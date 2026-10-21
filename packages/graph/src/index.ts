@@ -6,6 +6,7 @@ export {
   snapToAnchor,
 } from "./connectors.js";
 export type {
+  CardContainers,
   CreateCardInput,
   CreateEdgeInput,
   LayerAction,

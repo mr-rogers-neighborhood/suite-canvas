@@ -12,7 +12,7 @@ import { Fragment, type ReactNode, useMemo } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type Point, sideOf } from "../components/Connector";
 import { PeerNameTag } from "../components/PeerNameTag";
-import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
+import { useCards, useEdges } from "../store/workspaceStore";
 
 const OPPOSITE: Record<Position, Position> = {
   [Position.Top]: Position.Bottom,
@@ -164,7 +164,8 @@ function LinkPreview({
 /** Renders peers' in-flight link drags in flow space, next to their cursors. */
 export function PeerReconnectLayer() {
   const peers = usePresenceStore((state) => state.peers);
-  const { cards, edges } = useWorkspaceSnapshot();
+  const cards = useCards();
+  const edges = useEdges();
   const { zoom } = useViewport();
   const inverseZoom = 1 / (zoom || 1);
   const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);

@@ -8,6 +8,7 @@ import {
   type HandleType,
   MarkerType,
   type Node,
+  type NodeChange,
   type OnConnectEnd,
   type OnConnectStart,
   ReactFlow,
@@ -19,14 +20,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CardReference, cardReferences } from "../cards/cardReferences";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
-import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { nodeTypes } from "./NoteNode";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { PresenceLayer } from "./PresenceLayer";
@@ -35,6 +37,13 @@ import { PresenceLayer } from "./PresenceLayer";
 const SMOOTHING = 0.22;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
+const EMPTY_REFERENCES: CardReference[] = [];
+
+type CardNodeData = {
+  card: Card;
+  placement: Placement;
+  references: CardReference[];
+};
 
 const EDGE_TYPE: Record<GraphEdge["path"], Edge["type"]> = {
   bezier: "default",
@@ -141,7 +150,7 @@ export function CanvasBoard() {
   const { screenToFlowPosition } = useReactFlow();
   const store = useStoreApi();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [nodes, setNodes, applyNodeChanges] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reconnecting, setReconnecting] = useState<{
     edgeId: string;
@@ -186,12 +195,33 @@ export function CanvasBoard() {
     );
   }, [snapshot, boardCards, activeBoardId]);
 
+  // Derived once per placement change; a card node receives its own slice and
+  // does not subscribe to the whole workspace for its footer references.
+  const referencesByCard = useMemo(
+    () => cardReferences(snapshot.boards, snapshot.placements, activeBoardId),
+    [snapshot.boards, snapshot.placements, activeBoardId],
+  );
+
   const locallyDraggingId = useRef<string | null>(null);
+  /** Nodes this client is resizing; React Flow owns their live corner. */
+  const locallyResizing = useRef(new Set<string>());
   /** React Flow reports edge-updater drags through onConnectStart too. */
   const reconnectGesture = useRef(false);
   const lastPointerSent = useRef(0);
   const lastDragSent = useRef(0);
   const selectedKey = selectedNodeIds.join(",");
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<Node>[]) => {
+      for (const change of changes) {
+        if (change.type !== "dimensions") continue;
+        if (change.resizing) locallyResizing.current.add(change.id);
+        else locallyResizing.current.delete(change.id);
+      }
+      applyNodeChanges(changes);
+    },
+    [applyNodeChanges],
+  );
 
   // Remote drags are eased toward their latest reported position so motion on a
   // collaborator's screen reads as continuous instead of stepping.
@@ -227,31 +257,9 @@ export function CanvasBoard() {
     smoothingFrame.current = requestAnimationFrame(tick);
   }, [setNodes]);
 
-  useEffect(() => {
-    const next = new Map<string, { x: number; y: number }>();
-    for (const peer of Object.values(peers)) {
-      if (peer.dragging) next.set(peer.dragging.nodeId, peer.dragging.position);
-    }
-    peerTargets.current = next;
-
-    // Drop smoothing state for drags that ended so the CRDT position takes over.
-    for (const id of smoothPositions.current.keys()) {
-      if (!next.has(id)) smoothPositions.current.delete(id);
-    }
-
-    if (next.size > 0) runSmoothing();
-  }, [peers, runSmoothing]);
-
-  useEffect(
-    () => () => {
-      if (smoothingFrame.current !== null) cancelAnimationFrame(smoothingFrame.current);
-    },
-    [],
-  );
-
   // React Flow owns transient state (drag position, selection), the CRDT owns
   // the truth. Re-derive flow nodes whenever either side changes.
-  useEffect(() => {
+  const applyBoardNodes = useCallback(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
       // Paint order comes from the sorted board list; ranks are fractional, so
@@ -261,22 +269,79 @@ export function CanvasBoard() {
         if (!placement) return [];
         const existing = byId.get(card.id);
         const position =
-          locallyDraggingId.current === card.id && existing
+          existing &&
+          (locallyDraggingId.current === card.id || locallyResizing.current.has(card.id))
             ? existing.position
             : (smoothPositions.current.get(card.id) ?? { x: placement.x, y: placement.y });
+        const selected = selectedKey.split(",").includes(card.id);
+        const references = referencesByCard.get(card.id) ?? EMPTY_REFERENCES;
+        const previous = existing?.data as CardNodeData | undefined;
+        // Reuse the data object (and the node when nothing visible changed), so
+        // a card that did not change does not re-render on a peer's edit.
+        const data: CardNodeData =
+          previous &&
+          previous.card === card &&
+          previous.placement === placement &&
+          previous.references === references
+            ? previous
+            : { card, placement, references };
+        if (
+          existing &&
+          existing.data === data &&
+          existing.selected === selected &&
+          existing.zIndex === layer &&
+          existing.position.x === position.x &&
+          existing.position.y === position.y
+        ) {
+          return [existing];
+        }
         return [
           {
             id: card.id,
             type: "note",
             position: { x: position.x, y: position.y },
-            selected: selectedKey.split(",").includes(card.id),
+            selected,
             zIndex: layer,
-            data: { card, placement },
+            data,
           } satisfies Node,
         ];
       });
     });
-  }, [boardCards, boardPlacements, selectedKey, setNodes]);
+  }, [boardCards, boardPlacements, selectedKey, referencesByCard, setNodes]);
+
+  useEffect(() => {
+    applyBoardNodes();
+  }, [applyBoardNodes]);
+
+  useEffect(() => {
+    const next = new Map<string, { x: number; y: number }>();
+    for (const peer of Object.values(peers)) {
+      // A top or left resize moves the node, so its corner streams like a drag's.
+      if (peer.dragging) next.set(peer.dragging.nodeId, peer.dragging.position);
+      else if (peer.resizing?.position) next.set(peer.resizing.nodeId, peer.resizing.position);
+    }
+    peerTargets.current = next;
+
+    // Drop smoothing state for gestures that ended so the CRDT value takes over.
+    // The final document write can land before the gesture clears, so re-derive
+    // instead of waiting for the next board change that may never come.
+    let ended = false;
+    for (const id of smoothPositions.current.keys()) {
+      if (next.has(id)) continue;
+      smoothPositions.current.delete(id);
+      ended = true;
+    }
+
+    if (next.size > 0) runSmoothing();
+    if (ended) applyBoardNodes();
+  }, [peers, runSmoothing, applyBoardNodes]);
+
+  useEffect(
+    () => () => {
+      if (smoothingFrame.current !== null) cancelAnimationFrame(smoothingFrame.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const peerByEdge = new Map<string, string>();

@@ -5,6 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CardReference } from "../cards/cardReferences";
 import { cardType } from "../cards/cardTypes";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
@@ -20,13 +21,7 @@ export interface ConnectorPeerState {
   position: { x: number; y: number } | null;
 }
 
-/** One board a card appears on, for the References footer section. */
-export interface CardReference {
-  boardId: string;
-  boardName: string;
-  isHome: boolean;
-  isCurrent: boolean;
-}
+export type { CardReference } from "../cards/cardReferences";
 
 export type EditingField = "title" | "body";
 

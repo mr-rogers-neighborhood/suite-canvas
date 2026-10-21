@@ -38,6 +38,12 @@ export interface WorkspaceChange {
   value: Board | Card | Placement | GraphEdge | null;
 }
 
+/** Shared text containers for one card, stable until the cards map changes. */
+export interface CardContainers {
+  contentId: ContainerID | null;
+  titleId: ContainerID | null;
+}
+
 export interface CreateCardInput {
   id?: string;
   kind?: Card["kind"];
@@ -247,6 +253,8 @@ export class WorkspaceDocument {
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
+  private readonly containerCache = new Map<string, CardContainers>();
+  private readonly containerListeners = new Map<string, Set<() => void>>();
 
   constructor(doc: LoroDoc = new LoroDoc()) {
     this.doc = doc;
@@ -266,9 +274,17 @@ export class WorkspaceDocument {
 
     doc.subscribe((batch) => {
       const touched = new Map<WorkspaceSection, Set<string>>();
+      const containers = new Set<string>();
       for (const event of batch.events) {
         const root = event.path[0];
         if (typeof root !== "string") continue;
+        if (root === WorkspaceDocument.CONTENT_KEY || root === WorkspaceDocument.TITLES_KEY) {
+          if (typeof event.path[1] === "string") containers.add(event.path[1]);
+          else if (event.diff.type === "map") {
+            for (const key of Object.keys(event.diff.updated)) containers.add(key);
+          }
+          continue;
+        }
         if (
           root !== WorkspaceDocument.BOARDS_KEY &&
           root !== WorkspaceDocument.CARDS_KEY &&
@@ -285,6 +301,12 @@ export class WorkspaceDocument {
           for (const key of Object.keys(event.diff.updated)) keys.add(key);
         }
         touched.set(section, keys);
+      }
+      for (const cardId of containers) {
+        this.containerCache.delete(cardId);
+        const listeners = this.containerListeners.get(cardId);
+        if (!listeners) continue;
+        for (const listener of listeners) listener();
       }
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {

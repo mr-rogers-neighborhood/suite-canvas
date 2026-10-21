@@ -1,23 +1,27 @@
 import type { Card, Placement } from "@suite/graph";
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { CardReference } from "../cards/cardReferences";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { type CardReference, type ConnectorPeerState, NodeCard } from "../components/NodeCard";
+import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
+import { useCardContainers } from "../hooks/useCardContainers";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
-import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
 
-  const { card, placement } = data as { card: Card; placement: Placement };
+  const { card, placement, references } = data as {
+    card: Card;
+    placement: Placement;
+    references: CardReference[];
+  };
   const workspace = useCanvasStore((state) => state.workspace);
   const cursorStore = useCanvasStore((state) => state.cursors);
-  const snapshot = useWorkspaceSnapshot();
   const peers = useBoardPeers(placement.boardId);
   const localUser = usePresenceStore((state) => state.localUser);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
@@ -32,17 +36,17 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
 
-  // Container ids are stable; resolving them through the snapshot lets a card
-  // that mounted before the document hydrated adopt the shared containers.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
+  // Container ids are stable; resolving them through the container observer
+  // lets a card that mounted before the body existed adopt it without
+  // subscribing to every other card on the board.
+  const containers = useCardContainers(id);
   const contentId = useMemo(
-    () => workspace.contentId(id) ?? workspace.getContent(id).id,
-    [workspace, id, snapshot],
+    () => containers.contentId ?? workspace.getContent(id).id,
+    [workspace, id, containers],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
   const titleId = useMemo(
-    () => workspace.titleId(id) ?? workspace.getTitle(id).id,
-    [workspace, id, snapshot],
+    () => containers.titleId ?? workspace.getTitle(id).id,
+    [workspace, id, containers],
   );
 
   const presence = useMemo<PresenceUser[]>(
@@ -95,7 +99,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   );
 
   // Live size while this client drags a resize handle; peers get it throttled and
-  // the CRDT records only the final size.
+  // the CRDT records only the final geometry.
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
   const lastResizeSent = useRef(0);
 
@@ -105,14 +109,23 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       const now = performance.now();
       if (now - lastResizeSent.current < 40) return;
       lastResizeSent.current = now;
-      setResizing({ nodeId: id, width: params.width, height: params.height });
+      // React Flow moves the node when the top or left edge is dragged, so peers
+      // need the corner as well as the size to see the same transformation.
+      setResizing({
+        nodeId: id,
+        position: { x: params.x, y: params.y },
+        width: params.width,
+        height: params.height,
+      });
     },
     [id, setResizing],
   );
 
   const handleResizeEnd = useCallback(
     (_event: unknown, params: ResizeParams) => {
-      workspace.updatePlacementSize(placement.boardId, id, {
+      workspace.updatePlacementGeometry(placement.boardId, id, {
+        x: params.x,
+        y: params.y,
         width: params.width,
         height: params.height,
       });
@@ -121,32 +134,6 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     },
     [workspace, placement.boardId, id, setResizing],
   );
-
-  // Every board holding this card, home first, so the footer can show sharing.
-  const references = useMemo<CardReference[]>(() => {
-    const boardsById = new Map(snapshot.boards.map((board) => [board.id, board]));
-    const placements = snapshot.placements
-      .filter((entry) => entry.cardId === id)
-      .sort((a, b) => a.createdAt - b.createdAt || a.boardId.localeCompare(b.boardId));
-    const home = placements[0]?.boardId ?? null;
-
-    return placements
-      .flatMap((entry) => {
-        const board = boardsById.get(entry.boardId);
-        if (!board) return [];
-        return [
-          {
-            boardId: entry.boardId,
-            boardName: board.name,
-            isHome: entry.boardId === home,
-            isCurrent: entry.boardId === placement.boardId,
-          },
-        ];
-      })
-      .sort(
-        (a, b) => Number(b.isHome) - Number(a.isHome) || a.boardName.localeCompare(b.boardName),
-      );
-  }, [snapshot, id, placement.boardId]);
 
   const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
   const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;

@@ -11,9 +11,9 @@ import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { TitleBar } from "./components/TitleBar";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
-import { useWorkspaceSnapshot } from "./hooks/useWorkspaceSnapshot";
 import { resolveBoardId, useCanvasStore, WORKSPACE_ID } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
+import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme } from "./theme/useThemeStore";
 
 /** Card glyph box in flow units: `w-56` wide, tall enough for a header + one line. */

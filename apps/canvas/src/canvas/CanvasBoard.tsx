@@ -5,6 +5,7 @@ import {
   ConnectionMode,
   Controls,
   type Edge,
+  type HandleType,
   MarkerType,
   type Node,
   ReactFlow,
@@ -14,13 +15,14 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { useGraphSnapshot } from "../hooks/useGraphSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { nodeTypes } from "./NoteNode";
+import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { PresenceLayer } from "./PresenceLayer";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
@@ -65,6 +67,7 @@ export function CanvasBoard() {
   const setPointer = usePresenceStore((state) => state.setPointer);
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
+  const setReconnect = usePresenceStore((state) => state.setReconnect);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
@@ -79,6 +82,9 @@ export function CanvasBoard() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [reconnecting, setReconnecting] = useState<{ edgeId: string; end: HandleType } | null>(
+    null,
+  );
 
   const locallyDraggingId = useRef<string | null>(null);
   const lastPointerSent = useRef(0);
@@ -171,12 +177,20 @@ export function CanvasBoard() {
         if (!peerByEdge.has(edgeId)) peerByEdge.set(edgeId, peer.user.color);
       }
     }
+
     const selectedEdges = new Set(selectedEdgeIds);
-    setEdges(
-      graphEdges.map((edge) =>
-        toFlowEdge(edge, selectedEdges.has(edge.id), peerByEdge.get(edge.id)),
-      ),
-    );
+
+    // While a peer drags one end of a link, their dashed preview replaces it.
+    const reconnecting = new Set<string>();
+    for (const peer of Object.values(peers)) {
+      if (peer.reconnect) reconnecting.add(peer.reconnect.edgeId);
+    }
+
+    const flowEdges: Edge[] = graphEdges.map((edge) => {
+      const flowEdge = toFlowEdge(edge, selectedEdges.has(edge.id), peerByEdge.get(edge.id));
+      return reconnecting.has(edge.id) ? { ...flowEdge, hidden: true } : flowEdge;
+    });
+    setEdges(flowEdges);
   }, [graphEdges, peers, selectedEdgeIds, setEdges]);
 
   useOnSelectionChange({
@@ -253,6 +267,67 @@ export function CanvasBoard() {
     },
     [graph],
   );
+
+  // React Flow reports nothing while a reconnect drag moves, so follow the
+  // pointer ourselves and publish the endpoint for peers to preview.
+  useEffect(() => {
+    if (!reconnecting) return;
+
+    let lastSent = 0;
+    let pending: { x: number; y: number } | null = null;
+    let trailing: ReturnType<typeof setTimeout> | null = null;
+
+    const publish = (position: { x: number; y: number }) => {
+      setReconnect({ ...reconnecting, position });
+    };
+
+    const follow = (event: PointerEvent) => {
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const wait = DRAG_THROTTLE_MS - (performance.now() - lastSent);
+      if (wait <= 0) {
+        lastSent = performance.now();
+        publish(position);
+        return;
+      }
+      // Always deliver the latest position, even if no further move arrives.
+      pending = position;
+      if (trailing !== null) return;
+      trailing = setTimeout(() => {
+        trailing = null;
+        if (!pending) return;
+        lastSent = performance.now();
+        publish(pending);
+        pending = null;
+      }, wait);
+    };
+
+    window.addEventListener("pointermove", follow);
+    return () => {
+      window.removeEventListener("pointermove", follow);
+      // The drop already rewrote the edge, so never re-publish here: onReconnectEnd
+      // clears the field first and a late sample would resurrect the preview.
+      if (trailing !== null) clearTimeout(trailing);
+    };
+  }, [reconnecting, screenToFlowPosition, setReconnect]);
+
+  const onReconnectStart = useCallback(
+    (event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
+      // React Flow reports the handle that stays anchored, so the other end moves.
+      const end: HandleType = handleType === "source" ? "target" : "source";
+      setReconnecting({ edgeId: edge.id, end });
+      setReconnect({
+        edgeId: edge.id,
+        end,
+        position: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+      });
+    },
+    [screenToFlowPosition, setReconnect],
+  );
+
+  const onReconnectStop = useCallback(() => {
+    setReconnecting(null);
+    setReconnect(null);
+  }, [setReconnect]);
 
   const onReconnect = useCallback(
     (oldEdge: Edge, connection: Connection) => {
@@ -413,6 +488,8 @@ export function CanvasBoard() {
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}
         onReconnect={onReconnect}
+        onReconnectStart={onReconnectStart}
+        onReconnectEnd={onReconnectStop}
         edgesReconnectable
         onEdgeContextMenu={(event, edge) => {
           event.preventDefault();
@@ -457,6 +534,7 @@ export function CanvasBoard() {
         <Background color="var(--rf-dot)" />
         <Controls showInteractive={false} />
         <PresenceLayer />
+        <PeerReconnectLayer />
       </ReactFlow>
       {contextMenu ? (
         <ContextMenu

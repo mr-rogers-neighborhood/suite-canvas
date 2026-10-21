@@ -31,6 +31,19 @@ export const Default: Story = {
   },
 };
 
+/** A peer is holding this connector, so it eases toward their position. */
+export const MovingByPeer: Story = {
+  args: {
+    connector,
+    nodeId: "n1",
+    movingPeers: [{ name: "Marlowe", color: "#f97316" }],
+    peerPosition: { x: 0.2, y: 0.1 },
+    onSelect: () => {},
+    onMoveEnd: () => {},
+    onContextMenu: () => {},
+  },
+};
+
 export const Selected: Story = {
   args: {
     connector,

@@ -3,7 +3,7 @@ import type { NodeProps, NodeTypes } from "@xyflow/react";
 import { useMemo } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { NodeCard } from "../components/NodeCard";
+import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -33,13 +33,15 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       .map((peer) => peer.user);
   }, [peers, id]);
 
-  const movingConnectorPeers = useMemo<Record<string, PresenceUser[]>>(() => {
-    const result: Record<string, PresenceUser[]> = {};
+  const movingConnectorPeers = useMemo<Record<string, ConnectorPeerState>>(() => {
+    const result: Record<string, ConnectorPeerState> = {};
     for (const peer of Object.values(peers)) {
-      if (peer.connector?.nodeId !== id) continue;
-      const list = result[peer.connector.connectorId] ?? [];
-      list.push(peer.user);
-      result[peer.connector.connectorId] = list;
+      const moving = peer.connector;
+      if (moving?.nodeId !== id) continue;
+      const entry = result[moving.connectorId] ?? { users: [], position: null };
+      entry.users.push(peer.user);
+      entry.position = entry.position ?? moving.position ?? null;
+      result[moving.connectorId] = entry;
     }
     return result;
   }, [peers, id]);
@@ -63,6 +65,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         selectingPeers={selectingPeers}
         movingConnectorPeers={movingConnectorPeers}
         onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}
+        onConnectorMove={(connectorId, position) =>
+          setMovingConnector({ nodeId: id, connectorId, position })
+        }
         onConnectorMoveFinished={() => setMovingConnector(null)}
         selectedConnectorId={
           selectedConnector?.nodeId === id ? selectedConnector.connectorId : null

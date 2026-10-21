@@ -61,10 +61,16 @@ Interaction model:
 - **Click a connector** to select it; a dashed circular grab handle appears.
 - **Drag the grab handle** to reposition. Positions are free along the card perimeter, but the
   connector magnetizes to the nearest corner or side midpoint when released within ~20 px.
-- Dragging the connector dot itself is reserved for creating connections (not implemented yet).
+- Dragging the connector dot itself is reserved for creating connections.
 - Right-click a connector for **Reposition Connector** and **Delete connector**.
 - The node menu has **Add connector** (uses a free anchor) and a **Position** submenu
   (Bring Forward / Bring to Front / Send Back / Send to Back).
+
+A drag publishes the connector's live perimeter fraction through presence (throttled to ~25 Hz,
+with a trailing sample so the last position always lands). Peers ease their copy of the connector
+toward it with the same per-frame smoothing used for cards and re-measure the node's handle, so
+their links follow the dot while the drag is still in flight. The CRDT still records only the
+final position on release.
 
 Layering is a `z` integer per node; `moveNodeLayer` reindexes nodes in order (0 = furthest back),
 and React Flow renders `zIndex: node.z`. React Flow elevates a *selected* node (z + 1000) in
@@ -89,6 +95,13 @@ Links follow their connectors live: while a connector is being repositioned, `Co
 new position to local state and calls React Flow's `updateNodeInternals` once per animation frame,
 so the edge re-routes before the drop instead of snapping afterwards.
 
+Peers also see link drags as they happen. `onReconnectStart` publishes `reconnect`
+(`edgeId`, moving `end`, pointer in flow coordinates), and `PeerReconnectLayer` draws the dragged
+link as a dashed path in the peer's colour from the anchored connector to their pointer, using the
+same path helper as the real edge. The shared edge is hidden for the duration, so only the preview
+is visible until the drop rewrites it. React Flow reports the *anchored* handle from
+`onReconnectStart`, so the moving end is the opposite one.
+
 Either end of a link can be dragged onto another connector: hovering a link reveals React Flow's
 reconnect handles (`edgesReconnectable` + `onReconnect`). React Flow keeps the anchored end intact,
 so an unchanged `source`/`sourceHandle` means the *target* moved; `reconnectEdge` then rewrites only
@@ -107,9 +120,10 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
 - **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
-  (editing node), `selection` (selected nodes *and* selected links) and `dragging` (node + live
-  position). Moving a connector publishes `connector` (`nodeId` + `connectorId`), which draws a peer
-  ring around that connector, and selected links render in the peer's colour.
+  (editing node), `selection` (selected nodes *and* selected links), `dragging` (node + live
+  position), `connector` (`nodeId`, `connectorId` and the live fraction) and `reconnect` (dragged
+  link end). A moving connector shows a peer ring and moves for everyone; selected links render in
+  the peer's colour.
   Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
@@ -129,7 +143,9 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 
 ## Drag tracking
 
-Dragging a card broadcasts its live position at ~40 ms intervals. On the collaborator's side the
+Dragging a card broadcasts its live position at ~40 ms intervals (connectors and link ends use the
+same throttle, plus a trailing sample so a pointer that stops moving still delivers its last
+position). On the collaborator's side the
 card eases toward that target each animation frame (`SMOOTHING = 0.22`), so motion reads as
 continuous rather than stepping, and the card is visible the whole time. Position is persisted to
 the CRDT only on drag stop.

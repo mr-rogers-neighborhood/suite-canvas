@@ -300,3 +300,14 @@ body {
 .node-card-editor p + p {
   margin-top: 0.5rem;
 }
+
+/* A peer's in-flight link drag, drawn in flow space. */
+.peer-reconnect-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}

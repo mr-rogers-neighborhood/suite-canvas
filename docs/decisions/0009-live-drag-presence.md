@@ -1,0 +1,46 @@
+# ADR-0009: Live presence for connector and link drags
+
+- **Status:** accepted
+- **Date:** 2026-10-21
+
+## Context
+
+Connector positions and link endpoints only reached collaborators when the pointer was released.
+Card drags had already solved that problem with awareness + per-frame smoothing, but a connector or
+link drag stayed invisible to everyone else until the drop, which made collaboration feel
+one-directional and hid the most interesting moment of the gesture.
+
+## Decision
+
+1. **Reuse the awareness channel, not the CRDT.** `connector` carries the live perimeter fraction and
+   `reconnect` carries the dragged link end. Writing to Yjs per frame would flood every client's
+   document history with throwaway states; presence is ephemeral by design and disappears with the
+   pointer.
+2. **Throttle with a trailing sample.** A bare throttle drops the final event, leaving peers frozen a
+   step behind a pointer that has stopped. Both broadcasts schedule a trailing publish for the end of
+   the window, and the connector flushes the exact drop position before clearing presence.
+3. **Smooth on the receiver.** `Connector` eases toward the peer's latest fraction each animation
+   frame (`0.22`, matching card drags) and calls `updateNodeInternals` so the peer's links re-route
+   with the dot.
+4. **Preview link drags with the library's own geometry.** `PeerReconnectLayer` computes the anchored
+   connector's flow position from the node's measured size, then draws a dashed path to the peer's
+   pointer using `getBezierPath` / `getStraightPath` / `getSmoothStepPath`, i.e. the same helpers the
+   real edge uses, and hides the shared edge while the preview is up.
+5. **React Flow reports the anchored handle.** `onReconnectStart`/`onReconnectEnd` receive the handle
+   that stays anchored, so presence records the *opposite* end as the moving one.
+
+Rejected alternatives:
+
+- **Ghost node + ghost edge.** Injecting an invisible node under the peer's pointer so React Flow could
+  route the preview looked elegant, but a node that mounts mid-session has unmeasured handles and the
+  edge referencing it was silently dropped; calling `updateNodeInternals` from the node did not help.
+  Drawing the path directly is deterministic.
+- **CRDT writes during the drag.** Simpler on the receiving side, but it turns a pointer gesture into
+  document history and would let an interrupted drag persist a half-finished position.
+
+## Consequences
+
+- Connectors and links move on every screen while the drag is in flight, with no CRDT churn.
+- The preview shares the real edge's path style and the peer's colour, so intent is legible at a glance.
+- Preview geometry depends on the anchor node being measured; while a node is unmeasured the preview
+  stays hidden rather than drawing at the origin.

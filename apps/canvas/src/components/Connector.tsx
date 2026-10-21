@@ -1,6 +1,6 @@
 import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/graph";
 import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 
 export interface ConnectorProps {
@@ -14,6 +14,10 @@ export interface ConnectorProps {
   onContextMenu: (event: React.MouseEvent, connectorId: string) => void;
   /** Peers currently dragging this connector, shown as a colored ring. */
   movingPeers?: PresenceUser[];
+  /** Where a peer is holding the connector right now, in perimeter fractions. */
+  peerPosition?: Point | null;
+  /** Broadcast (throttled) while this client drags, so peers see the move live. */
+  onMove?: ((position: Point) => void) | undefined;
   /** Called when this client starts/stops dragging the connector. */
   onMoveStart?: (() => void) | undefined;
   onMoveFinished?: (() => void) | undefined;
@@ -22,7 +26,13 @@ export interface ConnectorProps {
 /** Magnetic radius around a corner/side midpoint, in screen pixels. */
 const MAGNET_RADIUS = 20;
 
-interface Point {
+/** Share of the remaining distance covered per frame when easing toward a peer. */
+const PEER_SMOOTHING = 0.22;
+
+/** Throttle for broadcasting a live connector position, in milliseconds. */
+const MOVE_THROTTLE_MS = 40;
+
+export interface Point {
   x: number;
   y: number;
 }
@@ -82,7 +92,8 @@ function isAnchor(position: Point): boolean {
  * can sit anywhere on the perimeter, so the side is derived from the position —
  * otherwise every edge would enter vertically and hook into the dot.
  */
-function sideOf(position: Point): Position {
+/** The card side a connector sits on, so links leave it perpendicular to the edge. */
+export function sideOf(position: Point): Position {
   const dx = position.x - 0.5;
   const dy = position.y - 0.5;
   if (Math.abs(dy) >= Math.abs(dx)) {
@@ -112,17 +123,65 @@ export function Connector({
   onMoveEnd,
   onContextMenu,
   movingPeers = [],
+  peerPosition = null,
+  onMove,
   onMoveStart,
   onMoveFinished,
 }: ConnectorProps) {
   const [dragging, setDragging] = useState(false);
   const [livePosition, setLivePosition] = useState<Point | null>(null);
+  const [peerLive, setPeerLive] = useState<Point | null>(null);
   const shell = useRef<HTMLDivElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const movingPeer = movingPeers[0];
 
-  const position = livePosition ?? { x: connector.x, y: connector.y };
+  const position = livePosition ?? peerLive ?? { x: connector.x, y: connector.y };
   const side = sideOf(position);
+
+  // A peer's drag arrives as a stream of targets; ease toward the newest one so
+  // the connector glides, and re-measure so their links follow it.
+  const peerTarget = useRef<Point | null>(null);
+  const easedPeer = useRef<Point | null>(null);
+  const peerFrame = useRef<number | null>(null);
+
+  useEffect(() => {
+    peerTarget.current = peerPosition;
+    if (!peerPosition) {
+      easedPeer.current = null;
+      setPeerLive(null);
+      return;
+    }
+    if (peerFrame.current !== null) return;
+
+    const tick = () => {
+      const target = peerTarget.current;
+      if (!target) {
+        peerFrame.current = null;
+        return;
+      }
+      const from = easedPeer.current ?? target;
+      const settled = Math.abs(target.x - from.x) < 0.001 && Math.abs(target.y - from.y) < 0.001;
+      const next = settled
+        ? target
+        : {
+            x: from.x + (target.x - from.x) * PEER_SMOOTHING,
+            y: from.y + (target.y - from.y) * PEER_SMOOTHING,
+          };
+      easedPeer.current = next;
+      setPeerLive(next);
+      updateNodeInternals(nodeId);
+      peerFrame.current = settled ? null : requestAnimationFrame(tick);
+    };
+
+    peerFrame.current = requestAnimationFrame(tick);
+  }, [peerPosition, nodeId, updateNodeInternals]);
+
+  useEffect(
+    () => () => {
+      if (peerFrame.current !== null) cancelAnimationFrame(peerFrame.current);
+    },
+    [],
+  );
 
   const startReposition = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -136,6 +195,8 @@ export function Connector({
       (event.target as HTMLElement).setPointerCapture(event.pointerId);
       setDragging(true);
       onMoveStart?.();
+      onMove?.({ x: connector.x, y: connector.y });
+      let lastSent = performance.now();
 
       // Edges are measured from the handle's DOM box, so re-measure while the
       // connector moves; otherwise links would only catch up on release.
@@ -150,8 +211,14 @@ export function Connector({
 
       const move = (moveEvent: PointerEvent) => {
         const projected = projectToPerimeter(rect, moveEvent.clientX, moveEvent.clientY);
-        setLivePosition(magnetize(projected, rect));
+        const next = magnetize(projected, rect);
+        setLivePosition(next);
         scheduleRemeasure();
+
+        const now = performance.now();
+        if (now - lastSent < MOVE_THROTTLE_MS) return;
+        lastSent = now;
+        onMove?.(next);
       };
 
       const up = (upEvent: PointerEvent) => {
@@ -159,6 +226,8 @@ export function Connector({
         const finalPosition = magnetize(projected, rect);
         setLivePosition(null);
         setDragging(false);
+        // Publish the exact drop position before peers fall back to the CRDT.
+        onMove?.(finalPosition);
         onMoveEnd(connector.id, finalPosition);
         onMoveFinished?.();
         if (frame !== null) cancelAnimationFrame(frame);
@@ -170,7 +239,17 @@ export function Connector({
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [connector.id, nodeId, onMoveEnd, onMoveFinished, onMoveStart, updateNodeInternals],
+    [
+      connector.id,
+      connector.x,
+      connector.y,
+      nodeId,
+      onMove,
+      onMoveEnd,
+      onMoveFinished,
+      onMoveStart,
+      updateNodeInternals,
+    ],
   );
 
   return (

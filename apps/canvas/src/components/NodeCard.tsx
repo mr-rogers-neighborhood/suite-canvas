@@ -11,6 +11,12 @@ import { CollaborationCursor } from "../editor/CollaborationCursor";
 import { Connector } from "./Connector";
 import { PresenceAvatars } from "./PresenceAvatars";
 
+/** Everyone dragging one connector, plus where the first of them is holding it. */
+export interface ConnectorPeerState {
+  users: PresenceUser[];
+  position: { x: number; y: number } | null;
+}
+
 export interface NodeCardProps {
   node: GraphNode;
   fragment: Y.XmlFragment;
@@ -24,8 +30,10 @@ export interface NodeCardProps {
   /** Peers that have this node selected. */
   selectingPeers?: PresenceUser[];
   /** Peers dragging a connector on this node, keyed by connector id. */
-  movingConnectorPeers?: Record<string, PresenceUser[]>;
+  movingConnectorPeers?: Record<string, ConnectorPeerState>;
   onConnectorMoveStart?: (connectorId: string) => void;
+  /** Live connector position while this client drags, throttled by the connector. */
+  onConnectorMove?: (connectorId: string, position: { x: number; y: number }) => void;
   onConnectorMoveFinished?: () => void;
   selectedConnectorId?: string | null;
   onConnectorSelect?: (connectorId: string) => void;
@@ -55,6 +63,7 @@ export function NodeCard({
   selectingPeers = [],
   movingConnectorPeers = {},
   onConnectorMoveStart,
+  onConnectorMove,
   onConnectorMoveFinished,
   selectedConnectorId = null,
   onConnectorSelect,
@@ -198,8 +207,10 @@ export function NodeCard({
           selected={selectedConnectorId === connector.id}
           onSelect={(id) => onConnectorSelect?.(id)}
           onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
-          movingPeers={movingConnectorPeers[connector.id] ?? []}
+          movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
+          peerPosition={movingConnectorPeers[connector.id]?.position ?? null}
           onMoveStart={() => onConnectorMoveStart?.(connector.id)}
+          onMove={(position) => onConnectorMove?.(connector.id, position)}
           onMoveFinished={onConnectorMoveFinished}
           onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
         />

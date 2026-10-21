@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { type BoundingBox, expect, type Locator, type Page, test } from "@playwright/test";
 
 /**
  * Finds a point on the React Flow pane with no node or control panel under it,
@@ -42,9 +42,12 @@ async function createNote(page: Page): Promise<void> {
 const editingCard = (page: Page) =>
   page.locator('[data-testid="node-card"]:has([contenteditable="true"])');
 
-/** Each test gets its own document so parallel tests never share CRDT state. */
-let docSequence = 0;
-const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${++docSequence}`;
+/**
+ * Each test gets its own document so parallel tests never share CRDT state. The
+ * random suffix keeps repeats of the same test apart even when two workers start
+ * in the same millisecond.
+ */
+const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`;
 
 test("creates, edits, and deletes a note", async ({ page }) => {
   await page.goto(docUrl("create-edit-delete"));
@@ -170,16 +173,43 @@ async function edgeGeometry(page: Page) {
   });
 }
 
+/**
+ * React Flow re-renders nodes (detaching handles) while a second client syncs, so
+ * a bounding box read can come back empty. Retry until both are measurable.
+ */
+async function boxPair(
+  first: Locator,
+  second: Locator,
+  timeout = 5_000,
+): Promise<{ source: BoundingBox; target: BoundingBox }> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const [source, target] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    if (source && target) return { source, target };
+    if (Date.now() > deadline) throw new Error("connectors not visible");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 async function connectCards(page: Page): Promise<void> {
   const cards = page.locator('[data-testid="node-card"]');
-  const source = await cards.nth(0).locator('[data-testid="connector-dot"]').nth(1).boundingBox();
-  const target = await cards.nth(1).locator('[data-testid="connector-dot"]').nth(3).boundingBox();
-  if (!source || !target) throw new Error("connectors not visible");
-  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 14 });
-  await page.mouse.up();
-  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(cards).toHaveCount(2);
+  const from = cards.nth(0).locator('[data-testid="connector-dot"]').nth(1);
+  const to = cards.nth(1).locator('[data-testid="connector-dot"]').nth(3);
+  const edge = page.locator(".react-flow__edge");
+
+  // Handles can still be registering right after mount, in which case the drop
+  // is ignored; repeat the gesture until React Flow accepts it.
+  await expect(async () => {
+    const { source, target } = await boxPair(from, to);
+    await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {
+      steps: 14,
+    });
+    await page.mouse.up();
+    await expect(edge).toHaveCount(1, { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 test("the link follows a connector while it is being moved", async ({ page }) => {
@@ -208,7 +238,7 @@ test("the link follows a connector while it is being moved", async ({ page }) =>
 
   await page.mouse.up();
   await page.waitForTimeout(400);
-  expect(await page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 });
 
 /** Screen point on the link stroke, which is where it actually accepts pointer events. */
@@ -500,6 +530,126 @@ test("shows link selection and connector movement presence", async ({ browser })
 
   await pageA.mouse.up();
   await expect(pageB.locator('[data-testid="connector"][data-peer="true"]')).toHaveCount(0);
+
+  await contextA.close();
+  await contextB.close();
+});
+
+/** Screen point of the connector a peer is currently holding. */
+async function peerConnectorPoint(page: Page) {
+  return page.evaluate(() => {
+    const element = document.querySelector('[data-testid="connector"][data-peer="true"]');
+    if (!element) return null;
+    const box = element.getBoundingClientRect();
+    return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+  });
+}
+
+test("a peer sees the connector and its link move before release", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("live-connector");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(pageA);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+
+  const edgeStartBefore = await edgeGeometry(pageB);
+
+  const card = pageA.locator('[data-testid="node-card"]').first();
+  const cardBox = await card.boundingBox();
+  if (!cardBox) throw new Error("card not visible");
+  await card.locator('[data-testid="connector-dot"]').nth(1).click();
+  const grab = await card.locator('[data-testid="connector-grab"]').boundingBox();
+  if (!grab) throw new Error("grab handle not visible");
+
+  await pageA.mouse.move(grab.x + grab.width - 3, grab.y + grab.height / 2);
+  await pageA.mouse.down();
+  await pageA.mouse.move(cardBox.x + cardBox.width * 0.6, cardBox.y + cardBox.height, {
+    steps: 10,
+  });
+
+  // B follows the drag while A still holds the pointer down.
+  await expect.poll(() => peerConnectorPoint(pageB)).not.toBeNull();
+  const first = await peerConnectorPoint(pageB);
+  await pageA.mouse.move(cardBox.x, cardBox.y + cardBox.height * 0.5, { steps: 10 });
+  await expect.poll(() => peerConnectorPoint(pageB)).not.toEqual(first);
+
+  // The link's endpoint follows too, not just the dot.
+  await expect
+    .poll(async () => (await edgeGeometry(pageB))?.start)
+    .not.toEqual(edgeStartBefore?.start);
+
+  await pageA.mouse.up();
+
+  await contextA.close();
+  await contextB.close();
+});
+
+/** Screen point of the free end of a peer's dashed link preview. */
+async function peerPreviewEnd(page: Page) {
+  return page.evaluate(() => {
+    const path = document.querySelector<SVGPathElement>('[data-testid="peer-reconnect-preview"]');
+    if (!path) return null;
+    const end = path.getPointAtLength(path.getTotalLength());
+    const screen = new DOMPoint(end.x, end.y).matrixTransform(path.getScreenCTM() as DOMMatrix);
+    return { x: Math.round(screen.x), y: Math.round(screen.y) };
+  });
+}
+
+test("shows a peer's link drag before it is dropped", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("live-reconnect");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(pageA);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
+
+  await hoverEdge(pageA);
+  const updater = await pageA.locator(".react-flow__edgeupdater-target").boundingBox();
+  const anchor = await pageA
+    .locator('[data-testid="node-card"]')
+    .first()
+    .locator('[data-testid="connector-dot"]')
+    .nth(1)
+    .boundingBox();
+  if (!updater || !anchor) throw new Error("reconnect handles not visible");
+
+  const anchorPoint = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
+  await pageA.mouse.move(updater.x + updater.width / 2, updater.y + updater.height / 2);
+  await pageA.mouse.down();
+  await pageA.mouse.move(anchorPoint.x + 40, anchorPoint.y + 120, { steps: 10 });
+
+  // B sees a dashed preview from the anchored connector to A's pointer, and the
+  // real link steps aside until the drop.
+  await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(1);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
+  // The preview trails the pointer by at most one throttled sample.
+  await expect
+    .poll(async () => {
+      const point = await peerPreviewEnd(pageB);
+      if (!point) return Number.POSITIVE_INFINITY;
+      return Math.hypot(point.x - (anchorPoint.x + 40), point.y - (anchorPoint.y + 120));
+    })
+    .toBeLessThan(12);
+
+  const first = await peerPreviewEnd(pageB);
+  await pageA.mouse.move(anchorPoint.x + 160, anchorPoint.y + 40, { steps: 10 });
+  await expect.poll(() => peerPreviewEnd(pageB)).not.toEqual(first);
+
+  await pageA.mouse.up();
+  await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
 
   await contextA.close();
   await contextB.close();

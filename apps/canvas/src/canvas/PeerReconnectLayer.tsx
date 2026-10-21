@@ -48,6 +48,7 @@ function ReconnectPreview({
   edge,
   node,
   connectorId,
+  movingEnd,
   target,
   pointer,
   color,
@@ -55,6 +56,8 @@ function ReconnectPreview({
   edge: GraphEdge;
   node: GraphNode;
   connectorId: string | undefined;
+  /** The end following the pointer; the anchored end is the other one. */
+  movingEnd: "source" | "target";
   /** Connector the mover has snapped to, if any. */
   target: { node: GraphNode; connectorId: string } | null;
   pointer: Point;
@@ -94,13 +97,21 @@ function ReconnectPreview({
   const d = pathFor(edge.path, anchor, anchorSide, end.point, end.side);
   const markerId = `peer-reconnect-arrow-${edge.id}-${color.replace(/\W/g, "")}`;
 
+  // Arrows belong where the finished link will have them: at its target, and at
+  // both ends when bidirectional — never at the end the pointer is holding.
+  const anchoredEnd = movingEnd === "target" ? "source" : "target";
+  const arrowAtStart = edge.bidirectional || anchoredEnd === "target";
+  const arrowAtEnd = edge.bidirectional || movingEnd === "target";
+  const arrows =
+    arrowAtStart && arrowAtEnd ? "both" : arrowAtStart ? "start" : arrowAtEnd ? "end" : "none";
+
   return (
     <svg className="peer-reconnect-preview" aria-hidden="true">
       <defs>
         <marker
           id={markerId}
           viewBox="0 0 10 10"
-          refX="9"
+          refX="10"
           refY="5"
           markerWidth="6"
           markerHeight="6"
@@ -112,13 +123,15 @@ function ReconnectPreview({
       <path
         data-testid="peer-reconnect-preview"
         data-snapped={snappedTarget ? "true" : undefined}
+        data-arrows={arrows}
         d={d}
         fill="none"
         stroke={color}
         strokeWidth={2}
         strokeDasharray="6 4"
         strokeLinecap="round"
-        markerEnd={`url(#${markerId})`}
+        {...(arrowAtStart ? { markerStart: `url(#${markerId})` } : {})}
+        {...(arrowAtEnd ? { markerEnd: `url(#${markerId})` } : {})}
       />
     </svg>
   );
@@ -155,6 +168,7 @@ export function PeerReconnectLayer() {
             edge={edge}
             node={anchorNode}
             connectorId={draggingSource ? edge.targetConnector : edge.sourceConnector}
+            movingEnd={state.end}
             target={resolveTarget(state.target)}
             pointer={state.position}
             color={peer.user.color}

@@ -103,6 +103,10 @@ same path helper as the real edge. The shared edge is hidden for the duration, s
 is visible until the drop rewrites it. React Flow reports the *anchored* handle from
 `onReconnectStart`, so the moving end is the opposite one.
 
+Arrowheads follow the finished link, not the gesture: dragging the target end puts the arrow on the
+free end, dragging the source end keeps it on the anchored target, and a bidirectional link shows
+both — so the preview never suggests a direction the drop will not produce.
+
 Snapping is forwarded rather than reimplemented: while the drag is in flight the mover reads React
 Flow's own `connection.toNode` / `toHandle` from the store (the same value that highlights the handle
 under the pointer) and publishes it as `reconnect.target`. Peers then end their preview on that

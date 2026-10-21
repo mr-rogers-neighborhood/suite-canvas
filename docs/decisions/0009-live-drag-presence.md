@@ -39,6 +39,11 @@ one-directional and hid the most interesting moment of the gesture.
    each node would clear the shared field when another node's connector was clicked, and the winner
    would depend on effect order.
 
+8. **Arrowheads describe the result, not the gesture.** The preview draws its marker at the ends the
+   finished link will mark: the target end (free while dragging the target, anchored while dragging
+   the source) plus the source end when the link is bidirectional. Putting a marker on whatever end
+   the pointer holds made the synced client show an arrow the drop would not produce.
+
 Rejected alternatives:
 
 - **Ghost node + ghost edge.** Injecting an invisible node under the peer's pointer so React Flow could

@@ -698,6 +698,9 @@ test("shows a peer's link drag before it is dropped", async ({ browser }) => {
 
   const preview = pageB.getByTestId("peer-reconnect-preview");
   await expect(preview).toHaveAttribute("data-snapped", "true");
+  // Dragging the target end: the arrowhead rides the free end, as it will once
+  // the link is dropped.
+  await expect(preview).toHaveAttribute("data-arrows", "end");
   await expect
     .poll(async () => {
       const point = await peerPreviewEnd(pageB);
@@ -709,6 +712,41 @@ test("shows a peer's link drag before it is dropped", async ({ browser }) => {
   await pageA.mouse.up();
   await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test("keeps the peer's preview arrow on the link's target end", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("preview-arrows");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(pageA);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+
+  // Dragging the *source* end leaves the target anchored, so the arrowhead
+  // belongs there rather than under the pointer.
+  await hoverEdge(pageA);
+  const updater = await pageA.locator(".react-flow__edgeupdater-source").boundingBox();
+  if (!updater) throw new Error("reconnect handles not visible");
+
+  await pageA.mouse.move(updater.x + updater.width / 2, updater.y + updater.height / 2);
+  await pageA.mouse.down();
+  await pageA.mouse.move(updater.x + 30, updater.y + 120, { steps: 10 });
+
+  const preview = pageB.getByTestId("peer-reconnect-preview");
+  await expect(preview).toHaveAttribute("data-arrows", "start");
+  await expect(preview).toHaveAttribute("marker-start", /arrow/);
+  await expect(preview).not.toHaveAttribute("marker-end", /arrow/);
+
+  await pageA.mouse.up();
+  await expect(preview).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

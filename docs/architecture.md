@@ -113,9 +113,9 @@ body.
 ### Migration
 
 The Loro document starts at the current schema; there is no production Yjs data to migrate.
-`migrateLegacy()` is a no-op kept on the interface, and `?doc=<id>` remains a URL alias for
-`?workspace=<id>`. Future schema changes follow the additive-first rule: new fields are optional,
-and a migration is explicit and guarded by `meta.schemaVersion`.
+`?doc=<id>` remains a URL alias for `?workspace=<id>`. Future schema changes follow the
+additive-first rule: new fields are optional, and a migration is explicit and guarded by
+`meta.schemaVersion`.
 
 ## Undo
 

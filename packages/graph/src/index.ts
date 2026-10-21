@@ -15,7 +15,6 @@ export type {
 } from "./loro/WorkspaceDocument.js";
 export {
   DEFAULT_BOARD_ID,
-  migrateLegacyDocument,
   normalizeCard,
   placementKey,
   WorkspaceDocument,

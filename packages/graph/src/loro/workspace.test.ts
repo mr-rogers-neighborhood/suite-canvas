@@ -438,17 +438,6 @@ describe("WorkspaceDocument connectors", () => {
   });
 });
 
-describe("migration", () => {
-  it("leaves a fresh Loro document untouched", () => {
-    const doc = new LoroDoc();
-    const workspace = new WorkspaceDocument(doc);
-    workspace.migrateLegacy();
-    expect(workspace.listBoards()).toHaveLength(0);
-    expect(workspace.listCards()).toHaveLength(0);
-    expect(workspace.listEdges()).toHaveLength(0);
-  });
-});
-
 describe("WorkspaceDocument undo", () => {
   function sync(a: LoroDoc, b: LoroDoc) {
     const fromA = a.export({ mode: "update" });

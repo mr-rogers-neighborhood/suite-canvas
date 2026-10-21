@@ -62,9 +62,6 @@ const MIN_RANK_GAP = 1e-7;
 
 export const CONNECTORS_FIELD = "connectors";
 
-/** Compatibility no-op: Loro documents do not have a legacy Yjs shape. */
-export function migrateLegacyDocument(_doc: LoroDoc): void {}
-
 /** Origin prefixes that keep text/editor history out of the structural undo stack. */
 export const TEXT_ORIGIN_PREFIX = "loroSyncPlugin";
 export const INIT_ORIGIN = "sys:init";
@@ -580,10 +577,6 @@ export class WorkspaceDocument {
     this.content.delete(id);
     this.titles.delete(id);
     this.commit(`${STRUCT_ORIGIN}purge-card`);
-  }
-
-  migrateLegacy(): void {
-    // New Loro documents have no Yjs or pre-workspace data to migrate.
   }
 
   emptyTrash(): void {

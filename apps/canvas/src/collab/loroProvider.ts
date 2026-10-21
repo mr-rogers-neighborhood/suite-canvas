@@ -1,6 +1,6 @@
 import { LoroAdaptor, LoroEphemeralAdaptor, LoroPersistentStoreAdaptor } from "loro-adaptors/loro";
 import type { EphemeralStore, LoroDoc } from "loro-crdt";
-import { ClientStatus, LoroWebsocketClient, type LoroWebsocketClientRoom } from "loro-websocket";
+import { LoroWebsocketClient, type LoroWebsocketClientRoom } from "loro-websocket";
 
 export type LoroConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -97,5 +97,3 @@ export class LoroProvider {
     this.client.destroy();
   }
 }
-
-export { ClientStatus };

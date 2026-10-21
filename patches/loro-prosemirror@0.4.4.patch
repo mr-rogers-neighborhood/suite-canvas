@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index f2d4d09c20acd871d5934bb39287f467a8e4e331..7e91eca22e146ea09c6af1f59f3adca08fe191ff 100644
+index f2d4d09c20acd871d5934bb39287f467a8e4e331..febfe159f08bcf4af26e2db691a173e4cf786f1b 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -15,7 +15,7 @@ const NODE_NAME_KEY = "nodeName";
@@ -20,15 +20,31 @@ index f2d4d09c20acd871d5934bb39287f467a8e4e331..7e91eca22e146ea09c6af1f59f3adca0
  }
  function createNodeFromLoroObj(schema, obj, mapping) {
  	let retval = mapping.get(obj.id) ?? null;
-@@ -473,6 +473,7 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -463,6 +463,14 @@ const createCursorPlugin = (pluginKey, store, options) => {
+ 	});
+ 	return plugin;
+ };
++function containerBelongsTo(doc, rootId, candidateId) {
++	let container = doc.getContainerById(candidateId);
++	while (container) {
++		if (container.id === rootId) return true;
++		container = container.parent();
++	}
++	return false;
++}
+ function createDecorations(state, store, _plugin, createSelection, createCursor) {
+ 	const all = store.getAll();
+ 	const d = [];
+@@ -473,6 +481,8 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
 +		if (!loroState.mapping.has(cursor.anchor.containerId()) || !loroState.mapping.has(cursor.focus.containerId())) continue;
++		if (loroState.containerId && (!containerBelongsTo(doc, loroState.containerId, cursor.anchor.containerId()) || !containerBelongsTo(doc, loroState.containerId, cursor.focus.containerId()))) continue;
  		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
  		d.push(prosemirror_view.Decoration.widget(focus, createCursor(peer)));
  		if (!cursorEq(cursor.anchor, cursor.focus)) {
-@@ -624,7 +625,7 @@ const LoroSyncPlugin = (props) => {
+@@ -624,7 +634,7 @@ const LoroSyncPlugin = (props) => {
  				else state.changedBy = "local";
  				switch (meta?.type) {
  					case "doc-changed":
@@ -37,7 +53,7 @@ index f2d4d09c20acd871d5934bb39287f467a8e4e331..7e91eca22e146ea09c6af1f59f3adca0
  						break;
  					case "update-state":
  						state = {
-@@ -642,6 +643,9 @@ const LoroSyncPlugin = (props) => {
+@@ -642,6 +652,9 @@ const LoroSyncPlugin = (props) => {
  			}
  		},
  		appendTransaction: (transactions, _oldEditorState, newEditorState) => {
@@ -47,7 +63,7 @@ index f2d4d09c20acd871d5934bb39287f467a8e4e331..7e91eca22e146ea09c6af1f59f3adca0
  			if (transactions.some((tr) => tr.docChanged)) return newEditorState.tr.setMeta(loroSyncPluginKey, { type: "doc-changed" });
  			return null;
  		},
-@@ -668,7 +672,9 @@ function init(view) {
+@@ -668,7 +681,9 @@ function init(view) {
  	const innerDoc = state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY);
  	const mapping = /* @__PURE__ */ new Map();
  	if (innerDoc.size === 0) {
@@ -103,7 +119,7 @@ index 187d0891377a3b876b77ed2a4d617c71057eff84..efe3bdb860a25c096a9dc46a24b56199
  interface LoroSyncPluginState extends LoroSyncPluginProps {
    changedBy: "local" | "import" | "checkout";
 diff --git a/dist/index.js b/dist/index.js
-index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d528b6f48 100644
+index 30f301e9505d8b0ce13ec211a3681a60f68c9875..304c685cca6ccdfbea699e792c8608e2fea2a554 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -14,7 +14,7 @@ const NODE_NAME_KEY = "nodeName";
@@ -124,15 +140,31 @@ index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d
  }
  function createNodeFromLoroObj(schema, obj, mapping) {
  	let retval = mapping.get(obj.id) ?? null;
-@@ -472,6 +472,7 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+@@ -462,6 +462,14 @@ const createCursorPlugin = (pluginKey, store, options) => {
+ 	});
+ 	return plugin;
+ };
++function containerBelongsTo(doc, rootId, candidateId) {
++	let container = doc.getContainerById(candidateId);
++	while (container) {
++		if (container.id === rootId) return true;
++		container = container.parent();
++	}
++	return false;
++}
+ function createDecorations(state, store, _plugin, createSelection, createCursor) {
+ 	const all = store.getAll();
+ 	const d = [];
+@@ -472,6 +480,8 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
  	for (const [peer, cursor] of Object.entries(all)) {
  		if (peer === thisPeer) continue;
  		if (!cursor.anchor || !cursor.focus) continue;
 +		if (!loroState.mapping.has(cursor.anchor.containerId()) || !loroState.mapping.has(cursor.focus.containerId())) continue;
++		if (loroState.containerId && (!containerBelongsTo(doc, loroState.containerId, cursor.anchor.containerId()) || !containerBelongsTo(doc, loroState.containerId, cursor.focus.containerId()))) continue;
  		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
  		d.push(Decoration.widget(focus, createCursor(peer)));
  		if (!cursorEq(cursor.anchor, cursor.focus)) {
-@@ -623,7 +624,7 @@ const LoroSyncPlugin = (props) => {
+@@ -623,7 +633,7 @@ const LoroSyncPlugin = (props) => {
  				else state.changedBy = "local";
  				switch (meta?.type) {
  					case "doc-changed":
@@ -141,7 +173,7 @@ index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d
  						break;
  					case "update-state":
  						state = {
-@@ -641,6 +642,9 @@ const LoroSyncPlugin = (props) => {
+@@ -641,6 +651,9 @@ const LoroSyncPlugin = (props) => {
  			}
  		},
  		appendTransaction: (transactions, _oldEditorState, newEditorState) => {
@@ -151,7 +183,7 @@ index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d
  			if (transactions.some((tr) => tr.docChanged)) return newEditorState.tr.setMeta(loroSyncPluginKey, { type: "doc-changed" });
  			return null;
  		},
-@@ -667,7 +671,9 @@ function init(view) {
+@@ -667,7 +680,9 @@ function init(view) {
  	const innerDoc = state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY);
  	const mapping = /* @__PURE__ */ new Map();
  	if (innerDoc.size === 0) {
@@ -163,18 +195,45 @@ index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d
  			type: "update-state",
  			state: {
 diff --git a/src/cursor/common.ts b/src/cursor/common.ts
-index 91bdf332d3e744bc90dce0bd6a9832dc92af948b..c47974bc2bc8d85320af64985a6fd1b5349e8675 100644
+index 91bdf332d3e744bc90dce0bd6a9832dc92af948b..923c40e96624789eb08fdd71de538490858037da 100644
 --- a/src/cursor/common.ts
 +++ b/src/cursor/common.ts
-@@ -218,6 +218,15 @@ function createDecorations(
+@@ -192,6 +192,19 @@ export const createCursorPlugin = (
+   return plugin;
+ };
+
++function containerBelongsTo(
++  doc: LoroDocType,
++  rootId: ContainerID,
++  candidateId: ContainerID,
++): boolean {
++  let container = doc.getContainerById(candidateId);
++  while (container) {
++    if (container.id === rootId) return true;
++    container = container.parent();
++  }
++  return false;
++}
++
+ function createDecorations(
+   state: EditorState,
+   store: CursorPresenceStore,
+@@ -218,6 +231,22 @@ function createDecorations(
        continue;
      }
- 
+
 +    // A cursor only belongs to the editor that owns its container. Without
 +    // this, every editor sharing the store renders the same remote caret.
 +    if (
 +      !loroState.mapping.has(cursor.anchor.containerId()) ||
 +      !loroState.mapping.has(cursor.focus.containerId())
++    ) {
++      continue;
++    }
++    if (
++      loroState.containerId &&
++      (!containerBelongsTo(doc, loroState.containerId, cursor.anchor.containerId()) ||
++        !containerBelongsTo(doc, loroState.containerId, cursor.focus.containerId()))
 +    ) {
 +      continue;
 +    }
@@ -202,7 +261,7 @@ index b8a8452be64e9fef1f9d00c83b3d534e6c61de0b..3fdff5a6ba692eca363570183c3fbcb5
 +    doc.commit({ origin: commitOrigin });
    }
  }
- 
+
 diff --git a/src/sync-plugin-key.ts b/src/sync-plugin-key.ts
 index ee4705fa4a20850c8e4454be75999f6d295be0dc..316c6c0b8bb919b02ccc141e7ef9b0aa905f8f9b 100644
 --- a/src/sync-plugin-key.ts
@@ -214,7 +273,7 @@ index ee4705fa4a20850c8e4454be75999f6d295be0dc..316c6c0b8bb919b02ccc141e7ef9b0aa
 +  /** Origin recorded for local editor commits. Use it to scope undo managers. */
 +  commitOrigin?: string;
  }
- 
+
  export interface LoroSyncPluginState extends LoroSyncPluginProps {
 diff --git a/src/sync-plugin.ts b/src/sync-plugin.ts
 index e5ef3228ed0c3edd57e9bea474c682fde01cf422..c3034bd51021619efa0dbd18d38eee999d506f4e 100644
@@ -255,7 +314,7 @@ index e5ef3228ed0c3edd57e9bea474c682fde01cf422..c3034bd51021619efa0dbd18d38eee99
          return newEditorState.tr.setMeta(loroSyncPluginKey, {
            type: "doc-changed",
 @@ -144,8 +155,20 @@ function init(view: EditorView) {
- 
+
    const mapping: LoroNodeMapping = new Map();
    if (innerDoc.size === 0) {
 -    // Empty doc

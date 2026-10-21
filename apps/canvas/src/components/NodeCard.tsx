@@ -401,7 +401,7 @@ export function NodeCard({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto" data-testid="card-body">
+      <div className="card-body-scroll min-h-0 flex-1 overflow-auto" data-testid="card-body">
         <EditorContent editor={editor} />
       </div>
 

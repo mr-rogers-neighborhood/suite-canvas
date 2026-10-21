@@ -199,6 +199,13 @@ test("syncs card titles and title carets between clients", async ({ browser }) =
       .filter({ hasText: "Shared title" })
       .locator(".card-title-editor .ProseMirror-loro-cursor"),
   ).toHaveCount(1);
+  // A title cursor must not also be rendered in the body editor.
+  await expect(
+    pageB
+      .locator('[data-testid="node-card"]')
+      .filter({ hasText: "Shared title" })
+      .locator(".node-card-editor .ProseMirror-loro-cursor"),
+  ).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

@@ -858,6 +858,18 @@ test("shows a peer's new link drag before it is dropped", async ({ browser }) =>
   await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
   await expect(edge).toHaveCount(0);
   await expect(preview).toHaveAttribute("data-arrows", "end");
+  // The peer preview must paint above cards, like the local connection line.
+  const layers = await pageB.evaluate(() => ({
+    preview: Number(
+      getComputedStyle(
+        document
+          .querySelector('[data-testid="peer-connect-preview"]')
+          ?.closest("svg") as SVGElement,
+      ).zIndex,
+    ),
+    nodes: Number(getComputedStyle(document.querySelector(".react-flow__nodes") as Element).zIndex),
+  }));
+  expect(layers.preview).toBeGreaterThan(layers.nodes);
 
   await expect
     .poll(async () => {

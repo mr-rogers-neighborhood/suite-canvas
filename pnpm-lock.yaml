@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  loro-prosemirror@0.4.4: 190e82e47ca6cc3f91e38fb59832c36694df8353bbf7d0665e35ce4aa0c41b41
+  loro-prosemirror@0.4.4: 560e9d811797588117457ef41c39867e7544c9d84239d329e634e4fca19fec04
 
 importers:
 
@@ -222,7 +222,7 @@ importers:
         version: 1.16.4
       loro-prosemirror:
         specifier: ^0.4.4
-        version: 0.4.4(patch_hash=190e82e47ca6cc3f91e38fb59832c36694df8353bbf7d0665e35ce4aa0c41b41)(loro-crdt@1.16.4)
+        version: 0.4.4(patch_hash=560e9d811797588117457ef41c39867e7544c9d84239d329e634e4fca19fec04)(loro-crdt@1.16.4)
       loro-protocol:
         specifier: ^0.3.0
         version: 0.3.0
@@ -4632,7 +4632,7 @@ snapshots:
 
   loro-crdt@1.16.4: {}
 
-  loro-prosemirror@0.4.4(patch_hash=190e82e47ca6cc3f91e38fb59832c36694df8353bbf7d0665e35ce4aa0c41b41)(loro-crdt@1.16.4):
+  loro-prosemirror@0.4.4(patch_hash=560e9d811797588117457ef41c39867e7544c9d84239d329e634e4fca19fec04)(loro-crdt@1.16.4):
     dependencies:
       lib0: 0.2.119
       loro-crdt: 1.16.4

@@ -20,6 +20,7 @@ interface PresenceState {
   localUser: Identity;
   presenceStore: EphemeralStore | null;
   peerId: string | null;
+  bound: boolean;
   peers: Record<string, PeerPresence>;
   bind: (store: EphemeralStore, peerId: string) => void;
   setBoard: (boardId: string | null) => void;
@@ -63,13 +64,16 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     localUser: getOrCreateIdentity(),
     presenceStore: initial.presence ?? null,
     peerId: initial.workspace.doc.peerIdStr,
+    bound: false,
     peers: {},
 
     bind: (store, peerId) => {
+      const current = get();
+      if (current.bound && current.presenceStore === store && current.peerId === peerId) return;
       store.set(peerId, localState);
       store.subscribe(sync);
       const timer = setInterval(sync, 1000);
-      set({ presenceStore: store, peerId });
+      set({ presenceStore: store, peerId, bound: true });
       sync();
       // The timer is intentionally process-lifetime: the store lives as long as
       // the workspace, and Dev HMR replaces the module rather than the store.

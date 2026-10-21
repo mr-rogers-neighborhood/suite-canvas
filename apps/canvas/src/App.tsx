@@ -67,16 +67,6 @@ function WorkspaceShell() {
     if (provider) bindPresence(presence, workspace.doc.peerIdStr);
   }, [bindPresence, presence, provider, workspace]);
 
-  // Legacy documents can only be migrated once they are actually here: local
-  // storage first, then the server's snapshot (a legacy doc may live remotely).
-  useEffect(() => {
-    if (ready) workspace.migrateLegacy();
-  }, [ready, workspace]);
-
-  useEffect(() => {
-    if (synced) workspace.migrateLegacy();
-  }, [synced, workspace]);
-
   // Seeding is once per workspace, so deleting every card stays deleted. It also
   // waits for the first server sync: seeding an empty local doc would resurrect
   // starter cards in a workspace someone emptied on another client.

@@ -284,7 +284,7 @@ body {
   position: absolute;
   top: -1.4em;
   left: -1px;
-  z-index: 10;
+  z-index: 60;
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 9px;
@@ -309,12 +309,22 @@ body {
   margin-top: 0.5rem;
 }
 
+/* Caret labels sit above the first line, outside the editor and body scroll
+   box. Let them escape while a peer caret is present so the card cannot clip
+   the collaborator's name. */
+.card-title-editor:has(.ProseMirror-loro-cursor),
+.card-title-editor:has(.ProseMirror-loro-cursor) p,
+.card-body-scroll:has(.ProseMirror-loro-cursor) {
+  overflow: visible;
+}
+
 /* A peer's in-flight link drag, drawn in flow space. */
 .peer-reconnect-preview,
 .peer-connect-preview {
   position: absolute;
   left: 0;
   top: 0;
+  z-index: 5;
   width: 1px;
   height: 1px;
   overflow: visible;

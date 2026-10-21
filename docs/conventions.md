@@ -69,6 +69,8 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Connector drags persist on release only; live positions stay in component state.
   Dragging a connector dot means "connect"; repositioning uses the selected grab handle.
 - Persist positions to the CRDT on drag stop only; live positions travel through `EphemeralStore`.
+- Do not publish a pointer position while a local text editor or canvas gesture is active. Peers
+  render the name on the interacted element instead, and restore the pointer on the next move.
 
 ## Data layer
 

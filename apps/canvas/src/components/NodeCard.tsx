@@ -11,6 +11,7 @@ import { countRender } from "../dev/perf";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Connector } from "./Connector";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
+import { PeerNameTag } from "./PeerNameTag";
 import { PresenceAvatars } from "./PresenceAvatars";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
@@ -257,6 +258,7 @@ export function NodeCard({
   const focusedBy = presence[0];
   const selectingPeer = selectingPeers[0];
   const resizingPeer = resizingPeers[0];
+  const activePeer = draggingPeers[0] ?? resizingPeers[0] ?? null;
 
   // Peer presence takes visual priority over local selection so collaborators
   // always see where everyone else is: dragging > editing > selecting.
@@ -386,6 +388,8 @@ export function NodeCard({
             }
           />
         ) : null}
+
+        {activePeer ? <PeerNameTag user={activePeer} /> : null}
 
         <button
           type="button"

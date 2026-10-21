@@ -310,6 +310,96 @@ body {
   margin-top: 0.5rem;
 }
 
+/* Names attached to the element a peer is actively manipulating. */
+.peer-name-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+.peer-name-tag {
+  animation: peer-name-tag-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: left center;
+}
+
+[data-testid="peer-cursor"] {
+  animation: peer-cursor-in 140ms ease-out;
+}
+
+.presence-cursor-arrow {
+  transform-origin: 3px 2px;
+  transition:
+    opacity 160ms ease-in,
+    scale 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-testid="peer-cursor"][data-leaving="true"] .presence-cursor-arrow {
+  opacity: 0;
+  scale: 0.55;
+}
+
+.presence-cursor-label {
+  transition:
+    opacity 90ms ease-in,
+    translate 120ms ease-in;
+}
+
+[data-testid="peer-cursor"][data-leaving="true"] .presence-cursor-label {
+  opacity: 0;
+  translate: -4px 0;
+}
+
+@keyframes peer-name-tag-in {
+  from {
+    opacity: 0;
+    scale: 0.45;
+    translate: -6px 2px;
+  }
+}
+
+@keyframes peer-cursor-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peer-name-tag,
+  [data-testid="peer-cursor"] {
+    animation: none;
+  }
+
+  .presence-cursor-arrow,
+  .presence-cursor-label {
+    transition: none;
+  }
+}
+
+.connector-peer-name {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.peer-link-name {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
 /* A peer's in-flight link drag, drawn in flow space. */
 .peer-reconnect-preview,
 .peer-connect-preview {

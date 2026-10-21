@@ -49,6 +49,29 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     if (presenceStore && peerId) presenceStore.set(peerId, localState);
   };
 
+  const interactionFields = [
+    AWARENESS_FIELDS.focus,
+    AWARENESS_FIELDS.dragging,
+    AWARENESS_FIELDS.connector,
+    AWARENESS_FIELDS.resizing,
+    AWARENESS_FIELDS.reconnect,
+    AWARENESS_FIELDS.connect,
+  ] as const;
+
+  const hasLocalInteraction = () =>
+    interactionFields.some(
+      (field) => localState[field] !== undefined && localState[field] !== null,
+    );
+
+  const clearPointer = () => {
+    if (
+      localState[AWARENESS_FIELDS.pointer] !== undefined &&
+      localState[AWARENESS_FIELDS.pointer] !== null
+    ) {
+      publish(AWARENESS_FIELDS.pointer, null);
+    }
+  };
+
   const sync = () => {
     const { presenceStore, peerId } = get();
     if (!presenceStore || !peerId) return;
@@ -81,14 +104,35 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     },
 
     setBoard: (boardId) => publish(AWARENESS_FIELDS.board, boardId),
-    setPointer: (pointer) => publish(AWARENESS_FIELDS.pointer, pointer),
-    setFocus: (focus) => publish(AWARENESS_FIELDS.focus, focus),
-    setDragging: (dragging) => publish(AWARENESS_FIELDS.dragging, dragging),
+    setPointer: (pointer) => {
+      if (hasLocalInteraction()) return;
+      publish(AWARENESS_FIELDS.pointer, pointer);
+    },
+    setFocus: (focus) => {
+      publish(AWARENESS_FIELDS.focus, focus);
+      if (focus) clearPointer();
+    },
+    setDragging: (dragging) => {
+      publish(AWARENESS_FIELDS.dragging, dragging);
+      if (dragging) clearPointer();
+    },
     setSelection: (selection) => publish(AWARENESS_FIELDS.selection, selection),
-    setMovingConnector: (connector) => publish(AWARENESS_FIELDS.connector, connector),
-    setResizing: (resizing) => publish(AWARENESS_FIELDS.resizing, resizing),
-    setReconnect: (reconnect) => publish(AWARENESS_FIELDS.reconnect, reconnect),
-    setConnect: (connect) => publish(AWARENESS_FIELDS.connect, connect),
+    setMovingConnector: (connector) => {
+      publish(AWARENESS_FIELDS.connector, connector);
+      if (connector) clearPointer();
+    },
+    setResizing: (resizing) => {
+      publish(AWARENESS_FIELDS.resizing, resizing);
+      if (resizing) clearPointer();
+    },
+    setReconnect: (reconnect) => {
+      publish(AWARENESS_FIELDS.reconnect, reconnect);
+      if (reconnect) clearPointer();
+    },
+    setConnect: (connect) => {
+      publish(AWARENESS_FIELDS.connect, connect);
+      if (connect) clearPointer();
+    },
   };
 });
 

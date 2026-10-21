@@ -742,6 +742,13 @@ export function CanvasBoard() {
     <div
       data-testid="canvas-board"
       className={`h-full w-full ${selectedConnector ? "connector-active" : ""}`}
+      onPointerMove={(event) => {
+        const now = performance.now();
+        if (now - lastPointerSent.current < POINTER_THROTTLE_MS) return;
+        lastPointerSent.current = now;
+        setPointer(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+      }}
+      onPointerLeave={() => setPointer(null)}
     >
       <ReactFlow
         nodes={nodes}
@@ -796,13 +803,6 @@ export function CanvasBoard() {
           const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", flowPosition });
         }}
-        onPaneMouseMove={(event) => {
-          const now = performance.now();
-          if (now - lastPointerSent.current < POINTER_THROTTLE_MS) return;
-          lastPointerSent.current = now;
-          setPointer(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-        }}
-        onPaneMouseLeave={() => setPointer(null)}
       >
         <Background color="var(--rf-dot)" />
         <Controls showInteractive={false} />

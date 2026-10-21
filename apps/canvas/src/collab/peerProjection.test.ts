@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GESTURE_TTL_MS, gestureSignature, projectPeers, type SeenGesture } from "./peerProjection";
-import { AWARENESS_FIELDS } from "./presence";
+import { AWARENESS_FIELDS, peerIsInteracting } from "./presence";
 
 const SELF = "self";
 const PEER = "peer";
@@ -143,5 +143,44 @@ describe("projectPeers with a new-link drag", () => {
         position: { x: 90 },
       },
     );
+  });
+});
+
+describe("peerIsInteracting", () => {
+  const base = (overrides: Record<string, unknown> = {}) =>
+    project(1000, new Map(), {
+      [AWARENESS_FIELDS.dragging]: undefined,
+      ...overrides,
+    })[PEER];
+
+  it("is true for every active editing or manipulation state", () => {
+    const focus = { nodeId: "n1", field: "title" };
+    const resizing = { nodeId: "n1", width: 200, height: 100 };
+    const connector = { nodeId: "n1", connectorId: "c1" };
+    const reconnect = { edgeId: "e1", end: "target", position: { x: 1, y: 2 } };
+    const connect = {
+      nodeId: "n1",
+      connectorId: "c1",
+      anchorEnd: "source",
+      position: { x: 1, y: 2 },
+    };
+
+    for (const override of [
+      { [AWARENESS_FIELDS.focus]: focus },
+      { [AWARENESS_FIELDS.dragging]: { nodeId: "n1", position: { x: 1, y: 2 } } },
+      { [AWARENESS_FIELDS.resizing]: resizing },
+      { [AWARENESS_FIELDS.connector]: connector },
+      { [AWARENESS_FIELDS.reconnect]: reconnect },
+      { [AWARENESS_FIELDS.connect]: connect },
+    ]) {
+      expect(peerIsInteracting(base(override) as never)).toBe(true);
+    }
+  });
+
+  it("is false for selection, hover, and an idle peer", () => {
+    expect(
+      peerIsInteracting(base({ [AWARENESS_FIELDS.selection]: { nodeIds: ["n1"] } }) as never),
+    ).toBe(false);
+    expect(peerIsInteracting(base() as never)).toBe(false);
   });
 });

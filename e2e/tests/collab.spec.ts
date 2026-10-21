@@ -525,6 +525,8 @@ test("shows a peer's drag presence while a card is being dragged", async ({ brow
   await pageA.mouse.move(box.x + 180, box.y + 120, { steps: 12 });
 
   await expect(cardB).toHaveAttribute("data-dragging", "true");
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(0);
+  await expect(cardB.getByTestId("peer-name-tag")).toBeVisible();
 
   // The card follows the collaborator's cursor live, not just after drop.
   await expect
@@ -536,6 +538,12 @@ test("shows a peer's drag presence while a card is being dragged", async ({ brow
 
   await pageA.mouse.up();
   await expect(cardB).not.toHaveAttribute("data-dragging", "true");
+
+  // The arrow returns on the next pointer move, not automatically on release.
+  const board = await pageA.getByTestId("canvas-board").boundingBox();
+  if (!board) throw new Error("canvas board not visible");
+  await pageA.mouse.move(board.x + 24, board.y + 24);
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(1);
 
   await contextA.close();
   await contextB.close();
@@ -679,6 +687,8 @@ test("a peer sees the connector and its link move before release", async ({ brow
 
   // B follows the drag while A still holds the pointer down.
   await expect.poll(() => peerConnectorPoint(pageB)).not.toBeNull();
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(0);
+  await expect(pageB.getByTestId("peer-name-tag")).toBeVisible();
   const first = await peerConnectorPoint(pageB);
   await pageA.mouse.move(cardBox.x, cardBox.y + cardBox.height * 0.5, { steps: 10 });
   await expect.poll(() => peerConnectorPoint(pageB)).not.toEqual(first);
@@ -858,6 +868,8 @@ test("shows a peer's new link drag before it is dropped", async ({ browser }) =>
   await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
   await expect(edge).toHaveCount(0);
   await expect(preview).toHaveAttribute("data-arrows", "end");
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(0);
+  await expect(pageB.getByTestId("peer-name-tag")).toBeVisible();
   // The peer preview must paint above cards, like the local connection line.
   const layers = await pageB.evaluate(() => ({
     preview: Number(
@@ -958,8 +970,10 @@ test("syncs content and presence between two clients", async ({ browser }) => {
   const noteOnB = pageB.locator('[data-testid="node-card"]').filter({ hasText: "hello from A" });
   await expect(noteOnB).toHaveCount(1);
 
-  // Presence: B sees A's avatar on the card A is editing, plus A's caret.
+  // Presence: B sees A's avatar on the card A is editing, plus A's caret,
+  // without the stale mouse arrow.
   await expect(noteOnB.getByTestId("presence-avatar")).toBeVisible();
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(0);
   await expect(noteOnB.locator(".ProseMirror-loro-cursor")).toHaveCount(1);
 
   // A's caret must not be mapped into the other cards' documents.

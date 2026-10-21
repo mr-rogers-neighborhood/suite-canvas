@@ -5,11 +5,13 @@ import {
   getStraightPath,
   Position,
   useInternalNode,
+  useViewport,
   ViewportPortal,
 } from "@xyflow/react";
 import { Fragment, type ReactNode, useMemo } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type Point, sideOf } from "../components/Connector";
+import { PeerNameTag } from "../components/PeerNameTag";
 import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 
 const OPPOSITE: Record<Position, Position> = {
@@ -53,6 +55,8 @@ function LinkPreview({
   path,
   bidirectional,
   color,
+  user,
+  scale,
   className,
   testId,
   markerId,
@@ -68,6 +72,8 @@ function LinkPreview({
   path: GraphEdge["path"];
   bidirectional: boolean;
   color: string;
+  user: { name: string; color: string };
+  scale: number;
   className: string;
   testId: string;
   markerId: string;
@@ -114,34 +120,44 @@ function LinkPreview({
     arrowAtStart && arrowAtEnd ? "both" : arrowAtStart ? "start" : arrowAtEnd ? "end" : "none";
 
   return (
-    <svg className={className} aria-hidden="true">
-      <defs>
-        <marker
-          id={markerId}
-          viewBox="0 0 10 10"
-          refX="10"
-          refY="5"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto-start-reverse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
-        </marker>
-      </defs>
-      <path
-        data-testid={testId}
-        data-snapped={snappedTarget ? "true" : undefined}
-        data-arrows={arrows}
-        d={d}
-        fill="none"
-        stroke={color}
-        strokeWidth={2}
-        strokeDasharray="6 4"
-        strokeLinecap="round"
-        {...(arrowAtStart ? { markerStart: `url(#${markerId})` } : {})}
-        {...(arrowAtEnd ? { markerEnd: `url(#${markerId})` } : {})}
-      />
-    </svg>
+    <>
+      <svg className={className} aria-hidden="true">
+        <defs>
+          <marker
+            id={markerId}
+            viewBox="0 0 10 10"
+            refX="10"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
+          </marker>
+        </defs>
+        <path
+          data-testid={testId}
+          data-snapped={snappedTarget ? "true" : undefined}
+          data-arrows={arrows}
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          strokeLinecap="round"
+          {...(arrowAtStart ? { markerStart: `url(#${markerId})` } : {})}
+          {...(arrowAtEnd ? { markerEnd: `url(#${markerId})` } : {})}
+        />
+      </svg>
+      <div
+        className="peer-link-name"
+        style={{
+          transform: `translate(${end.point.x}px, ${end.point.y + 10}px) scale(${scale})`,
+        }}
+      >
+        <PeerNameTag user={user} />
+      </div>
+    </>
   );
 }
 
@@ -149,6 +165,8 @@ function LinkPreview({
 export function PeerReconnectLayer() {
   const peers = usePresenceStore((state) => state.peers);
   const { cards, edges } = useWorkspaceSnapshot();
+  const { zoom } = useViewport();
+  const inverseZoom = 1 / (zoom || 1);
   const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
 
   const resolveTarget = (target: { nodeId: string; connectorId: string } | undefined) => {
@@ -182,6 +200,8 @@ export function PeerReconnectLayer() {
                 path={edge.path}
                 bidirectional={edge.bidirectional}
                 color={peer.user.color}
+                user={peer.user}
+                scale={inverseZoom}
                 className="peer-reconnect-preview"
                 testId="peer-reconnect-preview"
                 markerId={`peer-reconnect-arrow-${edge.id}-${peer.user.color.replace(/\W/g, "")}`}
@@ -207,6 +227,8 @@ export function PeerReconnectLayer() {
                 path="bezier"
                 bidirectional={false}
                 color={peer.user.color}
+                user={peer.user}
+                scale={inverseZoom}
                 className="peer-connect-preview"
                 testId="peer-connect-preview"
                 markerId={`peer-connect-arrow-${peer.clientId}-${connect.nodeId}-${connect.connectorId}-${peer.user.color.replace(/\W/g, "")}`}

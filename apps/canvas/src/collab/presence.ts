@@ -101,3 +101,15 @@ export interface PeerPresence {
   reconnect: ReconnectState | null;
   connect: ConnectState | null;
 }
+
+/** True while a peer is actively editing or manipulating something. */
+export function peerIsInteracting(peer: PeerPresence): boolean {
+  return Boolean(
+    peer.focus ||
+      peer.dragging ||
+      peer.resizing ||
+      peer.connector ||
+      peer.reconnect ||
+      peer.connect,
+  );
+}

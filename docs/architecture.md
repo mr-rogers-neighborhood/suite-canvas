@@ -268,6 +268,9 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   peer's caret only renders in the editor that owns its Loro container (all editors share one
   cursor store, and a card has both a title and a body editor). Focused-editor publishing keeps
   only one field's caret active at a time.
+  While a peer edits text or has an in-flight card, connector or link gesture, their pointer arrow
+  is hidden and their name moves onto the affected element; the arrow returns on their next pointer
+  move. Selections alone keep the normal pointer.
 - **Gestures expire on their own.** A drag, resize, connector move or link drag (reconnecting an end
   or drawing a new one) that stops arriving
   without an end event (tab killed, network dropped) would leave a ghost on every peer until the

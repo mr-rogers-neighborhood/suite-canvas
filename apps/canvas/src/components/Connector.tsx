@@ -2,6 +2,7 @@ import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/grap
 import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
+import { PeerNameTag } from "./PeerNameTag";
 
 export interface ConnectorProps {
   connector: ConnectorModel;
@@ -281,6 +282,10 @@ export function Connector({
           className="connector-peer-ring -translate-x-1/2 -translate-y-1/2"
           style={{ borderColor: peerIndicator.user.color }}
         />
+      ) : null}
+
+      {movingPeer ? (
+        <PeerNameTag user={movingPeer} className="connector-peer-name -translate-y-1/2" />
       ) : null}
 
       {selected ? (

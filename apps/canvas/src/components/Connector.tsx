@@ -1,4 +1,5 @@
 import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/graph";
+import { Handle, Position } from "@xyflow/react";
 import { useCallback, useRef, useState } from "react";
 
 export interface ConnectorProps {
@@ -69,6 +70,11 @@ function isAnchor(position: Point): boolean {
   return CONNECTOR_ANCHORS.some((anchor) => anchor.x === position.x && anchor.y === position.y);
 }
 
+/**
+ * A node connector. The dot is a React Flow handle, so dragging it draws a
+ * connection; the dashed ring underneath is a separate grab handle used to
+ * reposition the connector along the card perimeter.
+ */
 export function Connector({
   connector,
   color = "#94a3b8",
@@ -82,10 +88,6 @@ export function Connector({
   const shell = useRef<HTMLDivElement | null>(null);
 
   const position = livePosition ?? { x: connector.x, y: connector.y };
-  const cardRect = useCallback(
-    () => shell.current?.closest("[data-testid='node-card']")?.getBoundingClientRect() ?? null,
-    [],
-  );
 
   const startReposition = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -93,7 +95,7 @@ export function Connector({
       event.preventDefault();
       event.stopPropagation();
 
-      const rect = cardRect();
+      const rect = shell.current?.closest("[data-testid='node-card']")?.getBoundingClientRect();
       if (!rect) return;
 
       (event.target as HTMLElement).setPointerCapture(event.pointerId);
@@ -117,7 +119,7 @@ export function Connector({
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [cardRect, connector.id, onMoveEnd],
+    [connector.id, onMoveEnd],
   );
 
   return (
@@ -131,23 +133,6 @@ export function Connector({
       className="nodrag nopan absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
-      <button
-        type="button"
-        aria-label="Connector"
-        title="Connector"
-        className="connector-dot -translate-x-1/2 -translate-y-1/2"
-        style={{ borderColor: color, backgroundColor: selected ? color : undefined }}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(connector.id);
-        }}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onContextMenu(event, connector.id);
-        }}
-      />
       {selected ? (
         <button
           type="button"
@@ -164,6 +149,31 @@ export function Connector({
           }}
         />
       ) : null}
+
+      <Handle
+        id={connector.id}
+        type="source"
+        position={Position.Top}
+        data-testid="connector-dot"
+        className="connector-dot -translate-x-1/2 -translate-y-1/2"
+        style={{
+          left: 0,
+          top: 0,
+          transform: "translate(-50%, -50%)",
+          borderColor: color,
+          backgroundColor: selected ? color : undefined,
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(connector.id);
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onContextMenu(event, connector.id);
+        }}
+      />
     </div>
   );
 }

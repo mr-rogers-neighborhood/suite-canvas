@@ -32,20 +32,29 @@ interface CanvasState {
   connect: () => void;
 }
 
-export const useCanvasStore = create<CanvasState>((set, get) => ({
-  graph,
-  provider: null,
-  status: "disconnected",
-  connect: () => {
-    if (get().provider) return;
-    const provider = new HocuspocusProvider({
-      url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
-      name: DOC_ID,
-      document: doc,
-    });
-    provider.on("status", (event: { status: string }) => {
-      set({ status: event.status as ConnectionStatus });
-    });
-    set({ provider });
-  },
-}));
+export const useCanvasStore = create<CanvasState>((set) => {
+  // Created eagerly so `provider.awareness` exists on the first render. Editors
+  // bind to that awareness; creating it later would remount them and drop
+  // in-flight keystrokes.
+  const provider =
+    typeof window === "undefined"
+      ? null
+      : new HocuspocusProvider({
+          url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
+          name: DOC_ID,
+          document: doc,
+        });
+
+  provider?.on("status", (event: { status: string }) => {
+    set({ status: event.status as ConnectionStatus });
+  });
+
+  return {
+    graph,
+    provider,
+    status: provider ? "disconnected" : "connecting",
+    connect: () => {
+      void provider?.connect();
+    },
+  };
+});

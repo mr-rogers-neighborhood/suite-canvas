@@ -29,6 +29,14 @@ export interface CreateNoteInput {
   position: { x: number; y: number };
 }
 
+export interface CreateEdgeInput {
+  source: string;
+  target: string;
+  sourceConnector?: string | undefined;
+  targetConnector?: string | undefined;
+  kind?: GraphEdge["kind"];
+}
+
 function toAction(action: unknown): GraphAction {
   return action === "add" || action === "delete" ? action : "update";
 }
@@ -46,6 +54,14 @@ export function normalizeNode(node: GraphNode): GraphNode {
       Array.isArray(legacy.connectors) && legacy.connectors.length > 0
         ? legacy.connectors
         : defaultConnectors(),
+  };
+}
+
+function normalizeEdge(edge: GraphEdge): GraphEdge {
+  const legacy = edge as GraphEdge & { bidirectional?: boolean };
+  return {
+    ...edge,
+    bidirectional: typeof legacy.bidirectional === "boolean" ? legacy.bidirectional : false,
   };
 }
 
@@ -82,7 +98,7 @@ export class GraphDocument {
   }
 
   listEdges(): GraphEdge[] {
-    return Array.from(this.edges.values());
+    return Array.from(this.edges.values(), normalizeEdge);
   }
 
   getNode(id: string): GraphNode | undefined {
@@ -91,7 +107,8 @@ export class GraphDocument {
   }
 
   getEdge(id: string): GraphEdge | undefined {
-    return this.edges.get(id);
+    const edge = this.edges.get(id);
+    return edge ? normalizeEdge(edge) : undefined;
   }
 
   setNode(node: GraphNode): void {
@@ -99,7 +116,56 @@ export class GraphDocument {
   }
 
   setEdge(edge: GraphEdge): void {
-    this.edges.set(edge.id, graphEdgeSchema.parse(edge));
+    this.edges.set(edge.id, graphEdgeSchema.parse(normalizeEdge(edge)));
+  }
+
+  addEdge(input: CreateEdgeInput): GraphEdge | null {
+    if (input.source === input.target) return null;
+
+    const now = Date.now();
+    const edge: GraphEdge = {
+      id: crypto.randomUUID(),
+      source: input.source,
+      target: input.target,
+      kind: input.kind ?? "references",
+      bidirectional: false,
+      createdAt: now,
+      updatedAt: now,
+      ...(input.sourceConnector ? { sourceConnector: input.sourceConnector } : {}),
+      ...(input.targetConnector ? { targetConnector: input.targetConnector } : {}),
+    };
+    this.setEdge(edge);
+    return edge;
+  }
+
+  removeEdge(id: string): void {
+    this.edges.delete(id);
+  }
+
+  /** Swaps the endpoints (and their connectors) of an existing link. */
+  reverseEdge(id: string): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+
+    const next: GraphEdge = {
+      ...edge,
+      source: edge.target,
+      target: edge.source,
+      updatedAt: Date.now(),
+    };
+
+    if (edge.sourceConnector) next.targetConnector = edge.sourceConnector;
+    else delete next.targetConnector;
+    if (edge.targetConnector) next.sourceConnector = edge.targetConnector;
+    else delete next.sourceConnector;
+
+    this.setEdge(next);
+  }
+
+  setEdgeBidirectional(id: string, bidirectional: boolean): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+    this.setEdge({ ...edge, bidirectional, updatedAt: Date.now() });
   }
 
   updateNodePosition(id: string, position: { x: number; y: number }): void {

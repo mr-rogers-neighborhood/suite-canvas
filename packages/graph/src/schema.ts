@@ -40,7 +40,12 @@ export const graphEdgeSchema = z.object({
   id: entityIdSchema,
   source: entityIdSchema,
   target: entityIdSchema,
+  /** Connector ids the link attaches to, when it was drawn between connectors. */
+  sourceConnector: entityIdSchema.optional(),
+  targetConnector: entityIdSchema.optional(),
   kind: edgeKindSchema,
+  /** Renders an arrowhead at both ends when true. */
+  bidirectional: z.boolean(),
   label: z.string().optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),

@@ -67,7 +67,19 @@ Interaction model:
   (Bring Forward / Bring to Front / Send Back / Send to Back).
 
 Layering is a `z` integer per node; `moveNodeLayer` reindexes nodes in order (0 = furthest back),
-and React Flow renders `zIndex: node.z`.
+and React Flow renders `zIndex: node.z`. React Flow elevates a *selected* node (z + 1000) in
+`basic` mode, so a layer action clears the selection — otherwise the elevation would hide the new
+order.
+
+## Links
+
+Edges connect **connectors**, not just nodes: `source`/`target` name the nodes and
+`sourceConnector`/`targetConnector` name the handles. Connector dots are React Flow handles rendered
+in `ConnectionMode.Loose`, so dragging from any connector to any other creates a link on drop.
+
+`bidirectional` controls the arrowheads (`markerEnd` always, `markerStart` when bidirectional).
+Right-clicking a link offers **Reverse direction** (swaps endpoints *and* their connectors),
+**Make bidirectional** / **Make one-way**, and **Delete link**.
 
 ## Editing and presence
 

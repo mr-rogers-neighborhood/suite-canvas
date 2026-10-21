@@ -1,5 +1,6 @@
 import type { GraphNode } from "@suite/graph";
 import { render, screen } from "@testing-library/react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { NodeCard } from "./NodeCard";
@@ -25,18 +26,24 @@ const node: GraphNode = {
 
 describe("NodeCard", () => {
   it("renders a read-only note card", () => {
-    render(<NodeCard node={node} fragment={fragment} awareness={null} />);
+    render(
+      <ReactFlowProvider>
+        <NodeCard node={node} fragment={fragment} awareness={null} />
+      </ReactFlowProvider>,
+    );
     expect(screen.getByTestId("node-card")).toBeInTheDocument();
   });
 
   it("renders presence avatars for peers on the node", () => {
     render(
-      <NodeCard
-        node={node}
-        fragment={fragment}
-        awareness={null}
-        presence={[{ name: "Nova", color: "#f97316" }]}
-      />,
+      <ReactFlowProvider>
+        <NodeCard
+          node={node}
+          fragment={fragment}
+          awareness={null}
+          presence={[{ name: "Nova", color: "#f97316" }]}
+        />
+      </ReactFlowProvider>,
     );
     expect(screen.getByTestId("presence-avatar")).toBeInTheDocument();
   });

@@ -3,9 +3,10 @@ import { create } from "zustand";
 export interface ContextMenuState {
   x: number;
   y: number;
-  kind: "canvas" | "node" | "connector";
+  kind: "canvas" | "node" | "connector" | "edge";
   nodeId?: string;
   connectorId?: string;
+  edgeId?: string;
   flowPosition?: { x: number; y: number };
 }
 

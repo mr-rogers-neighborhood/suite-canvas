@@ -1,8 +1,11 @@
-import type { GraphEdge, GraphNode } from "@suite/graph";
+import type { GraphEdge, GraphNode, LayerAction } from "@suite/graph";
 import {
   Background,
+  type Connection,
+  ConnectionMode,
   Controls,
   type Edge,
+  MarkerType,
   type Node,
   ReactFlow,
   useEdgesState,
@@ -26,11 +29,18 @@ const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
 
 function toFlowEdge(edge: GraphEdge): Edge {
+  const marker = { type: MarkerType.ArrowClosed, width: 18, height: 18 };
+
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    label: edge.label,
+    type: "bezier",
+    ...(edge.sourceConnector ? { sourceHandle: edge.sourceConnector } : {}),
+    ...(edge.targetConnector ? { targetHandle: edge.targetConnector } : {}),
+    ...(edge.label ? { label: edge.label } : {}),
+    markerEnd: marker,
+    ...(edge.bidirectional ? { markerStart: marker } : {}),
   };
 }
 
@@ -190,6 +200,30 @@ export function CanvasBoard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [deleteSelected]);
 
+  // Selection elevates a card in React Flow, which would hide the new order, so
+  // drop the selection once an explicit layer change lands.
+  const changeLayer = useCallback(
+    (nodeId: string, action: LayerAction) => {
+      graph.moveNodeLayer(nodeId, action);
+      setSelectedNodeIds([]);
+      setPresenceSelection(null);
+    },
+    [graph, setSelectedNodeIds, setPresenceSelection],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      graph.addEdge({
+        source: connection.source,
+        target: connection.target,
+        ...(connection.sourceHandle ? { sourceConnector: connection.sourceHandle } : {}),
+        ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
+      });
+    },
+    [graph],
+  );
+
   const createNoteAt = useCallback(
     (position: { x: number; y: number }) => {
       const node = graph.createNote({ id: crypto.randomUUID(), position });
@@ -212,6 +246,26 @@ export function CanvasBoard() {
       ];
     }
     const nodeId = contextMenu.nodeId;
+    const edgeId = contextMenu.edgeId;
+
+    if (contextMenu.kind === "edge" && edgeId) {
+      const edge = graph.getEdge(edgeId);
+      return [
+        {
+          label: "Reverse direction",
+          onSelect: () => graph.reverseEdge(edgeId),
+        },
+        {
+          label: edge?.bidirectional ? "Make one-way" : "Make bidirectional",
+          onSelect: () => graph.setEdgeBidirectional(edgeId, !edge?.bidirectional),
+        },
+        {
+          label: "Delete link",
+          danger: true,
+          onSelect: () => graph.removeEdge(edgeId),
+        },
+      ];
+    }
 
     if (contextMenu.kind === "connector") {
       return [
@@ -248,19 +302,19 @@ export function CanvasBoard() {
         items: [
           {
             label: "Bring Forward",
-            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "forward"),
+            onSelect: () => nodeId && changeLayer(nodeId, "forward"),
           },
           {
             label: "Bring to Front",
-            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "front"),
+            onSelect: () => nodeId && changeLayer(nodeId, "front"),
           },
           {
             label: "Send Back",
-            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "backward"),
+            onSelect: () => nodeId && changeLayer(nodeId, "backward"),
           },
           {
             label: "Send to Back",
-            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "back"),
+            onSelect: () => nodeId && changeLayer(nodeId, "back"),
           },
         ],
       },
@@ -275,7 +329,7 @@ export function CanvasBoard() {
         },
       },
     ];
-  }, [contextMenu, graph, createNoteAt, setSelectedNodeIds, setSelectedConnector]);
+  }, [contextMenu, graph, createNoteAt, changeLayer, setSelectedNodeIds, setSelectedConnector]);
 
   return (
     <div data-testid="canvas-board" className="h-full w-full">
@@ -287,6 +341,12 @@ export function CanvasBoard() {
         nodeTypes={nodeTypes}
         fitView
         deleteKeyCode={null}
+        connectionMode={ConnectionMode.Loose}
+        onConnect={onConnect}
+        onEdgeContextMenu={(event, edge) => {
+          event.preventDefault();
+          openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
+        }}
         onNodeDragStart={(_, node) => {
           locallyDraggingId.current = node.id;
           setDragging({ nodeId: node.id, position: node.position });

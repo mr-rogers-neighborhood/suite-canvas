@@ -1,6 +1,7 @@
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 import type { Awareness } from "y-protocols/awareness";
 import { create } from "zustand";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
 import {
   AWARENESS_FIELDS,
@@ -42,45 +43,51 @@ function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerP
   };
 }
 
-export const usePresenceStore = create<PresenceState>((set, get) => ({
-  localUser: getOrCreateIdentity(),
-  awareness: null,
-  peers: {},
+export const usePresenceStore = create<PresenceState>((set, get) => {
+  // Bound eagerly so editor components see the real awareness on first render
+  // (changing it later would remount every editor).
+  const initialAwareness = useCanvasStore.getState().provider?.awareness ?? null;
 
-  bind: (provider) => {
-    const awareness = provider.awareness;
-    if (!awareness) return;
+  return {
+    localUser: getOrCreateIdentity(),
+    awareness: initialAwareness,
+    peers: {},
 
-    awareness.setLocalStateField(AWARENESS_FIELDS.user, get().localUser);
+    bind: (provider) => {
+      const awareness = provider.awareness;
+      if (!awareness) return;
 
-    const sync = () => {
-      const states = awareness.getStates() as Map<number, Record<string, unknown>>;
-      const peers: Record<number, PeerPresence> = {};
-      for (const [clientId, state] of states) {
-        if (clientId === awareness.clientID) continue;
-        peers[clientId] = toPeerPresence(clientId, state);
-      }
-      set({ peers });
-    };
+      awareness.setLocalStateField(AWARENESS_FIELDS.user, get().localUser);
 
-    awareness.on("change", sync);
-    set({ awareness });
-    sync();
-  },
+      const sync = () => {
+        const states = awareness.getStates() as Map<number, Record<string, unknown>>;
+        const peers: Record<number, PeerPresence> = {};
+        for (const [clientId, state] of states) {
+          if (clientId === awareness.clientID) continue;
+          peers[clientId] = toPeerPresence(clientId, state);
+        }
+        set({ peers });
+      };
 
-  setPointer: (pointer) => {
-    get().awareness?.setLocalStateField(AWARENESS_FIELDS.pointer, pointer);
-  },
+      awareness.on("change", sync);
+      set({ awareness });
+      sync();
+    },
 
-  setFocus: (focus) => {
-    get().awareness?.setLocalStateField(AWARENESS_FIELDS.focus, focus);
-  },
+    setPointer: (pointer) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.pointer, pointer);
+    },
 
-  setDragging: (dragging) => {
-    get().awareness?.setLocalStateField(AWARENESS_FIELDS.dragging, dragging);
-  },
+    setFocus: (focus) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.focus, focus);
+    },
 
-  setSelection: (selection) => {
-    get().awareness?.setLocalStateField(AWARENESS_FIELDS.selection, selection);
-  },
-}));
+    setDragging: (dragging) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.dragging, dragging);
+    },
+
+    setSelection: (selection) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.selection, selection);
+    },
+  };
+});

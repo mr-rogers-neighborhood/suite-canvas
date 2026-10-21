@@ -21,6 +21,7 @@ const edge: GraphEdge = {
   source: "n1",
   target: "n2",
   kind: "references",
+  bidirectional: false,
   createdAt: now,
   updatedAt: now,
 };
@@ -165,6 +166,77 @@ describe("GraphDocument", () => {
     const restored = graph.getNode("n1");
     expect(restored?.z).toBe(0);
     expect(restored?.connectors).toHaveLength(4);
+  });
+
+  it("connects two connectors with a directed link", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    const [sourceConnector] = graph.getNode("a")?.connectors ?? [];
+    const [targetConnector] = graph.getNode("b")?.connectors ?? [];
+
+    const created = graph.addEdge({
+      source: "a",
+      target: "b",
+      sourceConnector: sourceConnector?.id ?? "",
+      targetConnector: targetConnector?.id ?? "",
+    });
+
+    expect(created?.bidirectional).toBe(false);
+    expect(graph.listEdges()).toHaveLength(1);
+    expect(graph.getEdge(created?.id ?? "")).toMatchObject({
+      source: "a",
+      target: "b",
+      sourceConnector: sourceConnector?.id,
+      targetConnector: targetConnector?.id,
+    });
+  });
+
+  it("refuses to connect a node to itself", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    expect(graph.addEdge({ source: "a", target: "a" })).toBeNull();
+  });
+
+  it("reverses a link, swapping endpoints and connectors", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    const edge = graph.addEdge({
+      source: "a",
+      target: "b",
+      sourceConnector: "ca",
+      targetConnector: "cb",
+    });
+    if (!edge) throw new Error("expected edge");
+
+    graph.reverseEdge(edge.id);
+
+    expect(graph.getEdge(edge.id)).toMatchObject({
+      source: "b",
+      target: "a",
+      sourceConnector: "cb",
+      targetConnector: "ca",
+    });
+  });
+
+  it("toggles bidirectional links", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    const edge = graph.addEdge({ source: "a", target: "b" });
+    if (!edge) throw new Error("expected edge");
+
+    graph.setEdgeBidirectional(edge.id, true);
+    expect(graph.getEdge(edge.id)?.bidirectional).toBe(true);
+  });
+
+  it("backfills bidirectional on legacy edges", () => {
+    const graph = new GraphDocument();
+    const legacy = { ...edge } as unknown as Record<string, unknown>;
+    delete legacy.bidirectional;
+    graph.doc.getMap("edges").set("e1", legacy);
+    expect(graph.getEdge("e1")?.bidirectional).toBe(false);
   });
 
   it("emits typed change events on mutation", () => {

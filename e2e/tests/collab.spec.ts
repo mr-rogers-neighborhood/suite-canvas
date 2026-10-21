@@ -43,7 +43,8 @@ const editingCard = (page: Page) =>
   page.locator('[data-testid="node-card"]:has([contenteditable="true"])');
 
 /** Each test gets its own document so parallel tests never share CRDT state. */
-const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}`;
+let docSequence = 0;
+const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${++docSequence}`;
 
 test("creates, edits, and deletes a note", async ({ page }) => {
   await page.goto(docUrl("create-edit-delete"));
@@ -97,10 +98,11 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   const grab = card.locator('[data-testid="connector-grab"]');
   await expect(grab).toHaveCount(1);
 
+  // Grab the ring itself (its centre is the dot, which starts a connection).
   const dragGrabTo = async (x: number, y: number) => {
     const handle = await grab.boundingBox();
     if (!handle) throw new Error("grab handle not visible");
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.move(handle.x + handle.width - 3, handle.y + handle.height / 2);
     await page.mouse.down();
     await page.mouse.move(x, y, { steps: 10 });
     await page.mouse.up();
@@ -115,15 +117,60 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   await dragGrabTo(box.x + 3, box.y + 3);
   await expect(card.locator('[data-testid="connector"][data-anchored="false"]')).toHaveCount(0);
 
-  // Right-click offers reposition and delete.
-  const target = await connectors.nth(2).boundingBox();
-  if (!target) throw new Error("connector not visible");
-  await page.mouse.click(target.x + target.width / 2, target.y + target.height / 2, {
-    button: "right",
-  });
+  // Right-click offers reposition and delete (target the dot itself).
+  await connectors.nth(2).locator('[data-testid="connector-dot"]').click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Reposition Connector" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Delete connector" }).click();
   await expect(connectors).toHaveCount(4);
+});
+
+test("links connectors with a direction the menu can change", async ({ page }) => {
+  await page.goto(docUrl("links"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+
+  const cards = page.locator('[data-testid="node-card"]');
+  const source = cards.nth(0).locator('[data-testid="connector-dot"]').nth(1);
+  const target = cards.nth(1).locator('[data-testid="connector-dot"]').nth(3);
+
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error("connectors not visible");
+
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+    steps: 16,
+  });
+  await page.mouse.up();
+
+  const edge = page.locator(".react-flow__edge").first();
+  await expect(edge).toHaveCount(1);
+
+  const path = edge.locator("path.react-flow__edge-path");
+  await expect(path).toHaveAttribute("marker-end", /arrowclosed/);
+  await expect(path).not.toHaveAttribute("marker-start", /arrowclosed/);
+
+  const edgeBox = await edge.boundingBox();
+  if (!edgeBox) throw new Error("edge not visible");
+  const openEdgeMenu = async () => {
+    await page.mouse.click(edgeBox.x + edgeBox.width / 2, edgeBox.y + edgeBox.height / 2, {
+      button: "right",
+    });
+    await expect(page.getByTestId("context-menu")).toBeVisible();
+  };
+
+  await openEdgeMenu();
+  await page.getByRole("menuitem", { name: "Make bidirectional" }).click();
+  await expect(path).toHaveAttribute("marker-start", /arrowclosed/);
+
+  await openEdgeMenu();
+  await expect(page.getByRole("menuitem", { name: "Make one-way" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Reverse direction" }).click();
+  await expect(edge).toHaveCount(1);
+
+  await openEdgeMenu();
+  await page.getByRole("menuitem", { name: "Delete link" }).click();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 });
 
 test("reorders card layers from the context menu", async ({ page }) => {
@@ -137,6 +184,8 @@ test("reorders card layers from the context menu", async ({ page }) => {
   await expect(page.getByTestId("context-submenu")).toBeVisible();
   await page.getByRole("menuitem", { name: "Bring to Front" }).click();
 
+  // The layer action clears the selection so React Flow's selection elevation
+  // does not hide the new order.
   await expect
     .poll(async () => {
       const z = await layers.evaluateAll((nodes) =>
@@ -145,6 +194,13 @@ test("reorders card layers from the context menu", async ({ page }) => {
       return Math.max(...z);
     })
     .toBeGreaterThan(0);
+
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+
+  await first.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Position" }).hover();
+  await page.getByRole("menuitem", { name: "Send to Back" }).click();
+  await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
 });
 
 test("switches and persists the color theme", async ({ page }) => {
@@ -176,7 +232,10 @@ test("shows a peer's drag presence while a card is being dragged", async ({ brow
   await pageA.keyboard.type("dragged note");
   await pageA.keyboard.press("Escape");
 
-  const cardA = pageA.locator('[data-testid="node-card"]').filter({ hasText: "dragged note" });
+  const cardA = pageA
+    .locator('[data-testid="node-card"]')
+    .filter({ hasText: "dragged note" })
+    .first();
   await expect(cardA).toHaveCount(1);
 
   const cardB = pageB.locator('[data-testid="node-card"]').filter({ hasText: "dragged note" });

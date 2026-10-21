@@ -174,12 +174,14 @@ body {
 }
 
 /* Connectors: a dot to select, plus a dashed grab handle to reposition it. */
-.connector-dot {
+/* Doubles as a React Flow handle, so the position rules below win over its defaults. */
+.connector-dot.react-flow__handle {
   position: absolute;
-  left: 0;
-  top: 0;
   width: 10px;
   height: 10px;
+  min-width: 0;
+  min-height: 0;
+  z-index: 30;
   border: 2px solid #94a3b8;
   border-radius: 9999px;
   background: var(--surface);
@@ -203,6 +205,7 @@ body {
   position: absolute;
   left: 0;
   top: 0;
+  z-index: 20;
   width: 24px;
   height: 24px;
   border: 2px dashed currentColor;

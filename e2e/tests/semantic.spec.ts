@@ -46,6 +46,27 @@ test("adds a field, edits a property with a tag, and survives a reload", async (
   await expect(page.getByTestId("tag-chip")).toContainText("research");
 });
 
+test("creates a type with a field and applies it from the inspector", async ({ page }) => {
+  await page.goto(workspaceUrl("new-type"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await openInspector(page, cards(page).first());
+  await page.getByTestId("manage-types").click();
+  await page.getByLabel("New type name").fill("Initiative");
+  await page.getByTestId("create-type").click();
+  await page.getByLabel("New field name").fill("Stage");
+  await page.getByTestId("create-field").click();
+  await expect(page.getByLabel("Field name Stage")).toHaveValue("Stage");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("button", { name: "Initiative", exact: true }).click();
+  await expect(page.getByLabel("Stage").last()).toBeVisible();
+  await expect(cards(page).first().getByTestId("card-type")).toHaveAttribute(
+    "aria-label",
+    "Card type: Initiative",
+  );
+});
+
 test("shows a type switch and keeps the hidden property dormant", async ({ page }) => {
   await page.goto(workspaceUrl("switch"));
   await expect(cards(page)).toHaveCount(2);

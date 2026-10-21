@@ -13,6 +13,8 @@ import {
   type PointerState,
   type ReconnectState,
   type ResizingState,
+  type SectionDragState,
+  type SectionResizeState,
   type SelectionState,
 } from "./presence";
 import { TAB_ID } from "./tabId";
@@ -31,6 +33,8 @@ interface PresenceState {
   setSelection: (selection: SelectionState | null) => void;
   setMovingConnector: (connector: ConnectorState | null) => void;
   setResizing: (resizing: ResizingState | null) => void;
+  setSectionDrag: (section: SectionDragState | null) => void;
+  setSectionResize: (section: SectionResizeState | null) => void;
   setReconnect: (reconnect: ReconnectState | null) => void;
   setConnect: (connect: ConnectState | null) => void;
 }
@@ -55,6 +59,8 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     AWARENESS_FIELDS.dragging,
     AWARENESS_FIELDS.connector,
     AWARENESS_FIELDS.resizing,
+    AWARENESS_FIELDS.sectionDrag,
+    AWARENESS_FIELDS.sectionResize,
     AWARENESS_FIELDS.reconnect,
     AWARENESS_FIELDS.connect,
   ] as const;
@@ -125,6 +131,14 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     setResizing: (resizing) => {
       publish(AWARENESS_FIELDS.resizing, resizing);
       if (resizing) clearPointer();
+    },
+    setSectionDrag: (sectionDrag) => {
+      publish(AWARENESS_FIELDS.sectionDrag, sectionDrag);
+      if (sectionDrag) clearPointer();
+    },
+    setSectionResize: (sectionResize) => {
+      publish(AWARENESS_FIELDS.sectionResize, sectionResize);
+      if (sectionResize) clearPointer();
     },
     setReconnect: (reconnect) => {
       publish(AWARENESS_FIELDS.reconnect, reconnect);

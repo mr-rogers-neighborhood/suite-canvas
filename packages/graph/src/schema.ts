@@ -3,10 +3,12 @@ import { z } from "zod";
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
 export const fieldKinds = ["text", "number", "date", "select", "multiSelect", "checkbox"] as const;
+export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
 
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
 export const fieldKindSchema = z.enum(fieldKinds);
+export const sectionColorSchema = z.enum(sectionColors);
 
 export const entityIdSchema = z.string().min(1);
 
@@ -118,9 +120,27 @@ export const placementSchema = z.object({
   height: z.number().positive().optional(),
 });
 
-export const graphEdgeSchema = z.object({
+/**
+ * A labeled region on one board. Sections never own cards: membership is
+ * derived from placement geometry, so deleting a section cannot delete one.
+ */
+export const sectionSchema = z.object({
   id: entityIdSchema,
-  /** Links belong to the board they were drawn on. */
+  boardId: entityIdSchema,
+  title: z.string(),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  /** Ordering among overlapping sections; cards always paint above all of them. */
+  z: z.number().finite(),
+  color: sectionColorSchema.optional(),
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+});
+
+export const graphEdgeSchema = z.object({
+  id: entityIdSchema /** Links belong to the board they were drawn on. */,
   boardId: entityIdSchema,
   source: entityIdSchema,
   target: entityIdSchema,
@@ -147,6 +167,8 @@ export type FieldKind = z.infer<typeof fieldKindSchema>;
 export type SelectOption = z.infer<typeof selectOptionSchema>;
 export type PropertyValue = z.infer<typeof propertyValueSchema>;
 export type Placement = z.infer<typeof placementSchema>;
+export type Section = z.infer<typeof sectionSchema>;
+export type SectionColor = z.infer<typeof sectionColorSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;

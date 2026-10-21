@@ -44,6 +44,7 @@ function snapshot(cards: Card[], base?: WorkspaceSnapshot): WorkspaceSnapshot {
     edges: base?.edges ?? [edge("e1")],
     types: base?.types ?? [],
     tags: base?.tags ?? [],
+    sections: base?.sections ?? [],
   };
 }
 

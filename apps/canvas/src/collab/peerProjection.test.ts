@@ -184,3 +184,45 @@ describe("peerIsInteracting", () => {
     expect(peerIsInteracting(base() as never)).toBe(false);
   });
 });
+
+describe("section gestures", () => {
+  it("projects a section drag and treats it as an interaction", () => {
+    const peers = projectPeers(
+      new Map([
+        [
+          PEER,
+          {
+            [AWARENESS_FIELDS.user]: { name: "Nova", color: "#f97316" },
+            [AWARENESS_FIELDS.sectionDrag]: {
+              sectionId: "s1",
+              position: { x: 10, y: 20 },
+            },
+          },
+        ],
+      ]),
+      { selfId: SELF, now: 1000, seen: new Map() },
+    );
+
+    expect(peers[PEER]?.sectionDrag).toEqual({
+      sectionId: "s1",
+      position: { x: 10, y: 20 },
+    });
+    const peer = peers[PEER];
+    expect(peer ? peerIsInteracting(peer) : false).toBe(true);
+  });
+
+  it("drops a stale section drag", () => {
+    const seen = new Map<string, SeenGesture>();
+    const state = {
+      [AWARENESS_FIELDS.user]: { name: "Nova", color: "#f97316" },
+      [AWARENESS_FIELDS.sectionDrag]: { sectionId: "s1", position: { x: 10, y: 20 } },
+    };
+    projectPeers(new Map([[PEER, state]]), { selfId: SELF, now: 1000, seen });
+    const peers = projectPeers(new Map([[PEER, state]]), {
+      selfId: SELF,
+      now: 1000 + 4000,
+      seen,
+    });
+    expect(peers[PEER]?.sectionDrag).toBeNull();
+  });
+});

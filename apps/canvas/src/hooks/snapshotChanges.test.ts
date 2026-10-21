@@ -63,6 +63,7 @@ function snapshot(overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot
     edges: [],
     types: [],
     tags: [],
+    sections: [],
     ...overrides,
   };
 }
@@ -304,6 +305,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       edges: workspace.listEdges(),
       types: workspace.listTypes(),
       tags: workspace.listTags(),
+      sections: workspace.listSections(),
     });
 
     let snapshot = read();
@@ -351,6 +353,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       edges: remote.listEdges(),
       types: remote.listTypes(),
       tags: remote.listTags(),
+      sections: remote.listSections(),
     });
 
     let snapshot = read();

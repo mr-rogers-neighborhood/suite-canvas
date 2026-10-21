@@ -43,16 +43,17 @@ test("moves a card by dragging its header", async ({ page }) => {
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(0);
 });
 
-test("selects on the first title click and edits on the second", async ({ page }) => {
+test("opens card info on a click and edits the title on a double click", async ({ page }) => {
   await page.goto(workspaceUrl("title"));
   const card = cards(page).first();
   const box = await card.boundingBox();
   if (!box) throw new Error("card not visible");
 
   await page.mouse.click(box.x + 80, box.y + 24);
+  await expect(page.getByTestId("card-inspector")).toBeVisible();
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(0);
 
-  await page.mouse.click(box.x + 80, box.y + 24);
+  await page.mouse.dblclick(box.x + 80, box.y + 24);
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
 
   await page.keyboard.type("Renamed card");
@@ -61,7 +62,7 @@ test("selects on the first title click and edits on the second", async ({ page }
   );
 });
 
-test("clicks the body to edit and drags the body to move", async ({ page }) => {
+test("double-clicks the body to edit and drags the body to move", async ({ page }) => {
   await page.goto(workspaceUrl("body-click"));
   const card = cards(page).first();
   const body = card.getByTestId("card-body");
@@ -69,7 +70,7 @@ test("clicks the body to edit and drags the body to move", async ({ page }) => {
   if (!bodyBox) throw new Error("card body not visible");
   const point = { x: bodyBox.x + 40, y: bodyBox.y + 28 };
 
-  await page.mouse.click(point.x, point.y);
+  await page.mouse.dblclick(point.x, point.y);
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("Body click");
   await expect(card.getByTestId("card-body")).toHaveText("Body click");
@@ -98,8 +99,7 @@ test("drags from the header while the title or body is being edited", async ({ p
   const initial = await card.boundingBox();
   if (!initial) throw new Error("card not visible");
 
-  await page.mouse.click(initial.x + 80, initial.y + 24);
-  await page.mouse.click(initial.x + 80, initial.y + 24);
+  await page.mouse.dblclick(initial.x + 80, initial.y + 24);
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("Editing");
 
@@ -117,7 +117,7 @@ test("drags from the header while the title or body is being edited", async ({ p
 
   const afterTitle = await card.boundingBox();
   if (!afterTitle) throw new Error("card not visible");
-  await card.getByTestId("card-body").click();
+  await card.getByTestId("card-body").dblclick();
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
   const bodyHeader = { x: afterTitle.x + afterTitle.width - 40, y: afterTitle.y + 14 };
   await page.mouse.move(bodyHeader.x, bodyHeader.y);

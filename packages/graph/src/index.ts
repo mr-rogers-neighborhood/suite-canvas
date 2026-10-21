@@ -11,6 +11,7 @@ export type {
   CreateCardInput,
   CreateEdgeInput,
   CreateFieldInput,
+  CreateSectionInput,
   CreateTypeInput,
   LayerAction,
   WorkspaceAction,
@@ -25,6 +26,7 @@ export {
   normalizeCard,
   placementKey,
   SCHEMA_VERSION,
+  sectionFromMap,
   tagFromMap,
   WorkspaceDocument,
 } from "./loro/WorkspaceDocument.js";
@@ -40,6 +42,8 @@ export type {
   GraphEdge,
   Placement,
   PropertyValue,
+  Section,
+  SectionColor,
   SelectOption,
   Tag,
 } from "./schema.js";
@@ -61,6 +65,23 @@ export {
   placementSchema,
   positionSchema,
   propertyValueSchema,
+  sectionColorSchema,
+  sectionColors,
+  sectionSchema,
   selectOptionSchema,
   tagSchema,
 } from "./schema.js";
+export type { Point, Rect } from "./sections.js";
+export {
+  CARD_ANCHOR_INSET,
+  cardAnchor,
+  containedSections,
+  rectContainsPoint,
+  rectContainsRect,
+  sectionForCard,
+  sectionLineage,
+  sectionMembership,
+  sectionMovePlan,
+  sectionsAt,
+  unionRect,
+} from "./sections.js";

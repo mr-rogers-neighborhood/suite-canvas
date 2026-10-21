@@ -85,7 +85,9 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   const created = page.locator('[data-testid="node-card"]').filter({ hasText: "keyboard delete" });
   await created.click({ position: { x: 40, y: 14 } });
   await page.keyboard.press("Delete");
-  await expect(page.getByText("keyboard delete")).toHaveCount(0);
+  // Delete removes the placement, not the card; the inspector keeps showing it.
+  await expect(page.locator("[data-node-id]")).toHaveCount(2);
+  await expect(page.getByTestId("card-inspector")).toContainText("In the inbox");
 });
 
 test("undoes and redoes a card move with the keyboard", async ({ page }) => {
@@ -129,7 +131,7 @@ test("undoes a removal from the board, not the editor text", async ({ page }) =>
   // Inside the editor, undo belongs to the editor's own fragment history.
   const card = page.locator('[data-testid="node-card"]').filter({ hasText: "scoped undo" });
   const body = card.getByTestId("card-body").locator(".ProseMirror");
-  await card.getByTestId("card-body").click();
+  await card.getByTestId("card-body").dblclick();
   await expect(body).toHaveClass(/ProseMirror-focused/);
   await page.keyboard.type("body text");
   await expect(body).toHaveText("body text");
@@ -146,7 +148,9 @@ test("undoes a removal from the board, not the editor text", async ({ page }) =>
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   await page.keyboard.press("Control+z");
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(3);
-  await expect(page.getByText("scoped undo")).toBeVisible();
+  await expect(
+    page.locator('[data-testid="node-card"]').filter({ hasText: "scoped undo" }),
+  ).toBeVisible();
 });
 
 test("manages connectors: add, magnetize, reposition, delete", async ({ page }) => {

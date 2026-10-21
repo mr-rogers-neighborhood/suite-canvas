@@ -62,6 +62,7 @@ const meta = {
       { boardId: "b2", boardName: "Drafts", isHome: false, isCurrent: false },
     ],
     onClose: () => {},
+    onEdit: () => {},
     onSetType: () => {},
     onAddTag: () => {},
     onRemoveTag: () => {},

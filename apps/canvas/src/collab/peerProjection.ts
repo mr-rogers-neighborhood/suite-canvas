@@ -9,6 +9,8 @@ import {
   type PresenceUser,
   type ReconnectState,
   type ResizingState,
+  type SectionDragState,
+  type SectionResizeState,
   type SelectionState,
 } from "./presence";
 
@@ -44,6 +46,9 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
     connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
     resizing: (state[AWARENESS_FIELDS.resizing] as ResizingState | undefined) ?? null,
+    sectionDrag: (state[AWARENESS_FIELDS.sectionDrag] as SectionDragState | undefined) ?? null,
+    sectionResize:
+      (state[AWARENESS_FIELDS.sectionResize] as SectionResizeState | undefined) ?? null,
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
     connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
   };
@@ -51,20 +56,38 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
 
 /** Only the in-flight gestures: selections and carets are state, not gestures. */
 export function gestureSignature(peer: PeerPresence): string {
-  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect && !peer.connect) {
+  if (
+    !peer.dragging &&
+    !peer.connector &&
+    !peer.resizing &&
+    !peer.sectionDrag &&
+    !peer.sectionResize &&
+    !peer.reconnect &&
+    !peer.connect
+  ) {
     return "";
   }
   return JSON.stringify([
     peer.dragging,
     peer.connector,
     peer.resizing,
+    peer.sectionDrag,
+    peer.sectionResize,
     peer.reconnect,
     peer.connect,
   ]);
 }
 
 function withoutGesture(peer: PeerPresence): PeerPresence {
-  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect && !peer.connect) {
+  if (
+    !peer.dragging &&
+    !peer.connector &&
+    !peer.resizing &&
+    !peer.sectionDrag &&
+    !peer.sectionResize &&
+    !peer.reconnect &&
+    !peer.connect
+  ) {
     return peer;
   }
   return {
@@ -72,6 +95,8 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
     dragging: null,
     connector: null,
     resizing: null,
+    sectionDrag: null,
+    sectionResize: null,
     reconnect: null,
     connect: null,
   };

@@ -1,4 +1,5 @@
-import type { Card, CardType, GraphEdge, LayerAction, Placement } from "@suite/graph";
+import type { Card, CardType, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
+import { sectionColors, sectionMembership, sectionMovePlan, unionRect } from "@suite/graph";
 import {
   Background,
   type Connection,
@@ -33,6 +34,8 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { nodeTypes } from "./NoteNode";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { PresenceLayer } from "./PresenceLayer";
+import { SectionLayer } from "./SectionLayer";
+import { cardSectionOffsets, sectionExpandPlan, sectionOffsets } from "./sectionLayout";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
 const SMOOTHING = 0.22;
@@ -139,8 +142,14 @@ export function CanvasBoard() {
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
   const setReconnect = usePresenceStore((state) => state.setReconnect);
   const setConnect = usePresenceStore((state) => state.setConnect);
+  const setSectionDragPresence = usePresenceStore((state) => state.setSectionDrag);
+  const setSectionResizePresence = usePresenceStore((state) => state.setSectionResize);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
+  const selectedSectionId = useUiStore((state) => state.selectedSectionId);
+  const selectSection = useUiStore((state) => state.selectSection);
+  const editingSectionId = useUiStore((state) => state.editingSectionId);
+  const setEditingSection = useUiStore((state) => state.setEditingSection);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
@@ -196,6 +205,63 @@ export function CanvasBoard() {
         edge.boardId === activeBoardId && placed.has(edge.source) && placed.has(edge.target),
     );
   }, [snapshot, boardCards, activeBoardId]);
+
+  const boardPlacementList = useMemo(() => [...boardPlacements.values()], [boardPlacements]);
+
+  const boardSections = useMemo(() => {
+    if (!activeBoardId) return [];
+    return snapshot.sections.filter((section) => section.boardId === activeBoardId);
+  }, [snapshot.sections, activeBoardId]);
+
+  const sectionMembershipMap = useMemo(
+    () => sectionMembership(boardPlacementList, boardSections),
+    [boardPlacementList, boardSections],
+  );
+
+  const [localSectionDrag, setLocalSectionDrag] = useState<{
+    sectionId: string;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [localSectionResize, setLocalSectionResize] = useState<{
+    sectionId: string;
+    rect: Rect;
+  } | null>(null);
+  const lastSectionPublish = useRef(0);
+
+  const sectionGestures = useMemo(() => {
+    const gestures: { sectionId: string; position: { x: number; y: number } }[] = [];
+    if (localSectionDrag) gestures.push(localSectionDrag);
+    for (const peer of Object.values(peers)) {
+      if (peer.sectionDrag) gestures.push(peer.sectionDrag);
+    }
+    return gestures;
+  }, [localSectionDrag, peers]);
+
+  const sectionOffsetsMap = useMemo(
+    () => sectionOffsets(boardSections, sectionGestures),
+    [boardSections, sectionGestures],
+  );
+
+  const sectionResizes = useMemo(() => {
+    const map = new Map<string, Rect>();
+    for (const peer of Object.values(peers)) {
+      const resizing = peer.sectionResize;
+      if (!resizing) continue;
+      map.set(resizing.sectionId, {
+        x: resizing.position.x,
+        y: resizing.position.y,
+        width: resizing.width,
+        height: resizing.height,
+      });
+    }
+    if (localSectionResize) map.set(localSectionResize.sectionId, localSectionResize.rect);
+    return map;
+  }, [peers, localSectionResize]);
+
+  const cardOffsetsMap = useMemo(
+    () => cardSectionOffsets(sectionMembershipMap, sectionOffsetsMap),
+    [sectionMembershipMap, sectionOffsetsMap],
+  );
 
   const typeMap = useMemo(() => typesById(snapshot.types), [snapshot.types]);
   const tagMap = useMemo(() => new Map(snapshot.tags.map((tag) => [tag.id, tag])), [snapshot.tags]);
@@ -271,11 +337,15 @@ export function CanvasBoard() {
         const placement = boardPlacements.get(card.id);
         if (!placement) return [];
         const existing = byId.get(card.id);
+        const sectionOffset = cardOffsetsMap.get(card.id);
+        const storedPosition = sectionOffset
+          ? { x: placement.x + sectionOffset.dx, y: placement.y + sectionOffset.dy }
+          : { x: placement.x, y: placement.y };
         const position =
           existing &&
           (locallyDraggingId.current === card.id || locallyResizing.current.has(card.id))
             ? existing.position
-            : (smoothPositions.current.get(card.id) ?? { x: placement.x, y: placement.y });
+            : (smoothPositions.current.get(card.id) ?? storedPosition);
         const selected = selectedKey.split(",").includes(card.id);
         const type = resolveCardType(typeMap, card.primaryTypeId);
         const meta = metaByCard.get(card.id) ?? EMPTY_META;
@@ -312,7 +382,7 @@ export function CanvasBoard() {
         ];
       });
     });
-  }, [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, setNodes]);
+  }, [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes]);
 
   useEffect(() => {
     applyBoardNodes();
@@ -324,6 +394,23 @@ export function CanvasBoard() {
       // A top or left resize moves the node, so its corner streams like a drag's.
       if (peer.dragging) next.set(peer.dragging.nodeId, peer.dragging.position);
       else if (peer.resizing?.position) next.set(peer.resizing.nodeId, peer.resizing.position);
+
+      // A section drag moves its members; resolve the same plan locally so the
+      // cards ease toward the peer's section instead of stepping.
+      if (peer.sectionDrag) {
+        const root = boardSections.find((section) => section.id === peer.sectionDrag?.sectionId);
+        if (root) {
+          const dx = peer.sectionDrag.position.x - root.x;
+          const dy = peer.sectionDrag.position.y - root.y;
+          const plan = sectionMovePlan(root.id, boardSections, boardPlacementList);
+          for (const placement of plan.placements) {
+            next.set(placement.cardId, {
+              x: placement.x + dx,
+              y: placement.y + dy,
+            });
+          }
+        }
+      }
     }
     peerTargets.current = next;
 
@@ -339,7 +426,7 @@ export function CanvasBoard() {
 
     if (next.size > 0) runSmoothing();
     if (ended) applyBoardNodes();
-  }, [peers, runSmoothing, applyBoardNodes]);
+  }, [peers, boardSections, boardPlacementList, runSmoothing, applyBoardNodes]);
 
   useEffect(
     () => () => {
@@ -385,7 +472,10 @@ export function CanvasBoard() {
       ? { nodeId: selectedConnector.nodeId, connectorId: selectedConnector.connectorId }
       : undefined;
     const hasSelection =
-      selectedNodeIds.length > 0 || selectedEdgeIds.length > 0 || connector !== undefined;
+      selectedSectionId !== null ||
+      selectedNodeIds.length > 0 ||
+      selectedEdgeIds.length > 0 ||
+      connector !== undefined;
 
     setPresenceSelection(
       hasSelection
@@ -393,10 +483,17 @@ export function CanvasBoard() {
             nodeIds: selectedNodeIds,
             edgeIds: selectedEdgeIds,
             ...(connector ? { connector } : {}),
+            ...(selectedSectionId ? { sectionId: selectedSectionId } : {}),
           }
         : null,
     );
-  }, [selectedConnector, selectedEdgeIds, selectedNodeIds, setPresenceSelection]);
+  }, [
+    selectedConnector,
+    selectedEdgeIds,
+    selectedNodeIds,
+    selectedSectionId,
+    setPresenceSelection,
+  ]);
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -417,12 +514,168 @@ export function CanvasBoard() {
     state.stopEditing();
   }, [workspace]);
 
+  // Selection elevates a card in React Flow, which would hide the new order, so
+  // drop the selection once an explicit layer change lands.
+  const changeLayer = useCallback(
+    (nodeId: string, action: LayerAction) => {
+      if (!activeBoardId) return;
+      workspace.moveLayer(activeBoardId, nodeId, action);
+      setSelectedNodeIds([]);
+      setPresenceSelection(null);
+    },
+    [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection],
+  );
+
+  const handleSelectSection = useCallback(
+    (sectionId: string | null) => {
+      if (sectionId) store.getState().unselectNodesAndEdges();
+      selectSection(sectionId);
+    },
+    [selectSection, store],
+  );
+
+  const publishSectionDrag = useCallback(
+    (sectionId: string, position: { x: number; y: number }) => {
+      const now = performance.now();
+      if (now - lastSectionPublish.current < DRAG_THROTTLE_MS) return;
+      lastSectionPublish.current = now;
+      setSectionDragPresence({ sectionId, position });
+    },
+    [setSectionDragPresence],
+  );
+
+  const handleSectionDrag = useCallback(
+    (sectionId: string, position: { x: number; y: number }) => {
+      setLocalSectionDrag({ sectionId, position });
+      publishSectionDrag(sectionId, position);
+    },
+    [publishSectionDrag],
+  );
+
+  const handleSectionDragEnd = useCallback(
+    (sectionId: string, position: { x: number; y: number }) => {
+      const root = boardSections.find((section) => section.id === sectionId);
+      if (root) {
+        const dx = position.x - root.x;
+        const dy = position.y - root.y;
+        if (dx !== 0 || dy !== 0) {
+          const plan = sectionMovePlan(sectionId, boardSections, boardPlacementList);
+          workspace.moveSectionsBatch({
+            sections: plan.sections.map((section) => ({
+              id: section.id,
+              x: section.x + dx,
+              y: section.y + dy,
+            })),
+            placements: plan.placements.map((placement) => ({
+              boardId: placement.boardId,
+              cardId: placement.cardId,
+              x: placement.x + dx,
+              y: placement.y + dy,
+            })),
+          });
+        }
+      }
+      setLocalSectionDrag(null);
+      setSectionDragPresence(null);
+    },
+    [boardSections, boardPlacementList, workspace, setSectionDragPresence],
+  );
+
+  const handleSectionResize = useCallback(
+    (sectionId: string, rect: Rect) => {
+      setLocalSectionResize({ sectionId, rect });
+      const now = performance.now();
+      if (now - lastSectionPublish.current < DRAG_THROTTLE_MS) return;
+      lastSectionPublish.current = now;
+      setSectionResizePresence({
+        sectionId,
+        position: { x: rect.x, y: rect.y },
+        width: rect.width,
+        height: rect.height,
+      });
+    },
+    [setSectionResizePresence],
+  );
+
+  const handleSectionResizeEnd = useCallback(
+    (sectionId: string, rect: Rect) => {
+      workspace.updateSectionGeometry(sectionId, rect);
+      setLocalSectionResize(null);
+      setSectionResizePresence(null);
+    },
+    [workspace, setSectionResizePresence],
+  );
+
+  const handleSectionRename = useCallback(
+    (sectionId: string, title: string) => {
+      workspace.renameSection(sectionId, title.trim());
+      setEditingSection(null);
+    },
+    [workspace, setEditingSection],
+  );
+
+  const createSectionAt = useCallback(
+    (position: { x: number; y: number }, wrapSelection = false) => {
+      if (!activeBoardId) return;
+      const selected = useUiStore.getState().selectedNodeIds;
+      let rect: Rect = { x: position.x, y: position.y, width: 360, height: 260 };
+
+      if (wrapSelection && selected.length > 0) {
+        const lookup = store.getState().nodeLookup;
+        const cardRects = selected.flatMap((id) => {
+          const node = lookup.get(id);
+          if (!node) return [];
+          const width = node.measured?.width ?? node.width ?? 224;
+          const height = node.measured?.height ?? node.height ?? 160;
+          return [{ x: node.position.x, y: node.position.y, width, height }];
+        });
+        const first = cardRects[0];
+        if (first) {
+          const union = unionRect(first, cardRects.slice(1), 24);
+          rect = {
+            x: union.x,
+            y: union.y - 16,
+            width: union.width,
+            height: union.height + 16,
+          };
+        }
+      }
+
+      const section = workspace.createSection({ boardId: activeBoardId, ...rect });
+      store.getState().unselectNodesAndEdges();
+      selectSection(section.id);
+      setEditingSection(section.id);
+    },
+    [activeBoardId, store, workspace, selectSection, setEditingSection],
+  );
+
+  const expandSectionForCard = useCallback(
+    (
+      position: { x: number; y: number },
+      measured: { width?: number | undefined; height?: number | undefined },
+    ) => {
+      const plan = sectionExpandPlan(boardSections, position, measured);
+      if (plan) workspace.moveSectionsBatch({ sections: plan });
+    },
+    [boardSections, workspace],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping =
         target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
       const state = useUiStore.getState();
+
+      if (event.key === "Escape" && state.editingSectionId) {
+        state.setEditingSection(null);
+        return;
+      }
+
+      if (event.key === "Escape" && state.selectedSectionId) {
+        state.selectSection(null);
+        return;
+      }
 
       if (event.key === "Escape" && state.editingNodeId) {
         state.stopEditing();
@@ -442,10 +695,27 @@ export function CanvasBoard() {
           state.stopEditing();
           return;
         }
+
+        if (key === "g") {
+          event.preventDefault();
+          const centre = screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          });
+          createSectionAt({ x: centre.x - 180, y: centre.y - 130 }, true);
+          return;
+        }
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
-        if (isTyping || state.selectedNodeIds.length === 0) return;
+        if (isTyping) return;
+        if (state.selectedSectionId) {
+          event.preventDefault();
+          workspace.deleteSection(state.selectedSectionId);
+          state.selectSection(null);
+          return;
+        }
+        if (state.selectedNodeIds.length === 0) return;
         event.preventDefault();
         if (event.shiftKey) trashSelected();
         else unplaceSelected();
@@ -463,19 +733,7 @@ export function CanvasBoard() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [trashSelected, unplaceSelected, workspace]);
-
-  // Selection elevates a card in React Flow, which would hide the new order, so
-  // drop the selection once an explicit layer change lands.
-  const changeLayer = useCallback(
-    (nodeId: string, action: LayerAction) => {
-      if (!activeBoardId) return;
-      workspace.moveLayer(activeBoardId, nodeId, action);
-      setSelectedNodeIds([]);
-      setPresenceSelection(null);
-    },
-    [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection],
-  );
+  }, [trashSelected, unplaceSelected, workspace, createSectionAt, screenToFlowPosition]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -673,6 +931,7 @@ export function CanvasBoard() {
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!contextMenu) return [];
     if (contextMenu.kind === "canvas") {
+      const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
       return [
         {
           label: "New note",
@@ -680,8 +939,59 @@ export function CanvasBoard() {
             if (contextMenu.flowPosition) createNoteAt(contextMenu.flowPosition);
           },
         },
+        {
+          label: "New section",
+          onSelect: () => createSectionAt(flowPosition),
+        },
+        ...(selectedNodeIds.length > 0
+          ? [
+              {
+                label: `New section from ${selectedNodeIds.length} card${
+                  selectedNodeIds.length === 1 ? "" : "s"
+                }`,
+                onSelect: () => createSectionAt(flowPosition, true),
+              },
+            ]
+          : []),
       ];
     }
+
+    if (contextMenu.kind === "section" && contextMenu.sectionId) {
+      const sectionId = contextMenu.sectionId;
+      const memberIds = [...sectionMembershipMap]
+        .filter(([, id]) => id === sectionId)
+        .map(([cardId]) => cardId);
+      return [
+        {
+          label: "Rename section",
+          onSelect: () => setEditingSection(sectionId),
+        },
+        {
+          label: "Color",
+          items: sectionColors.map((color) => ({
+            label: color.charAt(0).toUpperCase() + color.slice(1),
+            onSelect: () => workspace.setSectionColor(sectionId, color),
+          })),
+        },
+        {
+          label: `Select ${memberIds.length} card${memberIds.length === 1 ? "" : "s"}`,
+          onSelect: () => {
+            setSelectedNodeIds(memberIds);
+            store.getState().addSelectedNodes(memberIds);
+            selectSection(null);
+          },
+        },
+        {
+          label: "Delete section",
+          danger: true,
+          onSelect: () => {
+            workspace.deleteSection(sectionId);
+            selectSection(null);
+          },
+        },
+      ];
+    }
+
     const nodeId = contextMenu.nodeId;
     const edgeId = contextMenu.edgeId;
 
@@ -803,7 +1113,13 @@ export function CanvasBoard() {
     workspace,
     activeBoardId,
     createNoteAt,
+    createSectionAt,
     changeLayer,
+    selectedNodeIds,
+    sectionMembershipMap,
+    setEditingSection,
+    selectSection,
+    store,
     setSelectedNodeIds,
     setSelectedConnector,
   ]);
@@ -860,9 +1176,19 @@ export function CanvasBoard() {
           setDragging(null);
           if (activeBoardId)
             workspace.updatePlacementPosition(activeBoardId, node.id, node.position);
+          expandSectionForCard(node.position, {
+            width: node.measured?.width ?? node.width,
+            height: node.measured?.height ?? node.height,
+          });
         }}
-        onPaneClick={() => setSelectedConnector(null)}
-        onNodeClick={() => setSelectedConnector(null)}
+        onPaneClick={() => {
+          setSelectedConnector(null);
+          handleSelectSection(null);
+        }}
+        onNodeClick={() => {
+          setSelectedConnector(null);
+          handleSelectSection(null);
+        }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "node", nodeId: node.id });
@@ -873,6 +1199,32 @@ export function CanvasBoard() {
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", flowPosition });
         }}
       >
+        <SectionLayer
+          sections={boardSections}
+          membership={sectionMembershipMap}
+          offsets={sectionOffsetsMap}
+          resizes={sectionResizes}
+          peers={peers}
+          selectedSectionId={selectedSectionId}
+          editingSectionId={editingSectionId}
+          onSelect={handleSelectSection}
+          onStartRename={setEditingSection}
+          onCommitRename={handleSectionRename}
+          onCancelRename={() => setEditingSection(null)}
+          onDrag={handleSectionDrag}
+          onDragEnd={handleSectionDragEnd}
+          onResize={handleSectionResize}
+          onResizeEnd={handleSectionResizeEnd}
+          onContextMenu={(event, sectionId) => {
+            event.preventDefault();
+            openContextMenu({
+              x: event.clientX,
+              y: event.clientY,
+              kind: "section",
+              sectionId,
+            });
+          }}
+        />
         <Background color="var(--rf-dot)" />
         <Controls showInteractive={false} />
         <PresenceLayer />

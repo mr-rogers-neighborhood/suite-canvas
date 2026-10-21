@@ -21,8 +21,14 @@ function formatValue(value: PropertyValue, field: FieldDefinition): string | nul
       if (typeof value !== "string") return null;
       return field.options.find((option) => option.id === value)?.label ?? null;
     }
-    case "multiSelect":
-      return null;
+    case "multiSelect": {
+      if (!Array.isArray(value)) return null;
+      const labels = value.flatMap((optionId) => {
+        const option = field.options.find((candidate) => candidate.id === optionId);
+        return option ? [option.label] : [];
+      });
+      return labels.length > 0 ? labels.join(", ") : null;
+    }
     case "number":
       return typeof value === "number" ? String(value) : null;
     case "date":
@@ -32,15 +38,15 @@ function formatValue(value: PropertyValue, field: FieldDefinition): string | nul
 }
 
 /**
- * A compact, read-only projection for the card face: the first two non-empty
- * scalar properties of the primary type, plus tag names. The inspector owns
- * editing; this only makes a typed card legible on the canvas.
+ * A compact, read-only projection for the card face: every non-empty scalar
+ * property of the primary type, plus tag names. The inspector owns editing; the
+ * card shows this only when its frontmatter is expanded.
  */
 export function cardMeta(
   card: Card,
   types: Map<string, CardType>,
   tags: Map<string, Tag>,
-  limit = 2,
+  limit = Number.POSITIVE_INFINITY,
 ): CardMeta {
   const type = types.get(card.primaryTypeId);
   const tagNames = card.tags.flatMap((id) => {
@@ -59,7 +65,7 @@ export function cardMeta(
     properties.push({
       fieldId: field.id,
       label: field.name,
-      value: field.kind === "checkbox" ? field.name : formatted,
+      value: field.kind === "checkbox" ? "\u2713" : formatted,
     });
   }
   return properties.length === 0 && tagNames.length === 0 ? EMPTY : { properties, tags: tagNames };

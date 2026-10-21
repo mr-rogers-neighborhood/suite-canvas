@@ -1,8 +1,8 @@
 import type { Card, CardType } from "@suite/graph";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NodeCard } from "./NodeCard";
 
 const doc = new LoroDoc();
@@ -34,10 +34,12 @@ const type: CardType = {
   fields: [],
 };
 
+const meta = { properties: [], tags: [] };
+
 const base = {
   card,
   type,
-  meta: { properties: [], tags: [] },
+  meta,
   cardDoc: doc,
   contentId,
   titleId,
@@ -46,22 +48,61 @@ const base = {
   boardId: "board-1",
 };
 
+function renderCard(overrides: Partial<Parameters<typeof NodeCard>[0]> = {}) {
+  return render(
+    <ReactFlowProvider>
+      <NodeCard {...base} {...overrides} />
+    </ReactFlowProvider>,
+  );
+}
+
 describe("NodeCard", () => {
   it("renders a read-only note card", () => {
-    render(
-      <ReactFlowProvider>
-        <NodeCard {...base} />
-      </ReactFlowProvider>,
-    );
+    renderCard();
     expect(screen.getByTestId("node-card")).toBeInTheDocument();
   });
 
   it("renders presence avatars for peers on the node", () => {
-    render(
+    renderCard({ presence: [{ name: "Nova", color: "#f97316" }] });
+    expect(screen.getByTestId("presence-avatar")).toBeInTheDocument();
+  });
+
+  it("opens card info on a click without movement", () => {
+    const onOpenInfo = vi.fn();
+    renderCard({ onOpenInfo });
+
+    fireEvent.click(screen.getByTestId("node-card"));
+
+    expect(onOpenInfo).toHaveBeenCalledOnce();
+  });
+
+  it("starts body editing on a double click", () => {
+    const onStartEditing = vi.fn();
+    renderCard({ onStartEditing });
+
+    fireEvent.doubleClick(screen.getByTestId("card-body"));
+
+    expect(onStartEditing).toHaveBeenCalledWith("body");
+  });
+
+  it("hides frontmatter until expanded", () => {
+    const onToggleMeta = vi.fn();
+    const withMeta = {
+      properties: [{ fieldId: "status", label: "Status", value: "Active" }],
+      tags: ["Research"],
+    };
+    const { rerender } = renderCard({ meta: withMeta, onToggleMeta });
+
+    expect(screen.queryByTestId("card-meta")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("card-meta-toggle"));
+    expect(onToggleMeta).toHaveBeenCalledOnce();
+
+    rerender(
       <ReactFlowProvider>
-        <NodeCard {...base} presence={[{ name: "Nova", color: "#f97316" }]} />
+        <NodeCard {...base} meta={withMeta} metaExpanded onToggleMeta={onToggleMeta} />
       </ReactFlowProvider>,
     );
-    expect(screen.getByTestId("presence-avatar")).toBeInTheDocument();
+    expect(screen.getByTestId("card-meta")).toHaveTextContent("Active");
+    expect(screen.getByTestId("card-meta")).toHaveTextContent("#Research");
   });
 });

@@ -15,6 +15,12 @@
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.25);
   --sheen: radial-gradient(120% 90% at 50% -20%, rgba(255, 255, 255, 0.9), transparent 55%);
   --segmented-bg: rgba(0, 0, 0, 0.05);
+  --section-slate: #64748b;
+  --section-blue: #3b82f6;
+  --section-green: #10b981;
+  --section-amber: #f59e0b;
+  --section-rose: #f43f5e;
+  --section-violet: #8b5cf6;
 }
 
 .dark {
@@ -29,6 +35,12 @@
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 44px -22px rgba(0, 0, 0, 0.9);
   --sheen: radial-gradient(120% 90% at 50% -20%, rgba(130, 130, 150, 0.18), transparent 55%);
   --segmented-bg: rgba(255, 255, 255, 0.08);
+  --section-slate: #94a3b8;
+  --section-blue: #60a5fa;
+  --section-green: #34d399;
+  --section-amber: #fbbf24;
+  --section-rose: #fb7185;
+  --section-violet: #a78bfa;
 }
 
 html,
@@ -623,23 +635,52 @@ body {
   }
 }
 
-.card-meta-chip {
-  display: inline-flex;
-  max-width: 100%;
+.card-meta-toggle {
+  font-variant-numeric: tabular-nums;
+}
+
+.card-meta {
+  display: flex;
+  max-height: 9rem;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+}
+
+.card-meta-row {
+  display: flex;
+  width: 100%;
   align-items: baseline;
-  gap: 4px;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: var(--segmented-bg);
-  padding: 1px 7px;
+  gap: 6px;
+  border-radius: 4px;
+  padding: 0 2px;
   font-size: 10px;
   line-height: 16px;
+  text-align: left;
+}
+
+.card-meta-row:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.card-meta-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.card-meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
 .card-meta-label {
+  flex: 0 0 auto;
   color: var(--ink-muted);
 }
 
@@ -651,4 +692,124 @@ body {
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Sections: a background region under the cards and a header/handle layer above
+   them, both inside React Flow's transformed viewport. */
+/* The portal wrapper itself must not cover the pane; interactive children
+   re-enable pointer events explicitly. */
+.react-flow__viewport-portal {
+  pointer-events: none;
+}
+
+.section-background-layer,
+.section-header-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.section-background-layer {
+  z-index: -1;
+}
+
+.section-header-layer {
+  z-index: 100000;
+}
+
+.section-region {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 12px;
+  pointer-events: auto;
+}
+
+.section-region.is-selected {
+  border-style: solid;
+  border-width: 1.5px;
+}
+
+.section-header {
+  position: absolute;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: var(--surface-translucent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.section-header:active {
+  cursor: grabbing;
+}
+
+.section-color-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+}
+
+.section-title {
+  max-width: 220px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.section-title-input {
+  width: 150px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  outline: none;
+}
+
+.section-count {
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.section-resize-handle {
+  position: absolute;
+  border: 1px solid var(--ink-muted);
+  background: var(--surface);
+  pointer-events: auto;
+}
+
+.section-resize-handle[data-direction="nw"],
+.section-resize-handle[data-direction="se"] {
+  cursor: nwse-resize;
+}
+
+.section-resize-handle[data-direction="ne"],
+.section-resize-handle[data-direction="sw"] {
+  cursor: nesw-resize;
+}
+
+.section-resize-handle[data-direction="n"],
+.section-resize-handle[data-direction="s"] {
+  cursor: ns-resize;
+}
+
+.section-resize-handle[data-direction="e"],
+.section-resize-handle[data-direction="w"] {
+  cursor: ew-resize;
 }

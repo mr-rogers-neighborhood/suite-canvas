@@ -32,6 +32,7 @@ export interface SelectionState {
   nodeIds: string[];
   edgeIds?: string[];
   connector?: ConnectorSelection;
+  sectionId?: string;
 }
 
 /** A connector a peer is dragging along a card perimeter. */
@@ -40,6 +41,20 @@ export interface ConnectorState {
   connectorId: string;
   /** Live perimeter fraction while the drag is in flight; peers ease toward it. */
   position?: { x: number; y: number };
+}
+
+/** A section a peer is dragging, with its live top-left in flow units. */
+export interface SectionDragState {
+  sectionId: string;
+  position: PointerState;
+}
+
+/** A section a peer is resizing, in flow units. */
+export interface SectionResizeState {
+  sectionId: string;
+  position: PointerState;
+  width: number;
+  height: number;
 }
 
 /** A card a peer is resizing, in flow units. */
@@ -88,6 +103,8 @@ export const AWARENESS_FIELDS = {
   selection: "selection",
   connector: "connector",
   resizing: "resizing",
+  sectionDrag: "sectionDrag",
+  sectionResize: "sectionResize",
   reconnect: "reconnect",
   connect: "connect",
 } as const;
@@ -103,6 +120,8 @@ export interface PeerPresence {
   selection: SelectionState | null;
   connector: ConnectorState | null;
   resizing: ResizingState | null;
+  sectionDrag: SectionDragState | null;
+  sectionResize: SectionResizeState | null;
   reconnect: ReconnectState | null;
   connect: ConnectState | null;
 }
@@ -113,6 +132,8 @@ export function peerIsInteracting(peer: PeerPresence): boolean {
     peer.focus ||
       peer.dragging ||
       peer.resizing ||
+      peer.sectionDrag ||
+      peer.sectionResize ||
       peer.connector ||
       peer.reconnect ||
       peer.connect,

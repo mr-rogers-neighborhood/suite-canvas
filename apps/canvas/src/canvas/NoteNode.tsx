@@ -36,6 +36,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const openInspector = useUiStore((state) => state.openInspector);
+  const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
+  const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
   // Container ids are stable; resolving them through the container observer
   // lets a card that mounted before the body existed adopt it without
@@ -154,6 +156,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         card={card}
         type={type}
         meta={meta}
+        metaExpanded={metaExpanded}
+        onToggleMeta={() => toggleCardMeta(id)}
         cardDoc={workspace.doc}
         contentId={contentId}
         titleId={titleId}

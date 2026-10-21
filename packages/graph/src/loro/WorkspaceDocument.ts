@@ -31,13 +31,22 @@ import {
   type Placement,
   type PropertyValue,
   placementSchema,
+  type Section,
   type SelectOption,
+  sectionSchema,
   selectOptionSchema,
   type Tag,
   tagSchema,
 } from "../schema.js";
 
-export type WorkspaceSection = "boards" | "cards" | "placements" | "edges" | "types" | "tags";
+export type WorkspaceSection =
+  | "boards"
+  | "cards"
+  | "placements"
+  | "edges"
+  | "types"
+  | "tags"
+  | "sections";
 export type WorkspaceAction = "add" | "update" | "delete";
 export type LayerAction = "forward" | "front" | "backward" | "back";
 
@@ -45,7 +54,7 @@ export interface WorkspaceChange {
   section: WorkspaceSection;
   action: WorkspaceAction;
   key: string;
-  value: Board | Card | Placement | GraphEdge | CardType | Tag | null;
+  value: Board | Card | Placement | GraphEdge | CardType | Tag | Section | null;
 }
 
 /** Shared text containers for one card, stable until the cards map changes. */
@@ -92,10 +101,21 @@ export interface CreateEdgeInput {
   kind?: GraphEdge["kind"];
 }
 
+export interface CreateSectionInput {
+  id?: string;
+  boardId: string;
+  title?: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color?: Section["color"];
+}
+
 /** Deterministic id so every client seeds the same default board. */
 export const DEFAULT_BOARD_ID = "board-1";
-/** Semantic records (types, fields, tags, properties) start at version 3. */
-export const SCHEMA_VERSION = 3;
+/** Spatial sections start at version 4. */
+export const SCHEMA_VERSION = 4;
 /** Below this gap two ranks are one float step apart; the board renumbers. */
 const MIN_RANK_GAP = 1e-7;
 
@@ -345,6 +365,23 @@ export function tagFromMap(id: string, fields: LoroMap): Tag {
   });
 }
 
+export function sectionFromMap(id: string, fields: LoroMap): Section {
+  const color = readString(fields, "color");
+  return sectionSchema.parse({
+    id,
+    boardId: readString(fields, "boardId") ?? "",
+    title: readString(fields, "title") ?? "",
+    x: readNumber(fields, "x") ?? 0,
+    y: readNumber(fields, "y") ?? 0,
+    width: Math.max(1, readNumber(fields, "width") ?? 320),
+    height: Math.max(1, readNumber(fields, "height") ?? 240),
+    z: readNumber(fields, "z") ?? 0,
+    createdAt: readNumber(fields, "createdAt") ?? 0,
+    updatedAt: readNumber(fields, "updatedAt") ?? 0,
+    ...(color ? { color } : {}),
+  });
+}
+
 /** Writers validate against the type's own field definition. */
 function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void {
   function fail(expected: string): never {
@@ -427,6 +464,7 @@ export class WorkspaceDocument {
   static readonly EDGES_KEY = "edges";
   static readonly TYPES_KEY = "types";
   static readonly TAGS_KEY = "tags";
+  static readonly SECTIONS_KEY = "sections";
   static readonly CONTENT_KEY = "content";
   static readonly TITLES_KEY = "titles";
   static readonly META_KEY = "meta";
@@ -438,6 +476,7 @@ export class WorkspaceDocument {
   private readonly edges: LoroMap;
   private readonly types: LoroMap;
   private readonly tags: LoroMap;
+  private readonly sections: LoroMap;
   private readonly content: LoroMap;
   private readonly titles: LoroMap;
   private readonly meta: LoroMap;
@@ -447,6 +486,7 @@ export class WorkspaceDocument {
   private readonly boardCache = new Map<string, Board>();
   private readonly typeCache = new Map<string, CardType>();
   private readonly tagCache = new Map<string, Tag>();
+  private readonly sectionCache = new Map<string, Section>();
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
@@ -462,6 +502,7 @@ export class WorkspaceDocument {
     this.edges = doc.getMap(WorkspaceDocument.EDGES_KEY);
     this.types = doc.getMap(WorkspaceDocument.TYPES_KEY);
     this.tags = doc.getMap(WorkspaceDocument.TAGS_KEY);
+    this.sections = doc.getMap(WorkspaceDocument.SECTIONS_KEY);
     this.content = doc.getMap(WorkspaceDocument.CONTENT_KEY);
     this.titles = doc.getMap(WorkspaceDocument.TITLES_KEY);
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
@@ -472,6 +513,7 @@ export class WorkspaceDocument {
       edges: new Set(this.edges.keys()),
       types: new Set(this.types.keys()),
       tags: new Set(this.tags.keys()),
+      sections: new Set(this.sections.keys()),
     };
 
     doc.subscribe((batch) => {
@@ -493,7 +535,8 @@ export class WorkspaceDocument {
           root !== WorkspaceDocument.PLACEMENTS_KEY &&
           root !== WorkspaceDocument.EDGES_KEY &&
           root !== WorkspaceDocument.TYPES_KEY &&
-          root !== WorkspaceDocument.TAGS_KEY
+          root !== WorkspaceDocument.TAGS_KEY &&
+          root !== WorkspaceDocument.SECTIONS_KEY
         ) {
           continue;
         }
@@ -571,6 +614,9 @@ export class WorkspaceDocument {
       case "tags":
         this.tagCache.delete(key);
         break;
+      case "sections":
+        this.sectionCache.delete(key);
+        break;
     }
   }
 
@@ -588,6 +634,8 @@ export class WorkspaceDocument {
         return this.getType(key) ?? null;
       case "tags":
         return this.getTag(key) ?? null;
+      case "sections":
+        return this.getSection(key) ?? null;
     }
   }
 
@@ -685,6 +733,10 @@ export class WorkspaceDocument {
     for (const edgeId of [...this.edges.keys()]) {
       const fields = this.edges.get(edgeId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.edges.delete(edgeId);
+    }
+    for (const sectionId of [...this.sections.keys()]) {
+      const fields = this.sections.get(sectionId);
+      if (isMap(fields) && readString(fields, "boardId") === id) this.sections.delete(sectionId);
     }
     this.boards.delete(id);
 
@@ -1032,6 +1084,137 @@ export class WorkspaceDocument {
     if (this.tags.get(id) === undefined) return;
     this.tags.delete(id);
     this.commit(`${STRUCT_ORIGIN}tag`);
+  }
+
+  // -------------------------------------------------------------- sections
+
+  private cachedSection(id: string): Section | undefined {
+    const cached = this.sectionCache.get(id);
+    if (cached) return cached;
+    const value = this.sections.get(id);
+    if (!isMap(value)) return undefined;
+    const section = sectionFromMap(id, value);
+    this.sectionCache.set(id, section);
+    return section;
+  }
+
+  listSections(boardId?: string): Section[] {
+    return this.sections
+      .keys()
+      .map((id) => this.cachedSection(id))
+      .filter((section): section is Section => section !== undefined)
+      .filter((section) => boardId === undefined || section.boardId === boardId)
+      .sort((a, b) => a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
+
+  getSection(id: string): Section | undefined {
+    return this.cachedSection(id);
+  }
+
+  createSection(input: CreateSectionInput): Section {
+    if (!this.boards.get(input.boardId)) {
+      throw new Error(`Unknown board: ${input.boardId}`);
+    }
+    const now = Date.now();
+    const existing = this.listSections(input.boardId);
+    const section = sectionSchema.parse({
+      id: input.id ?? crypto.randomUUID(),
+      boardId: input.boardId,
+      title: input.title ?? "",
+      x: input.x,
+      y: input.y,
+      width: Math.max(80, input.width ?? 360),
+      height: Math.max(60, input.height ?? 260),
+      z: existing.length > 0 ? (existing.at(-1)?.z ?? 0) + 1 : 0,
+      createdAt: now,
+      updatedAt: now,
+      ...(input.color ? { color: input.color } : {}),
+    });
+    this.writeSection(section);
+    this.commit(`${STRUCT_ORIGIN}create-section`);
+    return section;
+  }
+
+  renameSection(id: string, title: string): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    fields.set("title", title);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}rename-section`);
+  }
+
+  setSectionColor(id: string, color: Section["color"] | null): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    if (color) fields.set("color", color);
+    else fields.delete("color");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}section-color`);
+  }
+
+  updateSectionGeometry(id: string, rect: Pick<Section, "x" | "y" | "width" | "height">): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    fields.set("x", rect.x);
+    fields.set("y", rect.y);
+    fields.set("width", Math.max(80, rect.width));
+    fields.set("height", Math.max(60, rect.height));
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}resize-section`);
+  }
+
+  /**
+   * One commit for a section drag: the region, any sections contained by it and
+   * every member placement. Members are supplied by the caller from stored
+   * geometry so peers and the drag leader agree without extra presence payload.
+   */
+  moveSectionsBatch(input: {
+    sections: {
+      id: string;
+      x: number;
+      y: number;
+      width?: number;
+      height?: number;
+    }[];
+    placements?: { boardId: string; cardId: string; x: number; y: number }[];
+  }): void {
+    const now = Date.now();
+    for (const next of input.sections) {
+      const fields = this.sections.get(next.id);
+      if (!isMap(fields)) continue;
+      fields.set("x", next.x);
+      fields.set("y", next.y);
+      if (next.width !== undefined) fields.set("width", Math.max(80, next.width));
+      if (next.height !== undefined) fields.set("height", Math.max(60, next.height));
+      fields.set("updatedAt", now);
+    }
+    for (const next of input.placements ?? []) {
+      const fields = this.placements.get(placementKey(next.boardId, next.cardId));
+      if (!isMap(fields)) continue;
+      fields.set("x", next.x);
+      fields.set("y", next.y);
+    }
+    this.commit(`${STRUCT_ORIGIN}move-section`);
+  }
+
+  deleteSection(id: string): void {
+    if (this.sections.get(id) === undefined) return;
+    this.sections.delete(id);
+    this.commit(`${STRUCT_ORIGIN}delete-section`);
+  }
+
+  private writeSection(section: Section): void {
+    const fields = this.sections.ensureMergeableMap(section.id);
+    fields.set("boardId", section.boardId);
+    fields.set("title", section.title);
+    fields.set("x", section.x);
+    fields.set("y", section.y);
+    fields.set("width", section.width);
+    fields.set("height", section.height);
+    fields.set("z", section.z);
+    fields.set("createdAt", section.createdAt);
+    fields.set("updatedAt", section.updatedAt);
+    if (section.color) fields.set("color", section.color);
   }
 
   // ----------------------------------------------------------------- cards

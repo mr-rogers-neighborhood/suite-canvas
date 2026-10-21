@@ -4,6 +4,7 @@ import type {
   CardType,
   GraphEdge,
   Placement,
+  Section,
   Tag,
   WorkspaceAction,
   WorkspaceChange,
@@ -26,7 +27,7 @@ function cardValue(value: WorkspaceChange["value"]): Card | null {
 }
 
 function placementValue(value: WorkspaceChange["value"]): Placement | null {
-  return value !== null && "z" in value ? value : null;
+  return value !== null && "cardId" in value && "z" in value ? value : null;
 }
 
 function edgeValue(value: WorkspaceChange["value"]): GraphEdge | null {
@@ -43,6 +44,10 @@ function tagValue(value: WorkspaceChange["value"]): Tag | null {
     : null;
 }
 
+function sectionValue(value: WorkspaceChange["value"]): Section | null {
+  return value !== null && "title" in value && "width" in value ? value : null;
+}
+
 function compareBoards(a: Board, b: Board): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
@@ -57,6 +62,10 @@ function compareTypes(a: CardType, b: CardType): number {
 
 function compareTags(a: Tag, b: Tag): number {
   return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+}
+
+function compareSections(a: Section, b: Section): number {
+  return a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 
 /** Insertion point in a list already sorted like the matching `list*` read. */
@@ -189,6 +198,17 @@ export function applyWorkspaceChange(
         compareTags,
       );
       return tags === snapshot.tags ? snapshot : { ...snapshot, tags };
+    }
+    case "sections": {
+      const sections = changeSorted(
+        snapshot.sections,
+        change.action,
+        change.key,
+        sectionValue(change.value),
+        (section) => section.id,
+        compareSections,
+      );
+      return sections === snapshot.sections ? snapshot : { ...snapshot, sections };
     }
   }
 }

@@ -1,3 +1,4 @@
+import { sectionForCard } from "@suite/graph";
 import { useEffect, useMemo } from "react";
 import { cardReferences } from "../cards/cardReferences";
 import { useCardTitle } from "../hooks/useCardContainers";
@@ -18,6 +19,7 @@ export function CardInspectorHost() {
   const closeInspector = useUiStore((state) => state.closeInspector);
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
+  const startEditing = useUiStore((state) => state.startEditing);
 
   const card = inspectorNodeId
     ? snapshot.cards.find((entry) => entry.id === inspectorNodeId)
@@ -33,6 +35,23 @@ export function CardInspectorHost() {
     [snapshot.boards, snapshot.placements, activeBoardId],
   );
 
+  const section = useMemo(() => {
+    if (!card || !activeBoardId) return null;
+    const placement = snapshot.placements.find(
+      (entry) => entry.boardId === activeBoardId && entry.cardId === card.id,
+    );
+    if (!placement) return null;
+    const match = sectionForCard(
+      placement,
+      snapshot.sections.filter((entry) => entry.boardId === activeBoardId),
+    );
+    if (!match) return null;
+    return {
+      name: match.title || "Untitled section",
+      ...(match.color ? { color: `var(--section-${match.color})` } : {}),
+    };
+  }, [card, activeBoardId, snapshot.placements, snapshot.sections]);
+
   // Cheap: one lookup per type on the card, and the snapshot re-renders this
   // panel whenever a field definition changes.
   const fields = card ? workspace.viewCardFields(card) : [];
@@ -47,7 +66,9 @@ export function CardInspectorHost() {
       tags={snapshot.tags}
       fields={fields}
       references={references.get(card.id) ?? []}
+      section={section}
       onClose={closeInspector}
+      onEdit={() => startEditing(card.id, "body")}
       onSetType={(typeId) => workspace.setCardTypes(card.id, [typeId], typeId)}
       onAddTag={(tagId) => workspace.addCardTag(card.id, tagId)}
       onRemoveTag={(tagId) => workspace.removeCardTag(card.id, tagId)}

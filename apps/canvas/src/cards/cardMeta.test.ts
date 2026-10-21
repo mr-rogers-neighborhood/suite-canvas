@@ -22,7 +22,17 @@ const type: CardType = {
     },
     { id: "owner", name: "Owner", kind: "text", required: false, order: 1, options: [] },
     { id: "done", name: "Done", kind: "checkbox", required: false, order: 2, options: [] },
-    { id: "labels", name: "Labels", kind: "multiSelect", required: false, order: 3, options: [] },
+    {
+      id: "labels",
+      name: "Labels",
+      kind: "multiSelect",
+      required: false,
+      order: 3,
+      options: [
+        { id: "active", label: "Active", order: 0 },
+        { id: "done", label: "Done", order: 1 },
+      ],
+    },
   ],
 };
 
@@ -41,12 +51,27 @@ const card: Card = {
 const tags = new Map<string, Tag>([["t1", { id: "t1", name: "Research", createdAt: 0 }]]);
 
 describe("cardMeta", () => {
-  it("should project the first two non-empty scalar properties", () => {
-    const meta = cardMeta(card, new Map([["project", type]]), tags);
+  it("should project the first two non-empty scalar properties when limited", () => {
+    const meta = cardMeta(card, new Map([["project", type]]), tags, 2);
 
     expect(meta.properties).toEqual([
       { fieldId: "status", label: "Status", value: "Active" },
       { fieldId: "owner", label: "Owner", value: "Ada" },
+    ]);
+  });
+
+  it("should project every non-empty property and format multi-select labels", () => {
+    const multi = {
+      ...card,
+      properties: { ...card.properties, labels: ["active", "done"] },
+    };
+    const meta = cardMeta(multi, new Map([["project", type]]), tags);
+
+    expect(meta.properties).toEqual([
+      { fieldId: "status", label: "Status", value: "Active" },
+      { fieldId: "owner", label: "Owner", value: "Ada" },
+      { fieldId: "done", label: "Done", value: "\u2713" },
+      { fieldId: "labels", label: "Labels", value: "Active, Done" },
     ]);
   });
 

@@ -66,6 +66,32 @@ export const ReadOnly: Story = { args: base };
 
 export const Selected: Story = { args: { ...base, selected: true } };
 
+export const WithExpandedFrontmatter: Story = {
+  args: {
+    ...base,
+    meta: {
+      properties: [
+        { fieldId: "status", label: "Status", value: "Active" },
+        { fieldId: "owner", label: "Owner", value: "Ada Lovelace" },
+      ],
+      tags: ["Research", "Q4"],
+    },
+    metaExpanded: true,
+    onToggleMeta: () => {},
+  },
+};
+
+export const WithCollapsedFrontmatter: Story = {
+  args: {
+    ...base,
+    meta: {
+      properties: [{ fieldId: "status", label: "Status", value: "Active" }],
+      tags: ["Research"],
+    },
+    onToggleMeta: () => {},
+  },
+};
+
 export const EditingTitle: Story = { args: { ...base, editing: "title" } };
 
 export const EditingBody: Story = { args: { ...base, editing: "body" } };

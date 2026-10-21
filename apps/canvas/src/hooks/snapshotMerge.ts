@@ -1,4 +1,4 @@
-import type { Board, Card, CardType, GraphEdge, Placement, Tag } from "@suite/graph";
+import type { Board, Card, CardType, GraphEdge, Placement, Section, Tag } from "@suite/graph";
 
 export interface WorkspaceSnapshot {
   boards: Board[];
@@ -7,6 +7,7 @@ export interface WorkspaceSnapshot {
   edges: GraphEdge[];
   types: CardType[];
   tags: Tag[];
+  sections: Section[];
 }
 
 /** Reuses the previous array when every element is still the same object. */
@@ -35,15 +36,17 @@ export function mergeSnapshots(
   const edges = reuseArray(previous.edges, next.edges);
   const types = reuseArray(previous.types, next.types);
   const tags = reuseArray(previous.tags, next.tags);
+  const sections = reuseArray(previous.sections, next.sections);
   if (
     boards === previous.boards &&
     cards === previous.cards &&
     placements === previous.placements &&
     edges === previous.edges &&
     types === previous.types &&
-    tags === previous.tags
+    tags === previous.tags &&
+    sections === previous.sections
   ) {
     return previous;
   }
-  return { boards, cards, placements, edges, types, tags };
+  return { boards, cards, placements, edges, types, tags, sections };
 }

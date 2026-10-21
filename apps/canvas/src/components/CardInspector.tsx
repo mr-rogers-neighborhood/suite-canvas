@@ -11,7 +11,11 @@ export interface CardInspectorProps {
   tags: Tag[];
   fields: CardFieldView[];
   references: CardReference[];
+  /** Section the card belongs to on the active board, when any. */
+  section?: { name: string; color?: string } | null;
   onClose: () => void;
+  /** Starts editing the card's text on the canvas. */
+  onEdit: () => void;
   onSetType: (typeId: string) => void;
   onAddTag: (tagId: string) => void;
   onRemoveTag: (tagId: string) => void;
@@ -41,7 +45,9 @@ export function CardInspector({
   tags,
   fields,
   references,
+  section = null,
   onClose,
+  onEdit,
   onSetType,
   onAddTag,
   onRemoveTag,
@@ -68,6 +74,15 @@ export function CardInspector({
               : "In the inbox"}
           </p>
         </div>
+        <button
+          type="button"
+          aria-label="Edit card on canvas"
+          data-testid="inspector-edit"
+          className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={onEdit}
+        >
+          Edit
+        </button>
         <button
           type="button"
           aria-label="Close card info"
@@ -180,6 +195,19 @@ export function CardInspector({
             </div>
           )}
         </Section>
+
+        {section ? (
+          <Section title="Section">
+            <p className="flex items-center gap-1.5 text-[12px]" data-testid="inspector-section">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full"
+                style={{ background: section.color ?? "var(--ink-muted)" }}
+              />
+              <span className="min-w-0 flex-1 truncate">{section.name}</span>
+            </p>
+          </Section>
+        ) : null}
 
         <Section title="On boards">
           {references.length === 0 ? (

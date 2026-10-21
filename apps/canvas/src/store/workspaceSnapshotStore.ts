@@ -10,6 +10,7 @@ export function readWorkspace(workspace: WorkspaceDocument): WorkspaceSnapshot {
     edges: workspace.listEdges(),
     types: workspace.listTypes(),
     tags: workspace.listTags(),
+    sections: workspace.listSections(),
   };
 }
 

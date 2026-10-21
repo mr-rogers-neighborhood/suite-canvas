@@ -28,6 +28,10 @@ export interface NodeCardProps {
   type: CardType;
   /** Read-only property and tag chips for the card face. */
   meta: CardMeta;
+  /** Whether the card's frontmatter is expanded. Local UI state only. */
+  metaExpanded?: boolean;
+  /** Toggles the frontmatter area. */
+  onToggleMeta?: () => void;
   /** Card document that owns the title and body rich text. */
   cardDoc: LoroDoc;
   /** Body rich-text container. */
@@ -81,6 +85,8 @@ export function NodeCard({
   card,
   type,
   meta,
+  metaExpanded = false,
+  onToggleMeta,
   cardDoc,
   contentId,
   titleId,
@@ -224,6 +230,9 @@ export function NodeCard({
     selector: ({ editor: current }) => current.isEmpty,
   });
 
+  const hasMeta = meta.properties.length > 0 || meta.tags.length > 0;
+  const metaCount = meta.properties.length + meta.tags.length;
+
   // Layout effect so the editor is editable and focused before the browser
   // paints; otherwise the first keystroke of a brand-new note can be dropped.
   useLayoutEffect(() => {
@@ -286,6 +295,14 @@ export function NodeCard({
 
   const menuItems: ContextMenuItem[] = [
     { label: "Card info", onSelect: () => onOpenInfo?.() },
+    ...(hasMeta && onToggleMeta
+      ? [
+          {
+            label: `${metaExpanded ? "Hide" : "Show"} details`,
+            onSelect: onToggleMeta,
+          },
+        ]
+      : []),
     { label: "Edit title", onSelect: () => onStartEditing?.("title") },
     { label: "Edit body", onSelect: () => onStartEditing?.("body") },
     { label: "Remove from board", onSelect: () => onRemoveFromBoard?.() },
@@ -293,6 +310,8 @@ export function NodeCard({
   ];
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the card is a canvas node; keyboard open is handled by Enter on the selected node.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the card is a canvas node; keyboard open is handled by Enter on the selected node.
     <div
       data-testid="node-card"
       data-node-id={card.id}
@@ -309,8 +328,34 @@ export function NodeCard({
       onPointerDown={(event) => {
         pointerOrigin.current = { x: event.clientX, y: event.clientY };
       }}
+      onClick={(event) => {
+        if (editing) return;
+        const origin = pointerOrigin.current;
+        const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
+        // A drag moves the card; a click without movement opens its info.
+        if (moved > 4) return;
+        onOpenInfo?.();
+      }}
     >
       <div className="card-header flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-2">
+        {hasMeta ? (
+          <button
+            type="button"
+            aria-label={metaExpanded ? "Hide details" : "Show details"}
+            aria-expanded={metaExpanded}
+            title={metaExpanded ? "Hide properties" : `Show properties (${metaCount})`}
+            data-testid="card-meta-toggle"
+            className="card-meta-toggle nodrag shrink-0 rounded px-0.5 text-[10px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleMeta?.();
+            }}
+          >
+            <span aria-hidden="true">{metaExpanded ? "\u25be" : "\u25b8"}</span>
+            {metaExpanded ? null : <span className="ml-0.5">{metaCount}</span>}
+          </button>
+        ) : null}
+
         <button
           type="button"
           aria-label={`Card type: ${type.name}`}
@@ -333,18 +378,6 @@ export function NodeCard({
               className="absolute inset-0 z-10 cursor-text"
               onDoubleClick={(event) => {
                 event.stopPropagation();
-                onStartEditing?.("title");
-              }}
-              onClick={(event) => {
-                // Keyboard activation has no pointer movement to compare.
-                if (event.detail > 0) {
-                  const origin = pointerOrigin.current;
-                  const moved = origin
-                    ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y)
-                    : 0;
-                  // A drag is not a click, and the first click only selects.
-                  if (moved > 4 || !selected) return;
-                }
                 onStartEditing?.("title");
               }}
             />
@@ -383,6 +416,7 @@ export function NodeCard({
           data-testid="card-menu"
           className="nodrag shrink-0 rounded px-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
           onClick={(event) => {
+            event.stopPropagation();
             const rect = event.currentTarget.getBoundingClientRect();
             setMenu({ x: rect.right - 4, y: rect.bottom + 4 });
           }}
@@ -391,38 +425,45 @@ export function NodeCard({
         </button>
       </div>
 
-      {meta.properties.length > 0 || meta.tags.length > 0 ? (
-        <div
-          className="card-meta flex shrink-0 flex-wrap items-center gap-1 px-2.5 pb-1"
-          data-testid="card-meta"
-        >
+      {hasMeta && metaExpanded ? (
+        <div className="card-meta shrink-0 px-2.5 pb-1.5" data-testid="card-meta">
           {meta.properties.map((property) => (
-            <span key={property.fieldId} className="card-meta-chip" title={property.label}>
+            <button
+              key={property.fieldId}
+              type="button"
+              className="card-meta-row nodrag"
+              title={`${property.label}: ${property.value}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenInfo?.();
+              }}
+            >
               <span className="card-meta-label">{property.label}</span>
-              {property.value !== property.label ? <span>{property.value}</span> : null}
-            </span>
+              <span className="card-meta-value">{property.value}</span>
+            </button>
           ))}
-          {meta.tags.map((name) => (
-            <span key={name} className="card-meta-tag">
-              #{name}
-            </span>
-          ))}
+          {meta.tags.length > 0 ? (
+            <div className="card-meta-tags">
+              {meta.tags.map((name) => (
+                <span key={name} className="card-meta-tag">
+                  #{name}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: clicking the body focuses the nested editor */}
       <div
         className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
           editing === "body" ? "nodrag" : ""
         }`}
         data-testid="card-body"
-        onClick={(event) => {
+        onDoubleClick={(event) => {
           if (editing === "body") return;
-          const origin = pointerOrigin.current;
-          const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
-          // A drag moves the card; a click without movement enters the text.
-          if (moved <= 4) onStartEditing?.("body");
+          event.stopPropagation();
+          onStartEditing?.("body");
         }}
       >
         <EditorContent editor={editor} />

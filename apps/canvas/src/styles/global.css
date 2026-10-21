@@ -272,10 +272,11 @@ body {
 /* Remote carets rendered by loro-prosemirror (LoroEphemeralCursorPlugin). */
 .ProseMirror-loro-cursor {
   position: relative;
+  display: inline-block;
+  height: 1.4em;
   margin-left: -1px;
-  margin-right: -1px;
   border-left: 2px solid;
-  border-right: 2px solid;
+  vertical-align: text-bottom;
   word-break: normal;
   pointer-events: none;
 }

@@ -47,14 +47,19 @@ export interface CreateEdgeInput {
 
 /** Deterministic id so every client seeds the same default board. */
 export const DEFAULT_BOARD_ID = "board-1";
-const SCHEMA_VERSION = 1;
+/**
+ * 1: single-board `nodes`/`edges` → workspace.
+ * 2: whole-record map values → nested field maps, so independent edits of the
+ *    same card/placement/edge merge instead of clobbering each other.
+ */
+const SCHEMA_VERSION = 2;
+
+type Fields = Y.Map<unknown>;
+
+export const CONNECTORS_FIELD = "connectors";
 
 export function placementKey(boardId: string, cardId: string): string {
   return `${boardId}/${cardId}`;
-}
-
-function toAction(action: unknown): WorkspaceAction {
-  return action === "add" || action === "delete" ? action : "update";
 }
 
 /** Backfills fields added after a document was created. */
@@ -77,6 +82,134 @@ function normalizeEdge(edge: GraphEdge): GraphEdge {
     bidirectional: typeof legacy.bidirectional === "boolean" ? legacy.bidirectional : false,
     path: legacy.path ?? "bezier",
   };
+}
+
+/** Nested record maps: one key per fact, so concurrent edits merge. */
+function isFields(value: unknown): value is Fields {
+  return value instanceof Y.Map;
+}
+
+function connectorFromFields(id: string, fields: Fields): Connector {
+  const x = fields.get("x");
+  const y = fields.get("y");
+  return {
+    id,
+    x: typeof x === "number" ? x : 0,
+    y: typeof y === "number" ? y : 0,
+  };
+}
+
+export function cardFromFields(id: string, fields: Fields): Card {
+  const connectorsField = fields.get(CONNECTORS_FIELD);
+  const connectors: Connector[] = [];
+  if (isFields(connectorsField)) {
+    for (const [connectorId, connectorFields] of connectorsField) {
+      if (isFields(connectorFields))
+        connectors.push(connectorFromFields(connectorId, connectorFields));
+    }
+  }
+
+  const kind = fields.get("kind");
+  // No `normalizeCard` here: minting default connectors on read would hand out
+  // fresh ids on every read, which breaks handles and the links that use them.
+  return {
+    id,
+    kind: kind === "note" ? kind : "note",
+    createdAt: Number(fields.get("createdAt") ?? 0),
+    updatedAt: Number(fields.get("updatedAt") ?? 0),
+    connectors,
+    deletedAt: (fields.get("deletedAt") as number | null | undefined) ?? null,
+    data: (fields.get("data") as Record<string, never> | undefined) ?? {},
+  } as Card;
+}
+
+export function placementFromFields(key: string, fields: Fields): Placement {
+  const [boardId, cardId] = key.split("/");
+  const width = fields.get("width");
+  const height = fields.get("height");
+  return placementSchema.parse({
+    boardId: (fields.get("boardId") as string | undefined) ?? boardId ?? "",
+    cardId: (fields.get("cardId") as string | undefined) ?? cardId ?? "",
+    x: Number(fields.get("x") ?? 0),
+    y: Number(fields.get("y") ?? 0),
+    z: Number(fields.get("z") ?? 0),
+    createdAt: Number(fields.get("createdAt") ?? 0),
+    ...(typeof width === "number" ? { width } : {}),
+    ...(typeof height === "number" ? { height } : {}),
+  });
+}
+
+export function edgeFromFields(id: string, fields: Fields): GraphEdge {
+  const read = (key: string): string | undefined => {
+    const value = fields.get(key);
+    return typeof value === "string" ? value : undefined;
+  };
+
+  const edge: Record<string, unknown> = {
+    id,
+    boardId: read("boardId") ?? "",
+    source: read("source") ?? "",
+    target: read("target") ?? "",
+    kind: read("kind") ?? "references",
+    path: read("path") ?? "bezier",
+    bidirectional: fields.get("bidirectional") === true,
+    createdAt: Number(fields.get("createdAt") ?? 0),
+    updatedAt: Number(fields.get("updatedAt") ?? 0),
+  };
+  const sourceConnector = read("sourceConnector");
+  const targetConnector = read("targetConnector");
+  const label = read("label");
+  if (sourceConnector) edge.sourceConnector = sourceConnector;
+  if (targetConnector) edge.targetConnector = targetConnector;
+  if (label) edge.label = label;
+  return normalizeEdge(graphEdgeSchema.parse(edge));
+}
+
+function fieldsOfCard(card: Card): Fields {
+  const fields = new Y.Map<unknown>();
+  fields.set("kind", card.kind);
+  fields.set("createdAt", card.createdAt);
+  fields.set("updatedAt", card.updatedAt);
+  fields.set("deletedAt", card.deletedAt ?? null);
+  fields.set("data", card.data);
+  const connectors = new Y.Map<Fields>();
+  for (const connector of card.connectors) {
+    const connectorFields = new Y.Map<unknown>();
+    connectorFields.set("x", connector.x);
+    connectorFields.set("y", connector.y);
+    connectors.set(connector.id, connectorFields);
+  }
+  fields.set(CONNECTORS_FIELD, connectors);
+  return fields;
+}
+
+function fieldsOfPlacement(placement: Placement): Fields {
+  const fields = new Y.Map<unknown>();
+  fields.set("boardId", placement.boardId);
+  fields.set("cardId", placement.cardId);
+  fields.set("x", placement.x);
+  fields.set("y", placement.y);
+  fields.set("z", placement.z);
+  fields.set("createdAt", placement.createdAt);
+  if (placement.width !== undefined) fields.set("width", placement.width);
+  if (placement.height !== undefined) fields.set("height", placement.height);
+  return fields;
+}
+
+function fieldsOfEdge(edge: GraphEdge): Fields {
+  const fields = new Y.Map<unknown>();
+  fields.set("boardId", edge.boardId);
+  fields.set("source", edge.source);
+  fields.set("target", edge.target);
+  fields.set("kind", edge.kind);
+  fields.set("path", edge.path);
+  fields.set("bidirectional", edge.bidirectional);
+  fields.set("createdAt", edge.createdAt);
+  fields.set("updatedAt", edge.updatedAt);
+  if (edge.sourceConnector) fields.set("sourceConnector", edge.sourceConnector);
+  if (edge.targetConnector) fields.set("targetConnector", edge.targetConnector);
+  if (edge.label) fields.set("label", edge.label);
+  return fields;
 }
 
 function sortByLayer(placements: Placement[]): Placement[] {
@@ -125,9 +258,9 @@ export class WorkspaceDocument {
 
   readonly doc: Y.Doc;
   private readonly boards: Y.Map<Board>;
-  private readonly cards: Y.Map<Card>;
-  private readonly placements: Y.Map<Placement>;
-  private readonly edges: Y.Map<GraphEdge>;
+  private readonly cards: Y.Map<Fields>;
+  private readonly placements: Y.Map<Fields>;
+  private readonly edges: Y.Map<Fields>;
   private readonly content: Y.Map<Y.XmlFragment>;
   private readonly titles: Y.Map<Y.XmlFragment>;
   /** Local, never-synced fragments used until the shared one arrives. */
@@ -136,13 +269,14 @@ export class WorkspaceDocument {
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
     this.boards = doc.getMap<Board>(WorkspaceDocument.BOARDS_KEY);
-    this.cards = doc.getMap<Card>(WorkspaceDocument.CARDS_KEY);
-    this.placements = doc.getMap<Placement>(WorkspaceDocument.PLACEMENTS_KEY);
-    this.edges = doc.getMap<GraphEdge>(WorkspaceDocument.EDGES_KEY);
+    this.cards = doc.getMap<Fields>(WorkspaceDocument.CARDS_KEY);
+    this.placements = doc.getMap<Fields>(WorkspaceDocument.PLACEMENTS_KEY);
+    this.edges = doc.getMap<Fields>(WorkspaceDocument.EDGES_KEY);
     this.content = doc.getMap<Y.XmlFragment>(WorkspaceDocument.CONTENT_KEY);
     this.titles = doc.getMap<Y.XmlFragment>(WorkspaceDocument.TITLES_KEY);
 
     migrateLegacyDocument(doc);
+    migrateRecordsToFieldMaps(doc);
   }
 
   /** Seeding is once per workspace, not once per board. */
@@ -194,20 +328,20 @@ export class WorkspaceDocument {
   deleteBoard(id: string, options: { cards?: "keep" | "trash" } = {}): void {
     const cardsOption = options.cards ?? "keep";
 
-    for (const [key, placement] of this.placements) {
-      if (placement.boardId === id) this.placements.delete(key);
+    for (const [key, value] of this.placements) {
+      if (placementFromFields(key, value).boardId === id) this.placements.delete(key);
     }
-    for (const [edgeId, edge] of this.edges) {
-      if (edge.boardId === id) this.edges.delete(edgeId);
+    for (const [edgeId, value] of this.edges) {
+      if (edgeFromFields(edgeId, value).boardId === id) this.edges.delete(edgeId);
     }
     this.boards.delete(id);
 
     if (cardsOption === "trash") {
       const now = Date.now();
-      for (const card of this.cards.values()) {
+      for (const card of this.listCards()) {
         if (card.deletedAt) continue;
         if (this.listCardPlacements(card.id).length > 0) continue;
-        this.cards.set(card.id, { ...card, deletedAt: now, updatedAt: now });
+        this.mutateCard(card.id, (fields) => fields.set("deletedAt", now));
       }
     }
   }
@@ -222,16 +356,77 @@ export class WorkspaceDocument {
   // ----------------------------------------------------------------- cards
 
   listCards(): Card[] {
-    return Array.from(this.cards.values(), normalizeCard);
+    return Array.from(this.cards.entries(), ([id, value]) => this.materializeCard(id, value));
+  }
+
+  private materializeCard(id: string, value: unknown): Card {
+    // A plain record is either pre-migration data or a write from an old client.
+    return isFields(value) ? cardFromFields(id, value) : normalizeCard(value as Card);
   }
 
   getCard(id: string): Card | undefined {
-    const card = this.cards.get(id);
-    return card ? normalizeCard(card) : undefined;
+    const value = this.cards.get(id);
+    return value ? this.materializeCard(id, value) : undefined;
   }
 
+  /** Full write. Prefer the field-level operations below for concurrent edits. */
   setCard(card: Card): void {
-    this.cards.set(card.id, cardSchema.parse(normalizeCard(card)));
+    const parsed = cardSchema.parse(normalizeCard(card));
+    this.doc.transact(() => {
+      const existing = this.cards.get(card.id);
+      if (!isFields(existing)) {
+        this.cards.set(parsed.id, fieldsOfCard(parsed));
+        return;
+      }
+
+      existing.set("kind", parsed.kind);
+      existing.set("createdAt", parsed.createdAt);
+      existing.set("updatedAt", parsed.updatedAt);
+      existing.set("deletedAt", parsed.deletedAt ?? null);
+      existing.set("data", parsed.data);
+
+      const current = existing.get(CONNECTORS_FIELD);
+      const connectors: Y.Map<Fields> = isFields(current)
+        ? (current as Y.Map<Fields>)
+        : new Y.Map<Fields>();
+      if (!isFields(current)) existing.set(CONNECTORS_FIELD, connectors);
+
+      const wanted = new Set(parsed.connectors.map((connector) => connector.id));
+      for (const connector of parsed.connectors) {
+        const fields = connectors.get(connector.id);
+        if (isFields(fields)) {
+          fields.set("x", connector.x);
+          fields.set("y", connector.y);
+        } else {
+          const created = new Y.Map<unknown>();
+          created.set("x", connector.x);
+          created.set("y", connector.y);
+          connectors.set(connector.id, created);
+        }
+      }
+      for (const connectorId of [...connectors.keys()]) {
+        if (!wanted.has(connectorId)) connectors.delete(connectorId);
+      }
+    });
+  }
+
+  /** Field-level edit; only the touched keys are written. */
+  private mutateCard(cardId: string, mutate: (fields: Fields) => void): void {
+    const fields = this.cards.get(cardId);
+    if (!isFields(fields)) return;
+    this.doc.transact(() => {
+      mutate(fields);
+      fields.set("updatedAt", Date.now());
+    });
+  }
+
+  private connectorFields(cardId: string, connectorId: string): Fields | undefined {
+    const cardFields = this.cards.get(cardId);
+    if (!isFields(cardFields)) return undefined;
+    const connectors = cardFields.get(CONNECTORS_FIELD);
+    if (!isFields(connectors)) return undefined;
+    const fields = connectors.get(connectorId);
+    return isFields(fields) ? fields : undefined;
   }
 
   createCard(input: CreateCardInput = {}): Card {
@@ -248,7 +443,7 @@ export class WorkspaceDocument {
 
     // One transaction so a peer never sees the card before its text containers.
     this.doc.transact(() => {
-      this.setCard(card);
+      this.cards.set(card.id, fieldsOfCard(card));
       this.getContent(card.id);
       this.getTitle(card.id);
       if (input.boardId) {
@@ -266,26 +461,29 @@ export class WorkspaceDocument {
     const card = this.getCard(id);
     if (!card || card.deletedAt) return;
     const now = Date.now();
-    this.setCard({ ...card, deletedAt: now, updatedAt: now });
+    this.mutateCard(id, (fields) => fields.set("deletedAt", now));
   }
 
   restoreCard(id: string): void {
     const card = this.getCard(id);
     if (!card?.deletedAt) return;
-    this.setCard({ ...card, deletedAt: null, updatedAt: Date.now() });
+    this.mutateCard(id, (fields) => fields.set("deletedAt", null));
   }
 
   /** Destroys a card and everything that referenced it. Used by "delete forever". */
   purgeCard(id: string): void {
-    this.cards.delete(id);
-    for (const [key, placement] of this.placements) {
-      if (placement.cardId === id) this.placements.delete(key);
-    }
-    for (const [edgeId, edge] of this.edges) {
-      if (edge.source === id || edge.target === id) this.edges.delete(edgeId);
-    }
-    this.content.delete(id);
-    this.titles.delete(id);
+    // Snapshot first: deleting while iterating a Y.Map skips entries.
+    const placements = this.listPlacements().filter((placement) => placement.cardId === id);
+    const edges = this.listEdges().filter((edge) => edge.source === id || edge.target === id);
+    this.doc.transact(() => {
+      this.cards.delete(id);
+      for (const placement of placements) {
+        this.placements.delete(placementKey(placement.boardId, placement.cardId));
+      }
+      for (const edge of edges) this.edges.delete(edge.id);
+      this.content.delete(id);
+      this.titles.delete(id);
+    });
   }
 
   /**
@@ -353,7 +551,13 @@ export class WorkspaceDocument {
   // ------------------------------------------------------------ placements
 
   listPlacements(): Placement[] {
-    return Array.from(this.placements.values());
+    return Array.from(this.placements.entries(), ([key, value]) =>
+      this.materializePlacement(key, value),
+    );
+  }
+
+  private materializePlacement(key: string, value: unknown): Placement {
+    return isFields(value) ? placementFromFields(key, value) : placementSchema.parse(value);
   }
 
   listCardPlacements(cardId: string): Placement[] {
@@ -363,7 +567,9 @@ export class WorkspaceDocument {
   }
 
   getPlacement(boardId: string, cardId: string): Placement | undefined {
-    return this.placements.get(placementKey(boardId, cardId));
+    const key = placementKey(boardId, cardId);
+    const value = this.placements.get(key);
+    return value ? this.materializePlacement(key, value) : undefined;
   }
 
   /** The board a card calls home: its oldest placement. */
@@ -412,9 +618,8 @@ export class WorkspaceDocument {
 
     const existing = this.getPlacement(boardId, cardId);
     if (existing) {
-      const moved: Placement = { ...existing, ...position };
-      this.placements.set(placementKey(boardId, cardId), placementSchema.parse(moved));
-      return moved;
+      this.updatePlacementPosition(boardId, cardId, position);
+      return { ...existing, ...position };
     }
 
     const placements = this.listBoardPlacements(boardId);
@@ -427,7 +632,7 @@ export class WorkspaceDocument {
       z: top,
       createdAt: this.nextPlacementTime(),
     };
-    this.placements.set(placementKey(boardId, cardId), placementSchema.parse(placement));
+    this.placements.set(placementKey(boardId, cardId), fieldsOfPlacement(placement));
     return placement;
   }
 
@@ -440,12 +645,12 @@ export class WorkspaceDocument {
     cardId: string,
     position: { x: number; y: number },
   ): void {
-    const placement = this.getPlacement(boardId, cardId);
-    if (!placement) return;
-    this.placements.set(
-      placementKey(boardId, cardId),
-      placementSchema.parse({ ...placement, ...position }),
-    );
+    const fields = this.placements.get(placementKey(boardId, cardId));
+    if (!isFields(fields)) return;
+    this.doc.transact(() => {
+      fields.set("x", position.x);
+      fields.set("y", position.y);
+    });
   }
 
   /** Records a resized card. Size is per placement: a card can be small on one board. */
@@ -454,12 +659,12 @@ export class WorkspaceDocument {
     cardId: string,
     size: { width: number; height: number },
   ): void {
-    const placement = this.getPlacement(boardId, cardId);
-    if (!placement) return;
-    this.placements.set(
-      placementKey(boardId, cardId),
-      placementSchema.parse({ ...placement, ...size }),
-    );
+    const fields = this.placements.get(placementKey(boardId, cardId));
+    if (!isFields(fields)) return;
+    this.doc.transact(() => {
+      fields.set("width", size.width);
+      fields.set("height", size.height);
+    });
   }
 
   /** Reassigns stacking order within one board (0 = furthest back). */
@@ -482,16 +687,33 @@ export class WorkspaceDocument {
 
     order.splice(target, 0, placement);
 
-    order.forEach((entry, z) => {
-      if (entry.z === z) return;
-      this.placements.set(placementKey(boardId, entry.cardId), { ...entry, z });
+    // One transaction per reorder so peers never see a half-sorted stack.
+    this.doc.transact(() => {
+      order.forEach((entry, z) => {
+        if (entry.z === z) return;
+        this.placements.get(placementKey(boardId, entry.cardId))?.set("z", z);
+      });
     });
   }
 
   // ----------------------------------------------------------------- edges
 
   listEdges(): GraphEdge[] {
-    return Array.from(this.edges.values(), normalizeEdge);
+    return Array.from(this.edges.entries(), ([id, value]) => this.materializeEdge(id, value));
+  }
+
+  private materializeEdge(id: string, value: unknown): GraphEdge {
+    return isFields(value) ? edgeFromFields(id, value) : normalizeEdge(value as GraphEdge);
+  }
+
+  /** Field-level edge edit inside one transaction. */
+  private mutateEdge(edgeId: string, mutate: (fields: Fields) => void): void {
+    const fields = this.edges.get(edgeId);
+    if (!isFields(fields)) return;
+    this.doc.transact(() => {
+      mutate(fields);
+      fields.set("updatedAt", Date.now());
+    });
   }
 
   /**
@@ -499,19 +721,36 @@ export class WorkspaceDocument {
    * neither is trashed. Dormant edges stay in the CRDT and revive on return.
    */
   listBoardEdges(boardId: string): GraphEdge[] {
-    const placed = new Set(this.listBoardCards(boardId).map((card) => card.id));
+    const placed = new Map(this.listBoardCards(boardId).map((card) => [card.id, card]));
     return this.listEdges().filter(
-      (edge) => edge.boardId === boardId && placed.has(edge.source) && placed.has(edge.target),
+      (edge) =>
+        edge.boardId === boardId &&
+        placed.has(edge.source) &&
+        placed.has(edge.target) &&
+        this.anchorsResolve(edge, placed),
     );
   }
 
+  /**
+   * A link whose connector was deleted cannot be drawn. Such edges can still
+   * exist in older documents, so they are filtered out rather than rendered.
+   */
+  private anchorsResolve(edge: GraphEdge, placed: Map<string, Card>): boolean {
+    const resolve = (cardId: string, connectorId: string | undefined): boolean => {
+      if (!connectorId) return true;
+      const connectors = placed.get(cardId)?.connectors ?? [];
+      return connectors.some((connector) => connector.id === connectorId);
+    };
+    return resolve(edge.source, edge.sourceConnector) && resolve(edge.target, edge.targetConnector);
+  }
+
   getEdge(id: string): GraphEdge | undefined {
-    const edge = this.edges.get(id);
-    return edge ? normalizeEdge(edge) : undefined;
+    const value = this.edges.get(id);
+    return value ? this.materializeEdge(id, value) : undefined;
   }
 
   setEdge(edge: GraphEdge): void {
-    this.edges.set(edge.id, graphEdgeSchema.parse(normalizeEdge(edge)));
+    this.edges.set(edge.id, fieldsOfEdge(graphEdgeSchema.parse(normalizeEdge(edge))));
   }
 
   addEdge(input: CreateEdgeInput): GraphEdge | null {
@@ -540,9 +779,8 @@ export class WorkspaceDocument {
   }
 
   setEdgePath(id: string, path: GraphEdge["path"]): void {
-    const edge = this.getEdge(id);
-    if (!edge) return;
-    this.setEdge({ ...edge, path, updatedAt: Date.now() });
+    if (!this.getEdge(id)) return;
+    this.mutateEdge(id, (fields) => fields.set("path", path));
   }
 
   /** Reattaches one end of a link to another card/connector. */
@@ -555,20 +793,21 @@ export class WorkspaceDocument {
     const edge = this.getEdge(id);
     if (!edge) return;
 
-    const next: GraphEdge = { ...edge, updatedAt: Date.now() };
     if (end === "source") {
       if (cardId === edge.target) return;
-      next.source = cardId;
-      if (connectorId) next.sourceConnector = connectorId;
-      else delete next.sourceConnector;
+      this.mutateEdge(id, (fields) => {
+        fields.set("source", cardId);
+        if (connectorId) fields.set("sourceConnector", connectorId);
+        else fields.delete("sourceConnector");
+      });
     } else {
       if (cardId === edge.source) return;
-      next.target = cardId;
-      if (connectorId) next.targetConnector = connectorId;
-      else delete next.targetConnector;
+      this.mutateEdge(id, (fields) => {
+        fields.set("target", cardId);
+        if (connectorId) fields.set("targetConnector", connectorId);
+        else fields.delete("targetConnector");
+      });
     }
-
-    this.setEdge(next);
   }
 
   /** Swaps the endpoints (and their connectors) of an existing link. */
@@ -576,25 +815,19 @@ export class WorkspaceDocument {
     const edge = this.getEdge(id);
     if (!edge) return;
 
-    const next: GraphEdge = {
-      ...edge,
-      source: edge.target,
-      target: edge.source,
-      updatedAt: Date.now(),
-    };
-
-    if (edge.sourceConnector) next.targetConnector = edge.sourceConnector;
-    else delete next.targetConnector;
-    if (edge.targetConnector) next.sourceConnector = edge.targetConnector;
-    else delete next.sourceConnector;
-
-    this.setEdge(next);
+    this.mutateEdge(id, (fields) => {
+      fields.set("source", edge.target);
+      fields.set("target", edge.source);
+      if (edge.sourceConnector) fields.set("targetConnector", edge.sourceConnector);
+      else fields.delete("targetConnector");
+      if (edge.targetConnector) fields.set("sourceConnector", edge.targetConnector);
+      else fields.delete("sourceConnector");
+    });
   }
 
   setEdgeBidirectional(id: string, bidirectional: boolean): void {
-    const edge = this.getEdge(id);
-    if (!edge) return;
-    this.setEdge({ ...edge, bidirectional, updatedAt: Date.now() });
+    if (!this.getEdge(id)) return;
+    this.mutateEdge(id, (fields) => fields.set("bidirectional", bidirectional));
   }
 
   // ------------------------------------------------------------ connectors
@@ -605,21 +838,34 @@ export class WorkspaceDocument {
 
     const anchor = position ?? nextFreeAnchor(card.connectors);
     const connector: Connector = { id: createConnectorId(), ...anchor };
-    this.setCard({
-      ...card,
-      connectors: [...card.connectors, connector],
-      updatedAt: Date.now(),
+    this.mutateCard(cardId, (fields) => {
+      const current = fields.get(CONNECTORS_FIELD);
+      const connectors: Y.Map<Fields> = isFields(current)
+        ? (current as Y.Map<Fields>)
+        : new Y.Map<Fields>();
+      if (!isFields(current)) fields.set(CONNECTORS_FIELD, connectors);
+      const connectorFields = new Y.Map<unknown>();
+      connectorFields.set("x", connector.x);
+      connectorFields.set("y", connector.y);
+      connectors.set(connector.id, connectorFields);
     });
     return connector;
   }
 
   removeConnector(cardId: string, connectorId: string): void {
-    const card = this.getCard(cardId);
-    if (!card) return;
-    this.setCard({
-      ...card,
-      connectors: card.connectors.filter((connector) => connector.id !== connectorId),
-      updatedAt: Date.now(),
+    if (!this.getCard(cardId)) return;
+    // Links anchored to the connector go with it; a dangling link is undrawable.
+    const attached = this.listEdges().filter(
+      (edge) =>
+        (edge.source === cardId && edge.sourceConnector === connectorId) ||
+        (edge.target === cardId && edge.targetConnector === connectorId),
+    );
+    this.doc.transact(() => {
+      this.mutateCard(cardId, (fields) => {
+        const current = fields.get(CONNECTORS_FIELD);
+        if (isFields(current)) (current as Y.Map<Fields>).delete(connectorId);
+      });
+      for (const edge of attached) this.removeEdge(edge.id);
     });
   }
 
@@ -637,12 +883,12 @@ export class WorkspaceDocument {
     if (!card) return;
 
     const next = options.snap ? snapToAnchor(position) : position;
-    this.setCard({
-      ...card,
-      connectors: card.connectors.map((connector) =>
-        connector.id === connectorId ? { ...connector, ...next } : connector,
-      ),
-      updatedAt: Date.now(),
+    const fields = this.connectorFields(cardId, connectorId);
+    if (!fields) return;
+    this.doc.transact(() => {
+      fields.set("x", next.x);
+      fields.set("y", next.y);
+      this.cards.get(cardId)?.set("updatedAt", Date.now());
     });
   }
 
@@ -654,26 +900,53 @@ export class WorkspaceDocument {
       section: WorkspaceSection,
       read: (key: string) => WorkspaceChange["value"],
     ) => {
-      const handler = (event: Y.YMapEvent<T>): void => {
+      // Top-level keys: add, delete, or a whole record replaced by an old client.
+      const topHandler = (event: Y.YMapEvent<T>): void => {
         event.keysChanged.forEach((key) => {
-          const action = toAction(event.changes.keys.get(key)?.action);
-          onChange({ section, action, key, value: read(key) });
+          const changed = event.changes.keys.get(key)?.action;
+          const value = read(key);
+          const action: WorkspaceAction =
+            value === null ? "delete" : changed === "add" ? "add" : "update";
+          onChange({ section, action, key, value });
         });
       };
-      map.observe(handler);
-      return () => map.unobserve(handler);
+
+      // Nested field edits: records are field maps, so most writes land here.
+      const deepHandler = (events: Y.YEvent<Y.AbstractType<unknown>>[]): void => {
+        const touched = new Set<string>();
+        for (const event of events) {
+          if (event.target === map) continue;
+          const key = event.path[0];
+          if (key !== undefined) touched.add(String(key));
+        }
+        for (const key of touched) {
+          const value = read(key);
+          if (value === null) continue;
+          onChange({ section, action: "update", key, value });
+        }
+      };
+
+      map.observe(topHandler);
+      map.observeDeep(deepHandler);
+      return () => {
+        map.unobserve(topHandler);
+        map.unobserveDeep(deepHandler);
+      };
     };
 
     return combine([
       watch(this.boards, "boards", (key) => this.boards.get(key) ?? null),
       watch(this.cards, "cards", (key) => {
-        const card = this.cards.get(key);
-        return card ? normalizeCard(card) : null;
+        const fields = this.cards.get(key);
+        return fields ? this.materializeCard(key, fields) : null;
       }),
-      watch(this.placements, "placements", (key) => this.placements.get(key) ?? null),
+      watch(this.placements, "placements", (key) => {
+        const fields = this.placements.get(key);
+        return fields ? this.materializePlacement(key, fields) : null;
+      }),
       watch(this.edges, "edges", (key) => {
-        const edge = this.edges.get(key);
-        return edge ? normalizeEdge(edge) : null;
+        const fields = this.edges.get(key);
+        return fields ? this.materializeEdge(key, fields) : null;
       }),
     ]);
   }
@@ -704,6 +977,9 @@ interface LegacyNode {
 export function migrateLegacyDocument(doc: Y.Doc): void {
   const meta = doc.getMap<unknown>(WorkspaceDocument.META_KEY);
   if (meta.get("schemaVersion") === SCHEMA_VERSION) return;
+
+  const version = meta.get("schemaVersion");
+  if (typeof version === "number" && version >= 1) return;
 
   const legacyNodes = doc.getMap<LegacyNode>("nodes");
   const legacyEdges = doc.getMap<GraphEdge>("edges");
@@ -787,5 +1063,49 @@ export function migrateLegacyDocument(doc: Y.Doc): void {
   }
 
   // Titles are created lazily on read, so legacy cards get one on first mount.
-  meta.set("schemaVersion", SCHEMA_VERSION);
+  meta.set("schemaVersion", 1);
+}
+
+/**
+ * Rewrites whole-record values (`cards: Record<id, Card>`) as nested field
+ * maps. Field-granular storage is what stops two clients editing different
+ * parts of the same card from clobbering each other; the schema change is
+ * transparent because every read goes through a materialiser.
+ */
+export function migrateRecordsToFieldMaps(doc: Y.Doc): void {
+  const meta = doc.getMap<unknown>(WorkspaceDocument.META_KEY);
+  const version = meta.get("schemaVersion");
+  if (typeof version === "number" && version >= SCHEMA_VERSION) return;
+
+  const cards = doc.getMap<Fields>(WorkspaceDocument.CARDS_KEY);
+  const placements = doc.getMap<Fields>(WorkspaceDocument.PLACEMENTS_KEY);
+  const edges = doc.getMap<Fields>(WorkspaceDocument.EDGES_KEY);
+  const boards = doc.getMap<Board>(WorkspaceDocument.BOARDS_KEY);
+  const isEmpty =
+    cards.size === 0 && placements.size === 0 && edges.size === 0 && boards.size === 0;
+  if (isEmpty) {
+    // Not hydrated yet: stamping here would skip migrating real data later.
+    return;
+  }
+
+  let converted = false;
+  const rewrite = <T>(
+    map: Y.Map<Fields>,
+    toFields: (value: T) => Fields,
+    parse: (value: unknown) => T,
+  ): void => {
+    for (const [key, value] of Array.from(map.entries())) {
+      if (isFields(value)) continue;
+      map.set(key, toFields(parse(value)));
+      converted = true;
+    }
+  };
+
+  doc.transact(() => {
+    rewrite(cards, fieldsOfCard, (value) => cardSchema.parse(value));
+    rewrite(placements, fieldsOfPlacement, (value) => placementSchema.parse(value));
+    rewrite(edges, fieldsOfEdge, (value) => graphEdgeSchema.parse(value));
+  });
+
+  if (converted) meta.set("schemaVersion", SCHEMA_VERSION);
 }

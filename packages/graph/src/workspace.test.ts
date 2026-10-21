@@ -331,6 +331,65 @@ describe("WorkspaceDocument connectors", () => {
     workspace.moveConnector(card.id, connector.id, { x: 0.42, y: 0.3 }, { snap: true });
     expect(workspace.getCard(card.id)?.connectors[1]).toMatchObject({ x: 0.5, y: 0 });
   });
+
+  it("removes the links anchored to a connector it deletes", () => {
+    const workspace = new WorkspaceDocument();
+    const source = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
+    const target = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
+    const [anchored, other] = source.connectors;
+    const [destination] = target.connectors;
+    if (!anchored || !other || !destination) throw new Error("expected connectors");
+
+    const dropped = workspace.addEdge({
+      boardId: DEFAULT_BOARD_ID,
+      source: source.id,
+      target: target.id,
+      sourceConnector: anchored.id,
+      targetConnector: destination.id,
+    });
+    const kept = workspace.addEdge({
+      boardId: DEFAULT_BOARD_ID,
+      source: source.id,
+      target: target.id,
+      sourceConnector: other.id,
+      targetConnector: destination.id,
+    });
+
+    workspace.removeConnector(source.id, anchored.id);
+
+    expect(workspace.getEdge(dropped?.id ?? "")).toBeUndefined();
+    expect(workspace.getEdge(kept?.id ?? "")).toBeDefined();
+  });
+
+  it("hides links whose connector no longer exists", () => {
+    const workspace = new WorkspaceDocument();
+    const source = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
+    const target = workspace.createCard({ boardId: DEFAULT_BOARD_ID });
+    const edge = workspace.addEdge({
+      boardId: DEFAULT_BOARD_ID,
+      source: source.id,
+      target: target.id,
+      sourceConnector: "missing-connector",
+    });
+    if (!edge) throw new Error("expected an edge");
+
+    expect(workspace.listEdges()).toHaveLength(1);
+    expect(workspace.listBoardEdges(DEFAULT_BOARD_ID)).toEqual([]);
+  });
+
+  it("reports stable connector ids and allows removing all of them", () => {
+    const workspace = new WorkspaceDocument();
+    const card = workspace.createCard();
+    const firstRead = workspace.getCard(card.id)?.connectors.map((connector) => connector.id);
+    const secondRead = workspace.getCard(card.id)?.connectors.map((connector) => connector.id);
+    expect(secondRead).toEqual(firstRead);
+
+    for (const connector of card.connectors) {
+      workspace.removeConnector(card.id, connector.id);
+    }
+    expect(workspace.getCard(card.id)?.connectors).toEqual([]);
+    expect(workspace.getCard(card.id)?.connectors).toEqual([]);
+  });
 });
 
 describe("migration", () => {
@@ -383,6 +442,53 @@ describe("migration", () => {
     expect(workspace.getPlacement(DEFAULT_BOARD_ID, "starter-2")).toMatchObject({ x: 320, y: 0 });
     expect(workspace.listBoardEdges(DEFAULT_BOARD_ID).map((edge) => edge.id)).toEqual(["edge-1"]);
     expect(workspace.getEdge("edge-1")?.boardId).toBe(DEFAULT_BOARD_ID);
+  });
+
+  it("keeps links resolvable when plain records become field maps", () => {
+    const doc = new Y.Doc();
+    const connectors = [
+      { id: "c-source", x: 1, y: 0.5 },
+      { id: "c-target", x: 0, y: 0.5 },
+    ];
+    doc.getMap("boards").set(DEFAULT_BOARD_ID, {
+      id: DEFAULT_BOARD_ID,
+      name: "Board 1",
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    doc.getMap("cards").set("a", { ...createCard("a"), connectors });
+    doc.getMap("cards").set("b", { ...createCard("b"), connectors });
+    doc.getMap("placements").set("board-1/a", {
+      boardId: DEFAULT_BOARD_ID,
+      cardId: "a",
+      x: 0,
+      y: 0,
+      z: 0,
+      createdAt: 1000,
+    });
+    doc.getMap("placements").set("board-1/b", {
+      boardId: DEFAULT_BOARD_ID,
+      cardId: "b",
+      x: 320,
+      y: 0,
+      z: 1,
+      createdAt: 2000,
+    });
+    doc.getMap("edges").set("edge-1", {
+      ...createEdge("edge-1", DEFAULT_BOARD_ID),
+      sourceConnector: connectors[0]?.id,
+      targetConnector: connectors[1]?.id,
+    });
+    doc.getMap("meta").set("schemaVersion", 1);
+
+    const workspace = new WorkspaceDocument(doc);
+
+    expect(doc.getMap("meta").get("schemaVersion")).toBe(2);
+    expect(workspace.getCard("a")?.connectors.map((connector) => connector.id)).toEqual([
+      "c-source",
+      "c-target",
+    ]);
+    expect(workspace.listBoardEdges(DEFAULT_BOARD_ID).map((edge) => edge.id)).toEqual(["edge-1"]);
   });
 
   it("does not stamp the version when there is nothing to migrate", () => {
@@ -439,5 +545,124 @@ describe("WorkspaceDocument.observe", () => {
       "placements:add:b1/c1",
       "cards:update:c1",
     ]);
+  });
+});
+
+describe("WorkspaceDocument concurrency", () => {
+  /** Applies both directions so each client converges on the merged state. */
+  function sync(a: Y.Doc, b: Y.Doc) {
+    const fromA = Y.encodeStateAsUpdate(a);
+    const fromB = Y.encodeStateAsUpdate(b);
+    Y.applyUpdate(b, fromA, "sync");
+    Y.applyUpdate(a, fromB, "sync");
+  }
+
+  function pair() {
+    const docA = new Y.Doc();
+    const docB = new Y.Doc();
+    const a = new WorkspaceDocument(docA);
+    const b = new WorkspaceDocument(docB);
+    const board = a.createBoard({ id: "board-1" });
+    const card = a.createCard({ id: "card-1", boardId: board.id });
+    sync(docA, docB);
+    return { docA, docB, a, b, card };
+  }
+
+  it("keeps a connector move landed while the peer adds another connector", () => {
+    const { docA, docB, a, b, card } = pair();
+    const moved = card.connectors[0];
+    if (!moved) throw new Error("expected a connector");
+
+    a.moveConnector(card.id, moved.id, { x: 0.12, y: 0.34 });
+    const added = b.addConnector(card.id);
+    sync(docA, docB);
+
+    expect(added).not.toBeNull();
+    for (const workspace of [a, b]) {
+      const connectors = workspace.getCard(card.id)?.connectors ?? [];
+      expect(connectors).toHaveLength(5);
+      expect(connectors.find((connector) => connector.id === moved.id)).toMatchObject({
+        x: 0.12,
+        y: 0.34,
+      });
+      expect(connectors.some((connector) => connector.id === added?.id)).toBe(true);
+    }
+  });
+
+  it("keeps two connector moves that touch different connectors", () => {
+    const { docA, docB, a, b, card } = pair();
+    const [first, second] = card.connectors;
+    if (!first || !second) throw new Error("expected connectors");
+
+    a.moveConnector(card.id, first.id, { x: 0.2, y: 0.25 });
+    b.moveConnector(card.id, second.id, { x: 0.75, y: 0.8 });
+    sync(docA, docB);
+
+    for (const workspace of [a, b]) {
+      const connectors = workspace.getCard(card.id)?.connectors ?? [];
+      expect(connectors.find((connector) => connector.id === first.id)).toMatchObject({
+        x: 0.2,
+        y: 0.25,
+      });
+      expect(connectors.find((connector) => connector.id === second.id)).toMatchObject({
+        x: 0.75,
+        y: 0.8,
+      });
+    }
+  });
+
+  it("keeps a resize landed while the peer drags the same card", () => {
+    const { docA, docB, a, b, card } = pair();
+
+    a.updatePlacementSize("board-1", card.id, { width: 420, height: 260 });
+    b.updatePlacementPosition("board-1", card.id, { x: 96, y: -48 });
+    sync(docA, docB);
+
+    for (const workspace of [a, b]) {
+      expect(workspace.getPlacement("board-1", card.id)).toMatchObject({
+        x: 96,
+        y: -48,
+        width: 420,
+        height: 260,
+      });
+    }
+  });
+
+  it("keeps a link reversal landed while the peer changes its path", () => {
+    const { docA, docB, a, b, card } = pair();
+    const other = a.createCard({ id: "card-2", boardId: "board-1" });
+    const edge = a.addEdge({
+      boardId: "board-1",
+      source: card.id,
+      target: other.id,
+    });
+    if (!edge) throw new Error("expected an edge");
+    sync(docA, docB);
+
+    a.setEdgeBidirectional(edge.id, true);
+    b.setEdgePath(edge.id, "smoothstep");
+    sync(docA, docB);
+
+    for (const workspace of [a, b]) {
+      expect(workspace.getEdge(edge.id)).toMatchObject({
+        bidirectional: true,
+        path: "smoothstep",
+      });
+    }
+  });
+
+  it("keeps two cards' moves independent", () => {
+    const { docA, docB, a, b, card } = pair();
+    const other = a.createCard({ id: "card-2", boardId: "board-1" });
+    sync(docA, docB);
+
+    a.updatePlacementPosition("board-1", card.id, { x: -120, y: 12 });
+    b.updatePlacementPosition("board-1", other.id, { x: 240, y: 88 });
+    sync(docA, docB);
+
+    for (const workspace of [a, b]) {
+      expect(workspace.getPlacement("board-1", card.id)).toMatchObject({ x: -120, y: 12 });
+      expect(workspace.getPlacement("board-1", other.id)).toMatchObject({ x: 240, y: 88 });
+    }
   });
 });

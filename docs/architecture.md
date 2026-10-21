@@ -42,18 +42,28 @@ flowchart LR
 One `Y.Doc` per workspace (room + IndexedDB key = workspace id). Boards are views inside that one
 document, so moving a card between boards stays atomic.
 
-| Map | Shape |
+| Map | Value |
 | --- | --- |
 | `boards` | `{ id, name, createdAt, updatedAt }` |
-| `cards` | `{ id, kind, connectors, data, createdAt, updatedAt, deletedAt? }` |
-| `placements` | key `${boardId}/${cardId}` → `{ boardId, cardId, x, y, z, createdAt }` |
-| `edges` | `{ id, boardId, source, target, sourceConnector?, targetConnector?, kind, path, bidirectional, label? }` |
+| `cards` | `Y.Map`, one key per field: `kind`, `createdAt`, `updatedAt`, `deletedAt`, `data`, `connectors` |
+| `placements` | key `${boardId}/${cardId}` → `Y.Map`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
+| `edges` | `Y.Map`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
 | `content` | card body rich text (`Y.XmlFragment`, keyed by card id) |
 | `titles` | card title rich text (`Y.XmlFragment`, keyed by card id) |
 | `meta` | `{ schemaVersion, seeded }` |
 
+**Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
+`GraphEdge` objects for reads, but stores each field as its own `Y.Map` key. A whole-record `set`
+would make two clients editing different parts of one record resolve last-write-wins for everything
+— one client moving a connector while another adds one silently dropped one of the two edits.
+Field maps merge per key, so concurrent writers keep both. Mutations therefore route through
+`mutateCard`/`mutateEdge` (single field writes), `updatePlacementPosition`/`updatePlacementSize`
+(x/y and width/height only) and the connector sub-map (`connectors` is itself a `Y.Map<Y.Map>`).
+`setCard`/`setEdge` remain as whole-record escape hatches for seeding and migration only.
+
 Derived views keep the filtering in one place: `listBoardCards(boardId)` (placed, alive, back to
-front), `listBoardEdges(boardId)` (both endpoints placed and alive), `listInboxCards()` (alive with
+front), `listBoardEdges(boardId)` (both endpoints placed, alive, and still owning the connectors the
+link names — a link whose connector was deleted cannot be drawn), `listInboxCards()` (alive with
 no placement), `listTrashedCards()`, `listCardPlacements(cardId)`, `homeBoardId(cardId)` and
 `displayTitle(cardId)` (title → body's first line → "Untitled").
 
@@ -66,7 +76,8 @@ the card back on every board it was on; `purgeCard` (and `emptyTrash`) destroy t
 placements, its text and every edge that referenced it.
 
 **Links are board-scoped and dormant, not deleted.** An edge whose endpoint leaves the board (or is
-trashed) stays in the CRDT and stops rendering, and revives when the card returns.
+trashed) stays in the CRDT and stops rendering, and revives when the card returns. Deleting a
+connector does delete the links anchored to it, since nothing can re-attach them.
 
 **Layer order is per board**: `moveLayer(boardId, cardId, action)` reindexes that board's placements
 only, so Inbox cards never consume z slots.
@@ -91,10 +102,18 @@ title exactly as it does in the body.
 
 ### Migration
 
-Documents created before workspaces hold flat `nodes`/`edges` maps. `migrateLegacyDocument` (run
-from the constructor, guarded by `meta.schemaVersion`) creates one default board, converts nodes to
-cards plus placements (preserving `createdAt` so home is stable), backfills empty titles and stamps
-`boardId` on edges. Deterministic ids make concurrent migrations converge; it is safe to run twice.
+Migration runs in two steps, both from the constructor and both guarded by `meta.schemaVersion`:
+
+1. **v1 — flat document to workspace.** Documents created before workspaces hold flat `nodes`/
+   `edges` maps. `migrateLegacyDocument` creates one default board, converts nodes to cards plus
+   placements (preserving `createdAt` so home is stable), backfills empty titles and stamps
+   `boardId` on edges.
+2. **v2 — whole records to field maps.** `migrateRecordsToFieldMaps` rewrites each record value as
+   a nested `Y.Map` and stamps version 2.
+
+Deterministic ids make concurrent migrations converge; both are safe to run twice. Neither stamps a
+version on a document with nothing to migrate, because that may simply mean this client has not
+hydrated yet.
 
 ## Connectors
 

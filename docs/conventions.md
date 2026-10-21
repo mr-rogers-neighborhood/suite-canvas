@@ -71,9 +71,15 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 
 ## Data layer
 
-- Never mutate `GraphDocument` internals from the UI. Add typed methods to
+- Never mutate `WorkspaceDocument` internals from the UI. Add typed methods to
   `packages/graph` instead.
 - Every `set*` method validates with the Zod schema; keep it that way.
+- Write **fields**, not records: prefer `mutateCard`/`mutateEdge`, `updatePlacementPosition`,
+  `updatePlacementSize`, `moveConnector`, `reconnectEdge` over `setCard`/`setEdge`. A whole-record
+  write makes concurrent edits to other fields of that record resolve last-write-wins.
+- Reads must never create shared state. Use `peekContent`/`peekTitle` for fragments; only creation
+  paths insert them. Materialised records are new objects on every read, so compare by id/value,
+  never by identity.
 
 ## Testing
 

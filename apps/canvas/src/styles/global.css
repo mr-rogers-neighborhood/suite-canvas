@@ -309,15 +309,6 @@ body {
   margin-top: 0.5rem;
 }
 
-/* Caret labels sit above the first line, outside the editor and body scroll
-   box. Let them escape while a peer caret is present so the card cannot clip
-   the collaborator's name. */
-.card-title-editor:has(.ProseMirror-loro-cursor),
-.card-title-editor:has(.ProseMirror-loro-cursor) p,
-.card-body-scroll:has(.ProseMirror-loro-cursor) {
-  overflow: visible;
-}
-
 /* A peer's in-flight link drag, drawn in flow space. */
 .peer-reconnect-preview,
 .peer-connect-preview {
@@ -347,6 +338,21 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Caret labels sit above the first line, outside the editor and body scroll
+   box. Let them escape while a peer caret is present so the card cannot clip
+   the collaborator's name. */
+.card-title-editor:has(.ProseMirror-loro-cursor),
+.card-title-editor:has(.ProseMirror-loro-cursor) p,
+.card-body-scroll:has(.ProseMirror-loro-cursor) {
+  overflow: visible;
+}
+
+/* A remote title caret needs room for its name badge. Wrap the title while a
+   peer is inside it instead of letting the nowrap text run under the next card. */
+.card-title-editor:has(.ProseMirror-loro-cursor) p {
+  white-space: normal;
 }
 
 .card-footer {

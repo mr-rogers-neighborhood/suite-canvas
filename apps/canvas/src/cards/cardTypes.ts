@@ -1,22 +1,23 @@
-import type { NodeKind } from "@suite/graph";
-
-export interface CardTypeDefinition {
-  kind: NodeKind;
-  label: string;
-  /** Single glyph used in the dock and the card header. */
-  glyph: string;
-}
+import type { CardType } from "@suite/graph";
 
 /**
- * The one place a card kind is described to the UI. Adding a kind means adding a
- * schema variant, a factory branch, and an entry here.
+ * Presentation used when a card's type is missing (legacy data, a type deleted
+ * by a collaborator, or a document that has not hydrated yet). It never
+ * replaces the stored primary id; the picker can repair it.
  */
-export const CARD_TYPES: readonly CardTypeDefinition[] = [
-  { kind: "note", label: "Note", glyph: "\u25a1" },
-];
+export const FALLBACK_CARD_TYPE: CardType = {
+  id: "note",
+  name: "Note",
+  glyph: "\u25a1",
+  createdAt: 0,
+  updatedAt: 0,
+  fields: [],
+};
 
-const NOTE_TYPE: CardTypeDefinition = { kind: "note", label: "Note", glyph: "\u25a1" };
+export function typesById(types: CardType[]): Map<string, CardType> {
+  return new Map(types.map((type) => [type.id, type]));
+}
 
-export function cardType(kind: NodeKind): CardTypeDefinition {
-  return CARD_TYPES.find((type) => type.kind === kind) ?? NOTE_TYPE;
+export function resolveCardType(types: Map<string, CardType>, primaryTypeId: string): CardType {
+  return types.get(primaryTypeId) ?? FALLBACK_CARD_TYPE;
 }

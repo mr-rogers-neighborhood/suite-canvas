@@ -4,12 +4,14 @@ import { mergeSnapshots, reuseArray, type WorkspaceSnapshot } from "./snapshotMe
 
 const card = (id: string): Card => ({
   id,
-  kind: "note",
   createdAt: 0,
   updatedAt: 0,
   connectors: [],
   deletedAt: null,
-  data: {},
+  typeIds: ["note"],
+  primaryTypeId: "note",
+  tags: [],
+  properties: {},
 });
 
 const placement = (cardId: string): Placement => ({
@@ -40,6 +42,8 @@ function snapshot(cards: Card[], base?: WorkspaceSnapshot): WorkspaceSnapshot {
     cards,
     placements: base?.placements ?? cards.map((entry) => placement(entry.id)),
     edges: base?.edges ?? [edge("e1")],
+    types: base?.types ?? [],
+    tags: base?.tags ?? [],
   };
 }
 

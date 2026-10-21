@@ -593,3 +593,62 @@ body {
   pointer-events: none;
   opacity: 0.9;
 }
+
+/* Card inspector: a floating panel over the canvas, never part of its flow. */
+.card-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 25;
+  display: flex;
+  width: min(320px, calc(100vw - 24px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+@media (max-width: 640px) {
+  .card-inspector {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+    width: auto;
+    max-height: 55vh;
+  }
+}
+
+.card-meta-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--segmented-bg);
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-meta-label {
+  color: var(--ink-muted);
+}
+
+.card-meta-tag {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

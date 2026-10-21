@@ -1,4 +1,4 @@
-import type { Card, GraphEdge, LayerAction, Placement } from "@suite/graph";
+import type { Card, CardType, GraphEdge, LayerAction, Placement } from "@suite/graph";
 import {
   Background,
   type Connection,
@@ -20,7 +20,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type CardReference, cardReferences } from "../cards/cardReferences";
+import { type CardMeta, cardMeta } from "../cards/cardMeta";
+import { resolveCardType, typesById } from "../cards/cardTypes";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -37,13 +38,14 @@ import { PresenceLayer } from "./PresenceLayer";
 const SMOOTHING = 0.22;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
-const EMPTY_REFERENCES: CardReference[] = [];
-
 type CardNodeData = {
   card: Card;
   placement: Placement;
-  references: CardReference[];
+  type: CardType;
+  meta: CardMeta;
 };
+
+const EMPTY_META: CardMeta = { properties: [], tags: [] };
 
 const EDGE_TYPE: Record<GraphEdge["path"], Edge["type"]> = {
   bezier: "default",
@@ -195,12 +197,13 @@ export function CanvasBoard() {
     );
   }, [snapshot, boardCards, activeBoardId]);
 
-  // Derived once per placement change; a card node receives its own slice and
-  // does not subscribe to the whole workspace for its footer references.
-  const referencesByCard = useMemo(
-    () => cardReferences(snapshot.boards, snapshot.placements, activeBoardId),
-    [snapshot.boards, snapshot.placements, activeBoardId],
-  );
+  const typeMap = useMemo(() => typesById(snapshot.types), [snapshot.types]);
+  const tagMap = useMemo(() => new Map(snapshot.tags.map((tag) => [tag.id, tag])), [snapshot.tags]);
+  const metaByCard = useMemo(() => {
+    const map = new Map<string, CardMeta>();
+    for (const card of snapshot.cards) map.set(card.id, cardMeta(card, typeMap, tagMap));
+    return map;
+  }, [snapshot.cards, typeMap, tagMap]);
 
   const locallyDraggingId = useRef<string | null>(null);
   /** Nodes this client is resizing; React Flow owns their live corner. */
@@ -274,7 +277,8 @@ export function CanvasBoard() {
             ? existing.position
             : (smoothPositions.current.get(card.id) ?? { x: placement.x, y: placement.y });
         const selected = selectedKey.split(",").includes(card.id);
-        const references = referencesByCard.get(card.id) ?? EMPTY_REFERENCES;
+        const type = resolveCardType(typeMap, card.primaryTypeId);
+        const meta = metaByCard.get(card.id) ?? EMPTY_META;
         const previous = existing?.data as CardNodeData | undefined;
         // Reuse the data object (and the node when nothing visible changed), so
         // a card that did not change does not re-render on a peer's edit.
@@ -282,9 +286,10 @@ export function CanvasBoard() {
           previous &&
           previous.card === card &&
           previous.placement === placement &&
-          previous.references === references
+          previous.type === type &&
+          previous.meta === meta
             ? previous
-            : { card, placement, references };
+            : { card, placement, type, meta };
         if (
           existing &&
           existing.data === data &&
@@ -307,7 +312,7 @@ export function CanvasBoard() {
         ];
       });
     });
-  }, [boardCards, boardPlacements, selectedKey, referencesByCard, setNodes]);
+  }, [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, setNodes]);
 
   useEffect(() => {
     applyBoardNodes();

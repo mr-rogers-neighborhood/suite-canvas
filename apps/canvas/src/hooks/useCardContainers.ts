@@ -15,3 +15,17 @@ export function useCardContainers(cardId: string): CardContainers {
   const get = useCallback(() => workspace.cardContainers(cardId), [workspace, cardId]);
   return useSyncExternalStore(subscribe, get, get);
 }
+
+/** Live display title, including the body-first-line fallback. */
+export function useCardTitle(cardId: string): string {
+  const workspace = useCanvasStore((state) => state.workspace);
+  const subscribe = useCallback(
+    (listener: () => void) => (cardId ? workspace.observeTitle(cardId, listener) : () => undefined),
+    [workspace, cardId],
+  );
+  const get = useCallback(
+    () => (cardId ? workspace.displayTitle(cardId) : ""),
+    [workspace, cardId],
+  );
+  return useSyncExternalStore(subscribe, get, get);
+}

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Card } from "@suite/graph";
+import type { Card, CardType } from "@suite/graph";
 import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
 import { NodeCard } from "./NodeCard";
@@ -10,7 +10,6 @@ const titleId = doc.getMap("titles").ensureMergeableMap("n1").id;
 
 const card: Card = {
   id: "n1",
-  kind: "note",
   createdAt: 0,
   updatedAt: 0,
   connectors: [
@@ -19,7 +18,19 @@ const card: Card = {
     { id: "c-bottom", x: 0.5, y: 1 },
     { id: "c-left", x: 0, y: 0.5 },
   ],
-  data: {},
+  typeIds: ["note"],
+  primaryTypeId: "note",
+  tags: [],
+  properties: {},
+};
+
+const type: CardType = {
+  id: "note",
+  name: "Note",
+  glyph: "\u25a1",
+  createdAt: 0,
+  updatedAt: 0,
+  fields: [],
 };
 
 const meta = {
@@ -41,6 +52,8 @@ type Story = StoryObj<typeof meta>;
 
 const base = {
   card,
+  type,
+  meta: { properties: [], tags: [] },
   cardDoc: doc,
   contentId,
   titleId,
@@ -49,11 +62,6 @@ const base = {
   boardId: "board-1",
 };
 
-const shared = [
-  { boardId: "board-1", boardName: "Research", isHome: true, isCurrent: false },
-  { boardId: "board-2", boardName: "Drafts", isHome: false, isCurrent: true },
-];
-
 export const ReadOnly: Story = { args: base };
 
 export const Selected: Story = { args: { ...base, selected: true } };
@@ -61,8 +69,6 @@ export const Selected: Story = { args: { ...base, selected: true } };
 export const EditingTitle: Story = { args: { ...base, editing: "title" } };
 
 export const EditingBody: Story = { args: { ...base, editing: "body" } };
-
-export const SharedCard: Story = { args: { ...base, references: shared } };
 
 export const Resized: Story = { args: { ...base, width: 340, height: 180 } };
 

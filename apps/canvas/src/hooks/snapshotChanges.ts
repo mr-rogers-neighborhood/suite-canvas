@@ -1,12 +1,14 @@
 import type {
   Board,
   Card,
+  CardType,
   GraphEdge,
   Placement,
+  Tag,
   WorkspaceAction,
   WorkspaceChange,
 } from "@suite/graph";
-import { placementKey } from "@suite/graph";
+import { DEFAULT_TYPE_ID, placementKey } from "@suite/graph";
 import type { WorkspaceSnapshot } from "./snapshotMerge";
 
 /**
@@ -14,7 +16,9 @@ import type { WorkspaceSnapshot } from "./snapshotMerge";
  * with its record type; these guards just make that contract explicit.
  */
 function boardValue(value: WorkspaceChange["value"]): Board | null {
-  return value !== null && "name" in value ? value : null;
+  return value !== null && "name" in value && "updatedAt" in value && !("glyph" in value)
+    ? value
+    : null;
 }
 
 function cardValue(value: WorkspaceChange["value"]): Card | null {
@@ -29,18 +33,40 @@ function edgeValue(value: WorkspaceChange["value"]): GraphEdge | null {
   return value !== null && "target" in value ? value : null;
 }
 
+function typeValue(value: WorkspaceChange["value"]): CardType | null {
+  return value !== null && "glyph" in value && "fields" in value ? value : null;
+}
+
+function tagValue(value: WorkspaceChange["value"]): Tag | null {
+  return value !== null && "name" in value && "createdAt" in value && !("updatedAt" in value)
+    ? value
+    : null;
+}
+
 function compareBoards(a: Board, b: Board): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 
-/** Insertion point in a list already sorted like `WorkspaceDocument.listBoards`. */
-function boardInsertionIndex(boards: Board[], board: Board): number {
+function compareTypes(a: CardType, b: CardType): number {
+  return (
+    Number(b.id === DEFAULT_TYPE_ID) - Number(a.id === DEFAULT_TYPE_ID) ||
+    a.createdAt - b.createdAt ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+function compareTags(a: Tag, b: Tag): number {
+  return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+}
+
+/** Insertion point in a list already sorted like the matching `list*` read. */
+function insertionIndex<T>(items: T[], value: T, compare: (a: T, b: T) => number): number {
   let low = 0;
-  let high = boards.length;
+  let high = items.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    const candidate = boards[middle];
-    if (!candidate || compareBoards(candidate, board) > 0) high = middle;
+    const candidate = items[middle];
+    if (candidate !== undefined && compare(candidate, value) > 0) high = middle;
     else low = middle + 1;
   }
   return low;
@@ -51,33 +77,34 @@ function without<T>(items: T[], index: number): T[] {
 }
 
 /**
- * Boards are sorted views, so a new or re-dated board goes back in sort order
- * instead of at the end.
+ * Sorted collections (boards, types, tags) put a new or re-dated record back in
+ * sort order instead of at the end.
  */
-function changeBoards(
-  boards: Board[],
+function changeSorted<T>(
+  items: T[],
   action: WorkspaceAction,
   key: string,
-  value: Board | null,
-): Board[] {
-  const index = boards.findIndex((board) => board.id === key);
+  value: T | null,
+  idOf: (item: T) => string,
+  compare: (a: T, b: T) => number,
+): T[] {
+  const index = items.findIndex((item) => idOf(item) === key);
   if (action === "delete" || value === null) {
-    return index === -1 ? boards : without(boards, index);
+    return index === -1 ? items : without(items, index);
   }
 
-  const rest = index === -1 ? boards : without(boards, index);
-  const insertAt = boardInsertionIndex(rest, value);
-  if (index === insertAt && boards[index] === value) return boards;
+  const rest = index === -1 ? items : without(items, index);
+  const insertAt = insertionIndex(rest, value, compare);
+  if (index === insertAt && items[index] === value) return items;
 
-  const next = rest === boards ? boards.slice() : rest;
+  const next = rest === items ? items.slice() : rest;
   next.splice(insertAt, 0, value);
   return next;
 }
 
 /**
  * Keyed records keep their existing order: an update replaces the record in
- * place and an add appends, matching Y.Map key iteration closely enough for the
- * current consumers.
+ * place and an add appends, matching the document's key iteration.
  */
 function changeKeyed<T>(items: T[], action: WorkspaceAction, index: number, value: T | null): T[] {
   if (action === "delete" || value === null) {
@@ -102,11 +129,13 @@ export function applyWorkspaceChange(
 ): WorkspaceSnapshot {
   switch (change.section) {
     case "boards": {
-      const boards = changeBoards(
+      const boards = changeSorted(
         snapshot.boards,
         change.action,
         change.key,
         boardValue(change.value),
+        (board) => board.id,
+        compareBoards,
       );
       return boards === snapshot.boards ? snapshot : { ...snapshot, boards };
     }
@@ -138,6 +167,28 @@ export function applyWorkspaceChange(
         edgeValue(change.value),
       );
       return edges === snapshot.edges ? snapshot : { ...snapshot, edges };
+    }
+    case "types": {
+      const types = changeSorted(
+        snapshot.types,
+        change.action,
+        change.key,
+        typeValue(change.value),
+        (type) => type.id,
+        compareTypes,
+      );
+      return types === snapshot.types ? snapshot : { ...snapshot, types };
+    }
+    case "tags": {
+      const tags = changeSorted(
+        snapshot.tags,
+        change.action,
+        change.key,
+        tagValue(change.value),
+        (tag) => tag.id,
+        compareTags,
+      );
+      return tags === snapshot.tags ? snapshot : { ...snapshot, tags };
     }
   }
 }

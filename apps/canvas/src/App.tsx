@@ -1,14 +1,16 @@
-import type { NodeKind } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { BoardTabs } from "./components/BoardTabs";
+import { CardInspectorHost } from "./components/CardInspectorHost";
 import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
+import { filterItems } from "./components/libraryFilters";
 import { TitleBar } from "./components/TitleBar";
+import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { resolveBoardId, useCanvasStore, WORKSPACE_ID } from "./store/useCanvasStore";
@@ -50,6 +52,12 @@ function WorkspaceShell() {
   const setLibraryOpen = useUiStore((state) => state.setLibraryOpen);
   const setLibraryTab = useUiStore((state) => state.setLibraryTab);
   const startEditing = useUiStore((state) => state.startEditing);
+  const openTypeSettings = useUiStore((state) => state.openTypeSettings);
+  const libraryTypeFilter = useUiStore((state) => state.libraryTypeFilter);
+  const libraryTagFilter = useUiStore((state) => state.libraryTagFilter);
+  const toggleLibraryType = useUiStore((state) => state.toggleLibraryType);
+  const toggleLibraryTag = useUiStore((state) => state.toggleLibraryTag);
+  const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const setFocus = usePresenceStore((state) => state.setFocus);
@@ -73,6 +81,9 @@ function WorkspaceShell() {
   // starter cards in a workspace someone emptied on another client.
   useEffect(() => {
     if (!ready || !synced) return;
+    // Starter types are structural, not sample data: every workspace has them,
+    // and the note type is the fallback for cards with no type.
+    workspace.ensureDefaultTypes();
     if (workspace.hasSeeded()) return;
     const board = workspace.ensureBoard();
     if (workspace.listCards().length === 0) {
@@ -150,10 +161,10 @@ function WorkspaceShell() {
   );
 
   const createCard = useCallback(
-    (kind: NodeKind, point?: { x: number; y: number }) => {
+    (typeId: string, point?: { x: number; y: number }) => {
       if (!activeBoardId) return;
       const position = point ? canvasPoint(point) : canvasPoint();
-      const card = workspace.createCard({ kind, boardId: activeBoardId, position });
+      const card = workspace.createCard({ typeId, boardId: activeBoardId, position });
       startEditing(card.id, "title");
     },
     [activeBoardId, canvasPoint, workspace, startEditing],
@@ -167,6 +178,8 @@ function WorkspaceShell() {
         const board = workspace.getBoard(placement.boardId);
         return board ? [{ id: board.id, name: board.name }] : [];
       }),
+      typeIds: workspace.getCard(cardId)?.typeIds ?? [],
+      tagIds: workspace.getCard(cardId)?.tags ?? [],
     }),
     [workspace],
   );
@@ -176,6 +189,10 @@ function WorkspaceShell() {
   const unplaced = inbox.filter((id) => workspace.listCardPlacements(id).length === 0);
   const trashed = workspace.listTrashedCards().map((card) => card.id);
   const allCards = inbox.map((id) => id);
+
+  const filteredInbox = filterItems(unplaced.map(toItem), libraryTypeFilter, libraryTagFilter);
+  const filteredCards = filterItems(allCards.map(toItem), libraryTypeFilter, libraryTagFilter);
+  const filteredTrash = filterItems(trashed.map(toItem), libraryTypeFilter, libraryTagFilter);
 
   return (
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
@@ -202,22 +219,27 @@ function WorkspaceShell() {
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
+        <CardInspectorHost />
       </main>
 
       <Dock
         inboxCount={unplaced.length}
         libraryOpen={libraryOpen}
         onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
-        onCreateCard={(kind) => createCard(kind)}
+        types={snapshot.types}
+        onCreateCard={(typeId) => createCard(typeId)}
+        onManageTypes={openTypeSettings}
       />
+
+      <TypeSettingsHost />
 
       <LibraryDrawer
         open={libraryOpen}
         tab={libraryTab}
         counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
-        inbox={unplaced.map(toItem)}
-        cards={allCards.map(toItem)}
-        trash={trashed.map(toItem)}
+        inbox={filteredInbox}
+        cards={filteredCards}
+        trash={filteredTrash}
         onTab={setLibraryTab}
         onClose={() => setLibraryOpen(false)}
         onPlace={placeCard}
@@ -228,6 +250,13 @@ function WorkspaceShell() {
         onEmptyTrash={() => workspace.emptyTrash()}
         onGoToBoard={setActiveBoardId}
         onDropAt={(cardId, point) => placeCard(cardId, point)}
+        types={snapshot.types}
+        tags={snapshot.tags}
+        typeFilter={libraryTypeFilter}
+        tagFilter={libraryTagFilter}
+        onToggleType={toggleLibraryType}
+        onToggleTag={toggleLibraryTag}
+        onClearFilters={clearLibraryFilters}
       />
 
       <PerfOverlay />

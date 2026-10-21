@@ -37,11 +37,14 @@ function snapshot(workspace: WorkspaceDocument) {
       .map((placement) => `${placement.boardId}/${placement.cardId}:${JSON.stringify(placement)}`)
       .sort(),
     edges: byKey(workspace.listEdges()).map((edge) => JSON.stringify(edge)),
+    types: byKey(workspace.listTypes()),
+    tags: byKey(workspace.listTags()),
   };
 }
 
 const BOARDS = ["b0", "b1"];
 const CARDS = ["c0", "c1", "c2", "c3"];
+const TYPE_IDS = ["note", "concept", "source", "project"];
 
 /**
  * Applies a random edit. Both clients run this between syncs, so the two
@@ -56,7 +59,7 @@ function randomEdit(workspace: WorkspaceDocument, next: () => number): void {
     workspace.listEdges()[Math.floor(next() * Math.max(1, workspace.listEdges().length))];
   const pick = (index: number) => next() * index;
 
-  switch (Math.floor(next() * 11)) {
+  switch (Math.floor(next() * 15)) {
     case 0:
       if (!card) workspace.createCard({ id: cardId, boardId: board, position: { x: 0, y: 0 } });
       break;
@@ -106,6 +109,31 @@ function randomEdit(workspace: WorkspaceDocument, next: () => number): void {
     case 10:
       workspace.moveLayer(board, cardId, next() > 0.5 ? "front" : "backward");
       break;
+    case 11:
+      workspace.addCardType(cardId, TYPE_IDS[Math.floor(pick(TYPE_IDS.length))] as string);
+      break;
+    case 12:
+      workspace.setPrimaryType(cardId, TYPE_IDS[Math.floor(pick(TYPE_IDS.length))] as string);
+      break;
+    case 13: {
+      const tag = workspace.listTags()[Math.floor(pick(Math.max(1, workspace.listTags().length)))];
+      if (tag) {
+        if (next() > 0.5) workspace.addCardTag(cardId, tag.id);
+        else workspace.removeCardTag(cardId, tag.id);
+      }
+      break;
+    }
+    case 14: {
+      const field =
+        workspace.getType("project")?.fields[
+          Math.floor(pick(Math.max(1, workspace.getType("project")?.fields.length ?? 1)))
+        ];
+      if (field && card) {
+        workspace.addCardType(cardId, "project");
+        workspace.setProperty(cardId, field.id, `v${Math.floor(pick(4))}`);
+      }
+      break;
+    }
     default:
       break;
   }
@@ -121,7 +149,13 @@ describe("workspace convergence", () => {
       const b = new WorkspaceDocument(docB);
 
       a.createBoard({ id: BOARDS[0] as string });
-      a.createCard({ id: CARDS[0] as string, boardId: BOARDS[0] as string });
+      a.ensureDefaultTypes();
+      a.createType({ id: "project", name: "Project" });
+      a.addField("project", { name: "Status", kind: "text" });
+      a.addField("project", { name: "Owner", kind: "text" });
+      a.createTag({ name: "Alpha" });
+      a.createTag({ name: "Beta" });
+      a.createCard({ id: CARDS[0] as string, typeId: "project", boardId: BOARDS[0] as string });
       sync(docA, docB);
 
       for (let step = 0; step < 40; step += 1) {

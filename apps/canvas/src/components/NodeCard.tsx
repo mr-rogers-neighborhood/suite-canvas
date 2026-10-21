@@ -1,12 +1,11 @@
-import type { Card, Connector as ConnectorModel } from "@suite/graph";
+import type { Card, CardType, Connector as ConnectorModel } from "@suite/graph";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CardReference } from "../cards/cardReferences";
-import { cardType } from "../cards/cardTypes";
+import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
@@ -21,12 +20,14 @@ export interface ConnectorPeerState {
   position: { x: number; y: number } | null;
 }
 
-export type { CardReference } from "../cards/cardReferences";
-
 export type EditingField = "title" | "body";
 
 export interface NodeCardProps {
   card: Card;
+  /** Primary type, resolved by the board; drives the glyph and its label. */
+  type: CardType;
+  /** Read-only property and tag chips for the card face. */
+  meta: CardMeta;
   /** Card document that owns the title and body rich text. */
   cardDoc: LoroDoc;
   /** Body rich-text container. */
@@ -41,7 +42,6 @@ export interface NodeCardProps {
   /** Resized dimensions in flow units; omitted means the card's natural size. */
   width?: number | null;
   height?: number | null;
-  references?: CardReference[];
   selected?: boolean;
   /** Which editor this card is focused in, if any. */
   editing?: EditingField | null;
@@ -61,8 +61,9 @@ export interface NodeCardProps {
   onConnectorContextMenu?: (event: React.MouseEvent, connectorId: string) => void;
   onStartEditing?: (field: EditingField) => void;
   onEditEnd?: () => void;
-  onGoToBoard?: (boardId: string) => void;
   onRemoveFromBoard?: () => void;
+  /** Opens the inspector for this card. */
+  onOpenInfo?: () => void;
   onTrash?: () => void;
 }
 
@@ -78,6 +79,8 @@ interface ToolbarState {
 
 export function NodeCard({
   card,
+  type,
+  meta,
   cardDoc,
   contentId,
   titleId,
@@ -86,7 +89,6 @@ export function NodeCard({
   boardId,
   width = null,
   height = null,
-  references = [],
   selected = false,
   editing = null,
   presence = [],
@@ -104,8 +106,8 @@ export function NodeCard({
   onConnectorContextMenu,
   onStartEditing,
   onEditEnd,
-  onGoToBoard,
   onRemoveFromBoard,
+  onOpenInfo,
   onTrash,
 }: NodeCardProps) {
   countRender("card");
@@ -113,7 +115,6 @@ export function NodeCard({
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
   // sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
-  const [footerOpen, setFooterOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
 
@@ -283,24 +284,11 @@ export function NodeCard({
         : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
     }`;
 
-  const otherBoards = references.filter((reference) => !reference.isCurrent);
-  const type = cardType(card.kind);
-
   const menuItems: ContextMenuItem[] = [
+    { label: "Card info", onSelect: () => onOpenInfo?.() },
     { label: "Edit title", onSelect: () => onStartEditing?.("title") },
     { label: "Edit body", onSelect: () => onStartEditing?.("body") },
     { label: "Remove from board", onSelect: () => onRemoveFromBoard?.() },
-    ...(otherBoards.length > 0
-      ? [
-          {
-            label: "Go to board",
-            items: otherBoards.map((reference) => ({
-              label: reference.boardName,
-              onSelect: () => onGoToBoard?.(reference.boardId),
-            })),
-          },
-        ]
-      : []),
     { label: "Delete card", danger: true, onSelect: () => onTrash?.() },
   ];
 
@@ -323,14 +311,19 @@ export function NodeCard({
       }}
     >
       <div className="card-header flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-2">
-        <span
-          role="img"
-          aria-label={`Card type: ${type.label}`}
-          title={type.label}
-          className="card-type-glyph shrink-0 text-[13px] leading-none text-[var(--ink-muted)]"
+        <button
+          type="button"
+          aria-label={`Card type: ${type.name}`}
+          title={type.name}
+          data-testid="card-type"
+          className="card-type-glyph nodrag shrink-0 rounded px-0.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenInfo?.();
+          }}
         >
           {type.glyph}
-        </span>
+        </button>
 
         <div className="card-title relative min-w-0 flex-1">
           {editing === "title" ? null : (
@@ -398,6 +391,25 @@ export function NodeCard({
         </button>
       </div>
 
+      {meta.properties.length > 0 || meta.tags.length > 0 ? (
+        <div
+          className="card-meta flex shrink-0 flex-wrap items-center gap-1 px-2.5 pb-1"
+          data-testid="card-meta"
+        >
+          {meta.properties.map((property) => (
+            <span key={property.fieldId} className="card-meta-chip" title={property.label}>
+              <span className="card-meta-label">{property.label}</span>
+              {property.value !== property.label ? <span>{property.value}</span> : null}
+            </span>
+          ))}
+          {meta.tags.map((name) => (
+            <span key={name} className="card-meta-tag">
+              #{name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: clicking the body focuses the nested editor */}
       <div
@@ -414,64 +426,6 @@ export function NodeCard({
         }}
       >
         <EditorContent editor={editor} />
-      </div>
-
-      <div className="card-footer shrink-0 border-t border-[var(--hairline)]">
-        <button
-          type="button"
-          aria-expanded={footerOpen}
-          data-testid="card-footer-toggle"
-          className="nodrag flex w-full items-center justify-between gap-2 px-2 py-1.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
-          onClick={() => setFooterOpen((open) => !open)}
-        >
-          <span>
-            References
-            {references.length > 0 ? ` \u00b7 ${references.length}` : ""}
-          </span>
-          <span aria-hidden="true">{footerOpen ? "\u25be" : "\u25b8"}</span>
-        </button>
-
-        {footerOpen ? (
-          <div className="px-2 pb-2" data-testid="card-footer">
-            {references.length === 0 ? (
-              <p className="text-[11px] text-[var(--ink-muted)]">Only on this board.</p>
-            ) : (
-              <ul className="space-y-1">
-                {references.map((reference) => (
-                  <li key={reference.boardId} className="flex items-center gap-1.5 text-[11px]">
-                    <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                      {reference.isHome ? "\u2302" : "\u2197"}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">
-                      {reference.boardName}
-                      {reference.isCurrent ? (
-                        <span className="text-[var(--ink-muted)]"> (this board)</span>
-                      ) : null}
-                    </span>
-                    {reference.isCurrent ? null : (
-                      <button
-                        type="button"
-                        className="nodrag rounded px-1 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                        onClick={() => onGoToBoard?.(reference.boardId)}
-                      >
-                        Go
-                      </button>
-                    )}
-                    {reference.isCurrent ? (
-                      <button
-                        type="button"
-                        className="nodrag rounded px-1 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                        onClick={() => onRemoveFromBoard?.()}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : null}
       </div>
 
       {toolbar ? (

@@ -16,17 +16,17 @@ function writeParagraph(workspace: WorkspaceDocument, container: LoroMap, text: 
 
 const now = Date.now();
 
-function createCard(cardId: string, kind = "note") {
-  const card = {
+function createCard(cardId: string, typeId = "note") {
+  return cardSchema.parse({
     id: cardId,
-    kind,
     createdAt: now,
     updatedAt: now,
     connectors: [],
-    data: {},
-  };
-  if (kind === "note") return cardSchema.parse(card);
-  throw new Error(`unknown kind ${kind}`);
+    typeIds: [typeId],
+    primaryTypeId: typeId,
+    tags: [],
+    properties: {},
+  });
 }
 
 function createEdge(edgeId: string, boardId: string) {
@@ -48,8 +48,8 @@ describe("safeParse", () => {
     expect(() => createCard("a")).not.toThrow();
   });
 
-  it("rejects unknown kinds", () => {
-    expect(() => createCard("a", "sketch")).toThrow();
+  it("requires at least one type", () => {
+    expect(() => cardSchema.parse({ ...createCard("a"), typeIds: [] })).toThrow();
   });
 
   it("requires a board on persisted edges", () => {

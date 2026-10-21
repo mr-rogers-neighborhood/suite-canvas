@@ -1,14 +1,17 @@
 import { z } from "zod";
 
-export const nodeKinds = ["note"] as const;
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
+export const fieldKinds = ["text", "number", "date", "select", "multiSelect", "checkbox"] as const;
 
-export const nodeKindSchema = z.enum(nodeKinds);
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
+export const fieldKindSchema = z.enum(fieldKinds);
 
 export const entityIdSchema = z.string().min(1);
+
+/** The type every card falls back to; it cannot be deleted. */
+export const DEFAULT_TYPE_ID = "note";
 
 export const positionSchema = z.object({
   x: z.number().finite(),
@@ -22,14 +25,62 @@ export const connectorSchema = z.object({
   y: z.number().min(0).max(1),
 });
 
-export const noteDataSchema = z.object({});
-
 export const boardSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
+
+/** One choice of a select or multi-select field. */
+export const selectOptionSchema = z.object({
+  id: entityIdSchema,
+  label: z.string().min(1),
+  color: z.string().optional(),
+  /** Explicit order: Loro map iteration is not insertion order. */
+  order: z.number().int(),
+});
+
+/** A typed field owned by one type. Field ids are unique across the workspace. */
+export const fieldDefinitionSchema = z.object({
+  id: entityIdSchema,
+  name: z.string().min(1),
+  kind: fieldKindSchema,
+  required: z.boolean(),
+  order: z.number().int(),
+  options: z.array(selectOptionSchema),
+});
+
+/** A schema-bearing classification. Exactly one is primary on a card. */
+export const cardTypeSchema = z.object({
+  id: entityIdSchema,
+  name: z.string().min(1),
+  glyph: z.string().min(1),
+  color: z.string().optional(),
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+  fields: z.array(fieldDefinitionSchema),
+});
+
+/** A freeform label with no schema, used for retrieval only. */
+export const tagSchema = z.object({
+  id: entityIdSchema,
+  name: z.string().min(1),
+  color: z.string().optional(),
+  createdAt: z.number().int().nonnegative(),
+});
+
+/**
+ * A property value. The field definition decides how to read it: text/date/
+ * select are strings, number is a number, checkbox is a boolean, and
+ * multi-select is the list of selected option ids.
+ */
+export const propertyValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.array(z.string()),
+]);
 
 const cardBase = {
   id: entityIdSchema,
@@ -41,12 +92,17 @@ const cardBase = {
 };
 
 /**
- * A card is a workspace-level object: it owns its content and connectors and
- * exists independently of any board. Where it *appears* is a placement.
+ * A card is a workspace-level object: it owns its content, type membership,
+ * tags and property values, and exists independently of any board.
  */
-export const cardSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("note"), ...cardBase, data: noteDataSchema }),
-]);
+export const cardSchema = z.object({
+  ...cardBase,
+  /** Merge-safe membership; the primary type is first in the materialised list. */
+  typeIds: z.array(entityIdSchema).min(1),
+  primaryTypeId: entityIdSchema,
+  tags: z.array(entityIdSchema),
+  properties: z.record(z.string(), propertyValueSchema),
+});
 
 /** Where a card sits on a board. One placement per (board, card) pair. */
 export const placementSchema = z.object({
@@ -84,8 +140,13 @@ export const graphEdgeSchema = z.object({
 export type Connector = z.infer<typeof connectorSchema>;
 export type Board = z.infer<typeof boardSchema>;
 export type Card = z.infer<typeof cardSchema>;
+export type CardType = z.infer<typeof cardTypeSchema>;
+export type Tag = z.infer<typeof tagSchema>;
+export type FieldDefinition = z.infer<typeof fieldDefinitionSchema>;
+export type FieldKind = z.infer<typeof fieldKindSchema>;
+export type SelectOption = z.infer<typeof selectOptionSchema>;
+export type PropertyValue = z.infer<typeof propertyValueSchema>;
 export type Placement = z.infer<typeof placementSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
-export type NodeKind = z.infer<typeof nodeKindSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;

@@ -1,11 +1,15 @@
+import type { CardType, Tag } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryTab } from "../store/useUiStore";
+import { facetCounts } from "./libraryFilters";
 
 export interface LibraryItem {
   id: string;
   title: string;
   boards: Array<{ id: string; name: string }>;
+  typeIds: string[];
+  tagIds: string[];
 }
 
 export interface LibraryDrawerProps {
@@ -26,6 +30,13 @@ export interface LibraryDrawerProps {
   onGoToBoard: (boardId: string) => void;
   /** Pointer drop over the canvas, in client coordinates. */
   onDropAt: (cardId: string, point: { x: number; y: number }) => void;
+  types: CardType[];
+  tags: Tag[];
+  typeFilter: string[];
+  tagFilter: string[];
+  onToggleType: (id: string) => void;
+  onToggleTag: (id: string) => void;
+  onClearFilters: () => void;
 }
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -53,6 +64,13 @@ export function LibraryDrawer({
   onEmptyTrash,
   onGoToBoard,
   onDropAt,
+  types,
+  tags,
+  typeFilter,
+  tagFilter,
+  onToggleType,
+  onToggleTag,
+  onClearFilters,
 }: LibraryDrawerProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
@@ -116,6 +134,8 @@ export function LibraryDrawer({
   if (!open) return null;
 
   const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
+  const countsByFacet = facetCounts(items, typeFilter, tagFilter);
+  const filtering = typeFilter.length > 0 || tagFilter.length > 0;
 
   return createPortal(
     <div
@@ -176,14 +196,73 @@ export function LibraryDrawer({
         </div>
       </div>
 
+      <div
+        className="flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
+        data-testid="library-facets"
+      >
+        {types.map((type) => {
+          const count = countsByFacet.types.get(type.id) ?? 0;
+          const active = typeFilter.includes(type.id);
+          return (
+            <button
+              key={type.id}
+              type="button"
+              aria-pressed={active}
+              data-testid={`facet-type-${type.id}`}
+              className="library-tab"
+              data-active={active ? "true" : undefined}
+              onClick={() => onToggleType(type.id)}
+            >
+              <span aria-hidden="true">{type.glyph}</span>
+              {type.name}
+              <span className="tabular-nums text-[var(--ink-muted)]">{count}</span>
+            </button>
+          );
+        })}
+
+        {tags.length > 0 ? <span className="h-4 w-px bg-[var(--hairline)]" /> : null}
+
+        {tags.map((tag) => {
+          const count = countsByFacet.tags.get(tag.id) ?? 0;
+          const active = tagFilter.includes(tag.id);
+          return (
+            <button
+              key={tag.id}
+              type="button"
+              aria-pressed={active}
+              data-testid={`facet-tag-${tag.id}`}
+              className="library-tab"
+              data-active={active ? "true" : undefined}
+              onClick={() => onToggleTag(tag.id)}
+            >
+              #{tag.name}
+              <span className="tabular-nums text-[var(--ink-muted)]">{count}</span>
+            </button>
+          );
+        })}
+
+        {filtering ? (
+          <button
+            type="button"
+            className="library-action ml-auto"
+            data-testid="clear-filters"
+            onClick={onClearFilters}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+
       <div className="max-h-[46vh] overflow-y-auto p-1.5">
         {items.length === 0 ? (
           <p className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]">
-            {tab === "inbox"
-              ? "Nothing in the inbox. Cards you take off a board land here."
-              : tab === "cards"
-                ? "No cards yet."
-                : "Trash is empty."}
+            {filtering
+              ? "No cards match these filters."
+              : tab === "inbox"
+                ? "Nothing in the inbox. Cards you take off a board land here."
+                : tab === "cards"
+                  ? "No cards yet."
+                  : "Trash is empty."}
           </p>
         ) : (
           <ul className="space-y-0.5">
@@ -208,6 +287,15 @@ export function LibraryDrawer({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px]">{item.title}</p>
+                  {item.tagIds.length > 0 ? (
+                    <p className="truncate text-[10px] text-[var(--ink-muted)]">
+                      {item.tagIds
+                        .map((id) => tags.find((tag) => tag.id === id))
+                        .filter((tag): tag is Tag => tag !== undefined)
+                        .map((tag) => `#${tag.name}`)
+                        .join(" ")}
+                    </p>
+                  ) : null}
                   {item.boards.length > 0 ? (
                     <p className="truncate text-[10px] text-[var(--ink-muted)]">
                       {item.boards.map((board) => board.name).join(" \u00b7 ")}

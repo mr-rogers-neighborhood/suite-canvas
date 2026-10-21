@@ -1,10 +1,12 @@
-import type { Board, Card, GraphEdge, Placement } from "@suite/graph";
+import type { Board, Card, CardType, GraphEdge, Placement, Tag } from "@suite/graph";
 
 export interface WorkspaceSnapshot {
   boards: Board[];
   cards: Card[];
   placements: Placement[];
   edges: GraphEdge[];
+  types: CardType[];
+  tags: Tag[];
 }
 
 /** Reuses the previous array when every element is still the same object. */
@@ -17,10 +19,10 @@ export function reuseArray<T>(previous: T[] | undefined, next: T[]): T[] {
 }
 
 /**
- * Keeps the four collections individually stable. `WorkspaceDocument` hands out
- * the same object for a record until its own fields change, so a peer's edit
- * leaves every other card, placement and edge identical, and the memoised views
- * downstream do not recompute.
+ * Keeps every collection individually stable. `WorkspaceDocument` hands out the
+ * same object for a record until its own fields change, so a peer's edit leaves
+ * every other card, placement, edge, type and tag identical, and the memoised
+ * views downstream do not recompute.
  */
 export function mergeSnapshots(
   previous: WorkspaceSnapshot | undefined,
@@ -31,13 +33,17 @@ export function mergeSnapshots(
   const cards = reuseArray(previous.cards, next.cards);
   const placements = reuseArray(previous.placements, next.placements);
   const edges = reuseArray(previous.edges, next.edges);
+  const types = reuseArray(previous.types, next.types);
+  const tags = reuseArray(previous.tags, next.tags);
   if (
     boards === previous.boards &&
     cards === previous.cards &&
     placements === previous.placements &&
-    edges === previous.edges
+    edges === previous.edges &&
+    types === previous.types &&
+    tags === previous.tags
   ) {
     return previous;
   }
-  return { boards, cards, placements, edges };
+  return { boards, cards, placements, edges, types, tags };
 }

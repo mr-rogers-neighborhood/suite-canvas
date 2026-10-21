@@ -1,4 +1,4 @@
-import type { Card } from "@suite/graph";
+import type { Card, CardType } from "@suite/graph";
 import { render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
@@ -11,7 +11,6 @@ const titleId = doc.getMap("titles").ensureMergeableMap("n1").id;
 
 const card: Card = {
   id: "n1",
-  kind: "note",
   createdAt: 0,
   updatedAt: 0,
   connectors: [
@@ -20,11 +19,25 @@ const card: Card = {
     { id: "c-bottom", x: 0.5, y: 1 },
     { id: "c-left", x: 0, y: 0.5 },
   ],
-  data: {},
+  typeIds: ["note"],
+  primaryTypeId: "note",
+  tags: [],
+  properties: {},
+};
+
+const type: CardType = {
+  id: "note",
+  name: "Note",
+  glyph: "\u25a1",
+  createdAt: 0,
+  updatedAt: 0,
+  fields: [],
 };
 
 const base = {
   card,
+  type,
+  meta: { properties: [], tags: [] },
   cardDoc: doc,
   contentId,
   titleId,

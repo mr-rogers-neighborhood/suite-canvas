@@ -8,8 +8,13 @@ const meta = {
   args: {
     inboxCount: 0,
     libraryOpen: false,
+    types: [
+      { id: "note", name: "Note", glyph: "\u25a1", createdAt: 0, updatedAt: 0, fields: [] },
+      { id: "concept", name: "Concept", glyph: "\u25c6", createdAt: 1, updatedAt: 1, fields: [] },
+    ],
     onToggleLibrary: () => {},
     onCreateCard: () => {},
+    onManageTypes: () => {},
   },
   decorators: [
     (Story) => (

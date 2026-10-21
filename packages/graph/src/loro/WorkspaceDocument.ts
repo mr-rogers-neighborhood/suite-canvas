@@ -19,15 +19,25 @@ import {
   type Board,
   boardSchema,
   type Card,
+  type CardType,
   type Connector,
   cardSchema,
+  cardTypeSchema,
+  DEFAULT_TYPE_ID,
+  type FieldDefinition,
+  fieldDefinitionSchema,
   type GraphEdge,
   graphEdgeSchema,
   type Placement,
+  type PropertyValue,
   placementSchema,
+  type SelectOption,
+  selectOptionSchema,
+  type Tag,
+  tagSchema,
 } from "../schema.js";
 
-export type WorkspaceSection = "boards" | "cards" | "placements" | "edges";
+export type WorkspaceSection = "boards" | "cards" | "placements" | "edges" | "types" | "tags";
 export type WorkspaceAction = "add" | "update" | "delete";
 export type LayerAction = "forward" | "front" | "backward" | "back";
 
@@ -35,7 +45,7 @@ export interface WorkspaceChange {
   section: WorkspaceSection;
   action: WorkspaceAction;
   key: string;
-  value: Board | Card | Placement | GraphEdge | null;
+  value: Board | Card | Placement | GraphEdge | CardType | Tag | null;
 }
 
 /** Shared text containers for one card, stable until the cards map changes. */
@@ -46,10 +56,31 @@ export interface CardContainers {
 
 export interface CreateCardInput {
   id?: string;
-  kind?: Card["kind"];
+  /** Primary type; defaults to the built-in note type. */
+  typeId?: string;
   /** Place the card on this board straight away; omit to create it in the inbox. */
   boardId?: string;
   position?: { x: number; y: number };
+}
+
+export interface CreateTypeInput {
+  id?: string;
+  name: string;
+  glyph?: string;
+  color?: string;
+}
+
+export interface CreateFieldInput {
+  name: string;
+  kind: FieldDefinition["kind"];
+  required?: boolean;
+  /** Initial labels for select and multi-select fields. */
+  options?: string[];
+}
+
+export interface CardFieldView {
+  typeId: string;
+  field: FieldDefinition;
 }
 
 export interface CreateEdgeInput {
@@ -63,6 +94,8 @@ export interface CreateEdgeInput {
 
 /** Deterministic id so every client seeds the same default board. */
 export const DEFAULT_BOARD_ID = "board-1";
+/** Semantic records (types, fields, tags, properties) start at version 3. */
+export const SCHEMA_VERSION = 3;
 /** Below this gap two ranks are one float step apart; the board renumbers. */
 const MIN_RANK_GAP = 1e-7;
 
@@ -79,15 +112,21 @@ export function placementKey(boardId: string, cardId: string): string {
 
 /** Backfills fields added after a document was created. */
 export function normalizeCard(card: Card): Card {
-  const legacy = card as Partial<Card> & { connectors?: Connector[] };
+  const typeIds = [...new Set(card.typeIds.length > 0 ? card.typeIds : [DEFAULT_TYPE_ID])];
+  const primaryTypeId = typeIds.includes(card.primaryTypeId) ? card.primaryTypeId : typeIds[0];
   return {
     ...card,
+    typeIds: primaryTypeId
+      ? [primaryTypeId, ...typeIds.filter((id) => id !== primaryTypeId)]
+      : typeIds,
+    primaryTypeId: primaryTypeId ?? DEFAULT_TYPE_ID,
+    tags: [...new Set(card.tags)],
     connectors:
-      Array.isArray(legacy.connectors) && legacy.connectors.length > 0
-        ? legacy.connectors
+      Array.isArray(card.connectors) && card.connectors.length > 0
+        ? card.connectors
         : [...defaultConnectors()],
-    deletedAt: legacy.deletedAt ?? null,
-  } as Card;
+    deletedAt: card.deletedAt ?? null,
+  };
 }
 
 function normalizeEdge(edge: GraphEdge): GraphEdge {
@@ -99,6 +138,23 @@ function normalizeEdge(edge: GraphEdge): GraphEdge {
     ...edge,
     bidirectional: typeof legacy.bidirectional === "boolean" ? legacy.bidirectional : false,
     path: legacy.path ?? "bezier",
+  };
+}
+
+function observeIn(
+  registry: Map<string, Set<() => void>>,
+  key: string,
+  listener: () => void,
+): () => void {
+  let listeners = registry.get(key);
+  if (!listeners) {
+    listeners = new Set();
+    registry.set(key, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) registry.delete(key);
   };
 }
 
@@ -174,15 +230,139 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
       left.order - right.order || left.connector.id.localeCompare(right.connector.id),
   );
 
+  const primaryTypeId = readString(fields, "primaryTypeId") ?? DEFAULT_TYPE_ID;
+  const typesMap = fields.get("types");
+  const rawTypes = isMap(typesMap) ? typesMap.keys() : [];
+  const membership = rawTypes.length > 0 ? rawTypes : [primaryTypeId];
+  const typeIds = membership.includes(primaryTypeId)
+    ? [primaryTypeId, ...membership.filter((id) => id !== primaryTypeId).sort()]
+    : [...membership].sort();
+
+  const tagsMap = fields.get("tags");
+  const tags = isMap(tagsMap) ? tagsMap.keys().sort() : [];
+
+  const properties: Record<string, PropertyValue> = {};
+  const propertiesMap = fields.get("properties");
+  if (isMap(propertiesMap)) {
+    for (const fieldId of propertiesMap.keys()) {
+      const value = propertiesMap.get(fieldId);
+      if (isMap(value)) properties[fieldId] = value.keys().sort();
+      else if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        properties[fieldId] = value;
+      }
+    }
+  }
+
   return cardSchema.parse({
     id,
-    kind: "note",
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     connectors: connectors.map((entry) => entry.connector),
     deletedAt: readNumber(fields, "deletedAt") ?? null,
-    data: fields.get("data") ?? {},
+    typeIds,
+    primaryTypeId,
+    tags,
+    properties,
   });
+}
+
+function optionFromMap(id: string, fields: LoroMap): SelectOption {
+  const color = readString(fields, "color");
+  return selectOptionSchema.parse({
+    id,
+    label: readString(fields, "label") ?? id,
+    order: readNumber(fields, "order") ?? Number.MAX_SAFE_INTEGER,
+    ...(color ? { color } : {}),
+  });
+}
+
+export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
+  const options: SelectOption[] = [];
+  const optionsMap = fields.get("options");
+  if (isMap(optionsMap)) {
+    for (const optionId of optionsMap.keys()) {
+      const option = optionsMap.get(optionId);
+      if (isMap(option)) options.push(optionFromMap(optionId, option));
+    }
+  }
+  options.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+
+  return fieldDefinitionSchema.parse({
+    id,
+    name: readString(fields, "name") ?? "Field",
+    kind: readString(fields, "kind") ?? "text",
+    required: readBoolean(fields, "required") ?? false,
+    order: readNumber(fields, "order") ?? Number.MAX_SAFE_INTEGER,
+    options,
+  });
+}
+
+export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
+  const definitions: FieldDefinition[] = [];
+  const fieldsMap = fields.get("fields");
+  if (isMap(fieldsMap)) {
+    for (const fieldId of fieldsMap.keys()) {
+      const field = fieldsMap.get(fieldId);
+      if (isMap(field)) definitions.push(fieldFromMap(fieldId, field));
+    }
+  }
+  definitions.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+
+  const color = readString(fields, "color");
+  return cardTypeSchema.parse({
+    id,
+    name: readString(fields, "name") ?? "Type",
+    glyph: readString(fields, "glyph") ?? "\u25c7",
+    createdAt: readNumber(fields, "createdAt") ?? 0,
+    updatedAt: readNumber(fields, "updatedAt") ?? 0,
+    fields: definitions,
+    ...(color ? { color } : {}),
+  });
+}
+
+export function tagFromMap(id: string, fields: LoroMap): Tag {
+  const color = readString(fields, "color");
+  return tagSchema.parse({
+    id,
+    name: readString(fields, "name") ?? id,
+    createdAt: readNumber(fields, "createdAt") ?? 0,
+    ...(color ? { color } : {}),
+  });
+}
+
+/** Writers validate against the type's own field definition. */
+function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void {
+  function fail(expected: string): never {
+    throw new Error(`Field "${field.name}" expects ${expected}`);
+  }
+  switch (field.kind) {
+    case "text":
+    case "date":
+      if (typeof value !== "string") fail("a string");
+      return;
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) fail("a finite number");
+      return;
+    case "checkbox":
+      if (typeof value !== "boolean") fail("a boolean");
+      return;
+    case "select": {
+      if (typeof value !== "string") fail("an option id");
+      if (!field.options.some((option) => option.id === value)) fail("one of its options");
+      return;
+    }
+    case "multiSelect": {
+      if (!Array.isArray(value)) fail("a list of option ids");
+      if (value.some((entry) => !field.options.some((option) => option.id === entry))) {
+        fail("only its options");
+      }
+      return;
+    }
+  }
 }
 
 export function placementFromMap(key: string, fields: LoroMap): Placement {
@@ -234,6 +414,8 @@ export class WorkspaceDocument {
   static readonly CARDS_KEY = "cards";
   static readonly PLACEMENTS_KEY = "placements";
   static readonly EDGES_KEY = "edges";
+  static readonly TYPES_KEY = "types";
+  static readonly TAGS_KEY = "tags";
   static readonly CONTENT_KEY = "content";
   static readonly TITLES_KEY = "titles";
   static readonly META_KEY = "meta";
@@ -243,6 +425,8 @@ export class WorkspaceDocument {
   private readonly cards: LoroMap;
   private readonly placements: LoroMap;
   private readonly edges: LoroMap;
+  private readonly types: LoroMap;
+  private readonly tags: LoroMap;
   private readonly content: LoroMap;
   private readonly titles: LoroMap;
   private readonly meta: LoroMap;
@@ -250,11 +434,14 @@ export class WorkspaceDocument {
   private readonly placementCache = new Map<string, Placement>();
   private readonly edgeCache = new Map<string, GraphEdge>();
   private readonly boardCache = new Map<string, Board>();
+  private readonly typeCache = new Map<string, CardType>();
+  private readonly tagCache = new Map<string, Tag>();
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
   private readonly containerCache = new Map<string, CardContainers>();
   private readonly containerListeners = new Map<string, Set<() => void>>();
+  private readonly titleListeners = new Map<string, Set<() => void>>();
 
   constructor(doc: LoroDoc = new LoroDoc()) {
     this.doc = doc;
@@ -262,6 +449,8 @@ export class WorkspaceDocument {
     this.cards = doc.getMap(WorkspaceDocument.CARDS_KEY);
     this.placements = doc.getMap(WorkspaceDocument.PLACEMENTS_KEY);
     this.edges = doc.getMap(WorkspaceDocument.EDGES_KEY);
+    this.types = doc.getMap(WorkspaceDocument.TYPES_KEY);
+    this.tags = doc.getMap(WorkspaceDocument.TAGS_KEY);
     this.content = doc.getMap(WorkspaceDocument.CONTENT_KEY);
     this.titles = doc.getMap(WorkspaceDocument.TITLES_KEY);
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
@@ -270,6 +459,8 @@ export class WorkspaceDocument {
       cards: new Set(this.cards.keys()),
       placements: new Set(this.placements.keys()),
       edges: new Set(this.edges.keys()),
+      types: new Set(this.types.keys()),
+      tags: new Set(this.tags.keys()),
     };
 
     doc.subscribe((batch) => {
@@ -289,7 +480,9 @@ export class WorkspaceDocument {
           root !== WorkspaceDocument.BOARDS_KEY &&
           root !== WorkspaceDocument.CARDS_KEY &&
           root !== WorkspaceDocument.PLACEMENTS_KEY &&
-          root !== WorkspaceDocument.EDGES_KEY
+          root !== WorkspaceDocument.EDGES_KEY &&
+          root !== WorkspaceDocument.TYPES_KEY &&
+          root !== WorkspaceDocument.TAGS_KEY
         ) {
           continue;
         }
@@ -303,10 +496,19 @@ export class WorkspaceDocument {
         touched.set(section, keys);
       }
       for (const cardId of containers) {
+        const before = this.containerCache.get(cardId);
         this.containerCache.delete(cardId);
-        const listeners = this.containerListeners.get(cardId);
-        if (!listeners) continue;
-        for (const listener of listeners) listener();
+        const after = this.cardContainers(cardId);
+        // Text edits also land here; only a container appearing or disappearing
+        // changes what an editor needs to mount.
+        if (before && before.contentId === after.contentId && before.titleId === after.titleId) {
+          this.containerCache.set(cardId, before);
+        } else {
+          const listeners = this.containerListeners.get(cardId);
+          if (listeners) for (const listener of listeners) listener();
+        }
+        const titles = this.titleListeners.get(cardId);
+        if (titles) for (const listener of titles) listener();
       }
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {
@@ -352,6 +554,12 @@ export class WorkspaceDocument {
       case "edges":
         this.edgeCache.delete(key);
         break;
+      case "types":
+        this.typeCache.delete(key);
+        break;
+      case "tags":
+        this.tagCache.delete(key);
+        break;
     }
   }
 
@@ -365,6 +573,10 @@ export class WorkspaceDocument {
         return this.getPlacementByKey(key) ?? null;
       case "edges":
         return this.getEdge(key) ?? null;
+      case "types":
+        return this.getType(key) ?? null;
+      case "tags":
+        return this.getTag(key) ?? null;
     }
   }
 
@@ -482,6 +694,335 @@ export class WorkspaceDocument {
     return this.createBoard({ id: DEFAULT_BOARD_ID, name: "Board 1" });
   }
 
+  // ----------------------------------------------------------------- types
+
+  private cachedType(id: string): CardType | undefined {
+    const cached = this.typeCache.get(id);
+    if (cached) return cached;
+    const value = this.types.get(id);
+    if (!isMap(value)) return undefined;
+    const type = cardTypeFromMap(id, value);
+    this.typeCache.set(id, type);
+    return type;
+  }
+
+  listTypes(): CardType[] {
+    return this.types
+      .keys()
+      .map((id) => this.cachedType(id))
+      .filter((type): type is CardType => type !== undefined)
+      .sort(
+        (a, b) =>
+          Number(b.id === DEFAULT_TYPE_ID) - Number(a.id === DEFAULT_TYPE_ID) ||
+          a.createdAt - b.createdAt ||
+          a.id.localeCompare(b.id),
+      );
+  }
+
+  getType(id: string): CardType | undefined {
+    return this.cachedType(id);
+  }
+
+  private writeType(type: CardType, commit: boolean): void {
+    const fields = this.types.ensureMergeableMap(type.id);
+    fields.set("name", type.name);
+    fields.set("glyph", type.glyph);
+    if (type.color) fields.set("color", type.color);
+    else if (fields.get("color") !== undefined) fields.delete("color");
+    fields.set("createdAt", type.createdAt);
+    fields.set("updatedAt", type.updatedAt);
+    fields.ensureMergeableMap("fields");
+    if (commit) this.commit(`${STRUCT_ORIGIN}type`);
+  }
+
+  createType(input: CreateTypeInput): CardType {
+    return this.createTypeInternal(input, true);
+  }
+
+  private createTypeInternal(input: CreateTypeInput, commit: boolean): CardType {
+    const now = Date.now();
+    const type = cardTypeSchema.parse({
+      id: input.id ?? crypto.randomUUID(),
+      name: input.name.trim() || "Type",
+      glyph: input.glyph ?? "\u25c7",
+      createdAt: now,
+      updatedAt: now,
+      fields: [],
+      ...(input.color ? { color: input.color } : {}),
+    });
+    this.writeType(type, commit);
+    this.typeCache.set(type.id, type);
+    return type;
+  }
+
+  updateType(id: string, patch: { name?: string; glyph?: string; color?: string | null }): void {
+    const type = this.getType(id);
+    if (!type) return;
+    const fields = this.types.get(id);
+    if (!isMap(fields)) return;
+    if (patch.name !== undefined) fields.set("name", patch.name.trim() || type.name);
+    if (patch.glyph !== undefined) fields.set("glyph", patch.glyph || type.glyph);
+    if (patch.color !== undefined) {
+      if (patch.color) fields.set("color", patch.color);
+      else if (fields.get("color") !== undefined) fields.delete("color");
+    }
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}type`);
+  }
+
+  /**
+   * Deletes a type and reassigns the cards that used it. One commit, so the
+   * whole command is one undo step. The built-in note type cannot be deleted.
+   */
+  deleteType(id: string, options: { reassignTo?: string } = {}): number {
+    if (id === DEFAULT_TYPE_ID) {
+      throw new Error("The note type cannot be deleted");
+    }
+    const type = this.getType(id);
+    if (!type) return 0;
+    const reassignTo = options.reassignTo ?? DEFAULT_TYPE_ID;
+    if (reassignTo === id) {
+      throw new Error("A type cannot be reassigned to itself");
+    }
+    if (!this.getType(reassignTo)) {
+      throw new Error(`Unknown replacement type: ${reassignTo}`);
+    }
+
+    let reassigned = 0;
+    for (const cardId of this.cards.keys()) {
+      const fields = this.cards.get(cardId);
+      if (!isMap(fields)) continue;
+      const memberships = fields.get("types");
+      if (!isMap(memberships) || !memberships.get(id)) continue;
+      memberships.delete(id);
+      if (!memberships.get(reassignTo)) memberships.set(reassignTo, true);
+      if ((readString(fields, "primaryTypeId") ?? DEFAULT_TYPE_ID) === id) {
+        fields.set("primaryTypeId", reassignTo);
+      }
+      fields.set("updatedAt", Date.now());
+      reassigned += 1;
+    }
+
+    this.types.delete(id);
+    this.commit(`${STRUCT_ORIGIN}delete-type`);
+    return reassigned;
+  }
+
+  /** Idempotent: the three starter types exist in every workspace. */
+  ensureDefaultTypes(): void {
+    const defaults: CreateTypeInput[] = [
+      { id: DEFAULT_TYPE_ID, name: "Note", glyph: "\u25a1" },
+      { id: "concept", name: "Concept", glyph: "\u25c6" },
+      { id: "source", name: "Source", glyph: "\u25a4" },
+    ];
+    let changed = false;
+    for (const definition of defaults) {
+      if (this.getType(definition.id ?? "")) continue;
+      this.createTypeInternal(definition, false);
+      changed = true;
+    }
+    if (this.meta.get("schemaVersion") !== SCHEMA_VERSION) {
+      this.meta.set("schemaVersion", SCHEMA_VERSION);
+      changed = true;
+    }
+    if (changed) this.commit(`${STRUCT_ORIGIN}seed`);
+  }
+
+  private typeFields(typeId: string): LoroMap | undefined {
+    const type = this.types.get(typeId);
+    if (!isMap(type)) return undefined;
+    const fields = type.get("fields");
+    return isMap(fields) ? fields : undefined;
+  }
+
+  private touchType(typeId: string): void {
+    const type = this.types.get(typeId);
+    if (isMap(type)) type.set("updatedAt", Date.now());
+  }
+
+  addField(typeId: string, input: CreateFieldInput): FieldDefinition {
+    const fields = this.typeFields(typeId);
+    if (!fields) throw new Error(`Unknown type: ${typeId}`);
+    const id = crypto.randomUUID();
+    const order = fields.keys().length;
+    const field = fields.ensureMergeableMap(id);
+    field.set("name", input.name.trim() || "Field");
+    field.set("kind", input.kind);
+    field.set("required", input.required ?? false);
+    field.set("order", order);
+    if (input.kind === "select" || input.kind === "multiSelect") {
+      const options = field.ensureMergeableMap("options");
+      (input.options ?? []).forEach((label, index) => {
+        const optionId = crypto.randomUUID();
+        const option = options.ensureMergeableMap(optionId);
+        option.set("label", label);
+        option.set("order", index);
+      });
+    }
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+    return fieldFromMap(id, field);
+  }
+
+  /** The kind is immutable: deleting and recreating a field is the migration. */
+  updateField(typeId: string, fieldId: string, patch: { name?: string; required?: boolean }): void {
+    const field = this.typeFields(typeId)?.get(fieldId);
+    if (!isMap(field)) return;
+    if (patch.name !== undefined) field.set("name", patch.name.trim() || "Field");
+    if (patch.required !== undefined) field.set("required", patch.required);
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+  }
+
+  /** Removes the definition only; card values stay dormant and can be revived. */
+  removeField(typeId: string, fieldId: string): void {
+    const fields = this.typeFields(typeId);
+    if (!fields || fields.get(fieldId) === undefined) return;
+    fields.delete(fieldId);
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+  }
+
+  moveField(typeId: string, fieldId: string, toIndex: number): void {
+    const fields = this.typeFields(typeId);
+    const type = this.getType(typeId);
+    if (!fields || !type) return;
+    const ordered = type.fields.filter((field) => field.id !== fieldId);
+    const moved = type.fields.find((field) => field.id === fieldId);
+    if (!moved) return;
+    ordered.splice(Math.max(0, Math.min(toIndex, ordered.length)), 0, moved);
+    ordered.forEach((field, index) => {
+      const target = fields.get(field.id);
+      if (isMap(target)) target.set("order", index);
+    });
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+  }
+
+  addSelectOption(
+    typeId: string,
+    fieldId: string,
+    input: { label: string; color?: string },
+  ): SelectOption {
+    const options = this.fieldOptions(typeId, fieldId);
+    if (!options) throw new Error(`Field ${fieldId} has no options`);
+    const id = crypto.randomUUID();
+    const option = options.ensureMergeableMap(id);
+    option.set("label", input.label.trim() || "Option");
+    if (input.color) option.set("color", input.color);
+    option.set("order", options.keys().length);
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+    return optionFromMap(id, option);
+  }
+
+  updateSelectOption(
+    typeId: string,
+    fieldId: string,
+    optionId: string,
+    patch: { label?: string; color?: string | null },
+  ): void {
+    const option = this.fieldOptions(typeId, fieldId)?.get(optionId);
+    if (!isMap(option)) return;
+    if (patch.label !== undefined) option.set("label", patch.label.trim() || "Option");
+    if (patch.color !== undefined) {
+      if (patch.color) option.set("color", patch.color);
+      else if (option.get("color") !== undefined) option.delete("color");
+    }
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+  }
+
+  removeSelectOption(typeId: string, fieldId: string, optionId: string): void {
+    const options = this.fieldOptions(typeId, fieldId);
+    if (!options || options.get(optionId) === undefined) return;
+    options.delete(optionId);
+    this.touchType(typeId);
+    this.commit(`${STRUCT_ORIGIN}field`);
+  }
+
+  private fieldOptions(typeId: string, fieldId: string): LoroMap | undefined {
+    const field = this.typeFields(typeId)?.get(fieldId);
+    if (!isMap(field)) return undefined;
+    const options = field.get("options");
+    return isMap(options) ? options : undefined;
+  }
+
+  // ------------------------------------------------------------------ tags
+
+  private cachedTag(id: string): Tag | undefined {
+    const cached = this.tagCache.get(id);
+    if (cached) return cached;
+    const value = this.tags.get(id);
+    if (!isMap(value)) return undefined;
+    const tag = tagFromMap(id, value);
+    this.tagCache.set(id, tag);
+    return tag;
+  }
+
+  listTags(): Tag[] {
+    return this.tags
+      .keys()
+      .map((id) => this.cachedTag(id))
+      .filter((tag): tag is Tag => tag !== undefined)
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  }
+
+  getTag(id: string): Tag | undefined {
+    return this.cachedTag(id);
+  }
+
+  findTagByName(name: string): Tag | undefined {
+    const needle = name.trim().toLocaleLowerCase();
+    if (!needle) return undefined;
+    return this.listTags().find((tag) => tag.name.toLocaleLowerCase() === needle);
+  }
+
+  createTag(input: { name: string; color?: string }): Tag {
+    const name = input.name.trim();
+    if (!name) throw new Error("A tag needs a name");
+    if (this.findTagByName(name)) throw new Error(`Tag already exists: ${name}`);
+    return this.writeNewTag(name, input.color);
+  }
+
+  /** Returns the existing tag when the name matches case-insensitively. */
+  ensureTag(name: string): Tag {
+    return this.findTagByName(name) ?? this.createTag({ name });
+  }
+
+  private writeNewTag(name: string, color?: string): Tag {
+    const tag = tagSchema.parse({
+      id: crypto.randomUUID(),
+      name,
+      createdAt: Date.now(),
+      ...(color ? { color } : {}),
+    });
+    const fields = this.tags.ensureMergeableMap(tag.id);
+    fields.set("name", tag.name);
+    fields.set("createdAt", tag.createdAt);
+    if (tag.color) fields.set("color", tag.color);
+    this.commit(`${STRUCT_ORIGIN}tag`);
+    return tag;
+  }
+
+  renameTag(id: string, name: string): void {
+    const next = name.trim();
+    if (!next) throw new Error("A tag needs a name");
+    const existing = this.findTagByName(next);
+    if (existing && existing.id !== id) throw new Error(`Tag already exists: ${next}`);
+    const fields = this.tags.get(id);
+    if (!isMap(fields)) return;
+    fields.set("name", next);
+    this.commit(`${STRUCT_ORIGIN}tag`);
+  }
+
+  /** Removes the record; card memberships stay dormant until the tag returns. */
+  deleteTag(id: string): void {
+    if (this.tags.get(id) === undefined) return;
+    this.tags.delete(id);
+    this.commit(`${STRUCT_ORIGIN}tag`);
+  }
+
   // ----------------------------------------------------------------- cards
 
   private cachedCard(id: string): Card | undefined {
@@ -514,11 +1055,48 @@ export class WorkspaceDocument {
 
   private applyCard(card: Card): void {
     const fields = this.cards.ensureMergeableMap(card.id);
-    fields.set("kind", card.kind);
     fields.set("createdAt", card.createdAt);
     fields.set("updatedAt", card.updatedAt);
     fields.set("deletedAt", card.deletedAt ?? null);
-    fields.set("data", card.data);
+    fields.set("primaryTypeId", card.primaryTypeId);
+
+    const types = fields.ensureMergeableMap("types");
+    const wantedTypes = new Set(card.typeIds);
+    for (const typeId of types.keys()) {
+      if (!wantedTypes.has(typeId)) types.delete(typeId);
+    }
+    for (const typeId of card.typeIds) {
+      if (!types.get(typeId)) types.set(typeId, true);
+    }
+
+    const tags = fields.ensureMergeableMap("tags");
+    const wantedTags = new Set(card.tags);
+    for (const tagId of tags.keys()) {
+      if (!wantedTags.has(tagId)) tags.delete(tagId);
+    }
+    for (const tagId of card.tags) {
+      if (!tags.get(tagId)) tags.set(tagId, true);
+    }
+
+    const properties = fields.ensureMergeableMap("properties");
+    const wantedProperties = new Set(Object.keys(card.properties));
+    for (const fieldId of properties.keys()) {
+      if (!wantedProperties.has(fieldId)) properties.delete(fieldId);
+    }
+    for (const [fieldId, value] of Object.entries(card.properties)) {
+      if (Array.isArray(value)) {
+        const selected = properties.ensureMergeableMap(fieldId);
+        const wanted = new Set(value);
+        for (const optionId of selected.keys()) {
+          if (!wanted.has(optionId)) selected.delete(optionId);
+        }
+        for (const optionId of value) {
+          if (!selected.get(optionId)) selected.set(optionId, true);
+        }
+      } else {
+        properties.set(fieldId, value);
+      }
+    }
 
     const connectors = fields.ensureMergeableMap(CONNECTORS_FIELD);
     const wanted = new Set(card.connectors.map((connector) => connector.id));
@@ -531,6 +1109,10 @@ export class WorkspaceDocument {
     for (const connectorId of [...connectors.keys()]) {
       if (!wanted.has(connectorId)) connectors.delete(connectorId);
     }
+
+    // Legacy card shapes wrote a closed kind and an empty data bag.
+    if (fields.get("kind") !== undefined) fields.delete("kind");
+    if (fields.get("data") !== undefined) fields.delete("data");
   }
 
   private mutateCard(cardId: string, mutate: (fields: LoroMap) => void, commit = true): void {
@@ -552,15 +1134,18 @@ export class WorkspaceDocument {
 
   createCard(input: CreateCardInput = {}): Card {
     const now = Date.now();
+    const typeId = input.typeId ?? DEFAULT_TYPE_ID;
     const card = cardSchema.parse({
       id: input.id ?? crypto.randomUUID(),
-      kind: input.kind ?? "note",
       createdAt: now,
       updatedAt: now,
       connectors: defaultConnectors(),
       deletedAt: null,
-      data: {},
-    }) as Card;
+      typeIds: [typeId],
+      primaryTypeId: typeId,
+      tags: [],
+      properties: {},
+    });
 
     this.applyCard(card);
     this.content.ensureMergeableMap(card.id);
@@ -663,16 +1248,12 @@ export class WorkspaceDocument {
 
   /** Fires when either text container for one card appears or disappears. */
   observeContainers(cardId: string, listener: () => void): () => void {
-    let listeners = this.containerListeners.get(cardId);
-    if (!listeners) {
-      listeners = new Set();
-      this.containerListeners.set(cardId, listeners);
-    }
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-      if (listeners.size === 0) this.containerListeners.delete(cardId);
-    };
+    return observeIn(this.containerListeners, cardId, listener);
+  }
+
+  /** Fires when the card's title (or the body it falls back to) changes. */
+  observeTitle(cardId: string, listener: () => void): () => void {
+    return observeIn(this.titleListeners, cardId, listener);
   }
 
   /** Title text, falling back to the body's first line, then "Untitled". */
@@ -681,6 +1262,153 @@ export class WorkspaceDocument {
     if (title) return title;
     const body = firstLine(textOf(this.peekContent(cardId)));
     return body || "Untitled";
+  }
+
+  private cardMemberships(
+    cardId: string,
+    key: "types" | "tags" | "properties",
+  ): LoroMap | undefined {
+    const fields = this.cards.get(cardId);
+    if (!isMap(fields)) return undefined;
+    const memberships = fields.get(key);
+    return isMap(memberships) ? memberships : undefined;
+  }
+
+  /**
+   * Replaces the whole type membership. The primary type is kept when it is
+   * still a member, otherwise the first remaining type becomes primary.
+   */
+  setCardTypes(cardId: string, typeIds: string[], primaryTypeId?: string): void {
+    const unique = [...new Set(typeIds)];
+    if (unique.length === 0) {
+      throw new Error("A card needs at least one type");
+    }
+    const primary = primaryTypeId && unique.includes(primaryTypeId) ? primaryTypeId : unique[0];
+    if (!primary) return;
+    this.mutateCard(cardId, (fields) => {
+      fields.set("primaryTypeId", primary);
+      const memberships = fields.ensureMergeableMap("types");
+      const wanted = new Set(unique);
+      for (const typeId of memberships.keys()) {
+        if (!wanted.has(typeId)) memberships.delete(typeId);
+      }
+      for (const typeId of unique) {
+        if (!memberships.get(typeId)) memberships.set(typeId, true);
+      }
+    });
+  }
+
+  addCardType(cardId: string, typeId: string): void {
+    const card = this.getCard(cardId);
+    if (!card || card.typeIds.includes(typeId)) return;
+    this.mutateCard(cardId, (fields) => {
+      const memberships = fields.ensureMergeableMap("types");
+      if (!memberships.get(typeId)) memberships.set(typeId, true);
+      if (!readString(fields, "primaryTypeId")) fields.set("primaryTypeId", typeId);
+    });
+  }
+
+  /** Removing the last type falls back to the built-in note type. */
+  removeCardType(cardId: string, typeId: string): void {
+    const card = this.getCard(cardId);
+    if (!card?.typeIds.includes(typeId)) return;
+    const remaining = card.typeIds.filter((id) => id !== typeId);
+    const next = remaining.length > 0 ? remaining : [DEFAULT_TYPE_ID];
+    const primary = card.primaryTypeId === typeId ? next[0] : card.primaryTypeId;
+    if (!primary) return;
+    this.setCardTypes(cardId, next, primary);
+  }
+
+  setPrimaryType(cardId: string, typeId: string): void {
+    const card = this.getCard(cardId);
+    if (!card) return;
+    const typeIds = card.typeIds.includes(typeId) ? card.typeIds : [typeId, ...card.typeIds];
+    this.setCardTypes(cardId, typeIds, typeId);
+  }
+
+  addCardTag(cardId: string, tagId: string): void {
+    const card = this.getCard(cardId);
+    if (!card || card.tags.includes(tagId)) return;
+    this.mutateCard(cardId, (fields) => {
+      const memberships = fields.ensureMergeableMap("tags");
+      if (!memberships.get(tagId)) memberships.set(tagId, true);
+    });
+  }
+
+  removeCardTag(cardId: string, tagId: string): void {
+    const memberships = this.cardMemberships(cardId, "tags");
+    if (!memberships?.get(tagId)) return;
+    this.mutateCard(cardId, (fields) => {
+      const tags = fields.ensureMergeableMap("tags");
+      if (tags.get(tagId)) tags.delete(tagId);
+    });
+  }
+
+  /** Fields of the card's types, primary first, then each type's own order. */
+  viewCardFields(card: Card): CardFieldView[] {
+    const views: CardFieldView[] = [];
+    const seen = new Set<string>();
+    for (const typeId of card.typeIds) {
+      const type = this.getType(typeId);
+      if (!type) continue;
+      for (const field of type.fields) {
+        if (seen.has(field.id)) continue;
+        seen.add(field.id);
+        views.push({ typeId, field });
+      }
+    }
+    return views;
+  }
+
+  private fieldForCard(card: Card, fieldId: string): FieldDefinition | undefined {
+    for (const typeId of card.typeIds) {
+      const field = this.getType(typeId)?.fields.find((entry) => entry.id === fieldId);
+      if (field) return field;
+    }
+    return undefined;
+  }
+
+  setProperty(cardId: string, fieldId: string, value: PropertyValue): void {
+    const card = this.getCard(cardId);
+    if (!card) throw new Error(`Unknown card: ${cardId}`);
+    const field = this.fieldForCard(card, fieldId);
+    if (!field) throw new Error(`Unknown field on this card: ${fieldId}`);
+    assertPropertyValue(field, value);
+    this.mutateCard(cardId, (fields) => {
+      const properties = fields.ensureMergeableMap("properties");
+      if (Array.isArray(value)) {
+        const selected = properties.ensureMergeableMap(fieldId);
+        const wanted = new Set(value);
+        for (const optionId of selected.keys()) {
+          if (!wanted.has(optionId)) selected.delete(optionId);
+        }
+        for (const optionId of value) {
+          if (!selected.get(optionId)) selected.set(optionId, true);
+        }
+      } else {
+        properties.set(fieldId, value);
+      }
+    });
+  }
+
+  /** Clears the displayed value; the property key disappears from the card. */
+  clearProperty(cardId: string, fieldId: string): void {
+    const properties = this.cardMemberships(cardId, "properties");
+    if (!properties?.get(fieldId)) return;
+    this.mutateCard(cardId, (fields) => {
+      const map = fields.ensureMergeableMap("properties");
+      if (map.get(fieldId) !== undefined) map.delete(fieldId);
+    });
+  }
+
+  listCardsOfType(typeId: string): Card[] {
+    if (!this.getType(typeId)) return [];
+    return this.listCards().filter((card) => !card.deletedAt && card.typeIds.includes(typeId));
+  }
+
+  listCardsWithTag(tagId: string): Card[] {
+    if (!this.getTag(tagId)) return [];
+    return this.listCards().filter((card) => !card.deletedAt && card.tags.includes(tagId));
   }
 
   // ------------------------------------------------------------ placements

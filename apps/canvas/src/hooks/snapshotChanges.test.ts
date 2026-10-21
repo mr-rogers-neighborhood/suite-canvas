@@ -12,12 +12,14 @@ import type { WorkspaceSnapshot } from "./snapshotMerge";
 
 const card = (id: string, updatedAt = 0): Card => ({
   id,
-  kind: "note",
   createdAt: 0,
   updatedAt,
   connectors: [],
   deletedAt: null,
-  data: {},
+  typeIds: ["note"],
+  primaryTypeId: "note",
+  tags: [],
+  properties: {},
 });
 
 const board = (id: string, createdAt = 0): Board => ({
@@ -54,7 +56,15 @@ const edge = (id: string, updatedAt = 0): GraphEdge => ({
 });
 
 function snapshot(overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot {
-  return { boards: [], cards: [], placements: [], edges: [], ...overrides };
+  return {
+    boards: [],
+    cards: [],
+    placements: [],
+    edges: [],
+    types: [],
+    tags: [],
+    ...overrides,
+  };
 }
 
 describe("applyWorkspaceChange", () => {
@@ -292,6 +302,8 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       cards: workspace.listCards(),
       placements: workspace.listPlacements(),
       edges: workspace.listEdges(),
+      types: workspace.listTypes(),
+      tags: workspace.listTags(),
     });
 
     let snapshot = read();
@@ -310,6 +322,14 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     workspace.unplaceCard(board.id, first.id);
     workspace.renameBoard(board.id, "Renamed");
     workspace.deleteBoard(second.id);
+    workspace.ensureDefaultTypes();
+    const project = workspace.createType({ id: "project", name: "Project" });
+    const field = workspace.addField(project.id, { name: "Status", kind: "text" });
+    workspace.setCardTypes(first.id, [project.id], project.id);
+    workspace.setProperty(first.id, field.id, "active");
+    const tag = workspace.createTag({ name: "Research" });
+    workspace.addCardTag(first.id, tag.id);
+    workspace.renameTag(tag.id, "Reading");
     stop();
 
     expect(snapshot).toEqual(read());
@@ -329,6 +349,8 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       cards: remote.listCards(),
       placements: remote.listPlacements(),
       edges: remote.listEdges(),
+      types: remote.listTypes(),
+      tags: remote.listTags(),
     });
 
     let snapshot = read();

@@ -8,6 +8,8 @@ export function readWorkspace(workspace: WorkspaceDocument): WorkspaceSnapshot {
     cards: workspace.listCards(),
     placements: workspace.listPlacements(),
     edges: workspace.listEdges(),
+    types: workspace.listTypes(),
+    tags: workspace.listTags(),
   };
 }
 

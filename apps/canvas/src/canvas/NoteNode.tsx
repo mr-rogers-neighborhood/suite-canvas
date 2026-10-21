@@ -1,7 +1,7 @@
-import type { Card, Placement } from "@suite/graph";
+import type { Card, CardType, Placement } from "@suite/graph";
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { CardReference } from "../cards/cardReferences";
+import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
@@ -15,10 +15,11 @@ import { useUiStore } from "../store/useUiStore";
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
 
-  const { card, placement, references } = data as {
+  const { card, placement, type, meta } = data as {
     card: Card;
     placement: Placement;
-    references: CardReference[];
+    type: CardType;
+    meta: CardMeta;
   };
   const workspace = useCanvasStore((state) => state.workspace);
   const cursorStore = useCanvasStore((state) => state.cursors);
@@ -33,8 +34,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const stopEditing = useUiStore((state) => state.stopEditing);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
-  const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
+  const openInspector = useUiStore((state) => state.openInspector);
 
   // Container ids are stable; resolving them through the container observer
   // lets a card that mounted before the body existed adopt it without
@@ -151,6 +152,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       />
       <NodeCard
         card={card}
+        type={type}
+        meta={meta}
         cardDoc={workspace.doc}
         contentId={contentId}
         titleId={titleId}
@@ -159,7 +162,6 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         boardId={placement.boardId}
         width={width}
         height={height}
-        references={references}
         selected={selected}
         editing={editingNodeId === id ? editingField : null}
         presence={presence}
@@ -170,8 +172,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         selectingConnectorPeers={selectingConnectorPeers}
         onStartEditing={(field) => startEditing(id, field)}
         onEditEnd={stopEditing}
-        onGoToBoard={(boardId) => setActiveBoardId(boardId)}
         onRemoveFromBoard={() => workspace.unplaceCard(placement.boardId, id)}
+        onOpenInfo={() => openInspector(id)}
         onTrash={() => workspace.trashCard(id)}
         onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}
         onConnectorMove={(connectorId, position) =>

@@ -11,6 +11,11 @@ async function createBoard(page: Page): Promise<void> {
   await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(before + 1);
 }
 
+async function createNoteFromDock(page: Page): Promise<void> {
+  await page.getByTestId("dock-new-card").click();
+  await page.getByTestId("dock-type-note").click();
+}
+
 async function openLibrary(page: Page, tab: "inbox" | "cards" | "trash"): Promise<void> {
   if ((await page.getByTestId("library-drawer").count()) === 0) {
     await page.getByTestId("dock-library").click();
@@ -23,7 +28,7 @@ test("creates a titled card from the dock", async ({ page }) => {
   await page.goto(workspaceUrl("create"));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("dock-type-note").click();
+  await createNoteFromDock(page);
   await expect(cards(page)).toHaveCount(3);
 
   // New cards land in the title, not the body.
@@ -82,7 +87,7 @@ test("trashes a card and restores it to its board", async ({ page }) => {
   await expect(cards(page)).toHaveCount(2);
 });
 
-test("shares one card across boards and lists both in the footer", async ({ page }) => {
+test("shares one card across boards and lists both in the inspector", async ({ page }) => {
   await page.goto(workspaceUrl("shared"));
   await expect(cards(page)).toHaveCount(2);
 
@@ -99,11 +104,10 @@ test("shares one card across boards and lists both in the footer", async ({ page
   await expect(cards(page)).toHaveCount(1);
 
   const card = cards(page).first();
-  await card.getByTestId("card-footer-toggle").click();
-  const footer = card.getByTestId("card-footer");
-  await expect(footer).toContainText("Board 1");
-  await expect(footer).toContainText("this board");
-  await expect(footer.locator("li")).toHaveCount(2);
+  await card.getByTestId("card-type").click();
+  const boards = page.getByTestId("inspector-boards");
+  await expect(boards).toContainText("Board 1");
+  await expect(boards.locator("li")).toHaveCount(2);
 });
 
 test("holds a card out of the drawer and drops it on the board", async ({ page }) => {
@@ -182,7 +186,7 @@ test("syncs card titles and title carets between clients", async ({ browser }) =
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
   await expect(pageB.locator(".card-title-editor")).toHaveCount(2);
 
-  await pageA.getByTestId("dock-type-note").click();
+  await createNoteFromDock(pageA);
   await expect(pageA.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   // React StrictMode remounts the editor once in dev; let the focused instance
   // settle so the first keystrokes cannot land in the discarded one.

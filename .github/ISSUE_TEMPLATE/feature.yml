@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a feature
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How might it work? Which package(s) are affected?
+    validations:
+      required: true
+  - type: textarea
+    id: schema
+    attributes:
+      label: Schema / model impact
+      description: Does this touch the object graph schema in @suite/graph?

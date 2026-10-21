@@ -1,0 +1,37 @@
+{
+  "name": "suite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.13.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "pnpm --filter @suite/e2e e2e",
+    "storybook": "pnpm --filter @suite/canvas storybook",
+    "build-storybook": "pnpm --filter @suite/canvas build-storybook",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "turbo": "^2.11.10",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}": "biome check --write"
+  }
+}

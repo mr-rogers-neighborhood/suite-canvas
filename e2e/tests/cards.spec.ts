@@ -92,6 +92,46 @@ test("clicks the body to edit and drags the body to move", async ({ page }) => {
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
 });
 
+test("drags from the header while the title or body is being edited", async ({ page }) => {
+  await page.goto(workspaceUrl("drag-while-editing"));
+  const card = cards(page).first();
+  const initial = await card.boundingBox();
+  if (!initial) throw new Error("card not visible");
+
+  await page.mouse.click(initial.x + 80, initial.y + 24);
+  await page.mouse.click(initial.x + 80, initial.y + 24);
+  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  await page.keyboard.type("Editing");
+
+  const headerPoint = { x: initial.x + initial.width - 40, y: initial.y + 14 };
+  await page.mouse.move(headerPoint.x, headerPoint.y);
+  await page.mouse.down();
+  await page.mouse.move(headerPoint.x + 140, headerPoint.y + 80, { steps: 12 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const box = await card.boundingBox();
+      return box ? Math.round(box.x - initial.x) : 0;
+    })
+    .toBeGreaterThan(80);
+
+  const afterTitle = await card.boundingBox();
+  if (!afterTitle) throw new Error("card not visible");
+  await card.getByTestId("card-body").click();
+  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
+  const bodyHeader = { x: afterTitle.x + afterTitle.width - 40, y: afterTitle.y + 14 };
+  await page.mouse.move(bodyHeader.x, bodyHeader.y);
+  await page.mouse.down();
+  await page.mouse.move(bodyHeader.x + 140, bodyHeader.y + 80, { steps: 12 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const box = await card.boundingBox();
+      return box ? Math.round(box.x - afterTitle.x) : 0;
+    })
+    .toBeGreaterThan(80);
+});
+
 test("resizes a card and projects the resize to a peer", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();

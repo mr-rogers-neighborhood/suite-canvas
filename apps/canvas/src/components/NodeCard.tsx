@@ -277,7 +277,6 @@ export function NodeCard({
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
-    editing ? "nodrag" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -338,11 +337,7 @@ export function NodeCard({
           {type.glyph}
         </span>
 
-        <div
-          className={`card-title relative min-w-0 flex-1 ${
-            editing === "title" ? "nodrag nopan" : ""
-          }`}
-        >
+        <div className="card-title relative min-w-0 flex-1">
           {editing === "title" ? null : (
             <button
               type="button"
@@ -366,7 +361,10 @@ export function NodeCard({
               }}
             />
           )}
-          <EditorContent editor={title} />
+          <EditorContent
+            editor={title}
+            className={editing === "title" ? "nodrag nopan" : undefined}
+          />
           {titleEmpty ? (
             <span
               aria-hidden="true"
@@ -408,7 +406,9 @@ export function NodeCard({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: clicking the body focuses the nested editor */}
       <div
-        className="card-body-scroll min-h-0 flex-1 overflow-auto"
+        className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
+          editing === "body" ? "nodrag" : ""
+        }`}
         data-testid="card-body"
         onClick={(event) => {
           if (editing === "body") return;

@@ -298,7 +298,7 @@ zoom (constant screen size) and only shows for the sole selected node.
   and a `⋯` menu (Edit title/body, Remove from board, Go to board, Delete card). The title editor is
   a paragraph-only Tiptap editor on the card's `titles` fragment: Enter commits instead of adding a
   line, an empty title shows a muted "Untitled" placeholder, and remote carets render inside it.
-  Clicking a non-editing title starts title editing. The body shows a text cursor and enters editing on a click; moving past the drag threshold still drags the card.
+  Clicking a non-editing title starts title editing. The body shows a text cursor and enters editing on a click; moving past the drag threshold still drags the card. While a field is focused, dragging from card chrome outside the editor still moves the card.
 - **Footer:** collapsed as `References · N`, expanding into a keyed section list. The first section
   is **References**: every placement of the card, home marked with `⌂`, the current board labelled,
   plus "Go" and "Remove" actions. The section list is generic so Backlinks or Tags can be added

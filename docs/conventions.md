@@ -87,7 +87,11 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 
 ## Testing
 
-- Unit-test pure logic (schema, `GraphDocument`) in `packages/graph`.
+- Unit-test pure logic (schema, `WorkspaceDocument`) in `packages/graph`.
+- Multi-client behaviour gets a **two-document test**: drive both `WorkspaceDocument`s through
+  conflicting edits, sync with `Y.encodeStateAsUpdate`/`Y.applyUpdate` both ways, then assert the
+  merge. `workspace.convergence.test.ts` fuzzes this across seeds; add a seeded case there when you
+  add a new kind of write.
 - Component tests (React Testing Library) for non-trivial UI in `apps/canvas`.
 - E2E (Playwright) for user journeys in `e2e`.
 - Name tests `should <behavior>`; describe by unit under test.

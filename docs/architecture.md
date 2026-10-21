@@ -72,7 +72,8 @@ whole-record `set` would make two clients editing different parts of one record 
 last-write-wins for everything — one client moving a connector while another adds one silently
 dropped one of the two edits. Field maps merge per key, so concurrent writers keep both. Mutations
 therefore route through `mutateCard`/`mutateEdge` (single field writes),
-`updatePlacementPosition`/`updatePlacementSize` (x/y and width/height only) and the connector
+`updatePlacementPosition`/`updatePlacementSize` (x/y and width/height only), `movePlacements` for a
+multi-card gesture (one commit for the whole set) and the connector
 sub-map (`connectors` is itself a `LoroMap` of maps). `setCard`/`setEdge` remain as whole-record
 escape hatches for seeding and migration only.
 
@@ -294,13 +295,20 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 - **Editor:** each card mounts two Tiptap editors (`StarterKit` + `LoroCollaboration`) for its title
   and body. StarterKit's undo history is disabled because `LoroCollaboration` owns a scoped Loro
   undo stack.
+- **One editable surface per card per client.** The same card can be mounted on the canvas, in the
+  inspector and in an expanded Library row. `editingSurface` (`canvas | panel`) decides which of
+  them accepts keystrokes; the others stay read-only. This is safe because all editors in a tab
+  share one `CursorEphemeralStore`, which keeps a single local cursor per tab, and peer carets are
+  content-anchored — so a caret published from the panel renders in the collaborator's canvas card.
+  Undo remains per editor, exactly as it already is between title and body.
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
 - **Presence:** one board `EphemeralStore` carries `user`, `board` (the board being viewed),
   `pointer` (canvas cursor), `focus` (card *and* editor field), `selection` (selected nodes,
   selected links *and* the clicked connector),
-  `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction),
+  `dragging` (node + live position + the full dragged set), `connector` (`nodeId`, `connectorId`
+  and the live fraction),
   `reconnect` (dragged link end + snap target) and `connect` (new-link drag: anchor card, anchor
   connector, anchor end, live pointer + snap target). A moving connector shows a peer ring and moves
   for everyone, a selected connector shows a dashed peer outline, and selected links render in the
@@ -332,6 +340,25 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 - **Workspaces:** the workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias,
   default `default-workspace`), used for both the IndexedDB key and the Loro sync room, so separate
   workspaces never share CRDT state. The active board rides in `?board=<id>`.
+- **Multi-object gestures stay one payload.** A multi-card drag publishes its anchor position plus
+  `nodeIds`; peers derive the other members from their stored placements plus the anchor delta,
+  the same way a section drag is derived. Peer selection rings need no extra work because
+  `selection.nodeIds` is already a list.
+
+## Orientation
+
+Three read-only surfaces answer "where is this?", all derived and all free of document writes:
+
+- **Focus primitive.** A surface asks the UI store (`focusCard`, `focusSection`) and the canvas
+  consumes `focusTarget` (a nonce makes repeat requests re-run). A card target polls React Flow's
+  node lookup while a board switch rebuilds the nodes, then moves the viewport with a capped zoom;
+  a section target fits the stored rectangle. Nothing is persisted.
+- **Board outline.** A collapsible left rail lists the active board's sections in reading order
+  (`y`, then `x`, then id), nested by containment, with member counts from `sectionMembership` and
+  peer dots from `selection.sectionId` / `sectionDrag`. Clicking a row selects the section and
+  focuses it. The rail renders nothing on a board without sections.
+- **Where block.** The shared card panel shows `Board › Section › Subsection` for the active board
+  (via `sectionForCard` + `sectionLineage`) plus the other boards the card is placed on.
 
 ## Card chrome
 
@@ -358,7 +385,16 @@ and links follow when the footer expands.
   title.
 - **Drawer** — anchored above the dock, tabs `Inbox | Cards | Trash` with counts and empty states.
   Rows show `displayTitle` and board chips.
-- **Place** centres the card in the viewport, staggered so repeated placements don't stack.
+- **Scope** — the Cards tab offers `All | <board>`. Board scope filters rows to that board's
+  placements, adds a **Sections** facet (a section includes its descendants, plus `Unsorted`), and
+  offers **group by section**. Sections are never a global facet: a section title only means
+  something inside one board's namespace. Scope, facet and grouping are UI state; membership stays
+  derived from geometry.
+- **Inline editing** — one row at a time expands into the shared card panel (title, tags,
+  properties, Where, body). It edits the same Loro containers as the canvas; `editingSurface`
+  guarantees the canvas copy is read-only while the panel has the caret.
+- **Place** centres the card in the viewport, staggered so repeated placements don't stack. A row's
+  `Open` action switches board and focuses the card through the focus primitive.
 - **Hold to place** is a pointer gesture (not HTML5 drag and drop): a row lifts into a card ghost
   that follows the cursor; dropping over the canvas places the card centred on the drop point, and
   dropping anywhere else cancels. The pointer-down is prevented from selecting text across the board.
@@ -383,6 +419,12 @@ position). On the collaborator's side the
 card eases toward that target each animation frame (`SMOOTHING = 0.22`), so motion reads as
 continuous rather than stepping, and the card is visible the whole time. Position is persisted to
 the CRDT only on drag stop.
+
+**Selection and multi-drag.** Shift, Ctrl and Cmd toggle membership; Shift-drag draws a partial
+marquee; `Cmd/Ctrl+A` selects the board. Dragging a selected card moves the whole set: React Flow
+reports every dragged node, the canvas keeps them in a local set so the snapshot projection does not
+snap members back, and on release one `movePlacements` call writes all the geometry, followed by
+`sectionsExpandPlan` → `moveSectionsBatch` for any section that has to grow. Undo is one step.
 
 ## Theming
 

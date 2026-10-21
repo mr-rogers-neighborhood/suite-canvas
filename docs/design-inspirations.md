@@ -62,6 +62,23 @@ A card can appear on five boards, in two views and on one website without knowin
 | **Obsidian Metadata Menu** | Typed field definitions; presets; autocomplete; per-type field sets | File/frontmatter as the storage model; per-note ad-hoc schemas | Field definitions are a workspace concern, not a per-file convention. |
 | **Capacities** | Object types; object dashboards; backlinks; collections/queries | Daily-note-centric navigation as the primary shell; cloud-only assumptions | Object dashboards and backlinks are the retrieval layer we want; the shell stays canvas-first. |
 
+### Where sections surface (Heptabase evidence)
+
+Sections are navigation, not retrieval. Heptabase's own surfaces draw the line, and their guidance
+puts whiteboards and sections on the knowledge side while tags, properties and table views serve
+archival records:
+
+| Surface | Sections? | Evidence |
+| --- | --- | --- |
+| Card Library | **No** | Filters are the property "filter builder"; tag table/kanban views |
+| Whiteboard table of contents | **Yes** | Right-sidebar tool showing the "hierarchy of sections" |
+| Card info panel | No section facet | Boards, tags, properties and word count |
+| Deeplinks, mentions, AI context | **Yes** | `v0.284 Mention Section`, `v1.56 section links`, `v1.71 sections as AI context` |
+| Backlinks | **Yes** | `v1.31 backlinks from arrows and sections` |
+
+Consequence: a **global** sections facet is rejected. A section title only means something inside
+one board, so sections become a facet and a grouping only when the Library is scoped to a board.
+
 ## 3. Core vocabulary
 
 | Term | Definition | Scope |
@@ -317,9 +334,13 @@ rather than surrounding it with chrome.
 
 - **Library dock** *(current)*: a floating bottom-centre pill with Inbox count and a type menu —
   how you find objects that are not in front of you and how you create new ones.
-- **Drawer** *(current)*: `Inbox | Cards | Trash`, counts, hold-to-place gesture, and type/tag
-  facets with counts (OR within a facet, AND across). The target adds saved views without turning
-  it into a sidebar.
+- **Drawer** *(current)*: `Inbox | Cards | Trash`, counts, hold-to-place gesture, type/tag facets
+  with counts (OR within a facet, AND across), and — on the Cards tab — an `All | <board>` scope
+  with a **Sections** facet and "group by section". Sections are never a global facet: a section
+  title only means something inside one board's namespace, and Heptabase's library filters by
+  tags and properties alone. An expanded row hosts the same card panel as the inspector, so a
+  property or a paragraph can be fixed without going to the canvas. The drawer widens and grows
+  when it is scoped or a row is open; saved views arrive without turning it into a sidebar.
 - **Board tabs** *(current)*: switch boards inside the same workspace; switching tabs must never
   feel like switching documents.
 - **Canvas toolbar** *(target)*: contextual tools for select, section and connect, in the spirit of
@@ -327,11 +348,19 @@ rather than surrounding it with chrome.
 - **Sections** *(current)*: drawn regions with titles, counts and colors, rendered beneath cards and
   operable from a header layer above them. They are board-scoped spatial organization, derived
   rather than written; they do not replace tags or views.
+- **Board outline** *(current)*: a collapsible left rail listing the active board's section tree in
+  reading order with member counts and peer presence dots. Clicking a row selects the section and
+  moves the viewport. It is the board's table of contents — Heptabase's precedent — not a filter.
 - **Sub-boards** *(later)*: a card can open into a nested board. This is navigation, not ownership:
   the nested board is another board in the same workspace and its contents remain ordinary cards.
-- **Inspector / card info** *(current, growing)*: a floating right panel with type, tags, field
-  values, the card's current section and placement references. A click opens it; a double-click
-  enters text editing. Relations and backlinks join it in the next phase.
+- **Inspector / card info** *(current)*: a floating right panel built on the shared card panel:
+  title, type, tags, field values, a **Where** block (`Board › Section › Subsection`, plus the other
+  boards it is placed on) and the body editor. A click opens it; clicking the body or title edits it
+  in place, with the same caret peers see on the canvas. Relations and backlinks join it next.
+- **Multi-selection** *(current)*: Shift or Ctrl/Cmd toggles, Shift-drag marquees, `Cmd/Ctrl+A`
+  selects the board. Moving a selection is one commit and one undo step, collaborators see every
+  ring and one drag label, and right-clicking a selection offers "New section from N cards".
+
 - **Backlinks** *(target)*: derived from relations, split into incoming and outgoing, naming the
   board(s) where each relation is drawn; clicking one navigates to the card.
 - **Command palette** *(target)*: keyboard-first create, place, switch board, apply view/section,
@@ -519,6 +548,10 @@ every web concern lives where it belongs.
 - Card inspector with type, tags, properties, section and placement references *(current)*
 - Spatial sections with derived membership, nesting, move-with-contents and auto-expand *(current)*
 - Collapsed card frontmatter with a header disclosure, and click-to-inspect / double-click-to-edit *(current)*
+- Board outline rail with the section tree, counts and peer presence *(current)*
+- Shared card panel: title, tags, properties and body editable from the inspector and the Library *(current)*
+- Board-scoped Library with a Sections facet (subtree), `Unsorted` and group-by-section *(current)*
+- Multi-select (Shift/Ctrl/Cmd, marquee, select-all), one-commit multi-drag, collaborator rings and labels *(current)*
 
 ### Thinking tools
 

@@ -61,6 +61,17 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 
 - Zustand for UI state only. Document data is owned by the Loro doc.
 - Store selectors should be atomic (`useCanvasStore((s) => s.graph)`) to limit re-renders.
+- **One editable surface per card per client.** A card's title and body may be mounted on several
+  surfaces (canvas card, inspector, Library row, later a card tab), but only one may be editable at
+  a time, decided by `editingSurface` in the UI store. Never start editing in a second surface
+  without moving the surface first; never add a second cursor store or peer id to work around it.
+
+## Navigation
+
+- Reveal requests go through the UI store's `focusTarget` (`focusCard`, `focusSection`); a surface
+  asks, the canvas moves. Never call `setCenter`/`fitBounds` from a panel.
+- A reveal is a view change only: it writes nothing and does not change selection unless the
+  surface also selects.
 
 ## Presence and coordinates
 
@@ -103,6 +114,9 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   section drag (one commit for the section, contained sections and member placements).
 - Section title and colour are individual field writes; geometry is written on release, not during
   a gesture. Auto-expand is a deliberate geometry write after a card drop.
+- **One commit per gesture.** Moving several cards uses `movePlacements`; a section drag or a
+  multi-drop that also grows sections writes both through `moveSectionsBatch`. Never loop a
+  single-record method over a selection — that produces N undo steps.
 
 ## Testing
 

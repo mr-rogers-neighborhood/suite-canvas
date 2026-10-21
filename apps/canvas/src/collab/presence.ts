@@ -19,6 +19,12 @@ export interface FocusState {
 export interface DraggingState {
   nodeId: string;
   position: PointerState;
+  /**
+   * Every card moving in the gesture, anchor included. Peers derive the other
+   * members from their stored placement plus this anchor's delta, so the drag
+   * stays a single payload instead of per-node streaming.
+   */
+  nodeIds?: string[];
 }
 
 /** A connector a peer has clicked, so peers can see who is working on it. */

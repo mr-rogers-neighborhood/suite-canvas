@@ -6,6 +6,7 @@ import {
   ConnectionMode,
   Controls,
   type Edge,
+  getViewportForBounds,
   type HandleType,
   MarkerType,
   type Node,
@@ -41,6 +42,13 @@ import { cardSectionOffsets, sectionExpandPlan, sectionOffsets } from "./section
 const SMOOTHING = 0.22;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
+/** How long a focus request waits for React Flow to register the card's node. */
+const FOCUS_POLL_TIMEOUT_MS = 1500;
+/** Card box assumed until React Flow has measured it. */
+const FOCUS_FALLBACK_SIZE = { width: 224, height: 160 };
+const FOCUS_DURATION_MS = 300;
+/** A focused card or section should not fill the screen. */
+const FOCUS_MAX_ZOOM = 1.2;
 type CardNodeData = {
   card: Card;
   placement: Placement;
@@ -158,7 +166,10 @@ export function CanvasBoard() {
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const contextMenu = useUiStore((state) => state.contextMenu);
-  const { screenToFlowPosition } = useReactFlow();
+  const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
+  const focusTarget = useUiStore((state) => state.focusTarget);
+  const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const store = useStoreApi();
 
   const [nodes, setNodes, applyNodeChanges] = useNodesState<Node>([]);
@@ -435,6 +446,72 @@ export function CanvasBoard() {
     [],
   );
 
+  // Reveal a card or section a surface asked for. A request can land before the
+  // board has rendered its nodes (switching boards rebuilds them on the next
+  // snapshot pass), so card targets poll until React Flow registers the node.
+  useEffect(() => {
+    if (!focusTarget) return;
+
+    if (focusTarget.boardId !== activeBoardId) {
+      setActiveBoardId(focusTarget.boardId);
+      return;
+    }
+
+    const reveal = (rect: Rect, padding: number) => {
+      const { width, height, minZoom } = store.getState();
+      // `fitBounds` cannot cap the zoom, and a single card should not fill the screen.
+      const viewport = getViewportForBounds(rect, width, height, minZoom, FOCUS_MAX_ZOOM, padding);
+      void setViewport(viewport, { duration: FOCUS_DURATION_MS });
+    };
+
+    if (focusTarget.kind === "section") {
+      const section = snapshot.sections.find((entry) => entry.id === focusTarget.id);
+      if (!section) {
+        clearFocusTarget();
+        return;
+      }
+      reveal({ x: section.x, y: section.y, width: section.width, height: section.height }, 0.12);
+      clearFocusTarget();
+      return;
+    }
+
+    let frame = 0;
+    const deadline = performance.now() + FOCUS_POLL_TIMEOUT_MS;
+    const settle = () => {
+      const node = store.getState().nodeLookup.get(focusTarget.id);
+      if (!node) {
+        if (performance.now() > deadline) {
+          clearFocusTarget();
+          return;
+        }
+        frame = requestAnimationFrame(settle);
+        return;
+      }
+      const position = node.internals.positionAbsolute;
+      reveal(
+        {
+          x: position.x,
+          y: position.y,
+          width: node.measured.width ?? FOCUS_FALLBACK_SIZE.width,
+          height: node.measured.height ?? FOCUS_FALLBACK_SIZE.height,
+        },
+        0.6,
+      );
+      clearFocusTarget();
+    };
+    settle();
+
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeBoardId,
+    clearFocusTarget,
+    focusTarget,
+    setActiveBoardId,
+    setViewport,
+    snapshot.sections,
+    store,
+  ]);
+
   useEffect(() => {
     const peerByEdge = new Map<string, string>();
     for (const peer of Object.values(peers)) {
@@ -680,6 +757,11 @@ export function CanvasBoard() {
       if (event.key === "Escape" && state.editingNodeId) {
         state.stopEditing();
         (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+
+      if (event.key === "Escape" && state.focusTarget) {
+        state.clearFocusTarget();
         return;
       }
 

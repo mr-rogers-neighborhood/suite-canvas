@@ -1,6 +1,11 @@
 import type { Section } from "@suite/graph";
 import { describe, expect, it } from "vitest";
-import { cardSectionOffsets, sectionExpandPlan, sectionOffsets } from "./sectionLayout";
+import {
+  cardSectionOffsets,
+  sectionExpandPlan,
+  sectionOffsets,
+  sectionsExpandPlan,
+} from "./sectionLayout";
 
 function section(id: string, x: number, y: number, width: number, height: number): Section {
   return {
@@ -68,5 +73,79 @@ describe("sectionLayout", () => {
     expect(
       sectionExpandPlan([section("outer", 0, 0, 100, 100)], { x: 500, y: 500 }, {}),
     ).toBeNull();
+  });
+});
+
+describe("sectionsExpandPlan", () => {
+  const card = (x: number, y: number, width = 224, height = 160) => ({ x, y, width, height });
+
+  it("grows one section once for two cards dropped inside it", () => {
+    const region = section("region", 0, 0, 320, 240);
+    const plan = sectionsExpandPlan([region], [card(40, 40), card(260, 180)]);
+
+    expect(plan).toHaveLength(1);
+    const grown = plan[0];
+    expect(grown?.id).toBe("region");
+    // Both drops fit, not just the last one.
+    expect(grown?.x).toBeLessThanOrEqual(40);
+    expect(grown?.y).toBeLessThanOrEqual(40);
+    expect((grown?.x ?? 0) + (grown?.width ?? 0)).toBeGreaterThanOrEqual(260 + 224);
+    expect((grown?.y ?? 0) + (grown?.height ?? 0)).toBeGreaterThanOrEqual(180 + 160);
+  });
+
+  it("leaves a card that already fits out of the plan", () => {
+    const region = section("region", 0, 0, 500, 400);
+    expect(sectionsExpandPlan([region], [card(40, 40)])).toEqual([]);
+  });
+
+  it("plans one rect per section when cards land in different sections", () => {
+    const left = section("left", 0, 0, 300, 300);
+    const right = section("right", 400, 0, 300, 300);
+    const plan = sectionsExpandPlan([left, right], [card(220, 250), card(620, 250)]);
+
+    expect(plan.map((entry) => entry.id).sort()).toEqual(["left", "right"]);
+    expect(plan.find((entry) => entry.id === "left")?.width).toBeGreaterThan(300);
+    expect(plan.find((entry) => entry.id === "left")?.width).toBeLessThan(600);
+  });
+
+  it("grows every ancestor of the section that holds the card", () => {
+    const outer = section("outer", 0, 0, 900, 700);
+    const inner = section("inner", 50, 50, 400, 300);
+    const plan = sectionsExpandPlan([outer, inner], [card(300, 200)]);
+
+    expect(plan.map((entry) => entry.id)).toEqual(["inner", "outer"]);
+    const innerRect = plan.find((entry) => entry.id === "inner");
+    const outerRect = plan.find((entry) => entry.id === "outer");
+    expect(innerRect).toBeDefined();
+    expect(outerRect).toBeDefined();
+
+    const contains = (rect: typeof outerRect, target: typeof innerRect) =>
+      rect !== undefined &&
+      target !== undefined &&
+      target.x >= rect.x &&
+      target.y >= rect.y &&
+      target.x + target.width <= rect.x + rect.width &&
+      target.y + target.height <= rect.y + rect.height;
+    expect(contains(outerRect, innerRect)).toBe(true);
+  });
+
+  it("returns nothing when no card is inside a section", () => {
+    const region = section("region", 0, 0, 200, 200);
+    expect(sectionsExpandPlan([region], [card(900, 900)])).toEqual([]);
+    expect(sectionsExpandPlan([], [card(10, 10)])).toEqual([]);
+    expect(sectionsExpandPlan([region], [])).toEqual([]);
+  });
+
+  it("matches the single-card plan for one dropped card", () => {
+    const outer = section("outer", 0, 0, 500, 400);
+    const inner = section("inner", 50, 50, 300, 250);
+    const single = sectionExpandPlan(
+      [outer, inner],
+      { x: 300, y: 100 },
+      { width: 224, height: 160 },
+    );
+    const multi = sectionsExpandPlan([outer, inner], [card(300, 100)]);
+
+    expect(multi).toEqual(single);
   });
 });

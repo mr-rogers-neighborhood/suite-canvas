@@ -101,6 +101,15 @@ export interface CreateEdgeInput {
   kind?: GraphEdge["kind"];
 }
 
+/** One placement in a multi-card move; only geometry is written. */
+export interface PlacementMoveInput {
+  cardId: string;
+  x: number;
+  y: number;
+}
+
+const placementMoveSchema = placementSchema.pick({ cardId: true, x: true, y: true });
+
 export interface CreateSectionInput {
   id?: string;
   boardId: string;
@@ -1731,6 +1740,29 @@ export class WorkspaceDocument {
     fields.set("x", position.x);
     fields.set("y", position.y);
     this.commit(`${STRUCT_ORIGIN}move-card`);
+  }
+
+  /**
+   * One commit for a multi-card drag, mirroring `moveSectionsBatch`: only `x`/`y`
+   * are written, unknown placements and moves that change nothing are skipped,
+   * and a batch with no effective change produces no commit (so no empty undo
+   * step). The result does not depend on the order of `moves`.
+   */
+  movePlacements(boardId: string, moves: PlacementMoveInput[]): void {
+    let changed = false;
+    for (const move of moves) {
+      const parsed = placementMoveSchema.safeParse(move);
+      if (!parsed.success) continue;
+      const fields = this.placements.get(placementKey(boardId, parsed.data.cardId));
+      if (!isMap(fields)) continue;
+      if (readNumber(fields, "x") === parsed.data.x && readNumber(fields, "y") === parsed.data.y) {
+        continue;
+      }
+      fields.set("x", parsed.data.x);
+      fields.set("y", parsed.data.y);
+      changed = true;
+    }
+    if (changed) this.commit(`${STRUCT_ORIGIN}move-cards`);
   }
 
   updatePlacementSize(

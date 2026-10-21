@@ -14,6 +14,7 @@ export type {
   CreateSectionInput,
   CreateTypeInput,
   LayerAction,
+  PlacementMoveInput,
   WorkspaceAction,
   WorkspaceChange,
   WorkspaceSection,

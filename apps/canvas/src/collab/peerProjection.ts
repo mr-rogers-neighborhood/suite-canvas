@@ -22,9 +22,40 @@ import {
  */
 export const GESTURE_TTL_MS = 3000;
 
+/** Guard rail: a peer cannot legitimately drag more cards than this at once. */
+export const MAX_DRAG_NODE_IDS = 500;
+
 export interface SeenGesture {
   signature: string;
   at: number;
+}
+
+/**
+ * The full dragged set, anchor first. Malformed entries are dropped, the anchor
+ * is always included, and the list is capped so one peer cannot flood the board.
+ */
+export function sanitizeDraggedNodeIds(value: unknown, anchor: string): string[] {
+  const ids = [anchor];
+  const seen = new Set([anchor]);
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry !== "string" || entry.length === 0 || seen.has(entry)) continue;
+      seen.add(entry);
+      ids.push(entry);
+      if (ids.length >= MAX_DRAG_NODE_IDS) break;
+    }
+  }
+  return ids;
+}
+
+function toDraggingState(value: unknown): DraggingState | null {
+  if (value === null || typeof value !== "object") return null;
+  const dragging = value as DraggingState;
+  if (typeof dragging.nodeId !== "string" || dragging.nodeId.length === 0) return null;
+  return {
+    ...dragging,
+    nodeIds: sanitizeDraggedNodeIds(dragging.nodeIds, dragging.nodeId),
+  };
 }
 
 function toPresenceUser(state: Record<string, unknown>): PresenceUser {
@@ -42,7 +73,10 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     user: toPresenceUser(state),
     pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
-    dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
+    dragging:
+      state[AWARENESS_FIELDS.dragging] === undefined
+        ? null
+        : toDraggingState(state[AWARENESS_FIELDS.dragging]),
     selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
     connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
     resizing: (state[AWARENESS_FIELDS.resizing] as ResizingState | undefined) ?? null,

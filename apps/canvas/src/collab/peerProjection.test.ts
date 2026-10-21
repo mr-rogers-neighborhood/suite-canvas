@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { GESTURE_TTL_MS, gestureSignature, projectPeers, type SeenGesture } from "./peerProjection";
+import {
+  GESTURE_TTL_MS,
+  gestureSignature,
+  MAX_DRAG_NODE_IDS,
+  projectPeers,
+  type SeenGesture,
+} from "./peerProjection";
 import { AWARENESS_FIELDS, peerIsInteracting } from "./presence";
 
 const SELF = "self";
@@ -224,5 +230,56 @@ describe("section gestures", () => {
       seen,
     });
     expect(peers[PEER]?.sectionDrag).toBeNull();
+  });
+});
+
+describe("multi-card drag presence", () => {
+  const drag = (dragging: Record<string, unknown>) => ({
+    [AWARENESS_FIELDS.dragging]: { nodeId: "n1", position: { x: 10, y: 20 }, ...dragging },
+  });
+
+  it("keeps the full dragged set, anchor included", () => {
+    const seen = new Map<string, SeenGesture>();
+    const peers = project(1000, seen, drag({ nodeIds: ["n1", "n2", "n3"] }));
+    expect(peers[PEER]?.dragging?.nodeIds).toEqual(["n1", "n2", "n3"]);
+    expect(peers[PEER]?.dragging?.nodeId).toBe("n1");
+  });
+
+  it("normalises a set without the anchor or with duplicates", () => {
+    const seen = new Map<string, SeenGesture>();
+    const peers = project(1000, seen, drag({ nodeIds: ["n2", "n2", 42, "", "n3"] }));
+    expect(peers[PEER]?.dragging?.nodeIds).toEqual(["n1", "n2", "n3"]);
+  });
+
+  it("falls back to the anchor when the set is missing or malformed", () => {
+    const missing = project(1000, new Map(), drag({}))[PEER];
+    expect(missing?.dragging?.nodeIds).toEqual(["n1"]);
+
+    for (const nodeIds of [null, "n2", {}, [null, 7]]) {
+      const peers = project(1000, new Map(), drag({ nodeIds }))[PEER];
+      expect(peers?.dragging?.nodeIds).toEqual(["n1"]);
+    }
+  });
+
+  it("caps an oversized set", () => {
+    const nodeIds = Array.from({ length: MAX_DRAG_NODE_IDS + 100 }, (_, index) => `n${index}`);
+    const peers = project(1000, new Map(), drag({ nodeIds }))[PEER];
+    expect(peers?.dragging?.nodeIds).toHaveLength(MAX_DRAG_NODE_IDS);
+  });
+
+  it("still expires a multi-card drag after the gesture TTL", () => {
+    const seen = new Map<string, SeenGesture>();
+    const frame = drag({ nodeIds: ["n1", "n2"] });
+    expect(project(1000, seen, frame)[PEER]?.dragging?.nodeIds).toEqual(["n1", "n2"]);
+    expect(project(1000 + GESTURE_TTL_MS - 1, seen, frame)[PEER]?.dragging).not.toBeNull();
+    expect(project(1000 + GESTURE_TTL_MS + 1, seen, frame)[PEER]?.dragging).toBeNull();
+  });
+
+  it("treats a changed set as a new frame, restarting the TTL", () => {
+    const seen = new Map<string, SeenGesture>();
+    project(1000, seen, drag({ nodeIds: ["n1"] }));
+    project(2000, seen, drag({ nodeIds: ["n1", "n2"] }));
+    const peers = project(2000 + GESTURE_TTL_MS - 1, seen, drag({ nodeIds: ["n1", "n2"] }));
+    expect(peers[PEER]?.dragging?.nodeIds).toEqual(["n1", "n2"]);
   });
 });

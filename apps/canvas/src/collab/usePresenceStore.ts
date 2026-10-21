@@ -2,7 +2,7 @@ import type { EphemeralStore, Value } from "loro-crdt";
 import { create } from "zustand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
-import { projectPeers, type SeenGesture } from "./peerProjection";
+import { projectPeers, type SeenGesture, sanitizeDraggedNodeIds } from "./peerProjection";
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
@@ -120,8 +120,19 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       if (focus) clearPointer();
     },
     setDragging: (dragging) => {
-      publish(AWARENESS_FIELDS.dragging, dragging);
-      if (dragging) clearPointer();
+      if (dragging) {
+        const nodeIds = sanitizeDraggedNodeIds(dragging.nodeIds, dragging.nodeId);
+        publish(AWARENESS_FIELDS.dragging, {
+          nodeId: dragging.nodeId,
+          position: dragging.position,
+          // A single-card drag keeps the original payload; the set is only
+          // carried when more than the anchor moves.
+          ...(nodeIds.length > 1 ? { nodeIds } : {}),
+        });
+        clearPointer();
+        return;
+      }
+      publish(AWARENESS_FIELDS.dragging, null);
     },
     setSelection: (selection) => publish(AWARENESS_FIELDS.selection, selection),
     setMovingConnector: (connector) => {

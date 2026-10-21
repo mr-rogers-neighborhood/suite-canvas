@@ -27,6 +27,14 @@ Order, separated by blank lines:
 
 Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 
+## Libraries first
+
+- Use the library's own primitive before writing UI or state plumbing: Tiptap's `BubbleMenu`
+  for the floating toolbar, `useEditorState` for editor-derived state, React Flow's
+  `useNodesState`/`useEdgesState` for transient canvas state, Zustand selectors for store reads.
+- Only hand-roll what the library does not provide (e.g. formatting buttons inside `BubbleMenu`,
+  the canvas context menu).
+
 ## React
 
 - Function components with hooks; no class components.

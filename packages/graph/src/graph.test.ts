@@ -11,7 +11,7 @@ const note: GraphNode = {
   position: { x: 0, y: 0 },
   createdAt: now,
   updatedAt: now,
-  data: { text: "hello" },
+  data: {},
 };
 
 const edge: GraphEdge = {
@@ -42,11 +42,7 @@ describe("GraphDocument", () => {
     const graph = new GraphDocument();
     graph.setNode(note);
     expect(graph.listNodes()).toHaveLength(1);
-    const stored = graph.getNode("n1");
-    expect(stored?.kind).toBe("note");
-    if (stored?.kind === "note") {
-      expect(stored.data.text).toBe("hello");
-    }
+    expect(graph.getNode("n1")?.kind).toBe("note");
   });
 
   it("stores and reads edges", () => {
@@ -56,10 +52,33 @@ describe("GraphDocument", () => {
     expect(graph.getEdge("e1")?.kind).toBe("references");
   });
 
+  it("creates a note with a content fragment", () => {
+    const graph = new GraphDocument();
+    const created = graph.createNote({ id: "n1", position: { x: 10, y: 20 } });
+    expect(created.kind).toBe("note");
+    expect(graph.getNode("n1")).toEqual(created);
+    expect(graph.getContent("n1")).toBe(graph.getContent("n1"));
+  });
+
+  it("returns the same content fragment for repeated access", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    expect(graph.getContent("n1")).toBe(graph.getContent("n1"));
+  });
+
+  it("removes content when a node is removed", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const fragment = graph.getContent("n1");
+    graph.removeNode("n1");
+    expect(graph.getNode("n1")).toBeUndefined();
+    expect(graph.getContent("n1")).not.toBe(fragment);
+  });
+
   it("cascades edge removal when a node is removed", () => {
     const graph = new GraphDocument();
     graph.setNode(note);
-    graph.setNode({ ...note, id: "n2", data: { text: "world" } });
+    graph.setNode({ ...note, id: "n2" });
     graph.setEdge(edge);
     graph.removeNode("n1");
     expect(graph.listEdges()).toHaveLength(0);

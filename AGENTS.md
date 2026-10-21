@@ -8,7 +8,7 @@ Claude Code, …). Read it first; keep it high-signal.
 
 - **Monorepo:** pnpm workspaces + Turborepo (task caching)
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
-  Zustand (UI state), React Flow (`@xyflow/react`), Tiptap 3 (rich text)
+  Zustand (UI state), React Flow (`@xyflow/react`), Tiptap 3 (every node is an editor)
 - **Collaboration:** Yjs (CRDT) as the single source of truth, `y-indexeddb` for offline
   persistence, Hocuspocus for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +
@@ -43,22 +43,26 @@ pnpm storybook        # storybook dev server
 
 ## Architecture in one paragraph
 
-A single `Y.Doc` per graph document is the source of truth. `nodes` and `edges` live as two
-`Y.Map`s; `@suite/graph` validates every write with Zod before it reaches the CRDT. The doc is
-persisted offline by `y-indexeddb` and synced by the Hocuspocus provider when online. Zustand
-holds **UI state only** (selection, tools, panels) — never document data. Tiptap's editor
-content is a `Y.Text` in the same doc.
+A single `Y.Doc` per graph document is the source of truth. `nodes`, `edges`, and per-node
+rich-text (`content: Y.Map<Y.XmlFragment>`) live in the same doc; `@suite/graph` validates every
+write with Zod before it reaches the CRDT. The doc is persisted offline by `y-indexeddb` and
+synced by the Hocuspocus provider when online. The document id comes from `?doc=<id>`. Zustand
+holds **UI state only** (selection, active node, context menu) — never document data. Every node
+is a Tiptap editor; formatting uses Tiptap's built-in `BubbleMenu`, and presence rides Yjs
+awareness (`user`, `pointer`, `focus`, `editorSelection`).
 
 ## Rules (non-negotiable)
 
-1. **Never write raw Yjs for graph data.** All node/edge mutations go through
+1. **Never write raw Yjs for graph data.** All node/edge/content mutations go through
    `GraphDocument` (or new typed methods you add to `@suite/graph`).
 2. **Document truth never lives in Zustand, React state, or localStorage.**
 3. **Schema changes are additive-first.** Updating `packages/graph/src/schema.ts` requires
    updating its tests; bumping a schema is an explicit decision (see ADRs).
 4. **TypeScript strict.** No `any` without a comment; prefer `unknown` + narrowing.
-5. **Conventional commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-6. **Verify before claiming done:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (and `pnpm build`
+5. **Prefer library primitives over hand-rolled UI**: Tiptap `BubbleMenu` / `useEditorState`,
+   React Flow `useNodesState` / `useEdgesState`. See [docs/conventions.md](docs/conventions.md).
+6. **Conventional commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+7. **Verify before claiming done:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (and `pnpm build`
    when touching the graph package or build config).
 
 ## Definition of done for a feature

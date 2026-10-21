@@ -1,35 +1,17 @@
-import type { GraphNode } from "@suite/graph";
 import { useEffect } from "react";
 import { CanvasBoard } from "./canvas/CanvasBoard";
-import { CollaborativeEditor } from "./editor/CollaborativeEditor";
+import { usePresenceStore } from "./collab/usePresenceStore";
 import { useGraphSnapshot } from "./hooks/useGraphSnapshot";
 import { useCanvasStore } from "./store/useCanvasStore";
-
-const now = Date.now();
-
-const seedNodes: GraphNode[] = [
-  {
-    id: "welcome-note",
-    kind: "note",
-    position: { x: 0, y: 0 },
-    createdAt: now,
-    updatedAt: now,
-    data: { text: "Welcome to Suite — a local-first collaborative canvas." },
-  },
-  {
-    id: "getting-started",
-    kind: "document",
-    position: { x: 360, y: 0 },
-    createdAt: now,
-    updatedAt: now,
-    data: { title: "Getting started", body: "Type in the note panel — it syncs collaboratively." },
-  },
-];
+import { useUiStore } from "./store/useUiStore";
 
 export default function App() {
   const graph = useCanvasStore((state) => state.graph);
   const connect = useCanvasStore((state) => state.connect);
+  const provider = useCanvasStore((state) => state.provider);
   const status = useCanvasStore((state) => state.status);
+  const editingNodeId = useUiStore((state) => state.editingNodeId);
+  const setFocus = usePresenceStore((state) => state.setFocus);
   useGraphSnapshot();
 
   useEffect(() => {
@@ -37,31 +19,29 @@ export default function App() {
   }, [connect]);
 
   useEffect(() => {
-    if (graph.listNodes().length > 0) return;
-    const timestamp = Date.now();
-    for (const node of seedNodes) {
-      graph.setNode({ ...node, createdAt: timestamp, updatedAt: timestamp });
+    if (provider) {
+      usePresenceStore.getState().bind(provider);
     }
-    graph.setEdge({
-      id: "welcome-link",
-      source: "welcome-note",
-      target: "getting-started",
-      kind: "references",
-      label: "see also",
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+  }, [provider]);
+
+  useEffect(() => {
+    if (graph.listNodes().length > 0) return;
+    // Fixed ids so multiple fresh clients converge on the same starter notes
+    // instead of each seeding duplicates.
+    graph.createNote({ id: "starter-1", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "starter-2", position: { x: 320, y: 0 } });
   }, [graph]);
 
+  useEffect(() => {
+    setFocus(editingNodeId ? { nodeId: editingNodeId } : null);
+  }, [editingNodeId, setFocus]);
+
   return (
-    <div className="flex h-screen w-screen bg-gray-50">
-      <main className="relative min-w-0 flex-1">
-        <CanvasBoard />
-      </main>
-      <aside className="flex w-80 shrink-0 flex-col border-l border-gray-200 bg-white p-4">
-        <CollaborativeEditor doc={graph.doc} />
-        <div className="mt-2 text-xs text-gray-400">sync: {status}</div>
-      </aside>
+    <div className="h-screen w-screen bg-gray-50">
+      <CanvasBoard />
+      <div className="pointer-events-none fixed bottom-2 left-2 z-40 rounded bg-white/80 px-2 py-1 text-xs text-gray-400">
+        sync: {status}
+      </div>
     </div>
   );
 }

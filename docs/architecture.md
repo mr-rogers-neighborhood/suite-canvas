@@ -36,9 +36,12 @@ flowchart LR
 
 | Yjs type | Key | Contents |
 | --- | --- | --- |
-| `Y.Map<GraphNode>` | `nodes` | Typed node entities (`note`, `document`, `tag`) |
+| `Y.Map<GraphNode>` | `nodes` | Typed node entities (`note`) |
 | `Y.Map<GraphEdge>` | `edges` | Typed semantic links (`references`, `relates-to`, `tagged`) |
-| `Y.Text` | `prosemirror` | Collaborative rich-text editor content |
+| `Y.Map<Y.XmlFragment>` | `content` | Per-node rich-text, keyed by node id |
+
+Every node is a Tiptap editor bound to its own `Y.XmlFragment` in `content`. Deleting a node
+cascades to its edges and its content fragment.
 
 ## Object graph (semantic layer)
 
@@ -46,6 +49,20 @@ Nodes and edges form a graph, not a flat list. Node kinds are discriminated unio
 carry semantic meaning (`references`, `relates-to`, `tagged`). The schema lives in
 `packages/graph/src/schema.ts` and is the contract between the canvas, the editor, and future
 search/semantic features.
+
+## Editing and presence
+
+- **Editor:** each card mounts a Tiptap editor (`StarterKit` + `Collaboration` +
+  `CollaborationCursor`). StarterKit's undo history is disabled because Collaboration ships its
+  own.
+- **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
+  positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
+  markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
+- **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor) and `focus`
+  (focused node). Editor carets/selections ride the same awareness via `yCursorPlugin`, on a
+  separate `editorSelection` field.
+- **Documents:** the document id comes from `?doc=<id>` (default `default-graph`), used for both
+  the IndexedDB key and the Hocuspocus room, so separate documents never share CRDT state.
 
 ## Layers
 

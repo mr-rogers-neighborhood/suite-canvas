@@ -11,6 +11,11 @@ export interface GraphChange {
   value: GraphNode | GraphEdge | null;
 }
 
+export interface CreateNoteInput {
+  id: string;
+  position: { x: number; y: number };
+}
+
 function toAction(action: unknown): GraphAction {
   return action === "add" || action === "delete" ? action : "update";
 }
@@ -23,15 +28,18 @@ function toAction(action: unknown): GraphAction {
 export class GraphDocument {
   static readonly NODES_KEY = "nodes";
   static readonly EDGES_KEY = "edges";
+  static readonly CONTENT_KEY = "content";
 
   readonly doc: Y.Doc;
   private readonly nodes: Y.Map<GraphNode>;
   private readonly edges: Y.Map<GraphEdge>;
+  private readonly content: Y.Map<Y.XmlFragment>;
 
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
     this.nodes = doc.getMap<GraphNode>(GraphDocument.NODES_KEY);
     this.edges = doc.getMap<GraphEdge>(GraphDocument.EDGES_KEY);
+    this.content = doc.getMap<Y.XmlFragment>(GraphDocument.CONTENT_KEY);
   }
 
   listNodes(): GraphNode[] {
@@ -58,6 +66,39 @@ export class GraphDocument {
     this.edges.set(edge.id, graphEdgeSchema.parse(edge));
   }
 
+  updateNodePosition(id: string, position: { x: number; y: number }): void {
+    const node = this.nodes.get(id);
+    if (!node) return;
+    this.setNode({ ...node, position, updatedAt: Date.now() });
+  }
+
+  getContent(nodeId: string): Y.XmlFragment {
+    const existing = this.content.get(nodeId);
+    if (existing) return existing;
+    const fragment = new Y.XmlFragment();
+    this.content.set(nodeId, fragment);
+    return fragment;
+  }
+
+  removeContent(nodeId: string): void {
+    this.content.delete(nodeId);
+  }
+
+  createNote(input: CreateNoteInput): GraphNode {
+    const now = Date.now();
+    const node: GraphNode = {
+      id: input.id,
+      kind: "note",
+      position: input.position,
+      createdAt: now,
+      updatedAt: now,
+      data: {},
+    };
+    this.setNode(node);
+    this.getContent(node.id);
+    return node;
+  }
+
   removeNode(id: string): void {
     this.nodes.delete(id);
     for (const [edgeId, edge] of this.edges) {
@@ -65,6 +106,7 @@ export class GraphDocument {
         this.edges.delete(edgeId);
       }
     }
+    this.removeContent(id);
   }
 
   removeEdge(id: string): void {

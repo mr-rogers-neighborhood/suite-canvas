@@ -1,3 +1,4 @@
+import { ReactFlowProvider } from "@xyflow/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -10,6 +11,8 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <ReactFlowProvider>
+      <App />
+    </ReactFlowProvider>
   </StrictMode>,
 );

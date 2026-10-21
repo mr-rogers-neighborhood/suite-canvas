@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const nodeKinds = ["note", "document", "tag"] as const;
+export const nodeKinds = ["note"] as const;
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 
 export const nodeKindSchema = z.enum(nodeKinds);
@@ -13,19 +13,7 @@ export const positionSchema = z.object({
   y: z.number().finite(),
 });
 
-export const noteDataSchema = z.object({
-  text: z.string(),
-});
-
-export const documentDataSchema = z.object({
-  title: z.string(),
-  body: z.string(),
-});
-
-export const tagDataSchema = z.object({
-  label: z.string(),
-  color: z.string(),
-});
+export const noteDataSchema = z.object({});
 
 const entityBase = {
   id: entityIdSchema,
@@ -36,8 +24,6 @@ const entityBase = {
 
 export const graphNodeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("note"), ...entityBase, data: noteDataSchema }),
-  z.object({ kind: z.literal("document"), ...entityBase, data: documentDataSchema }),
-  z.object({ kind: z.literal("tag"), ...entityBase, data: tagDataSchema }),
 ]);
 
 export const graphEdgeSchema = z.object({

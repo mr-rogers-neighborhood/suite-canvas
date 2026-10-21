@@ -6,7 +6,15 @@ import { create } from "zustand";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
-export const DOC_ID = "default-graph";
+function resolveDocId(): string {
+  if (typeof window !== "undefined") {
+    const requested = new URLSearchParams(window.location.search).get("doc");
+    if (requested) return requested;
+  }
+  return "default-graph";
+}
+
+export const DOC_ID = resolveDocId();
 
 const doc = new Y.Doc();
 const graph = new GraphDocument(doc);

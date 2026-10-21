@@ -1,11 +1,18 @@
+import { useViewport, ViewportPortal } from "@xyflow/react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { PresenceCursor } from "../components/PresenceCursor";
 
+/**
+ * Renders peer cursors in flow space, so they stay aligned to the canvas while
+ * panning and zooming. Labels are counter-scaled to keep a constant size.
+ */
 export function PresenceLayer() {
   const peers = usePresenceStore((state) => state.peers);
+  const { zoom } = useViewport();
+  const inverseZoom = 1 / (zoom || 1);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30">
+    <ViewportPortal>
       {Object.values(peers).map((peer) =>
         peer.pointer ? (
           <PresenceCursor
@@ -13,9 +20,10 @@ export function PresenceLayer() {
             user={peer.user}
             x={peer.pointer.x}
             y={peer.pointer.y}
+            scale={inverseZoom}
           />
         ) : null,
       )}
-    </div>
+    </ViewportPortal>
   );
 }

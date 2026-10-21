@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { getOrCreateIdentity, type Identity } from "./identity";
 import {
   AWARENESS_FIELDS,
+  type DraggingState,
   type FocusState,
   type PeerPresence,
   type PointerState,
@@ -17,6 +18,7 @@ interface PresenceState {
   bind: (provider: HocuspocusProvider) => void;
   setPointer: (pointer: PointerState | null) => void;
   setFocus: (focus: FocusState | null) => void;
+  setDragging: (dragging: DraggingState | null) => void;
 }
 
 function toPresenceUser(state: Record<string, unknown>): PresenceUser {
@@ -33,6 +35,7 @@ function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerP
     user: toPresenceUser(state),
     pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
+    dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
   };
 }
 
@@ -68,5 +71,9 @@ export const usePresenceStore = create<PresenceState>((set, get) => ({
 
   setFocus: (focus) => {
     get().awareness?.setLocalStateField(AWARENESS_FIELDS.focus, focus);
+  },
+
+  setDragging: (dragging) => {
+    get().awareness?.setLocalStateField(AWARENESS_FIELDS.dragging, dragging);
   },
 }));

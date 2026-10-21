@@ -3,7 +3,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { PresenceUser } from "../collab/presence";
@@ -16,7 +16,10 @@ export interface NodeCardProps {
   awareness: Awareness | null;
   selected?: boolean;
   editing?: boolean;
+  /** Peers focused on this node. */
   presence?: PresenceUser[];
+  /** Peers currently dragging this node. */
+  draggingPeers?: PresenceUser[];
   onEditEnd?: () => void;
 }
 
@@ -37,8 +40,20 @@ export function NodeCard({
   selected = false,
   editing = false,
   presence = [],
+  draggingPeers = [],
   onEditEnd,
 }: NodeCardProps) {
+  // Blur can fire transiently while the card re-renders (presence updates,
+  // CRDT sync). Only leave edit mode when focus does not come back.
+  const blurTimeout = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
+    },
+    [],
+  );
+
   const editor = useEditor(
     {
       editable: false,
@@ -46,15 +61,27 @@ export function NodeCard({
         // Collaboration ships its own undo history, so StarterKit's is disabled.
         StarterKit.configure({ undoRedo: false }),
         Collaboration.configure({ fragment }),
-        CollaborationCursor.configure({ awareness }),
+        CollaborationCursor.configure({ awareness, nodeId: node.id }),
       ],
       editorProps: {
         attributes: {
           class:
-            "node-card-editor min-h-[40px] w-56 px-3 py-2 text-sm text-gray-800 focus:outline-none",
+            "node-card-editor min-h-[40px] w-56 px-3 py-2 text-sm text-[var(--ink)] focus:outline-none",
         },
       },
-      onBlur: () => onEditEnd?.(),
+      onFocus: () => {
+        if (blurTimeout.current !== null) {
+          window.clearTimeout(blurTimeout.current);
+          blurTimeout.current = null;
+        }
+      },
+      onBlur: () => {
+        if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
+        blurTimeout.current = window.setTimeout(() => {
+          blurTimeout.current = null;
+          onEditEnd?.();
+        }, 120);
+      },
     },
     [fragment, awareness, node.id],
   );
@@ -72,38 +99,62 @@ export function NodeCard({
     }),
   });
 
-  useEffect(() => {
+  // Layout effect so the editor is editable and focused before the browser
+  // paints; otherwise the first keystroke of a brand-new note can be dropped.
+  useLayoutEffect(() => {
     if (!editor) return;
     editor.setEditable(editing);
     if (!editing) return;
 
-    // Focus immediately, and again on the next frame as a fallback for the
-    // editor's first mount (the ProseMirror view can attach after this effect).
     editor.commands.focus("end");
+    // The ProseMirror view can attach after mount; re-focus on the next frame.
     const frame = requestAnimationFrame(() => {
       editor.commands.focus("end");
     });
     return () => cancelAnimationFrame(frame);
   }, [editor, editing]);
 
+  const draggingPeer = draggingPeers[0];
+  const focusedBy = presence[0];
+
+  // Peer presence takes visual priority over local selection so collaborators
+  // always see where everyone else is.
+  const presenceStyle: CSSProperties = draggingPeer
+    ? { borderColor: draggingPeer.color, boxShadow: `0 0 0 3px ${draggingPeer.color}55` }
+    : focusedBy
+      ? { borderColor: focusedBy.color, boxShadow: `0 0 0 2px ${focusedBy.color}33` }
+      : {};
+
   const cardClass = [
-    "node-card relative rounded-xl border bg-white shadow-sm transition-shadow",
-    selected ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200",
-    editing ? "nodrag shadow-md" : "",
+    "node-card relative rounded-2xl border border-[var(--hairline)]",
+    selected && !draggingPeer && !focusedBy
+      ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
+      : "",
+    editing ? "nodrag" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   const buttonClass = (active: boolean) =>
     `rounded px-2 py-1 text-xs transition-colors ${
-      active ? "bg-gray-300 font-semibold text-gray-900" : "text-gray-600 hover:bg-gray-200"
+      active
+        ? "bg-gray-300 font-semibold text-gray-900 dark:bg-white/25 dark:text-white"
+        : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
     }`;
 
   return (
-    <div data-testid="node-card" data-node-id={node.id} className={cardClass}>
+    <div
+      data-testid="node-card"
+      data-node-id={node.id}
+      data-dragging={draggingPeer ? "true" : undefined}
+      className={cardClass}
+      style={presenceStyle}
+    >
       <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-[10px] font-medium uppercase text-gray-400">note</span>
-        <PresenceAvatars users={presence} />
+        <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--ink-muted)]">
+          note
+        </span>
+        <PresenceAvatars users={presence.length > 0 ? presence : draggingPeers} />
       </div>
       <EditorContent editor={editor} />
       {editor ? (
@@ -111,7 +162,7 @@ export function NodeCard({
           <div
             data-testid="editor-toolbar"
             role="toolbar"
-            className="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+            className="flex flex-wrap gap-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-lg"
             onMouseDown={(event) => event.preventDefault()}
           >
             <button

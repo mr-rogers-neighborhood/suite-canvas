@@ -46,6 +46,14 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Zustand for UI state only. Document data is owned by the Yjs doc.
 - Store selectors should be atomic (`useCanvasStore((s) => s.graph)`) to limit re-renders.
 
+## Presence and coordinates
+
+- Broadcast presence in **flow coordinates** (`screenToFlowPosition`), never raw screen pixels;
+  the overlay renders inside `<ViewportPortal>` so it follows pan/zoom.
+- Never publish a shared "current selection" awareness field for multiple editors — filter
+  remote carets by the peer's focused node id.
+- Persist positions to the CRDT on drag stop only; live positions travel through awareness.
+
 ## Data layer
 
 - Never mutate `GraphDocument` internals from the UI. Add typed methods to

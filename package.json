@@ -19,6 +19,8 @@
     "e2e": "pnpm --filter @suite/e2e e2e",
     "storybook": "pnpm --filter @suite/canvas storybook",
     "build-storybook": "pnpm --filter @suite/canvas build-storybook",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "clean": "rm -rf apps/*/dist apps/*/storybook-static packages/*/dist .turbo apps/*/.turbo packages/*/.turbo",
     "prepare": "husky"
   },
   "devDependencies": {

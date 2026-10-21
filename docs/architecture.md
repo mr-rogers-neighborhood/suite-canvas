@@ -58,9 +58,11 @@ search/semantic features.
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
-- **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor) and `focus`
-  (focused node). Editor carets/selections ride the same awareness via `yCursorPlugin`, on a
-  separate `editorSelection` field.
+- **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
+  (focused node) and `dragging` (node + live position). Pointer and drag positions are
+  **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
+  Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
+  only renders in the card they have focused (all editors share one awareness).
 - **Documents:** the document id comes from `?doc=<id>` (default `default-graph`), used for both
   the IndexedDB key and the Hocuspocus room, so separate documents never share CRDT state.
 
@@ -73,6 +75,19 @@ search/semantic features.
 | Domain | `packages/graph` | Schema, types, typed CRDT access |
 | Persistence | `y-indexeddb` | Offline-first local storage |
 | Sync | Hocuspocus provider + server | Real-time collaboration |
+
+## Drag tracking
+
+Dragging a card broadcasts its live position at ~40 ms intervals. On the collaborator's side the
+card eases toward that target each animation frame (`SMOOTHING = 0.22`), so motion reads as
+continuous rather than stepping, and the card is visible the whole time. Position is persisted to
+the CRDT only on drag stop.
+
+## Theming
+
+`light` / `dark` / `system` (auto) is stored in `localStorage` and applied as `.dark` on
+`<html>` before first paint. Colors live in CSS variables (`--surface`, `--ink`, `--hairline`,
+`--canvas-bg`, `--rf-dot`), and React Flow chrome is themed through those variables.
 
 ## Connection lifecycle
 

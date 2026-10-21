@@ -60,9 +60,12 @@ awareness (`user`, `pointer`, `focus`, `editorSelection`).
    updating its tests; bumping a schema is an explicit decision (see ADRs).
 4. **TypeScript strict.** No `any` without a comment; prefer `unknown` + narrowing.
 5. **Prefer library primitives over hand-rolled UI**: Tiptap `BubbleMenu` / `useEditorState`,
-   React Flow `useNodesState` / `useEdgesState`. See [docs/conventions.md](docs/conventions.md).
-6. **Conventional commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-7. **Verify before claiming done:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (and `pnpm build`
+   React Flow `useNodesState` / `useEdgesState` / `ViewportPortal`. See
+   [docs/conventions.md](docs/conventions.md).
+6. **Presence uses flow coordinates** (`screenToFlowPosition`) and is drawn in `<ViewportPortal>`;
+   document positions persist on drag stop, live drag positions ride awareness.
+7. **Conventional commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+8. **Verify before claiming done:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (and `pnpm build`
    when touching the graph package or build config).
 
 ## Definition of done for a feature

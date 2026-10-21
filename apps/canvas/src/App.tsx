@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { usePresenceStore } from "./collab/usePresenceStore";
+import { TitleBar } from "./components/TitleBar";
 import { useGraphSnapshot } from "./hooks/useGraphSnapshot";
-import { useCanvasStore } from "./store/useCanvasStore";
+import { DOC_ID, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
+import { initTheme } from "./theme/useThemeStore";
 
 export default function App() {
   const graph = useCanvasStore((state) => state.graph);
@@ -12,7 +14,10 @@ export default function App() {
   const status = useCanvasStore((state) => state.status);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const setFocus = usePresenceStore((state) => state.setFocus);
+  const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
   useGraphSnapshot();
+
+  useEffect(() => initTheme(), []);
 
   useEffect(() => {
     connect();
@@ -37,11 +42,11 @@ export default function App() {
   }, [editingNodeId, setFocus]);
 
   return (
-    <div className="h-screen w-screen bg-gray-50">
-      <CanvasBoard />
-      <div className="pointer-events-none fixed bottom-2 left-2 z-40 rounded bg-white/80 px-2 py-1 text-xs text-gray-400">
-        sync: {status}
-      </div>
+    <div className="app-canvas flex h-screen w-screen flex-col">
+      <TitleBar status={status} peerCount={peerCount} documentId={DOC_ID} />
+      <main className="relative z-10 min-h-0 flex-1">
+        <CanvasBoard />
+      </main>
     </div>
   );
 }

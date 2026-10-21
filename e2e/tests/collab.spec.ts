@@ -75,6 +75,67 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   await expect(page.getByText("keyboard delete")).toHaveCount(0);
 });
 
+test("switches and persists the color theme", async ({ page }) => {
+  await page.goto(docUrl("theme"));
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+
+  await page.getByTestId("theme-dark").click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.getByTestId("theme-dark")).toHaveAttribute("data-checked", "true");
+
+  await page.getByTestId("theme-light").click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+test("shows a peer's drag presence while a card is being dragged", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("drag-presence");
+  await pageA.goto(url);
+  await pageB.goto(url);
+
+  await createNote(pageA);
+  await pageA.keyboard.type("dragged note");
+  await pageA.keyboard.press("Escape");
+
+  const cardA = pageA.locator('[data-testid="node-card"]').filter({ hasText: "dragged note" });
+  await expect(cardA).toHaveCount(1);
+
+  const cardB = pageB.locator('[data-testid="node-card"]').filter({ hasText: "dragged note" });
+  await expect(cardB).toHaveCount(1);
+  await expect(cardB).not.toHaveAttribute("data-dragging", "true");
+
+  const box = await cardA.boundingBox();
+  if (!box) throw new Error("card not visible");
+  const before = await cardB.boundingBox();
+
+  await pageA.mouse.move(box.x + 40, box.y + 14);
+  await pageA.mouse.down();
+  await pageA.mouse.move(box.x + 180, box.y + 120, { steps: 12 });
+
+  await expect(cardB).toHaveAttribute("data-dragging", "true");
+
+  // The card follows the collaborator's cursor live, not just after drop.
+  await expect
+    .poll(async () => {
+      const during = await cardB.boundingBox();
+      return during ? Math.round(during.x - (before?.x ?? 0)) : 0;
+    })
+    .toBeGreaterThan(80);
+
+  await pageA.mouse.up();
+  await expect(cardB).not.toHaveAttribute("data-dragging", "true");
+
+  await contextA.close();
+  await contextB.close();
+});
+
 test("syncs content and presence between two clients", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -98,6 +159,15 @@ test("syncs content and presence between two clients", async ({ browser }) => {
   // Presence: B sees A's avatar on the card A is editing, plus A's caret.
   await expect(noteOnB.getByTestId("presence-avatar")).toBeVisible();
   await expect(noteOnB.locator(".ProseMirror-yjs-cursor")).toHaveCount(1);
+
+  // A's caret must not be mapped into the other cards' documents.
+  const otherCards = pageB
+    .locator('[data-testid="node-card"]')
+    .filter({ hasNotText: "hello from A" });
+  const otherCount = await otherCards.count();
+  for (let index = 0; index < otherCount; index += 1) {
+    await expect(otherCards.nth(index).locator(".ProseMirror-yjs-cursor")).toHaveCount(0);
+  }
 
   await contextA.close();
   await contextB.close();

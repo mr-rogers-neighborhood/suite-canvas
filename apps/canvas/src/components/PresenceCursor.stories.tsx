@@ -5,6 +5,7 @@ const meta = {
   title: "Components/PresenceCursor",
   component: PresenceCursor,
   parameters: { layout: "centered" },
+  tags: ["autodocs"],
 } satisfies Meta<typeof PresenceCursor>;
 
 export default meta;

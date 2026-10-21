@@ -20,6 +20,11 @@ import { useUiStore } from "../store/useUiStore";
 import { nodeTypes } from "./NoteNode";
 import { PresenceLayer } from "./PresenceLayer";
 
+/** Share of the remaining distance covered per frame when easing toward a peer's drag. */
+const SMOOTHING = 0.22;
+const POINTER_THROTTLE_MS = 60;
+const DRAG_THROTTLE_MS = 40;
+
 function toFlowEdge(edge: GraphEdge): Edge {
   return {
     id: edge.id,
@@ -32,7 +37,9 @@ function toFlowEdge(edge: GraphEdge): Edge {
 export function CanvasBoard() {
   const { nodes: graphNodes, edges: graphEdges } = useGraphSnapshot();
   const graph = useCanvasStore((state) => state.graph);
+  const peers = usePresenceStore((state) => state.peers);
   const setPointer = usePresenceStore((state) => state.setPointer);
+  const setDragging = usePresenceStore((state) => state.setDragging);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const setEditingNodeId = useUiStore((state) => state.setEditingNodeId);
@@ -44,9 +51,66 @@ export function CanvasBoard() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  const draggingId = useRef<string | null>(null);
+  const locallyDraggingId = useRef<string | null>(null);
   const lastPointerSent = useRef(0);
+  const lastDragSent = useRef(0);
   const selectedKey = selectedNodeIds.join(",");
+
+  // Remote drags are eased toward their latest reported position so motion on a
+  // collaborator's screen reads as continuous instead of stepping.
+  const peerTargets = useRef(new Map<string, { x: number; y: number }>());
+  const smoothPositions = useRef(new Map<string, { x: number; y: number }>());
+  const smoothingFrame = useRef<number | null>(null);
+
+  const runSmoothing = useCallback(() => {
+    const tick = () => {
+      let moving = false;
+      for (const [id, target] of peerTargets.current) {
+        const previous = smoothPositions.current.get(id) ?? target;
+        const x = previous.x + (target.x - previous.x) * SMOOTHING;
+        const y = previous.y + (target.y - previous.y) * SMOOTHING;
+        const settled = Math.abs(target.x - x) < 0.5 && Math.abs(target.y - y) < 0.5;
+        smoothPositions.current.set(id, settled ? { ...target } : { x, y });
+        if (!settled) moving = true;
+      }
+
+      setNodes((current) =>
+        current.map((node) => {
+          const position = smoothPositions.current.get(node.id);
+          if (!position) return node;
+          if (position.x === node.position.x && position.y === node.position.y) return node;
+          return { ...node, position };
+        }),
+      );
+
+      smoothingFrame.current = moving ? requestAnimationFrame(tick) : null;
+    };
+
+    if (smoothingFrame.current !== null) return;
+    smoothingFrame.current = requestAnimationFrame(tick);
+  }, [setNodes]);
+
+  useEffect(() => {
+    const next = new Map<string, { x: number; y: number }>();
+    for (const peer of Object.values(peers)) {
+      if (peer.dragging) next.set(peer.dragging.nodeId, peer.dragging.position);
+    }
+    peerTargets.current = next;
+
+    // Drop smoothing state for drags that ended so the CRDT position takes over.
+    for (const id of smoothPositions.current.keys()) {
+      if (!next.has(id)) smoothPositions.current.delete(id);
+    }
+
+    if (next.size > 0) runSmoothing();
+  }, [peers, runSmoothing]);
+
+  useEffect(
+    () => () => {
+      if (smoothingFrame.current !== null) cancelAnimationFrame(smoothingFrame.current);
+    },
+    [],
+  );
 
   // React Flow owns transient state (drag position, selection), the CRDT owns
   // the truth. Re-derive flow nodes whenever either side changes.
@@ -56,7 +120,9 @@ export function CanvasBoard() {
       return graphNodes.map((graphNode: GraphNode) => {
         const existing = byId.get(graphNode.id);
         const position =
-          draggingId.current === graphNode.id && existing ? existing.position : graphNode.position;
+          locallyDraggingId.current === graphNode.id && existing
+            ? existing.position
+            : (smoothPositions.current.get(graphNode.id) ?? graphNode.position);
         return {
           id: graphNode.id,
           type: "note",
@@ -165,10 +231,18 @@ export function CanvasBoard() {
         fitView
         deleteKeyCode={null}
         onNodeDragStart={(_, node) => {
-          draggingId.current = node.id;
+          locallyDraggingId.current = node.id;
+          setDragging({ nodeId: node.id, position: node.position });
+        }}
+        onNodeDrag={(_, node) => {
+          const now = performance.now();
+          if (now - lastDragSent.current < DRAG_THROTTLE_MS) return;
+          lastDragSent.current = now;
+          setDragging({ nodeId: node.id, position: node.position });
         }}
         onNodeDragStop={(_, node) => {
-          draggingId.current = null;
+          locallyDraggingId.current = null;
+          setDragging(null);
           graph.updateNodePosition(node.id, node.position);
         }}
         onNodeDoubleClick={(_, node) => setEditingNodeId(node.id)}
@@ -183,16 +257,16 @@ export function CanvasBoard() {
         }}
         onPaneMouseMove={(event) => {
           const now = performance.now();
-          if (now - lastPointerSent.current < 80) return;
+          if (now - lastPointerSent.current < POINTER_THROTTLE_MS) return;
           lastPointerSent.current = now;
-          setPointer({ x: event.clientX, y: event.clientY });
+          setPointer(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
         }}
         onPaneMouseLeave={() => setPointer(null)}
       >
-        <Background />
-        <Controls />
+        <Background color="var(--rf-dot)" />
+        <Controls showInteractive={false} />
+        <PresenceLayer />
       </ReactFlow>
-      <PresenceLayer />
       {contextMenu ? (
         <ContextMenu
           x={contextMenu.x}

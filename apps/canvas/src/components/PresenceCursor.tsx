@@ -4,15 +4,21 @@ export interface PresenceCursorProps {
   user: PresenceUser;
   x: number;
   y: number;
+  /** Counter-scale so the cursor keeps a constant size while zooming. */
+  scale?: number;
 }
 
-export function PresenceCursor({ user, x, y }: PresenceCursorProps) {
+export function PresenceCursor({ user, x, y, scale = 1 }: PresenceCursorProps) {
   return (
     <div
-      className="pointer-events-none absolute left-0 top-0"
-      style={{ transform: `translate(${x}px, ${y}px)` }}
+      className="pointer-events-none absolute left-0 top-0 z-50"
+      style={{
+        transform: `translate(${x}px, ${y}px) scale(${scale})`,
+        transformOrigin: "0 0",
+        transition: "transform 80ms linear",
+      }}
     >
-      <svg width="14" height="14" viewBox="0 0 16 16" className="drop-shadow-sm">
+      <svg width="16" height="16" viewBox="0 0 16 16" className="drop-shadow-sm">
         <title>{user.name}</title>
         <path fill={user.color} stroke="white" strokeWidth="1" d="M3 1.5l9.5 6.2-4.8.6L5 13z" />
       </svg>

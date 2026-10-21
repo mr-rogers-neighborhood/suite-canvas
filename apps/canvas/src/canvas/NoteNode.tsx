@@ -23,6 +23,12 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       .map((peer) => peer.user);
   }, [peers, id]);
 
+  const draggingPeers = useMemo<PresenceUser[]>(() => {
+    return Object.values(peers)
+      .filter((peer) => peer.dragging?.nodeId === id)
+      .map((peer) => peer.user);
+  }, [peers, id]);
+
   return (
     <div>
       <Handle type="target" position={Position.Top} />
@@ -33,6 +39,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         selected={selected}
         editing={editing}
         presence={presence}
+        draggingPeers={draggingPeers}
         onEditEnd={() => setEditingNodeId(null)}
       />
       <Handle type="source" position={Position.Bottom} />

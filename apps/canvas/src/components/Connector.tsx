@@ -71,6 +71,27 @@ function isAnchor(position: Point): boolean {
 }
 
 /**
+ * React Flow routes an edge according to the handle's declared side. Connectors
+ * can sit anywhere on the perimeter, so the side is derived from the position —
+ * otherwise every edge would enter vertically and hook into the dot.
+ */
+function sideOf(position: Point): Position {
+  const dx = position.x - 0.5;
+  const dy = position.y - 0.5;
+  if (Math.abs(dy) >= Math.abs(dx)) {
+    return dy <= 0 ? Position.Top : Position.Bottom;
+  }
+  return dx <= 0 ? Position.Left : Position.Right;
+}
+
+const SIDE_NAME: Record<Position, string> = {
+  [Position.Top]: "top",
+  [Position.Right]: "right",
+  [Position.Bottom]: "bottom",
+  [Position.Left]: "left",
+};
+
+/**
  * A node connector. The dot is a React Flow handle, so dragging it draws a
  * connection; the dashed ring underneath is a separate grab handle used to
  * reposition the connector along the card perimeter.
@@ -88,6 +109,7 @@ export function Connector({
   const shell = useRef<HTMLDivElement | null>(null);
 
   const position = livePosition ?? { x: connector.x, y: connector.y };
+  const side = sideOf(position);
 
   const startReposition = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -130,6 +152,7 @@ export function Connector({
       data-selected={selected ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
       data-anchored={isAnchor(position) ? "true" : "false"}
+      data-side={SIDE_NAME[side]}
       className="nodrag nopan absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
@@ -153,7 +176,7 @@ export function Connector({
       <Handle
         id={connector.id}
         type="source"
-        position={Position.Top}
+        position={side}
         data-testid="connector-dot"
         className="connector-dot"
         style={{

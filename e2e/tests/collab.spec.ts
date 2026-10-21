@@ -84,6 +84,14 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   const connectors = card.locator('[data-testid="connector"]');
   await expect(connectors).toHaveCount(4);
 
+  // Each connector declares the card side it sits on, so edges leave and enter
+  // perpendicular to the perimeter instead of hooking in from above.
+  await expect(connectors).toHaveCount(4);
+  const sides = await connectors.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-side")),
+  );
+  expect(sides).toEqual(["top", "right", "bottom", "left"]);
+
   // Connectors sit exactly on the card perimeter (top, right, bottom, left).
   const cardBox = await card.boundingBox();
   if (!cardBox) throw new Error("card not visible");
@@ -168,6 +176,17 @@ test("links connectors with a direction the menu can change", async ({ page }) =
   const path = edge.locator("path.react-flow__edge-path");
   await expect(path).toHaveAttribute("marker-end", /arrowclosed/);
   await expect(path).not.toHaveAttribute("marker-start", /arrowclosed/);
+
+  // The edge meets the target connector horizontally (its side is "left"),
+  // rather than hooking downward.
+  const endTangent = await path.evaluate((element) => {
+    const pathElement = element as SVGPathElement;
+    const length = pathElement.getTotalLength();
+    const from = pathElement.getPointAtLength(Math.max(0, length - 6));
+    const to = pathElement.getPointAtLength(length);
+    return { dx: to.x - from.x, dy: to.y - from.y };
+  });
+  expect(Math.abs(endTangent.dy)).toBeLessThan(Math.abs(endTangent.dx));
 
   // Links paint above cards so card stacking order cannot hide them.
   const layers = await page.evaluate(() => ({

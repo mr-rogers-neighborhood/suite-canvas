@@ -236,6 +236,14 @@ body {
   touch-action: none;
 }
 
+/* Merely selected by a peer: a quieter outline than the moving ring. */
+.connector-peer-ring[data-state="selected"] {
+  border-style: dashed;
+  border-width: 1.5px;
+  box-shadow: none;
+  opacity: 0.85;
+}
+
 .dark .connector-peer-ring {
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
 }

@@ -58,7 +58,8 @@ of each side.
 
 Interaction model:
 
-- **Click a connector** to select it; a dashed circular grab handle appears.
+- **Click a connector** to select it; a dashed circular grab handle appears, and the selection is
+  published so peers see a dashed outline in their colour around the same connector.
 - **Drag the grab handle** to reposition. Positions are free along the card perimeter, but the
   connector magnetizes to the nearest corner or side midpoint when released within ~20 px.
 - Dragging the connector dot itself is reserved for creating connections.
@@ -102,6 +103,12 @@ same path helper as the real edge. The shared edge is hidden for the duration, s
 is visible until the drop rewrites it. React Flow reports the *anchored* handle from
 `onReconnectStart`, so the moving end is the opposite one.
 
+Snapping is forwarded rather than reimplemented: while the drag is in flight the mover reads React
+Flow's own `connection.toNode` / `toHandle` from the store (the same value that highlights the handle
+under the pointer) and publishes it as `reconnect.target`. Peers then end their preview on that
+connector instead of the raw pointer, meeting it perpendicular to its side, so both clients show the
+drop the link would land on.
+
 Either end of a link can be dragged onto another connector: hovering a link reveals React Flow's
 reconnect handles (`edgesReconnectable` + `onReconnect`). React Flow keeps the anchored end intact,
 so an unchanged `source`/`sourceHandle` means the *target* moved; `reconnectEdge` then rewrites only
@@ -120,10 +127,12 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
 - **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
-  (editing node), `selection` (selected nodes *and* selected links), `dragging` (node + live
-  position), `connector` (`nodeId`, `connectorId` and the live fraction) and `reconnect` (dragged
-  link end). A moving connector shows a peer ring and moves for everyone; selected links render in
-  the peer's colour.
+  (editing node), `selection` (selected nodes, selected links *and* the clicked connector),
+  `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction) and
+  `reconnect` (dragged link end + snap target). A moving connector shows a peer ring and moves for
+  everyone, a selected connector shows a dashed peer outline, and selected links render in the
+  peer's colour. `selection` has a single publisher (`CanvasBoard`), so a connector click cannot be
+  clobbered by a node or link selection clearing the same field.
   Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret

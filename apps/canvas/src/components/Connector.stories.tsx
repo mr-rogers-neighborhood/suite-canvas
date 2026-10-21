@@ -44,6 +44,18 @@ export const MovingByPeer: Story = {
   },
 };
 
+/** A peer has clicked this connector (no drag), shown as a dashed outline. */
+export const SelectedByPeer: Story = {
+  args: {
+    connector,
+    nodeId: "n1",
+    selectingPeers: [{ name: "Marlowe", color: "#f97316" }],
+    onSelect: () => {},
+    onMoveEnd: () => {},
+    onContextMenu: () => {},
+  },
+};
+
 export const Selected: Story = {
   args: {
     connector,

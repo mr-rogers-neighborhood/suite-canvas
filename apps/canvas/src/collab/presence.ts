@@ -19,10 +19,17 @@ export interface DraggingState {
   position: PointerState;
 }
 
-/** Cards and links a peer has selected (not necessarily editing). */
+/** A connector a peer has clicked, so peers can see who is working on it. */
+export interface ConnectorSelection {
+  nodeId: string;
+  connectorId: string;
+}
+
+/** Cards, links and the connector a peer has selected (not necessarily editing). */
 export interface SelectionState {
   nodeIds: string[];
   edgeIds?: string[];
+  connector?: ConnectorSelection;
 }
 
 /** A connector a peer is dragging along a card perimeter. */
@@ -40,6 +47,8 @@ export interface ReconnectState {
   end: "source" | "target";
   /** Pointer position in flow coordinates. */
   position: { x: number; y: number };
+  /** Connector React Flow has snapped the dragged end to, if any. */
+  target?: ConnectorSelection;
 }
 
 export const AWARENESS_FIELDS = {

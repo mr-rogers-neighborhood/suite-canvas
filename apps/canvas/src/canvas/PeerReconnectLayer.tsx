@@ -48,28 +48,50 @@ function ReconnectPreview({
   edge,
   node,
   connectorId,
+  target,
   pointer,
   color,
 }: {
   edge: GraphEdge;
   node: GraphNode;
   connectorId: string | undefined;
+  /** Connector the mover has snapped to, if any. */
+  target: { node: GraphNode; connectorId: string } | null;
   pointer: Point;
   color: string;
 }) {
-  const internal = useInternalNode(node.id);
-  const measured = internal?.measured;
+  const anchorNode = useInternalNode(node.id);
+  const targetNode = useInternalNode(target?.node.id ?? "");
+  const anchorMeasured = anchorNode?.measured;
   const connector = node.connectors.find((candidate) => candidate.id === connectorId);
+  const targetConnector = target?.node.connectors.find(
+    (candidate) => candidate.id === target.connectorId,
+  );
 
-  if (!internal || !measured?.width || !measured?.height || !connector) return null;
+  if (!anchorNode || !anchorMeasured?.width || !anchorMeasured?.height || !connector) return null;
 
   const anchor = {
-    x: internal.internals.positionAbsolute.x + connector.x * measured.width,
-    y: internal.internals.positionAbsolute.y + connector.y * measured.height,
+    x: anchorNode.internals.positionAbsolute.x + connector.x * anchorMeasured.width,
+    y: anchorNode.internals.positionAbsolute.y + connector.y * anchorMeasured.height,
   };
   const anchorSide = sideOf(connector);
-  // The free end points back at the anchor, so the curve bows away from the card.
-  const d = pathFor(edge.path, anchor, anchorSide, pointer, OPPOSITE[anchorSide]);
+
+  const targetSize = targetNode?.measured;
+  const snappedTarget =
+    targetNode && targetSize?.width && targetSize.height && targetConnector
+      ? {
+          point: {
+            x: targetNode.internals.positionAbsolute.x + targetConnector.x * targetSize.width,
+            y: targetNode.internals.positionAbsolute.y + targetConnector.y * targetSize.height,
+          },
+          side: sideOf(targetConnector),
+        }
+      : null;
+
+  // Snapped ends meet the connector perpendicularly, exactly like the real edge.
+  const end = snappedTarget ?? { point: pointer, side: OPPOSITE[anchorSide] };
+
+  const d = pathFor(edge.path, anchor, anchorSide, end.point, end.side);
   const markerId = `peer-reconnect-arrow-${edge.id}-${color.replace(/\W/g, "")}`;
 
   return (
@@ -89,6 +111,7 @@ function ReconnectPreview({
       </defs>
       <path
         data-testid="peer-reconnect-preview"
+        data-snapped={snappedTarget ? "true" : undefined}
         d={d}
         fill="none"
         stroke={color}
@@ -106,6 +129,12 @@ export function PeerReconnectLayer() {
   const peers = usePresenceStore((state) => state.peers);
   const { nodes, edges } = useGraphSnapshot();
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  const resolveTarget = (target: { nodeId: string; connectorId: string } | undefined) => {
+    if (!target) return null;
+    const node = nodesById.get(target.nodeId);
+    return node ? { node, connectorId: target.connectorId } : null;
+  };
 
   return (
     <ViewportPortal>
@@ -126,6 +155,7 @@ export function PeerReconnectLayer() {
             edge={edge}
             node={anchorNode}
             connectorId={draggingSource ? edge.targetConnector : edge.sourceConnector}
+            target={resolveTarget(state.target)}
             pointer={state.position}
             color={peer.user.color}
           />

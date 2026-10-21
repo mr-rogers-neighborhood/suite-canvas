@@ -46,6 +46,18 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     return result;
   }, [peers, id]);
 
+  const selectingConnectorPeers = useMemo<Record<string, PresenceUser[]>>(() => {
+    const result: Record<string, PresenceUser[]> = {};
+    for (const peer of Object.values(peers)) {
+      const selected = peer.selection?.connector;
+      if (selected?.nodeId !== id) continue;
+      const list = result[selected.connectorId] ?? [];
+      list.push(peer.user);
+      result[selected.connectorId] = list;
+    }
+    return result;
+  }, [peers, id]);
+
   const selectingPeers = useMemo<PresenceUser[]>(() => {
     return Object.values(peers)
       .filter((peer) => peer.selection?.nodeIds.includes(id))
@@ -64,6 +76,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         draggingPeers={draggingPeers}
         selectingPeers={selectingPeers}
         movingConnectorPeers={movingConnectorPeers}
+        selectingConnectorPeers={selectingConnectorPeers}
         onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}
         onConnectorMove={(connectorId, position) =>
           setMovingConnector({ nodeId: id, connectorId, position })

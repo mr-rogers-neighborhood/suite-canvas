@@ -28,6 +28,16 @@ one-directional and hid the most interesting moment of the gesture.
    real edge uses, and hides the shared edge while the preview is up.
 5. **React Flow reports the anchored handle.** `onReconnectStart`/`onReconnectEnd` receive the handle
    that stays anchored, so presence records the *opposite* end as the moving one.
+6. **Forward the snap, do not recreate it.** While a link end is dragged, the mover reads React Flow's
+   `connection.toNode`/`toHandle` from the store (the value that already highlights the handle under
+   the pointer) and publishes it as `reconnect.target`. Peers end the preview on that connector,
+   perpendicular to its side, so the preview shows exactly the drop the mover is about to make.
+   Re-implementing the radius test locally would drift from the library's own tolerances.
+7. **A connector click is presence too.** `selection` gained an optional `connector`, published from a
+   single effect in `CanvasBoard` that merges React Flow's selection with the clicked connector.
+   Peers draw a dashed outline in their colour. Publishing per node (from `NoteNode`) was rejected:
+   each node would clear the shared field when another node's connector was clicked, and the winner
+   would depend on effect order.
 
 Rejected alternatives:
 

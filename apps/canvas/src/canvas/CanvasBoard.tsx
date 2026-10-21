@@ -13,6 +13,7 @@ import {
   useNodesState,
   useOnSelectionChange,
   useReactFlow,
+  useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -79,12 +80,16 @@ export function CanvasBoard() {
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const contextMenu = useUiStore((state) => state.contextMenu);
   const { screenToFlowPosition } = useReactFlow();
+  const store = useStoreApi();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [reconnecting, setReconnecting] = useState<{ edgeId: string; end: HandleType } | null>(
-    null,
-  );
+  const [reconnecting, setReconnecting] = useState<{
+    edgeId: string;
+    end: HandleType;
+    /** The connector that stays put, so a snap onto it is not mistaken for a target. */
+    anchorConnector: string | null;
+  } | null>(null);
 
   const locallyDraggingId = useRef<string | null>(null);
   const lastPointerSent = useRef(0);
@@ -195,13 +200,30 @@ export function CanvasBoard() {
 
   useOnSelectionChange({
     onChange: ({ nodes: selectedNodes, edges: selectedEdges }) => {
-      const ids = selectedNodes.map((node) => node.id);
-      const edgeIds = selectedEdges.map((edge) => edge.id);
-      setSelectedNodeIds(ids);
-      setSelectedEdgeIds(edgeIds);
-      setPresenceSelection(ids.length > 0 || edgeIds.length > 0 ? { nodeIds: ids, edgeIds } : null);
+      setSelectedNodeIds(selectedNodes.map((node) => node.id));
+      setSelectedEdgeIds(selectedEdges.map((edge) => edge.id));
     },
   });
+
+  // One publisher for everything a peer has selected, including the connector
+  // they clicked, so no component has to reason about who else is selected.
+  useEffect(() => {
+    const connector = selectedConnector
+      ? { nodeId: selectedConnector.nodeId, connectorId: selectedConnector.connectorId }
+      : undefined;
+    const hasSelection =
+      selectedNodeIds.length > 0 || selectedEdgeIds.length > 0 || connector !== undefined;
+
+    setPresenceSelection(
+      hasSelection
+        ? {
+            nodeIds: selectedNodeIds,
+            edgeIds: selectedEdgeIds,
+            ...(connector ? { connector } : {}),
+          }
+        : null,
+    );
+  }, [selectedConnector, selectedEdgeIds, selectedNodeIds, setPresenceSelection]);
 
   const deleteSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -278,7 +300,23 @@ export function CanvasBoard() {
     let trailing: ReturnType<typeof setTimeout> | null = null;
 
     const publish = (position: { x: number; y: number }) => {
-      setReconnect({ ...reconnecting, position });
+      // React Flow already resolves the snap target while the drag is in flight;
+      // forward it so peers stop exactly where the mover's link would land.
+      const { connection } = store.getState();
+      const snapped = connection.isValid
+        ? [connection.toHandle, connection.fromHandle].find(
+            (handle) => handle && handle.id !== reconnecting.anchorConnector,
+          )
+        : undefined;
+
+      setReconnect({
+        edgeId: reconnecting.edgeId,
+        end: reconnecting.end,
+        position,
+        ...(snapped?.nodeId && snapped.id
+          ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
+          : {}),
+      });
     };
 
     const follow = (event: PointerEvent) => {
@@ -308,13 +346,17 @@ export function CanvasBoard() {
       // clears the field first and a late sample would resurrect the preview.
       if (trailing !== null) clearTimeout(trailing);
     };
-  }, [reconnecting, screenToFlowPosition, setReconnect]);
+  }, [reconnecting, screenToFlowPosition, setReconnect, store]);
 
   const onReconnectStart = useCallback(
     (event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
       // React Flow reports the handle that stays anchored, so the other end moves.
       const end: HandleType = handleType === "source" ? "target" : "source";
-      setReconnecting({ edgeId: edge.id, end });
+      setReconnecting({
+        edgeId: edge.id,
+        end,
+        anchorConnector: (handleType === "source" ? edge.sourceHandle : edge.targetHandle) ?? null,
+      });
       setReconnect({
         edgeId: edge.id,
         end,

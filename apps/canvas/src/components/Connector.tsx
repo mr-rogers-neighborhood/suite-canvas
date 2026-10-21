@@ -14,6 +14,8 @@ export interface ConnectorProps {
   onContextMenu: (event: React.MouseEvent, connectorId: string) => void;
   /** Peers currently dragging this connector, shown as a colored ring. */
   movingPeers?: PresenceUser[];
+  /** Peers that have clicked this connector, shown as a dashed outline. */
+  selectingPeers?: PresenceUser[];
   /** Where a peer is holding the connector right now, in perimeter fractions. */
   peerPosition?: Point | null;
   /** Broadcast (throttled) while this client drags, so peers see the move live. */
@@ -123,6 +125,7 @@ export function Connector({
   onMoveEnd,
   onContextMenu,
   movingPeers = [],
+  selectingPeers = [],
   peerPosition = null,
   onMove,
   onMoveStart,
@@ -134,6 +137,11 @@ export function Connector({
   const shell = useRef<HTMLDivElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const movingPeer = movingPeers[0];
+  const peerIndicator = movingPeer
+    ? { user: movingPeer, state: "moving" as const }
+    : selectingPeers[0]
+      ? { user: selectingPeers[0], state: "selected" as const }
+      : undefined;
 
   const position = livePosition ?? peerLive ?? { x: connector.x, y: connector.y };
   const side = sideOf(position);
@@ -262,14 +270,16 @@ export function Connector({
       data-anchored={isAnchor(position) ? "true" : "false"}
       data-side={SIDE_NAME[side]}
       data-peer={movingPeer ? "true" : undefined}
+      data-peer-selected={peerIndicator ? "true" : undefined}
       className="nodrag nopan absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
-      {movingPeer ? (
+      {peerIndicator ? (
         <span
           aria-hidden="true"
+          data-state={peerIndicator.state}
           className="connector-peer-ring -translate-x-1/2 -translate-y-1/2"
-          style={{ borderColor: movingPeer.color }}
+          style={{ borderColor: peerIndicator.user.color }}
         />
       ) : null}
 

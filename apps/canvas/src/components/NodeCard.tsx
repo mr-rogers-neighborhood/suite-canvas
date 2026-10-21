@@ -31,6 +31,8 @@ export interface NodeCardProps {
   selectingPeers?: PresenceUser[];
   /** Peers dragging a connector on this node, keyed by connector id. */
   movingConnectorPeers?: Record<string, ConnectorPeerState>;
+  /** Peers that clicked a connector on this node, keyed by connector id. */
+  selectingConnectorPeers?: Record<string, PresenceUser[]>;
   onConnectorMoveStart?: (connectorId: string) => void;
   /** Live connector position while this client drags, throttled by the connector. */
   onConnectorMove?: (connectorId: string, position: { x: number; y: number }) => void;
@@ -62,6 +64,7 @@ export function NodeCard({
   draggingPeers = [],
   selectingPeers = [],
   movingConnectorPeers = {},
+  selectingConnectorPeers = {},
   onConnectorMoveStart,
   onConnectorMove,
   onConnectorMoveFinished,
@@ -208,6 +211,7 @@ export function NodeCard({
           onSelect={(id) => onConnectorSelect?.(id)}
           onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
           movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
+          selectingPeers={selectingConnectorPeers[connector.id] ?? []}
           peerPosition={movingConnectorPeers[connector.id]?.position ?? null}
           onMoveStart={() => onConnectorMoveStart?.(connector.id)}
           onMove={(position) => onConnectorMove?.(connector.id, position)}

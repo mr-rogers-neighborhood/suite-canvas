@@ -18,7 +18,8 @@ Related reading: [architecture.md](./architecture.md), [conventions.md](./conven
 [ADR-0003](./decisions/0003-typed-object-graph.md),
 [ADR-0010](./decisions/0010-workspace-boards-and-cards.md),
 [ADR-0011](./decisions/0011-library-dock-and-card-chrome.md),
-[ADR-0012](./decisions/0012-field-granular-records.md).
+[ADR-0012](./decisions/0012-field-granular-records.md),
+[ADR-0017](./decisions/0017-spatial-sections.md).
 
 ## 1. Purpose and north star
 
@@ -75,7 +76,7 @@ A card can appear on five boards, in two views and on one website without knowin
 | **Tag** | A freeform label with no schema. Many per card. Used for retrieval, not validation. | Workspace |
 | **Relation** | A typed semantic statement between two cards. Exists independently of boards. | Workspace |
 | **Edge placement** | How a relation is drawn on one board: connectors, path, label, layer. | Board |
-| **Section** | A named spatial region on a board. Membership is derived from placement geometry. | Board |
+| **Section** | A named spatial region on a board. Membership is derived from the card's header anchor; sections nest by containment. | Board |
 | **View / collection** | A saved query over the workspace, rendered as a list, table, gallery or board. Results are derived and read-only. | Workspace |
 | **Template** | A creation recipe for a type: default fields and body. Instantiated, never linked. | Workspace |
 
@@ -112,6 +113,7 @@ edges, types, tags and properties are field-granular per
 | `cards` | `createdAt`, `updatedAt`, `deletedAt`, `connectors`, `primaryTypeId`, `types`, `tags`, `properties` | Type/tag membership and properties are merge-safe nested maps. |
 | `placements` | `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` | Key `${boardId}/${cardId}`; one per pair. |
 | `edges` | `boardId`, `source`, `target`, connectors, `kind`, `path`, `bidirectional`, `label?` | Semantic link and drawing are conflated in one record; still target for the relation split. |
+| `sections` | `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?` | Spatial regions; membership is derived, never stored on a placement. |
 | `content` / `titles` | `loro-prosemirror` tree per card | Body and title rich text, same document. |
 | `meta` | `schemaVersion`, `seeded` | Current schema version is 3. |
 
@@ -222,7 +224,12 @@ boards during migration; a merge is an explicit user action.
 
 - `boards`: unchanged.
 - `placements`: unchanged. Section membership is never stored on a placement.
-- `sections`: `id`, `boardId`, `title?`, `x`, `y`, `width`, `height`, `z`, `color?`. Geometry only.
+- `sections`: `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?`. Geometry and
+  presentation only. A card belongs to the smallest section containing its header anchor
+  (`placement.x + 8`, `placement.y + 8`); ties break by `z`, then id. Sections nest when one
+  rectangle fully contains another. Dragging a section moves its member cards and contained
+  sections in one commit; dropping a hanging card expands the section to fit. Deleting a section
+  never deletes a card.
 - `views`: `id`, `name`, serialized filter AST, sort, optional group-by, presentation, optional
   `pinnedBoardId`. No result membership is stored.
 
@@ -269,11 +276,12 @@ That failure is silent, which is why the rule is non-negotiable rather than a pr
    would need reconciliation. Backlinks are always derived from the relation store.
 
 3. **Sections derive membership from geometry and never write card state.** A section is a rectangle
-   on a board; membership is computed from placement geometry at read time. Dragging a card into a
-   section changes nothing about the card. Overlap resolves deterministically: topmost section by
-   `z`, then smallest area, so a card belongs to at most one section. "Apply section as tags" (or as
-   a property) is an **explicit, idempotent command** that writes tags once and reports what it
-   changed. There is no live projection loop.
+   on a board; membership is computed at read time from the card's header anchor. Dragging a card
+   into a section changes nothing about the card. Overlap resolves deterministically: smallest
+   containing section, then `z`, then id, so a card belongs to at most one section. Nesting is
+   containment, not ownership. "Apply section as tags" (or as a property) is an **explicit,
+   idempotent command** that writes tags once and reports what it changed. There is no live
+   projection loop.
 
 4. **Views are read-only saved queries.** A view answers a question; it does not own its results.
    Changing a card may change what a view shows, but a view never writes to a card. "Apply view
@@ -316,12 +324,14 @@ rather than surrounding it with chrome.
   feel like switching documents.
 - **Canvas toolbar** *(target)*: contextual tools for select, section and connect, in the spirit of
   Heptabase's floating palette. Creation stays in the dock; tools stay near the canvas.
-- **Sections** *(target)*: drawn regions with titles and colors, rendered beneath cards. They are the
-  spatial equivalent of a tag, but derived rather than written.
+- **Sections** *(current)*: drawn regions with titles, counts and colors, rendered beneath cards and
+  operable from a header layer above them. They are board-scoped spatial organization, derived
+  rather than written; they do not replace tags or views.
 - **Sub-boards** *(later)*: a card can open into a nested board. This is navigation, not ownership:
   the nested board is another board in the same workspace and its contents remain ordinary cards.
 - **Inspector / card info** *(current, growing)*: a floating right panel with type, tags, field
-  values and placement references. Relations and backlinks join it in the next phase.
+  values, the card's current section and placement references. A click opens it; a double-click
+  enters text editing. Relations and backlinks join it in the next phase.
 - **Backlinks** *(target)*: derived from relations, split into incoming and outgoing, naming the
   board(s) where each relation is drawn; clicking one navigates to the card.
 - **Command palette** *(target)*: keyboard-first create, place, switch board, apply view/section,
@@ -506,11 +516,12 @@ every web concern lives where it belongs.
 - Library dock and drawer, hold-to-place *(current)*
 - Card types, typed fields and field values *(current)*
 - Freeform tags with workspace-level rename and library facets *(current)*
-- Card inspector with type, tags, properties and placement references *(current)*
+- Card inspector with type, tags, properties, section and placement references *(current)*
+- Spatial sections with derived membership, nesting, move-with-contents and auto-expand *(current)*
+- Collapsed card frontmatter with a header disclosure, and click-to-inspect / double-click-to-edit *(current)*
 
 ### Thinking tools
 
-- Spatial **sections** with derived membership
 - **Views/collections** as saved read-only queries
 - **Relations** separated from **edge placements**
 - Backlinks, type dashboards, templates, command palette
@@ -552,7 +563,7 @@ every web concern lives where it belongs.
 | **Search** | In-memory index over summaries first; body search loads card docs | A central search index conflicts with per-card ACL and local-first availability. |
 | **Multiple supertags** | Additive `typeIds` with field-id-namespaced properties | Required fields, conflicting field kinds and dashboard ownership need a concrete rule. |
 | **Cross-document transactions** | Compensating, idempotent sequences; scoped undo | Loro has no multi-doc transaction, and a transaction log would become a second truth. |
-| **Section overlap and nesting** | Topmost-then-smallest wins; no nesting initially | Nesting multiplies ambiguity in "which section owns this card" and in apply commands. |
+| **Section overlap and nesting** | Smallest containing header anchor; nesting derived by containment | Resolved by [ADR-0017](./decisions/0017-spatial-sections.md); outline navigation is still to come. |
 | **Edge placement multiplicity** | One drawing per (board, relation) | Multiple drawings of one statement may be legitimate but complicate selection and deletion. |
 | **Card doc retention and purge** | Trash retains the doc; purge tombstones then deletes | Offline clients may resurrect a purged doc; needs a tombstone/GC rule. |
 | **Offline availability of card docs** | Pin edited docs; evict others by LRU | Storage quotas and "why is this card blank offline" expectations are unresolved. |

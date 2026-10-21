@@ -59,11 +59,12 @@ now; the target index/card-doc split is described in
 | `cards` | `LoroMap`, one key per field: `createdAt`, `updatedAt`, `deletedAt`, `connectors`, `primaryTypeId`, plus the nested `types`, `tags` and `properties` maps |
 | `types` | `LoroMap`, one key per type: `id`, `name`, `glyph`, `color?`, `createdAt`, `updatedAt`, `fields` (a map of field definitions) |
 | `tags` | `LoroMap`, one key per tag: `id`, `name`, `color?`, `createdAt` |
+| `sections` | `LoroMap`, one key per field: `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?`, `createdAt`, `updatedAt` |
 | `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
 | `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
-| `meta` | `{ schemaVersion, seeded }` (schema version 3 introduces the semantic records) |
+| `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
 
 **Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
 `GraphEdge`/`CardType`/`Tag` objects for reads, but stores each field as its own `LoroMap` key. A
@@ -83,6 +84,15 @@ different properties of one card both keep their values. A `multiSelect` value i
 option id, which makes renaming an option a single write. Writers validate the value against the
 field definition owned by one of the card's types.
 
+**Sections are geometry, not ownership.** `sections` stores a board-scoped rectangle, title and
+colour; no card or placement stores a section id. A card belongs to the smallest section containing
+its **header anchor** (`placement.x + 8`, `placement.y + 8`), with `z` and id as deterministic
+tie-breaks. Nesting is derived by full containment. Dragging a section writes one
+`moveSectionsBatch` commit containing the section, its contained sections and the x/y of every
+member placement; nothing is written while the gesture runs. Dropping a card whose anchor is inside
+a section but whose measured rectangle hangs outside expands that section and its ancestors, again
+as geometry writes. Membership is recomputed on read, so no drag ever rewrites card state.
+
 **Dormant values are intentional.** Removing a field from a type, switching a card's type or
 removing a tag hides the stored value without deleting it; restoring the definition revives it.
 Queries (`listCardsOfType`, `listCardsWithTag`) filter by existing records, so a deleted type or tag
@@ -99,6 +109,13 @@ the card's types, primary first) and `listCardsOfType`/`listCardsWithTag` for re
 **Home is derived**, not stored: the oldest placement is home. Placement `createdAt` is strictly
 increasing per client, so creating two placements in the same millisecond cannot flip the home
 board. Unplacing the home card promotes the next placement; with none left the card is in the Inbox.
+
+**Sections always paint behind cards.** The canvas renders sections through two React Flow
+`ViewportPortal`s: a background portal with a negative z-index for the fill and border, and a header
+portal above the nodes for the title chip, member count and resize handles. Headers and handles
+counter-scale with zoom so titles stay usable. This keeps sections out of React Flow's node
+selection, layer elevation and `onlyRenderVisibleElements` machinery, which is card-specific.
+Deleting a section removes only the region; deleting its board removes its sections with it.
 
 **Trash is a tombstone.** `trashCard` sets `deletedAt` and keeps the placements, so a restore puts
 the card back on every board it was on; `purgeCard` (and `emptyTrash`) destroy the card, its
@@ -152,8 +169,8 @@ Two histories, each scoped to what it owns:
   inside a card only walks that field's text (which is why `StarterKit`'s own history is disabled).
 - **Structure** belongs to the document. `WorkspaceDocument` owns an `UndoManager` that excludes
   `text:`, `sys:init` and the Lite/import origins, covering moves, connectors, links, layers,
-  place and trash/changes. The canvas handles `Cmd-Z` / `Cmd-Shift-Z` / `Ctrl-Y` when focus is not
-  in an editor. `canUndo`/`canRedo` are exposed for affordances, and `stopCapturing()` starts a new
+  place, trash/changes and section geometry. The canvas handles `Cmd-Z` / `Cmd-Shift-Z` / `Ctrl-Y`
+  when focus is not in an editor. `canUndo`/`canRedo` are exposed for affordances, and `stopCapturing()` starts a new
   entry.
 
 Remote updates and local hydration carry non-local origins, so **undo can never revert a
@@ -185,7 +202,8 @@ A CRDT change should repaint the card it touched, not the board.
   once and hands out the same object until an observer sees one of that record's keys change
   (`invalidateOn`). A peer editing card A leaves card B's object identical.
 - **The snapshot reuses collections.** `useWorkspaceSnapshot` keeps the previous `cards`,
-  `placements`, `edges` and `boards` array whenever every element is still the same object, so the
+  `placements`, `edges`, `boards`, `types`, `tags` and `sections` array whenever every element is
+  still the same object, so the
   memoised board views re-run only for the collection that changed.
 - **`?perf=1` shows render rates** from `dev/perf.ts` (dev builds only): counts for the shell,
   canvas, and each card, so a costly repaint is visible instead of guessed at.
@@ -324,7 +342,7 @@ zoom (constant screen size) and only shows for the sole selected node.
   and a `⋯` menu (Edit title/body, Remove from board, Go to board, Delete card). The title editor is
   a paragraph-only Tiptap editor on the card's `titles` fragment: Enter commits instead of adding a
   line, an empty title shows a muted "Untitled" placeholder, and remote carets render inside it.
-  Clicking a non-editing title starts title editing. The body shows a text cursor and enters editing on a click; moving past the drag threshold still drags the card. While a field is focused, dragging from card chrome outside the editor still moves the card.
+  A click without movement opens card info. A double click on the title or body enters that field's editor; moving past the drag threshold still drags the card. While a field is focused, dragging from card chrome outside the editor still moves the card. The card's frontmatter starts collapsed behind a header disclosure; expanding it is local UI state.
 - **Footer:** collapsed as `References · N`, expanding into a keyed section list. The first section
   is **References**: every placement of the card, home marked with `⌂`, the current board labelled,
   plus "Go" and "Remove" actions. The section list is generic so Backlinks or Tags can be added

@@ -98,6 +98,11 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Removing a field, switching a type or removing a tag leaves stored values dormant on purpose.
   Do not "clean up" other records in response; a later explicit command owns that.
 - Required fields are advisory. Never block a write or an editor on a missing required field.
+- **Section membership is derived, never stored.** Do not write a section id on a placement or a
+  card. Use `sectionMembership`/`sectionForCard` for reads and `moveSectionsBatch` for a
+  section drag (one commit for the section, contained sections and member placements).
+- Section title and colour are individual field writes; geometry is written on release, not during
+  a gesture. Auto-expand is a deliberate geometry write after a card drop.
 
 ## Testing
 

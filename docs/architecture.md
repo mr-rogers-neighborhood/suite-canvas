@@ -32,9 +32,14 @@ flowchart LR
 - **Zustand** holds ephemeral UI state: active board, selection, library drawer state,
   connection status. It never duplicates document data.
 - **`@suite/graph`** exposes `WorkspaceDocument`, a typed wrapper over a `LoroDoc`. Boards, cards,
-  placements and edges are nested `LoroMap`s; card text lives in `content`/`titles` maps shaped by
-  `loro-prosemirror` in the same doc. Loro's typed containers (map, list, text, tree, counter,
-  movable list) are available when the semantic model needs them.
+  placements, edges, types and tags are nested `LoroMap`s; card text lives in `content`/`titles`
+  maps shaped by `loro-prosemirror` in the same doc. Loro's typed containers (map, list, text, tree,
+  counter, movable list) are available when the semantic model needs them.
+- **The workspace snapshot store** (`store/workspaceSnapshotStore.ts`) owns the single
+  `WorkspaceDocument.observe` subscription. Hooks select an identity-stable slice
+  (`useCard(id)`, `useCards()`, `useWorkspaceSnapshot()`), so a card re-renders only when its own
+  record, or the node data the board derives from it, changed. Text containers are observed
+  separately (`useCardContainers`, `useCardTitle`) so a keystroke never invalidates the graph.
 - **`LoroIndexeddbPersistence`** stores a Loro snapshot plus an append-only update log locally, so
   the app rehydrates instantly and works offline.
 - **`loro-websocket`** (provider + server) syncs the doc across peers over WebSocket, and the server
@@ -51,27 +56,45 @@ now; the target index/card-doc split is described in
 | Map | Value |
 | --- | --- |
 | `boards` | `{ id, name, createdAt, updatedAt }` |
-| `cards` | `LoroMap`, one key per field: `kind`, `createdAt`, `updatedAt`, `deletedAt`, `data`, `connectors` |
+| `cards` | `LoroMap`, one key per field: `createdAt`, `updatedAt`, `deletedAt`, `connectors`, `primaryTypeId`, plus the nested `types`, `tags` and `properties` maps |
+| `types` | `LoroMap`, one key per type: `id`, `name`, `glyph`, `color?`, `createdAt`, `updatedAt`, `fields` (a map of field definitions) |
+| `tags` | `LoroMap`, one key per tag: `id`, `name`, `color?`, `createdAt` |
 | `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
 | `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
-| `meta` | `{ schemaVersion, seeded }` |
+| `meta` | `{ schemaVersion, seeded }` (schema version 3 introduces the semantic records) |
 
 **Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
-`GraphEdge` objects for reads, but stores each field as its own `LoroMap` key. A whole-record `set`
-would make two clients editing different parts of one record resolve last-write-wins for everything
-— one client moving a connector while another adds one silently dropped one of the two edits.
-Field maps merge per key, so concurrent writers keep both. Mutations therefore route through
-`mutateCard`/`mutateEdge` (single field writes), `updatePlacementPosition`/`updatePlacementSize`
-(x/y and width/height only) and the connector sub-map (`connectors` is itself a `LoroMap` of maps).
-`setCard`/`setEdge` remain as whole-record escape hatches for seeding and migration only.
+`GraphEdge`/`CardType`/`Tag` objects for reads, but stores each field as its own `LoroMap` key. A
+whole-record `set` would make two clients editing different parts of one record resolve
+last-write-wins for everything — one client moving a connector while another adds one silently
+dropped one of the two edits. Field maps merge per key, so concurrent writers keep both. Mutations
+therefore route through `mutateCard`/`mutateEdge` (single field writes),
+`updatePlacementPosition`/`updatePlacementSize` (x/y and width/height only) and the connector
+sub-map (`connectors` is itself a `LoroMap` of maps). `setCard`/`setEdge` remain as whole-record
+escape hatches for seeding and migration only.
+
+**Types, tags and properties follow the same rule.** A card's type membership is
+`LoroMap<typeId, true>` plus a `primaryTypeId`; tags are `LoroMap<tagId, true>`; properties are one
+key per field id. Adding two different types or tags concurrently merges, and two people editing
+different properties of one card both keep their values. A `multiSelect` value is itself a
+`LoroMap<optionId, true>`, so toggling different options does not clobber. Select values store the
+option id, which makes renaming an option a single write. Writers validate the value against the
+field definition owned by one of the card's types.
+
+**Dormant values are intentional.** Removing a field from a type, switching a card's type or
+removing a tag hides the stored value without deleting it; restoring the definition revives it.
+Queries (`listCardsOfType`, `listCardsWithTag`) filter by existing records, so a deleted type or tag
+simply stops matching. Type deletion is the one explicit bulk command: it reassigns affected cards
+in a single commit and reports the count, and the built-in `note` type cannot be deleted.
 
 Derived views keep the filtering in one place: `listBoardCards(boardId)` (placed, alive, back to
 front), `listBoardEdges(boardId)` (both endpoints placed, alive, and still owning the connectors the
 link names — a link whose connector was deleted cannot be drawn), `listInboxCards()` (alive with
-no placement), `listTrashedCards()`, `listCardPlacements(cardId)`, `homeBoardId(cardId)` and
-`displayTitle(cardId)` (title → body's first line → "Untitled").
+no placement), `listTrashedCards()`, `listCardPlacements(cardId)`, `homeBoardId(cardId)`,
+`displayTitle(cardId)` (title → body's first line → "Untitled"), `viewCardFields(card)` (fields of
+the card's types, primary first) and `listCardsOfType`/`listCardsWithTag` for retrieval.
 
 **Home is derived**, not stored: the oldest placement is home. Placement `createdAt` is strictly
 increasing per client, so creating two placements in the same millisecond cannot flip the home

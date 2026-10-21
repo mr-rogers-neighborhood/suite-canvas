@@ -15,14 +15,15 @@
 
 Use the workspace vocabulary consistently, in code and in copy:
 
-- **workspace** — one `Y.Doc`, one sync room, one IndexedDB entry.
+- **workspace** — one `LoroDoc`, one sync room, one IndexedDB entry.
 - **board** — a view inside a workspace; has a name and a tab.
-- **card** — the object (content, connectors, kind). Exists with or without a board.
+- **card** — the object (content, primary type, tags, properties, connectors). Exists with
+  or without a board.
 - **placement** — where a card sits on one board. "Place" and "remove from board", never "delete".
 - **trash** — soft delete (`deletedAt`). "Delete forever" only when purging.
 
-Avoid "node"/"document"/"note" for these concepts: `node` means a React Flow node, and `note` is a
-card kind.
+Avoid "node"/"document"/"note" for these concepts: `node` means a React Flow node, and `note` is
+the built-in card type, not a synonym for card.
 
 ## Files & naming
 
@@ -51,7 +52,9 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 ## React
 
 - Function components with hooks; no class components.
-- Derive document data via `useGraphSnapshot` (subscribes to the CRDT), not `useState` copies.
+- Derive document data through the workspace snapshot store (`useWorkspaceSnapshot`, `useCard`,
+  `useCards`), not `useState` copies. Never call `WorkspaceDocument.observe` from a component;
+  the store owns the single subscription.
 - Keep components small; split presentational pieces into `components/`.
 
 ## State
@@ -85,16 +88,24 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Reads must never create shared state. Use `peekContent`/`peekTitle` for fragments; only creation
   paths insert them.
 - Record identity is stable until that record changes: `WorkspaceDocument` caches the materialised
-  object and drops it when any of its fields change, and `useWorkspaceSnapshot` reuses unchanged
+  object and drops it when any of its fields change, and the snapshot store reuses unchanged
   collections. Rely on identity to skip re-renders; never rely on it flipping.
+- Type membership, tag membership and properties are collection writes: use
+  `setCardTypes`/`addCardType`/`removeCardType`, `addCardTag`/`removeCardTag`, and
+  `setProperty`/`clearProperty`. Never replace a whole `types`, `tags` or `properties` map.
+- **Types add schema, never behaviour.** The primary type may change presentation (glyph, colour,
+  template); no code may branch on a *combination* of types.
+- Removing a field, switching a type or removing a tag leaves stored values dormant on purpose.
+  Do not "clean up" other records in response; a later explicit command owns that.
+- Required fields are advisory. Never block a write or an editor on a missing required field.
 
 ## Testing
 
 - Unit-test pure logic (schema, `WorkspaceDocument`) in `packages/graph`.
 - Multi-client behaviour gets a **two-document test**: drive both `WorkspaceDocument`s through
-  conflicting edits, sync with `Y.encodeStateAsUpdate`/`Y.applyUpdate` both ways, then assert the
-  merge. `workspace.convergence.test.ts` fuzzes this across seeds; add a seeded case there when you
-  add a new kind of write.
+  conflicting edits, sync with `doc.export({ mode: "update" })` / `doc.import(...)` both ways, then
+  assert the merge. `workspace.convergence.test.ts` fuzzes this across seeds; add a seeded case
+  there when you add a new kind of write.
 - Component tests (React Testing Library) for non-trivial UI in `apps/canvas`.
 - E2E (Playwright) for user journeys in `e2e`.
 - Name tests `should <behavior>`; describe by unit under test.

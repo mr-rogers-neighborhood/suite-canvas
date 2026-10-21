@@ -100,23 +100,40 @@ answers "where is it on this board?". A **view** answers "which cards match this
 
 ### 4.1 Current implementation
 
-One `Y.Doc` per workspace (room and IndexedDB key are the workspace id). Cards, placements and
-edges are field-granular per [ADR-0012](./decisions/0012-field-granular-records.md); boards are
-still whole values.
+One `LoroDoc` per workspace (room and IndexedDB key are the workspace id). Cards, placements,
+edges, types, tags and properties are field-granular per
+[ADR-0012](./decisions/0012-field-granular-records.md); boards are still whole values.
 
 | Map | Holds | Notes |
 | --- | --- | --- |
 | `boards` | `id`, `name`, `createdAt`, `updatedAt` | Boards are views inside one document. |
-| `cards` | `kind`, `createdAt`, `updatedAt`, `deletedAt`, `data`, `connectors` | `kind` is a closed union (`note` today). |
+| `types` | `id`, `name`, `glyph`, `color?`, `createdAt`, `updatedAt`, `fields` | Fields are owned by their type ([ADR-0016](./decisions/0016-semantic-core.md)). |
+| `tags` | `id`, `name`, `color?`, `createdAt` | Schema-free labels, workspace records. |
+| `cards` | `createdAt`, `updatedAt`, `deletedAt`, `connectors`, `primaryTypeId`, `types`, `tags`, `properties` | Type/tag membership and properties are merge-safe nested maps. |
 | `placements` | `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` | Key `${boardId}/${cardId}`; one per pair. |
-| `edges` | `boardId`, `source`, `target`, connectors, `kind`, `path`, `bidirectional`, `label?` | Semantic link and drawing are conflated in one record. |
-| `content` / `titles` | `Y.XmlFragment` per card | Body and title rich text, same document. |
-| `meta` | `schemaVersion`, `seeded` | Current schema version is 2. |
+| `edges` | `boardId`, `source`, `target`, connectors, `kind`, `path`, `bidirectional`, `label?` | Semantic link and drawing are conflated in one record; still target for the relation split. |
+| `content` / `titles` | `loro-prosemirror` tree per card | Body and title rich text, same document. |
+| `meta` | `schemaVersion`, `seeded` | Current schema version is 3. |
 
 Derived today: `homeBoardId` (oldest placement), `listBoardCards`, `listBoardEdges`,
-`listInboxCards`, `listTrashedCards`, `displayTitle`. Everything else is stored. **Types, fields,
-tags, properties, sections, views, relations and edge placements do not exist yet.** The card-doc
-split described below is target architecture, not implemented behavior.
+`listInboxCards`, `listTrashedCards`, `displayTitle`, `viewCardFields` and
+`listCardsOfType`/`listCardsWithTag`. Everything else is stored. **Sections, views, relations and
+edge placements do not exist yet.** The card-doc split described below is target architecture, not
+implemented behavior.
+
+### 4.1a Current type model
+
+Types and tags are implemented, with the storage shape chosen for a later multi-type UI:
+
+- `cards.<id>.types` is `LoroMap<typeId, true>`; `primaryTypeId` names the primary. The picker is
+  single-select today, but concurrent membership merges and multi-type needs no migration.
+- Field kinds are `text`, `number`, `date`, `select`, `multiSelect` and `checkbox`. Relations fields
+  wait for the relation split.
+- Properties are keyed by field id. Scalars store natively; multi-select is a per-option map. See
+  [ADR-0016](./decisions/0016-semantic-core.md).
+- Required fields are advisory. Values are dormant when a field or type disappears, so switching
+  type is non-destructive.
+- **No behavior may branch on a combination of types**; types add schema, never behavior.
 
 ### 4.2 Target: index document plus card documents
 
@@ -290,10 +307,11 @@ That failure is silent, which is why the rule is non-negotiable rather than a pr
 The shell is canvas-first with retrieval always one gesture away. It stays out of the canvas's way
 rather than surrounding it with chrome.
 
-- **Library dock** *(current)*: a floating bottom-centre pill with Inbox count and the card-type
-  registry — how you find objects that are not in front of you and how you create new ones.
-- **Drawer** *(current)*: `Inbox | Cards | Trash`, counts, hold-to-place gesture. The target adds
-  type/tag filters and saved views without turning it into a sidebar.
+- **Library dock** *(current)*: a floating bottom-centre pill with Inbox count and a type menu —
+  how you find objects that are not in front of you and how you create new ones.
+- **Drawer** *(current)*: `Inbox | Cards | Trash`, counts, hold-to-place gesture, and type/tag
+  facets with counts (OR within a facet, AND across). The target adds saved views without turning
+  it into a sidebar.
 - **Board tabs** *(current)*: switch boards inside the same workspace; switching tabs must never
   feel like switching documents.
 - **Canvas toolbar** *(target)*: contextual tools for select, section and connect, in the spirit of
@@ -302,8 +320,8 @@ rather than surrounding it with chrome.
   spatial equivalent of a tag, but derived rather than written.
 - **Sub-boards** *(later)*: a card can open into a nested board. This is navigation, not ownership:
   the nested board is another board in the same workspace and its contents remain ordinary cards.
-- **Inspector / card info** *(target)*: type, fields, tags, relations, backlinks and placement
-  references in one panel. The current footer's keyed section list is the seam.
+- **Inspector / card info** *(current, growing)*: a floating right panel with type, tags, field
+  values and placement references. Relations and backlinks join it in the next phase.
 - **Backlinks** *(target)*: derived from relations, split into incoming and outgoing, naming the
   board(s) where each relation is drawn; clicking one navigates to the card.
 - **Command palette** *(target)*: keyboard-first create, place, switch board, apply view/section,
@@ -486,12 +504,12 @@ every web concern lives where it belongs.
 - Connectors and typed links, dormant when an endpoint leaves *(current)*
 - Layers, undo/redo split by scope, offline persistence, live sync *(current)*
 - Library dock and drawer, hold-to-place *(current)*
-- Card info footer with placement references *(current)*
+- Card types, typed fields and field values *(current)*
+- Freeform tags with workspace-level rename and library facets *(current)*
+- Card inspector with type, tags, properties and placement references *(current)*
 
 ### Thinking tools
 
-- Card **types** with typed **fields** and **properties**
-- Freeform **tags** with workspace-level rename
 - Spatial **sections** with derived membership
 - **Views/collections** as saved read-only queries
 - **Relations** separated from **edge placements**

@@ -1,6 +1,6 @@
 # ADR-0014: Semantic model — types, fields, relations, sections and views
 
-- **Status:** accepted
+- **Status:** accepted; types, fields, tags and properties implemented by [ADR-0016](./0016-semantic-core.md)
 - **Date:** 2026-10-21
 
 ## Context
@@ -107,8 +107,10 @@ that are confirmed.
     independent keys. Whole-record writes are reserved for seeding and migration, exactly as in
     [ADR-0012](0012-field-granular-records.md).
 
-**Scope.** This ADR records the target model, not an implemented refactor. Today's board-scoped
-`edges` conflate statement and drawing. The migration will turn each edge into a relation (its
+**Scope.** This ADR records the target model. Sections, views, relations and edge placements are
+still target. Types, fields, tags and properties are implemented by [ADR-0016](./0016-semantic-core.md),
+which also records the storage decision (type membership as a merge-safe set plus a primary id).
+Today's board-scoped `edges` conflate statement and drawing. The migration will turn each edge into a relation (its
 endpoints, its `kind` mapped to a seeded relation type, its label) plus an edge placement (board,
 connectors, path, bidirectional as an arrowhead option). Identical relations created on different
 boards are not auto-deduplicated; merging them is an explicit user action.

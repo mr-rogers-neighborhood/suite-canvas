@@ -194,7 +194,9 @@ export function CanvasBoard() {
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
-      return boardCards.flatMap((card: Card) => {
+      // Paint order comes from the sorted board list; ranks are fractional, so
+      // they cannot be used as CSS z-index values directly.
+      return boardCards.flatMap((card: Card, layer) => {
         const placement = boardPlacements.get(card.id);
         if (!placement) return [];
         const existing = byId.get(card.id);
@@ -208,7 +210,7 @@ export function CanvasBoard() {
             type: "note",
             position: { x: position.x, y: position.y },
             selected: selectedKey.split(",").includes(card.id),
-            zIndex: placement.z,
+            zIndex: layer,
             data: { card, placement },
           } satisfies Node,
         ];

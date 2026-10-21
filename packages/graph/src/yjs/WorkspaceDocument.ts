@@ -53,6 +53,8 @@ export const DEFAULT_BOARD_ID = "board-1";
  *    same card/placement/edge merge instead of clobbering each other.
  */
 const SCHEMA_VERSION = 2;
+/** Below this gap two ranks are one float step apart; the board renumbers. */
+const MIN_RANK_GAP = 1e-7;
 
 type Fields = Y.Map<unknown>;
 
@@ -667,33 +669,56 @@ export class WorkspaceDocument {
     });
   }
 
-  /** Reassigns stacking order within one board (0 = furthest back). */
+  /**
+   * Reorders one card inside its board. Ranks are fractional, so a move writes a
+   * single placement; peers reordering other cards at the same time keep theirs.
+   */
   moveLayer(boardId: string, cardId: string, action: LayerAction): void {
-    const order = this.listBoardPlacements(boardId);
-    const index = order.findIndex((placement) => placement.cardId === cardId);
-    if (index < 0) return;
-
-    const [placement] = order.splice(index, 1);
+    const ordered = this.listBoardPlacements(boardId);
+    const index = ordered.findIndex((placement) => placement.cardId === cardId);
+    const placement = ordered[index];
     if (!placement) return;
 
+    const rest = ordered.filter((entry) => entry.cardId !== cardId);
     const target =
       action === "front"
-        ? order.length
+        ? rest.length
         : action === "back"
           ? 0
           : action === "forward"
-            ? Math.min(order.length, index + 1)
+            ? Math.min(rest.length, index + 1)
             : Math.max(0, index - 1);
+    if (target === index) return;
 
-    order.splice(target, 0, placement);
+    const below = rest[target - 1]?.z;
+    const above = rest[target]?.z;
+    const rank = this.rankBetween(below, above);
+    const fields = this.placements.get(placementKey(boardId, cardId));
+    if (!fields) return;
 
-    // One transaction per reorder so peers never see a half-sorted stack.
+    const tooTight = below !== undefined && above !== undefined && above - below < MIN_RANK_GAP;
+    if (!tooTight) {
+      this.doc.transact(() => fields.set("z", rank));
+      return;
+    }
+
+    // Ranks have converged past float precision: renumber, one reorder only.
+    const next = [...rest];
+    next.splice(target, 0, placement);
     this.doc.transact(() => {
-      order.forEach((entry, z) => {
-        if (entry.z === z) return;
-        this.placements.get(placementKey(boardId, entry.cardId))?.set("z", z);
+      next.forEach((entry, layer) => {
+        const entryFields = this.placements.get(placementKey(boardId, entry.cardId));
+        if (!entryFields || entry.z === layer) return;
+        entryFields.set("z", layer);
       });
     });
+  }
+
+  private rankBetween(below: number | undefined, above: number | undefined): number {
+    if (below === undefined && above === undefined) return 0;
+    if (below === undefined) return (above ?? 0) - 1;
+    if (above === undefined) return below + 1;
+    return below + (above - below) / 2;
   }
 
   // ----------------------------------------------------------------- edges

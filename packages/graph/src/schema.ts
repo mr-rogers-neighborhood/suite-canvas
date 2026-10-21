@@ -54,8 +54,8 @@ export const placementSchema = z.object({
   cardId: entityIdSchema,
   x: z.number().finite(),
   y: z.number().finite(),
-  /** Stacking order within the board; higher paints above lower. */
-  z: z.number().int(),
+  /** Stacking order within the board; higher paints above lower. Fractional, so a reorder writes one placement instead of renumbering the stack. */
+  z: z.number().finite(),
   createdAt: z.number().int().nonnegative(),
   /** Resized card dimensions in flow units; unset means the card's natural size. */
   width: z.number().positive().optional(),

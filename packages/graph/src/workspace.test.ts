@@ -155,12 +155,59 @@ describe("WorkspaceDocument cards and placements", () => {
     expect(workspace.getPlacement(board.id, a.id)?.z).toBe(0);
     expect(workspace.getPlacement(board.id, b.id)?.z).toBe(1);
 
+    const order = () => workspace.listBoardCards(board.id).map((card) => card.id);
+    const rankOfB = workspace.getPlacement(board.id, b.id)?.z;
+
     workspace.moveLayer(board.id, a.id, "front");
-    expect(workspace.getPlacement(board.id, a.id)?.z).toBe(1);
-    expect(workspace.getPlacement(board.id, b.id)?.z).toBe(0);
+    expect(order()).toEqual([b.id, a.id]);
+    // Only the moved placement gets a new rank; the stack is not renumbered.
+    expect(workspace.getPlacement(board.id, b.id)?.z).toBe(rankOfB);
+    expect(workspace.getPlacement(board.id, a.id)?.z).toBeGreaterThan(rankOfB ?? 0);
     expect(
       workspace.getPlacement(other.id, workspace.listBoardCards(other.id)[0]?.id ?? "")?.z,
     ).toBe(0);
+  });
+
+  it("orders forward, backward, front and back against the neighbours", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard();
+    const cards = ["a", "b", "c"].map((id) => workspace.createCard({ id, boardId: board.id }));
+    const order = () => workspace.listBoardCards(board.id).map((card) => card.id);
+    const middle = cards[1]?.id ?? "";
+
+    workspace.moveLayer(board.id, middle, "forward");
+    expect(order()).toEqual(["a", "c", "b"]);
+    workspace.moveLayer(board.id, middle, "backward");
+    expect(order()).toEqual(["a", "b", "c"]);
+    workspace.moveLayer(board.id, middle, "back");
+    expect(order()).toEqual(["b", "a", "c"]);
+    workspace.moveLayer(board.id, middle, "front");
+    expect(order()).toEqual(["a", "c", "b"]);
+    // Already at the boundary: the rank does not move.
+    const rank = workspace.getPlacement(board.id, middle)?.z;
+    workspace.moveLayer(board.id, middle, "front");
+    expect(workspace.getPlacement(board.id, middle)?.z).toBe(rank);
+    expect(order()).toEqual(["a", "c", "b"]);
+  });
+
+  it("renumbers only when ranks run out of float precision", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard();
+    const cards = ["a", "b", "c"].map((id) => workspace.createCard({ id, boardId: board.id }));
+    const order = () => workspace.listBoardCards(board.id).map((card) => card.id);
+    const [first, middle, last] = cards.map((card) => card.id) as [string, string, string];
+
+    // Squeeze "b" between "a" and "c" until the gap is below the precision floor.
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      workspace.moveLayer(board.id, middle, "forward");
+      workspace.moveLayer(board.id, middle, "backward");
+    }
+    expect(order()).toEqual([first, middle, last]);
+
+    workspace.moveLayer(board.id, middle, "back");
+    expect(order()).toEqual([middle, first, last]);
+    const ranks = workspace.listBoardPlacements(board.id).map((placement) => placement.z);
+    expect(new Set(ranks).size).toBe(3);
   });
 
   it("falls back to the body's first line and then Untitled", () => {
@@ -648,6 +695,23 @@ describe("WorkspaceDocument concurrency", () => {
         bidirectional: true,
         path: "smoothstep",
       });
+    }
+  });
+
+  it("keeps a reorder landed while the peer reorders another card", () => {
+    const { docA, docB, a, b } = pair();
+    const cards = ["c1", "c2", "c3", "c4"].map((id) => a.createCard({ id, boardId: "board-1" }).id);
+    sync(docA, docB);
+    const [first, second, third, fourth] = cards as [string, string, string, string];
+
+    a.moveLayer("board-1", first, "forward");
+    b.moveLayer("board-1", fourth, "backward");
+    sync(docA, docB);
+
+    for (const workspace of [a, b]) {
+      const order = workspace.listBoardCards("board-1").map((card) => card.id);
+      expect(order.indexOf(first)).toBeGreaterThan(order.indexOf(second));
+      expect(order.indexOf(fourth)).toBeLessThan(order.indexOf(third));
     }
   });
 

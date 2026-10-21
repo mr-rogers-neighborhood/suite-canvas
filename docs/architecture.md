@@ -79,8 +79,13 @@ placements, its text and every edge that referenced it.
 trashed) stays in the CRDT and stops rendering, and revives when the card returns. Deleting a
 connector does delete the links anchored to it, since nothing can re-attach them.
 
-**Layer order is per board**: `moveLayer(boardId, cardId, action)` reindexes that board's placements
-only, so Inbox cards never consume z slots.
+**Layer order is per board and fractional.** `moveLayer(boardId, cardId, action)` moves one card by
+writing **one** rank: the midpoint between its new neighbours (or `last + 1` / `first - 1` at the
+ends). Peers reordering other cards at the same moment keep their moves, because nothing renumbers
+the stack. When neighbours converge below `MIN_RANK_GAP` (float precision), that board's placements
+are renumbered once, in a single transaction. Sorting breaks ties by `createdAt` then `cardId`, so
+concurrent moves that land on the same rank still order deterministically. Ranks are fractional, so
+the canvas paints with the sorted index rather than the raw rank. Inbox cards never hold a rank.
 
 **Reads never create shared containers.** `peekContent`/`peekTitle` return the shared fragment or a
 local placeholder; only `createCard` (and the migration) insert fragments into the doc. A client that

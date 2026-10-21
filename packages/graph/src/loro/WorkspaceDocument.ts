@@ -141,6 +141,17 @@ function normalizeEdge(edge: GraphEdge): GraphEdge {
   };
 }
 
+/** Next explicit order in a map whose entries carry an `order` field. */
+function nextOrder(map: LoroMap): number {
+  let max = -1;
+  for (const key of map.keys()) {
+    const entry = map.get(key);
+    if (!isMap(entry)) continue;
+    max = Math.max(max, readNumber(entry, "order") ?? -1);
+  }
+  return max + 1;
+}
+
 function observeIn(
   registry: Map<string, Set<() => void>>,
   key: string,
@@ -844,7 +855,7 @@ export class WorkspaceDocument {
     const fields = this.typeFields(typeId);
     if (!fields) throw new Error(`Unknown type: ${typeId}`);
     const id = crypto.randomUUID();
-    const order = fields.keys().length;
+    const order = nextOrder(fields);
     const field = fields.ensureMergeableMap(id);
     field.set("name", input.name.trim() || "Field");
     field.set("kind", input.kind);
@@ -910,7 +921,7 @@ export class WorkspaceDocument {
     const option = options.ensureMergeableMap(id);
     option.set("label", input.label.trim() || "Option");
     if (input.color) option.set("color", input.color);
-    option.set("order", options.keys().length);
+    option.set("order", nextOrder(options));
     this.touchType(typeId);
     this.commit(`${STRUCT_ORIGIN}field`);
     return optionFromMap(id, option);

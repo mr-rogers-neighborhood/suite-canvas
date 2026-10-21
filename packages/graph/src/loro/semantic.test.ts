@@ -96,6 +96,22 @@ describe("fields", () => {
     expect(workspace.getType(project.id)?.fields[1]?.id).toBe(first.id);
   });
 
+  it("should append a field after a middle field is removed", () => {
+    const { workspace, project } = setup();
+    const first = workspace.addField(project.id, { name: "One", kind: "text" });
+    workspace.addField(project.id, { name: "Two", kind: "text" });
+    workspace.addField(project.id, { name: "Three", kind: "text" });
+    workspace.removeField(project.id, first.id);
+
+    workspace.addField(project.id, { name: "Four", kind: "text" });
+
+    expect(workspace.getType(project.id)?.fields.map((field) => field.name)).toEqual([
+      "Two",
+      "Three",
+      "Four",
+    ]);
+  });
+
   it("should create select options with stable ids", () => {
     const { workspace, project } = setup();
     const field = workspace.addField(project.id, {

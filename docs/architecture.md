@@ -242,6 +242,13 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
   only renders in the card **and field** they have focused (all editors share one awareness, and a
   card has both a title and a body editor).
+- **Gestures expire on their own.** A drag, resize, connector move or link drag that stops arriving
+  without an end event (tab killed, network dropped) would leave a ghost on every peer until
+  awareness timed the client out. `peerProjection.ts` stamps each peer's gesture signature with the
+  time it last *changed* (on the receiving side, so clock skew does not matter) and drops the
+  gesture after `GESTURE_TTL_MS` (3 s) of silence; a 1 s sweep re-projects awareness so the ghost
+  disappears even when no further update arrives. Selections and carets are state, not gestures, and
+  are left alone.
 - **Board scoping:** presence is workspace-wide because there is one document, so every board-scoped
   surface filters by `peer.board`. Carets stay card-scoped on purpose: two people editing the same
   card from different boards should see each other.

@@ -3,6 +3,7 @@ import type { Awareness } from "y-protocols/awareness";
 import { create } from "zustand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
+import { projectPeers, type SeenGesture } from "./peerProjection";
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
@@ -10,7 +11,6 @@ import {
   type FocusState,
   type PeerPresence,
   type PointerState,
-  type PresenceUser,
   type ReconnectState,
   type ResizingState,
   type SelectionState,
@@ -31,28 +31,8 @@ interface PresenceState {
   setReconnect: (reconnect: ReconnectState | null) => void;
 }
 
-function toPresenceUser(state: Record<string, unknown>): PresenceUser {
-  const user = state[AWARENESS_FIELDS.user] as Partial<PresenceUser> | undefined;
-  return {
-    name: user?.name ?? "Anonymous",
-    color: user?.color ?? "#94a3b8",
-  };
-}
-
-function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerPresence {
-  return {
-    clientId,
-    board: (state[AWARENESS_FIELDS.board] as string | undefined) ?? null,
-    user: toPresenceUser(state),
-    pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
-    focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
-    dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
-    selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
-    connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
-    resizing: (state[AWARENESS_FIELDS.resizing] as ResizingState | undefined) ?? null,
-    reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
-  };
-}
+/** Last gesture signature and arrival time per peer, for the staleness check. */
+const gestureClock = new Map<number, SeenGesture>();
 
 export const usePresenceStore = create<PresenceState>((set, get) => {
   // Bound eagerly so editor components see the real awareness on first render
@@ -72,15 +52,21 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
 
       const sync = () => {
         const states = awareness.getStates() as Map<number, Record<string, unknown>>;
-        const peers: Record<number, PeerPresence> = {};
-        for (const [clientId, state] of states) {
-          if (clientId === awareness.clientID) continue;
-          peers[clientId] = toPeerPresence(clientId, state);
-        }
-        set({ peers });
+        set({
+          peers: projectPeers(states, {
+            selfId: awareness.clientID,
+            now: performance.now(),
+            seen: gestureClock,
+          }),
+        });
       };
 
+      // A gesture can stop without an end event, so re-project even when no
+      // awareness update arrives; stale gestures then expire on their own.
+      const timer = setInterval(sync, 1000);
+      const stop = () => clearInterval(timer);
       awareness.on("change", sync);
+      awareness.on("destroy", stop);
       set({ awareness });
       sync();
     },

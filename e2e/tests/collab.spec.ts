@@ -538,6 +538,39 @@ test("shows a peer's drag presence while a card is being dragged", async ({ brow
   await contextB.close();
 });
 
+test("clears a peer's ghost when their gestures stop arriving", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("stale-gesture");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.locator('[data-testid="node-card"]')).toHaveCount(2);
+
+  const cardA = pageA.locator('[data-testid="node-card"]').first();
+  const box = await cardA.boundingBox();
+  if (!box) throw new Error("card not visible");
+  await pageA.mouse.move(box.x + 40, box.y + 14);
+  await pageA.mouse.down();
+  await pageA.mouse.move(box.x + 200, box.y + 140, { steps: 8 });
+
+  const cardB = pageB.locator('[data-testid="node-card"]').first();
+  await expect(cardB).toHaveAttribute("data-dragging", "true");
+
+  // The network drops mid-drag: no end event ever arrives, so the ghost has to
+  // expire on its own rather than linger until awareness times the client out.
+  await contextA.setOffline(true);
+  const startedAt = Date.now();
+  await expect(cardB).not.toHaveAttribute("data-dragging", "true", { timeout: 10_000 });
+  expect(Date.now() - startedAt).toBeGreaterThan(1_000);
+
+  await contextA.close();
+  await contextB.close();
+});
+
 test("shows a peer's selection presence", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();

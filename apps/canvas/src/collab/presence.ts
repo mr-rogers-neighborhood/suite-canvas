@@ -19,11 +19,17 @@ export interface DraggingState {
   position: PointerState;
 }
 
+/** Cards a peer has selected (not necessarily editing). */
+export interface SelectionState {
+  nodeIds: string[];
+}
+
 export const AWARENESS_FIELDS = {
   user: "user",
   pointer: "pointer",
   focus: "focus",
   dragging: "dragging",
+  selection: "selection",
 } as const;
 
 export interface PeerPresence {
@@ -32,4 +38,5 @@ export interface PeerPresence {
   pointer: PointerState | null;
   focus: FocusState | null;
   dragging: DraggingState | null;
+  selection: SelectionState | null;
 }

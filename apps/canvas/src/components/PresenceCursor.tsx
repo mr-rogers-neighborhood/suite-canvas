@@ -18,12 +18,12 @@ export function PresenceCursor({ user, x, y, scale = 1 }: PresenceCursorProps) {
         transition: "transform 80ms linear",
       }}
     >
-      <svg width="16" height="16" viewBox="0 0 16 16" className="drop-shadow-sm">
+      <svg width="24" height="24" viewBox="0 0 16 16" className="-ml-1 -mt-0.5 drop-shadow-md">
         <title>{user.name}</title>
-        <path fill={user.color} stroke="white" strokeWidth="1" d="M3 1.5l9.5 6.2-4.8.6L5 13z" />
+        <path fill={user.color} stroke="white" strokeWidth="1.2" d="M3 1.5l9.5 6.2-4.8.6L5 13z" />
       </svg>
       <span
-        className="ml-3 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+        className="ml-4 inline-block rounded-md px-2 py-0.5 text-xs font-medium text-white shadow-sm"
         style={{ backgroundColor: user.color }}
       >
         {user.name}

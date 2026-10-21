@@ -9,6 +9,7 @@ import {
   type PeerPresence,
   type PointerState,
   type PresenceUser,
+  type SelectionState,
 } from "./presence";
 
 interface PresenceState {
@@ -19,6 +20,7 @@ interface PresenceState {
   setPointer: (pointer: PointerState | null) => void;
   setFocus: (focus: FocusState | null) => void;
   setDragging: (dragging: DraggingState | null) => void;
+  setSelection: (selection: SelectionState | null) => void;
 }
 
 function toPresenceUser(state: Record<string, unknown>): PresenceUser {
@@ -36,6 +38,7 @@ function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerP
     pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
     dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
+    selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
   };
 }
 
@@ -75,5 +78,9 @@ export const usePresenceStore = create<PresenceState>((set, get) => ({
 
   setDragging: (dragging) => {
     get().awareness?.setLocalStateField(AWARENESS_FIELDS.dragging, dragging);
+  },
+
+  setSelection: (selection) => {
+    get().awareness?.setLocalStateField(AWARENESS_FIELDS.selection, selection);
   },
 }));

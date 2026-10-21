@@ -40,9 +40,11 @@ export function CanvasBoard() {
   const peers = usePresenceStore((state) => state.peers);
   const setPointer = usePresenceStore((state) => state.setPointer);
   const setDragging = usePresenceStore((state) => state.setDragging);
+  const setPresenceSelection = usePresenceStore((state) => state.setSelection);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const setEditingNodeId = useUiStore((state) => state.setEditingNodeId);
+  const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const contextMenu = useUiStore((state) => state.contextMenu);
@@ -128,6 +130,7 @@ export function CanvasBoard() {
           type: "note",
           position: { x: position.x, y: position.y },
           selected: selectedKey.split(",").includes(graphNode.id),
+          zIndex: graphNode.z,
           data: { node: graphNode },
         } satisfies Node;
       });
@@ -140,7 +143,9 @@ export function CanvasBoard() {
 
   useOnSelectionChange({
     onChange: ({ nodes: selected }) => {
-      setSelectedNodeIds(selected.map((node) => node.id));
+      const ids = selected.map((node) => node.id);
+      setSelectedNodeIds(ids);
+      setPresenceSelection(ids.length > 0 ? { nodeIds: ids } : null);
     },
   });
 
@@ -206,19 +211,71 @@ export function CanvasBoard() {
         },
       ];
     }
+    const nodeId = contextMenu.nodeId;
+
+    if (contextMenu.kind === "connector") {
+      return [
+        {
+          label: "Reposition Connector",
+          onSelect: () => {
+            if (nodeId && contextMenu.connectorId) {
+              setSelectedConnector({ nodeId, connectorId: contextMenu.connectorId });
+            }
+          },
+        },
+        {
+          label: "Delete connector",
+          danger: true,
+          onSelect: () => {
+            if (nodeId && contextMenu.connectorId) {
+              graph.removeConnector(nodeId, contextMenu.connectorId);
+              setSelectedConnector(null);
+            }
+          },
+        },
+      ];
+    }
+
     return [
+      {
+        label: "Add connector",
+        onSelect: () => {
+          if (nodeId) graph.addConnector(nodeId);
+        },
+      },
+      {
+        label: "Position",
+        items: [
+          {
+            label: "Bring Forward",
+            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "forward"),
+          },
+          {
+            label: "Bring to Front",
+            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "front"),
+          },
+          {
+            label: "Send Back",
+            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "backward"),
+          },
+          {
+            label: "Send to Back",
+            onSelect: () => nodeId && graph.moveNodeLayer(nodeId, "back"),
+          },
+        ],
+      },
       {
         label: "Delete note",
         danger: true,
         onSelect: () => {
-          if (contextMenu.nodeId) {
-            graph.removeNode(contextMenu.nodeId);
+          if (nodeId) {
+            graph.removeNode(nodeId);
             setSelectedNodeIds([]);
           }
         },
       },
     ];
-  }, [contextMenu, graph, createNoteAt, setSelectedNodeIds]);
+  }, [contextMenu, graph, createNoteAt, setSelectedNodeIds, setSelectedConnector]);
 
   return (
     <div data-testid="canvas-board" className="h-full w-full">
@@ -245,6 +302,8 @@ export function CanvasBoard() {
           setDragging(null);
           graph.updateNodePosition(node.id, node.position);
         }}
+        onPaneClick={() => setSelectedConnector(null)}
+        onNodeClick={() => setSelectedConnector(null)}
         onNodeDoubleClick={(_, node) => setEditingNodeId(node.id)}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();

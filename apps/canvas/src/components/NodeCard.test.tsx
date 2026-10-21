@@ -13,6 +13,13 @@ const node: GraphNode = {
   position: { x: 0, y: 0 },
   createdAt: 0,
   updatedAt: 0,
+  z: 0,
+  connectors: [
+    { id: "c-top", x: 0.5, y: 0 },
+    { id: "c-right", x: 1, y: 0.5 },
+    { id: "c-bottom", x: 0.5, y: 1 },
+    { id: "c-left", x: 0, y: 0.5 },
+  ],
   data: {},
 };
 

@@ -1,5 +1,13 @@
-export type { EdgeKind, GraphEdge, GraphNode, NodeKind } from "./schema.js";
 export {
+  CONNECTOR_ANCHORS,
+  createConnectorId,
+  defaultConnectors,
+  nextFreeAnchor,
+  snapToAnchor,
+} from "./connectors.js";
+export type { Connector, EdgeKind, GraphEdge, GraphNode, NodeKind } from "./schema.js";
+export {
+  connectorSchema,
   edgeKindSchema,
   edgeKinds,
   entityIdSchema,
@@ -15,5 +23,6 @@ export type {
   GraphAction,
   GraphChange,
   GraphSection,
+  LayerAction,
 } from "./yjs/GraphDocument.js";
-export { GraphDocument } from "./yjs/GraphDocument.js";
+export { GraphDocument, normalizeNode } from "./yjs/GraphDocument.js";

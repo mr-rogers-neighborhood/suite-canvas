@@ -173,6 +173,53 @@ body {
   border: 1px solid var(--ink-muted);
 }
 
+/* Connectors: a dot to select, plus a dashed grab handle to reposition it. */
+.connector-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #94a3b8;
+  border-radius: 9999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
+  cursor: crosshair;
+  transition: box-shadow 120ms ease;
+}
+
+.dark .connector-dot {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+}
+
+/* Indicate a connection point without moving or resizing the dot. */
+.connector-dot:hover {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 5px rgba(10, 132, 255, 0.35);
+}
+
+.connector-grab {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border: 2px dashed currentColor;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: grab;
+  touch-action: none;
+}
+
+.dark .connector-grab {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.connector-grab:active {
+  cursor: grabbing;
+}
+
 /* Remote carets + selections rendered by @tiptap/y-tiptap (yCursorPlugin). */
 .ProseMirror-yjs-cursor {
   position: relative;

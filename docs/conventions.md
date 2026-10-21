@@ -52,6 +52,8 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   the overlay renders inside `<ViewportPortal>` so it follows pan/zoom.
 - Never publish a shared "current selection" awareness field for multiple editors — filter
   remote carets by the peer's focused node id.
+- Connector drags persist on release only; live positions stay in component state.
+  Dragging a connector dot means "connect"; repositioning uses the selected grab handle.
 - Persist positions to the CRDT on drag stop only; live positions travel through awareness.
 
 ## Data layer

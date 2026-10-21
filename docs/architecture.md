@@ -50,6 +50,25 @@ carry semantic meaning (`references`, `relates-to`, `tagged`). The schema lives 
 `packages/graph/src/schema.ts` and is the contract between the canvas, the editor, and future
 search/semantic features.
 
+## Connectors
+
+Every note carries its own connectors, stored on the node (`connectors: { id, x, y }[]`, where
+`x`/`y` are 0..1 fractions of the card's width/height). New notes start with four: the midpoints
+of each side.
+
+Interaction model:
+
+- **Click a connector** to select it; a dashed circular grab handle appears.
+- **Drag the grab handle** to reposition. Positions are free along the card perimeter, but the
+  connector magnetizes to the nearest corner or side midpoint when released within ~20 px.
+- Dragging the connector dot itself is reserved for creating connections (not implemented yet).
+- Right-click a connector for **Reposition Connector** and **Delete connector**.
+- The node menu has **Add connector** (uses a free anchor) and a **Position** submenu
+  (Bring Forward / Bring to Front / Send Back / Send to Back).
+
+Layering is a `z` integer per node; `moveNodeLayer` reindexes nodes in order (0 = furthest back),
+and React Flow renders `zIndex: node.z`.
+
 ## Editing and presence
 
 - **Editor:** each card mounts a Tiptap editor (`StarterKit` + `Collaboration` +
@@ -59,7 +78,8 @@ search/semantic features.
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
 - **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
-  (focused node) and `dragging` (node + live position). Pointer and drag positions are
+  (editing node), `selection` (selected nodes) and `dragging` (node + live position).
+  Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
   only renders in the card they have focused (all editors share one awareness).

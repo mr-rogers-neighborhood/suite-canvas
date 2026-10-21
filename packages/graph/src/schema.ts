@@ -13,6 +13,13 @@ export const positionSchema = z.object({
   y: z.number().finite(),
 });
 
+/** A connection point, stored as a 0..1 fraction of the node's width/height. */
+export const connectorSchema = z.object({
+  id: entityIdSchema,
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+
 export const noteDataSchema = z.object({});
 
 const entityBase = {
@@ -20,6 +27,9 @@ const entityBase = {
   position: positionSchema,
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
+  /** Stacking order; higher paints above lower. */
+  z: z.number().int(),
+  connectors: z.array(connectorSchema),
 };
 
 export const graphNodeSchema = z.discriminatedUnion("kind", [
@@ -36,6 +46,7 @@ export const graphEdgeSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
 });
 
+export type Connector = z.infer<typeof connectorSchema>;
 export type GraphNode = z.infer<typeof graphNodeSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type NodeKind = z.infer<typeof nodeKindSchema>;

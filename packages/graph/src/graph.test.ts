@@ -11,6 +11,8 @@ const note: GraphNode = {
   position: { x: 0, y: 0 },
   createdAt: now,
   updatedAt: now,
+  z: 0,
+  connectors: [],
   data: {},
 };
 
@@ -82,6 +84,87 @@ describe("GraphDocument", () => {
     graph.setEdge(edge);
     graph.removeNode("n1");
     expect(graph.listEdges()).toHaveLength(0);
+  });
+
+  it("starts a note with four connectors at the side midpoints", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const connectors = graph.getNode("n1")?.connectors ?? [];
+    expect(connectors).toHaveLength(4);
+    expect(new Set(connectors.map((connector) => `${connector.x}:${connector.y}`))).toEqual(
+      new Set(["0:0.5", "0.5:0", "0.5:1", "1:0.5"]),
+    );
+  });
+
+  it("adds a connector on a free anchor", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const added = graph.addConnector("n1");
+    expect(added).not.toBeNull();
+    expect(graph.getNode("n1")?.connectors).toHaveLength(5);
+    expect(added).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("removes a connector", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const first = graph.getNode("n1")?.connectors[0];
+    if (!first) throw new Error("expected connectors");
+    graph.removeConnector("n1", first.id);
+    expect(graph.getNode("n1")?.connectors).toHaveLength(3);
+  });
+
+  it("snaps a moved connector to the nearest anchor", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const first = graph.getNode("n1")?.connectors[0];
+    if (!first) throw new Error("expected connectors");
+
+    graph.moveConnector("n1", first.id, { x: 0.94, y: 0.88 }, { snap: true });
+    const moved = graph.getNode("n1")?.connectors.find((connector) => connector.id === first.id);
+    expect(moved).toMatchObject({ x: 1, y: 1 });
+  });
+
+  it("keeps free connector positions when snapping is not requested", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "n1", position: { x: 0, y: 0 } });
+    const first = graph.getNode("n1")?.connectors[0];
+    if (!first) throw new Error("expected connectors");
+
+    graph.moveConnector("n1", first.id, { x: 0.32, y: 0 });
+    const moved = graph.getNode("n1")?.connectors.find((connector) => connector.id === first.id);
+    expect(moved).toMatchObject({ x: 0.32, y: 0 });
+  });
+
+  it("reorders nodes by layer", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 10, y: 0 } });
+    graph.createNote({ id: "c", position: { x: 20, y: 0 } });
+
+    graph.moveNodeLayer("a", "front");
+    expect(graph.getNode("a")?.z).toBe(2);
+
+    graph.moveNodeLayer("a", "back");
+    expect(graph.getNode("a")?.z).toBe(0);
+
+    graph.moveNodeLayer("a", "forward");
+    expect(graph.getNode("a")?.z).toBe(1);
+
+    graph.moveNodeLayer("a", "backward");
+    expect(graph.getNode("a")?.z).toBe(0);
+  });
+
+  it("backfills connectors and layer for legacy nodes", () => {
+    const graph = new GraphDocument();
+    const legacy = { ...note } as unknown as Record<string, unknown>;
+    delete legacy.connectors;
+    delete legacy.z;
+    graph.doc.getMap("nodes").set("n1", legacy);
+
+    const restored = graph.getNode("n1");
+    expect(restored?.z).toBe(0);
+    expect(restored?.connectors).toHaveLength(4);
   });
 
   it("emits typed change events on mutation", () => {

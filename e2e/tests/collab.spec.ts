@@ -75,6 +75,78 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   await expect(page.getByText("keyboard delete")).toHaveCount(0);
 });
 
+test("manages connectors: add, magnetize, reposition, delete", async ({ page }) => {
+  await page.goto(docUrl("connectors"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+
+  const card = page.locator('[data-testid="node-card"]').first();
+  const connectors = card.locator('[data-testid="connector"]');
+  await expect(connectors).toHaveCount(4);
+
+  // Add a connector from the node menu.
+  await card.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add connector" }).click();
+  await expect(connectors).toHaveCount(5);
+
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
+
+  // Clicking a connector reveals the grab handle (dragging the dot is reserved
+  // for making connections).
+  await connectors.first().locator(".connector-dot").click();
+  const grab = card.locator('[data-testid="connector-grab"]');
+  await expect(grab).toHaveCount(1);
+
+  const dragGrabTo = async (x: number, y: number) => {
+    const handle = await grab.boundingBox();
+    if (!handle) throw new Error("grab handle not visible");
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, y, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+
+  // Free placement away from the anchors.
+  await dragGrabTo(box.x + box.width + 1, box.y + box.height * 0.32);
+  await expect(card.locator('[data-testid="connector"][data-anchored="false"]')).toHaveCount(1);
+
+  // Magnetizes when dropped near a corner.
+  await dragGrabTo(box.x + 3, box.y + 3);
+  await expect(card.locator('[data-testid="connector"][data-anchored="false"]')).toHaveCount(0);
+
+  // Right-click offers reposition and delete.
+  const target = await connectors.nth(2).boundingBox();
+  if (!target) throw new Error("connector not visible");
+  await page.mouse.click(target.x + target.width / 2, target.y + target.height / 2, {
+    button: "right",
+  });
+  await expect(page.getByRole("menuitem", { name: "Reposition Connector" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Delete connector" }).click();
+  await expect(connectors).toHaveCount(4);
+});
+
+test("reorders card layers from the context menu", async ({ page }) => {
+  await page.goto(docUrl("layers"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+
+  const layers = page.locator(".react-flow__node");
+  const first = page.locator('[data-testid="node-card"]').first();
+  await first.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Position" }).hover();
+  await expect(page.getByTestId("context-submenu")).toBeVisible();
+  await page.getByRole("menuitem", { name: "Bring to Front" }).click();
+
+  await expect
+    .poll(async () => {
+      const z = await layers.evaluateAll((nodes) =>
+        nodes.map((node) => Number(getComputedStyle(node).zIndex)),
+      );
+      return Math.max(...z);
+    })
+    .toBeGreaterThan(0);
+});
+
 test("switches and persists the color theme", async ({ page }) => {
   await page.goto(docUrl("theme"));
   await expect(page.locator("html")).not.toHaveClass(/dark/);
@@ -131,6 +203,28 @@ test("shows a peer's drag presence while a card is being dragged", async ({ brow
 
   await pageA.mouse.up();
   await expect(cardB).not.toHaveAttribute("data-dragging", "true");
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test("shows a peer's selection presence", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("selection-presence");
+  await pageA.goto(url);
+  await pageB.goto(url);
+
+  const cardA = pageA.locator('[data-testid="node-card"]').first();
+  await expect(cardA).toBeVisible();
+  await cardA.click();
+
+  const cardB = pageB.locator('[data-testid="node-card"]').first();
+  await expect(cardB).toHaveAttribute("data-selected-by-peer", "true");
+  await expect(cardB.getByTestId("presence-avatar")).toBeVisible();
 
   await contextA.close();
   await contextB.close();

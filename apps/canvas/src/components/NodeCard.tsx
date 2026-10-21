@@ -1,4 +1,4 @@
-import type { GraphNode } from "@suite/graph";
+import type { Connector as ConnectorModel, GraphNode } from "@suite/graph";
 import Collaboration from "@tiptap/extension-collaboration";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -8,6 +8,7 @@ import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import type { PresenceUser } from "../collab/presence";
 import { CollaborationCursor } from "../editor/CollaborationCursor";
+import { Connector } from "./Connector";
 import { PresenceAvatars } from "./PresenceAvatars";
 
 export interface NodeCardProps {
@@ -20,6 +21,12 @@ export interface NodeCardProps {
   presence?: PresenceUser[];
   /** Peers currently dragging this node. */
   draggingPeers?: PresenceUser[];
+  /** Peers that have this node selected. */
+  selectingPeers?: PresenceUser[];
+  selectedConnectorId?: string | null;
+  onConnectorSelect?: (connectorId: string) => void;
+  onConnectorMoveEnd?: (connectorId: string, position: { x: number; y: number }) => void;
+  onConnectorContextMenu?: (event: React.MouseEvent, connectorId: string) => void;
   onEditEnd?: () => void;
 }
 
@@ -41,6 +48,11 @@ export function NodeCard({
   editing = false,
   presence = [],
   draggingPeers = [],
+  selectingPeers = [],
+  selectedConnectorId = null,
+  onConnectorSelect,
+  onConnectorMoveEnd,
+  onConnectorContextMenu,
   onEditEnd,
 }: NodeCardProps) {
   // Blur can fire transiently while the card re-renders (presence updates,
@@ -66,7 +78,7 @@ export function NodeCard({
       editorProps: {
         attributes: {
           class:
-            "node-card-editor min-h-[40px] w-56 px-3 py-2 text-sm text-[var(--ink)] focus:outline-none",
+            "node-card-editor min-h-[52px] w-full px-3 pt-2.5 pb-2 text-sm text-[var(--ink)] focus:outline-none",
         },
       },
       onFocus: () => {
@@ -116,17 +128,20 @@ export function NodeCard({
 
   const draggingPeer = draggingPeers[0];
   const focusedBy = presence[0];
+  const selectingPeer = selectingPeers[0];
 
   // Peer presence takes visual priority over local selection so collaborators
-  // always see where everyone else is.
+  // always see where everyone else is: dragging > editing > selecting.
   const presenceStyle: CSSProperties = draggingPeer
     ? { borderColor: draggingPeer.color, boxShadow: `0 0 0 3px ${draggingPeer.color}55` }
     : focusedBy
       ? { borderColor: focusedBy.color, boxShadow: `0 0 0 2px ${focusedBy.color}33` }
-      : {};
+      : selectingPeer
+        ? { boxShadow: `0 0 0 2px ${selectingPeer.color}66` }
+        : {};
 
   const cardClass = [
-    "node-card relative rounded-2xl border border-[var(--hairline)]",
+    "node-card relative w-56 min-h-[72px] rounded-md border border-[var(--hairline)]",
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
@@ -147,16 +162,37 @@ export function NodeCard({
       data-testid="node-card"
       data-node-id={node.id}
       data-dragging={draggingPeer ? "true" : undefined}
+      data-selected-by-peer={selectingPeer ? "true" : undefined}
       className={cardClass}
       style={presenceStyle}
     >
-      <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--ink-muted)]">
-          note
-        </span>
-        <PresenceAvatars users={presence.length > 0 ? presence : draggingPeers} />
-      </div>
+      {presence.length > 0 || draggingPeers.length > 0 || selectingPeers.length > 0 ? (
+        <div className="pointer-events-none absolute -top-6 right-0">
+          <PresenceAvatars
+            users={
+              presence.length > 0
+                ? presence
+                : draggingPeers.length > 0
+                  ? draggingPeers
+                  : selectingPeers
+            }
+          />
+        </div>
+      ) : null}
+
       <EditorContent editor={editor} />
+
+      {node.connectors.map((connector: ConnectorModel) => (
+        <Connector
+          key={connector.id}
+          connector={connector}
+          color={focusedBy?.color ?? draggingPeer?.color}
+          selected={selectedConnectorId === connector.id}
+          onSelect={(id) => onConnectorSelect?.(id)}
+          onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
+          onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
+        />
+      ))}
       {editor ? (
         <BubbleMenu editor={editor}>
           <div

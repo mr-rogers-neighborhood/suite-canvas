@@ -4,6 +4,10 @@ Suite is a **local-first, collaborative canvas**. The canvas is the primary surf
 is a **typed object graph** with semantic links, so it can later grow into a knowledge base
 (Capacities-style).
 
+Objects are workspace-level and views are boards: a **card** owns its content and exists whether or
+not it is displayed, a **board** shows cards at a position, and the **library** is how you find
+cards that are not on the board in front of you.
+
 ## Principles
 
 1. **Local-first:** the app is fully usable offline; the network only accelerates sync.
@@ -24,31 +28,59 @@ flowchart LR
   Server <-->|WebSocket| Others[Other clients]
 ```
 
-- **Zustand** holds ephemeral UI state: selection, active tool, panel visibility,
+- **Zustand** holds ephemeral UI state: active board, selection, library drawer state,
   connection status. It never duplicates document data.
-- **`@suite/graph`** exposes `GraphDocument`, a typed wrapper over a `Y.Doc`. Nodes and edges
-  are `Y.Map`s (`nodes`, `edges`); Tiptap content is a `Y.Text` (`prosemirror`) in the same doc.
+- **`@suite/graph`** exposes `WorkspaceDocument`, a typed wrapper over a `Y.Doc`. Boards, cards,
+  placements and edges are `Y.Map`s; card text lives in `content`/`titles` fragments in the same
+  doc.
 - **`y-indexeddb`** persists the whole doc locally so the app rehydrates instantly and works
   offline.
 - **Hocuspocus** (provider + server) syncs the doc across peers over WebSocket.
 
 ## Document model
 
-| Yjs type | Key | Contents |
-| --- | --- | --- |
-| `Y.Map<GraphNode>` | `nodes` | Typed node entities (`note`) |
-| `Y.Map<GraphEdge>` | `edges` | Typed semantic links (`references`, `relates-to`, `tagged`) |
-| `Y.Map<Y.XmlFragment>` | `content` | Per-node rich-text, keyed by node id |
+One `Y.Doc` per workspace (room + IndexedDB key = workspace id). Boards are views inside that one
+document, so moving a card between boards stays atomic.
 
-Every node is a Tiptap editor bound to its own `Y.XmlFragment` in `content`. Deleting a node
-cascades to its edges and its content fragment.
+| Map | Shape |
+| --- | --- |
+| `boards` | `{ id, name, createdAt, updatedAt }` |
+| `cards` | `{ id, kind, connectors, data, createdAt, updatedAt, deletedAt? }` |
+| `placements` | key `${boardId}/${cardId}` → `{ boardId, cardId, x, y, z, createdAt }` |
+| `edges` | `{ id, boardId, source, target, sourceConnector?, targetConnector?, kind, path, bidirectional, label? }` |
+| `content` | card body rich text (`Y.XmlFragment`, keyed by card id) |
+| `titles` | card title rich text (`Y.XmlFragment`, keyed by card id) |
+| `meta` | `{ schemaVersion, seeded }` |
 
-## Object graph (semantic layer)
+Derived views keep the filtering in one place: `listBoardCards(boardId)` (placed, alive, back to
+front), `listBoardEdges(boardId)` (both endpoints placed and alive), `listInboxCards()` (alive with
+no placement), `listTrashedCards()`, `listCardPlacements(cardId)`, `homeBoardId(cardId)` and
+`displayTitle(cardId)` (title → body's first line → "Untitled").
 
-Nodes and edges form a graph, not a flat list. Node kinds are discriminated unions; edge kinds
-carry semantic meaning (`references`, `relates-to`, `tagged`). The schema lives in
-`packages/graph/src/schema.ts` and is the contract between the canvas, the editor, and future
-search/semantic features.
+**Home is derived**, not stored: the oldest placement is home. Placement `createdAt` is strictly
+increasing per client, so creating two placements in the same millisecond cannot flip the home
+board. Unplacing the home card promotes the next placement; with none left the card is in the Inbox.
+
+**Trash is a tombstone.** `trashCard` sets `deletedAt` and keeps the placements, so a restore puts
+the card back on every board it was on; `purgeCard` (and `emptyTrash`) destroy the card, its
+placements, its text and every edge that referenced it.
+
+**Links are board-scoped and dormant, not deleted.** An edge whose endpoint leaves the board (or is
+trashed) stays in the CRDT and stops rendering, and revives when the card returns.
+
+**Layer order is per board**: `moveLayer(boardId, cardId, action)` reindexes that board's placements
+only, so Inbox cards never consume z slots.
+
+**Title text is a fragment.** A `Y.Map` string would resolve concurrent renames last-write-wins for
+the whole value; an `XmlFragment` merges character-wise and lets y-prosemirror draw carets in the
+title exactly as it does in the body.
+
+### Migration
+
+Documents created before workspaces hold flat `nodes`/`edges` maps. `migrateLegacyDocument` (run
+from the constructor, guarded by `meta.schemaVersion`) creates one default board, converts nodes to
+cards plus placements (preserving `createdAt` so home is stable), backfills empty titles and stamps
+`boardId` on edges. Deterministic ids make concurrent migrations converge; it is safe to run twice.
 
 ## Connectors
 
@@ -130,8 +162,9 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
-- **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
-  (editing node), `selection` (selected nodes, selected links *and* the clicked connector),
+- **Presence:** one awareness channel carries `user`, `board` (the board being viewed),
+  `pointer` (canvas cursor), `focus` (card *and* editor field), `selection` (selected nodes,
+  selected links *and* the clicked connector),
   `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction) and
   `reconnect` (dragged link end + snap target). A moving connector shows a peer ring and moves for
   everyone, a selected connector shows a dashed peer outline, and selected links render in the
@@ -140,9 +173,46 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
-  only renders in the card they have focused (all editors share one awareness).
-- **Documents:** the document id comes from `?doc=<id>` (default `default-graph`), used for both
-  the IndexedDB key and the Hocuspocus room, so separate documents never share CRDT state.
+  only renders in the card **and field** they have focused (all editors share one awareness, and a
+  card has both a title and a body editor).
+- **Board scoping:** presence is workspace-wide because there is one document, so every board-scoped
+  surface filters by `peer.board`. Carets stay card-scoped on purpose: two people editing the same
+  card from different boards should see each other.
+- **Workspaces:** the workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias,
+  default `default-workspace`), used for both the IndexedDB key and the Hocuspocus room, so separate
+  workspaces never share CRDT state. The active board rides in `?board=<id>`.
+
+## Card chrome
+
+Each card renders in-card chrome rather than React Flow's `NodeToolbar`, which counter-scales with
+zoom (constant screen size) and only shows for the sole selected node.
+
+- **Header:** card-type glyph (the future type picker), the collaborative title, presence avatars,
+  and a `⋯` menu (Edit title/body, Remove from board, Go to board, Delete card). The title editor is
+  a paragraph-only Tiptap editor on the card's `titles` fragment: Enter commits instead of adding a
+  line, an empty title shows a muted "Untitled" placeholder, and remote carets render inside it.
+  Clicking a non-editing title starts title editing; the body is edited on double-click.
+- **Footer:** collapsed as `References · N`, expanding into a keyed section list. The first section
+  is **References**: every placement of the card, home marked with `⌂`, the current board labelled,
+  plus "Go" and "Remove" actions. The section list is generic so Backlinks or Tags can be added
+  without touching the card again.
+
+Both regions are `nodrag nopan` while interacting and are part of the measured node, so connectors
+and links follow when the footer expands.
+
+## Library (dock and drawer)
+
+- **Dock** — a floating pill at the bottom centre: `Library` with the Inbox count, a separator, and
+  the card-type registry. A type click creates that card at the viewport centre and focuses its
+  title.
+- **Drawer** — anchored above the dock, tabs `Inbox | Cards | Trash` with counts and empty states.
+  Rows show `displayTitle` and board chips.
+- **Place** centres the card in the viewport, staggered so repeated placements don't stack.
+- **Hold to place** is a pointer gesture (not HTML5 drag and drop): a row lifts into a card ghost
+  that follows the cursor; dropping over the canvas places the card centred on the drop point, and
+  dropping anywhere else cancels. The pointer-down is prevented from selecting text across the board.
+- **Trash** offers Restore and Delete forever, plus Empty trash; deleting a *board* asks first and
+  offers keeping the cards (they fall into the Inbox) or trashing them.
 
 ## Layers
 

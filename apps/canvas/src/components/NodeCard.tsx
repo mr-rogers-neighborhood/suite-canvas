@@ -1,14 +1,16 @@
-import type { Connector as ConnectorModel, GraphNode } from "@suite/graph";
+import type { Card, Connector as ConnectorModel } from "@suite/graph";
 import Collaboration from "@tiptap/extension-collaboration";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
-import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { cardType } from "../cards/cardTypes";
 import type { PresenceUser } from "../collab/presence";
 import { CollaborationCursor } from "../editor/CollaborationCursor";
 import { Connector } from "./Connector";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PresenceAvatars } from "./PresenceAvatars";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
@@ -17,31 +19,45 @@ export interface ConnectorPeerState {
   position: { x: number; y: number } | null;
 }
 
+/** One board a card appears on, for the References footer section. */
+export interface CardReference {
+  boardId: string;
+  boardName: string;
+  isHome: boolean;
+  isCurrent: boolean;
+}
+
+export type EditingField = "title" | "body";
+
 export interface NodeCardProps {
-  node: GraphNode;
+  card: Card;
+  /** Body rich text. */
   fragment: Y.XmlFragment;
+  /** Title rich text (a single paragraph). */
+  titleFragment: Y.XmlFragment;
   awareness: Awareness | null;
+  boardId: string;
+  references?: CardReference[];
   selected?: boolean;
-  editing?: boolean;
-  /** Peers focused on this node. */
+  /** Which editor this card is focused in, if any. */
+  editing?: EditingField | null;
   presence?: PresenceUser[];
-  /** Peers currently dragging this node. */
   draggingPeers?: PresenceUser[];
-  /** Peers that have this node selected. */
   selectingPeers?: PresenceUser[];
-  /** Peers dragging a connector on this node, keyed by connector id. */
   movingConnectorPeers?: Record<string, ConnectorPeerState>;
-  /** Peers that clicked a connector on this node, keyed by connector id. */
   selectingConnectorPeers?: Record<string, PresenceUser[]>;
   onConnectorMoveStart?: (connectorId: string) => void;
-  /** Live connector position while this client drags, throttled by the connector. */
   onConnectorMove?: (connectorId: string, position: { x: number; y: number }) => void;
   onConnectorMoveFinished?: () => void;
   selectedConnectorId?: string | null;
   onConnectorSelect?: (connectorId: string) => void;
   onConnectorMoveEnd?: (connectorId: string, position: { x: number; y: number }) => void;
   onConnectorContextMenu?: (event: React.MouseEvent, connectorId: string) => void;
+  onStartEditing?: (field: EditingField) => void;
   onEditEnd?: () => void;
+  onGoToBoard?: (boardId: string) => void;
+  onRemoveFromBoard?: () => void;
+  onTrash?: () => void;
 }
 
 interface ToolbarState {
@@ -55,11 +71,14 @@ interface ToolbarState {
 }
 
 export function NodeCard({
-  node,
+  card,
   fragment,
+  titleFragment,
   awareness,
+  boardId,
+  references = [],
   selected = false,
-  editing = false,
+  editing = null,
   presence = [],
   draggingPeers = [],
   selectingPeers = [],
@@ -72,11 +91,17 @@ export function NodeCard({
   onConnectorSelect,
   onConnectorMoveEnd,
   onConnectorContextMenu,
+  onStartEditing,
   onEditEnd,
+  onGoToBoard,
+  onRemoveFromBoard,
+  onTrash,
 }: NodeCardProps) {
-  // Blur can fire transiently while the card re-renders (presence updates,
-  // CRDT sync). Only leave edit mode when focus does not come back.
+  // Blur can fire transiently while the card re-renders (presence updates, CRDT
+  // sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
+  const [footerOpen, setFooterOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(
     () => () => {
@@ -85,14 +110,29 @@ export function NodeCard({
     [],
   );
 
+  const keepFocusAlive = () => {
+    if (blurTimeout.current !== null) {
+      window.clearTimeout(blurTimeout.current);
+      blurTimeout.current = null;
+    }
+  };
+
+  const releaseFocusSoon = () => {
+    if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
+    blurTimeout.current = window.setTimeout(() => {
+      blurTimeout.current = null;
+      onEditEnd?.();
+    }, 120);
+  };
+
   const editor = useEditor(
     {
-      editable: false,
+      editable: editing === "body",
       extensions: [
         // Collaboration ships its own undo history, so StarterKit's is disabled.
         StarterKit.configure({ undoRedo: false }),
         Collaboration.configure({ fragment }),
-        CollaborationCursor.configure({ awareness, nodeId: node.id }),
+        CollaborationCursor.configure({ awareness, nodeId: card.id, field: "body" }),
       ],
       editorProps: {
         attributes: {
@@ -100,21 +140,43 @@ export function NodeCard({
             "node-card-editor min-h-[52px] w-full px-3 pt-2.5 pb-2 text-sm text-[var(--ink)] focus:outline-none",
         },
       },
-      onFocus: () => {
-        if (blurTimeout.current !== null) {
-          window.clearTimeout(blurTimeout.current);
-          blurTimeout.current = null;
-        }
-      },
-      onBlur: () => {
-        if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
-        blurTimeout.current = window.setTimeout(() => {
-          blurTimeout.current = null;
-          onEditEnd?.();
-        }, 120);
-      },
+      onFocus: keepFocusAlive,
+      onBlur: releaseFocusSoon,
     },
-    [fragment, awareness, node.id],
+    [fragment, awareness, card.id],
+  );
+
+  const title = useEditor(
+    {
+      editable: editing === "title",
+      extensions: [
+        StarterKit.configure({ undoRedo: false }),
+        Collaboration.configure({ fragment: titleFragment }),
+        CollaborationCursor.configure({ awareness, nodeId: card.id, field: "title" }),
+      ],
+      editorProps: {
+        attributes: {
+          class:
+            "card-title-editor w-full truncate text-[13px] font-semibold leading-5 text-[var(--ink)] focus:outline-none",
+          "aria-label": "Card title",
+        },
+        // Enter commits instead of adding a line: titles stay single-line.
+        handleKeyDown: (_view, event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onEditEnd?.();
+            return true;
+          }
+          return false;
+        },
+      },
+      onFocus: () => {
+        keepFocusAlive();
+        onStartEditing?.("title");
+      },
+      onBlur: releaseFocusSoon,
+    },
+    [titleFragment, awareness, card.id],
   );
 
   const toolbar = useEditorState({
@@ -130,20 +192,36 @@ export function NodeCard({
     }),
   });
 
+  const titleEmpty = useEditorState({
+    editor: title,
+    selector: ({ editor: current }) => current.isEmpty,
+  });
+
   // Layout effect so the editor is editable and focused before the browser
   // paints; otherwise the first keystroke of a brand-new note can be dropped.
   useLayoutEffect(() => {
     if (!editor) return;
-    editor.setEditable(editing);
-    if (!editing) return;
+    editor.setEditable(editing === "body");
+    if (editing !== "body") return;
 
     editor.commands.focus("end");
-    // The ProseMirror view can attach after mount; re-focus on the next frame.
     const frame = requestAnimationFrame(() => {
       editor.commands.focus("end");
     });
     return () => cancelAnimationFrame(frame);
   }, [editor, editing]);
+
+  useLayoutEffect(() => {
+    if (!title) return;
+    title.setEditable(editing === "title");
+    if (editing !== "title") return;
+
+    title.commands.focus("end");
+    const frame = requestAnimationFrame(() => {
+      title.commands.focus("end");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [title, editing]);
 
   const draggingPeer = draggingPeers[0];
   const focusedBy = presence[0];
@@ -160,7 +238,7 @@ export function NodeCard({
         : {};
 
   const cardClass = [
-    "node-card relative w-56 min-h-[72px] rounded-md border border-[var(--hairline)]",
+    "node-card relative w-56 rounded-md border border-[var(--hairline)]",
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
@@ -176,17 +254,68 @@ export function NodeCard({
         : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
     }`;
 
+  const otherBoards = references.filter((reference) => !reference.isCurrent);
+  const type = cardType(card.kind);
+
+  const menuItems: ContextMenuItem[] = [
+    { label: "Edit title", onSelect: () => onStartEditing?.("title") },
+    { label: "Edit body", onSelect: () => onStartEditing?.("body") },
+    { label: "Remove from board", onSelect: () => onRemoveFromBoard?.() },
+    ...(otherBoards.length > 0
+      ? [
+          {
+            label: "Go to board",
+            items: otherBoards.map((reference) => ({
+              label: reference.boardName,
+              onSelect: () => onGoToBoard?.(reference.boardId),
+            })),
+          },
+        ]
+      : []),
+    { label: "Delete card", danger: true, onSelect: () => onTrash?.() },
+  ];
+
   return (
     <div
       data-testid="node-card"
-      data-node-id={node.id}
+      data-node-id={card.id}
       data-dragging={draggingPeer ? "true" : undefined}
       data-selected-by-peer={selectingPeer ? "true" : undefined}
+      data-board-id={boardId}
       className={cardClass}
       style={presenceStyle}
     >
-      {presence.length > 0 || draggingPeers.length > 0 || selectingPeers.length > 0 ? (
-        <div className="pointer-events-none absolute -top-6 right-0">
+      <div className="card-header flex items-center gap-1.5 rounded-t-md px-2 py-2">
+        <span
+          role="img"
+          aria-label={`Card type: ${type.label}`}
+          title={type.label}
+          className="card-type-glyph shrink-0 text-[13px] leading-none text-[var(--ink-muted)]"
+        >
+          {type.glyph}
+        </span>
+
+        <div className="card-title relative min-w-0 flex-1 nodrag nopan">
+          {editing === "title" ? null : (
+            <button
+              type="button"
+              aria-label="Edit card title"
+              className="absolute inset-0 z-10 cursor-text"
+              onClick={() => onStartEditing?.("title")}
+            />
+          )}
+          <EditorContent editor={title} />
+          {titleEmpty ? (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 text-[13px] leading-5 text-[var(--ink-muted)]/70"
+            >
+              Untitled
+            </span>
+          ) : null}
+        </div>
+
+        {presence.length > 0 || draggingPeers.length > 0 || selectingPeers.length > 0 ? (
           <PresenceAvatars
             users={
               presence.length > 0
@@ -196,16 +325,144 @@ export function NodeCard({
                   : selectingPeers
             }
           />
-        </div>
-      ) : null}
+        ) : null}
+
+        <button
+          type="button"
+          aria-label="Card actions"
+          data-testid="card-menu"
+          className="nodrag shrink-0 rounded px-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setMenu({ x: rect.right - 4, y: rect.bottom + 4 });
+          }}
+        >
+          {"\u22ef"}
+        </button>
+      </div>
 
       <EditorContent editor={editor} />
 
-      {node.connectors.map((connector: ConnectorModel) => (
+      <div className="card-footer border-t border-[var(--hairline)]">
+        <button
+          type="button"
+          aria-expanded={footerOpen}
+          data-testid="card-footer-toggle"
+          className="nodrag flex w-full items-center justify-between gap-2 px-2 py-1.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+          onClick={() => setFooterOpen((open) => !open)}
+        >
+          <span>
+            References
+            {references.length > 0 ? ` \u00b7 ${references.length}` : ""}
+          </span>
+          <span aria-hidden="true">{footerOpen ? "\u25be" : "\u25b8"}</span>
+        </button>
+
+        {footerOpen ? (
+          <div className="px-2 pb-2" data-testid="card-footer">
+            {references.length === 0 ? (
+              <p className="text-[11px] text-[var(--ink-muted)]">Only on this board.</p>
+            ) : (
+              <ul className="space-y-1">
+                {references.map((reference) => (
+                  <li key={reference.boardId} className="flex items-center gap-1.5 text-[11px]">
+                    <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                      {reference.isHome ? "\u2302" : "\u2197"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {reference.boardName}
+                      {reference.isCurrent ? (
+                        <span className="text-[var(--ink-muted)]"> (this board)</span>
+                      ) : null}
+                    </span>
+                    {reference.isCurrent ? null : (
+                      <button
+                        type="button"
+                        className="nodrag rounded px-1 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => onGoToBoard?.(reference.boardId)}
+                      >
+                        Go
+                      </button>
+                    )}
+                    {reference.isCurrent ? (
+                      <button
+                        type="button"
+                        className="nodrag rounded px-1 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => onRemoveFromBoard?.()}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {toolbar ? (
+        <BubbleMenu editor={editor} data-testid="format-toolbar">
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-lg">
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleBold().run()}
+              className={buttonClass(toolbar.bold)}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
+              className={`${buttonClass(toolbar.italic)} italic`}
+            >
+              I
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleStrike().run()}
+              className={`${buttonClass(toolbar.strike)} line-through`}
+            >
+              S
+            </button>
+            <span className="mx-1 h-4 w-px bg-[var(--hairline)]" />
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+              className={buttonClass(toolbar.heading1)}
+            >
+              H1
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+              className={buttonClass(toolbar.heading2)}
+            >
+              H2
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleBulletList().run()}
+              className={buttonClass(toolbar.bulletList)}
+            >
+              {"\u2022"}
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+              className={buttonClass(toolbar.orderedList)}
+            >
+              1.
+            </button>
+          </div>
+        </BubbleMenu>
+      ) : null}
+
+      {card.connectors.map((connector: ConnectorModel) => (
         <Connector
           key={connector.id}
           connector={connector}
-          nodeId={node.id}
+          nodeId={card.id}
           color={focusedBy?.color ?? draggingPeer?.color}
           selected={selectedConnectorId === connector.id}
           onSelect={(id) => onConnectorSelect?.(id)}
@@ -219,65 +476,9 @@ export function NodeCard({
           onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
         />
       ))}
-      {editor ? (
-        <BubbleMenu editor={editor}>
-          <div
-            data-testid="editor-toolbar"
-            role="toolbar"
-            className="flex flex-wrap gap-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-lg"
-            onMouseDown={(event) => event.preventDefault()}
-          >
-            <button
-              type="button"
-              className={buttonClass(toolbar?.bold ?? false)}
-              onClick={() => editor.chain().focus().toggleBold().run()}
-            >
-              B
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.italic ?? false)}
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-            >
-              I
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.strike ?? false)}
-              onClick={() => editor.chain().focus().toggleStrike().run()}
-            >
-              S
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.heading1 ?? false)}
-              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            >
-              H1
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.heading2 ?? false)}
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            >
-              H2
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.bulletList ?? false)}
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-            >
-              {"\u2022"} List
-            </button>
-            <button
-              type="button"
-              className={buttonClass(toolbar?.orderedList ?? false)}
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            >
-              1. List
-            </button>
-          </div>
-        </BubbleMenu>
+
+      {menu ? (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       ) : null}
     </div>
   );

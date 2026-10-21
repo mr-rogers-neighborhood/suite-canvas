@@ -5,6 +5,8 @@ export interface TitleBarProps {
   status: ConnectionStatus;
   peerCount?: number;
   documentId?: string;
+  /** Board switcher, rendered between the document id and the status. */
+  children?: React.ReactNode;
 }
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -19,7 +21,7 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   disconnected: "bg-gray-400 dark:bg-gray-500",
 };
 
-export function TitleBar({ status, peerCount = 0, documentId }: TitleBarProps) {
+export function TitleBar({ status, peerCount = 0, documentId, children }: TitleBarProps) {
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
       <span className="text-[13px] font-semibold tracking-tight">Suite</span>
@@ -27,6 +29,8 @@ export function TitleBar({ status, peerCount = 0, documentId }: TitleBarProps) {
       {documentId ? (
         <span className="truncate text-[11px] text-[var(--ink-muted)]">{documentId}</span>
       ) : null}
+
+      {children ? <div className="ml-2 flex min-w-0 items-center">{children}</div> : null}
 
       <div className="ml-auto flex items-center gap-3">
         <span

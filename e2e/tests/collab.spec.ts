@@ -34,8 +34,14 @@ async function createNote(page: Page): Promise<void> {
   const point = await emptyCanvasPoint(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
   await page.getByRole("menuitem", { name: "New note" }).click();
-  await expect(page.locator('[data-testid="node-card"]:has([contenteditable="true"])')).toHaveCount(
-    1,
+  // New cards focus their title; waiting for that focus (and for two frames, so
+  // ProseMirror has painted) keeps the first keystrokes from racing the mount.
+  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
   );
 }
 
@@ -61,7 +67,7 @@ test("creates, edits, and deletes a note", async ({ page }) => {
   await expect(created).toHaveCount(1);
 
   await created.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Delete note" }).click();
+  await page.getByRole("menuitem", { name: "Delete card" }).click();
   await expect(page.getByText("note to delete")).toHaveCount(0);
 });
 

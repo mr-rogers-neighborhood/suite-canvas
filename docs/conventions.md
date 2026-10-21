@@ -11,6 +11,19 @@
 - Schemas are the source of truth for persisted shapes — derive types with `z.infer`, never
   duplicate interfaces.
 
+## Domain language
+
+Use the workspace vocabulary consistently, in code and in copy:
+
+- **workspace** — one `Y.Doc`, one sync room, one IndexedDB entry.
+- **board** — a view inside a workspace; has a name and a tab.
+- **card** — the object (content, connectors, kind). Exists with or without a board.
+- **placement** — where a card sits on one board. "Place" and "remove from board", never "delete".
+- **trash** — soft delete (`deletedAt`). "Delete forever" only when purging.
+
+Avoid "node"/"document"/"note" for these concepts: `node` means a React Flow node, and `note` is a
+card kind.
+
 ## Files & naming
 
 - React components: `PascalCase.tsx`; hooks: `useCamelCase.ts`; plain modules: `camelCase.ts`.

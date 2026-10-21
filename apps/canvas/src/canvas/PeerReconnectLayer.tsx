@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode } from "@suite/graph";
+import type { Card, GraphEdge } from "@suite/graph";
 import {
   getBezierPath,
   getSmoothStepPath,
@@ -10,7 +10,7 @@ import {
 import { useMemo } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type Point, sideOf } from "../components/Connector";
-import { useGraphSnapshot } from "../hooks/useGraphSnapshot";
+import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 
 const OPPOSITE: Record<Position, Position> = {
   [Position.Top]: Position.Bottom,
@@ -46,7 +46,7 @@ function pathFor(
  */
 function ReconnectPreview({
   edge,
-  node,
+  card,
   connectorId,
   movingEnd,
   target,
@@ -54,20 +54,20 @@ function ReconnectPreview({
   color,
 }: {
   edge: GraphEdge;
-  node: GraphNode;
+  card: Card;
   connectorId: string | undefined;
   /** The end following the pointer; the anchored end is the other one. */
   movingEnd: "source" | "target";
   /** Connector the mover has snapped to, if any. */
-  target: { node: GraphNode; connectorId: string } | null;
+  target: { card: Card; connectorId: string } | null;
   pointer: Point;
   color: string;
 }) {
-  const anchorNode = useInternalNode(node.id);
-  const targetNode = useInternalNode(target?.node.id ?? "");
+  const anchorNode = useInternalNode(card.id);
+  const targetNode = useInternalNode(target?.card.id ?? "");
   const anchorMeasured = anchorNode?.measured;
-  const connector = node.connectors.find((candidate) => candidate.id === connectorId);
-  const targetConnector = target?.node.connectors.find(
+  const connector = card.connectors.find((candidate) => candidate.id === connectorId);
+  const targetConnector = target?.card.connectors.find(
     (candidate) => candidate.id === target.connectorId,
   );
 
@@ -140,13 +140,13 @@ function ReconnectPreview({
 /** Renders peers' in-flight link drags in flow space, next to their cursors. */
 export function PeerReconnectLayer() {
   const peers = usePresenceStore((state) => state.peers);
-  const { nodes, edges } = useGraphSnapshot();
-  const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const { cards, edges } = useWorkspaceSnapshot();
+  const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
 
   const resolveTarget = (target: { nodeId: string; connectorId: string } | undefined) => {
     if (!target) return null;
-    const node = nodesById.get(target.nodeId);
-    return node ? { node, connectorId: target.connectorId } : null;
+    const card = cardsById.get(target.nodeId);
+    return card ? { card, connectorId: target.connectorId } : null;
   };
 
   return (
@@ -159,14 +159,14 @@ export function PeerReconnectLayer() {
         if (!edge) return null;
 
         const draggingSource = state.end === "source";
-        const anchorNode = nodesById.get(draggingSource ? edge.target : edge.source);
-        if (!anchorNode) return null;
+        const anchorCard = cardsById.get(draggingSource ? edge.target : edge.source);
+        if (!anchorCard) return null;
 
         return (
           <ReconnectPreview
             key={peer.clientId}
             edge={edge}
-            node={anchorNode}
+            card={anchorCard}
             connectorId={draggingSource ? edge.targetConnector : edge.sourceConnector}
             movingEnd={state.end}
             target={resolveTarget(state.target)}

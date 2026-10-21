@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, LayerAction } from "@suite/graph";
+import type { Card, GraphEdge, LayerAction, Placement } from "@suite/graph";
 import {
   Background,
   type Connection,
@@ -19,7 +19,8 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
-import { useGraphSnapshot } from "../hooks/useGraphSnapshot";
+import { useBoardPeers } from "../hooks/useBoardPeers";
+import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { nodeTypes } from "./NoteNode";
@@ -62,9 +63,10 @@ function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edg
 }
 
 export function CanvasBoard() {
-  const { nodes: graphNodes, edges: graphEdges } = useGraphSnapshot();
-  const graph = useCanvasStore((state) => state.graph);
-  const peers = usePresenceStore((state) => state.peers);
+  const snapshot = useWorkspaceSnapshot();
+  const workspace = useCanvasStore((state) => state.workspace);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  const peers = useBoardPeers(activeBoardId);
   const setPointer = usePresenceStore((state) => state.setPointer);
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
@@ -74,7 +76,7 @@ export function CanvasBoard() {
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
-  const setEditingNodeId = useUiStore((state) => state.setEditingNodeId);
+  const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
@@ -90,6 +92,41 @@ export function CanvasBoard() {
     /** The connector that stays put, so a snap onto it is not mistaken for a target. */
     anchorConnector: string | null;
   } | null>(null);
+
+  // Board-scoped views derived from the snapshot, so a CRDT change anywhere
+  // recomputes exactly once per board.
+  const boardPlacements = useMemo(() => {
+    const map = new Map<string, Placement>();
+    if (!activeBoardId) return map;
+    for (const placement of snapshot.placements) {
+      if (placement.boardId === activeBoardId) map.set(placement.cardId, placement);
+    }
+    return map;
+  }, [snapshot, activeBoardId]);
+
+  const cardsById = useMemo(
+    () => new Map(snapshot.cards.map((card) => [card.id, card])),
+    [snapshot],
+  );
+
+  const boardCards: Card[] = useMemo(() => {
+    if (!activeBoardId) return [];
+    return [...boardPlacements.values()]
+      .sort((a, b) => a.z - b.z || a.createdAt - b.createdAt || a.cardId.localeCompare(b.cardId))
+      .flatMap((placement) => {
+        const card = cardsById.get(placement.cardId);
+        return card && !card.deletedAt ? [card] : [];
+      });
+  }, [boardPlacements, cardsById, activeBoardId]);
+
+  const boardEdges: GraphEdge[] = useMemo(() => {
+    if (!activeBoardId) return [];
+    const placed = new Set(boardCards.map((card) => card.id));
+    return snapshot.edges.filter(
+      (edge) =>
+        edge.boardId === activeBoardId && placed.has(edge.source) && placed.has(edge.target),
+    );
+  }, [snapshot, boardCards, activeBoardId]);
 
   const locallyDraggingId = useRef<string | null>(null);
   const lastPointerSent = useRef(0);
@@ -157,23 +194,27 @@ export function CanvasBoard() {
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
-      return graphNodes.map((graphNode: GraphNode) => {
-        const existing = byId.get(graphNode.id);
+      return boardCards.flatMap((card: Card) => {
+        const placement = boardPlacements.get(card.id);
+        if (!placement) return [];
+        const existing = byId.get(card.id);
         const position =
-          locallyDraggingId.current === graphNode.id && existing
+          locallyDraggingId.current === card.id && existing
             ? existing.position
-            : (smoothPositions.current.get(graphNode.id) ?? graphNode.position);
-        return {
-          id: graphNode.id,
-          type: "note",
-          position: { x: position.x, y: position.y },
-          selected: selectedKey.split(",").includes(graphNode.id),
-          zIndex: graphNode.z,
-          data: { node: graphNode },
-        } satisfies Node;
+            : (smoothPositions.current.get(card.id) ?? { x: placement.x, y: placement.y });
+        return [
+          {
+            id: card.id,
+            type: "note",
+            position: { x: position.x, y: position.y },
+            selected: selectedKey.split(",").includes(card.id),
+            zIndex: placement.z,
+            data: { card, placement },
+          } satisfies Node,
+        ];
       });
     });
-  }, [graphNodes, selectedKey, setNodes]);
+  }, [boardCards, boardPlacements, selectedKey, setNodes]);
 
   useEffect(() => {
     const peerByEdge = new Map<string, string>();
@@ -191,12 +232,12 @@ export function CanvasBoard() {
       if (peer.reconnect) reconnecting.add(peer.reconnect.edgeId);
     }
 
-    const flowEdges: Edge[] = graphEdges.map((edge) => {
+    const flowEdges: Edge[] = boardEdges.map((edge) => {
       const flowEdge = toFlowEdge(edge, selectedEdges.has(edge.id), peerByEdge.get(edge.id));
       return reconnecting.has(edge.id) ? { ...flowEdge, hidden: true } : flowEdge;
     });
     setEdges(flowEdges);
-  }, [graphEdges, peers, selectedEdgeIds, setEdges]);
+  }, [boardEdges, peers, selectedEdgeIds, setEdges]);
 
   useOnSelectionChange({
     onChange: ({ nodes: selectedNodes, edges: selectedEdges }) => {
@@ -225,13 +266,24 @@ export function CanvasBoard() {
     );
   }, [selectedConnector, selectedEdgeIds, selectedNodeIds, setPresenceSelection]);
 
-  const deleteSelected = useCallback(() => {
+  const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
+    if (!activeBoardId) return;
     for (const id of state.selectedNodeIds) {
-      graph.removeNode(id);
+      workspace.unplaceCard(activeBoardId, id);
     }
     state.setSelectedNodeIds([]);
-  }, [graph]);
+    state.stopEditing();
+  }, [workspace, activeBoardId]);
+
+  const trashSelected = useCallback(() => {
+    const state = useUiStore.getState();
+    for (const id of state.selectedNodeIds) {
+      workspace.trashCard(id);
+    }
+    state.setSelectedNodeIds([]);
+    state.stopEditing();
+  }, [workspace]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -241,7 +293,7 @@ export function CanvasBoard() {
       const state = useUiStore.getState();
 
       if (event.key === "Escape" && state.editingNodeId) {
-        state.setEditingNodeId(null);
+        state.stopEditing();
         (document.activeElement as HTMLElement | null)?.blur();
         return;
       }
@@ -249,7 +301,8 @@ export function CanvasBoard() {
       if (event.key === "Delete" || event.key === "Backspace") {
         if (isTyping || state.selectedNodeIds.length === 0) return;
         event.preventDefault();
-        deleteSelected();
+        if (event.shiftKey) trashSelected();
+        else unplaceSelected();
         return;
       }
 
@@ -257,37 +310,40 @@ export function CanvasBoard() {
         const first = state.selectedNodeIds[0];
         if (first) {
           event.preventDefault();
-          state.setEditingNodeId(first);
+          state.startEditing(first, "body");
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [deleteSelected]);
+  }, [trashSelected, unplaceSelected]);
 
   // Selection elevates a card in React Flow, which would hide the new order, so
   // drop the selection once an explicit layer change lands.
   const changeLayer = useCallback(
     (nodeId: string, action: LayerAction) => {
-      graph.moveNodeLayer(nodeId, action);
+      if (!activeBoardId) return;
+      workspace.moveLayer(activeBoardId, nodeId, action);
       setSelectedNodeIds([]);
       setPresenceSelection(null);
     },
-    [graph, setSelectedNodeIds, setPresenceSelection],
+    [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
-      graph.addEdge({
+      if (!activeBoardId) return;
+      workspace.addEdge({
+        boardId: activeBoardId,
         source: connection.source,
         target: connection.target,
         ...(connection.sourceHandle ? { sourceConnector: connection.sourceHandle } : {}),
         ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
       });
     },
-    [graph],
+    [workspace, activeBoardId],
   );
 
   // React Flow reports nothing while a reconnect drag moves, so follow the
@@ -381,18 +437,19 @@ export function CanvasBoard() {
           : "source";
       const nodeId = end === "source" ? connection.source : connection.target;
       const connectorId = end === "source" ? connection.sourceHandle : connection.targetHandle;
-      graph.reconnectEdge(oldEdge.id, end, nodeId, connectorId ?? undefined);
+      workspace.reconnectEdge(oldEdge.id, end, nodeId, connectorId ?? undefined);
     },
-    [graph],
+    [workspace],
   );
 
   const createNoteAt = useCallback(
     (position: { x: number; y: number }) => {
-      const node = graph.createNote({ id: crypto.randomUUID(), position });
-      setSelectedNodeIds([node.id]);
-      setEditingNodeId(node.id);
+      if (!activeBoardId) return;
+      const card = workspace.createCard({ boardId: activeBoardId, position });
+      setSelectedNodeIds([card.id]);
+      startEditing(card.id, "title");
     },
-    [graph, setSelectedNodeIds, setEditingNodeId],
+    [workspace, activeBoardId, setSelectedNodeIds, startEditing],
   );
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
@@ -411,41 +468,41 @@ export function CanvasBoard() {
     const edgeId = contextMenu.edgeId;
 
     if (contextMenu.kind === "edge" && edgeId) {
-      const edge = graph.getEdge(edgeId);
+      const edge = workspace.getEdge(edgeId);
       return [
         {
           label: "Reverse direction",
-          onSelect: () => graph.reverseEdge(edgeId),
+          onSelect: () => workspace.reverseEdge(edgeId),
         },
         {
           label: edge?.bidirectional ? "Make one-way" : "Make bidirectional",
-          onSelect: () => graph.setEdgeBidirectional(edgeId, !edge?.bidirectional),
+          onSelect: () => workspace.setEdgeBidirectional(edgeId, !edge?.bidirectional),
         },
         {
           label: "Path",
           items: [
             {
               label: edge?.path === "bezier" ? "Curved ✓" : "Curved",
-              onSelect: () => graph.setEdgePath(edgeId, "bezier"),
+              onSelect: () => workspace.setEdgePath(edgeId, "bezier"),
             },
             {
               label: edge?.path === "straight" ? "Straight ✓" : "Straight",
-              onSelect: () => graph.setEdgePath(edgeId, "straight"),
+              onSelect: () => workspace.setEdgePath(edgeId, "straight"),
             },
             {
               label: edge?.path === "step" ? "Step ✓" : "Step",
-              onSelect: () => graph.setEdgePath(edgeId, "step"),
+              onSelect: () => workspace.setEdgePath(edgeId, "step"),
             },
             {
               label: edge?.path === "smoothstep" ? "Smooth step ✓" : "Smooth step",
-              onSelect: () => graph.setEdgePath(edgeId, "smoothstep"),
+              onSelect: () => workspace.setEdgePath(edgeId, "smoothstep"),
             },
           ],
         },
         {
           label: "Delete link",
           danger: true,
-          onSelect: () => graph.removeEdge(edgeId),
+          onSelect: () => workspace.removeEdge(edgeId),
         },
       ];
     }
@@ -465,7 +522,7 @@ export function CanvasBoard() {
           danger: true,
           onSelect: () => {
             if (nodeId && contextMenu.connectorId) {
-              graph.removeConnector(nodeId, contextMenu.connectorId);
+              workspace.removeConnector(nodeId, contextMenu.connectorId);
               setSelectedConnector(null);
             }
           },
@@ -477,7 +534,7 @@ export function CanvasBoard() {
       {
         label: "Add connector",
         onSelect: () => {
-          if (nodeId) graph.addConnector(nodeId);
+          if (nodeId) workspace.addConnector(nodeId);
         },
       },
       {
@@ -502,17 +559,36 @@ export function CanvasBoard() {
         ],
       },
       {
-        label: "Delete note",
+        label: "Remove from board",
+        onSelect: () => {
+          if (nodeId && activeBoardId) {
+            workspace.unplaceCard(activeBoardId, nodeId);
+            setSelectedNodeIds([]);
+            setSelectedConnector(null);
+          }
+        },
+      },
+      {
+        label: "Delete card",
         danger: true,
         onSelect: () => {
           if (nodeId) {
-            graph.removeNode(nodeId);
+            workspace.trashCard(nodeId);
             setSelectedNodeIds([]);
+            setSelectedConnector(null);
           }
         },
       },
     ];
-  }, [contextMenu, graph, createNoteAt, changeLayer, setSelectedNodeIds, setSelectedConnector]);
+  }, [
+    contextMenu,
+    workspace,
+    activeBoardId,
+    createNoteAt,
+    changeLayer,
+    setSelectedNodeIds,
+    setSelectedConnector,
+  ]);
 
   return (
     <div
@@ -551,11 +627,12 @@ export function CanvasBoard() {
         onNodeDragStop={(_, node) => {
           locallyDraggingId.current = null;
           setDragging(null);
-          graph.updateNodePosition(node.id, node.position);
+          if (activeBoardId)
+            workspace.updatePlacementPosition(activeBoardId, node.id, node.position);
         }}
         onPaneClick={() => setSelectedConnector(null)}
         onNodeClick={() => setSelectedConnector(null)}
-        onNodeDoubleClick={(_, node) => setEditingNodeId(node.id)}
+        onNodeDoubleClick={(_, node) => startEditing(node.id, "body")}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "node", nodeId: node.id });

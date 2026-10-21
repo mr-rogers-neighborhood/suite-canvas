@@ -11,6 +11,8 @@ export interface PointerState {
 
 export interface FocusState {
   nodeId: string;
+  /** Which editor on the card the caret is in. */
+  field?: "title" | "body";
 }
 
 /** The node a peer is dragging, plus its live flow position. */
@@ -52,6 +54,7 @@ export interface ReconnectState {
 }
 
 export const AWARENESS_FIELDS = {
+  board: "board",
   user: "user",
   pointer: "pointer",
   focus: "focus",
@@ -63,6 +66,8 @@ export const AWARENESS_FIELDS = {
 
 export interface PeerPresence {
   clientId: number;
+  /** Board the peer is looking at; presence from other boards is ignored. */
+  board: string | null;
   user: PresenceUser;
   pointer: PointerState | null;
   focus: FocusState | null;

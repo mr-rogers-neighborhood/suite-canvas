@@ -1,4 +1,4 @@
-import type { GraphNode } from "@suite/graph";
+import type { Card } from "@suite/graph";
 import { render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
@@ -8,13 +8,11 @@ import { NodeCard } from "./NodeCard";
 const doc = new Y.Doc();
 const fragment = doc.getXmlFragment("test");
 
-const node: GraphNode = {
+const card: Card = {
   id: "n1",
   kind: "note",
-  position: { x: 0, y: 0 },
   createdAt: 0,
   updatedAt: 0,
-  z: 0,
   connectors: [
     { id: "c-top", x: 0.5, y: 0 },
     { id: "c-right", x: 1, y: 0.5 },
@@ -23,12 +21,19 @@ const node: GraphNode = {
   ],
   data: {},
 };
+const titleFragment = doc.getXmlFragment("test-title");
 
 describe("NodeCard", () => {
   it("renders a read-only note card", () => {
     render(
       <ReactFlowProvider>
-        <NodeCard node={node} fragment={fragment} awareness={null} />
+        <NodeCard
+          card={card}
+          fragment={fragment}
+          titleFragment={titleFragment}
+          boardId="board-1"
+          awareness={null}
+        />
       </ReactFlowProvider>,
     );
     expect(screen.getByTestId("node-card")).toBeInTheDocument();
@@ -38,8 +43,10 @@ describe("NodeCard", () => {
     render(
       <ReactFlowProvider>
         <NodeCard
-          node={node}
+          card={card}
           fragment={fragment}
+          titleFragment={titleFragment}
+          boardId="board-1"
           awareness={null}
           presence={[{ name: "Nova", color: "#f97316" }]}
         />

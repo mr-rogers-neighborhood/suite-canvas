@@ -20,6 +20,7 @@ interface PresenceState {
   awareness: Awareness | null;
   peers: Record<number, PeerPresence>;
   bind: (provider: HocuspocusProvider) => void;
+  setBoard: (boardId: string | null) => void;
   setPointer: (pointer: PointerState | null) => void;
   setFocus: (focus: FocusState | null) => void;
   setDragging: (dragging: DraggingState | null) => void;
@@ -39,6 +40,7 @@ function toPresenceUser(state: Record<string, unknown>): PresenceUser {
 function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerPresence {
   return {
     clientId,
+    board: (state[AWARENESS_FIELDS.board] as string | undefined) ?? null,
     user: toPresenceUser(state),
     pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
@@ -80,6 +82,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       sync();
     },
 
+    setBoard: (boardId) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.board, boardId);
+    },
+
     setPointer: (pointer) => {
       get().awareness?.setLocalStateField(AWARENESS_FIELDS.pointer, pointer);
     },
@@ -105,3 +111,5 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     },
   };
 });
+
+export type { PeerPresence };

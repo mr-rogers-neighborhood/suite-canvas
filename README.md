@@ -1,7 +1,8 @@
 # Suite
 
-A local-first, collaborative canvas. Every node is a rich-text card; edits sync live and the
-canvas keeps working offline.
+A local-first, collaborative canvas for connected thinking. A **workspace** owns its **cards** and
+the **boards** they appear on: cards are objects first (they can sit in the Inbox, or on several
+boards at once), and boards are views. Edits sync live and the canvas keeps working offline.
 
 ![Suite](docs/assets/preview-dark.png)
 
@@ -12,8 +13,13 @@ pnpm install
 pnpm dev          # canvas app (http://localhost:5173) + collab server (:1234)
 ```
 
-Open two browser windows at the same URL — including `?doc=<any-id>` to work in a separate
-document — and edits, carets, and presence appear in both.
+Open two browser windows at the same URL — including `?workspace=<any-id>` to work in a separate
+workspace (`?doc=` still works as an alias) — and edits, carets, titles, and presence appear in
+both. Board tabs in the app bar switch boards inside the same workspace.
+
+The dock at the bottom of the canvas opens the **library**: cards taken off a board land in the
+**Inbox**, the **Cards** tab lists everything in the workspace, and the **Trash** tab restores or
+purges what you deleted. Clicking a card type creates a card on the current board.
 
 ## Commands
 
@@ -41,14 +47,19 @@ docs/                Architecture, conventions, ADRs
 
 ## How it works
 
-A single `Y.Doc` per document is the source of truth:
+A single `Y.Doc` per workspace is the source of truth:
 
-- `nodes` / `edges` — typed graph entities (`Y.Map`)
-- `content` — per-node rich text (`Y.Map<Y.XmlFragment>`), edited with Tiptap
+- `boards` — named boards in this workspace
+- `cards` — workspace-level cards (kind, connectors, `deletedAt`); content lives independently of
+  any board
+- `placements` — where a card sits on a board (`x`, `y`, `z`, `createdAt`); one per card and board
+- `edges` — links drawn on a board, dormant while an endpoint is off it
+- `content` / `titles` — per-card body and title rich text (`Y.Map<Y.XmlFragment>`), edited with
+  Tiptap
 
-`y-indexeddb` persists locally; Hocuspocus syncs when online. Presence (`user`, `pointer`,
-`focus`, `dragging`, plus editor carets) travels over Yjs awareness. All graph writes go through
-`GraphDocument`, which validates with Zod. See [docs/architecture.md](docs/architecture.md).
+`y-indexeddb` persists locally; Hocuspocus syncs when online. Presence (`user`, `pointer`, `board`,
+`focus`, `dragging`, plus editor carets) travels over Yjs awareness. All writes go through
+`WorkspaceDocument`, which validates with Zod. See [docs/architecture.md](docs/architecture.md).
 
 ## Publishing
 

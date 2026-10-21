@@ -1,32 +1,41 @@
 import { HocuspocusProvider } from "@hocuspocus/provider";
-import { GraphDocument } from "@suite/graph";
+import { WorkspaceDocument } from "@suite/graph";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import { create } from "zustand";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
-function resolveDocId(): string {
-  if (typeof window !== "undefined") {
-    const requested = new URLSearchParams(window.location.search).get("doc");
-    if (requested) return requested;
-  }
-  return "default-graph";
+function searchParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
 }
 
-export const DOC_ID = resolveDocId();
+/**
+ * A workspace owns its boards and cards. `?doc=` is accepted as a legacy alias so
+ * older links and tests keep resolving to the same document.
+ */
+export function resolveWorkspaceId(): string {
+  return searchParam("workspace") ?? searchParam("doc") ?? "default-workspace";
+}
+
+export function resolveBoardId(): string | null {
+  return searchParam("board");
+}
+
+export const WORKSPACE_ID = resolveWorkspaceId();
 
 const doc = new Y.Doc();
-const graph = new GraphDocument(doc);
+const workspace = new WorkspaceDocument(doc);
 
 // Offline-first: persist the document locally in IndexedDB so the app works
 // with no network and rehydrates instantly on reload.
 if (typeof indexedDB !== "undefined") {
-  new IndexeddbPersistence(DOC_ID, doc);
+  new IndexeddbPersistence(WORKSPACE_ID, doc);
 }
 
 interface CanvasState {
-  graph: GraphDocument;
+  workspace: WorkspaceDocument;
   provider: HocuspocusProvider | null;
   status: ConnectionStatus;
   connect: () => void;
@@ -41,7 +50,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
       ? null
       : new HocuspocusProvider({
           url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
-          name: DOC_ID,
+          name: WORKSPACE_ID,
           document: doc,
         });
 
@@ -50,7 +59,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
   });
 
   return {
-    graph,
+    workspace,
     provider,
     status: provider ? "disconnected" : "connecting",
     connect: () => {

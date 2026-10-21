@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { GraphNode } from "@suite/graph";
+import type { Card } from "@suite/graph";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -8,13 +8,11 @@ import { NodeCard } from "./NodeCard";
 const doc = new Y.Doc();
 const fragment = doc.getXmlFragment("story");
 
-const node: GraphNode = {
+const card: Card = {
   id: "n1",
   kind: "note",
-  position: { x: 0, y: 0 },
   createdAt: 0,
   updatedAt: 0,
-  z: 0,
   connectors: [
     { id: "c-top", x: 0.5, y: 0 },
     { id: "c-right", x: 1, y: 0.5 },
@@ -23,6 +21,7 @@ const node: GraphNode = {
   ],
   data: {},
 };
+const titleFragment = doc.getXmlFragment("story-title");
 
 const meta = {
   title: "Components/NodeCard",
@@ -41,23 +40,32 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const ReadOnly: Story = {
-  args: { node, fragment, awareness: null },
+const base = {
+  card,
+  fragment,
+  titleFragment,
+  boardId: "board-1",
+  awareness: null,
 };
 
-export const Selected: Story = {
-  args: { node, fragment, awareness: null, selected: true },
-};
+const shared = [
+  { boardId: "board-1", boardName: "Research", isHome: true, isCurrent: false },
+  { boardId: "board-2", boardName: "Drafts", isHome: false, isCurrent: true },
+];
 
-export const Editing: Story = {
-  args: { node, fragment, awareness: null, editing: true },
-};
+export const ReadOnly: Story = { args: base };
+
+export const Selected: Story = { args: { ...base, selected: true } };
+
+export const EditingTitle: Story = { args: { ...base, editing: "title" } };
+
+export const EditingBody: Story = { args: { ...base, editing: "body" } };
+
+export const SharedCard: Story = { args: { ...base, references: shared } };
 
 export const WithPresence: Story = {
   args: {
-    node,
-    fragment,
-    awareness: null,
+    ...base,
     presence: [
       { name: "Nova", color: "#f97316" },
       { name: "Atlas", color: "#7c3aed" },
@@ -65,6 +73,4 @@ export const WithPresence: Story = {
   },
 };
 
-export const WithAwareness: Story = {
-  args: { node, fragment, awareness: new Awareness(doc) },
-};
+export const WithAwareness: Story = { args: { ...base, awareness: new Awareness(doc) } };

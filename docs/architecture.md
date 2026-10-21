@@ -120,6 +120,19 @@ Deterministic ids make concurrent migrations converge; both are safe to run twic
 version on a document with nothing to migrate, because that may simply mean this client has not
 hydrated yet.
 
+## Rendering
+
+A CRDT change should repaint the card it touched, not the board.
+
+- **Record identity is a cache.** `WorkspaceDocument` materialises a `Card`/`Placement`/`GraphEdge`
+  once and hands out the same object until an observer sees one of that record's keys change
+  (`invalidateOn`). A peer editing card A leaves card B's object identical.
+- **The snapshot reuses collections.** `useWorkspaceSnapshot` keeps the previous `cards`,
+  `placements`, `edges` and `boards` array whenever every element is still the same object, so the
+  memoised board views re-run only for the collection that changed.
+- **`?perf=1` shows render rates** from `dev/perf.ts` (dev builds only): counts for the shell,
+  canvas, and each card, so a costly repaint is visible instead of guessed at.
+
 ## Connectors
 
 Every note carries its own connectors, stored on the node (`connectors: { id, x, y }[]`, where

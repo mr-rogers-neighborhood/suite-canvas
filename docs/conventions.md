@@ -78,8 +78,10 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   `updatePlacementSize`, `moveConnector`, `reconnectEdge` over `setCard`/`setEdge`. A whole-record
   write makes concurrent edits to other fields of that record resolve last-write-wins.
 - Reads must never create shared state. Use `peekContent`/`peekTitle` for fragments; only creation
-  paths insert them. Materialised records are new objects on every read, so compare by id/value,
-  never by identity.
+  paths insert them.
+- Record identity is stable until that record changes: `WorkspaceDocument` caches the materialised
+  object and drops it when any of its fields change, and `useWorkspaceSnapshot` reuses unchanged
+  collections. Rely on identity to skip re-renders; never rely on it flipping.
 
 ## Testing
 

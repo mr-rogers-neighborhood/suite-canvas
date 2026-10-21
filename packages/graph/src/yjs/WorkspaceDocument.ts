@@ -267,6 +267,13 @@ export class WorkspaceDocument {
   private readonly titles: Y.Map<Y.XmlFragment>;
   /** Local, never-synced fragments used until the shared one arrives. */
   private readonly placeholders = new Map<string, Y.XmlFragment>();
+  /**
+   * Materialised records are cached until their own fields change, so a peer's
+   * edit leaves every other card's object identity intact and React can skip it.
+   */
+  private readonly cardCache = new Map<string, Card>();
+  private readonly placementCache = new Map<string, Placement>();
+  private readonly edgeCache = new Map<string, GraphEdge>();
 
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
@@ -279,6 +286,51 @@ export class WorkspaceDocument {
 
     migrateLegacyDocument(doc);
     migrateRecordsToFieldMaps(doc);
+
+    this.invalidateOn(this.cards, this.cardCache);
+    this.invalidateOn(this.placements, this.placementCache);
+    this.invalidateOn(this.edges, this.edgeCache);
+  }
+
+  /** Drops cached records as soon as any of their keys change, local or remote. */
+  private invalidateOn<T>(map: Y.Map<Y.Map<unknown>>, cache: Map<string, T>): void {
+    map.observeDeep((events) => {
+      for (const event of events) {
+        const key = event.path[0];
+        if (key === undefined) cache.clear();
+        else cache.delete(String(key));
+      }
+    });
+  }
+
+  private cachedCard(id: string): Card | undefined {
+    const cached = this.cardCache.get(id);
+    if (cached) return cached;
+    const value = this.cards.get(id);
+    if (!value) return undefined;
+    const card = this.materializeCard(id, value);
+    this.cardCache.set(id, card);
+    return card;
+  }
+
+  private cachedPlacement(key: string): Placement | undefined {
+    const cached = this.placementCache.get(key);
+    if (cached) return cached;
+    const value = this.placements.get(key);
+    if (!value) return undefined;
+    const placement = this.materializePlacement(key, value);
+    this.placementCache.set(key, placement);
+    return placement;
+  }
+
+  private cachedEdge(id: string): GraphEdge | undefined {
+    const cached = this.edgeCache.get(id);
+    if (cached) return cached;
+    const value = this.edges.get(id);
+    if (!value) return undefined;
+    const edge = this.materializeEdge(id, value);
+    this.edgeCache.set(id, edge);
+    return edge;
   }
 
   /** Seeding is once per workspace, not once per board. */
@@ -358,7 +410,9 @@ export class WorkspaceDocument {
   // ----------------------------------------------------------------- cards
 
   listCards(): Card[] {
-    return Array.from(this.cards.entries(), ([id, value]) => this.materializeCard(id, value));
+    return Array.from(this.cards.keys(), (id) => this.cachedCard(id)).filter(
+      (card): card is Card => card !== undefined,
+    );
   }
 
   private materializeCard(id: string, value: unknown): Card {
@@ -367,8 +421,7 @@ export class WorkspaceDocument {
   }
 
   getCard(id: string): Card | undefined {
-    const value = this.cards.get(id);
-    return value ? this.materializeCard(id, value) : undefined;
+    return this.cachedCard(id);
   }
 
   /** Full write. Prefer the field-level operations below for concurrent edits. */
@@ -553,8 +606,8 @@ export class WorkspaceDocument {
   // ------------------------------------------------------------ placements
 
   listPlacements(): Placement[] {
-    return Array.from(this.placements.entries(), ([key, value]) =>
-      this.materializePlacement(key, value),
+    return Array.from(this.placements.keys(), (key) => this.cachedPlacement(key)).filter(
+      (placement): placement is Placement => placement !== undefined,
     );
   }
 
@@ -569,9 +622,7 @@ export class WorkspaceDocument {
   }
 
   getPlacement(boardId: string, cardId: string): Placement | undefined {
-    const key = placementKey(boardId, cardId);
-    const value = this.placements.get(key);
-    return value ? this.materializePlacement(key, value) : undefined;
+    return this.cachedPlacement(placementKey(boardId, cardId));
   }
 
   /** The board a card calls home: its oldest placement. */
@@ -724,7 +775,9 @@ export class WorkspaceDocument {
   // ----------------------------------------------------------------- edges
 
   listEdges(): GraphEdge[] {
-    return Array.from(this.edges.entries(), ([id, value]) => this.materializeEdge(id, value));
+    return Array.from(this.edges.keys(), (id) => this.cachedEdge(id)).filter(
+      (edge): edge is GraphEdge => edge !== undefined,
+    );
   }
 
   private materializeEdge(id: string, value: unknown): GraphEdge {
@@ -770,8 +823,7 @@ export class WorkspaceDocument {
   }
 
   getEdge(id: string): GraphEdge | undefined {
-    const value = this.edges.get(id);
-    return value ? this.materializeEdge(id, value) : undefined;
+    return this.cachedEdge(id);
   }
 
   setEdge(edge: GraphEdge): void {

@@ -698,6 +698,43 @@ describe("WorkspaceDocument concurrency", () => {
     }
   });
 
+  it("keeps record identity until that record changes", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard();
+    const a = workspace.createCard({ boardId: board.id });
+    const b = workspace.createCard({ boardId: board.id });
+    const [connector] = a.connectors;
+    if (!connector) throw new Error("expected a connector");
+
+    const cardA = workspace.getCard(a.id);
+    const cardB = workspace.getCard(b.id);
+    const placementB = workspace.getPlacement(board.id, b.id);
+    expect(workspace.getCard(a.id)).toBe(cardA);
+    expect(workspace.getPlacement(board.id, b.id)).toBe(placementB);
+
+    workspace.moveConnector(a.id, connector.id, { x: 0.1, y: 0.1 });
+
+    expect(workspace.getCard(a.id)).not.toBe(cardA);
+    // Untouched records keep their identity, so React can skip them.
+    expect(workspace.getCard(b.id)).toBe(cardB);
+    expect(workspace.getPlacement(board.id, b.id)).toBe(placementB);
+  });
+
+  it("drops cached identity for remote edits too", () => {
+    const { docA, docB, a, b, card } = pair();
+    const [connector] = card.connectors;
+    if (!connector) throw new Error("expected a connector");
+
+    const remote = b.getCard(card.id);
+    expect(b.getCard(card.id)).toBe(remote);
+
+    a.moveConnector(card.id, connector.id, { x: 0.3, y: 0.7 });
+    sync(docA, docB);
+
+    expect(b.getCard(card.id)).not.toBe(remote);
+    expect(b.getCard(card.id)?.connectors[0]).toMatchObject({ x: 0.3, y: 0.7 });
+  });
+
   it("keeps a reorder landed while the peer reorders another card", () => {
     const { docA, docB, a, b } = pair();
     const cards = ["c1", "c2", "c3", "c4"].map((id) => a.createCard({ id, boardId: "board-1" }).id);

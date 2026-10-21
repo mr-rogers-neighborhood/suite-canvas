@@ -8,6 +8,7 @@ import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
 import { cardType } from "../cards/cardTypes";
 import type { PresenceUser } from "../collab/presence";
+import { countRender } from "../dev/perf";
 import { CollaborationCursor } from "../editor/CollaborationCursor";
 import { Connector } from "./Connector";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
@@ -105,6 +106,8 @@ export function NodeCard({
   onRemoveFromBoard,
   onTrash,
 }: NodeCardProps) {
+  countRender("card");
+
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
   // sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);

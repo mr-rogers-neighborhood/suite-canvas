@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type CardReference, type ConnectorPeerState, NodeCard } from "../components/NodeCard";
+import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
@@ -11,6 +12,8 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
 export function NoteNode({ id, data, selected }: NodeProps) {
+  countRender("note");
+
   const { card, placement } = data as { card: Card; placement: Placement };
   const workspace = useCanvasStore((state) => state.workspace);
   const snapshot = useWorkspaceSnapshot();

@@ -19,6 +19,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -63,6 +64,8 @@ function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edg
 }
 
 export function CanvasBoard() {
+  countRender("canvas");
+
   const snapshot = useWorkspaceSnapshot();
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);

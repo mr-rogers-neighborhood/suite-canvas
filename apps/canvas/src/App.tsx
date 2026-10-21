@@ -8,6 +8,8 @@ import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { TitleBar } from "./components/TitleBar";
+import { PerfOverlay } from "./dev/PerfOverlay";
+import { countRender } from "./dev/perf";
 import { useWorkspaceSnapshot } from "./hooks/useWorkspaceSnapshot";
 import { resolveBoardId, useCanvasStore, WORKSPACE_ID } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
@@ -35,6 +37,8 @@ function WorkspaceShell() {
   const ready = useCanvasStore((state) => state.ready);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
+
+  countRender("shell");
 
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
@@ -225,6 +229,8 @@ function WorkspaceShell() {
         onGoToBoard={setActiveBoardId}
         onDropAt={(cardId, point) => placeCard(cardId, point)}
       />
+
+      <PerfOverlay />
 
       {boardToDelete ? (
         <Dialog

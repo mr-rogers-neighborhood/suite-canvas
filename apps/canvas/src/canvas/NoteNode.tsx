@@ -30,6 +30,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
+  const editingSurface = useUiStore((state) => state.editingSurface);
   const startEditing = useUiStore((state) => state.startEditing);
   const stopEditing = useUiStore((state) => state.stopEditing);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
@@ -138,13 +139,14 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [workspace, placement.boardId, id, setResizing],
   );
 
+  const panelOwnsCard = editingNodeId === id && editingSurface === "panel";
   const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
   const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
 
   return (
     <div>
       <NodeResizer
-        isVisible={Boolean(selected) && editingNodeId !== id}
+        isVisible={Boolean(selected) && !(editingNodeId === id && editingSurface === "canvas")}
         minWidth={160}
         minHeight={80}
         onResize={handleResize}
@@ -161,20 +163,22 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         cardDoc={workspace.doc}
         contentId={contentId}
         titleId={titleId}
-        cursorStore={cursorStore}
+        // The panel is the only surface publishing carets for this card while it
+        // owns editing; a read-only canvas twin must not clear that cursor.
+        cursorStore={panelOwnsCard ? null : cursorStore}
         localUser={localUser}
         boardId={placement.boardId}
         width={width}
         height={height}
         selected={selected}
-        editing={editingNodeId === id ? editingField : null}
+        editing={editingNodeId === id && editingSurface === "canvas" ? editingField : null}
         presence={presence}
         draggingPeers={draggingPeers}
         selectingPeers={selectingPeers}
         resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
-        onStartEditing={(field) => startEditing(id, field)}
+        onStartEditing={(field) => startEditing(id, field, "canvas")}
         onEditEnd={stopEditing}
         onRemoveFromBoard={() => workspace.unplaceCard(placement.boardId, id)}
         onOpenInfo={() => openInspector(id)}

@@ -85,6 +85,25 @@ describe("NodeCard", () => {
     expect(onStartEditing).toHaveBeenCalledWith("body");
   });
 
+  it("ignores shift, ctrl and meta clicks so multi-select owns them", () => {
+    const onOpenInfo = vi.fn();
+    renderCard({ onOpenInfo });
+
+    const cardElement = screen.getByTestId("node-card");
+    fireEvent.click(cardElement, { shiftKey: true });
+    fireEvent.click(cardElement, { ctrlKey: true });
+    fireEvent.click(cardElement, { metaKey: true });
+
+    expect(onOpenInfo).not.toHaveBeenCalled();
+  });
+
+  it("renders the body read-only when no surface owns it", () => {
+    const { container } = renderCard();
+    const body = container.querySelector(".node-card-editor");
+
+    expect(body).toHaveAttribute("contenteditable", "false");
+  });
+
   it("hides frontmatter until expanded", () => {
     const onToggleMeta = vi.fn();
     const withMeta = {

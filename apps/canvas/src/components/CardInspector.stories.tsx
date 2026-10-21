@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType, Tag } from "@suite/graph";
+import { LoroDoc } from "loro-crdt";
 import { CardInspector } from "./CardInspector";
+
+const doc = new LoroDoc();
+const contentId = doc.getMap("content").ensureMergeableMap("c1").id;
+const titleId = doc.getMap("titles").ensureMergeableMap("c1").id;
 
 const type: CardType = {
   id: "project",
@@ -57,12 +62,39 @@ const meta = {
     types: [note, type],
     tags,
     fields: type.fields.map((field) => ({ typeId: "project", field })),
-    references: [
-      { boardId: "b1", boardName: "Research", isHome: true, isCurrent: true },
-      { boardId: "b2", boardName: "Drafts", isHome: false, isCurrent: false },
-    ],
+    where: {
+      unplaced: false,
+      entries: [
+        {
+          boardId: "b1",
+          boardName: "Research",
+          isHome: true,
+          isCurrent: true,
+          sectionPath: [
+            { id: "s1", name: "Timelines" },
+            { id: "s2", name: "Drafts", color: "var(--section-blue)" },
+          ],
+        },
+        {
+          boardId: "b2",
+          boardName: "Drafts",
+          isHome: false,
+          isCurrent: false,
+          sectionPath: [],
+        },
+      ],
+    },
+    editing: null,
+    cardDoc: doc,
+    contentId,
+    titleId,
+    cursorStore: null,
+    localUser: null,
+    peers: [],
     onClose: () => {},
     onEdit: () => {},
+    onStartEditing: () => {},
+    onEditEnd: () => {},
     onSetType: () => {},
     onAddTag: () => {},
     onRemoveTag: () => {},
@@ -70,7 +102,8 @@ const meta = {
     onSetProperty: () => {},
     onClearProperty: () => {},
     onManageTypes: () => {},
-    onGoToBoard: () => {},
+    onFocusCard: () => {},
+    onFocusSection: () => {},
     onRemoveFromBoard: () => {},
   },
   tags: ["autodocs"],
@@ -86,4 +119,12 @@ export const NoFields: Story = {
     card: { ...card, typeIds: ["note"], primaryTypeId: "note", properties: {} },
     fields: [],
   },
+};
+
+export const InTheInbox: Story = {
+  args: { where: { unplaced: true, entries: [] } },
+};
+
+export const EditingBody: Story = {
+  args: { editing: "body" },
 };

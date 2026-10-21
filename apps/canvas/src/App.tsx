@@ -1,5 +1,6 @@
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
@@ -219,6 +220,7 @@ function WorkspaceShell() {
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
+        <BoardOutlineHost />
         <CardInspectorHost />
       </main>
 

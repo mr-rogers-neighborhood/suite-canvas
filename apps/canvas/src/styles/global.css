@@ -635,6 +635,39 @@ body {
   }
 }
 
+/* Shared card surface: the inspector drawer and an expanded library row. */
+.card-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-panel-title {
+  position: relative;
+}
+
+.card-panel .card-title-editor p {
+  margin: 0;
+}
+
+.card-panel-body {
+  position: relative;
+  border-width: 1px;
+  transition: box-shadow 120ms ease;
+}
+
+/* Caret labels sit above the first line; let them escape the body box. */
+.card-panel-body:has(.ProseMirror-loro-cursor) {
+  overflow: visible;
+}
+
+.card-peer-tag {
+  position: absolute;
+  top: -6px;
+  right: 6px;
+  z-index: 6;
+  pointer-events: none;
+}
+
 .card-meta-toggle {
   font-variant-numeric: tabular-nums;
 }

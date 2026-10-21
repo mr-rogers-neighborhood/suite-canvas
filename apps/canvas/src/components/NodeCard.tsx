@@ -1,14 +1,11 @@
 import type { Card, CardType, Connector as ConnectorModel } from "@suite/graph";
-import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
-import { BubbleMenu } from "@tiptap/react/menus";
-import StarterKit from "@tiptap/starter-kit";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
-import { LoroCollaboration } from "../editor/LoroCollaboration";
+import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import { Connector } from "./Connector";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PeerNameTag } from "./PeerNameTag";
@@ -69,16 +66,6 @@ export interface NodeCardProps {
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
   onTrash?: () => void;
-}
-
-interface ToolbarState {
-  bold: boolean;
-  italic: boolean;
-  strike: boolean;
-  heading1: boolean;
-  heading2: boolean;
-  bulletList: boolean;
-  orderedList: boolean;
 }
 
 export function NodeCard({
@@ -146,118 +133,8 @@ export function NodeCard({
     }, 120);
   };
 
-  const editor = useEditor(
-    {
-      editable: editing === "body",
-      extensions: [
-        // Collaboration ships its own undo history, so StarterKit's is disabled.
-        StarterKit.configure({ undoRedo: false }),
-        LoroCollaboration.configure({
-          doc: cardDoc,
-          containerId: contentId,
-          cursorStore,
-          user: localUser,
-          commitOrigin: "text:body",
-          excludeOriginPrefixes: ["text:title"],
-        }),
-      ],
-      editorProps: {
-        attributes: {
-          class:
-            "node-card-editor min-h-[52px] w-full px-3 pt-2.5 pb-2 text-sm text-[var(--ink)] focus:outline-none",
-        },
-      },
-      onFocus: keepFocusAlive,
-      onBlur: releaseFocusSoon,
-    },
-    [cardDoc, contentId, cursorStore, localUser, card.id],
-  );
-
-  const title = useEditor(
-    {
-      editable: editing === "title",
-      extensions: [
-        StarterKit.configure({ undoRedo: false }),
-        LoroCollaboration.configure({
-          doc: cardDoc,
-          containerId: titleId,
-          cursorStore,
-          user: localUser,
-          commitOrigin: "text:title",
-          excludeOriginPrefixes: ["text:body"],
-        }),
-      ],
-      editorProps: {
-        attributes: {
-          class:
-            "card-title-editor w-full truncate text-[13px] font-semibold leading-5 text-[var(--ink)] focus:outline-none",
-          "aria-label": "Card title",
-        },
-        // Enter commits instead of adding a line: titles stay single-line.
-        handleKeyDown: (_view, event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            onEditEnd?.();
-            return true;
-          }
-          return false;
-        },
-      },
-      onFocus: () => {
-        keepFocusAlive();
-        onStartEditing?.("title");
-      },
-      onBlur: releaseFocusSoon,
-    },
-    [cardDoc, titleId, cursorStore, localUser, card.id],
-  );
-
-  const toolbar = useEditorState({
-    editor,
-    selector: ({ editor: current }): ToolbarState => ({
-      bold: current.isActive("bold"),
-      italic: current.isActive("italic"),
-      strike: current.isActive("strike"),
-      heading1: current.isActive("heading", { level: 1 }),
-      heading2: current.isActive("heading", { level: 2 }),
-      bulletList: current.isActive("bulletList"),
-      orderedList: current.isActive("orderedList"),
-    }),
-  });
-
-  const titleEmpty = useEditorState({
-    editor: title,
-    selector: ({ editor: current }) => current.isEmpty,
-  });
-
   const hasMeta = meta.properties.length > 0 || meta.tags.length > 0;
   const metaCount = meta.properties.length + meta.tags.length;
-
-  // Layout effect so the editor is editable and focused before the browser
-  // paints; otherwise the first keystroke of a brand-new note can be dropped.
-  useLayoutEffect(() => {
-    if (!editor) return;
-    editor.setEditable(editing === "body");
-    if (editing !== "body") return;
-
-    editor.commands.focus("end");
-    const frame = requestAnimationFrame(() => {
-      editor.commands.focus("end");
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [editor, editing]);
-
-  useLayoutEffect(() => {
-    if (!title) return;
-    title.setEditable(editing === "title");
-    if (editing !== "title") return;
-
-    title.commands.focus("end");
-    const frame = requestAnimationFrame(() => {
-      title.commands.focus("end");
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [title, editing]);
 
   const draggingPeer = draggingPeers[0];
   const focusedBy = presence[0];
@@ -285,13 +162,6 @@ export function NodeCard({
   ]
     .filter(Boolean)
     .join(" ");
-
-  const buttonClass = (active: boolean) =>
-    `rounded px-2 py-1 text-xs transition-colors ${
-      active
-        ? "bg-gray-300 font-semibold text-gray-900 dark:bg-white/25 dark:text-white"
-        : "text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-white/10"
-    }`;
 
   const menuItems: ContextMenuItem[] = [
     { label: "Card info", onSelect: () => onOpenInfo?.() },
@@ -330,6 +200,8 @@ export function NodeCard({
       }}
       onClick={(event) => {
         if (editing) return;
+        // Multi-select owns modifier clicks; they must not open the inspector.
+        if (event.shiftKey || event.metaKey || event.ctrlKey) return;
         const origin = pointerOrigin.current;
         const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
         // A drag moves the card; a click without movement opens its info.
@@ -382,18 +254,20 @@ export function NodeCard({
               }}
             />
           )}
-          <EditorContent
-            editor={title}
+          <CardTitleEditor
+            cardDoc={cardDoc}
+            titleId={titleId}
+            cursorStore={cursorStore}
+            localUser={localUser}
+            editable={editing === "title"}
             className={editing === "title" ? "nodrag nopan" : undefined}
+            onFocus={() => {
+              keepFocusAlive();
+              onStartEditing?.("title");
+            }}
+            onBlur={releaseFocusSoon}
+            onCommit={onEditEnd}
           />
-          {titleEmpty ? (
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 text-[13px] leading-5 text-[var(--ink-muted)]/70"
-            >
-              Untitled
-            </span>
-          ) : null}
         </div>
 
         {presence.length > 0 || draggingPeers.length > 0 || selectingPeers.length > 0 ? (
@@ -466,65 +340,16 @@ export function NodeCard({
           onStartEditing?.("body");
         }}
       >
-        <EditorContent editor={editor} />
+        <CardBodyEditor
+          cardDoc={cardDoc}
+          contentId={contentId}
+          cursorStore={cursorStore}
+          localUser={localUser}
+          editable={editing === "body"}
+          onFocus={keepFocusAlive}
+          onBlur={releaseFocusSoon}
+        />
       </div>
-
-      {toolbar ? (
-        <BubbleMenu editor={editor} data-testid="format-toolbar">
-          <div className="flex items-center gap-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-lg">
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleBold().run()}
-              className={buttonClass(toolbar.bold)}
-            >
-              B
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleItalic().run()}
-              className={`${buttonClass(toolbar.italic)} italic`}
-            >
-              I
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleStrike().run()}
-              className={`${buttonClass(toolbar.strike)} line-through`}
-            >
-              S
-            </button>
-            <span className="mx-1 h-4 w-px bg-[var(--hairline)]" />
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
-              className={buttonClass(toolbar.heading1)}
-            >
-              H1
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-              className={buttonClass(toolbar.heading2)}
-            >
-              H2
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleBulletList().run()}
-              className={buttonClass(toolbar.bulletList)}
-            >
-              {"\u2022"}
-            </button>
-            <button
-              type="button"
-              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-              className={buttonClass(toolbar.orderedList)}
-            >
-              1.
-            </button>
-          </div>
-        </BubbleMenu>
-      ) : null}
 
       {card.connectors.map((connector: ConnectorModel) => (
         <Connector

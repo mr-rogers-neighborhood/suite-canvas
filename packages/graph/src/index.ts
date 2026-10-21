@@ -6,14 +6,18 @@ export {
   snapToAnchor,
 } from "./connectors.js";
 export type {
+  Board,
+  Card,
   Connector,
   EdgeKind,
   EdgePath,
   GraphEdge,
-  GraphNode,
   NodeKind,
+  Placement,
 } from "./schema.js";
 export {
+  boardSchema,
+  cardSchema,
   connectorSchema,
   edgeKindSchema,
   edgeKinds,
@@ -21,17 +25,24 @@ export {
   edgePaths,
   entityIdSchema,
   graphEdgeSchema,
-  graphNodeSchema,
   nodeKindSchema,
   nodeKinds,
   noteDataSchema,
+  placementSchema,
   positionSchema,
 } from "./schema.js";
 export type {
-  CreateNoteInput,
-  GraphAction,
-  GraphChange,
-  GraphSection,
+  CreateCardInput,
+  CreateEdgeInput,
   LayerAction,
-} from "./yjs/GraphDocument.js";
-export { GraphDocument, normalizeNode } from "./yjs/GraphDocument.js";
+  WorkspaceAction,
+  WorkspaceChange,
+  WorkspaceSection,
+} from "./yjs/WorkspaceDocument.js";
+export {
+  DEFAULT_BOARD_ID,
+  migrateLegacyDocument,
+  normalizeCard,
+  placementKey,
+  WorkspaceDocument,
+} from "./yjs/WorkspaceDocument.js";

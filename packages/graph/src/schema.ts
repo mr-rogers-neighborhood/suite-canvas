@@ -24,22 +24,45 @@ export const connectorSchema = z.object({
 
 export const noteDataSchema = z.object({});
 
-const entityBase = {
+export const boardSchema = z.object({
   id: entityIdSchema,
-  position: positionSchema,
+  name: z.string().min(1),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
-  /** Stacking order; higher paints above lower. */
-  z: z.number().int(),
+});
+
+const cardBase = {
+  id: entityIdSchema,
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
   connectors: z.array(connectorSchema),
+  /** Soft delete: set when the card is in the trash, cleared on restore. */
+  deletedAt: z.number().int().nonnegative().nullable().optional(),
 };
 
-export const graphNodeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("note"), ...entityBase, data: noteDataSchema }),
+/**
+ * A card is a workspace-level object: it owns its content and connectors and
+ * exists independently of any board. Where it *appears* is a placement.
+ */
+export const cardSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("note"), ...cardBase, data: noteDataSchema }),
 ]);
+
+/** Where a card sits on a board. One placement per (board, card) pair. */
+export const placementSchema = z.object({
+  boardId: entityIdSchema,
+  cardId: entityIdSchema,
+  x: z.number().finite(),
+  y: z.number().finite(),
+  /** Stacking order within the board; higher paints above lower. */
+  z: z.number().int(),
+  createdAt: z.number().int().nonnegative(),
+});
 
 export const graphEdgeSchema = z.object({
   id: entityIdSchema,
+  /** Links belong to the board they were drawn on. */
+  boardId: entityIdSchema,
   source: entityIdSchema,
   target: entityIdSchema,
   /** Connector ids the link attaches to, when it was drawn between connectors. */
@@ -56,7 +79,9 @@ export const graphEdgeSchema = z.object({
 });
 
 export type Connector = z.infer<typeof connectorSchema>;
-export type GraphNode = z.infer<typeof graphNodeSchema>;
+export type Board = z.infer<typeof boardSchema>;
+export type Card = z.infer<typeof cardSchema>;
+export type Placement = z.infer<typeof placementSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type NodeKind = z.infer<typeof nodeKindSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;

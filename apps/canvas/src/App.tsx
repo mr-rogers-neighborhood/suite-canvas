@@ -2,6 +2,7 @@ import type { NodeKind } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CanvasBoard } from "./canvas/CanvasBoard";
+import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { BoardTabs } from "./components/BoardTabs";
 import { Dialog } from "./components/Dialog";
@@ -64,8 +65,8 @@ function WorkspaceShell() {
   }, [connect]);
 
   useEffect(() => {
-    if (provider) bindPresence(presence, workspace.doc.peerIdStr);
-  }, [bindPresence, presence, provider, workspace]);
+    if (provider) bindPresence(presence, TAB_ID);
+  }, [bindPresence, presence, provider]);
 
   // Seeding is once per workspace, so deleting every card stays deleted. It also
   // waits for the first server sync: seeding an empty local doc would resurrect

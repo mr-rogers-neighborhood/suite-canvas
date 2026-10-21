@@ -793,7 +793,6 @@ export function CanvasBoard() {
         }}
         onPaneClick={() => setSelectedConnector(null)}
         onNodeClick={() => setSelectedConnector(null)}
-        onNodeDoubleClick={(_, node) => startEditing(node.id, "body")}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "node", nodeId: node.id });

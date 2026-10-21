@@ -4,6 +4,7 @@ import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
+import { TAB_ID } from "../collab/tabId";
 
 export type ConnectionStatus = LoroConnectionStatus;
 
@@ -26,7 +27,7 @@ export const WORKSPACE_ID = resolveWorkspaceId();
 const doc = new LoroDoc();
 const workspace = new WorkspaceDocument(doc);
 const presence = new EphemeralStore(30_000);
-const cursors = new CursorEphemeralStore(doc.peerIdStr, 30_000);
+const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 
 const persistence =
   typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(WORKSPACE_ID, doc) : null;

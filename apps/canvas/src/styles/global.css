@@ -310,6 +310,17 @@ body {
   margin-top: 0.5rem;
 }
 
+/* The body reads as text, but dragging still wins once the card moves. */
+[data-testid="card-body"],
+[data-testid="card-body"] * {
+  cursor: text;
+}
+
+.react-flow__node.dragging [data-testid="card-body"],
+.react-flow__node.dragging [data-testid="card-body"] * {
+  cursor: grabbing;
+}
+
 /* Names attached to the element a peer is actively manipulating. */
 .peer-name-tag {
   display: inline-block;

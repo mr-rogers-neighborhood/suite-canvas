@@ -9,6 +9,7 @@ import {
   redo,
   undo,
 } from "loro-prosemirror";
+import { TAB_ID } from "../collab/tabId";
 
 export interface LoroCollaborationOptions {
   doc: LoroDoc | null;
@@ -62,6 +63,7 @@ export const LoroCollaboration = Extension.create<LoroCollaborationOptions>({
     if (cursorStore) {
       plugins.push(
         LoroEphemeralCursorPlugin(cursorStore, {
+          selfPeerId: TAB_ID,
           ...(user ? { user } : {}),
         }),
       );

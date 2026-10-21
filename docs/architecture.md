@@ -279,6 +279,9 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   gesture after `GESTURE_TTL_MS` (3 s) of silence; a 1 s sweep re-projects presence so the ghost
   disappears even when no further update arrives. Selections and carets are state, not gestures, and
   are left alone.
+- **Reload identity:** presence and cursor stores are keyed by a `sessionStorage` tab id rather than the
+  Loro document peer id. A refreshed tab overwrites its own presence instead of appearing as a
+  second frozen collaborator. The presence room is ephemeral and is not replayed to late joiners.
 - **Board scoping:** presence is workspace-wide because there is one document, so every board-scoped
   surface filters by `peer.board`. Carets stay card-scoped on purpose: two people editing the same
   card from different boards should see each other.
@@ -295,7 +298,7 @@ zoom (constant screen size) and only shows for the sole selected node.
   and a `⋯` menu (Edit title/body, Remove from board, Go to board, Delete card). The title editor is
   a paragraph-only Tiptap editor on the card's `titles` fragment: Enter commits instead of adding a
   line, an empty title shows a muted "Untitled" placeholder, and remote carets render inside it.
-  Clicking a non-editing title starts title editing; the body is edited on double-click.
+  Clicking a non-editing title starts title editing. The body shows a text cursor and enters editing on a click; moving past the drag threshold still drags the card.
 - **Footer:** collapsed as `References · N`, expanding into a keyed section list. The first section
   is **References**: every placement of the card, home marked with `⌂`, the current board labelled,
   plus "Go" and "Remove" actions. The section list is generic so Backlinks or Tags can be added

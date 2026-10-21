@@ -61,6 +61,37 @@ test("selects on the first title click and edits on the second", async ({ page }
   );
 });
 
+test("clicks the body to edit and drags the body to move", async ({ page }) => {
+  await page.goto(workspaceUrl("body-click"));
+  const card = cards(page).first();
+  const body = card.getByTestId("card-body");
+  const bodyBox = await body.boundingBox();
+  if (!bodyBox) throw new Error("card body not visible");
+  const point = { x: bodyBox.x + 40, y: bodyBox.y + 28 };
+
+  await page.mouse.click(point.x, point.y);
+  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
+  await page.keyboard.type("Body click");
+  await expect(card.getByTestId("card-body")).toHaveText("Body click");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
+
+  const before = await card.boundingBox();
+  if (!before) throw new Error("card not visible");
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 140, point.y + 90, { steps: 12 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => {
+      const after = await card.boundingBox();
+      return after ? Math.round(after.x - before.x) : 0;
+    })
+    .toBeGreaterThan(80);
+  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
+});
+
 test("resizes a card and projects the resize to a peer", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();

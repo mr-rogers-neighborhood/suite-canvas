@@ -15,6 +15,7 @@ import {
   type ResizingState,
   type SelectionState,
 } from "./presence";
+import { TAB_ID } from "./tabId";
 
 interface PresenceState {
   localUser: Identity;
@@ -86,7 +87,7 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
   return {
     localUser: getOrCreateIdentity(),
     presenceStore: initial.presence ?? null,
-    peerId: initial.workspace.doc.peerIdStr,
+    peerId: TAB_ID,
     bound: false,
     peers: {},
 

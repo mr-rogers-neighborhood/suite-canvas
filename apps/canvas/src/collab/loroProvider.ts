@@ -1,4 +1,4 @@
-import { LoroAdaptor, LoroEphemeralAdaptor, LoroPersistentStoreAdaptor } from "loro-adaptors/loro";
+import { LoroAdaptor, LoroEphemeralAdaptor } from "loro-adaptors/loro";
 import type { EphemeralStore, LoroDoc } from "loro-crdt";
 import { LoroWebsocketClient, type LoroWebsocketClientRoom } from "loro-websocket";
 
@@ -57,7 +57,9 @@ export class LoroProvider {
       try {
         this.presenceRoom = await this.client.join({
           roomId: `${this.options.workspaceId}:presence`,
-          crdtAdaptor: new LoroPersistentStoreAdaptor(this.options.presence),
+          // Presence must not be replayed to late joiners: a stale tab would
+          // otherwise remain as a frozen collaborator until manually cleared.
+          crdtAdaptor: new LoroEphemeralAdaptor(this.options.presence),
         });
         this.cursorRoom = await this.client.join({
           roomId: `${this.options.workspaceId}:cursors`,

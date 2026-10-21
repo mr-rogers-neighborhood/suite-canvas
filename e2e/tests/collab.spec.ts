@@ -83,7 +83,7 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   await page.keyboard.press("Escape");
 
   const created = page.locator('[data-testid="node-card"]').filter({ hasText: "keyboard delete" });
-  await created.click();
+  await created.click({ position: { x: 40, y: 14 } });
   await page.keyboard.press("Delete");
   await expect(page.getByText("keyboard delete")).toHaveCount(0);
 });
@@ -129,8 +129,7 @@ test("undoes a removal from the board, not the editor text", async ({ page }) =>
   // Inside the editor, undo belongs to the editor's own fragment history.
   const card = page.locator('[data-testid="node-card"]').filter({ hasText: "scoped undo" });
   const body = card.getByTestId("card-body").locator(".ProseMirror");
-  await card.click();
-  await page.keyboard.press("Enter");
+  await card.getByTestId("card-body").click();
   await expect(body).toHaveClass(/ProseMirror-focused/);
   await page.keyboard.type("body text");
   await expect(body).toHaveText("body text");
@@ -142,7 +141,7 @@ test("undoes a removal from the board, not the editor text", async ({ page }) =>
   await page.keyboard.press("Escape");
 
   // On the canvas it covers structure: removing a card from the board.
-  await card.click();
+  await card.click({ position: { x: 40, y: 14 } });
   await page.keyboard.press("Delete");
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   await page.keyboard.press("Control+z");
@@ -492,6 +491,37 @@ test("switches and persists the color theme", async ({ page }) => {
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });
 
+test("a reloaded tab replaces its presence instead of duplicating it", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  const url = docUrl("reload-presence");
+
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.getByTestId("canvas-board")).toBeVisible();
+
+  const board = await pageA.getByTestId("canvas-board").boundingBox();
+  if (!board) throw new Error("canvas board not visible");
+  await pageA.mouse.move(board.x + 40, board.y + 40);
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(1);
+  await expect(pageB.getByText(/2 here/)).toHaveCount(1);
+
+  await pageA.reload();
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.getByText(/2 here/)).toHaveCount(1);
+
+  // The refreshed tab publishes under the same presence id, so its next move
+  // replaces the old entry rather than adding a second frozen cursor.
+  await pageA.mouse.move(board.x + 64, board.y + 64);
+  await expect(pageB.getByTestId("peer-cursor")).toHaveCount(1);
+
+  await contextA.close();
+  await contextB.close();
+});
+
 test("shows a peer's drag presence while a card is being dragged", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -594,7 +624,7 @@ test("shows a peer's selection presence", async ({ browser }) => {
 
   const cardA = pageA.locator('[data-testid="node-card"]').first();
   await expect(cardA).toBeVisible();
-  await cardA.click();
+  await cardA.click({ position: { x: 40, y: 14 } });
 
   const cardB = pageB.locator('[data-testid="node-card"]').first();
   await expect(cardB).toHaveAttribute("data-selected-by-peer", "true");

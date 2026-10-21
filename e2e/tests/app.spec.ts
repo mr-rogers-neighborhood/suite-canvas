@@ -31,7 +31,10 @@ test("does not reseed a workspace another client emptied", async ({ browser }) =
 
   // Empty the board (the cards go to the trash, the workspace stays seeded).
   for (let remaining = 2; remaining > 0; remaining -= 1) {
-    await pageA.locator('[data-testid="node-card"]').first().click();
+    await pageA
+      .locator('[data-testid="node-card"]')
+      .first()
+      .click({ position: { x: 40, y: 14 } });
     await pageA.keyboard.press("Shift+Delete");
   }
   await expect(pageA.locator('[data-testid="node-card"]')).toHaveCount(0);

@@ -405,7 +405,19 @@ export function NodeCard({
         </button>
       </div>
 
-      <div className="card-body-scroll min-h-0 flex-1 overflow-auto" data-testid="card-body">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: clicking the body focuses the nested editor */}
+      <div
+        className="card-body-scroll min-h-0 flex-1 overflow-auto"
+        data-testid="card-body"
+        onClick={(event) => {
+          if (editing === "body") return;
+          const origin = pointerOrigin.current;
+          const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
+          // A drag moves the card; a click without movement enters the text.
+          if (moved <= 4) onStartEditing?.("body");
+        }}
+      >
         <EditorContent editor={editor} />
       </div>
 

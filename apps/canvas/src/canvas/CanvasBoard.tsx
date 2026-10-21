@@ -8,6 +8,8 @@ import {
   type HandleType,
   MarkerType,
   type Node,
+  type OnConnectEnd,
+  type OnConnectStart,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -17,6 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { countRender } from "../dev/perf";
@@ -39,6 +42,56 @@ const EDGE_TYPE: Record<GraphEdge["path"], Edge["type"]> = {
   step: "step",
   smoothstep: "smoothstep",
 };
+
+/** The connector a local new-link drag started from, minus the live pointer. */
+type ConnectAnchor = Omit<ConnectState, "position" | "target">;
+
+/** Client coordinates of a mouse or touch event, when it carries any. */
+function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if ("clientX" in event) return { x: event.clientX, y: event.clientY };
+  const touch = event.touches[0] ?? event.changedTouches[0];
+  return touch ? { x: touch.clientX, y: touch.clientY } : null;
+}
+
+/**
+ * Publishes a gesture's pointer samples at most once per `DRAG_THROTTLE_MS`,
+ * plus a trailing sample so a pointer that stops still lands on every peer.
+ */
+function followPointer(
+  screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number },
+  publish: (position: { x: number; y: number }) => void,
+) {
+  let lastSent = 0;
+  let pending: { x: number; y: number } | null = null;
+  let trailing: ReturnType<typeof setTimeout> | null = null;
+
+  const follow = (event: PointerEvent) => {
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const wait = DRAG_THROTTLE_MS - (performance.now() - lastSent);
+    if (wait <= 0) {
+      lastSent = performance.now();
+      publish(position);
+      return;
+    }
+    pending = position;
+    if (trailing !== null) return;
+    trailing = setTimeout(() => {
+      trailing = null;
+      if (!pending) return;
+      lastSent = performance.now();
+      publish(pending);
+      pending = null;
+    }, wait);
+  };
+
+  const stop = () => {
+    if (trailing !== null) clearTimeout(trailing);
+    trailing = null;
+    pending = null;
+  };
+
+  return { follow, stop };
+}
 
 function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edge {
   const marker = {
@@ -74,6 +127,7 @@ export function CanvasBoard() {
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
   const setReconnect = usePresenceStore((state) => state.setReconnect);
+  const setConnect = usePresenceStore((state) => state.setConnect);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
@@ -95,6 +149,7 @@ export function CanvasBoard() {
     /** The connector that stays put, so a snap onto it is not mistaken for a target. */
     anchorConnector: string | null;
   } | null>(null);
+  const [connecting, setConnecting] = useState<ConnectAnchor | null>(null);
 
   // Board-scoped views derived from the snapshot, so a CRDT change anywhere
   // recomputes exactly once per board.
@@ -132,6 +187,8 @@ export function CanvasBoard() {
   }, [snapshot, boardCards, activeBoardId]);
 
   const locallyDraggingId = useRef<string | null>(null);
+  /** React Flow reports edge-updater drags through onConnectStart too. */
+  const reconnectGesture = useRef(false);
   const lastPointerSent = useRef(0);
   const lastDragSent = useRef(0);
   const selectedKey = selectedNodeIds.join(",");
@@ -370,11 +427,7 @@ export function CanvasBoard() {
   useEffect(() => {
     if (!reconnecting) return;
 
-    let lastSent = 0;
-    let pending: { x: number; y: number } | null = null;
-    let trailing: ReturnType<typeof setTimeout> | null = null;
-
-    const publish = (position: { x: number; y: number }) => {
+    const { follow, stop } = followPointer(screenToFlowPosition, (position) => {
       // React Flow already resolves the snap target while the drag is in flight;
       // forward it so peers stop exactly where the mover's link would land.
       const { connection } = store.getState();
@@ -392,39 +445,90 @@ export function CanvasBoard() {
           ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
           : {}),
       });
-    };
-
-    const follow = (event: PointerEvent) => {
-      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      const wait = DRAG_THROTTLE_MS - (performance.now() - lastSent);
-      if (wait <= 0) {
-        lastSent = performance.now();
-        publish(position);
-        return;
-      }
-      // Always deliver the latest position, even if no further move arrives.
-      pending = position;
-      if (trailing !== null) return;
-      trailing = setTimeout(() => {
-        trailing = null;
-        if (!pending) return;
-        lastSent = performance.now();
-        publish(pending);
-        pending = null;
-      }, wait);
-    };
+    });
 
     window.addEventListener("pointermove", follow);
     return () => {
       window.removeEventListener("pointermove", follow);
       // The drop already rewrote the edge, so never re-publish here: onReconnectEnd
       // clears the field first and a late sample would resurrect the preview.
-      if (trailing !== null) clearTimeout(trailing);
+      stop();
     };
   }, [reconnecting, screenToFlowPosition, setReconnect, store]);
 
+  // A new link has no edge to follow yet, so its live pointer rides awareness
+  // the same way a reconnect drag's does.
+  useEffect(() => {
+    if (!connecting) return;
+
+    const { follow, stop } = followPointer(screenToFlowPosition, (position) => {
+      // Forward React Flow's own snap decision rather than re-testing radii.
+      const { connection } = store.getState();
+      const snapped = connection.isValid
+        ? [connection.toHandle, connection.fromHandle].find(
+            (handle) =>
+              handle && handle.id !== connecting.connectorId && handle.nodeId !== connecting.nodeId,
+          )
+        : undefined;
+
+      setConnect({
+        nodeId: connecting.nodeId,
+        connectorId: connecting.connectorId,
+        anchorEnd: connecting.anchorEnd,
+        position,
+        ...(snapped?.nodeId && snapped.id
+          ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
+          : {}),
+      });
+    });
+
+    window.addEventListener("pointermove", follow);
+    return () => {
+      window.removeEventListener("pointermove", follow);
+      // onConnectEnd clears the field first; a late sample must not revive it.
+      stop();
+    };
+  }, [connecting, screenToFlowPosition, setConnect, store]);
+
+  const onConnectStart = useCallback<OnConnectStart>(
+    (event, params) => {
+      // Edge updaters report their anchored handle here as well; that gesture
+      // publishes `reconnect` and has its own preview.
+      if (reconnectGesture.current) return;
+
+      const { nodeId, handleId, handleType } = params;
+      if (!nodeId || !handleId) return;
+
+      const anchorEnd = handleType === "target" ? "target" : "source";
+      // Two link gestures never overlap, so the reconnect preview goes first.
+      setReconnecting(null);
+      setReconnect(null);
+      setConnecting({ nodeId, connectorId: handleId, anchorEnd });
+
+      const point = clientPoint(event);
+      if (!point) return;
+      setConnect({
+        nodeId,
+        connectorId: handleId,
+        anchorEnd,
+        position: screenToFlowPosition(point),
+      });
+    },
+    [screenToFlowPosition, setConnect, setReconnect],
+  );
+
+  const onConnectEnd = useCallback<OnConnectEnd>(() => {
+    setConnecting(null);
+    setConnect(null);
+  }, [setConnect]);
+
   const onReconnectStart = useCallback(
     (event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
+      // React Flow also fires onConnectStart for this drag; mark it so the
+      // new-link presence stays out of it.
+      reconnectGesture.current = true;
+      setConnecting(null);
+      setConnect(null);
       // React Flow reports the handle that stays anchored, so the other end moves.
       const end: HandleType = handleType === "source" ? "target" : "source";
       setReconnecting({
@@ -438,10 +542,11 @@ export function CanvasBoard() {
         position: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       });
     },
-    [screenToFlowPosition, setReconnect],
+    [screenToFlowPosition, setReconnect, setConnect],
   );
 
   const onReconnectStop = useCallback(() => {
+    reconnectGesture.current = false;
     setReconnecting(null);
     setReconnect(null);
   }, [setReconnect]);
@@ -620,10 +725,16 @@ export function CanvasBoard() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
+        // Unmount nodes and edges outside the viewport. React Flow keeps measured
+        // sizes and handle bounds for unmounted nodes, so edges still route and
+        // connectors remeasure when a card scrolls back in.
+        onlyRenderVisibleElements
         fitView
         deleteKeyCode={null}
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onReconnect={onReconnect}
         onReconnectStart={onReconnectStart}
         onReconnectEnd={onReconnectStop}

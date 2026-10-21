@@ -44,6 +44,21 @@ one-directional and hid the most interesting moment of the gesture.
    the source) plus the source end when the link is bidirectional. Putting a marker on whatever end
    the pointer holds made the synced client show an arrow the drop would not produce.
 
+9. **A brand-new link is a gesture too.** Dragging out of a connector produced no document writes
+   until the drop, so peers saw nothing at all — the most interesting moment of the gesture was
+   invisible. `onConnectStart` now publishes `connect`, the same shape of presence as `reconnect`
+   (anchor, live pointer, forwarded snap target), followed by the same throttled + trailing pointer
+   sampler and cleared by `onConnectEnd`. React Flow reports an edge updater through
+   `onConnectStart` as well, so a ref set by `onReconnectStart` (which the library calls first) keeps
+   the two gestures from producing a preview each; starting one clears the other's field.
+10. **The anchor end is recorded.** Every connector is currently a `<Handle type="source">`, so a
+   normal new link anchors the *source* and the arrow belongs on the pointer end. Recording
+   `anchorEnd` keeps the preview correct if connectors ever expose target handles, without the
+   renderer having to guess from the handle type of an edge that does not exist yet.
+11. **The snap target is forwarded, not recomputed** for the same reason as reconnect: React Flow
+   already resolved which connector is under the pointer, and re-testing its radius here would
+   drift. Peers end the preview on that connector, so the dashed path predicts the exact drop.
+
 Rejected alternatives:
 
 - **Ghost node + ghost edge.** Injecting an invisible node under the peer's pointer so React Flow could

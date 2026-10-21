@@ -89,3 +89,59 @@ describe("projectPeers", () => {
     expect(gestureSignature({ ...peer, board: null } as never)).toBe("");
   });
 });
+
+describe("projectPeers with a new-link drag", () => {
+  const connectFrame = (x: number) => ({
+    [AWARENESS_FIELDS.dragging]: undefined,
+    [AWARENESS_FIELDS.connect]: {
+      nodeId: "n1",
+      connectorId: "c1",
+      anchorEnd: "source",
+      position: { x, y: 20 },
+    },
+  });
+
+  it("projects the gesture so peers can draw a preview", () => {
+    const seen = new Map<number, SeenGesture>();
+    const peer = project(1000, seen, connectFrame(10))[PEER];
+    expect(peer?.connect).toMatchObject({
+      nodeId: "n1",
+      connectorId: "c1",
+      anchorEnd: "source",
+      position: { x: 10, y: 20 },
+    });
+    expect(peer && gestureSignature(peer)).not.toBe("");
+  });
+
+  it("expires when the drag stops arriving, like any other gesture", () => {
+    const seen = new Map<number, SeenGesture>();
+    project(1000, seen, connectFrame(10));
+    expect(
+      project(1000 + GESTURE_TTL_MS - 1, seen, connectFrame(10))[PEER]?.connect,
+    ).not.toBeNull();
+    expect(project(1000 + GESTURE_TTL_MS + 1, seen, connectFrame(10))[PEER]?.connect).toBeNull();
+  });
+
+  it("stays live while the pointer keeps refreshing it", () => {
+    const seen = new Map<number, SeenGesture>();
+    project(1000, seen, connectFrame(10));
+    project(2000, seen, connectFrame(60));
+    project(3000, seen, connectFrame(110));
+
+    // The last frame arrived well inside the TTL window.
+    const peers = project(3000 + GESTURE_TTL_MS - 1, seen, connectFrame(110));
+    expect(peers[PEER]?.connect).toMatchObject({ position: { x: 110 } });
+  });
+
+  it("restarts only when a fresh frame arrives after expiry", () => {
+    const seen = new Map<number, SeenGesture>();
+    project(1000, seen, connectFrame(10));
+    expect(project(1000 + GESTURE_TTL_MS + 1, seen, connectFrame(10))[PEER]?.connect).toBeNull();
+    // A fresh frame is a new arrival, so the gesture is live again.
+    expect(project(1000 + GESTURE_TTL_MS + 2, seen, connectFrame(90))[PEER]?.connect).toMatchObject(
+      {
+        position: { x: 90 },
+      },
+    );
+  });
+});

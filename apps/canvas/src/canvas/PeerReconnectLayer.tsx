@@ -7,7 +7,7 @@ import {
   useInternalNode,
   ViewportPortal,
 } from "@xyflow/react";
-import { useMemo } from "react";
+import { Fragment, type ReactNode, useMemo } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type Point, sideOf } from "../components/Connector";
 import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
@@ -44,16 +44,20 @@ function pathFor(
  * Draws the link a peer is currently dragging: a dashed path from its anchored
  * connector to their pointer, using the same path style as the real edge.
  */
-function ReconnectPreview({
-  edge,
+function LinkPreview({
   card,
   connectorId,
   movingEnd,
   target,
   pointer,
+  path,
+  bidirectional,
   color,
+  className,
+  testId,
+  markerId,
 }: {
-  edge: GraphEdge;
+  /** Card the preview stays anchored to. */
   card: Card;
   connectorId: string | undefined;
   /** The end following the pointer; the anchored end is the other one. */
@@ -61,7 +65,12 @@ function ReconnectPreview({
   /** Connector the mover has snapped to, if any. */
   target: { card: Card; connectorId: string } | null;
   pointer: Point;
+  path: GraphEdge["path"];
+  bidirectional: boolean;
   color: string;
+  className: string;
+  testId: string;
+  markerId: string;
 }) {
   const anchorNode = useInternalNode(card.id);
   const targetNode = useInternalNode(target?.card.id ?? "");
@@ -94,19 +103,18 @@ function ReconnectPreview({
   // Snapped ends meet the connector perpendicularly, exactly like the real edge.
   const end = snappedTarget ?? { point: pointer, side: OPPOSITE[anchorSide] };
 
-  const d = pathFor(edge.path, anchor, anchorSide, end.point, end.side);
-  const markerId = `peer-reconnect-arrow-${edge.id}-${color.replace(/\W/g, "")}`;
+  const d = pathFor(path, anchor, anchorSide, end.point, end.side);
 
   // Arrows belong where the finished link will have them: at its target, and at
   // both ends when bidirectional — never at the end the pointer is holding.
   const anchoredEnd = movingEnd === "target" ? "source" : "target";
-  const arrowAtStart = edge.bidirectional || anchoredEnd === "target";
-  const arrowAtEnd = edge.bidirectional || movingEnd === "target";
+  const arrowAtStart = bidirectional || anchoredEnd === "target";
+  const arrowAtEnd = bidirectional || movingEnd === "target";
   const arrows =
     arrowAtStart && arrowAtEnd ? "both" : arrowAtStart ? "start" : arrowAtEnd ? "end" : "none";
 
   return (
-    <svg className="peer-reconnect-preview" aria-hidden="true">
+    <svg className={className} aria-hidden="true">
       <defs>
         <marker
           id={markerId}
@@ -121,7 +129,7 @@ function ReconnectPreview({
         </marker>
       </defs>
       <path
-        data-testid="peer-reconnect-preview"
+        data-testid={testId}
         data-snapped={snappedTarget ? "true" : undefined}
         data-arrows={arrows}
         d={d}
@@ -152,28 +160,62 @@ export function PeerReconnectLayer() {
   return (
     <ViewportPortal>
       {Object.values(peers).map((peer) => {
-        const state = peer.reconnect;
-        if (!state) return null;
+        const previews: ReactNode[] = [];
 
-        const edge = edges.find((candidate) => candidate.id === state.edgeId);
-        if (!edge) return null;
+        const reconnect = peer.reconnect;
+        if (reconnect) {
+          const edge = edges.find((candidate) => candidate.id === reconnect.edgeId);
+          const draggingSource = reconnect.end === "source";
+          const anchorCard = edge
+            ? cardsById.get(draggingSource ? edge.target : edge.source)
+            : undefined;
 
-        const draggingSource = state.end === "source";
-        const anchorCard = cardsById.get(draggingSource ? edge.target : edge.source);
-        if (!anchorCard) return null;
+          if (edge && anchorCard) {
+            previews.push(
+              <LinkPreview
+                key="reconnect"
+                card={anchorCard}
+                connectorId={draggingSource ? edge.targetConnector : edge.sourceConnector}
+                movingEnd={reconnect.end}
+                target={resolveTarget(reconnect.target)}
+                pointer={reconnect.position}
+                path={edge.path}
+                bidirectional={edge.bidirectional}
+                color={peer.user.color}
+                className="peer-reconnect-preview"
+                testId="peer-reconnect-preview"
+                markerId={`peer-reconnect-arrow-${edge.id}-${peer.user.color.replace(/\W/g, "")}`}
+              />,
+            );
+          }
+        }
 
-        return (
-          <ReconnectPreview
-            key={peer.clientId}
-            edge={edge}
-            card={anchorCard}
-            connectorId={draggingSource ? edge.targetConnector : edge.sourceConnector}
-            movingEnd={state.end}
-            target={resolveTarget(state.target)}
-            pointer={state.position}
-            color={peer.user.color}
-          />
-        );
+        // New links have no edge yet: the preview runs from the anchored
+        // connector to the pointer, or to the connector React Flow snapped to.
+        const connect = peer.connect;
+        if (connect) {
+          const anchorCard = cardsById.get(connect.nodeId);
+          if (anchorCard) {
+            previews.push(
+              <LinkPreview
+                key="connect"
+                card={anchorCard}
+                connectorId={connect.connectorId}
+                movingEnd={connect.anchorEnd === "source" ? "target" : "source"}
+                target={resolveTarget(connect.target)}
+                pointer={connect.position}
+                path="bezier"
+                bidirectional={false}
+                color={peer.user.color}
+                className="peer-connect-preview"
+                testId="peer-connect-preview"
+                markerId={`peer-connect-arrow-${peer.clientId}-${connect.nodeId}-${connect.connectorId}-${peer.user.color.replace(/\W/g, "")}`}
+              />,
+            );
+          }
+        }
+
+        return previews.length > 0 ? <Fragment key={peer.clientId}>{previews}</Fragment> : null;
       })}
     </ViewportPortal>
   );

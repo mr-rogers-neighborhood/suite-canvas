@@ -310,7 +310,8 @@ body {
 }
 
 /* A peer's in-flight link drag, drawn in flow space. */
-.peer-reconnect-preview {
+.peer-reconnect-preview,
+.peer-connect-preview {
   position: absolute;
   left: 0;
   top: 0;

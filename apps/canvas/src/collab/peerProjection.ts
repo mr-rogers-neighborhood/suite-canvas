@@ -1,6 +1,7 @@
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
+  type ConnectState,
   type DraggingState,
   type FocusState,
   type PeerPresence,
@@ -44,18 +45,36 @@ export function toPeerPresence(clientId: number, state: Record<string, unknown>)
     connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
     resizing: (state[AWARENESS_FIELDS.resizing] as ResizingState | undefined) ?? null,
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
+    connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
   };
 }
 
 /** Only the in-flight gestures: selections and carets are state, not gestures. */
 export function gestureSignature(peer: PeerPresence): string {
-  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect) return "";
-  return JSON.stringify([peer.dragging, peer.connector, peer.resizing, peer.reconnect]);
+  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect && !peer.connect) {
+    return "";
+  }
+  return JSON.stringify([
+    peer.dragging,
+    peer.connector,
+    peer.resizing,
+    peer.reconnect,
+    peer.connect,
+  ]);
 }
 
 function withoutGesture(peer: PeerPresence): PeerPresence {
-  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect) return peer;
-  return { ...peer, dragging: null, connector: null, resizing: null, reconnect: null };
+  if (!peer.dragging && !peer.connector && !peer.resizing && !peer.reconnect && !peer.connect) {
+    return peer;
+  }
+  return {
+    ...peer,
+    dragging: null,
+    connector: null,
+    resizing: null,
+    reconnect: null,
+    connect: null,
+  };
 }
 
 /**

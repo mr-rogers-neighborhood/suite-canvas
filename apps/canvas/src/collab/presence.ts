@@ -60,6 +60,20 @@ export interface ReconnectState {
   target?: ConnectorSelection;
 }
 
+/** A link a peer is dragging out of one connector toward another. */
+export interface ConnectState {
+  /** Card the gesture starts from; the pointer drags the other end. */
+  nodeId: string;
+  /** Connector on that card the finished link will attach to. */
+  connectorId: string;
+  /** Which end of the eventual link the anchor is; the pointer is the other end. */
+  anchorEnd: "source" | "target";
+  /** Pointer position in flow coordinates. */
+  position: { x: number; y: number };
+  /** Connector React Flow has snapped the dragged end to, if any. */
+  target?: ConnectorSelection;
+}
+
 export const AWARENESS_FIELDS = {
   board: "board",
   user: "user",
@@ -70,6 +84,7 @@ export const AWARENESS_FIELDS = {
   connector: "connector",
   resizing: "resizing",
   reconnect: "reconnect",
+  connect: "connect",
 } as const;
 
 export interface PeerPresence {
@@ -84,4 +99,5 @@ export interface PeerPresence {
   connector: ConnectorState | null;
   resizing: ResizingState | null;
   reconnect: ReconnectState | null;
+  connect: ConnectState | null;
 }

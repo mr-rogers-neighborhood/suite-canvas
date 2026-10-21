@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { applyWorkspaceChange } from "./snapshotChanges";
 import { mergeSnapshots, type WorkspaceSnapshot } from "./snapshotMerge";
 
 export type { WorkspaceSnapshot } from "./snapshotMerge";
@@ -16,17 +17,19 @@ function read(workspace: Workspace): WorkspaceSnapshot {
 }
 
 /**
- * React binding for the workspace. Subscribes to CRDT changes and returns a
- * snapshot whose unchanged collections keep their identity.
+ * React binding for the workspace. One full read covers mount and workspace
+ * swaps; afterwards each observe record is folded in on its own, so a peer's
+ * edit no longer re-reads (or re-materialises) the whole workspace.
  */
 export function useWorkspaceSnapshot(): WorkspaceSnapshot {
   const workspace = useCanvasStore((state) => state.workspace);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>(() => read(workspace));
 
   useEffect(() => {
-    const refresh = () => setSnapshot((previous) => mergeSnapshots(previous, read(workspace)));
-    refresh();
-    return workspace.observe(refresh);
+    setSnapshot((previous) => mergeSnapshots(previous, read(workspace)));
+    return workspace.observe((change) => {
+      setSnapshot((previous) => applyWorkspaceChange(previous ?? read(workspace), change));
+    });
   }, [workspace]);
 
   return snapshot;

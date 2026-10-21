@@ -7,6 +7,7 @@ import { projectPeers, type SeenGesture } from "./peerProjection";
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
+  type ConnectState,
   type DraggingState,
   type FocusState,
   type PeerPresence,
@@ -29,6 +30,7 @@ interface PresenceState {
   setMovingConnector: (connector: ConnectorState | null) => void;
   setResizing: (resizing: ResizingState | null) => void;
   setReconnect: (reconnect: ReconnectState | null) => void;
+  setConnect: (connect: ConnectState | null) => void;
 }
 
 /** Last gesture signature and arrival time per peer, for the staleness check. */
@@ -101,6 +103,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
 
     setReconnect: (reconnect) => {
       get().awareness?.setLocalStateField(AWARENESS_FIELDS.reconnect, reconnect);
+    },
+
+    setConnect: (connect) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.connect, connect);
     },
   };
 });

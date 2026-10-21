@@ -726,14 +726,14 @@ test("shows a peer's connector selection", async ({ browser }) => {
 });
 
 /** Screen point of the free end of a peer's dashed link preview. */
-async function peerPreviewEnd(page: Page) {
-  return page.evaluate(() => {
-    const path = document.querySelector<SVGPathElement>('[data-testid="peer-reconnect-preview"]');
+async function peerPreviewEnd(page: Page, testId = "peer-reconnect-preview") {
+  return page.evaluate((id) => {
+    const path = document.querySelector<SVGPathElement>(`[data-testid="${id}"]`);
     if (!path) return null;
     const end = path.getPointAtLength(path.getTotalLength());
     const screen = new DOMPoint(end.x, end.y).matrixTransform(path.getScreenCTM() as DOMMatrix);
     return { x: Math.round(screen.x), y: Math.round(screen.y) };
-  });
+  }, testId);
 }
 
 test("shows a peer's link drag before it is dropped", async ({ browser }) => {
@@ -766,8 +766,10 @@ test("shows a peer's link drag before it is dropped", async ({ browser }) => {
   await pageA.mouse.move(anchorPoint.x + 40, anchorPoint.y + 120, { steps: 10 });
 
   // B sees a dashed preview from the anchored connector to A's pointer, and the
-  // real link steps aside until the drop.
+  // real link steps aside until the drop. A reconnect must not also read as a
+  // brand-new link drag.
   await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(1);
+  await expect(pageB.getByTestId("peer-connect-preview")).toHaveCount(0);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
   // The preview trails the pointer by at most one throttled sample.
   await expect
@@ -813,6 +815,74 @@ test("shows a peer's link drag before it is dropped", async ({ browser }) => {
   await pageA.mouse.up();
   await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test("shows a peer's new link drag before it is dropped", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("live-connect");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.locator('[data-testid="node-card"]')).toHaveCount(2);
+
+  const cards = pageA.locator('[data-testid="node-card"]');
+  const source = await cards.nth(0).locator('[data-testid="connector-dot"]').nth(1).boundingBox();
+  const target = await cards.nth(1).locator('[data-testid="connector-dot"]').nth(3).boundingBox();
+  if (!source || !target) throw new Error("connectors not visible");
+
+  const sourcePoint = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+  const targetPoint = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+
+  const preview = pageB.getByTestId("peer-connect-preview");
+  const edge = pageB.locator(".react-flow__edge");
+  await expect(preview).toHaveCount(0);
+
+  // A drags a brand-new link out of one of its connectors and holds it.
+  await pageA.mouse.move(sourcePoint.x, sourcePoint.y);
+  await pageA.mouse.down();
+  await pageA.mouse.move(sourcePoint.x + 60, sourcePoint.y + 120, { steps: 10 });
+
+  // B sees exactly one dashed preview from the anchored connector to A's
+  // pointer, with the arrow on the end the drop will mark. No link exists yet.
+  await expect(preview).toHaveCount(1);
+  await expect(pageB.getByTestId("peer-reconnect-preview")).toHaveCount(0);
+  await expect(edge).toHaveCount(0);
+  await expect(preview).toHaveAttribute("data-arrows", "end");
+
+  await expect
+    .poll(async () => {
+      const point = await peerPreviewEnd(pageB, "peer-connect-preview");
+      if (!point) return Number.POSITIVE_INFINITY;
+      return Math.hypot(point.x - (sourcePoint.x + 60), point.y - (sourcePoint.y + 120));
+    })
+    .toBeLessThan(12);
+
+  const first = await peerPreviewEnd(pageB, "peer-connect-preview");
+  await pageA.mouse.move(sourcePoint.x + 160, sourcePoint.y + 40, { steps: 10 });
+  await expect.poll(() => peerPreviewEnd(pageB, "peer-connect-preview")).not.toEqual(first);
+
+  // Over a target connector the preview snaps to it, the same way it snaps for
+  // the client doing the dragging.
+  await pageA.mouse.move(targetPoint.x + 5, targetPoint.y + 5, { steps: 10 });
+  await expect(preview).toHaveAttribute("data-snapped", "true");
+  await expect
+    .poll(async () => {
+      const point = await peerPreviewEnd(pageB, "peer-connect-preview");
+      if (!point) return Number.POSITIVE_INFINITY;
+      return Math.hypot(point.x - targetPoint.x, point.y - targetPoint.y);
+    })
+    .toBeLessThan(6);
+
+  await pageA.mouse.up();
+  await expect(preview).toHaveCount(0);
+  await expect(edge).toHaveCount(1);
 
   await contextA.close();
   await contextB.close();

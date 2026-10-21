@@ -231,6 +231,15 @@ under the pointer) and publishes it as `reconnect.target`. Peers then end their 
 connector instead of the raw pointer, meeting it perpendicular to its side, so both clients show the
 drop the link would land on.
 
+Dragging a **new** link out of a connector is the same story with no edge yet: `onConnectStart`
+publishes `connect` (`nodeId`, `connectorId`, the `anchorEnd` the link will attach there, the pointer
+in flow coordinates and React Flow's snapped `target`), the pointer is followed with the same
+throttled + trailing sampler, and `onConnectEnd` clears the field. `PeerReconnectLayer` draws both
+gestures with one dashed preview path, so peers see the new link grow from A's connector toward their
+pointer and snap onto the connector the drop will use. The preview's arrowhead sits on the end the
+dropped link will mark: the pointer end for a normal new link (the anchor is its source), or the
+anchor when the gesture started from a `target` handle.
+
 Either end of a link can be dragged onto another connector: hovering a link reveals React Flow's
 reconnect handles (`edgesReconnectable` + `onReconnect`). React Flow keeps the anchored end intact,
 so an unchanged `source`/`sourceHandle` means the *target* moved; `reconnectEdge` then rewrites only
@@ -251,9 +260,10 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 - **Presence:** one awareness channel carries `user`, `board` (the board being viewed),
   `pointer` (canvas cursor), `focus` (card *and* editor field), `selection` (selected nodes,
   selected links *and* the clicked connector),
-  `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction) and
-  `reconnect` (dragged link end + snap target). A moving connector shows a peer ring and moves for
-  everyone, a selected connector shows a dashed peer outline, and selected links render in the
+  `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction),
+  `reconnect` (dragged link end + snap target) and `connect` (new-link drag: anchor card, anchor
+  connector, anchor end, live pointer + snap target). A moving connector shows a peer ring and moves
+  for everyone, a selected connector shows a dashed peer outline, and selected links render in the
   peer's colour. `selection` has a single publisher (`CanvasBoard`), so a connector click cannot be
   clobbered by a node or link selection clearing the same field.
   Pointer and drag positions are
@@ -261,7 +271,8 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
   only renders in the card **and field** they have focused (all editors share one awareness, and a
   card has both a title and a body editor).
-- **Gestures expire on their own.** A drag, resize, connector move or link drag that stops arriving
+- **Gestures expire on their own.** A drag, resize, connector move or link drag (reconnecting an end
+  or drawing a new one) that stops arriving
   without an end event (tab killed, network dropped) would leave a ghost on every peer until
   awareness timed the client out. `peerProjection.ts` stamps each peer's gesture signature with the
   time it last *changed* (on the receiving side, so clock skew does not matter) and drops the

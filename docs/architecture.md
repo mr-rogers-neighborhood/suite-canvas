@@ -101,9 +101,12 @@ moment they arrive. Startup work (seeding, board resolution) waits for `ready`, 
 local storage hydrates.
 
 **Card size belongs to the placement.** `width`/`height` are optional per placement, so a shared
-card can be small on one board and large on another. A resize broadcasts `resizing { nodeId, width,
-height }` at ~25 Hz; peers ease toward it (the same smoothing as card drags) and show the resizer's
-colour ring, while the CRDT records only the final size on release.
+card can be small on one board and large on another. A resize broadcasts `resizing { nodeId,
+position, width, height }` at ~25 Hz; peers ease toward it (the same smoothing as card drags) and show
+the resizer's colour ring. The corner is part of the gesture because React Flow moves the node when
+the top or left edge is dragged: projecting only the size would anchor that edge on peers and mirror
+the transformation. The CRDT records the final geometry on release, so the corner the resizer saw is
+also what a reload reproduces.
 
 **Title text is a Loro map shaped by `loro-prosemirror`.** A plain string would resolve concurrent
 renames last-write-wins for the whole value; the ProseMirror tree stores text in `LoroText`, merges

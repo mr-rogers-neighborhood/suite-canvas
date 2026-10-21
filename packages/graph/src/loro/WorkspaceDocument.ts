@@ -646,6 +646,35 @@ export class WorkspaceDocument {
     return this.peekTitle(cardId)?.id ?? null;
   }
 
+  /**
+   * Both text container ids for a card, in one identity-stable object. Editors
+   * need this to adopt containers created by a peer after they mounted.
+   */
+  cardContainers(cardId: string): CardContainers {
+    const cached = this.containerCache.get(cardId);
+    if (cached) return cached;
+    const next: CardContainers = {
+      contentId: this.contentId(cardId),
+      titleId: this.titleId(cardId),
+    };
+    this.containerCache.set(cardId, next);
+    return next;
+  }
+
+  /** Fires when either text container for one card appears or disappears. */
+  observeContainers(cardId: string, listener: () => void): () => void {
+    let listeners = this.containerListeners.get(cardId);
+    if (!listeners) {
+      listeners = new Set();
+      this.containerListeners.set(cardId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.containerListeners.delete(cardId);
+    };
+  }
+
   /** Title text, falling back to the body's first line, then "Untitled". */
   displayTitle(cardId: string): string {
     const title = firstLine(textOf(this.peekTitle(cardId)));
@@ -791,6 +820,21 @@ export class WorkspaceDocument {
     if (!isMap(fields)) return;
     fields.set("width", size.width);
     fields.set("height", size.height);
+    this.commit(`${STRUCT_ORIGIN}resize-card`);
+  }
+
+  /** Commits position and size together so a corner drag is one undo step. */
+  updatePlacementGeometry(
+    boardId: string,
+    cardId: string,
+    geometry: { x: number; y: number; width: number; height: number },
+  ): void {
+    const fields = this.placements.get(placementKey(boardId, cardId));
+    if (!isMap(fields)) return;
+    fields.set("x", geometry.x);
+    fields.set("y", geometry.y);
+    fields.set("width", geometry.width);
+    fields.set("height", geometry.height);
     this.commit(`${STRUCT_ORIGIN}resize-card`);
   }
 

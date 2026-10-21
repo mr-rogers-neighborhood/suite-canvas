@@ -56,4 +56,4 @@ workspaces should not share anything.
 - Layer order reindexes one board's placements only, so Inbox cards never consume z slots.
 - The pre-workspace schema is migrated once, deterministically, with `meta.schemaVersion`.
 - Card size is per placement, so a shared card can be sized differently on each board, and resizes
-  are projected to peers live before the final size is persisted.
+  are projected to peers live before the final geometry is persisted.

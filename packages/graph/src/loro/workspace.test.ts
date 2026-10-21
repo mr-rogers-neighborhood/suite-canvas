@@ -258,6 +258,33 @@ describe("WorkspaceDocument fragments and sizes", () => {
     // Size is a property of the placement, not the card.
     expect(workspace.getPlacement(second.id, card.id)?.width).toBeUndefined();
   });
+
+  it("records a corner resize as one position-and-size change", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard();
+    const card = workspace.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
+
+    workspace.updatePlacementGeometry(board.id, card.id, {
+      x: 40,
+      y: 60,
+      width: 360,
+      height: 240,
+    });
+
+    expect(workspace.getPlacement(board.id, card.id)).toMatchObject({
+      x: 40,
+      y: 60,
+      width: 360,
+      height: 240,
+    });
+
+    workspace.undo();
+
+    // Dragging the top or left edge moves the corner; the round trip is one
+    // history entry, so a single undo restores it.
+    expect(workspace.getPlacement(board.id, card.id)).toMatchObject({ x: 10, y: 20 });
+    expect(workspace.getPlacement(board.id, card.id)?.width).toBeUndefined();
+  });
 });
 
 describe("WorkspaceDocument trash", () => {

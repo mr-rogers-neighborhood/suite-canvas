@@ -45,6 +45,11 @@ export interface ConnectorState {
 /** A card a peer is resizing, in flow units. */
 export interface ResizingState {
   nodeId: string;
+  /**
+   * Top-left corner while the gesture runs. Resizing from the top or left edge
+   * moves the node as well, so the size alone cannot reproduce the gesture.
+   */
+  position: PointerState;
   width: number;
   height: number;
 }

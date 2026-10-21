@@ -179,3 +179,67 @@ test("resizes a card and projects the resize to a peer", async ({ browser }) => 
   await contextA.close();
   await contextB.close();
 });
+
+test("projects a top-left resize in the same direction as the gesture", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = workspaceUrl("resize-corner");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(pageB)).toHaveCount(2);
+
+  const cardA = cards(pageA).first();
+  const cardB = cards(pageB).first();
+  const before = await cardA.boundingBox();
+  if (!before) throw new Error("card not visible");
+  await pageA.mouse.click(before.x + 60, before.y + 6);
+  await expect(pageA.locator(".react-flow__resize-control")).not.toHaveCount(0);
+
+  const handle = pageA.locator(".react-flow__resize-control.handle.top.left").first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error("resize handle not visible");
+
+  await pageA.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await pageA.mouse.down();
+  // Pull the top and left edges outward. React Flow moves the node's corner with
+  // them, so the peer has to move the same corner instead of pinning it.
+  await pageA.mouse.move(handleBox.x - 40, handleBox.y - 60, { steps: 10 });
+
+  await expect(cardB).toHaveAttribute("data-resizing-by-peer", "true");
+  await expect
+    .poll(async () => Math.round((await cardB.boundingBox())?.y ?? 0))
+    .toBeLessThan(Math.round(before.y) - 20);
+  await expect
+    .poll(async () => Math.round((await cardB.boundingBox())?.x ?? 0))
+    .toBeLessThan(Math.round(before.x) - 10);
+
+  await pageA.mouse.up();
+  await expect(cardB).not.toHaveAttribute("data-resizing-by-peer", "true");
+
+  // Read the flow-space geometry from the DOM: screen boxes depend on each
+  // page's viewport, flow units do not.
+  const flowGeometry = async (page: Page) =>
+    cards(page)
+      .first()
+      .evaluate((element) => {
+        const node = element.closest(".react-flow__node") as HTMLElement | null;
+        return [node?.style.transform ?? "", element.style.width, element.style.height].join("|");
+      });
+
+  // Both the moved corner and the new size are persisted, so the clients land
+  // on the same rectangle and a reload reproduces it.
+  await expect
+    .poll(async () => (await flowGeometry(pageA)) === (await flowGeometry(pageB)))
+    .toBe(true);
+  const settled = await flowGeometry(pageB);
+
+  await pageB.reload();
+  await expect.poll(() => flowGeometry(pageB)).toBe(settled);
+
+  await contextA.close();
+  await contextB.close();
+});

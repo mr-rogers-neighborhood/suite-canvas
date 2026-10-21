@@ -14,6 +14,7 @@ import {
   type OnConnectEnd,
   type OnConnectStart,
   ReactFlow,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useOnSelectionChange,
@@ -32,11 +33,18 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import {
+  dragMoves,
+  dragRects,
+  layerActions,
+  orderedSelection,
+  selectionSummary,
+} from "./multiSelect";
 import { nodeTypes } from "./NoteNode";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { PresenceLayer } from "./PresenceLayer";
 import { SectionLayer } from "./SectionLayer";
-import { cardSectionOffsets, sectionExpandPlan, sectionOffsets } from "./sectionLayout";
+import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
 const SMOOTHING = 0.22;
@@ -219,6 +227,9 @@ export function CanvasBoard() {
 
   const boardPlacementList = useMemo(() => [...boardPlacements.values()], [boardPlacements]);
 
+  /** Board cards in paint order (bottom to top), the order layer actions apply in. */
+  const boardOrder = useMemo(() => boardCards.map((card) => card.id), [boardCards]);
+
   const boardSections = useMemo(() => {
     if (!activeBoardId) return [];
     return snapshot.sections.filter((section) => section.boardId === activeBoardId);
@@ -282,7 +293,12 @@ export function CanvasBoard() {
     return map;
   }, [snapshot.cards, typeMap, tagMap]);
 
-  const locallyDraggingId = useRef<string | null>(null);
+  /** Cards this client is dragging; React Flow owns their live positions. */
+  const locallyDraggingIds = useRef(new Set<string>());
+  /** Cards in the current drag gesture, anchor included; published to peers. */
+  const draggedNodeIds = useRef<string[]>([]);
+  /** Board cards in paint order; Cmd/Ctrl+A selects exactly these. */
+  const boardCardIds = useRef<string[]>([]);
   /** Nodes this client is resizing; React Flow owns their live corner. */
   const locallyResizing = useRef(new Set<string>());
   /** React Flow reports edge-updater drags through onConnectStart too. */
@@ -290,6 +306,19 @@ export function CanvasBoard() {
   const lastPointerSent = useRef(0);
   const lastDragSent = useRef(0);
   const selectedKey = selectedNodeIds.join(",");
+  /**
+   * The selection key `applyBoardNodes` last painted. React Flow mirrors its own
+   * selection into the store asynchronously (through `onSelectionChange`), so a
+   * rebuild in between — a peer's pointer tick is enough — would paint the
+   * previous selection back over a marquee that is still in flight. Only an
+   * explicit selection change re-derives `selected`; otherwise React Flow's live
+   * value wins.
+   */
+  const paintedSelection = useRef(selectedKey);
+
+  useEffect(() => {
+    boardCardIds.current = boardOrder;
+  }, [boardOrder]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
@@ -340,6 +369,10 @@ export function CanvasBoard() {
   // React Flow owns transient state (drag position, selection), the CRDT owns
   // the truth. Re-derive flow nodes whenever either side changes.
   const applyBoardNodes = useCallback(() => {
+    // Computed once per pass: an unchanged key means React Flow's live selection
+    // is the truth, a changed one means a surface asked for a different set.
+    const repaintSelection = selectedKey !== paintedSelection.current;
+    paintedSelection.current = selectedKey;
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
       // Paint order comes from the sorted board list; ranks are fractional, so
@@ -354,10 +387,12 @@ export function CanvasBoard() {
           : { x: placement.x, y: placement.y };
         const position =
           existing &&
-          (locallyDraggingId.current === card.id || locallyResizing.current.has(card.id))
+          (locallyDraggingIds.current.has(card.id) || locallyResizing.current.has(card.id))
             ? existing.position
             : (smoothPositions.current.get(card.id) ?? storedPosition);
-        const selected = selectedKey.split(",").includes(card.id);
+        const selected = repaintSelection
+          ? selectedKey.split(",").includes(card.id)
+          : existing?.selected === true;
         const type = resolveCardType(typeMap, card.primaryTypeId);
         const meta = metaByCard.get(card.id) ?? EMPTY_META;
         const previous = existing?.data as CardNodeData | undefined;
@@ -403,8 +438,23 @@ export function CanvasBoard() {
     const next = new Map<string, { x: number; y: number }>();
     for (const peer of Object.values(peers)) {
       // A top or left resize moves the node, so its corner streams like a drag's.
-      if (peer.dragging) next.set(peer.dragging.nodeId, peer.dragging.position);
-      else if (peer.resizing?.position) next.set(peer.resizing.nodeId, peer.resizing.position);
+      if (peer.dragging) {
+        const { nodeId, position, nodeIds } = peer.dragging;
+        next.set(nodeId, position);
+        // A multi-drag streams the anchor only; every other member rides the
+        // same delta from its stored placement, so the set moves as one piece.
+        const anchorPlacement = boardPlacements.get(nodeId);
+        if (nodeIds && nodeIds.length > 1 && anchorPlacement) {
+          const dx = position.x - anchorPlacement.x;
+          const dy = position.y - anchorPlacement.y;
+          for (const id of nodeIds) {
+            if (id === nodeId) continue;
+            const placement = boardPlacements.get(id);
+            if (!placement) continue;
+            next.set(id, { x: placement.x + dx, y: placement.y + dy });
+          }
+        }
+      } else if (peer.resizing?.position) next.set(peer.resizing.nodeId, peer.resizing.position);
 
       // A section drag moves its members; resolve the same plan locally so the
       // cards ease toward the peer's section instead of stepping.
@@ -437,7 +487,7 @@ export function CanvasBoard() {
 
     if (next.size > 0) runSmoothing();
     if (ended) applyBoardNodes();
-  }, [peers, boardSections, boardPlacementList, runSmoothing, applyBoardNodes]);
+  }, [peers, boardSections, boardPlacementList, boardPlacements, runSmoothing, applyBoardNodes]);
 
   useEffect(
     () => () => {
@@ -535,12 +585,20 @@ export function CanvasBoard() {
     setEdges(flowEdges);
   }, [boardEdges, peers, selectedEdgeIds, setEdges]);
 
-  useOnSelectionChange({
-    onChange: ({ nodes: selectedNodes, edges: selectedEdges }) => {
-      setSelectedNodeIds(selectedNodes.map((node) => node.id));
-      setSelectedEdgeIds(selectedEdges.map((edge) => edge.id));
+  // React Flow registers this handler in an effect keyed on its identity, and
+  // unregisters it during the cleanup phase of every commit that re-renders this
+  // board. An inline callback therefore misses any selection change that lands in
+  // the same commit (the listener's own effect runs before this one re-registers),
+  // so the callback has to stay stable.
+  const onSelectionChanged = useCallback(
+    ({ nodes: nextNodes, edges: nextEdges }: { nodes: Node[]; edges: Edge[] }) => {
+      setSelectedNodeIds(nextNodes.map((node) => node.id));
+      setSelectedEdgeIds(nextEdges.map((edge) => edge.id));
     },
-  });
+    [setSelectedNodeIds, setSelectedEdgeIds],
+  );
+
+  useOnSelectionChange({ onChange: onSelectionChanged });
 
   // One publisher for everything a peer has selected, including the connector
   // they clicked, so no component has to reason about who else is selected.
@@ -601,6 +659,21 @@ export function CanvasBoard() {
       setPresenceSelection(null);
     },
     [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection],
+  );
+
+  // A bulk layer change is N single-card moves applied in an order that keeps
+  // the selection's relative stacking (see `layerActions`).
+  const changeLayerBulk = useCallback(
+    (ids: string[], action: LayerAction) => {
+      if (!activeBoardId) return;
+      for (const id of layerActions(orderedSelection(boardOrder, ids), action)) {
+        workspace.moveLayer(activeBoardId, id, action);
+      }
+      store.getState().unselectNodesAndEdges();
+      setSelectedNodeIds([]);
+      setPresenceSelection(null);
+    },
+    [workspace, activeBoardId, boardOrder, setSelectedNodeIds, setPresenceSelection, store],
   );
 
   const handleSelectSection = useCallback(
@@ -726,15 +799,29 @@ export function CanvasBoard() {
     [activeBoardId, store, workspace, selectSection, setEditingSection],
   );
 
-  const expandSectionForCard = useCallback(
-    (
-      position: { x: number; y: number },
-      measured: { width?: number | undefined; height?: number | undefined },
-    ) => {
-      const plan = sectionExpandPlan(boardSections, position, measured);
-      if (plan) workspace.moveSectionsBatch({ sections: plan });
+  /**
+   * Commits a finished drag of one or more cards. The move and any section
+   * growth land in one document commit (and so one undo step): `moveSectionsBatch`
+   * accepts placements, so a drop that grows a section does not need a second
+   * write the way a separate `movePlacements` call would.
+   */
+  const commitDrop = useCallback(
+    (dragged: Node[]) => {
+      if (!activeBoardId || dragged.length === 0) return;
+      const moves = dragMoves(dragged);
+      const plan = sectionsExpandPlan(boardSections, dragRects(dragged));
+      if (plan.length > 0) {
+        workspace.moveSectionsBatch({
+          sections: plan,
+          placements: moves.map((move) => ({ boardId: activeBoardId, ...move })),
+        });
+        return;
+      }
+      // No section needs to grow: `movePlacements` skips no-op moves and stays
+      // silent when the whole gesture ended where it started.
+      workspace.movePlacements(activeBoardId, moves);
     },
-    [boardSections, workspace],
+    [activeBoardId, boardSections, workspace],
   );
 
   useEffect(() => {
@@ -765,6 +852,21 @@ export function CanvasBoard() {
         return;
       }
 
+      // Last of the Escape branches: drop the selection once nothing more
+      // specific (a rename, an editing card, a pending reveal) owns Escape.
+      if (
+        event.key === "Escape" &&
+        (state.selectedNodeIds.length > 0 ||
+          state.selectedEdgeIds.length > 0 ||
+          state.selectedConnector)
+      ) {
+        store.getState().unselectNodesAndEdges();
+        state.setSelectedNodeIds([]);
+        state.setSelectedEdgeIds([]);
+        state.setSelectedConnector(null);
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && !isTyping) {
         const key = event.key.toLowerCase();
         // Inside a card the editor owns undo (per-fragment history); here it
@@ -785,6 +887,17 @@ export function CanvasBoard() {
             y: window.innerHeight / 2,
           });
           createSectionAt({ x: centre.x - 180, y: centre.y - 130 }, true);
+          return;
+        }
+
+        // Select every card on the board, never the page text.
+        if (key === "a" && !event.altKey && !event.shiftKey) {
+          event.preventDefault();
+          const ids = boardCardIds.current;
+          const flow = store.getState();
+          flow.unselectNodesAndEdges();
+          flow.addSelectedNodes(ids);
+          state.selectAllOnBoard(ids);
           return;
         }
       }
@@ -815,7 +928,7 @@ export function CanvasBoard() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [trashSelected, unplaceSelected, workspace, createSectionAt, screenToFlowPosition]);
+  }, [trashSelected, unplaceSelected, workspace, createSectionAt, screenToFlowPosition, store]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -1140,6 +1253,49 @@ export function CanvasBoard() {
       ];
     }
 
+    // Right-clicking a card that is part of a multi-selection acts on the whole
+    // selection; a lone card keeps the single-card menu.
+    const selection = selectionSummary(selectedNodeIds);
+    if (nodeId && selection.multiple && selection.ids.includes(nodeId)) {
+      const anchor = contextMenu.flowPosition ?? { x: 0, y: 0 };
+      return [
+        {
+          label: `New section from ${selection.noun}`,
+          onSelect: () => createSectionAt(anchor, true),
+        },
+        {
+          label: "Position",
+          items: [
+            {
+              label: "Bring Forward",
+              onSelect: () => changeLayerBulk(selection.ids, "forward"),
+            },
+            {
+              label: "Bring to Front",
+              onSelect: () => changeLayerBulk(selection.ids, "front"),
+            },
+            {
+              label: "Send Back",
+              onSelect: () => changeLayerBulk(selection.ids, "backward"),
+            },
+            {
+              label: "Send to Back",
+              onSelect: () => changeLayerBulk(selection.ids, "back"),
+            },
+          ],
+        },
+        {
+          label: "Remove from board",
+          onSelect: () => unplaceSelected(),
+        },
+        {
+          label: "Delete cards",
+          danger: true,
+          onSelect: () => trashSelected(),
+        },
+      ];
+    }
+
     return [
       {
         label: "Add connector",
@@ -1197,6 +1353,9 @@ export function CanvasBoard() {
     createNoteAt,
     createSectionAt,
     changeLayer,
+    changeLayerBulk,
+    unplaceSelected,
+    trashSelected,
     selectedNodeIds,
     sectionMembershipMap,
     setEditingSection,
@@ -1230,6 +1389,11 @@ export function CanvasBoard() {
         onlyRenderVisibleElements
         fitView
         deleteKeyCode={null}
+        // Shift, Ctrl and Cmd all toggle membership; Shift also starts the
+        // marquee (React Flow's `selectionKeyCode` default). `Partial` selects a
+        // card the box merely touches, which is what a card board should do.
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
+        selectionMode={SelectionMode.Partial}
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
@@ -1243,25 +1407,30 @@ export function CanvasBoard() {
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
         onEdgeClick={() => setSelectedConnector(null)}
-        onNodeDragStart={(_, node) => {
-          locallyDraggingId.current = node.id;
-          setDragging({ nodeId: node.id, position: node.position });
+        onNodeDragStart={(_, node, dragged) => {
+          // React Flow drags the whole selection; the node under the pointer is
+          // the anchor peers derive every other member's position from.
+          const ids = dragged.length > 0 ? dragged.map((entry) => entry.id) : [node.id];
+          draggedNodeIds.current = ids;
+          locallyDraggingIds.current = new Set(ids);
+          setDragging({ nodeId: node.id, position: node.position, nodeIds: ids });
         }}
         onNodeDrag={(_, node) => {
           const now = performance.now();
           if (now - lastDragSent.current < DRAG_THROTTLE_MS) return;
           lastDragSent.current = now;
-          setDragging({ nodeId: node.id, position: node.position });
-        }}
-        onNodeDragStop={(_, node) => {
-          locallyDraggingId.current = null;
-          setDragging(null);
-          if (activeBoardId)
-            workspace.updatePlacementPosition(activeBoardId, node.id, node.position);
-          expandSectionForCard(node.position, {
-            width: node.measured?.width ?? node.width,
-            height: node.measured?.height ?? node.height,
+          setDragging({
+            nodeId: node.id,
+            position: node.position,
+            nodeIds: draggedNodeIds.current,
           });
+        }}
+        onNodeDragStop={(_, node, dragged) => {
+          const dropped = dragged.length > 0 ? dragged : [node];
+          draggedNodeIds.current = [];
+          locallyDraggingIds.current = new Set();
+          setDragging(null);
+          commitDrop(dropped);
         }}
         onPaneClick={() => {
           setSelectedConnector(null);
@@ -1273,12 +1442,34 @@ export function CanvasBoard() {
         }}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
-          openContextMenu({ x: event.clientX, y: event.clientY, kind: "node", nodeId: node.id });
+          openContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            kind: "node",
+            nodeId: node.id,
+            // Lets "New section from N cards" fall back to the card it was
+            // opened on when no card is selected.
+            flowPosition: node.position,
+          });
         }}
         onPaneContextMenu={(event) => {
           event.preventDefault();
           const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", flowPosition });
+        }}
+        // A marquee leaves React Flow's selection overlay over the cards, so a
+        // right-click there reaches this handler rather than the card's.
+        onSelectionContextMenu={(event, selected) => {
+          event.preventDefault();
+          const anchor = selected[0];
+          if (!anchor) return;
+          openContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            kind: "node",
+            nodeId: anchor.id,
+            flowPosition: anchor.position,
+          });
         }}
       >
         <SectionLayer

@@ -82,7 +82,21 @@ so card stacking order cannot hide them.
 
 `bidirectional` controls the arrowheads (`markerEnd` always, `markerStart` when bidirectional).
 Right-clicking a link offers **Reverse direction** (swaps endpoints *and* their connectors),
-**Make bidirectional** / **Make one-way**, and **Delete link**.
+**Make bidirectional** / **Make one-way**, a **Path** submenu (Curved / Straight / Step / Smooth
+step, stored as `path` on the edge), and **Delete link**.
+
+Links follow their connectors live: while a connector is being repositioned, `Connector` writes the
+new position to local state and calls React Flow's `updateNodeInternals` once per animation frame,
+so the edge re-routes before the drop instead of snapping afterwards.
+
+Either end of a link can be dragged onto another connector: hovering a link reveals React Flow's
+reconnect handles (`edgesReconnectable` + `onReconnect`). React Flow keeps the anchored end intact,
+so an unchanged `source`/`sourceHandle` means the *target* moved; `reconnectEdge` then rewrites only
+that end and refuses to point a link at its own node.
+
+While a connector is selected, the board adds `.connector-active`, which disables pointer events on
+edges, their interaction strokes, and the reconnect handles. Without it the reconnect handle (a
+10 px circle centred on the dot) swallows the drag that is meant to move the connector.
 
 ## Editing and presence
 
@@ -93,7 +107,9 @@ Right-clicking a link offers **Reverse direction** (swaps endpoints *and* their 
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
 - **Presence:** one awareness channel carries `user`, `pointer` (canvas cursor), `focus`
-  (editing node), `selection` (selected nodes) and `dragging` (node + live position).
+  (editing node), `selection` (selected nodes *and* selected links) and `dragging` (node + live
+  position). Moving a connector publishes `connector` (`nodeId` + `connectorId`), which draws a peer
+  ring around that connector, and selected links render in the peer's colour.
   Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
   Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret

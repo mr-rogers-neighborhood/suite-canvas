@@ -2,9 +2,11 @@ import { z } from "zod";
 
 export const nodeKinds = ["note"] as const;
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
+export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
 
 export const nodeKindSchema = z.enum(nodeKinds);
 export const edgeKindSchema = z.enum(edgeKinds);
+export const edgePathSchema = z.enum(edgePaths);
 
 export const entityIdSchema = z.string().min(1);
 
@@ -44,6 +46,8 @@ export const graphEdgeSchema = z.object({
   sourceConnector: entityIdSchema.optional(),
   targetConnector: entityIdSchema.optional(),
   kind: edgeKindSchema,
+  /** How the link is drawn between its two connectors. */
+  path: edgePathSchema,
   /** Renders an arrowhead at both ends when true. */
   bidirectional: z.boolean(),
   label: z.string().optional(),
@@ -56,3 +60,4 @@ export type GraphNode = z.infer<typeof graphNodeSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type NodeKind = z.infer<typeof nodeKindSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
+export type EdgePath = z.infer<typeof edgePathSchema>;

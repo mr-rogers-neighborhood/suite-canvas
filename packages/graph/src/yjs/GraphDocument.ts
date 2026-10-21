@@ -58,10 +58,11 @@ export function normalizeNode(node: GraphNode): GraphNode {
 }
 
 function normalizeEdge(edge: GraphEdge): GraphEdge {
-  const legacy = edge as GraphEdge & { bidirectional?: boolean };
+  const legacy = edge as GraphEdge & { bidirectional?: boolean; path?: GraphEdge["path"] };
   return {
     ...edge,
     bidirectional: typeof legacy.bidirectional === "boolean" ? legacy.bidirectional : false,
+    path: legacy.path ?? "bezier",
   };
 }
 
@@ -128,6 +129,7 @@ export class GraphDocument {
       source: input.source,
       target: input.target,
       kind: input.kind ?? "references",
+      path: "bezier",
       bidirectional: false,
       createdAt: now,
       updatedAt: now,
@@ -140,6 +142,38 @@ export class GraphDocument {
 
   removeEdge(id: string): void {
     this.edges.delete(id);
+  }
+
+  setEdgePath(id: string, path: GraphEdge["path"]): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+    this.setEdge({ ...edge, path, updatedAt: Date.now() });
+  }
+
+  /** Reattaches one end of a link to another node/connector. */
+  reconnectEdge(
+    id: string,
+    end: "source" | "target",
+    nodeId: string,
+    connectorId: string | undefined,
+  ): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+
+    const next: GraphEdge = { ...edge, updatedAt: Date.now() };
+    if (end === "source") {
+      if (nodeId === edge.target) return;
+      next.source = nodeId;
+      if (connectorId) next.sourceConnector = connectorId;
+      else delete next.sourceConnector;
+    } else {
+      if (nodeId === edge.source) return;
+      next.target = nodeId;
+      if (connectorId) next.targetConnector = connectorId;
+      else delete next.targetConnector;
+    }
+
+    this.setEdge(next);
   }
 
   /** Swaps the endpoints (and their connectors) of an existing link. */

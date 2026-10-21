@@ -151,6 +151,131 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   await expect(connectors).toHaveCount(4);
 });
 
+/** Reads the live edge path straight from the DOM (avoids locator churn). */
+async function edgeGeometry(page: Page) {
+  return page.evaluate(() => {
+    const path = document.querySelector("path.react-flow__edge-path");
+    if (!path) return null;
+    const length = path.getTotalLength();
+    const start = path.getPointAtLength(0);
+    const end = path.getPointAtLength(length);
+    const mid = path.getPointAtLength(length / 2);
+    return {
+      start: { x: Math.round(start.x), y: Math.round(start.y) },
+      end: { x: Math.round(end.x), y: Math.round(end.y) },
+      mid: { x: Math.round(mid.x), y: Math.round(mid.y) },
+      d: path.getAttribute("d") ?? "",
+      stroke: getComputedStyle(path).stroke,
+    };
+  });
+}
+
+async function connectCards(page: Page): Promise<void> {
+  const cards = page.locator('[data-testid="node-card"]');
+  const source = await cards.nth(0).locator('[data-testid="connector-dot"]').nth(1).boundingBox();
+  const target = await cards.nth(1).locator('[data-testid="connector-dot"]').nth(3).boundingBox();
+  if (!source || !target) throw new Error("connectors not visible");
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 14 });
+  await page.mouse.up();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+}
+
+test("the link follows a connector while it is being moved", async ({ page }) => {
+  await page.goto(docUrl("live-link"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(page);
+
+  const before = await edgeGeometry(page);
+  if (!before) throw new Error("edge missing");
+
+  const card = page.locator('[data-testid="node-card"]').first();
+  await card.locator('[data-testid="connector-dot"]').nth(1).click();
+  const grab = await card.locator('[data-testid="connector-grab"]').boundingBox();
+  const cardBox = await card.boundingBox();
+  if (!grab || !cardBox) throw new Error("grab handle not visible");
+
+  await page.mouse.move(grab.x + grab.width - 3, grab.y + grab.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(cardBox.x + cardBox.width * 0.75, cardBox.y - 6, { steps: 10 });
+  await page.waitForTimeout(250);
+
+  // The link's source end follows the connector before it is dropped.
+  const during = await edgeGeometry(page);
+  if (!during) throw new Error("edge missing during drag");
+  expect(Math.abs(during.start.y - before.start.y)).toBeGreaterThan(4);
+
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  expect(await page.locator(".react-flow__edge")).toHaveCount(1);
+});
+
+/** Screen point on the link stroke, which is where it actually accepts pointer events. */
+async function edgeMidpoint(page: Page): Promise<{ x: number; y: number }> {
+  const point = await page.evaluate(() => {
+    const path = document.querySelector("path.react-flow__edge-path");
+    if (!path) return null;
+    const mid = path.getPointAtLength(path.getTotalLength() / 2);
+    const screen = new DOMPoint(mid.x, mid.y).matrixTransform(path.getScreenCTM());
+    return { x: screen.x, y: screen.y };
+  });
+  if (!point) throw new Error("edge missing");
+  return point;
+}
+
+/** Hovers the link so React Flow reveals its reconnect handles. */
+async function hoverEdge(page: Page): Promise<void> {
+  const point = await edgeMidpoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".react-flow__edgeupdater")).toHaveCount(2);
+}
+
+test("reconnects a link end onto another connector", async ({ page }) => {
+  await page.goto(docUrl("reconnect"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(page);
+
+  await createNote(page);
+  await page.keyboard.press("Escape");
+  const cards = page.locator('[data-testid="node-card"]');
+  await expect(cards).toHaveCount(3);
+
+  const before = await edgeGeometry(page);
+  if (!before) throw new Error("edge missing");
+
+  await hoverEdge(page);
+  const updater = await page.locator(".react-flow__edgeupdater-source").boundingBox();
+  const other = await cards.nth(2).locator('[data-testid="connector-dot"]').nth(1).boundingBox();
+  if (!updater || !other) throw new Error("reconnect handles not visible");
+
+  await page.mouse.move(updater.x + updater.width / 2, updater.y + updater.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(other.x + other.width / 2, other.y + other.height / 2, { steps: 14 });
+  await page.mouse.up();
+
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+  await expect.poll(async () => (await edgeGeometry(page))?.start).not.toEqual(before.start);
+});
+
+test("changes link pathing from the context menu", async ({ page }) => {
+  await page.goto(docUrl("edge-paths"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(page);
+
+  const curved = await edgeGeometry(page);
+  if (!curved) throw new Error("edge missing");
+  expect(curved.d).toContain("C");
+
+  const point = await edgeMidpoint(page);
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Path" }).hover();
+  await expect(page.getByTestId("context-submenu")).toBeVisible();
+  await page.getByRole("menuitem", { name: "Step", exact: true }).click();
+
+  await expect.poll(async () => (await edgeGeometry(page))?.d.includes("C")).toBe(false);
+});
+
 test("links connectors with a direction the menu can change", async ({ page }) => {
   await page.goto(docUrl("links"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
@@ -195,13 +320,16 @@ test("links connectors with a direction the menu can change", async ({ page }) =
   }));
   expect(layers.edges).toBeGreaterThan(layers.nodes);
 
-  const edgeBox = await edge.boundingBox();
-  if (!edgeBox) throw new Error("edge not visible");
+  // Swapping the endpoints makes React Flow drop the edge for a frame, so a right
+  // click can fall through to the pane. Dismiss whatever opened and try again.
   const openEdgeMenu = async () => {
-    await page.mouse.click(edgeBox.x + edgeBox.width / 2, edgeBox.y + edgeBox.height / 2, {
-      button: "right",
-    });
-    await expect(page.getByTestId("context-menu")).toBeVisible();
+    const deleteItem = page.getByRole("menuitem", { name: "Delete link" });
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      const point = await edgeMidpoint(page);
+      await page.mouse.click(point.x, point.y, { button: "right" });
+      await expect(deleteItem).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 10_000 });
   };
 
   await openEdgeMenu();
@@ -329,6 +457,49 @@ test("shows a peer's selection presence", async ({ browser }) => {
   const cardB = pageB.locator('[data-testid="node-card"]').first();
   await expect(cardB).toHaveAttribute("data-selected-by-peer", "true");
   await expect(cardB.getByTestId("presence-avatar")).toBeVisible();
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test("shows link selection and connector movement presence", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("link-presence");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
+
+  await connectCards(pageA);
+  await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
+
+  const before = await edgeGeometry(pageB);
+  if (!before) throw new Error("edge missing on B");
+
+  // A selects the link; B sees it highlighted in A's color.
+  const box = await pageA.locator(".react-flow__edge").first().boundingBox();
+  if (!box) throw new Error("edge not visible");
+  await pageA.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect.poll(async () => (await edgeGeometry(pageB))?.stroke).not.toBe(before.stroke);
+
+  // A drags a connector; B sees it as peer-moved.
+  const cardA = pageA.locator('[data-testid="node-card"]').first();
+  await cardA.locator('[data-testid="connector-dot"]').nth(1).click();
+  const grab = await cardA.locator('[data-testid="connector-grab"]').boundingBox();
+  if (!grab) throw new Error("grab handle not visible");
+  await pageA.mouse.move(grab.x + grab.width - 3, grab.y + grab.height / 2);
+  await pageA.mouse.down();
+  await pageA.mouse.move(grab.x + grab.width + 40, grab.y - 40, { steps: 8 });
+
+  await expect(pageB.locator('[data-testid="connector"][data-peer="true"]')).toHaveCount(1);
+
+  await pageA.mouse.up();
+  await expect(pageB.locator('[data-testid="connector"][data-peer="true"]')).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

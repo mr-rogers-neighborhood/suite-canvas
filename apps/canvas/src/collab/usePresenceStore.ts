@@ -5,6 +5,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
 import {
   AWARENESS_FIELDS,
+  type ConnectorState,
   type DraggingState,
   type FocusState,
   type PeerPresence,
@@ -22,6 +23,7 @@ interface PresenceState {
   setFocus: (focus: FocusState | null) => void;
   setDragging: (dragging: DraggingState | null) => void;
   setSelection: (selection: SelectionState | null) => void;
+  setMovingConnector: (connector: ConnectorState | null) => void;
 }
 
 function toPresenceUser(state: Record<string, unknown>): PresenceUser {
@@ -40,6 +42,7 @@ function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerP
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,
     dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
     selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
+    connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
   };
 }
 
@@ -88,6 +91,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
 
     setSelection: (selection) => {
       get().awareness?.setLocalStateField(AWARENESS_FIELDS.selection, selection);
+    },
+
+    setMovingConnector: (connector) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.connector, connector);
     },
   };
 });

@@ -5,11 +5,20 @@ export {
   nextFreeAnchor,
   snapToAnchor,
 } from "./connectors.js";
-export type { Connector, EdgeKind, GraphEdge, GraphNode, NodeKind } from "./schema.js";
+export type {
+  Connector,
+  EdgeKind,
+  EdgePath,
+  GraphEdge,
+  GraphNode,
+  NodeKind,
+} from "./schema.js";
 export {
   connectorSchema,
   edgeKindSchema,
   edgeKinds,
+  edgePathSchema,
+  edgePaths,
   entityIdSchema,
   graphEdgeSchema,
   graphNodeSchema,

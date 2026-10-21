@@ -16,6 +16,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setEditingNodeId = useUiStore((state) => state.setEditingNodeId);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
+  const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
 
   const fragment = useMemo(() => graph.getContent(id), [graph, id]);
@@ -30,6 +31,17 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     return Object.values(peers)
       .filter((peer) => peer.dragging?.nodeId === id)
       .map((peer) => peer.user);
+  }, [peers, id]);
+
+  const movingConnectorPeers = useMemo<Record<string, PresenceUser[]>>(() => {
+    const result: Record<string, PresenceUser[]> = {};
+    for (const peer of Object.values(peers)) {
+      if (peer.connector?.nodeId !== id) continue;
+      const list = result[peer.connector.connectorId] ?? [];
+      list.push(peer.user);
+      result[peer.connector.connectorId] = list;
+    }
+    return result;
   }, [peers, id]);
 
   const selectingPeers = useMemo<PresenceUser[]>(() => {
@@ -49,6 +61,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         presence={presence}
         draggingPeers={draggingPeers}
         selectingPeers={selectingPeers}
+        movingConnectorPeers={movingConnectorPeers}
+        onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}
+        onConnectorMoveFinished={() => setMovingConnector(null)}
         selectedConnectorId={
           selectedConnector?.nodeId === id ? selectedConnector.connectorId : null
         }

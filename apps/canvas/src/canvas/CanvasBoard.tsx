@@ -28,17 +28,31 @@ const SMOOTHING = 0.22;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
 
-function toFlowEdge(edge: GraphEdge): Edge {
-  const marker = { type: MarkerType.ArrowClosed, width: 18, height: 18 };
+const EDGE_TYPE: Record<GraphEdge["path"], Edge["type"]> = {
+  bezier: "default",
+  straight: "straight",
+  step: "step",
+  smoothstep: "smoothstep",
+};
+
+function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edge {
+  const marker = {
+    type: MarkerType.ArrowClosed,
+    width: 18,
+    height: 18,
+    ...(peerColor ? { color: peerColor } : {}),
+  };
 
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: "bezier",
+    type: EDGE_TYPE[edge.path] ?? "default",
+    selected,
     ...(edge.sourceConnector ? { sourceHandle: edge.sourceConnector } : {}),
     ...(edge.targetConnector ? { targetHandle: edge.targetConnector } : {}),
     ...(edge.label ? { label: edge.label } : {}),
+    ...(peerColor ? { style: { stroke: peerColor, strokeWidth: 2 } } : {}),
     markerEnd: marker,
     ...(edge.bidirectional ? { markerStart: marker } : {}),
   };
@@ -52,7 +66,10 @@ export function CanvasBoard() {
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
+  const selectedConnector = useUiStore((state) => state.selectedConnector);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
+  const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
+  const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const setEditingNodeId = useUiStore((state) => state.setEditingNodeId);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
@@ -148,14 +165,27 @@ export function CanvasBoard() {
   }, [graphNodes, selectedKey, setNodes]);
 
   useEffect(() => {
-    setEdges(graphEdges.map(toFlowEdge));
-  }, [graphEdges, setEdges]);
+    const peerByEdge = new Map<string, string>();
+    for (const peer of Object.values(peers)) {
+      for (const edgeId of peer.selection?.edgeIds ?? []) {
+        if (!peerByEdge.has(edgeId)) peerByEdge.set(edgeId, peer.user.color);
+      }
+    }
+    const selectedEdges = new Set(selectedEdgeIds);
+    setEdges(
+      graphEdges.map((edge) =>
+        toFlowEdge(edge, selectedEdges.has(edge.id), peerByEdge.get(edge.id)),
+      ),
+    );
+  }, [graphEdges, peers, selectedEdgeIds, setEdges]);
 
   useOnSelectionChange({
-    onChange: ({ nodes: selected }) => {
-      const ids = selected.map((node) => node.id);
+    onChange: ({ nodes: selectedNodes, edges: selectedEdges }) => {
+      const ids = selectedNodes.map((node) => node.id);
+      const edgeIds = selectedEdges.map((edge) => edge.id);
       setSelectedNodeIds(ids);
-      setPresenceSelection(ids.length > 0 ? { nodeIds: ids } : null);
+      setSelectedEdgeIds(edgeIds);
+      setPresenceSelection(ids.length > 0 || edgeIds.length > 0 ? { nodeIds: ids, edgeIds } : null);
     },
   });
 
@@ -224,6 +254,21 @@ export function CanvasBoard() {
     [graph],
   );
 
+  const onReconnect = useCallback(
+    (oldEdge: Edge, connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      // React Flow keeps the anchored end intact, so an unchanged source means the target moved.
+      const end: "source" | "target" =
+        connection.source === oldEdge.source && connection.sourceHandle === oldEdge.sourceHandle
+          ? "target"
+          : "source";
+      const nodeId = end === "source" ? connection.source : connection.target;
+      const connectorId = end === "source" ? connection.sourceHandle : connection.targetHandle;
+      graph.reconnectEdge(oldEdge.id, end, nodeId, connectorId ?? undefined);
+    },
+    [graph],
+  );
+
   const createNoteAt = useCallback(
     (position: { x: number; y: number }) => {
       const node = graph.createNote({ id: crypto.randomUUID(), position });
@@ -258,6 +303,27 @@ export function CanvasBoard() {
         {
           label: edge?.bidirectional ? "Make one-way" : "Make bidirectional",
           onSelect: () => graph.setEdgeBidirectional(edgeId, !edge?.bidirectional),
+        },
+        {
+          label: "Path",
+          items: [
+            {
+              label: edge?.path === "bezier" ? "Curved ✓" : "Curved",
+              onSelect: () => graph.setEdgePath(edgeId, "bezier"),
+            },
+            {
+              label: edge?.path === "straight" ? "Straight ✓" : "Straight",
+              onSelect: () => graph.setEdgePath(edgeId, "straight"),
+            },
+            {
+              label: edge?.path === "step" ? "Step ✓" : "Step",
+              onSelect: () => graph.setEdgePath(edgeId, "step"),
+            },
+            {
+              label: edge?.path === "smoothstep" ? "Smooth step ✓" : "Smooth step",
+              onSelect: () => graph.setEdgePath(edgeId, "smoothstep"),
+            },
+          ],
         },
         {
           label: "Delete link",
@@ -332,7 +398,10 @@ export function CanvasBoard() {
   }, [contextMenu, graph, createNoteAt, changeLayer, setSelectedNodeIds, setSelectedConnector]);
 
   return (
-    <div data-testid="canvas-board" className="h-full w-full">
+    <div
+      data-testid="canvas-board"
+      className={`h-full w-full ${selectedConnector ? "connector-active" : ""}`}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -343,10 +412,13 @@ export function CanvasBoard() {
         deleteKeyCode={null}
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}
+        onReconnect={onReconnect}
+        edgesReconnectable
         onEdgeContextMenu={(event, edge) => {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
+        onEdgeClick={() => setSelectedConnector(null)}
         onNodeDragStart={(_, node) => {
           locallyDraggingId.current = node.id;
           setDragging({ nodeId: node.id, position: node.position });

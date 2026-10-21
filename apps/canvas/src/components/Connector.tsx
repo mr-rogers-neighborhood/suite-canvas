@@ -1,15 +1,22 @@
 import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/graph";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { useCallback, useRef, useState } from "react";
+import type { PresenceUser } from "../collab/presence";
 
 export interface ConnectorProps {
   connector: ConnectorModel;
+  nodeId: string;
   color?: string | undefined;
   selected?: boolean;
   onSelect: (connectorId: string) => void;
   /** Persisted once, on release, so dragging never writes to the CRDT per frame. */
   onMoveEnd: (connectorId: string, position: { x: number; y: number }) => void;
   onContextMenu: (event: React.MouseEvent, connectorId: string) => void;
+  /** Peers currently dragging this connector, shown as a colored ring. */
+  movingPeers?: PresenceUser[];
+  /** Called when this client starts/stops dragging the connector. */
+  onMoveStart?: (() => void) | undefined;
+  onMoveFinished?: (() => void) | undefined;
 }
 
 /** Magnetic radius around a corner/side midpoint, in screen pixels. */
@@ -98,15 +105,21 @@ const SIDE_NAME: Record<Position, string> = {
  */
 export function Connector({
   connector,
+  nodeId,
   color = "#94a3b8",
   selected = false,
   onSelect,
   onMoveEnd,
   onContextMenu,
+  movingPeers = [],
+  onMoveStart,
+  onMoveFinished,
 }: ConnectorProps) {
   const [dragging, setDragging] = useState(false);
   const [livePosition, setLivePosition] = useState<Point | null>(null);
   const shell = useRef<HTMLDivElement | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const movingPeer = movingPeers[0];
 
   const position = livePosition ?? { x: connector.x, y: connector.y };
   const side = sideOf(position);
@@ -122,10 +135,23 @@ export function Connector({
 
       (event.target as HTMLElement).setPointerCapture(event.pointerId);
       setDragging(true);
+      onMoveStart?.();
+
+      // Edges are measured from the handle's DOM box, so re-measure while the
+      // connector moves; otherwise links would only catch up on release.
+      let frame: number | null = null;
+      const scheduleRemeasure = () => {
+        if (frame !== null) return;
+        frame = requestAnimationFrame(() => {
+          frame = null;
+          updateNodeInternals(nodeId);
+        });
+      };
 
       const move = (moveEvent: PointerEvent) => {
         const projected = projectToPerimeter(rect, moveEvent.clientX, moveEvent.clientY);
         setLivePosition(magnetize(projected, rect));
+        scheduleRemeasure();
       };
 
       const up = (upEvent: PointerEvent) => {
@@ -134,6 +160,9 @@ export function Connector({
         setLivePosition(null);
         setDragging(false);
         onMoveEnd(connector.id, finalPosition);
+        onMoveFinished?.();
+        if (frame !== null) cancelAnimationFrame(frame);
+        updateNodeInternals(nodeId);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
       };
@@ -141,7 +170,7 @@ export function Connector({
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [connector.id, onMoveEnd],
+    [connector.id, nodeId, onMoveEnd, onMoveFinished, onMoveStart, updateNodeInternals],
   );
 
   return (
@@ -153,9 +182,18 @@ export function Connector({
       data-dragging={dragging ? "true" : undefined}
       data-anchored={isAnchor(position) ? "true" : "false"}
       data-side={SIDE_NAME[side]}
+      data-peer={movingPeer ? "true" : undefined}
       className="nodrag nopan absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
+      {movingPeer ? (
+        <span
+          aria-hidden="true"
+          className="connector-peer-ring -translate-x-1/2 -translate-y-1/2"
+          style={{ borderColor: movingPeer.color }}
+        />
+      ) : null}
+
       {selected ? (
         <button
           type="button"

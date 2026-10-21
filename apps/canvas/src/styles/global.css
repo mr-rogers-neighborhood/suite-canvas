@@ -210,6 +210,18 @@ body {
     0 0 0 5px rgba(10, 132, 255, 0.35);
 }
 
+.connector-peer-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 25;
+  width: 22px;
+  height: 22px;
+  border: 2px solid;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5);
+}
+
 .connector-grab {
   position: absolute;
   left: 0;
@@ -224,12 +236,29 @@ body {
   touch-action: none;
 }
 
+.dark .connector-peer-ring {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
+}
+
 .dark .connector-grab {
   background: rgba(0, 0, 0, 0.35);
 }
 
 .connector-grab:active {
   cursor: grabbing;
+}
+
+/* While a connector is selected its grab ring must win over link hit-areas
+   (including React Flow's reconnect handles, which sit on the connector). */
+.connector-active .react-flow__edge,
+.connector-active .react-flow__edge-interaction,
+.connector-active .react-flow__edgeupdater {
+  pointer-events: none;
+}
+
+/* Links */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2.5;
 }
 
 /* Remote carets + selections rendered by @tiptap/y-tiptap (yCursorPlugin). */

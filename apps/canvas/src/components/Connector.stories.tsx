@@ -24,6 +24,7 @@ const connector = { id: "c1", x: 0.5, y: 0 };
 export const Default: Story = {
   args: {
     connector,
+    nodeId: "n1",
     onSelect: () => {},
     onMoveEnd: () => {},
     onContextMenu: () => {},
@@ -33,6 +34,7 @@ export const Default: Story = {
 export const Selected: Story = {
   args: {
     connector,
+    nodeId: "n1",
     selected: true,
     color: "#7c3aed",
     onSelect: () => {},

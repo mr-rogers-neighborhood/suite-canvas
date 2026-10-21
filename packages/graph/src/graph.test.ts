@@ -21,6 +21,7 @@ const edge: GraphEdge = {
   source: "n1",
   target: "n2",
   kind: "references",
+  path: "bezier",
   bidirectional: false,
   createdAt: now,
   updatedAt: now,
@@ -237,6 +238,55 @@ describe("GraphDocument", () => {
     delete legacy.bidirectional;
     graph.doc.getMap("edges").set("e1", legacy);
     expect(graph.getEdge("e1")?.bidirectional).toBe(false);
+  });
+
+  it("changes a link's path style", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    const edge = graph.addEdge({ source: "a", target: "b" });
+    if (!edge) throw new Error("expected edge");
+
+    expect(edge.path).toBe("bezier");
+    graph.setEdgePath(edge.id, "step");
+    expect(graph.getEdge(edge.id)?.path).toBe("step");
+  });
+
+  it("reconnects one end of a link to another connector", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    graph.createNote({ id: "c", position: { x: 600, y: 0 } });
+    const edge = graph.addEdge({ source: "a", target: "b", sourceConnector: "a1" });
+    if (!edge) throw new Error("expected edge");
+
+    graph.reconnectEdge(edge.id, "target", "c", "c2");
+
+    expect(graph.getEdge(edge.id)).toMatchObject({
+      source: "a",
+      sourceConnector: "a1",
+      target: "c",
+      targetConnector: "c2",
+    });
+  });
+
+  it("ignores a reconnect that would create a self link", () => {
+    const graph = new GraphDocument();
+    graph.createNote({ id: "a", position: { x: 0, y: 0 } });
+    graph.createNote({ id: "b", position: { x: 300, y: 0 } });
+    const edge = graph.addEdge({ source: "a", target: "b" });
+    if (!edge) throw new Error("expected edge");
+
+    graph.reconnectEdge(edge.id, "target", "a", undefined);
+    expect(graph.getEdge(edge.id)?.target).toBe("b");
+  });
+
+  it("backfills path on legacy edges", () => {
+    const graph = new GraphDocument();
+    const legacy = { ...edge } as unknown as Record<string, unknown>;
+    delete legacy.path;
+    graph.doc.getMap("edges").set("e1", legacy);
+    expect(graph.getEdge("e1")?.path).toBe("bezier");
   });
 
   it("emits typed change events on mutation", () => {

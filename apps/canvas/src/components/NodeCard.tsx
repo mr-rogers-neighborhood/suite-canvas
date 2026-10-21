@@ -23,6 +23,10 @@ export interface NodeCardProps {
   draggingPeers?: PresenceUser[];
   /** Peers that have this node selected. */
   selectingPeers?: PresenceUser[];
+  /** Peers dragging a connector on this node, keyed by connector id. */
+  movingConnectorPeers?: Record<string, PresenceUser[]>;
+  onConnectorMoveStart?: (connectorId: string) => void;
+  onConnectorMoveFinished?: () => void;
   selectedConnectorId?: string | null;
   onConnectorSelect?: (connectorId: string) => void;
   onConnectorMoveEnd?: (connectorId: string, position: { x: number; y: number }) => void;
@@ -49,6 +53,9 @@ export function NodeCard({
   presence = [],
   draggingPeers = [],
   selectingPeers = [],
+  movingConnectorPeers = {},
+  onConnectorMoveStart,
+  onConnectorMoveFinished,
   selectedConnectorId = null,
   onConnectorSelect,
   onConnectorMoveEnd,
@@ -186,10 +193,14 @@ export function NodeCard({
         <Connector
           key={connector.id}
           connector={connector}
+          nodeId={node.id}
           color={focusedBy?.color ?? draggingPeer?.color}
           selected={selectedConnectorId === connector.id}
           onSelect={(id) => onConnectorSelect?.(id)}
           onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
+          movingPeers={movingConnectorPeers[connector.id] ?? []}
+          onMoveStart={() => onConnectorMoveStart?.(connector.id)}
+          onMoveFinished={onConnectorMoveFinished}
           onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
         />
       ))}

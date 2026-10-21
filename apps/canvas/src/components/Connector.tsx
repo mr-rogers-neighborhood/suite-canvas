@@ -155,7 +155,7 @@ export function Connector({
         type="source"
         position={Position.Top}
         data-testid="connector-dot"
-        className="connector-dot -translate-x-1/2 -translate-y-1/2"
+        className="connector-dot"
         style={{
           left: 0,
           top: 0,

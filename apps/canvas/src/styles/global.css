@@ -173,6 +173,15 @@ body {
   border: 1px solid var(--ink-muted);
 }
 
+/* Draw links above cards so they are not hidden by card stacking order. */
+.react-flow__edges {
+  z-index: 4;
+}
+
+.react-flow__nodes {
+  z-index: 3;
+}
+
 /* Connectors: a dot to select, plus a dashed grab handle to reposition it. */
 /* Doubles as a React Flow handle, so the position rules below win over its defaults. */
 .connector-dot.react-flow__handle {

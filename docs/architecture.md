@@ -77,6 +77,9 @@ Edges connect **connectors**, not just nodes: `source`/`target` name the nodes a
 `sourceConnector`/`targetConnector` name the handles. Connector dots are React Flow handles rendered
 in `ConnectionMode.Loose`, so dragging from any connector to any other creates a link on drop.
 
+Links are drawn in a layer above the cards (`.react-flow__edges` z-index 4 vs `.react-flow__nodes` 3),
+so card stacking order cannot hide them.
+
 `bidirectional` controls the arrowheads (`markerEnd` always, `markerStart` when bidirectional).
 Right-clicking a link offers **Reverse direction** (swaps endpoints *and* their connectors),
 **Make bidirectional** / **Make one-way**, and **Delete link**.

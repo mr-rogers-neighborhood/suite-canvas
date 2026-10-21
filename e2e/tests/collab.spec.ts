@@ -84,6 +84,25 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   const connectors = card.locator('[data-testid="connector"]');
   await expect(connectors).toHaveCount(4);
 
+  // Connectors sit exactly on the card perimeter (top, right, bottom, left).
+  const cardBox = await card.boundingBox();
+  if (!cardBox) throw new Error("card not visible");
+  const dots = card.locator('[data-testid="connector-dot"]');
+  const expected = [
+    { x: cardBox.width / 2, y: 0 },
+    { x: cardBox.width, y: cardBox.height / 2 },
+    { x: cardBox.width / 2, y: cardBox.height },
+    { x: 0, y: cardBox.height / 2 },
+  ];
+  for (let index = 0; index < expected.length; index += 1) {
+    const dotBox = await dots.nth(index).boundingBox();
+    if (!dotBox) throw new Error("connector dot not visible");
+    const offsetX = Math.abs(dotBox.x + dotBox.width / 2 - (cardBox.x + expected[index].x));
+    const offsetY = Math.abs(dotBox.y + dotBox.height / 2 - (cardBox.y + expected[index].y));
+    expect(offsetX).toBeLessThan(4);
+    expect(offsetY).toBeLessThan(4);
+  }
+
   // Add a connector from the node menu.
   await card.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add connector" }).click();
@@ -149,6 +168,13 @@ test("links connectors with a direction the menu can change", async ({ page }) =
   const path = edge.locator("path.react-flow__edge-path");
   await expect(path).toHaveAttribute("marker-end", /arrowclosed/);
   await expect(path).not.toHaveAttribute("marker-start", /arrowclosed/);
+
+  // Links paint above cards so card stacking order cannot hide them.
+  const layers = await page.evaluate(() => ({
+    edges: Number(getComputedStyle(document.querySelector(".react-flow__edges")).zIndex),
+    nodes: Number(getComputedStyle(document.querySelector(".react-flow__nodes")).zIndex),
+  }));
+  expect(layers.edges).toBeGreaterThan(layers.nodes);
 
   const edgeBox = await edge.boundingBox();
   if (!edgeBox) throw new Error("edge not visible");

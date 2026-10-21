@@ -71,6 +71,20 @@ trashed) stays in the CRDT and stops rendering, and revives when the card return
 **Layer order is per board**: `moveLayer(boardId, cardId, action)` reindexes that board's placements
 only, so Inbox cards never consume z slots.
 
+**Reads never create shared containers.** `peekContent`/`peekTitle` return the shared fragment or a
+local placeholder; only `createCard` (and the migration) insert fragments into the doc. A client that
+mounts before the document has loaded would otherwise publish a competing `Y.XmlFragment`, win the
+CRDT race, and orphan the real text — which is why title and body edits silently stopped syncing.
+The card re-resolves its fragments on every CRDT change, so it adopts the shared one the moment it
+arrives. Startup work (migration, seeding, board resolution) waits for `ready`, which flips when
+local storage hydrates; migration also refuses to stamp `schemaVersion` on a document that has no
+legacy nodes yet, so a not-yet-loaded client cannot skip real data.
+
+**Card size belongs to the placement.** `width`/`height` are optional per placement, so a shared
+card can be small on one board and large on another. A resize broadcasts `resizing { nodeId, width,
+height }` at ~25 Hz; peers ease toward it (the same smoothing as card drags) and show the resizer's
+colour ring, while the CRDT records only the final size on release.
+
 **Title text is a fragment.** A `Y.Map` string would resolve concurrent renames last-write-wins for
 the whole value; an `XmlFragment` merges character-wise and lets y-prosemirror draw carets in the
 title exactly as it does in the body.

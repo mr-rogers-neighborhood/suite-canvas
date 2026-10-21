@@ -130,6 +130,8 @@ export class WorkspaceDocument {
   private readonly edges: Y.Map<GraphEdge>;
   private readonly content: Y.Map<Y.XmlFragment>;
   private readonly titles: Y.Map<Y.XmlFragment>;
+  /** Local, never-synced fragments used until the shared one arrives. */
+  private readonly placeholders = new Map<string, Y.XmlFragment>();
 
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
@@ -244,13 +246,15 @@ export class WorkspaceDocument {
       data: {},
     } as Card;
 
-    this.setCard(card);
-    this.getContent(card.id);
-    this.getTitle(card.id);
-
-    if (input.boardId) {
-      this.placeCard(input.boardId, card.id, input.position ?? { x: 0, y: 0 });
-    }
+    // One transaction so a peer never sees the card before its text containers.
+    this.doc.transact(() => {
+      this.setCard(card);
+      this.getContent(card.id);
+      this.getTitle(card.id);
+      if (input.boardId) {
+        this.placeCard(input.boardId, card.id, input.position ?? { x: 0, y: 0 });
+      }
+    });
     return card;
   }
 
@@ -284,12 +288,43 @@ export class WorkspaceDocument {
     this.titles.delete(id);
   }
 
+  /**
+   * Re-runs the legacy migration. Safe to call after the document finishes
+   * loading, which is when a not-yet-hydrated client actually sees old data.
+   */
+  migrateLegacy(): void {
+    migrateLegacyDocument(this.doc);
+  }
+
   emptyTrash(): void {
     for (const card of this.listCards()) {
       if (card.deletedAt) this.purgeCard(card.id);
     }
   }
 
+  /**
+   * The shared body fragment, if it has arrived. Reading never creates a shared
+   * container: a client that mounts before the document loads would publish a
+   * competing fragment, win the CRDT race and orphan the real content.
+   */
+  peekContent(cardId: string): Y.XmlFragment {
+    return this.content.get(cardId) ?? this.placeholder(`content:${cardId}`);
+  }
+
+  /** Title fragment, with the same read-never-creates guarantee as `peekContent`. */
+  peekTitle(cardId: string): Y.XmlFragment {
+    return this.titles.get(cardId) ?? this.placeholder(`title:${cardId}`);
+  }
+
+  private placeholder(key: string): Y.XmlFragment {
+    const existing = this.placeholders.get(key);
+    if (existing) return existing;
+    const fragment = new Y.XmlFragment();
+    this.placeholders.set(key, fragment);
+    return fragment;
+  }
+
+  /** Creates the body fragment if it is missing. Only writers should call this. */
   getContent(cardId: string): Y.XmlFragment {
     const existing = this.content.get(cardId);
     if (existing) return existing;
@@ -298,6 +333,7 @@ export class WorkspaceDocument {
     return fragment;
   }
 
+  /** Creates the title fragment if it is missing. Only writers should call this. */
   getTitle(cardId: string): Y.XmlFragment {
     const existing = this.titles.get(cardId);
     if (existing) return existing;
@@ -409,6 +445,20 @@ export class WorkspaceDocument {
     this.placements.set(
       placementKey(boardId, cardId),
       placementSchema.parse({ ...placement, ...position }),
+    );
+  }
+
+  /** Records a resized card. Size is per placement: a card can be small on one board. */
+  updatePlacementSize(
+    boardId: string,
+    cardId: string,
+    size: { width: number; height: number },
+  ): void {
+    const placement = this.getPlacement(boardId, cardId);
+    if (!placement) return;
+    this.placements.set(
+      placementKey(boardId, cardId),
+      placementSchema.parse({ ...placement, ...size }),
     );
   }
 
@@ -657,7 +707,13 @@ export function migrateLegacyDocument(doc: Y.Doc): void {
 
   const legacyNodes = doc.getMap<LegacyNode>("nodes");
   const legacyEdges = doc.getMap<GraphEdge>("edges");
-  if (legacyNodes.size > 0) {
+  if (legacyNodes.size === 0) {
+    // Nothing to migrate yet. Leave the version unset: this client may simply
+    // not have hydrated the document, and stamping now would skip real data.
+    return;
+  }
+
+  {
     const boards = doc.getMap<Board>(WorkspaceDocument.BOARDS_KEY);
     const cards = doc.getMap<Card>(WorkspaceDocument.CARDS_KEY);
     const placements = doc.getMap<Placement>(WorkspaceDocument.PLACEMENTS_KEY);
@@ -673,7 +729,11 @@ export function migrateLegacyDocument(doc: Y.Doc): void {
       });
     }
 
+    const titles = doc.getMap<Y.XmlFragment>(WorkspaceDocument.TITLES_KEY);
     for (const node of Array.from(legacyNodes.values())) {
+      if (!titles.get(node.id)) {
+        titles.set(node.id, new Y.XmlFragment());
+      }
       if (!cards.get(node.id)) {
         cards.set(
           node.id,

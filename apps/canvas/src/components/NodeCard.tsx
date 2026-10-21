@@ -37,6 +37,9 @@ export interface NodeCardProps {
   titleFragment: Y.XmlFragment;
   awareness: Awareness | null;
   boardId: string;
+  /** Resized dimensions in flow units; omitted means the card's natural size. */
+  width?: number | null;
+  height?: number | null;
   references?: CardReference[];
   selected?: boolean;
   /** Which editor this card is focused in, if any. */
@@ -44,6 +47,8 @@ export interface NodeCardProps {
   presence?: PresenceUser[];
   draggingPeers?: PresenceUser[];
   selectingPeers?: PresenceUser[];
+  /** Peers currently resizing this card. */
+  resizingPeers?: PresenceUser[];
   movingConnectorPeers?: Record<string, ConnectorPeerState>;
   selectingConnectorPeers?: Record<string, PresenceUser[]>;
   onConnectorMoveStart?: (connectorId: string) => void;
@@ -76,12 +81,15 @@ export function NodeCard({
   titleFragment,
   awareness,
   boardId,
+  width = null,
+  height = null,
   references = [],
   selected = false,
   editing = null,
   presence = [],
   draggingPeers = [],
   selectingPeers = [],
+  resizingPeers = [],
   movingConnectorPeers = {},
   selectingConnectorPeers = {},
   onConnectorMoveStart,
@@ -102,6 +110,7 @@ export function NodeCard({
   const blurTimeout = useRef<number | null>(null);
   const [footerOpen, setFooterOpen] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(
     () => () => {
@@ -226,6 +235,7 @@ export function NodeCard({
   const draggingPeer = draggingPeers[0];
   const focusedBy = presence[0];
   const selectingPeer = selectingPeers[0];
+  const resizingPeer = resizingPeers[0];
 
   // Peer presence takes visual priority over local selection so collaborators
   // always see where everyone else is: dragging > editing > selecting.
@@ -233,12 +243,14 @@ export function NodeCard({
     ? { borderColor: draggingPeer.color, boxShadow: `0 0 0 3px ${draggingPeer.color}55` }
     : focusedBy
       ? { borderColor: focusedBy.color, boxShadow: `0 0 0 2px ${focusedBy.color}33` }
-      : selectingPeer
-        ? { boxShadow: `0 0 0 2px ${selectingPeer.color}66` }
-        : {};
+      : resizingPeer
+        ? { borderColor: resizingPeer.color, boxShadow: `0 0 0 2px ${resizingPeer.color}44` }
+        : selectingPeer
+          ? { boxShadow: `0 0 0 2px ${selectingPeer.color}66` }
+          : {};
 
   const cardClass = [
-    "node-card relative w-56 rounded-md border border-[var(--hairline)]",
+    "node-card relative flex w-56 flex-col rounded-md border border-[var(--hairline)]",
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
@@ -281,11 +293,19 @@ export function NodeCard({
       data-node-id={card.id}
       data-dragging={draggingPeer ? "true" : undefined}
       data-selected-by-peer={selectingPeer ? "true" : undefined}
+      data-resizing-by-peer={resizingPeer ? "true" : undefined}
       data-board-id={boardId}
       className={cardClass}
-      style={presenceStyle}
+      style={{
+        ...presenceStyle,
+        ...(width ? { width } : {}),
+        ...(height ? { height } : {}),
+      }}
+      onPointerDown={(event) => {
+        pointerOrigin.current = { x: event.clientX, y: event.clientY };
+      }}
     >
-      <div className="card-header flex items-center gap-1.5 rounded-t-md px-2 py-2">
+      <div className="card-header flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-2">
         <span
           role="img"
           aria-label={`Card type: ${type.label}`}
@@ -295,13 +315,32 @@ export function NodeCard({
           {type.glyph}
         </span>
 
-        <div className="card-title relative min-w-0 flex-1 nodrag nopan">
+        <div
+          className={`card-title relative min-w-0 flex-1 ${
+            editing === "title" ? "nodrag nopan" : ""
+          }`}
+        >
           {editing === "title" ? null : (
             <button
               type="button"
               aria-label="Edit card title"
               className="absolute inset-0 z-10 cursor-text"
-              onClick={() => onStartEditing?.("title")}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                onStartEditing?.("title");
+              }}
+              onClick={(event) => {
+                // Keyboard activation has no pointer movement to compare.
+                if (event.detail > 0) {
+                  const origin = pointerOrigin.current;
+                  const moved = origin
+                    ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y)
+                    : 0;
+                  // A drag is not a click, and the first click only selects.
+                  if (moved > 4 || !selected) return;
+                }
+                onStartEditing?.("title");
+              }}
             />
           )}
           <EditorContent editor={title} />
@@ -341,9 +380,11 @@ export function NodeCard({
         </button>
       </div>
 
-      <EditorContent editor={editor} />
+      <div className="min-h-0 flex-1 overflow-auto">
+        <EditorContent editor={editor} />
+      </div>
 
-      <div className="card-footer border-t border-[var(--hairline)]">
+      <div className="card-footer shrink-0 border-t border-[var(--hairline)]">
         <button
           type="button"
           aria-expanded={footerOpen}

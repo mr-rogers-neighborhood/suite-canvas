@@ -12,6 +12,7 @@ import {
   type PointerState,
   type PresenceUser,
   type ReconnectState,
+  type ResizingState,
   type SelectionState,
 } from "./presence";
 
@@ -26,6 +27,7 @@ interface PresenceState {
   setDragging: (dragging: DraggingState | null) => void;
   setSelection: (selection: SelectionState | null) => void;
   setMovingConnector: (connector: ConnectorState | null) => void;
+  setResizing: (resizing: ResizingState | null) => void;
   setReconnect: (reconnect: ReconnectState | null) => void;
 }
 
@@ -47,6 +49,7 @@ function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerP
     dragging: (state[AWARENESS_FIELDS.dragging] as DraggingState | undefined) ?? null,
     selection: (state[AWARENESS_FIELDS.selection] as SelectionState | undefined) ?? null,
     connector: (state[AWARENESS_FIELDS.connector] as ConnectorState | undefined) ?? null,
+    resizing: (state[AWARENESS_FIELDS.resizing] as ResizingState | undefined) ?? null,
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
   };
 }
@@ -104,6 +107,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
 
     setMovingConnector: (connector) => {
       get().awareness?.setLocalStateField(AWARENESS_FIELDS.connector, connector);
+    },
+
+    setResizing: (resizing) => {
+      get().awareness?.setLocalStateField(AWARENESS_FIELDS.resizing, resizing);
     },
 
     setReconnect: (reconnect) => {

@@ -37,6 +37,15 @@ workspaces should not share anything.
 7. **Delete means unplace.** Delete/Backspace takes a card off the board (Inbox); Shift+Delete and
    the card menu trash it. Destructive actions stay explicit.
 
+8. **Reads never materialise shared containers.** Text lives in `Y.XmlFragment`s keyed by card id,
+   and only creation writes them. A reader that raced the document load would publish a second
+   fragment, win the merge and orphan the real text (observed as "edits stop syncing" and "carets
+   disappear"). Peek returns the shared fragment or a local placeholder, and the card re-resolves it
+   on every change so it adopts the winner as soon as it arrives.
+9. **Startup waits for hydration.** Migration, seeding and board resolution run only once local
+   storage is ready, and migration leaves `schemaVersion` unset when the document has no legacy
+   nodes, so an empty, not-yet-loaded client cannot stamp over real data.
+
 ## Consequences
 
 - Cards can appear on several boards at once; the footer lists the placements and marks home.
@@ -46,3 +55,5 @@ workspaces should not share anything.
   between boards; carets stay card-scoped so two people can edit one card from different boards.
 - Layer order reindexes one board's placements only, so Inbox cards never consume z slots.
 - The pre-workspace schema is migrated once, deterministically, with `meta.schemaVersion`.
+- Card size is per placement, so a shared card can be sized differently on each board, and resizes
+  are projected to peers live before the final size is persisted.

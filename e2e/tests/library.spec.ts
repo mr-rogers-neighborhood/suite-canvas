@@ -128,21 +128,43 @@ test("holds a card out of the drawer and drops it on the board", async ({ page }
   expect(Math.abs(placed.x + placed.width / 2 - 640)).toBeLessThan(60);
 });
 
-test("deletes a board and keeps its cards in the library", async ({ page }) => {
+test("deletes an empty board without asking", async ({ page }) => {
+  await page.goto(workspaceUrl("board-delete-empty"));
+  await expect(cards(page)).toHaveCount(2);
+  await createBoard(page);
+  await expect(cards(page)).toHaveCount(0);
+
+  // Nothing to lose, so no confirmation dialog.
+  await page.getByLabel(/^Delete /).click();
+  await expect(page.getByTestId("dialog")).toHaveCount(0);
+  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(cards(page)).toHaveCount(2);
+});
+
+test("asks before deleting a board with cards and keeps them in the library", async ({ page }) => {
   await page.goto(workspaceUrl("board-delete"));
   await expect(cards(page)).toHaveCount(2);
   await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
-  // Delete the empty second board: nothing to trash, cards stay where they are.
-  const tabs = page.locator('[role="tab"][data-testid^="board-tab"]');
-  const name = (await tabs.nth(1).innerText()).trim();
-  await page.getByLabel(`Delete ${name}`).click();
+  // Put a card on the board so the delete has consequences.
+  await openLibrary(page, "cards");
+  await page
+    .locator('[data-testid^="library-item-"]')
+    .first()
+    .getByRole("button", { name: "Place" })
+    .click();
+  await expect(cards(page)).toHaveCount(1);
+
+  await page.getByLabel(/^Delete /).click();
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Keep cards" }).click();
 
-  await expect(tabs).toHaveCount(1);
-  await expect(cards(page)).toHaveCount(2);
+  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  // The card survives; it is simply no longer on the deleted board.
+  await expect(page.getByTestId("dock-inbox-count")).toHaveCount(0);
+  await openLibrary(page, "inbox");
+  await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(0);
 });
 
 test("syncs card titles and title carets between clients", async ({ browser }) => {

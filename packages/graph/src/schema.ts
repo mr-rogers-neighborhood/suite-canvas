@@ -57,6 +57,9 @@ export const placementSchema = z.object({
   /** Stacking order within the board; higher paints above lower. */
   z: z.number().int(),
   createdAt: z.number().int().nonnegative(),
+  /** Resized card dimensions in flow units; unset means the card's natural size. */
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
 });
 
 export const graphEdgeSchema = z.object({

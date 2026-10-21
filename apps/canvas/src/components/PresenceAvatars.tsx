@@ -8,9 +8,15 @@ export interface PresenceAvatarsProps {
 export function PresenceAvatars({ users, max = 4 }: PresenceAvatarsProps) {
   if (users.length === 0) return null;
 
+  // Two peers can share a generated identity; one avatar per identity is enough.
+  const unique = users.filter(
+    (user, index) =>
+      users.findIndex((other) => other.name === user.name && other.color === user.color) === index,
+  );
+
   return (
     <div className="flex -space-x-1.5">
-      {users.slice(0, max).map((user) => (
+      {unique.slice(0, max).map((user) => (
         <span
           key={`${user.name}:${user.color}`}
           data-testid="presence-avatar"

@@ -1,10 +1,11 @@
 import type { Card, Placement } from "@suite/graph";
-import type { NodeProps, NodeTypes } from "@xyflow/react";
-import { useMemo } from "react";
+import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { type CardReference, type ConnectorPeerState, NodeCard } from "../components/NodeCard";
 import { useBoardPeers } from "../hooks/useBoardPeers";
+import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useWorkspaceSnapshot } from "../hooks/useWorkspaceSnapshot";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -16,6 +17,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const peers = useBoardPeers(placement.boardId);
   const awareness = usePresenceStore((state) => state.awareness);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
+  const setResizing = usePresenceStore((state) => state.setResizing);
 
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
@@ -26,8 +28,13 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
 
-  const fragment = useMemo(() => workspace.getContent(id), [workspace, id]);
-  const titleFragment = useMemo(() => workspace.getTitle(id), [workspace, id]);
+  // Peek (never create) and re-resolve on every change, so a client that mounted
+  // before the document loaded adopts the shared fragment as soon as it arrives.
+  // `snapshot` is the invalidation signal: any CRDT change can carry it in.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
+  const fragment = useMemo(() => workspace.peekContent(id), [workspace, id, snapshot]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
+  const titleFragment = useMemo(() => workspace.peekTitle(id), [workspace, id, snapshot]);
 
   const presence = useMemo<PresenceUser[]>(
     () => peers.filter((peer) => peer.focus?.nodeId === id).map((peer) => peer.user),
@@ -69,6 +76,43 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [peers, id],
   );
 
+  const resizingPeers = useMemo<PresenceUser[]>(
+    () => peers.filter((peer) => peer.resizing?.nodeId === id).map((peer) => peer.user),
+    [peers, id],
+  );
+  const peerResize = peers.find((peer) => peer.resizing?.nodeId === id)?.resizing ?? null;
+  const peerSize = useSmoothedSize(
+    peerResize ? { width: peerResize.width, height: peerResize.height } : null,
+  );
+
+  // Live size while this client drags a resize handle; peers get it throttled and
+  // the CRDT records only the final size.
+  const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
+  const lastResizeSent = useRef(0);
+
+  const handleResize = useCallback(
+    (_event: unknown, params: ResizeParams) => {
+      setLiveSize({ width: params.width, height: params.height });
+      const now = performance.now();
+      if (now - lastResizeSent.current < 40) return;
+      lastResizeSent.current = now;
+      setResizing({ nodeId: id, width: params.width, height: params.height });
+    },
+    [id, setResizing],
+  );
+
+  const handleResizeEnd = useCallback(
+    (_event: unknown, params: ResizeParams) => {
+      workspace.updatePlacementSize(placement.boardId, id, {
+        width: params.width,
+        height: params.height,
+      });
+      setResizing(null);
+      setLiveSize(null);
+    },
+    [workspace, placement.boardId, id, setResizing],
+  );
+
   // Every board holding this card, home first, so the footer can show sharing.
   const references = useMemo<CardReference[]>(() => {
     const boardsById = new Map(snapshot.boards.map((board) => [board.id, board]));
@@ -95,20 +139,35 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       );
   }, [snapshot, id, placement.boardId]);
 
+  const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
+  const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
+
   return (
     <div>
+      <NodeResizer
+        isVisible={Boolean(selected) && editingNodeId !== id}
+        minWidth={160}
+        minHeight={80}
+        onResize={handleResize}
+        onResizeEnd={handleResizeEnd}
+        lineStyle={{ borderColor: "var(--ink-muted)", borderWidth: 1 }}
+        handleStyle={{ width: 8, height: 8, borderRadius: 2, background: "var(--ink)" }}
+      />
       <NodeCard
         card={card}
         fragment={fragment}
         titleFragment={titleFragment}
         awareness={awareness}
         boardId={placement.boardId}
+        width={width}
+        height={height}
         references={references}
         selected={selected}
         editing={editingNodeId === id ? editingField : null}
         presence={presence}
         draggingPeers={draggingPeers}
         selectingPeers={selectingPeers}
+        resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
         onStartEditing={(field) => startEditing(id, field)}

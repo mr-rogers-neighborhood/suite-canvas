@@ -184,6 +184,36 @@ describe("WorkspaceDocument cards and placements", () => {
   });
 });
 
+describe("WorkspaceDocument fragments and sizes", () => {
+  it("never creates shared fragments on read", () => {
+    const workspace = new WorkspaceDocument();
+    const card = workspace.createCard();
+
+    // Reading a card whose text has not arrived must not publish a competing
+    // fragment: that would win the CRDT race and orphan the real content.
+    const other = workspace.createCard();
+    workspace.purgeCard(other.id);
+
+    expect(() => workspace.peekContent("missing")).not.toThrow();
+    expect(workspace.peekContent("missing")).toBe(workspace.peekContent("missing"));
+    expect(workspace.peekContent(card.id)).toBe(workspace.getContent(card.id));
+  });
+
+  it("records a resized card per placement", () => {
+    const workspace = new WorkspaceDocument();
+    const first = workspace.createBoard({ name: "First" });
+    const second = workspace.createBoard({ name: "Second" });
+    const card = workspace.createCard({ boardId: first.id });
+    workspace.placeCard(second.id, card.id, { x: 0, y: 0 });
+
+    workspace.updatePlacementSize(first.id, card.id, { width: 320, height: 200 });
+
+    expect(workspace.getPlacement(first.id, card.id)).toMatchObject({ width: 320, height: 200 });
+    // Size is a property of the placement, not the card.
+    expect(workspace.getPlacement(second.id, card.id)?.width).toBeUndefined();
+  });
+});
+
 describe("WorkspaceDocument trash", () => {
   it("hides trashed cards from boards but keeps their placements", () => {
     const workspace = new WorkspaceDocument();
@@ -353,6 +383,27 @@ describe("migration", () => {
     expect(workspace.getPlacement(DEFAULT_BOARD_ID, "starter-2")).toMatchObject({ x: 320, y: 0 });
     expect(workspace.listBoardEdges(DEFAULT_BOARD_ID).map((edge) => edge.id)).toEqual(["edge-1"]);
     expect(workspace.getEdge("edge-1")?.boardId).toBe(DEFAULT_BOARD_ID);
+  });
+
+  it("does not stamp the version when there is nothing to migrate", () => {
+    const doc = new Y.Doc();
+    const workspace = new WorkspaceDocument(doc);
+    expect(doc.getMap("meta").get("schemaVersion")).toBeUndefined();
+
+    // Data arrives later (this client simply had not hydrated yet) and migrates.
+    doc.getMap("nodes").set("late", {
+      id: "late",
+      kind: "note",
+      position: { x: 5, y: 6 },
+      createdAt: 1,
+      updatedAt: 1,
+      connectors: [],
+      data: {},
+    });
+    workspace.migrateLegacy();
+
+    expect(workspace.listCards().map((card) => card.id)).toEqual(["late"]);
+    expect(workspace.getPlacement(DEFAULT_BOARD_ID, "late")).toMatchObject({ x: 5, y: 6 });
   });
 
   it("is idempotent when run twice", () => {

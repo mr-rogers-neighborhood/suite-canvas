@@ -63,6 +63,12 @@ export const EditingBody: Story = { args: { ...base, editing: "body" } };
 
 export const SharedCard: Story = { args: { ...base, references: shared } };
 
+export const Resized: Story = { args: { ...base, width: 340, height: 180 } };
+
+export const ResizingByPeer: Story = {
+  args: { ...base, resizingPeers: [{ name: "Nova", color: "#f97316" }] },
+};
+
 export const WithPresence: Story = {
   args: {
     ...base,

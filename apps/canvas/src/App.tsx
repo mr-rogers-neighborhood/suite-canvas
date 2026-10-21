@@ -32,6 +32,7 @@ function WorkspaceShell() {
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
   const status = useCanvasStore((state) => state.status);
+  const ready = useCanvasStore((state) => state.ready);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
 
@@ -59,8 +60,15 @@ function WorkspaceShell() {
     if (provider) usePresenceStore.getState().bind(provider);
   }, [provider]);
 
+  // Legacy documents can only be migrated once local storage has hydrated;
+  // running it on an empty, not-yet-loaded doc would skip real data.
+  useEffect(() => {
+    if (ready) workspace.migrateLegacy();
+  }, [ready, workspace]);
+
   // Seeding is once per workspace, so deleting every card stays deleted.
   useEffect(() => {
+    if (!ready) return;
     if (workspace.hasSeeded()) return;
     const board = workspace.ensureBoard();
     if (workspace.listCards().length === 0) {
@@ -68,10 +76,11 @@ function WorkspaceShell() {
       workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
     }
     workspace.markSeeded();
-  }, [workspace]);
+  }, [ready, workspace]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {
+    if (!ready) return;
     const boards = snapshot.boards;
     if (boards.length === 0) {
       workspace.ensureBoard();
@@ -82,7 +91,7 @@ function WorkspaceShell() {
     const requested = resolveBoardId();
     const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [snapshot.boards, activeBoardId, setActiveBoardId, workspace]);
+  }, [ready, snapshot.boards, activeBoardId, setActiveBoardId, workspace]);
 
   // Keep the URL shareable without a reload.
   useEffect(() => {
@@ -165,7 +174,7 @@ function WorkspaceShell() {
   const allCards = inbox.map((id) => id);
 
   return (
-    <div className="app-canvas flex h-screen w-screen flex-col">
+    <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready}>
       <TitleBar status={status} peerCount={peerCount} documentId={WORKSPACE_ID}>
         <BoardTabs
           boards={snapshot.boards}
@@ -176,7 +185,14 @@ function WorkspaceShell() {
             setActiveBoardId(board.id);
           }}
           onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-          onDeleteRequest={setBoardToDelete}
+          onDeleteRequest={(boardId) => {
+            // Nothing to lose on an empty board, so skip the dialog.
+            if (workspace.listBoardCards(boardId).length === 0) {
+              workspace.deleteBoard(boardId);
+              return;
+            }
+            setBoardToDelete(boardId);
+          }}
         />
       </TitleBar>
 

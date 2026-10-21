@@ -42,6 +42,13 @@ export interface ConnectorState {
   position?: { x: number; y: number };
 }
 
+/** A card a peer is resizing, in flow units. */
+export interface ResizingState {
+  nodeId: string;
+  width: number;
+  height: number;
+}
+
 /** A link end a peer is dragging toward another connector. */
 export interface ReconnectState {
   edgeId: string;
@@ -61,6 +68,7 @@ export const AWARENESS_FIELDS = {
   dragging: "dragging",
   selection: "selection",
   connector: "connector",
+  resizing: "resizing",
   reconnect: "reconnect",
 } as const;
 
@@ -74,5 +82,6 @@ export interface PeerPresence {
   dragging: DraggingState | null;
   selection: SelectionState | null;
   connector: ConnectorState | null;
+  resizing: ResizingState | null;
   reconnect: ReconnectState | null;
 }

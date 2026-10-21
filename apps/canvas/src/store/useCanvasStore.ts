@@ -30,14 +30,15 @@ const workspace = new WorkspaceDocument(doc);
 
 // Offline-first: persist the document locally in IndexedDB so the app works
 // with no network and rehydrates instantly on reload.
-if (typeof indexedDB !== "undefined") {
-  new IndexeddbPersistence(WORKSPACE_ID, doc);
-}
+const persistence =
+  typeof indexedDB !== "undefined" ? new IndexeddbPersistence(WORKSPACE_ID, doc) : null;
 
 interface CanvasState {
   workspace: WorkspaceDocument;
   provider: HocuspocusProvider | null;
   status: ConnectionStatus;
+  /** True once local storage has hydrated, so startup work never races loading. */
+  ready: boolean;
   connect: () => void;
 }
 
@@ -58,10 +59,13 @@ export const useCanvasStore = create<CanvasState>((set) => {
     set({ status: event.status as ConnectionStatus });
   });
 
+  persistence?.on("synced", () => set({ ready: true }));
+
   return {
     workspace,
     provider,
     status: provider ? "disconnected" : "connecting",
+    ready: persistence === null,
     connect: () => {
       void provider?.connect();
     },

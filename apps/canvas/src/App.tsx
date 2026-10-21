@@ -35,6 +35,7 @@ function WorkspaceShell() {
   const provider = useCanvasStore((state) => state.provider);
   const status = useCanvasStore((state) => state.status);
   const ready = useCanvasStore((state) => state.ready);
+  const synced = useCanvasStore((state) => state.synced);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
 
@@ -64,15 +65,21 @@ function WorkspaceShell() {
     if (provider) usePresenceStore.getState().bind(provider);
   }, [provider]);
 
-  // Legacy documents can only be migrated once local storage has hydrated;
-  // running it on an empty, not-yet-loaded doc would skip real data.
+  // Legacy documents can only be migrated once they are actually here: local
+  // storage first, then the server's snapshot (a legacy doc may live remotely).
   useEffect(() => {
     if (ready) workspace.migrateLegacy();
   }, [ready, workspace]);
 
-  // Seeding is once per workspace, so deleting every card stays deleted.
   useEffect(() => {
-    if (!ready) return;
+    if (synced) workspace.migrateLegacy();
+  }, [synced, workspace]);
+
+  // Seeding is once per workspace, so deleting every card stays deleted. It also
+  // waits for the first server sync: seeding an empty local doc would resurrect
+  // starter cards in a workspace someone emptied on another client.
+  useEffect(() => {
+    if (!ready || !synced) return;
     if (workspace.hasSeeded()) return;
     const board = workspace.ensureBoard();
     if (workspace.listCards().length === 0) {
@@ -80,11 +87,11 @@ function WorkspaceShell() {
       workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
     }
     workspace.markSeeded();
-  }, [ready, workspace]);
+  }, [ready, synced, workspace]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !synced) return;
     const boards = snapshot.boards;
     if (boards.length === 0) {
       workspace.ensureBoard();
@@ -95,7 +102,7 @@ function WorkspaceShell() {
     const requested = resolveBoardId();
     const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [ready, snapshot.boards, activeBoardId, setActiveBoardId, workspace]);
+  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace]);
 
   // Keep the URL shareable without a reload.
   useEffect(() => {
@@ -178,7 +185,7 @@ function WorkspaceShell() {
   const allCards = inbox.map((id) => id);
 
   return (
-    <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready}>
+    <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
       <TitleBar status={status} peerCount={peerCount} documentId={WORKSPACE_ID}>
         <BoardTabs
           boards={snapshot.boards}

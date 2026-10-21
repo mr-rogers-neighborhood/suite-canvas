@@ -17,7 +17,9 @@ export default defineConfig({
     },
     {
       command: "pnpm --filter @suite/collab-server start",
-      stdout: /ready/,
+      // Probing the port lets Playwright reuse a dev server you already have
+      // running instead of spawning one that cannot bind.
+      url: "http://localhost:1234",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

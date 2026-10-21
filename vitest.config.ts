@@ -12,6 +12,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: "server",
+          environment: "node",
+          include: ["apps/collab-server/src/**/*.test.ts"],
+        },
+      },
+      {
+        test: {
           name: "canvas",
           environment: "jsdom",
           include: ["apps/canvas/src/**/*.test.{ts,tsx}"],

@@ -30,7 +30,7 @@ purges what you deleted. Clicking a card type creates a card on the current boar
 | `pnpm verify` | lint → typecheck → unit tests → build (what CI runs) |
 | `pnpm lint` / `pnpm lint:fix` | Biome |
 | `pnpm typecheck` | TypeScript across all packages |
-| `pnpm test` | Vitest (graph + canvas) |
+| `pnpm test` | Vitest (graph + server + canvas) |
 | `pnpm e2e` | Playwright (boots app + collab server) |
 | `pnpm build` | Builds `@suite/graph` then the canvas app |
 | `pnpm clean` | Removes build output and caches |
@@ -57,7 +57,9 @@ A single `Y.Doc` per workspace is the source of truth:
 - `content` / `titles` — per-card body and title rich text (`Y.Map<Y.XmlFragment>`), edited with
   Tiptap
 
-`y-indexeddb` persists locally; Hocuspocus syncs when online. Presence (`user`, `pointer`, `board`,
+`y-indexeddb` persists locally; Hocuspocus syncs when online and flushes each document to SQLite
+(`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a server
+restart. Presence (`user`, `pointer`, `board`,
 `focus`, `dragging`, plus editor carets) travels over Yjs awareness. All writes go through
 `WorkspaceDocument`, which validates with Zod. See [docs/architecture.md](docs/architecture.md).
 

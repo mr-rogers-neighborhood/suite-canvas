@@ -26,6 +26,7 @@ flowchart LR
   Doc <--> HP[HocuspocusProvider]
   HP <-->|WebSocket| Server[Hocuspocus server]
   Server <-->|WebSocket| Others[Other clients]
+  Server --> DB[(SQLite<br/>document store)]
 ```
 
 - **Zustand** holds ephemeral UI state: active board, selection, library drawer state,
@@ -35,7 +36,9 @@ flowchart LR
   doc.
 - **`y-indexeddb`** persists the whole doc locally so the app rehydrates instantly and works
   offline.
-- **Hocuspocus** (provider + server) syncs the doc across peers over WebSocket.
+- **Hocuspocus** (provider + server) syncs the doc across peers over WebSocket, and the server
+  flushes each document to SQLite (`apps/collab-server/src/persistence.ts`) so a workspace outlives
+  the last connected client.
 
 ## Document model
 
@@ -135,6 +138,22 @@ Two histories, each scoped to what it owns:
 Both managers track only transactions with a `null` origin, which is what local writes use;
 updates applied by the Hocuspocus or IndexedDB providers carry the provider as origin, so **undo
 can never revert a collaborator's work**.
+
+## Session start
+
+A client holds two copies of a workspace: the local IndexedDB one and the server's. Startup order
+matters because acting on an empty document is indistinguishable from acting on a deleted workspace.
+
+1. The document and provider are created eagerly, so `provider.awareness` exists on the first render
+   (editors bind to it, and swapping awareness later remounts them).
+2. `ready` flips when `y-indexeddb` has replayed everything it had. Migration runs here, and again
+   when `synced` flips.
+3. `synced` flips when the server's first sync lands — or after `SYNC_WAIT_MS` (5 s) if the network
+   is down, so an offline first run still works.
+4. Seeding and board resolution wait for **both**. Seeding an empty local doc before the server's
+   snapshot arrives would resurrect starter cards in a workspace someone deliberately emptied.
+
+`data-ready` on the app root reports the combined state, which is what the startup work keys off.
 
 ## Rendering
 

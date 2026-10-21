@@ -579,6 +579,7 @@ export class WorkspaceDocument {
    */
   migrateLegacy(): void {
     migrateLegacyDocument(this.doc);
+    migrateRecordsToFieldMaps(this.doc);
   }
 
   emptyTrash(): void {

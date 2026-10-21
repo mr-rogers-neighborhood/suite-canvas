@@ -33,12 +33,22 @@ const workspace = new WorkspaceDocument(doc);
 const persistence =
   typeof indexedDB !== "undefined" ? new IndexeddbPersistence(WORKSPACE_ID, doc) : null;
 
+/** How long to wait for the first server sync before treating the doc as local. */
+const SYNC_WAIT_MS = 5000;
+
 interface CanvasState {
   workspace: WorkspaceDocument;
   provider: HocuspocusProvider | null;
   status: ConnectionStatus;
   /** True once local storage has hydrated, so startup work never races loading. */
   ready: boolean;
+  /**
+   * True once the first server sync landed (or the wait ran out). Startup writes
+   * — migration and seeding — wait for it: a client that hydrates an empty
+   * IndexedDB before the server's snapshot arrives would otherwise seed starter
+   * cards over a workspace whose cards were deliberately deleted.
+   */
+  synced: boolean;
   connect: () => void;
 }
 
@@ -59,13 +69,23 @@ export const useCanvasStore = create<CanvasState>((set) => {
     set({ status: event.status as ConnectionStatus });
   });
 
+  provider?.on("synced", () => set({ synced: true }));
+
   persistence?.on("synced", () => set({ ready: true }));
+
+  // Offline first run: nothing will ever sync, so local state is authoritative.
+  if (provider) {
+    setTimeout(() => {
+      if (!useCanvasStore.getState().synced) set({ synced: true });
+    }, SYNC_WAIT_MS);
+  }
 
   return {
     workspace,
     provider,
     status: provider ? "disconnected" : "connecting",
     ready: persistence === null,
+    synced: provider === null,
     connect: () => {
       void provider?.connect();
     },

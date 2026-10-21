@@ -85,6 +85,68 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   await expect(page.getByText("keyboard delete")).toHaveCount(0);
 });
 
+test("undoes and redoes a card move with the keyboard", async ({ page }) => {
+  await page.goto(docUrl("undo-move"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page);
+  await page.keyboard.type("undo move");
+  await page.keyboard.press("Escape");
+
+  const card = page.locator('[data-testid="node-card"]').filter({ hasText: "undo move" });
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
+  const start = { x: box.x + box.width / 2, y: box.y + 12 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 180, start.y + 120, { steps: 12 });
+  await page.mouse.up();
+
+  const moved = await card.boundingBox();
+  if (!moved) throw new Error("card lost");
+  expect(Math.round(moved.x)).toBeGreaterThan(Math.round(box.x) + 120);
+
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => Math.round((await card.boundingBox())?.x ?? 0))
+    .toBeLessThanOrEqual(Math.round(box.x) + 4);
+
+  await page.keyboard.press("Control+Shift+z");
+  await expect
+    .poll(async () => Math.round((await card.boundingBox())?.x ?? 0))
+    .toBeGreaterThan(Math.round(box.x) + 120);
+});
+
+test("undoes a removal from the board, not the editor text", async ({ page }) => {
+  await page.goto(docUrl("undo-scope"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page);
+  await page.keyboard.type("scoped undo");
+  await page.keyboard.press("Escape");
+
+  // Inside the editor, undo belongs to the editor's own fragment history.
+  const card = page.locator('[data-testid="node-card"]').filter({ hasText: "scoped undo" });
+  const body = card.getByTestId("card-body").locator(".ProseMirror");
+  await card.click();
+  await page.keyboard.press("Enter");
+  await expect(body).toHaveClass(/ProseMirror-focused/);
+  await page.keyboard.type("body text");
+  await expect(body).toHaveText("body text");
+
+  await page.keyboard.press("Control+z");
+  await expect(body).toHaveText("");
+  // Structure stayed put: the editor's history is scoped to its own fragment.
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(3);
+  await page.keyboard.press("Escape");
+
+  // On the canvas it covers structure: removing a card from the board.
+  await card.click();
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await page.keyboard.press("Control+z");
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(3);
+  await expect(page.getByText("scoped undo")).toBeVisible();
+});
+
 test("manages connectors: add, magnetize, reposition, delete", async ({ page }) => {
   await page.goto(docUrl("connectors"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();

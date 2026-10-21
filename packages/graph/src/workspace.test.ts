@@ -572,6 +572,88 @@ describe("migration", () => {
   });
 });
 
+describe("WorkspaceDocument undo", () => {
+  function sync(a: Y.Doc, b: Y.Doc) {
+    const fromA = Y.encodeStateAsUpdate(a);
+    const fromB = Y.encodeStateAsUpdate(b);
+    Y.applyUpdate(b, fromA, "sync");
+    Y.applyUpdate(a, fromB, "sync");
+  }
+
+  /** Entries merge inside `captureTimeout`, so each step starts a new one. */
+  function step(workspace: WorkspaceDocument) {
+    workspace.stopCapturing();
+  }
+
+  it("undoes and redoes structure changes", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard({ id: "board-1" });
+    const card = workspace.createCard({ id: "card-1", boardId: board.id });
+    step(workspace);
+    workspace.updatePlacementPosition(board.id, card.id, { x: 40, y: 60 });
+
+    expect(workspace.canUndo()).toBe(true);
+    workspace.undo();
+    expect(workspace.getPlacement(board.id, card.id)).toMatchObject({ x: 0, y: 0 });
+
+    workspace.redo();
+    expect(workspace.getPlacement(board.id, card.id)).toMatchObject({ x: 40, y: 60 });
+  });
+
+  it("undoes an unplace, a trash and a connector move", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard({ id: "board-1" });
+    const card = workspace.createCard({ boardId: board.id, id: "card-1" });
+    const [connector] = card.connectors;
+    if (!connector) throw new Error("expected a connector");
+
+    step(workspace);
+    workspace.moveConnector(card.id, connector.id, { x: 0.25, y: 0.75 });
+    workspace.undo();
+    expect(workspace.getCard(card.id)?.connectors[0]).toMatchObject({ x: 0.5, y: 0 });
+
+    step(workspace);
+    workspace.unplaceCard(board.id, card.id);
+    expect(workspace.getPlacement(board.id, card.id)).toBeUndefined();
+    workspace.undo();
+    expect(workspace.getPlacement(board.id, card.id)).toBeDefined();
+
+    step(workspace);
+    workspace.trashCard(card.id);
+    expect(workspace.isTrashed(card.id)).toBe(true);
+    workspace.undo();
+    expect(workspace.isTrashed(card.id)).toBe(false);
+  });
+
+  it("never reverts a collaborator's change", () => {
+    const docA = new Y.Doc();
+    const docB = new Y.Doc();
+    const a = new WorkspaceDocument(docA);
+    const b = new WorkspaceDocument(docB);
+    const board = a.createBoard({ id: "board-1" });
+    const card = a.createCard({ id: "card-1", boardId: board.id });
+    const [connector] = card.connectors;
+    if (!connector) throw new Error("expected a connector");
+    sync(docA, docB);
+
+    step(a);
+    a.moveConnector(card.id, connector.id, { x: 0.25, y: 0.75 });
+    sync(docA, docB);
+    b.addConnector(card.id);
+    sync(docA, docB);
+    expect(a.getCard(card.id)?.connectors).toHaveLength(5);
+
+    a.undo();
+
+    // A's own move is reverted, B's added connector survives.
+    expect(a.getCard(card.id)?.connectors).toHaveLength(5);
+    expect(a.getCard(card.id)?.connectors.find((entry) => entry.id === connector.id)).toMatchObject(
+      { x: 0.5, y: 0 },
+    );
+    expect(b.getCard(card.id)?.connectors).toHaveLength(5);
+  });
+});
+
 describe("WorkspaceDocument.observe", () => {
   it("reports the section that changed", () => {
     const workspace = new WorkspaceDocument();

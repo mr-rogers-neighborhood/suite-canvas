@@ -74,6 +74,8 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Never mutate `WorkspaceDocument` internals from the UI. Add typed methods to
   `packages/graph` instead.
 - Every `set*` method validates with the Zod schema; keep it that way.
+- Undo is split by scope: never add structural changes to an editor's history, and never put text
+  in the document's `UndoManager` scope (`cards`/`placements`/`edges`/`boards` only).
 - Write **fields**, not records: prefer `mutateCard`/`mutateEdge`, `updatePlacementPosition`,
   `updatePlacementSize`, `moveConnector`, `reconnectEdge` over `setCard`/`setEdge`. A whole-record
   write makes concurrent edits to other fields of that record resolve last-write-wins.

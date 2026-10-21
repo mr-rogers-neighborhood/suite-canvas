@@ -303,6 +303,20 @@ export function CanvasBoard() {
         return;
       }
 
+      if ((event.metaKey || event.ctrlKey) && !isTyping) {
+        const key = event.key.toLowerCase();
+        // Inside a card the editor owns undo (per-fragment history); here it
+        // covers structure: moves, links, connectors, place and trash.
+        if (key === "z" || key === "y") {
+          event.preventDefault();
+          if (key === "z" && !event.shiftKey) workspace.undo();
+          else workspace.redo();
+          state.setSelectedNodeIds([]);
+          state.stopEditing();
+          return;
+        }
+      }
+
       if (event.key === "Delete" || event.key === "Backspace") {
         if (isTyping || state.selectedNodeIds.length === 0) return;
         event.preventDefault();
@@ -322,7 +336,7 @@ export function CanvasBoard() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [trashSelected, unplaceSelected]);
+  }, [trashSelected, unplaceSelected, workspace]);
 
   // Selection elevates a card in React Flow, which would hide the new order, so
   // drop the selection once an explicit layer change lands.

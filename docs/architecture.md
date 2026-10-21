@@ -120,6 +120,22 @@ Deterministic ids make concurrent migrations converge; both are safe to run twic
 version on a document with nothing to migrate, because that may simply mean this client has not
 hydrated yet.
 
+## Undo
+
+Two histories, each scoped to what it owns:
+
+- **Text** belongs to the editor. `@tiptap/extension-collaboration` installs a `Y.UndoManager`
+  scoped to the card's fragment, so `Cmd-Z` inside a card only walks that card's text (which is why
+  `StarterKit`'s own history is disabled).
+- **Structure** belongs to the document. `WorkspaceDocument` owns a `Y.UndoManager` over the
+  `cards`, `placements`, `edges` and `boards` maps — moves, connectors, links, layers, place and
+  trash/changes — and the canvas handles `Cmd-Z` / `Cmd-Shift-Z` / `Ctrl-Y` when focus is not in an
+  editor. `canUndo`/`canRedo` are exposed for affordances, and `stopCapturing()` starts a new entry.
+
+Both managers track only transactions with a `null` origin, which is what local writes use;
+updates applied by the Hocuspocus or IndexedDB providers carry the provider as origin, so **undo
+can never revert a collaborator's work**.
+
 ## Rendering
 
 A CRDT change should repaint the card it touched, not the board.

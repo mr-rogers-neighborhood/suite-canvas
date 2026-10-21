@@ -274,6 +274,11 @@ export class WorkspaceDocument {
   private readonly cardCache = new Map<string, Card>();
   private readonly placementCache = new Map<string, Placement>();
   private readonly edgeCache = new Map<string, GraphEdge>();
+  /**
+   * Undo for structure only — cards, placements, edges and boards. Card text has
+   * its own per-editor history (y-tiptap's undo plugin), so the two never fight.
+   */
+  private readonly undoManager: Y.UndoManager;
 
   constructor(doc: Y.Doc = new Y.Doc()) {
     this.doc = doc;
@@ -290,6 +295,33 @@ export class WorkspaceDocument {
     this.invalidateOn(this.cards, this.cardCache);
     this.invalidateOn(this.placements, this.placementCache);
     this.invalidateOn(this.edges, this.edgeCache);
+
+    // Local writes carry a null origin; remote ones carry the provider, so a
+    // local undo can never revert a collaborator's work.
+    this.undoManager = new Y.UndoManager([this.cards, this.placements, this.edges, this.boards], {
+      captureTimeout: 400,
+    });
+  }
+
+  undo(): void {
+    this.undoManager.undo();
+  }
+
+  redo(): void {
+    this.undoManager.redo();
+  }
+
+  canUndo(): boolean {
+    return this.undoManager.undoStack.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.undoManager.redoStack.length > 0;
+  }
+
+  /** Starts a new undo entry, so the next edit cannot merge into the last one. */
+  stopCapturing(): void {
+    this.undoManager.stopCapturing();
   }
 
   /** Drops cached records as soon as any of their keys change, local or remote. */

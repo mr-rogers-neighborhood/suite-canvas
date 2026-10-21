@@ -241,7 +241,10 @@ export function SectionLayer({
                   borderColor: selected ? STROKE[color] : undefined,
                   ...(peerColor ? { boxShadow: `0 0 0 2px ${peerColor}66` } : {}),
                   ...(peerGesture.has(section.id)
-                    ? { transition: "left 60ms linear, top 60ms linear" }
+                    ? {
+                        transition:
+                          "left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear",
+                      }
                     : {}),
                 }}
                 onPointerDown={(event) => {
@@ -274,6 +277,7 @@ export function SectionLayer({
                   top: rect.y + 6,
                   transform: `scale(${inverseZoom})`,
                   borderColor: selected ? STROKE[color] : undefined,
+                  ...(peer ? { transition: "left 60ms linear, top 60ms linear" } : {}),
                 }}
                 onPointerDown={(event) => startDrag(event, section)}
                 onContextMenu={(event) => onContextMenu(event, section.id)}

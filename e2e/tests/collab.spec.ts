@@ -43,6 +43,9 @@ async function createNote(page: Page): Promise<void> {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       }),
   );
+  // React StrictMode remounts the editor once in dev; let the focused instance
+  // settle so the first keystrokes cannot land in the discarded one.
+  await page.waitForTimeout(300);
 }
 
 const editingCard = (page: Page) =>
@@ -204,7 +207,7 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
     await page.mouse.down();
     await page.mouse.move(x, y, { steps: 10 });
     await page.mouse.up();
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(300);
   };
 
   // Free placement away from the anchors.
@@ -945,7 +948,7 @@ test("syncs content and presence between two clients", async ({ browser }) => {
 
   // Presence: B sees A's avatar on the card A is editing, plus A's caret.
   await expect(noteOnB.getByTestId("presence-avatar")).toBeVisible();
-  await expect(noteOnB.locator(".ProseMirror-yjs-cursor")).toHaveCount(1);
+  await expect(noteOnB.locator(".ProseMirror-loro-cursor")).toHaveCount(1);
 
   // A's caret must not be mapped into the other cards' documents.
   const otherCards = pageB
@@ -953,7 +956,7 @@ test("syncs content and presence between two clients", async ({ browser }) => {
     .filter({ hasNotText: "hello from A" });
   const otherCount = await otherCards.count();
   for (let index = 0; index < otherCount; index += 1) {
-    await expect(otherCards.nth(index).locator(".ProseMirror-yjs-cursor")).toHaveCount(0);
+    await expect(otherCards.nth(index).locator(".ProseMirror-loro-cursor")).toHaveCount(0);
   }
 
   await contextA.close();

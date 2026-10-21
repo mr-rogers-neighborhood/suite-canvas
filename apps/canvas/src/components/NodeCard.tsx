@@ -1,15 +1,14 @@
 import type { Card, Connector as ConnectorModel } from "@suite/graph";
-import Collaboration from "@tiptap/extension-collaboration";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
+import type { ContainerID, LoroDoc } from "loro-crdt";
+import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Awareness } from "y-protocols/awareness";
-import type * as Y from "yjs";
 import { cardType } from "../cards/cardTypes";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
-import { CollaborationCursor } from "../editor/CollaborationCursor";
+import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Connector } from "./Connector";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PresenceAvatars } from "./PresenceAvatars";
@@ -32,11 +31,16 @@ export type EditingField = "title" | "body";
 
 export interface NodeCardProps {
   card: Card;
-  /** Body rich text. */
-  fragment: Y.XmlFragment;
-  /** Title rich text (a single paragraph). */
-  titleFragment: Y.XmlFragment;
-  awareness: Awareness | null;
+  /** Card document that owns the title and body rich text. */
+  cardDoc: LoroDoc;
+  /** Body rich-text container. */
+  contentId: ContainerID;
+  /** Title rich-text container (a single paragraph). */
+  titleId: ContainerID;
+  /** Shared cursor presence for this workspace. */
+  cursorStore: CursorEphemeralStore | null;
+  /** Local user, for cursor presence. */
+  localUser: { name: string; color: string } | null;
   boardId: string;
   /** Resized dimensions in flow units; omitted means the card's natural size. */
   width?: number | null;
@@ -78,9 +82,11 @@ interface ToolbarState {
 
 export function NodeCard({
   card,
-  fragment,
-  titleFragment,
-  awareness,
+  cardDoc,
+  contentId,
+  titleId,
+  cursorStore,
+  localUser,
   boardId,
   width = null,
   height = null,
@@ -143,8 +149,14 @@ export function NodeCard({
       extensions: [
         // Collaboration ships its own undo history, so StarterKit's is disabled.
         StarterKit.configure({ undoRedo: false }),
-        Collaboration.configure({ fragment }),
-        CollaborationCursor.configure({ awareness, nodeId: card.id, field: "body" }),
+        LoroCollaboration.configure({
+          doc: cardDoc,
+          containerId: contentId,
+          cursorStore,
+          user: localUser,
+          commitOrigin: "text:body",
+          excludeOriginPrefixes: ["text:title"],
+        }),
       ],
       editorProps: {
         attributes: {
@@ -155,7 +167,7 @@ export function NodeCard({
       onFocus: keepFocusAlive,
       onBlur: releaseFocusSoon,
     },
-    [fragment, awareness, card.id],
+    [cardDoc, contentId, cursorStore, localUser, card.id],
   );
 
   const title = useEditor(
@@ -163,8 +175,14 @@ export function NodeCard({
       editable: editing === "title",
       extensions: [
         StarterKit.configure({ undoRedo: false }),
-        Collaboration.configure({ fragment: titleFragment }),
-        CollaborationCursor.configure({ awareness, nodeId: card.id, field: "title" }),
+        LoroCollaboration.configure({
+          doc: cardDoc,
+          containerId: titleId,
+          cursorStore,
+          user: localUser,
+          commitOrigin: "text:title",
+          excludeOriginPrefixes: ["text:body"],
+        }),
       ],
       editorProps: {
         attributes: {
@@ -188,7 +206,7 @@ export function NodeCard({
       },
       onBlur: releaseFocusSoon,
     },
-    [titleFragment, awareness, card.id],
+    [cardDoc, titleId, cursorStore, localUser, card.id],
   );
 
   const toolbar = useEditorState({

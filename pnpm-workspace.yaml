@@ -12,3 +12,5 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-64@2.11.10"
   - "@turbo/windows-arm64@2.11.10"
   - turbo@2.11.10
+patchedDependencies:
+  loro-prosemirror@0.4.4: patches/loro-prosemirror@0.4.4.patch

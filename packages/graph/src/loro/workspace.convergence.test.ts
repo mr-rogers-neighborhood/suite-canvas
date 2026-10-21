@@ -1,6 +1,6 @@
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { WorkspaceDocument } from "./yjs/WorkspaceDocument.js";
+import { WorkspaceDocument } from "./WorkspaceDocument.js";
 
 /** Deterministic PRNG (mulberry32) so a failing seed reproduces exactly. */
 function random(seed: number): () => number {
@@ -14,11 +14,11 @@ function random(seed: number): () => number {
   };
 }
 
-function sync(a: Y.Doc, b: Y.Doc): void {
-  const fromA = Y.encodeStateAsUpdate(a);
-  const fromB = Y.encodeStateAsUpdate(b);
-  Y.applyUpdate(b, fromA, "sync");
-  Y.applyUpdate(a, fromB, "sync");
+function sync(a: LoroDoc, b: LoroDoc): void {
+  const fromA = a.export({ mode: "update" });
+  const fromB = b.export({ mode: "update" });
+  b.import(fromA);
+  a.import(fromB);
 }
 
 /** A stable, order-independent view of everything the document exposes. */
@@ -115,8 +115,8 @@ describe("workspace convergence", () => {
   it("converges after conflicting edits from two clients", () => {
     for (let seed = 1; seed <= 40; seed += 1) {
       const next = random(seed);
-      const docA = new Y.Doc();
-      const docB = new Y.Doc();
+      const docA = new LoroDoc();
+      const docB = new LoroDoc();
       const a = new WorkspaceDocument(docA);
       const b = new WorkspaceDocument(docB);
 

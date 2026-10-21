@@ -5,8 +5,8 @@ import {
   type Placement,
   WorkspaceDocument,
 } from "@suite/graph";
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { applyWorkspaceChange } from "./snapshotChanges";
 import type { WorkspaceSnapshot } from "./snapshotMerge";
 
@@ -286,7 +286,7 @@ describe("applyWorkspaceChange", () => {
 
 describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
   it("should reproduce a full read after structural edits", () => {
-    const workspace = new WorkspaceDocument(new Y.Doc());
+    const workspace = new WorkspaceDocument(new LoroDoc());
     const read = (): WorkspaceSnapshot => ({
       boards: workspace.listBoards(),
       cards: workspace.listCards(),
@@ -316,13 +316,13 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
   });
 
   it("should follow updates that arrive from a synced peer", () => {
-    const docA = new Y.Doc();
-    const docB = new Y.Doc();
+    const docA = new LoroDoc();
+    const docB = new LoroDoc();
     const local = new WorkspaceDocument(docA);
     const remote = new WorkspaceDocument(docB);
     const board = local.createBoard({ id: "b1", name: "One" });
     const card = local.createCard({ id: "c1", boardId: board.id });
-    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA), "sync");
+    docB.import(docA.export({ mode: "update" }));
 
     const read = (): WorkspaceSnapshot => ({
       boards: remote.listBoards(),
@@ -339,7 +339,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     local.updatePlacementPosition(board.id, card.id, { x: 12, y: 34 });
     local.renameBoard(board.id, "Renamed");
     local.trashCard(card.id);
-    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA), "sync");
+    docB.import(docA.export({ mode: "update" }));
     stop();
 
     expect(snapshot).toEqual(read());

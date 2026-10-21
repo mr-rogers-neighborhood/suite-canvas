@@ -33,7 +33,7 @@ function toPresenceUser(state: Record<string, unknown>): PresenceUser {
   };
 }
 
-export function toPeerPresence(clientId: number, state: Record<string, unknown>): PeerPresence {
+export function toPeerPresence(clientId: string, state: Record<string, unknown>): PeerPresence {
   return {
     clientId,
     board: (state[AWARENESS_FIELDS.board] as string | undefined) ?? null,
@@ -83,11 +83,11 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
  * mutated in place.
  */
 export function projectPeers(
-  states: Map<number, Record<string, unknown>>,
-  context: { selfId: number | null; now: number; seen: Map<number, SeenGesture> },
-): Record<number, PeerPresence> {
-  const peers: Record<number, PeerPresence> = {};
-  const live = new Set<number>();
+  states: Map<string, Record<string, unknown>>,
+  context: { selfId: string | null; now: number; seen: Map<string, SeenGesture> },
+): Record<string, PeerPresence> {
+  const peers: Record<string, PeerPresence> = {};
+  const live = new Set<string>();
 
   for (const [clientId, state] of states) {
     if (clientId === context.selfId) continue;

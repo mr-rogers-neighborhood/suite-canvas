@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card } from "@suite/graph";
 import { ReactFlowProvider } from "@xyflow/react";
-import { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
+import { LoroDoc } from "loro-crdt";
 import { NodeCard } from "./NodeCard";
 
-const doc = new Y.Doc();
-const fragment = doc.getXmlFragment("story");
+const doc = new LoroDoc();
+const contentId = doc.getMap("content").ensureMergeableMap("n1").id;
+const titleId = doc.getMap("titles").ensureMergeableMap("n1").id;
 
 const card: Card = {
   id: "n1",
@@ -21,7 +21,6 @@ const card: Card = {
   ],
   data: {},
 };
-const titleFragment = doc.getXmlFragment("story-title");
 
 const meta = {
   title: "Components/NodeCard",
@@ -42,10 +41,12 @@ type Story = StoryObj<typeof meta>;
 
 const base = {
   card,
-  fragment,
-  titleFragment,
+  cardDoc: doc,
+  contentId,
+  titleId,
+  cursorStore: null,
+  localUser: null,
   boardId: "board-1",
-  awareness: null,
 };
 
 const shared = [
@@ -78,5 +79,3 @@ export const WithPresence: Story = {
     ],
   },
 };
-
-export const WithAwareness: Story = { args: { ...base, awareness: new Awareness(doc) } };

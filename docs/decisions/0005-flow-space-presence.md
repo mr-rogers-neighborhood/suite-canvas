@@ -1,6 +1,6 @@
 # ADR-0005: Flow-space presence and live drag tracking
 
-- **Status:** accepted
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
 
 ## Context

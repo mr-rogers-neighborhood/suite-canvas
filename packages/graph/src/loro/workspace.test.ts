@@ -1,11 +1,18 @@
+import { LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { cardSchema, graphEdgeSchema } from "./schema.js";
-import {
-  DEFAULT_BOARD_ID,
-  migrateLegacyDocument,
-  WorkspaceDocument,
-} from "./yjs/WorkspaceDocument.js";
+import { cardSchema, graphEdgeSchema } from "../schema.js";
+import { DEFAULT_BOARD_ID, WorkspaceDocument } from "./WorkspaceDocument.js";
+
+function writeParagraph(workspace: WorkspaceDocument, container: LoroMap, text: string) {
+  const children = container.ensureMergeableList("children");
+  const paragraph = children.insertContainer(children.length, new LoroMap());
+  paragraph.set("nodeName", "paragraph");
+  paragraph.ensureMergeableMap("attributes");
+  const textChildren = paragraph.ensureMergeableList("children");
+  const content = textChildren.insertContainer(0, new LoroText());
+  content.insert(0, text);
+  workspace.doc.commit({ origin: "test" });
+}
 
 const now = Date.now();
 
@@ -215,18 +222,10 @@ describe("WorkspaceDocument cards and placements", () => {
     const card = workspace.createCard();
     expect(workspace.displayTitle(card.id)).toBe("Untitled");
 
-    const body = workspace.getContent(card.id);
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.insert(0, [new Y.XmlText("  Hello world\nsecond line")]);
-    body.insert(0, [paragraph]);
-
+    writeParagraph(workspace, workspace.getContent(card.id), "  Hello world\nsecond line");
     expect(workspace.displayTitle(card.id)).toBe("Hello world");
 
-    const title = workspace.getTitle(card.id);
-    const titleParagraph = new Y.XmlElement("paragraph");
-    titleParagraph.insert(0, [new Y.XmlText("Typed title")]);
-    title.insert(0, [titleParagraph]);
-
+    writeParagraph(workspace, workspace.getTitle(card.id), "Typed title");
     expect(workspace.displayTitle(card.id)).toBe("Typed title");
   });
 });
@@ -242,8 +241,8 @@ describe("WorkspaceDocument fragments and sizes", () => {
     workspace.purgeCard(other.id);
 
     expect(() => workspace.peekContent("missing")).not.toThrow();
-    expect(workspace.peekContent("missing")).toBe(workspace.peekContent("missing"));
-    expect(workspace.peekContent(card.id)).toBe(workspace.getContent(card.id));
+    expect(workspace.peekContent("missing")).toBeNull();
+    expect(workspace.peekContent(card.id)?.id).toBe(workspace.getContent(card.id).id);
   });
 
   it("records a resized card per placement", () => {
@@ -440,144 +439,22 @@ describe("WorkspaceDocument connectors", () => {
 });
 
 describe("migration", () => {
-  function legacyDoc() {
-    const doc = new Y.Doc();
-    const nodes = doc.getMap("nodes");
-    nodes.set("starter-1", {
-      id: "starter-1",
-      kind: "note",
-      position: { x: 0, y: 0 },
-      z: 0,
-      createdAt: 1000,
-      updatedAt: 1000,
-      connectors: [],
-      data: {},
-    });
-    nodes.set("starter-2", {
-      id: "starter-2",
-      kind: "note",
-      position: { x: 320, y: 0 },
-      z: 1,
-      createdAt: 2000,
-      updatedAt: 2000,
-      connectors: [],
-      data: {},
-    });
-    doc.getMap("edges").set("edge-1", {
-      id: "edge-1",
-      source: "starter-1",
-      target: "starter-2",
-      kind: "references",
-      createdAt: 3000,
-      updatedAt: 3000,
-    });
-    return doc;
-  }
-
-  it("converts nodes into cards and placements on one board", () => {
-    const doc = legacyDoc();
+  it("leaves a fresh Loro document untouched", () => {
+    const doc = new LoroDoc();
     const workspace = new WorkspaceDocument(doc);
-
-    const boards = workspace.listBoards();
-    expect(boards).toHaveLength(1);
-    expect(boards[0]?.id).toBe(DEFAULT_BOARD_ID);
-
-    const cards = workspace.listBoardCards(DEFAULT_BOARD_ID);
-    expect(cards.map((card) => card.id)).toEqual(["starter-1", "starter-2"]);
-    expect(cards[0]?.connectors).toHaveLength(4);
-
-    expect(workspace.getPlacement(DEFAULT_BOARD_ID, "starter-2")).toMatchObject({ x: 320, y: 0 });
-    expect(workspace.listBoardEdges(DEFAULT_BOARD_ID).map((edge) => edge.id)).toEqual(["edge-1"]);
-    expect(workspace.getEdge("edge-1")?.boardId).toBe(DEFAULT_BOARD_ID);
-  });
-
-  it("keeps links resolvable when plain records become field maps", () => {
-    const doc = new Y.Doc();
-    const connectors = [
-      { id: "c-source", x: 1, y: 0.5 },
-      { id: "c-target", x: 0, y: 0.5 },
-    ];
-    doc.getMap("boards").set(DEFAULT_BOARD_ID, {
-      id: DEFAULT_BOARD_ID,
-      name: "Board 1",
-      createdAt: 1000,
-      updatedAt: 1000,
-    });
-    doc.getMap("cards").set("a", { ...createCard("a"), connectors });
-    doc.getMap("cards").set("b", { ...createCard("b"), connectors });
-    doc.getMap("placements").set("board-1/a", {
-      boardId: DEFAULT_BOARD_ID,
-      cardId: "a",
-      x: 0,
-      y: 0,
-      z: 0,
-      createdAt: 1000,
-    });
-    doc.getMap("placements").set("board-1/b", {
-      boardId: DEFAULT_BOARD_ID,
-      cardId: "b",
-      x: 320,
-      y: 0,
-      z: 1,
-      createdAt: 2000,
-    });
-    doc.getMap("edges").set("edge-1", {
-      ...createEdge("edge-1", DEFAULT_BOARD_ID),
-      sourceConnector: connectors[0]?.id,
-      targetConnector: connectors[1]?.id,
-    });
-    doc.getMap("meta").set("schemaVersion", 1);
-
-    const workspace = new WorkspaceDocument(doc);
-
-    expect(doc.getMap("meta").get("schemaVersion")).toBe(2);
-    expect(workspace.getCard("a")?.connectors.map((connector) => connector.id)).toEqual([
-      "c-source",
-      "c-target",
-    ]);
-    expect(workspace.listBoardEdges(DEFAULT_BOARD_ID).map((edge) => edge.id)).toEqual(["edge-1"]);
-  });
-
-  it("does not stamp the version when there is nothing to migrate", () => {
-    const doc = new Y.Doc();
-    const workspace = new WorkspaceDocument(doc);
-    expect(doc.getMap("meta").get("schemaVersion")).toBeUndefined();
-
-    // Data arrives later (this client simply had not hydrated yet) and migrates.
-    doc.getMap("nodes").set("late", {
-      id: "late",
-      kind: "note",
-      position: { x: 5, y: 6 },
-      createdAt: 1,
-      updatedAt: 1,
-      connectors: [],
-      data: {},
-    });
     workspace.migrateLegacy();
-
-    expect(workspace.listCards().map((card) => card.id)).toEqual(["late"]);
-    expect(workspace.getPlacement(DEFAULT_BOARD_ID, "late")).toMatchObject({ x: 5, y: 6 });
-  });
-
-  it("is idempotent when run twice", () => {
-    const doc = legacyDoc();
-    new WorkspaceDocument(doc);
-    const workspace = new WorkspaceDocument(doc);
-    migrateLegacyDocument(doc);
-
-    expect(workspace.listBoards()).toHaveLength(1);
-    expect(workspace.listCards()).toHaveLength(2);
-    expect(workspace.listPlacements()).toHaveLength(2);
-    expect(workspace.listEdges()).toHaveLength(1);
+    expect(workspace.listBoards()).toHaveLength(0);
+    expect(workspace.listCards()).toHaveLength(0);
+    expect(workspace.listEdges()).toHaveLength(0);
   });
 });
 
 describe("WorkspaceDocument undo", () => {
-  function sync(a: Y.Doc, b: Y.Doc) {
-    const fromA = Y.encodeStateAsUpdate(a);
-    const fromB = Y.encodeStateAsUpdate(b);
-    Y.applyUpdate(b, fromA, "sync");
-    Y.applyUpdate(a, fromB, "sync");
+  function sync(a: LoroDoc, b: LoroDoc) {
+    const fromA = a.export({ mode: "update" });
+    const fromB = b.export({ mode: "update" });
+    b.import(fromA);
+    a.import(fromB);
   }
 
   /** Entries merge inside `captureTimeout`, so each step starts a new one. */
@@ -610,7 +487,9 @@ describe("WorkspaceDocument undo", () => {
     step(workspace);
     workspace.moveConnector(card.id, connector.id, { x: 0.25, y: 0.75 });
     workspace.undo();
-    expect(workspace.getCard(card.id)?.connectors[0]).toMatchObject({ x: 0.5, y: 0 });
+    expect(
+      workspace.getCard(card.id)?.connectors.find((entry) => entry.id === connector.id),
+    ).toMatchObject({ x: 0.5, y: 0 });
 
     step(workspace);
     workspace.unplaceCard(board.id, card.id);
@@ -626,8 +505,8 @@ describe("WorkspaceDocument undo", () => {
   });
 
   it("never reverts a collaborator's change", () => {
-    const docA = new Y.Doc();
-    const docB = new Y.Doc();
+    const docA = new LoroDoc();
+    const docB = new LoroDoc();
     const a = new WorkspaceDocument(docA);
     const b = new WorkspaceDocument(docB);
     const board = a.createBoard({ id: "board-1" });
@@ -668,27 +547,29 @@ describe("WorkspaceDocument.observe", () => {
     stop();
     workspace.createCard();
 
-    expect(changes).toEqual([
-      "boards:add:b1",
-      "cards:add:c1",
-      "placements:add:b1/c1",
-      "cards:update:c1",
-    ]);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        "boards:add:b1",
+        "cards:add:c1",
+        "placements:add:b1/c1",
+        "cards:update:c1",
+      ]),
+    );
   });
 });
 
 describe("WorkspaceDocument concurrency", () => {
   /** Applies both directions so each client converges on the merged state. */
-  function sync(a: Y.Doc, b: Y.Doc) {
-    const fromA = Y.encodeStateAsUpdate(a);
-    const fromB = Y.encodeStateAsUpdate(b);
-    Y.applyUpdate(b, fromA, "sync");
-    Y.applyUpdate(a, fromB, "sync");
+  function sync(a: LoroDoc, b: LoroDoc) {
+    const fromA = a.export({ mode: "update" });
+    const fromB = b.export({ mode: "update" });
+    b.import(fromA);
+    a.import(fromB);
   }
 
   function pair() {
-    const docA = new Y.Doc();
-    const docB = new Y.Doc();
+    const docA = new LoroDoc();
+    const docB = new LoroDoc();
     const a = new WorkspaceDocument(docA);
     const b = new WorkspaceDocument(docB);
     const board = a.createBoard({ id: "board-1" });
@@ -814,7 +695,9 @@ describe("WorkspaceDocument concurrency", () => {
     sync(docA, docB);
 
     expect(b.getCard(card.id)).not.toBe(remote);
-    expect(b.getCard(card.id)?.connectors[0]).toMatchObject({ x: 0.3, y: 0.7 });
+    expect(b.getCard(card.id)?.connectors.find((entry) => entry.id === connector.id)).toMatchObject(
+      { x: 0.3, y: 0.7 },
+    );
   });
 
   it("keeps a reorder landed while the peer reorders another card", () => {

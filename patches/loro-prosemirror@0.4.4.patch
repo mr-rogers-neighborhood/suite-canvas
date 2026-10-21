@@ -1,0 +1,279 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index f2d4d09c20acd871d5934bb39287f467a8e4e331..7e91eca22e146ea09c6af1f59f3adca08fe191ff 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -15,7 +15,7 @@ const NODE_NAME_KEY = "nodeName";
+ * Maps PM non-text nodes to their corresponding Loro Container IDs.
+ */
+ const WEAK_NODE_TO_LORO_CONTAINER_MAPPING = /* @__PURE__ */ new WeakMap();
+-function updateLoroToPmState(doc, mapping, editorState, containerId) {
++function updateLoroToPmState(doc, mapping, editorState, containerId, commitOrigin = "loroSyncPlugin") {
+ 	const node = editorState.doc;
+ 	const map = containerId ? doc.getContainerById(containerId) : doc.getMap(ROOT_DOC_KEY);
+ 	let isInit = false;
+@@ -26,7 +26,7 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+ 	}
+ 	updateLoroMap(map, node, mapping);
+ 	if (isInit) doc.commit({ origin: "sys:init" });
+-	else doc.commit({ origin: "loroSyncPlugin" });
++	else doc.commit({ origin: commitOrigin });
+ }
+ function createNodeFromLoroObj(schema, obj, mapping) {
+ 	let retval = mapping.get(obj.id) ?? null;
+@@ -473,6 +473,7 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+ 	for (const [peer, cursor] of Object.entries(all)) {
+ 		if (peer === thisPeer) continue;
+ 		if (!cursor.anchor || !cursor.focus) continue;
++		if (!loroState.mapping.has(cursor.anchor.containerId()) || !loroState.mapping.has(cursor.focus.containerId())) continue;
+ 		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
+ 		d.push(prosemirror_view.Decoration.widget(focus, createCursor(peer)));
+ 		if (!cursorEq(cursor.anchor, cursor.focus)) {
+@@ -624,7 +625,7 @@ const LoroSyncPlugin = (props) => {
+ 				else state.changedBy = "local";
+ 				switch (meta?.type) {
+ 					case "doc-changed":
+-						if (!undoState?.isUndoing.current) updateLoroToPmState(state.doc, state.mapping, newEditorState, props.containerId);
++						if (!undoState?.isUndoing.current) updateLoroToPmState(state.doc, state.mapping, newEditorState, props.containerId, props.commitOrigin);
+ 						break;
+ 					case "update-state":
+ 						state = {
+@@ -642,6 +643,9 @@ const LoroSyncPlugin = (props) => {
+ 			}
+ 		},
+ 		appendTransaction: (transactions, _oldEditorState, newEditorState) => {
++			const syncState = loroSyncPluginKey.getState(newEditorState);
++			if (!syncState) return null;
++			if (syncState.snapshot === undefined) return null;
+ 			if (transactions.some((tr) => tr.docChanged)) return newEditorState.tr.setMeta(loroSyncPluginKey, { type: "doc-changed" });
+ 			return null;
+ 		},
+@@ -668,7 +672,9 @@ function init(view) {
+ 	const innerDoc = state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY);
+ 	const mapping = /* @__PURE__ */ new Map();
+ 	if (innerDoc.size === 0) {
+-		const tr = view.state.tr.delete(0, view.state.doc.content.size);
++		const hasEarlyText = view.state.doc.textContent.length > 0;
++		if (hasEarlyText) updateLoroToPmState(state.doc, mapping, view.state, state.containerId);
++		const tr = hasEarlyText ? view.state.tr : view.state.tr.delete(0, view.state.doc.content.size);
+ 		tr.setMeta(loroSyncPluginKey, {
+ 			type: "update-state",
+ 			state: {
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index fd378f1636560624286cdeb561909be285fdd3d9..379e1bff68b86c908d3f7a68d96936e25580b792 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -24,7 +24,7 @@ declare const ROOT_DOC_KEY = "doc";
+ declare const ATTRIBUTES_KEY = "attributes";
+ declare const CHILDREN_KEY = "children";
+ declare const NODE_NAME_KEY = "nodeName";
+-declare function updateLoroToPmState(doc: LoroDocType, mapping: LoroNodeMapping, editorState: EditorState, containerId?: ContainerID): void;
++declare function updateLoroToPmState(doc: LoroDocType, mapping: LoroNodeMapping, editorState: EditorState, containerId?: ContainerID, commitOrigin?: string): void;
+ declare function createNodeFromLoroObj(schema: Schema, obj: LoroNode, mapping: LoroNodeMapping): Node;
+ declare function createNodeFromLoroObj(schema: Schema, obj: LoroText, mapping: LoroNodeMapping): Node[];
+ //#endregion
+@@ -34,6 +34,8 @@ interface LoroSyncPluginProps {
+   doc: LoroDocType;
+   mapping?: LoroNodeMapping;
+   containerId?: ContainerID;
++  /** Origin recorded for local editor commits. Use it to scope undo managers. */
++  commitOrigin?: string;
+ }
+ interface LoroSyncPluginState extends LoroSyncPluginProps {
+   changedBy: "local" | "import" | "checkout";
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 187d0891377a3b876b77ed2a4d617c71057eff84..efe3bdb860a25c096a9dc46a24b56199889729d3 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -24,7 +24,7 @@ declare const ROOT_DOC_KEY = "doc";
+ declare const ATTRIBUTES_KEY = "attributes";
+ declare const CHILDREN_KEY = "children";
+ declare const NODE_NAME_KEY = "nodeName";
+-declare function updateLoroToPmState(doc: LoroDocType, mapping: LoroNodeMapping, editorState: EditorState, containerId?: ContainerID): void;
++declare function updateLoroToPmState(doc: LoroDocType, mapping: LoroNodeMapping, editorState: EditorState, containerId?: ContainerID, commitOrigin?: string): void;
+ declare function createNodeFromLoroObj(schema: Schema, obj: LoroNode, mapping: LoroNodeMapping): Node;
+ declare function createNodeFromLoroObj(schema: Schema, obj: LoroText, mapping: LoroNodeMapping): Node[];
+ //#endregion
+@@ -34,6 +34,8 @@ interface LoroSyncPluginProps {
+   doc: LoroDocType;
+   mapping?: LoroNodeMapping;
+   containerId?: ContainerID;
++  /** Origin recorded for local editor commits. Use it to scope undo managers. */
++  commitOrigin?: string;
+ }
+ interface LoroSyncPluginState extends LoroSyncPluginProps {
+   changedBy: "local" | "import" | "checkout";
+diff --git a/dist/index.js b/dist/index.js
+index 30f301e9505d8b0ce13ec211a3681a60f68c9875..8d4ed4ee02b920fd9fdcf575c9452f7d528b6f48 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -14,7 +14,7 @@ const NODE_NAME_KEY = "nodeName";
+ * Maps PM non-text nodes to their corresponding Loro Container IDs.
+ */
+ const WEAK_NODE_TO_LORO_CONTAINER_MAPPING = /* @__PURE__ */ new WeakMap();
+-function updateLoroToPmState(doc, mapping, editorState, containerId) {
++function updateLoroToPmState(doc, mapping, editorState, containerId, commitOrigin = "loroSyncPlugin") {
+ 	const node = editorState.doc;
+ 	const map = containerId ? doc.getContainerById(containerId) : doc.getMap(ROOT_DOC_KEY);
+ 	let isInit = false;
+@@ -25,7 +25,7 @@ function updateLoroToPmState(doc, mapping, editorState, containerId) {
+ 	}
+ 	updateLoroMap(map, node, mapping);
+ 	if (isInit) doc.commit({ origin: "sys:init" });
+-	else doc.commit({ origin: "loroSyncPlugin" });
++	else doc.commit({ origin: commitOrigin });
+ }
+ function createNodeFromLoroObj(schema, obj, mapping) {
+ 	let retval = mapping.get(obj.id) ?? null;
+@@ -472,6 +472,7 @@ function createDecorations(state, store, _plugin, createSelection, createCursor)
+ 	for (const [peer, cursor] of Object.entries(all)) {
+ 		if (peer === thisPeer) continue;
+ 		if (!cursor.anchor || !cursor.focus) continue;
++		if (!loroState.mapping.has(cursor.anchor.containerId()) || !loroState.mapping.has(cursor.focus.containerId())) continue;
+ 		const [focus, focusCursorUpdate] = cursorToAbsolutePosition(cursor.focus, doc, loroState.mapping);
+ 		d.push(Decoration.widget(focus, createCursor(peer)));
+ 		if (!cursorEq(cursor.anchor, cursor.focus)) {
+@@ -623,7 +624,7 @@ const LoroSyncPlugin = (props) => {
+ 				else state.changedBy = "local";
+ 				switch (meta?.type) {
+ 					case "doc-changed":
+-						if (!undoState?.isUndoing.current) updateLoroToPmState(state.doc, state.mapping, newEditorState, props.containerId);
++						if (!undoState?.isUndoing.current) updateLoroToPmState(state.doc, state.mapping, newEditorState, props.containerId, props.commitOrigin);
+ 						break;
+ 					case "update-state":
+ 						state = {
+@@ -641,6 +642,9 @@ const LoroSyncPlugin = (props) => {
+ 			}
+ 		},
+ 		appendTransaction: (transactions, _oldEditorState, newEditorState) => {
++			const syncState = loroSyncPluginKey.getState(newEditorState);
++			if (!syncState) return null;
++			if (syncState.snapshot === undefined) return null;
+ 			if (transactions.some((tr) => tr.docChanged)) return newEditorState.tr.setMeta(loroSyncPluginKey, { type: "doc-changed" });
+ 			return null;
+ 		},
+@@ -667,7 +671,9 @@ function init(view) {
+ 	const innerDoc = state.containerId ? state.doc.getContainerById(state.containerId) : state.doc.getMap(ROOT_DOC_KEY);
+ 	const mapping = /* @__PURE__ */ new Map();
+ 	if (innerDoc.size === 0) {
+-		const tr = view.state.tr.delete(0, view.state.doc.content.size);
++		const hasEarlyText = view.state.doc.textContent.length > 0;
++		if (hasEarlyText) updateLoroToPmState(state.doc, mapping, view.state, state.containerId);
++		const tr = hasEarlyText ? view.state.tr : view.state.tr.delete(0, view.state.doc.content.size);
+ 		tr.setMeta(loroSyncPluginKey, {
+ 			type: "update-state",
+ 			state: {
+diff --git a/src/cursor/common.ts b/src/cursor/common.ts
+index 91bdf332d3e744bc90dce0bd6a9832dc92af948b..c47974bc2bc8d85320af64985a6fd1b5349e8675 100644
+--- a/src/cursor/common.ts
++++ b/src/cursor/common.ts
+@@ -218,6 +218,15 @@ function createDecorations(
+       continue;
+     }
+ 
++    // A cursor only belongs to the editor that owns its container. Without
++    // this, every editor sharing the store renders the same remote caret.
++    if (
++      !loroState.mapping.has(cursor.anchor.containerId()) ||
++      !loroState.mapping.has(cursor.focus.containerId())
++    ) {
++      continue;
++    }
++
+     const [focus, focusCursorUpdate] = cursorToAbsolutePosition(
+       cursor.focus,
+       doc as LoroDocType,
+diff --git a/src/lib.ts b/src/lib.ts
+index b8a8452be64e9fef1f9d00c83b3d534e6c61de0b..3fdff5a6ba692eca363570183c3fbcb597899fe6 100644
+--- a/src/lib.ts
++++ b/src/lib.ts
+@@ -73,6 +73,7 @@ export function updateLoroToPmState(
+   mapping: LoroNodeMapping,
+   editorState: EditorState,
+   containerId?: ContainerID,
++  commitOrigin = "loroSyncPlugin",
+ ) {
+   const node = editorState.doc;
+   const map = containerId
+@@ -90,7 +91,7 @@ export function updateLoroToPmState(
+   if (isInit) {
+     doc.commit({ origin: "sys:init" });
+   } else {
+-    doc.commit({ origin: "loroSyncPlugin" });
++    doc.commit({ origin: commitOrigin });
+   }
+ }
+ 
+diff --git a/src/sync-plugin-key.ts b/src/sync-plugin-key.ts
+index ee4705fa4a20850c8e4454be75999f6d295be0dc..316c6c0b8bb919b02ccc141e7ef9b0aa905f8f9b 100644
+--- a/src/sync-plugin-key.ts
++++ b/src/sync-plugin-key.ts
+@@ -11,6 +11,8 @@ export interface LoroSyncPluginProps {
+   doc: LoroDocType;
+   mapping?: LoroNodeMapping;
+   containerId?: ContainerID;
++  /** Origin recorded for local editor commits. Use it to scope undo managers. */
++  commitOrigin?: string;
+ }
+ 
+ export interface LoroSyncPluginState extends LoroSyncPluginProps {
+diff --git a/src/sync-plugin.ts b/src/sync-plugin.ts
+index e5ef3228ed0c3edd57e9bea474c682fde01cf422..c3034bd51021619efa0dbd18d38eee999d506f4e 100644
+--- a/src/sync-plugin.ts
++++ b/src/sync-plugin.ts
+@@ -49,7 +49,6 @@ export const LoroSyncPlugin = (props: LoroSyncPluginProps): Plugin => {
+     state: {
+       init: (_config, editorState): LoroSyncPluginState => {
+         configLoroTextStyle(props.doc, editorState.schema);
+-
+         return {
+           doc: props.doc,
+           mapping: props.mapping ?? new Map(),
+@@ -76,6 +75,7 @@ export const LoroSyncPlugin = (props: LoroSyncPluginProps): Plugin => {
+                 state.mapping,
+                 newEditorState,
+                 props.containerId,
++                props.commitOrigin,
+               );
+             }
+             break;
+@@ -93,6 +93,17 @@ export const LoroSyncPlugin = (props: LoroSyncPluginProps): Plugin => {
+       },
+     } as StateField<LoroSyncPluginState>,
+     appendTransaction: (transactions, _oldEditorState, newEditorState) => {
++      // `init()` is deferred to a macrotask. A doc-changed transaction before
++      // it runs would sync the empty editor state over populated Loro content
++      // (loro-prosemirror#77). `snapshot` is undefined until init completes and
++      // null afterwards, so use it as the initialized guard.
++      const syncState = loroSyncPluginKey.getState(newEditorState);
++      if (!syncState) return null;
++      if (syncState.snapshot === undefined) {
++        // Init is deferred. Ignore edits until it runs; `init` commits any
++        // content the user typed in the meantime instead of deleting it.
++        return null;
++      }
+       if (transactions.some((tr) => tr.docChanged)) {
+         return newEditorState.tr.setMeta(loroSyncPluginKey, {
+           type: "doc-changed",
+@@ -144,8 +155,20 @@ function init(view: EditorView) {
+ 
+   const mapping: LoroNodeMapping = new Map();
+   if (innerDoc.size === 0) {
+-    // Empty doc
+-    const tr = view.state.tr.delete(0, view.state.doc.content.size);
++    const hasEarlyText = view.state.doc.textContent.length > 0;
++    if (hasEarlyText) {
++      // The user typed before the deferred init ran. Persist that text instead
++      // of replacing it with the empty Loro container.
++      updateLoroToPmState(
++        state.doc as LoroDocType,
++        mapping,
++        view.state,
++        state.containerId,
++      );
++    }
++    const tr = hasEarlyText
++      ? view.state.tr
++      : view.state.tr.delete(0, view.state.doc.content.size);
+     tr.setMeta(loroSyncPluginKey, {
+       type: "update-state",
+       state: { mapping, docSubscription, snapshot: null },

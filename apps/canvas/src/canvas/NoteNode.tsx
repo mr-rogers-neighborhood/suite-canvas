@@ -16,9 +16,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 
   const { card, placement } = data as { card: Card; placement: Placement };
   const workspace = useCanvasStore((state) => state.workspace);
+  const cursorStore = useCanvasStore((state) => state.cursors);
   const snapshot = useWorkspaceSnapshot();
   const peers = useBoardPeers(placement.boardId);
-  const awareness = usePresenceStore((state) => state.awareness);
+  const localUser = usePresenceStore((state) => state.localUser);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
   const setResizing = usePresenceStore((state) => state.setResizing);
 
@@ -31,13 +32,18 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
 
-  // Peek (never create) and re-resolve on every change, so a client that mounted
-  // before the document loaded adopts the shared fragment as soon as it arrives.
-  // `snapshot` is the invalidation signal: any CRDT change can carry it in.
+  // Container ids are stable; resolving them through the snapshot lets a card
+  // that mounted before the document hydrated adopt the shared containers.
   // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
-  const fragment = useMemo(() => workspace.peekContent(id), [workspace, id, snapshot]);
+  const contentId = useMemo(
+    () => workspace.contentId(id) ?? workspace.getContent(id).id,
+    [workspace, id, snapshot],
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: snapshot is the invalidation signal
-  const titleFragment = useMemo(() => workspace.peekTitle(id), [workspace, id, snapshot]);
+  const titleId = useMemo(
+    () => workspace.titleId(id) ?? workspace.getTitle(id).id,
+    [workspace, id, snapshot],
+  );
 
   const presence = useMemo<PresenceUser[]>(
     () => peers.filter((peer) => peer.focus?.nodeId === id).map((peer) => peer.user),
@@ -158,9 +164,11 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       />
       <NodeCard
         card={card}
-        fragment={fragment}
-        titleFragment={titleFragment}
-        awareness={awareness}
+        cardDoc={workspace.doc}
+        contentId={contentId}
+        titleId={titleId}
+        cursorStore={cursorStore}
+        localUser={localUser}
         boardId={placement.boardId}
         width={width}
         height={height}

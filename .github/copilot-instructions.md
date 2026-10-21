@@ -6,7 +6,7 @@ for the full map and [docs/conventions.md](../docs/conventions.md) for detailed 
 ## Always
 
 - Use pnpm (never npm/yarn) and run commands from the repo root.
-- Graph data mutations must go through `@suite/graph` (`GraphDocument`), never raw Yjs.
+- Graph data mutations must go through `@suite/graph` (`WorkspaceDocument`), never raw Loro.
 - Zustand is for UI state only; document data is CRDT-owned.
 - Keep TypeScript strict; no `any` without a comment.
 - Follow conventional commit messages when committing.

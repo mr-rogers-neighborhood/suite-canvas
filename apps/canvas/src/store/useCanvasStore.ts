@@ -1,20 +1,18 @@
-import { HocuspocusProvider } from "@hocuspocus/provider";
 import { WorkspaceDocument } from "@suite/graph";
-import { IndexeddbPersistence } from "y-indexeddb";
-import * as Y from "yjs";
+import { EphemeralStore, LoroDoc } from "loro-crdt";
+import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
+import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
+import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
 
-export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+export type ConnectionStatus = LoroConnectionStatus;
 
 function searchParam(key: string): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(key);
 }
 
-/**
- * A workspace owns its boards and cards. `?doc=` is accepted as a legacy alias so
- * older links and tests keep resolving to the same document.
- */
+/** A workspace owns its boards and cards. `?doc=` remains a legacy alias. */
 export function resolveWorkspaceId(): string {
   return searchParam("workspace") ?? searchParam("doc") ?? "default-workspace";
 }
@@ -25,65 +23,73 @@ export function resolveBoardId(): string | null {
 
 export const WORKSPACE_ID = resolveWorkspaceId();
 
-const doc = new Y.Doc();
+const doc = new LoroDoc();
 const workspace = new WorkspaceDocument(doc);
+const presence = new EphemeralStore(30_000);
+const cursors = new CursorEphemeralStore(doc.peerIdStr, 30_000);
 
-// Offline-first: persist the document locally in IndexedDB so the app works
-// with no network and rehydrates instantly on reload.
 const persistence =
-  typeof indexedDB !== "undefined" ? new IndexeddbPersistence(WORKSPACE_ID, doc) : null;
+  typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(WORKSPACE_ID, doc) : null;
 
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
 
 interface CanvasState {
   workspace: WorkspaceDocument;
-  provider: HocuspocusProvider | null;
+  presence: EphemeralStore;
+  cursors: CursorEphemeralStore;
+  provider: LoroProvider | null;
   status: ConnectionStatus;
-  /** True once local storage has hydrated, so startup work never races loading. */
+  /** True once local storage has hydrated. */
   ready: boolean;
-  /**
-   * True once the first server sync landed (or the wait ran out). Startup writes
-   * — migration and seeding — wait for it: a client that hydrates an empty
-   * IndexedDB before the server's snapshot arrives would otherwise seed starter
-   * cards over a workspace whose cards were deliberately deleted.
-   */
+  /** True once the first server sync landed (or the wait ran out). */
   synced: boolean;
   connect: () => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set) => {
-  // Created eagerly so `provider.awareness` exists on the first render. Editors
-  // bind to that awareness; creating it later would remount them and drop
-  // in-flight keystrokes.
   const provider =
     typeof window === "undefined"
       ? null
-      : new HocuspocusProvider({
+      : new LoroProvider({
           url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
-          name: WORKSPACE_ID,
-          document: doc,
+          workspaceId: WORKSPACE_ID,
+          doc,
+          presence,
+          cursors,
+          onStatus: (status) => set({ status }),
+          onSynced: () => set({ synced: true }),
         });
 
-  provider?.on("status", (event: { status: string }) => {
-    set({ status: event.status as ConnectionStatus });
-  });
+  if (persistence) {
+    void persistence
+      .load()
+      .catch((error) => console.warn("[loro] local hydration failed", error))
+      .finally(() => set({ ready: true }));
+  }
 
-  provider?.on("synced", () => set({ synced: true }));
-
-  persistence?.on("synced", () => set({ ready: true }));
-
-  // Offline first run: nothing will ever sync, so local state is authoritative.
   if (provider) {
     setTimeout(() => {
       if (!useCanvasStore.getState().synced) set({ synced: true });
     }, SYNC_WAIT_MS);
   }
 
+  const flush = () => {
+    void persistence?.flush();
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+  }
+
   return {
     workspace,
+    presence,
+    cursors,
     provider,
-    status: provider ? "disconnected" : "connecting",
+    status: provider ? provider.status : "connecting",
     ready: persistence === null,
     synced: provider === null,
     connect: () => {

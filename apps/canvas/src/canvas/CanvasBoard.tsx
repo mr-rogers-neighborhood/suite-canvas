@@ -427,28 +427,39 @@ export function CanvasBoard() {
   useEffect(() => {
     if (!reconnecting) return;
 
-    const { follow, stop } = followPointer(screenToFlowPosition, (position) => {
-      // React Flow already resolves the snap target while the drag is in flight;
-      // forward it so peers stop exactly where the mover's link would land.
-      const { connection } = store.getState();
-      const snapped = connection.isValid
-        ? [connection.toHandle, connection.fromHandle].find(
-            (handle) => handle && handle.id !== reconnecting.anchorConnector,
-          )
-        : undefined;
+    let frame: number | null = null;
+    let cancelled = false;
+    const publish = (position: { x: number; y: number }) => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      // React Flow updates `connection` after the pointer event, so read it on
+      // the next frame; otherwise a sample that lands on a connector can keep
+      // the previous, unsnapped target.
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (cancelled) return;
+        const { connection } = store.getState();
+        const snapped = connection.isValid
+          ? [connection.toHandle, connection.fromHandle].find(
+              (handle) => handle && handle.id !== reconnecting.anchorConnector,
+            )
+          : undefined;
 
-      setReconnect({
-        edgeId: reconnecting.edgeId,
-        end: reconnecting.end,
-        position,
-        ...(snapped?.nodeId && snapped.id
-          ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
-          : {}),
+        setReconnect({
+          edgeId: reconnecting.edgeId,
+          end: reconnecting.end,
+          position,
+          ...(snapped?.nodeId && snapped.id
+            ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
+            : {}),
+        });
       });
-    });
+    };
+    const { follow, stop } = followPointer(screenToFlowPosition, publish);
 
     window.addEventListener("pointermove", follow);
     return () => {
+      cancelled = true;
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", follow);
       // The drop already rewrote the edge, so never re-publish here: onReconnectEnd
       // clears the field first and a late sample would resurrect the preview.
@@ -461,29 +472,42 @@ export function CanvasBoard() {
   useEffect(() => {
     if (!connecting) return;
 
-    const { follow, stop } = followPointer(screenToFlowPosition, (position) => {
+    let frame: number | null = null;
+    let cancelled = false;
+    const publish = (position: { x: number; y: number }) => {
+      if (frame !== null) cancelAnimationFrame(frame);
       // Forward React Flow's own snap decision rather than re-testing radii.
-      const { connection } = store.getState();
-      const snapped = connection.isValid
-        ? [connection.toHandle, connection.fromHandle].find(
-            (handle) =>
-              handle && handle.id !== connecting.connectorId && handle.nodeId !== connecting.nodeId,
-          )
-        : undefined;
+      // Read it after React Flow processes the pointer event.
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (cancelled) return;
+        const { connection } = store.getState();
+        const snapped = connection.isValid
+          ? [connection.toHandle, connection.fromHandle].find(
+              (handle) =>
+                handle &&
+                handle.id !== connecting.connectorId &&
+                handle.nodeId !== connecting.nodeId,
+            )
+          : undefined;
 
-      setConnect({
-        nodeId: connecting.nodeId,
-        connectorId: connecting.connectorId,
-        anchorEnd: connecting.anchorEnd,
-        position,
-        ...(snapped?.nodeId && snapped.id
-          ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
-          : {}),
+        setConnect({
+          nodeId: connecting.nodeId,
+          connectorId: connecting.connectorId,
+          anchorEnd: connecting.anchorEnd,
+          position,
+          ...(snapped?.nodeId && snapped.id
+            ? { target: { nodeId: snapped.nodeId, connectorId: snapped.id } }
+            : {}),
+        });
       });
-    });
+    };
+    const { follow, stop } = followPointer(screenToFlowPosition, publish);
 
     window.addEventListener("pointermove", follow);
     return () => {
+      cancelled = true;
+      if (frame !== null) cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", follow);
       // onConnectEnd clears the field first; a late sample must not revive it.
       stop();

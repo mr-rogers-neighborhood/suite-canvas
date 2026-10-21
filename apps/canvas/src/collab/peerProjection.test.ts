@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { GESTURE_TTL_MS, gestureSignature, projectPeers, type SeenGesture } from "./peerProjection";
 import { AWARENESS_FIELDS } from "./presence";
 
-const SELF = 1;
-const PEER = 2;
+const SELF = "self";
+const PEER = "peer";
 
 function states(overrides: Record<string, unknown> = {}) {
-  return new Map<number, Record<string, unknown>>([
+  return new Map<string, Record<string, unknown>>([
     [
       PEER,
       {
@@ -19,20 +19,20 @@ function states(overrides: Record<string, unknown> = {}) {
   ]);
 }
 
-function project(now: number, seen: Map<number, SeenGesture>, overrides?: Record<string, unknown>) {
+function project(now: number, seen: Map<string, SeenGesture>, overrides?: Record<string, unknown>) {
   return projectPeers(states(overrides), { selfId: SELF, now, seen });
 }
 
 describe("projectPeers", () => {
   it("keeps a gesture that is still arriving", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen);
     const peers = project(1000 + GESTURE_TTL_MS - 1, seen);
     expect(peers[PEER]?.dragging).toMatchObject({ nodeId: "n1" });
   });
 
   it("drops a gesture that stopped arriving", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen);
     const peers = project(1000 + GESTURE_TTL_MS + 1, seen);
     expect(peers[PEER]?.dragging).toBeNull();
@@ -41,7 +41,7 @@ describe("projectPeers", () => {
   });
 
   it("restarts the clock when the gesture frame changes", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen);
     project(2000, seen, {
       [AWARENESS_FIELDS.dragging]: { nodeId: "n1", position: { x: 99, y: 20 } },
@@ -53,7 +53,7 @@ describe("projectPeers", () => {
   });
 
   it("keeps selections and carets, which are state rather than gestures", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     const selection = { nodeIds: ["n1"] };
     const focus = { nodeId: "n1", field: "body" };
     project(1000, seen, {
@@ -71,8 +71,8 @@ describe("projectPeers", () => {
   });
 
   it("skips the local client and forgets clients that left", () => {
-    const seen = new Map<number, SeenGesture>();
-    const map = new Map<number, Record<string, unknown>>([
+    const seen = new Map<string, SeenGesture>();
+    const map = new Map<string, Record<string, unknown>>([
       [SELF, { [AWARENESS_FIELDS.user]: { name: "Me", color: "#000" } }],
       ...states().entries(),
     ]);
@@ -102,7 +102,7 @@ describe("projectPeers with a new-link drag", () => {
   });
 
   it("projects the gesture so peers can draw a preview", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     const peer = project(1000, seen, connectFrame(10))[PEER];
     expect(peer?.connect).toMatchObject({
       nodeId: "n1",
@@ -114,7 +114,7 @@ describe("projectPeers with a new-link drag", () => {
   });
 
   it("expires when the drag stops arriving, like any other gesture", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen, connectFrame(10));
     expect(
       project(1000 + GESTURE_TTL_MS - 1, seen, connectFrame(10))[PEER]?.connect,
@@ -123,7 +123,7 @@ describe("projectPeers with a new-link drag", () => {
   });
 
   it("stays live while the pointer keeps refreshing it", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen, connectFrame(10));
     project(2000, seen, connectFrame(60));
     project(3000, seen, connectFrame(110));
@@ -134,7 +134,7 @@ describe("projectPeers with a new-link drag", () => {
   });
 
   it("restarts only when a fresh frame arrives after expiry", () => {
-    const seen = new Map<number, SeenGesture>();
+    const seen = new Map<string, SeenGesture>();
     project(1000, seen, connectFrame(10));
     expect(project(1000 + GESTURE_TTL_MS + 1, seen, connectFrame(10))[PEER]?.connect).toBeNull();
     // A fresh frame is a new arrival, so the gesture is live again.

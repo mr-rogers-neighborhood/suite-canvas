@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LoroDoc } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { createDocumentStore, type DocumentStore } from "./persistence.js";
 
 let directory: string;
@@ -18,45 +18,62 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
+function write(doc: LoroDoc, key: string, value: string): void {
+  doc.getMap("cards").set(key, value);
+  doc.commit();
+}
+
+function read(state: Uint8Array): LoroDoc {
+  const doc = new LoroDoc();
+  doc.import(state);
+  return doc;
+}
+
 describe("document store", () => {
   it("returns null for a document that was never saved", () => {
     expect(store.load("missing")).toBeNull();
   });
 
   it("round-trips a document's state", () => {
-    const doc = new Y.Doc();
-    doc.getMap("cards").set("card-1", { title: "Kept" });
+    const doc = new LoroDoc();
+    write(doc, "card-1", "Kept");
 
-    store.save("workspace", Y.encodeStateAsUpdate(doc));
+    store.save("workspace", doc.export({ mode: "snapshot" }));
 
-    const restored = new Y.Doc();
-    Y.applyUpdate(restored, store.load("workspace") as Uint8Array);
-    expect(restored.getMap("cards").get("card-1")).toEqual({ title: "Kept" });
+    expect(
+      read(store.load("workspace") as Uint8Array)
+        .getMap("cards")
+        .get("card-1"),
+    ).toBe("Kept");
   });
 
   it("overwrites the same document on save", () => {
-    const doc = new Y.Doc();
-    doc.getMap("cards").set("card-1", "first");
-    store.save("workspace", Y.encodeStateAsUpdate(doc));
+    const doc = new LoroDoc();
+    write(doc, "card-1", "first");
+    store.save("workspace", doc.export({ mode: "snapshot" }));
 
-    doc.getMap("cards").set("card-1", "second");
-    store.save("workspace", Y.encodeStateAsUpdate(doc));
+    write(doc, "card-1", "second");
+    store.save("workspace", doc.export({ mode: "snapshot" }));
 
-    const restored = new Y.Doc();
-    Y.applyUpdate(restored, store.load("workspace") as Uint8Array);
-    expect(restored.getMap("cards").get("card-1")).toBe("second");
+    expect(
+      read(store.load("workspace") as Uint8Array)
+        .getMap("cards")
+        .get("card-1"),
+    ).toBe("second");
   });
 
   it("keeps documents separate", () => {
-    const one = new Y.Doc();
-    one.getMap("meta").set("name", "one");
-    const two = new Y.Doc();
-    two.getMap("meta").set("name", "two");
-    store.save("one", Y.encodeStateAsUpdate(one));
-    store.save("two", Y.encodeStateAsUpdate(two));
+    const one = new LoroDoc();
+    write(one, "card-1", "one");
+    const two = new LoroDoc();
+    write(two, "card-1", "two");
+    store.save("one", one.export({ mode: "snapshot" }));
+    store.save("two", two.export({ mode: "snapshot" }));
 
-    const restored = new Y.Doc();
-    Y.applyUpdate(restored, store.load("two") as Uint8Array);
-    expect(restored.getMap("meta").get("name")).toBe("two");
+    expect(
+      read(store.load("two") as Uint8Array)
+        .getMap("cards")
+        .get("card-1"),
+    ).toBe("two");
   });
 });

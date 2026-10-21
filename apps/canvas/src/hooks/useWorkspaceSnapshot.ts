@@ -23,14 +23,20 @@ function read(workspace: Workspace): WorkspaceSnapshot {
  */
 export function useWorkspaceSnapshot(): WorkspaceSnapshot {
   const workspace = useCanvasStore((state) => state.workspace);
+  const ready = useCanvasStore((state) => state.ready);
+  const synced = useCanvasStore((state) => state.synced);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot>(() => read(workspace));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ready/synced are re-read triggers, not effect inputs.
   useEffect(() => {
+    // Hydration and the first server sync can land between the initial read and
+    // the observer registration. Re-read when either gate flips so a snapshot
+    // taken before the import cannot stay empty.
     setSnapshot((previous) => mergeSnapshots(previous, read(workspace)));
     return workspace.observe((change) => {
       setSnapshot((previous) => applyWorkspaceChange(previous ?? read(workspace), change));
     });
-  }, [workspace]);
+  }, [workspace, ready, synced]);
 
   return snapshot;
 }

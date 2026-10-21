@@ -1,5 +1,4 @@
 import { WorkspaceDocument } from "@suite/graph";
-import * as Y from "yjs";
 
 export interface DocStats {
   /** Encoded size of the whole document, in bytes. */
@@ -18,10 +17,10 @@ export interface DocStats {
 export function readDocStats(workspace: WorkspaceDocument): DocStats {
   const { doc } = workspace;
   return {
-    bytes: Y.encodeStateAsUpdate(doc).byteLength,
-    boards: doc.getMap<unknown>(WorkspaceDocument.BOARDS_KEY).size,
-    cards: doc.getMap<unknown>(WorkspaceDocument.CARDS_KEY).size,
-    placements: doc.getMap<unknown>(WorkspaceDocument.PLACEMENTS_KEY).size,
-    edges: doc.getMap<unknown>(WorkspaceDocument.EDGES_KEY).size,
+    bytes: doc.export({ mode: "snapshot" }).byteLength,
+    boards: doc.getMap(WorkspaceDocument.BOARDS_KEY).size,
+    cards: doc.getMap(WorkspaceDocument.CARDS_KEY).size,
+    placements: doc.getMap(WorkspaceDocument.PLACEMENTS_KEY).size,
+    edges: doc.getMap(WorkspaceDocument.EDGES_KEY).size,
   };
 }

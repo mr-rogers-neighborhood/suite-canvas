@@ -11,7 +11,7 @@ cards that are not on the board in front of you.
 ## Principles
 
 1. **Local-first:** the app is fully usable offline; the network only accelerates sync.
-2. **CRDT truth:** Yjs owns the document state. The UI observes and mutates it, never the
+2. **CRDT truth:** Loro owns the document state. The UI observes and mutates it, never the
    other way around.
 3. **Typed boundary:** all graph writes are validated by Zod at the `@suite/graph` layer.
 
@@ -20,48 +20,51 @@ cards that are not on the board in front of you.
 ```mermaid
 flowchart LR
   UI[React UI] --> Store[Zustand UI state]
-  Store --> Graph["@suite/graph (typed Yjs)"]
-  Graph --> Doc[Y.Doc]
-  Doc --> IDB[(IndexedDB<br/>y-indexeddb)]
-  Doc <--> HP[HocuspocusProvider]
-  HP <-->|WebSocket| Server[Hocuspocus server]
+  Store --> Graph["@suite/graph (typed Loro)"]
+  Graph --> Doc[LoroDoc]
+  Doc --> IDB[(IndexedDB<br/>snapshot + update log)]
+  Doc <--> Provider[LoroProvider]
+  Provider <-->|WebSocket| Server[loro-websocket server]
   Server <-->|WebSocket| Others[Other clients]
   Server --> DB[(SQLite<br/>document store)]
 ```
 
 - **Zustand** holds ephemeral UI state: active board, selection, library drawer state,
   connection status. It never duplicates document data.
-- **`@suite/graph`** exposes `WorkspaceDocument`, a typed wrapper over a `Y.Doc`. Boards, cards,
-  placements and edges are `Y.Map`s; card text lives in `content`/`titles` fragments in the same
-  doc.
-- **`y-indexeddb`** persists the whole doc locally so the app rehydrates instantly and works
-  offline.
-- **Hocuspocus** (provider + server) syncs the doc across peers over WebSocket, and the server
-  flushes each document to SQLite (`apps/collab-server/src/persistence.ts`) so a workspace outlives
-  the last connected client.
+- **`@suite/graph`** exposes `WorkspaceDocument`, a typed wrapper over a `LoroDoc`. Boards, cards,
+  placements and edges are nested `LoroMap`s; card text lives in `content`/`titles` maps shaped by
+  `loro-prosemirror` in the same doc. Loro's typed containers (map, list, text, tree, counter,
+  movable list) are available when the semantic model needs them.
+- **`LoroIndexeddbPersistence`** stores a Loro snapshot plus an append-only update log locally, so
+  the app rehydrates instantly and works offline.
+- **`loro-websocket`** (provider + server) syncs the doc across peers over WebSocket, and the server
+  flushes each room to SQLite (`apps/collab-server/src/persistence.ts`) so a workspace outlives the
+  last connected client.
 
 ## Document model
 
-One `Y.Doc` per workspace (room + IndexedDB key = workspace id). Boards are views inside that one
-document, so moving a card between boards stays atomic.
+One `LoroDoc` per workspace (room + IndexedDB key = workspace id). Boards are views inside that one
+document, so moving a card between boards stays atomic. Card bodies are also in that document for
+now; the target index/card-doc split is described in
+[design-inspirations.md](./design-inspirations.md#7-collaboration-and-local-first-model).
 
 | Map | Value |
 | --- | --- |
 | `boards` | `{ id, name, createdAt, updatedAt }` |
-| `cards` | `Y.Map`, one key per field: `kind`, `createdAt`, `updatedAt`, `deletedAt`, `data`, `connectors` |
-| `placements` | key `${boardId}/${cardId}` → `Y.Map`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
-| `edges` | `Y.Map`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
-| `content` | card body rich text (`Y.XmlFragment`, keyed by card id) |
-| `titles` | card title rich text (`Y.XmlFragment`, keyed by card id) |
+| `cards` | `LoroMap`, one key per field: `kind`, `createdAt`, `updatedAt`, `deletedAt`, `data`, `connectors` |
+| `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
+| `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
+| `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
+| `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `meta` | `{ schemaVersion, seeded }` |
 
 **Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
-`GraphEdge` objects for reads, but stores each field as its own `Y.Map` key. A whole-record `set`
+`GraphEdge` objects for reads, but stores each field as its own `LoroMap` key. A whole-record `set`
 would make two clients editing different parts of one record resolve last-write-wins for everything
 — one client moving a connector while another adds one silently dropped one of the two edits.
 Field maps merge per key, so concurrent writers keep both. Mutations therefore route through
 `mutateCard`/`mutateEdge` (single field writes), `updatePlacementPosition`/`updatePlacementSize`
-(x/y and width/height only) and the connector sub-map (`connectors` is itself a `Y.Map<Y.Map>`).
+(x/y and width/height only) and the connector sub-map (`connectors` is itself a `LoroMap` of maps).
 `setCard`/`setEdge` remain as whole-record escape hatches for seeding and migration only.
 
 Derived views keep the filtering in one place: `listBoardCards(boardId)` (placed, alive, back to
@@ -90,66 +93,59 @@ are renumbered once, in a single transaction. Sorting breaks ties by `createdAt`
 concurrent moves that land on the same rank still order deterministically. Ranks are fractional, so
 the canvas paints with the sorted index rather than the raw rank. Inbox cards never hold a rank.
 
-**Reads never create shared containers.** `peekContent`/`peekTitle` return the shared fragment or a
-local placeholder; only `createCard` (and the migration) insert fragments into the doc. A client that
-mounts before the document has loaded would otherwise publish a competing `Y.XmlFragment`, win the
-CRDT race, and orphan the real text — which is why title and body edits silently stopped syncing.
-The card re-resolves its fragments on every CRDT change, so it adopts the shared one the moment it
-arrives. Startup work (migration, seeding, board resolution) waits for `ready`, which flips when
-local storage hydrates; migration also refuses to stamp `schemaVersion` on a document that has no
-legacy nodes yet, so a not-yet-loaded client cannot skip real data.
+**Reads never create shared containers.** `peekContent`/`peekTitle` return the existing Loro map or
+`null`; only `createCard` and explicit writers create containers. A client that mounts before the
+document has loaded must not initialize a competing container, or the real text is orphaned. The
+card re-resolves its container ids on every document change, so it adopts the shared containers the
+moment they arrive. Startup work (seeding, board resolution) waits for `ready`, which flips when
+local storage hydrates.
 
 **Card size belongs to the placement.** `width`/`height` are optional per placement, so a shared
 card can be small on one board and large on another. A resize broadcasts `resizing { nodeId, width,
 height }` at ~25 Hz; peers ease toward it (the same smoothing as card drags) and show the resizer's
 colour ring, while the CRDT records only the final size on release.
 
-**Title text is a fragment.** A `Y.Map` string would resolve concurrent renames last-write-wins for
-the whole value; an `XmlFragment` merges character-wise and lets y-prosemirror draw carets in the
-title exactly as it does in the body.
+**Title text is a Loro map shaped by `loro-prosemirror`.** A plain string would resolve concurrent
+renames last-write-wins for the whole value; the ProseMirror tree stores text in `LoroText`, merges
+character-wise, and lets the Loro cursor plugin draw carets in the title exactly as it does in the
+body.
 
 ### Migration
 
-Migration runs in two steps, both from the constructor and both guarded by `meta.schemaVersion`:
-
-1. **v1 — flat document to workspace.** Documents created before workspaces hold flat `nodes`/
-   `edges` maps. `migrateLegacyDocument` creates one default board, converts nodes to cards plus
-   placements (preserving `createdAt` so home is stable), backfills empty titles and stamps
-   `boardId` on edges.
-2. **v2 — whole records to field maps.** `migrateRecordsToFieldMaps` rewrites each record value as
-   a nested `Y.Map` and stamps version 2.
-
-Deterministic ids make concurrent migrations converge; both are safe to run twice. Neither stamps a
-version on a document with nothing to migrate, because that may simply mean this client has not
-hydrated yet.
+The Loro document starts at the current schema; there is no production Yjs data to migrate.
+`migrateLegacy()` is a no-op kept on the interface, and `?doc=<id>` remains a URL alias for
+`?workspace=<id>`. Future schema changes follow the additive-first rule: new fields are optional,
+and a migration is explicit and guarded by `meta.schemaVersion`.
 
 ## Undo
 
 Two histories, each scoped to what it owns:
 
-- **Text** belongs to the editor. `@tiptap/extension-collaboration` installs a `Y.UndoManager`
-  scoped to the card's fragment, so `Cmd-Z` inside a card only walks that card's text (which is why
-  `StarterKit`'s own history is disabled).
-- **Structure** belongs to the document. `WorkspaceDocument` owns a `Y.UndoManager` over the
-  `cards`, `placements`, `edges` and `boards` maps — moves, connectors, links, layers, place and
-  trash/changes — and the canvas handles `Cmd-Z` / `Cmd-Shift-Z` / `Ctrl-Y` when focus is not in an
-  editor. `canUndo`/`canRedo` are exposed for affordances, and `stopCapturing()` starts a new entry.
+- **Text** belongs to the editor. `LoroCollaboration` installs a `LoroUndoPlugin` with an
+  `UndoManager` scoped to the editor's own commit origin (`text:title` or `text:body`), so `Cmd-Z`
+  inside a card only walks that field's text (which is why `StarterKit`'s own history is disabled).
+- **Structure** belongs to the document. `WorkspaceDocument` owns an `UndoManager` that excludes
+  `text:`, `sys:init` and the Lite/import origins, covering moves, connectors, links, layers,
+  place and trash/changes. The canvas handles `Cmd-Z` / `Cmd-Shift-Z` / `Ctrl-Y` when focus is not
+  in an editor. `canUndo`/`canRedo` are exposed for affordances, and `stopCapturing()` starts a new
+  entry.
 
-Both managers track only transactions with a `null` origin, which is what local writes use;
-updates applied by the Hocuspocus or IndexedDB providers carry the provider as origin, so **undo
-can never revert a collaborator's work**.
+Remote updates and local hydration carry non-local origins, so **undo can never revert a
+collaborator's work**. Structural edits commit with a `struct:` origin; editor commits carry a
+`text:` origin so the two stacks never capture each other.
 
 ## Session start
 
 A client holds two copies of a workspace: the local IndexedDB one and the server's. Startup order
 matters because acting on an empty document is indistinguishable from acting on a deleted workspace.
 
-1. The document and provider are created eagerly, so `provider.awareness` exists on the first render
-   (editors bind to it, and swapping awareness later remounts them).
-2. `ready` flips when `y-indexeddb` has replayed everything it had. Migration runs here, and again
-   when `synced` flips.
-3. `synced` flips when the server's first sync lands — or after `SYNC_WAIT_MS` (5 s) if the network
-   is down, so an offline first run still works.
+1. The document, presence stores and provider are created eagerly, so the Tiptap cursor plugins can
+   bind to a stable `CursorEphemeralStore` on the first render.
+2. `ready` flips when the IndexedDB snapshot and update log have been imported. Migration runs here,
+   and again when `synced` flips.
+3. `synced` flips when the workspace room join completes — or after `SYNC_WAIT_MS` (5 s) if the
+   network is down, so an offline first run still works. `LoroAdaptor.waitForReachingServerVersion`
+   is deliberately not used: it never resolves for a brand-new empty room.
 4. Seeding and board resolution wait for **both**. Seeding an empty local doc before the server's
    snapshot arrives would resurrect starter cards in a workspace someone deliberately emptied.
 
@@ -251,13 +247,13 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 
 ## Editing and presence
 
-- **Editor:** each card mounts a Tiptap editor (`StarterKit` + `Collaboration` +
-  `CollaborationCursor`). StarterKit's undo history is disabled because Collaboration ships its
-  own.
+- **Editor:** each card mounts two Tiptap editors (`StarterKit` + `LoroCollaboration`) for its title
+  and body. StarterKit's undo history is disabled because `LoroCollaboration` owns a scoped Loro
+  undo stack.
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
-- **Presence:** one awareness channel carries `user`, `board` (the board being viewed),
+- **Presence:** one board `EphemeralStore` carries `user`, `board` (the board being viewed),
   `pointer` (canvas cursor), `focus` (card *and* editor field), `selection` (selected nodes,
   selected links *and* the clicked connector),
   `dragging` (node + live position), `connector` (`nodeId`, `connectorId` and the live fraction),
@@ -268,22 +264,23 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   clobbered by a node or link selection clearing the same field.
   Pointer and drag positions are
   **flow coordinates**, so they stay aligned under pan/zoom; the overlay renders through React
-  Flow's `ViewportPortal`. Remote carets come from `yCursorPlugin`, filtered so a peer's caret
-  only renders in the card **and field** they have focused (all editors share one awareness, and a
-  card has both a title and a body editor).
+  Flow's `ViewportPortal`. Remote carets come from `LoroEphemeralCursorPlugin`, filtered so a
+  peer's caret only renders in the editor that owns its Loro container (all editors share one
+  cursor store, and a card has both a title and a body editor). Focused-editor publishing keeps
+  only one field's caret active at a time.
 - **Gestures expire on their own.** A drag, resize, connector move or link drag (reconnecting an end
   or drawing a new one) that stops arriving
-  without an end event (tab killed, network dropped) would leave a ghost on every peer until
-  awareness timed the client out. `peerProjection.ts` stamps each peer's gesture signature with the
+  without an end event (tab killed, network dropped) would leave a ghost on every peer until the
+  ephemeral store timed the client out. `peerProjection.ts` stamps each peer's gesture signature with the
   time it last *changed* (on the receiving side, so clock skew does not matter) and drops the
-  gesture after `GESTURE_TTL_MS` (3 s) of silence; a 1 s sweep re-projects awareness so the ghost
+  gesture after `GESTURE_TTL_MS` (3 s) of silence; a 1 s sweep re-projects presence so the ghost
   disappears even when no further update arrives. Selections and carets are state, not gestures, and
   are left alone.
 - **Board scoping:** presence is workspace-wide because there is one document, so every board-scoped
   surface filters by `peer.board`. Carets stay card-scoped on purpose: two people editing the same
   card from different boards should see each other.
 - **Workspaces:** the workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias,
-  default `default-workspace`), used for both the IndexedDB key and the Hocuspocus room, so separate
+  default `default-workspace`), used for both the IndexedDB key and the Loro sync room, so separate
   workspaces never share CRDT state. The active board rides in `?board=<id>`.
 
 ## Card chrome
@@ -325,8 +322,8 @@ and links follow when the footer expands.
 | UI | `apps/canvas` | React Flow board, Tiptap editor, panels |
 | UI state | `apps/canvas` (Zustand) | Selection, tools, panels, connection status |
 | Domain | `packages/graph` | Schema, types, typed CRDT access |
-| Persistence | `y-indexeddb` | Offline-first local storage |
-| Sync | Hocuspocus provider + server | Real-time collaboration |
+| Persistence | `LoroIndexeddbPersistence` | Offline-first local snapshot + update log |
+| Sync | `loro-websocket` provider + server | Real-time collaboration |
 
 ## Drag tracking
 
@@ -345,8 +342,8 @@ the CRDT only on drag stop.
 
 ## Connection lifecycle
 
-1. `useCanvasStore` constructs the `Y.Doc` and `GraphDocument` once, and starts
-   `IndexeddbPersistence` immediately (offline-first).
-2. `App` calls `connect()`, creating a `HocuspocusProvider` that syncs over WebSocket.
+1. `useCanvasStore` constructs the `LoroDoc`, `WorkspaceDocument`, presence stores and provider
+   once, and starts `LoroIndexeddbPersistence` immediately (offline-first).
+2. `App` calls `connect()`, joining the workspace room through `LoroProvider` over WebSocket.
 3. `status` reflects `connecting | connected | disconnected`; the UI stays functional in every
    state.

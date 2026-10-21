@@ -1,6 +1,6 @@
 # ADR-0001: Yjs as the single source of truth
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
 
 ## Context

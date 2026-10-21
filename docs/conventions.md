@@ -56,18 +56,19 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 
 ## State
 
-- Zustand for UI state only. Document data is owned by the Yjs doc.
+- Zustand for UI state only. Document data is owned by the Loro doc.
 - Store selectors should be atomic (`useCanvasStore((s) => s.graph)`) to limit re-renders.
 
 ## Presence and coordinates
 
 - Broadcast presence in **flow coordinates** (`screenToFlowPosition`), never raw screen pixels;
-  the overlay renders inside `<ViewportPortal>` so it follows pan/zoom.
-- Never publish a shared "current selection" awareness field for multiple editors — filter
-  remote carets by the peer's focused node id.
+  the board `EphemeralStore` overlay renders inside `<ViewportPortal>` so it follows pan/zoom.
+- Never render a shared cursor store across editors without filtering by Loro container; a peer's
+  caret belongs only to the editor whose mapping contains it. Publish carets only from the focused
+  editor.
 - Connector drags persist on release only; live positions stay in component state.
   Dragging a connector dot means "connect"; repositioning uses the selected grab handle.
-- Persist positions to the CRDT on drag stop only; live positions travel through awareness.
+- Persist positions to the CRDT on drag stop only; live positions travel through `EphemeralStore`.
 
 ## Data layer
 

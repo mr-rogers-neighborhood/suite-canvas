@@ -1,6 +1,6 @@
 # ADR-0012: Field-granular CRDT records
 
-- **Status:** accepted
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-22
 
 ## Context

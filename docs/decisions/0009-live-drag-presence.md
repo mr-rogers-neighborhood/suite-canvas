@@ -1,6 +1,6 @@
 # ADR-0009: Live presence for connector and link drags
 
-- **Status:** accepted
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-21
 
 ## Context

@@ -9,8 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hocuspocus/server": "^4.7.1",
-    "yjs": "^13.6.33"
+    "@loro-dev/flock": "^4.5.2",
+    "loro-adaptors": "^0.6.1",
+    "loro-crdt": "^1.16.4",
+    "loro-protocol": "^0.3.0",
+    "loro-websocket": "^0.6.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

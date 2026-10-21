@@ -28,6 +28,9 @@ test("creates a titled card from the dock", async ({ page }) => {
 
   // New cards land in the title, not the body.
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  // React StrictMode remounts the editor once in dev; let the focused instance
+  // settle so the first keystrokes cannot land in the discarded one.
+  await page.waitForTimeout(300);
   await page.keyboard.type("Field notes");
   await expect(page.locator(".card-title-editor").filter({ hasText: "Field notes" })).toHaveCount(
     1,
@@ -181,6 +184,9 @@ test("syncs card titles and title carets between clients", async ({ browser }) =
 
   await pageA.getByTestId("dock-type-note").click();
   await expect(pageA.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  // React StrictMode remounts the editor once in dev; let the focused instance
+  // settle so the first keystrokes cannot land in the discarded one.
+  await pageA.waitForTimeout(300);
   await pageA.keyboard.type("Shared title");
 
   await expect(pageB.locator(".card-title-editor").filter({ hasText: "Shared title" })).toHaveCount(
@@ -191,7 +197,7 @@ test("syncs card titles and title carets between clients", async ({ browser }) =
     pageB
       .locator('[data-testid="node-card"]')
       .filter({ hasText: "Shared title" })
-      .locator(".card-title-editor .ProseMirror-yjs-cursor"),
+      .locator(".card-title-editor .ProseMirror-loro-cursor"),
   ).toHaveCount(1);
 
   await contextA.close();

@@ -88,7 +88,7 @@ export const AWARENESS_FIELDS = {
 } as const;
 
 export interface PeerPresence {
-  clientId: number;
+  clientId: string;
   /** Board the peer is looking at; presence from other boards is ignored. */
   board: string | null;
   user: PresenceUser;

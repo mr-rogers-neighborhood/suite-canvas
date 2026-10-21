@@ -17,9 +17,9 @@ export default defineConfig({
     },
     {
       command: "pnpm --filter @suite/collab-server start",
-      // Probing the port lets Playwright reuse a dev server you already have
-      // running instead of spawning one that cannot bind.
-      url: "http://localhost:1234",
+      // Loro's sync endpoint is a WebSocket, so probe a small HTTP health
+      // endpoint on the adjacent port instead.
+      url: "http://localhost:1235/health",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

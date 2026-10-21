@@ -1,5 +1,4 @@
-import type { HocuspocusProvider } from "@hocuspocus/provider";
-import type { Awareness } from "y-protocols/awareness";
+import type { EphemeralStore, Value } from "loro-crdt";
 import { create } from "zustand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
@@ -19,9 +18,10 @@ import {
 
 interface PresenceState {
   localUser: Identity;
-  awareness: Awareness | null;
-  peers: Record<number, PeerPresence>;
-  bind: (provider: HocuspocusProvider) => void;
+  presenceStore: EphemeralStore | null;
+  peerId: string | null;
+  peers: Record<string, PeerPresence>;
+  bind: (store: EphemeralStore, peerId: string) => void;
   setBoard: (boardId: string | null) => void;
   setPointer: (pointer: PointerState | null) => void;
   setFocus: (focus: FocusState | null) => void;
@@ -34,80 +34,57 @@ interface PresenceState {
 }
 
 /** Last gesture signature and arrival time per peer, for the staleness check. */
-const gestureClock = new Map<number, SeenGesture>();
+const gestureClock = new Map<string, SeenGesture>();
 
 export const usePresenceStore = create<PresenceState>((set, get) => {
-  // Bound eagerly so editor components see the real awareness on first render
-  // (changing it later would remount every editor).
-  const initialAwareness = useCanvasStore.getState().provider?.awareness ?? null;
+  const initial = useCanvasStore.getState();
+  let localState: Record<string, Value> = {
+    [AWARENESS_FIELDS.user]: getOrCreateIdentity() as unknown as Value,
+  };
+
+  const publish = (field: string, value: unknown) => {
+    localState = { ...localState, [field]: value as Value };
+    const { presenceStore, peerId } = get();
+    if (presenceStore && peerId) presenceStore.set(peerId, localState);
+  };
+
+  const sync = () => {
+    const { presenceStore, peerId } = get();
+    if (!presenceStore || !peerId) return;
+    const states = new Map<string, Record<string, unknown>>(
+      Object.entries(presenceStore.getAllStates() as Record<string, Record<string, unknown>>),
+    );
+    set({
+      peers: projectPeers(states, { selfId: peerId, now: performance.now(), seen: gestureClock }),
+    });
+  };
 
   return {
     localUser: getOrCreateIdentity(),
-    awareness: initialAwareness,
+    presenceStore: initial.presence ?? null,
+    peerId: initial.workspace.doc.peerIdStr,
     peers: {},
 
-    bind: (provider) => {
-      const awareness = provider.awareness;
-      if (!awareness) return;
-
-      awareness.setLocalStateField(AWARENESS_FIELDS.user, get().localUser);
-
-      const sync = () => {
-        const states = awareness.getStates() as Map<number, Record<string, unknown>>;
-        set({
-          peers: projectPeers(states, {
-            selfId: awareness.clientID,
-            now: performance.now(),
-            seen: gestureClock,
-          }),
-        });
-      };
-
-      // A gesture can stop without an end event, so re-project even when no
-      // awareness update arrives; stale gestures then expire on their own.
+    bind: (store, peerId) => {
+      store.set(peerId, localState);
+      store.subscribe(sync);
       const timer = setInterval(sync, 1000);
-      const stop = () => clearInterval(timer);
-      awareness.on("change", sync);
-      awareness.on("destroy", stop);
-      set({ awareness });
+      set({ presenceStore: store, peerId });
       sync();
+      // The timer is intentionally process-lifetime: the store lives as long as
+      // the workspace, and Dev HMR replaces the module rather than the store.
+      void timer;
     },
 
-    setBoard: (boardId) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.board, boardId);
-    },
-
-    setPointer: (pointer) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.pointer, pointer);
-    },
-
-    setFocus: (focus) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.focus, focus);
-    },
-
-    setDragging: (dragging) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.dragging, dragging);
-    },
-
-    setSelection: (selection) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.selection, selection);
-    },
-
-    setMovingConnector: (connector) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.connector, connector);
-    },
-
-    setResizing: (resizing) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.resizing, resizing);
-    },
-
-    setReconnect: (reconnect) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.reconnect, reconnect);
-    },
-
-    setConnect: (connect) => {
-      get().awareness?.setLocalStateField(AWARENESS_FIELDS.connect, connect);
-    },
+    setBoard: (boardId) => publish(AWARENESS_FIELDS.board, boardId),
+    setPointer: (pointer) => publish(AWARENESS_FIELDS.pointer, pointer),
+    setFocus: (focus) => publish(AWARENESS_FIELDS.focus, focus),
+    setDragging: (dragging) => publish(AWARENESS_FIELDS.dragging, dragging),
+    setSelection: (selection) => publish(AWARENESS_FIELDS.selection, selection),
+    setMovingConnector: (connector) => publish(AWARENESS_FIELDS.connector, connector),
+    setResizing: (resizing) => publish(AWARENESS_FIELDS.resizing, resizing),
+    setReconnect: (reconnect) => publish(AWARENESS_FIELDS.reconnect, reconnect),
+    setConnect: (connect) => publish(AWARENESS_FIELDS.connect, connect),
   };
 });
 

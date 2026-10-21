@@ -6,6 +6,21 @@ export {
   snapToAnchor,
 } from "./connectors.js";
 export type {
+  CreateCardInput,
+  CreateEdgeInput,
+  LayerAction,
+  WorkspaceAction,
+  WorkspaceChange,
+  WorkspaceSection,
+} from "./loro/WorkspaceDocument.js";
+export {
+  DEFAULT_BOARD_ID,
+  migrateLegacyDocument,
+  normalizeCard,
+  placementKey,
+  WorkspaceDocument,
+} from "./loro/WorkspaceDocument.js";
+export type {
   Board,
   Card,
   Connector,
@@ -31,18 +46,3 @@ export {
   placementSchema,
   positionSchema,
 } from "./schema.js";
-export type {
-  CreateCardInput,
-  CreateEdgeInput,
-  LayerAction,
-  WorkspaceAction,
-  WorkspaceChange,
-  WorkspaceSection,
-} from "./yjs/WorkspaceDocument.js";
-export {
-  DEFAULT_BOARD_ID,
-  migrateLegacyDocument,
-  normalizeCard,
-  placementKey,
-  WorkspaceDocument,
-} from "./yjs/WorkspaceDocument.js";

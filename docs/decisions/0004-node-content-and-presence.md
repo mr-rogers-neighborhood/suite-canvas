@@ -1,6 +1,6 @@
 # ADR-0004: Every node is a collaborative editor
 
-- **Status:** accepted
+- **Status:** accepted; CRDT engine and presence store amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
 
 ## Context

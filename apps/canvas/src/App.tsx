@@ -33,6 +33,7 @@ function WorkspaceShell() {
   const workspace = useCanvasStore((state) => state.workspace);
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
+  const presence = useCanvasStore((state) => state.presence);
   const status = useCanvasStore((state) => state.status);
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
@@ -52,6 +53,7 @@ function WorkspaceShell() {
   const editingField = useUiStore((state) => state.editingField);
   const setFocus = usePresenceStore((state) => state.setFocus);
   const setBoard = usePresenceStore((state) => state.setBoard);
+  const bindPresence = usePresenceStore((state) => state.bind);
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
 
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
@@ -62,8 +64,8 @@ function WorkspaceShell() {
   }, [connect]);
 
   useEffect(() => {
-    if (provider) usePresenceStore.getState().bind(provider);
-  }, [provider]);
+    if (provider) bindPresence(presence, workspace.doc.peerIdStr);
+  }, [bindPresence, presence, provider, workspace]);
 
   // Legacy documents can only be migrated once they are actually here: local
   // storage first, then the server's snapshot (a legacy doc may live remotely).

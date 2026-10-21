@@ -12,19 +12,19 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@hocuspocus/provider": "^4.7.1",
+    "@loro-dev/flock": "^4.5.2",
     "@suite/graph": "workspace:*",
-    "@tiptap/extension-collaboration": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
-    "@tiptap/y-tiptap": "^3.0.10",
     "@xyflow/react": "^12.12.0",
+    "loro-adaptors": "^0.6.1",
+    "loro-crdt": "^1.16.4",
+    "loro-prosemirror": "^0.4.4",
+    "loro-protocol": "^0.3.0",
+    "loro-websocket": "^0.6.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "y-indexeddb": "^9.0.12",
-    "y-protocols": "^1.0.7",
-    "yjs": "^13.6.33",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -42,6 +42,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^8.3.4",
+    "vite-plugin-wasm": "^3.6.0",
     "vitest": "^5.0.5"
   }
 }

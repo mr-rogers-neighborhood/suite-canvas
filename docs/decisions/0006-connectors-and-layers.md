@@ -1,6 +1,6 @@
 # ADR-0006: Node-owned connectors, magnetic placement, and layer order
 
-- **Status:** accepted
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
 
 ## Context

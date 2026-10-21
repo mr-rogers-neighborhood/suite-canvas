@@ -269,8 +269,8 @@ body {
   stroke-width: 2.5;
 }
 
-/* Remote carets + selections rendered by @tiptap/y-tiptap (yCursorPlugin). */
-.ProseMirror-yjs-cursor {
+/* Remote carets rendered by loro-prosemirror (LoroEphemeralCursorPlugin). */
+.ProseMirror-loro-cursor {
   position: relative;
   margin-left: -1px;
   margin-right: -1px;
@@ -280,7 +280,7 @@ body {
   pointer-events: none;
 }
 
-.ProseMirror-yjs-cursor > div {
+.ProseMirror-loro-cursor > div {
   position: absolute;
   top: -1.4em;
   left: -1px;
@@ -296,7 +296,7 @@ body {
   user-select: none;
 }
 
-.ProseMirror-yjs-selection {
+.loro-selection {
   border-radius: 2px;
 }
 

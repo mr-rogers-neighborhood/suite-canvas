@@ -25,7 +25,7 @@ purges what you deleted. Clicking a card type creates a card on the current boar
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | Canvas app + Hocuspocus collab server |
+| `pnpm dev` | Canvas app + Loro collab server |
 | `pnpm storybook` | Component workshop on :6006 |
 | `pnpm verify` | lint → typecheck → unit tests → build (what CI runs) |
 | `pnpm lint` / `pnpm lint:fix` | Biome |
@@ -39,29 +39,30 @@ purges what you deleted. Clicking a card type creates a card on the current boar
 
 ```
 apps/canvas          React 19 + Vite + Tailwind v4 app (React Flow canvas, Tiptap editors)
-apps/collab-server   Hocuspocus WebSocket server
-packages/graph       @suite/graph — Zod schema + typed Yjs document layer
+apps/collab-server   Loro WebSocket sync server
+packages/graph       @suite/graph — Zod schema + typed Loro document layer
 e2e                  Playwright tests
 docs/                Architecture, conventions, ADRs
 ```
 
 ## How it works
 
-A single `Y.Doc` per workspace is the source of truth:
+A single `LoroDoc` per workspace is the source of truth:
 
 - `boards` — named boards in this workspace
 - `cards` — workspace-level cards (kind, connectors, `deletedAt`); content lives independently of
   any board
 - `placements` — where a card sits on a board (`x`, `y`, `z`, `createdAt`); one per card and board
 - `edges` — links drawn on a board, dormant while an endpoint is off it
-- `content` / `titles` — per-card body and title rich text (`Y.Map<Y.XmlFragment>`), edited with
-  Tiptap
+- `content` / `titles` — per-card body and title rich text (Loro maps shaped by
+  `loro-prosemirror`), edited with Tiptap
 
-`y-indexeddb` persists locally; Hocuspocus syncs when online and flushes each document to SQLite
-(`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a server
-restart. Presence (`user`, `pointer`, `board`,
-`focus`, `dragging`, plus editor carets) travels over Yjs awareness. All writes go through
-`WorkspaceDocument`, which validates with Zod. See [docs/architecture.md](docs/architecture.md).
+`LoroIndexeddbPersistence` persists locally; the `loro-websocket` sync server flushes each room to
+SQLite (`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a
+server restart. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus editor carets) and
+the canvas gesture channel ride Loro `EphemeralStore`s; they are not persisted in the document. All
+writes go through `WorkspaceDocument`, which validates with Zod. See
+[docs/architecture.md](docs/architecture.md).
 
 ## Publishing
 
@@ -70,7 +71,7 @@ restart. Presence (`user`, `pointer`, `board`,
 (`development` export condition) and from `dist` in production, so a clean checkout always
 builds via `pnpm build` (Turbo builds the dependency first).
 
-Deploy `apps/canvas/dist` to any static host and point `VITE_COLLAB_URL` at your Hocuspocus
+Deploy `apps/canvas/dist` to any static host and point `VITE_COLLAB_URL` at your Loro sync
 server:
 
 ```sh

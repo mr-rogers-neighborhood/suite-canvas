@@ -1,12 +1,13 @@
 import type { Card } from "@suite/graph";
 import { render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { NodeCard } from "./NodeCard";
 
-const doc = new Y.Doc();
-const fragment = doc.getXmlFragment("test");
+const doc = new LoroDoc();
+const contentId = doc.getMap("content").ensureMergeableMap("n1").id;
+const titleId = doc.getMap("titles").ensureMergeableMap("n1").id;
 
 const card: Card = {
   id: "n1",
@@ -21,19 +22,22 @@ const card: Card = {
   ],
   data: {},
 };
-const titleFragment = doc.getXmlFragment("test-title");
+
+const base = {
+  card,
+  cardDoc: doc,
+  contentId,
+  titleId,
+  cursorStore: null,
+  localUser: null,
+  boardId: "board-1",
+};
 
 describe("NodeCard", () => {
   it("renders a read-only note card", () => {
     render(
       <ReactFlowProvider>
-        <NodeCard
-          card={card}
-          fragment={fragment}
-          titleFragment={titleFragment}
-          boardId="board-1"
-          awareness={null}
-        />
+        <NodeCard {...base} />
       </ReactFlowProvider>,
     );
     expect(screen.getByTestId("node-card")).toBeInTheDocument();
@@ -42,14 +46,7 @@ describe("NodeCard", () => {
   it("renders presence avatars for peers on the node", () => {
     render(
       <ReactFlowProvider>
-        <NodeCard
-          card={card}
-          fragment={fragment}
-          titleFragment={titleFragment}
-          boardId="board-1"
-          awareness={null}
-          presence={[{ name: "Nova", color: "#f97316" }]}
-        />
+        <NodeCard {...base} presence={[{ name: "Nova", color: "#f97316" }]} />
       </ReactFlowProvider>,
     );
     expect(screen.getByTestId("presence-avatar")).toBeInTheDocument();

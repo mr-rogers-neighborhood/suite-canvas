@@ -65,6 +65,12 @@ export type SharePublishResult =
   | { ok: true; applied: number }
   | { ok: false; conflicts: PublishConflict[]; unsupported: PublishConflict[]; reason?: string };
 
+/** Whether a share's draft holds edits the workspace has not received yet. */
+export interface ShareStatus {
+  dirty: boolean;
+  hasBaseline: boolean;
+}
+
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
   url: string;
@@ -310,12 +316,33 @@ export class ProjectionWorker {
    * Publishes an editor's draft into its workspace. The share room, its source
    * room and a baseline are all required: a publish never falls back to saved
    * bytes, because those may lag the owner's live edits.
+   *
+   * `overwrite` names the conflicting keys whose draft value wins. An empty
+   * array is meaningful: it keeps every workspace value.
    */
-  publish(share: Share, version?: ShareVersion): Promise<SharePublishResult> {
+  publish(
+    share: Share,
+    version?: ShareVersion,
+    overwrite?: readonly string[],
+  ): Promise<SharePublishResult> {
     if (!this.started) return Promise.resolve(failure("The share service is not running."));
-    return this.enqueue(share.workspaceId, () => this.publishNow(share, version)).catch(
+    return this.enqueue(share.workspaceId, () => this.publishNow(share, version, overwrite)).catch(
       (error: unknown) => failure(message(error)),
     );
+  }
+
+  /**
+   * Reports whether a share's draft differs from its baseline. A room that is
+   * not open yet is joined first, so the answer is about the draft, not about
+   * which shares happen to be warm.
+   */
+  status(share: Share): Promise<ShareStatus> {
+    const idle: ShareStatus = { dirty: false, hasBaseline: false };
+    if (!this.started) return Promise.resolve(idle);
+    return this.enqueue(share.workspaceId, () => this.statusNow(share)).catch((error: unknown) => {
+      this.warn(`could not read the status of ${share.id}: ${message(error)}`);
+      return idle;
+    });
   }
 
   /** Discards an editor's draft and rebuilds it from the workspace. */
@@ -683,7 +710,36 @@ export class ProjectionWorker {
     return { room, source };
   }
 
-  private async publishNow(share: Share, version?: ShareVersion): Promise<SharePublishResult> {
+  /**
+   * Reads, and if needed opens, the room behind a share. A viewer or a share
+   * without a room has no draft to report.
+   */
+  private async statusNow(share: Share): Promise<ShareStatus> {
+    const idle: ShareStatus = { dirty: false, hasBaseline: false };
+    if (share.role !== "editor" || share.scope === "workspace" || !share.roomId) return idle;
+    const roomId = share.roomId;
+
+    // A share created since the last refresh has no room yet.
+    if (!this.rooms.has(roomId)) await this.syncRooms(share.workspaceId);
+    const room = this.rooms.get(roomId);
+    if (!room) return idle;
+
+    if (!room.baseline) {
+      const baseline = this.loadBaseline(room.shareId);
+      if (baseline) {
+        room.baseline = baseline;
+        room.baselineVersion = versionJson(baseline.doc);
+        room.dirty = this.draftDiffers(room.workspace, baseline, room.target);
+      }
+    }
+    return { dirty: room.role === "editor" && room.dirty, hasBaseline: room.baseline !== null };
+  }
+
+  private async publishNow(
+    share: Share,
+    version?: ShareVersion,
+    overwrite?: readonly string[],
+  ): Promise<SharePublishResult> {
     const prepared = await this.prepareDraft(share);
     if ("ok" in prepared) return prepared;
     const { room, source } = prepared;
@@ -701,7 +757,15 @@ export class ProjectionWorker {
       }
     }
 
-    const plan = planPublish(room.workspace, baseline, source.workspace, room.target);
+    // An absent list keeps the old all-or-nothing policy; an empty list is a
+    // decision to keep every workspace value.
+    const plan = planPublish(
+      room.workspace,
+      baseline,
+      source.workspace,
+      room.target,
+      overwrite === undefined ? undefined : { overwrite: new Set(overwrite) },
+    );
     if (plan.conflicts.length > 0 || plan.unsupported.length > 0) {
       return { ok: false, conflicts: plan.conflicts, unsupported: plan.unsupported };
     }

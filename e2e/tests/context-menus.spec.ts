@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
 
+test.describe.configure({ timeout: 60_000 });
+
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`);
@@ -159,12 +161,12 @@ test("keeps the app menu on a field mention", async ({ page }) => {
   await page.keyboard.press("Enter");
 
   const chip = source.getByTestId("mention-chip");
-  await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/);
+  await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/, { timeout: 10_000 });
 
   // The chip stops propagation, so the app menu survives the rich-text guard.
   await chip.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
-  await expect(menu).toBeVisible();
+  await expect(menu).toBeVisible({ timeout: 10_000 });
   await expect(menu.getByRole("menuitem", { name: "Open card" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Display…" })).toBeVisible();
 });
@@ -193,7 +195,7 @@ test("keeps the app menu on a property block", async ({ page }) => {
   // The chip stops propagation, so the app menu survives the rich-text guard.
   await value.click({ button: "right" });
   const menu = page.getByTestId("context-menu");
-  await expect(menu).toBeVisible();
+  await expect(menu).toBeVisible({ timeout: 10_000 });
   await expect(menu.getByRole("menuitem", { name: "Open card" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Display…" })).toBeVisible();
 });

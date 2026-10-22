@@ -39,6 +39,7 @@ export type {
   PublishConflict,
   PublishFieldKind,
   PublishPlan,
+  PublishPlanOptions,
   PublishScope,
   PublishValue,
   RichTextSnapshot,

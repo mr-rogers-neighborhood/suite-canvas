@@ -201,8 +201,18 @@ the URL fragment (`#owner=<key>`), and stored on the server only as a SHA-256 ha
 (`SUITE_WORKSPACES_DB`, default `suite.workspaces.sqlite`). `POST /api/workspaces/:id/claim`
 registers the first key and reports a conflict for a different one; an online open claims the key,
 while an offline open keeps working locally and claims on the next sync. Empty auth never writes a
-workspace room after a claim. The editor link is the recovery path for a lost browser profile: it
-carries the fragment, so copying it is also copying the owner capability. Share management requires
+workspace room after a claim.
+
+Recovery is a separate `.suitekey` JSON file — `{ kind: "suite.owner", version: 1, workspaceId,
+ownerKey, exportedAt }` — saved from `File → Recovery key…`. It is never embedded in a `.suite`
+backup, because that file is routinely copied, attached or shared. The protected screen accepts the
+file (or its pasted contents), refuses a key from another workspace, and reloads with `#owner=` so
+the app boots with it. The editor link stays the second recovery path: it carries the fragment, so
+copying it is also copying the owner capability. `POST /api/workspaces/:id/rotate` takes
+`{ newOwnerKey }` with the current key in `Authorization` and atomically replaces the stored hash;
+old editor links and old `.suitekey` files then stop working while share tokens keep working.
+Exporting a backup offers the recovery file once, in a small prompt: the two files are deliberately
+never bundled. Share management requires
 `Authorization: Bearer <ownerKey>`; a share token cannot list, create or revoke links.
 
 ## Session start

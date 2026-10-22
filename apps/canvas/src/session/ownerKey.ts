@@ -78,6 +78,16 @@ export function withOwnerFragment(url: string, ownerKey: string): string {
   return next.toString();
 }
 
+/**
+ * Rewrites the fragment and boots the app again. A fragment-only `assign` would
+ * not reload, so the in-memory session would keep the old key; the reload is
+ * what makes a freshly imported or rotated key the one the app uses.
+ */
+export function reloadWithOwnerKey(ownerKey: string): void {
+  window.history.replaceState(null, "", withOwnerFragment(window.location.href, ownerKey));
+  window.location.reload();
+}
+
 function timeoutSignal(): AbortSignal | undefined {
   return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
     ? AbortSignal.timeout(CLAIM_TIMEOUT_MS)
@@ -123,4 +133,48 @@ export async function prepareOwnerSession(workspaceId: string): Promise<OwnerSes
   // fragment next time, but a conflicting key must not replace a stored one.
   if (fromFragment && claim !== "conflict") writeOwnerKey(workspaceId, ownerKey);
   return { ownerKey, claim };
+}
+
+function serverMessage(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const value = (body as Record<string, unknown>).error;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function rotateError(status: number, body: unknown): string {
+  const message = serverMessage(body);
+  if (message.length > 0) return message;
+  if (status === 401) return "The server did not receive the current owner key.";
+  if (status === 403) return "This browser no longer holds the current owner key.";
+  if (status === 400) return "The new owner key was refused.";
+  return `The owner key could not be replaced (${status}).`;
+}
+
+/**
+ * Replaces the owner key on the relay. The current key travels in the
+ * Authorization header, so it never appears in the URL or the request body.
+ * Resolves only when the server accepted the new key.
+ */
+export async function rotateOwnerKey(
+  workspaceId: string,
+  currentOwnerKey: string,
+  newOwnerKey: string,
+): Promise<void> {
+  const url = `${httpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/rotate`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${currentOwnerKey}`,
+      },
+      body: JSON.stringify({ newOwnerKey }),
+    });
+  } catch {
+    throw new Error("Could not reach the workspace server. The owner key was not changed.");
+  }
+  if (response.ok) return;
+  const body = await response.json().catch(() => null);
+  throw new Error(rotateError(response.status, body));
 }

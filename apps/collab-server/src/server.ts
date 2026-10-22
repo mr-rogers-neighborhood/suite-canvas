@@ -63,8 +63,9 @@ const health = createServer((request, response) => {
     onSharesChanged: (workspaceId) => {
       void worker.schedule(workspaceId, { immediate: true });
     },
-    publish: (share, version) => worker.publish(share, version),
+    publish: (share, version, overwrite) => worker.publish(share, version, overwrite),
     reload: (share) => worker.reload(share),
+    status: (share) => worker.status(share),
   })
     .then((handled) => {
       if (handled || response.writableEnded) return;

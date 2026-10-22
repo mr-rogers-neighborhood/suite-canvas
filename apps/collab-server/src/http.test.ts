@@ -23,6 +23,9 @@ let publishResult: SharePublishResult;
 let reloadResult: SharePublishResult;
 let published: Share[];
 let publishedVersions: (Record<string, number> | undefined)[];
+let publishedOverwrites: (readonly string[] | undefined)[];
+let statuses: Share[];
+let statusResult: { dirty: boolean; hasBaseline: boolean };
 let reloaded: Share[];
 
 beforeEach(async () => {
@@ -36,6 +39,9 @@ beforeEach(async () => {
   reloadResult = { ok: true, applied: 0 };
   published = [];
   publishedVersions = [];
+  publishedOverwrites = [];
+  statuses = [];
+  statusResult = { dirty: true, hasBaseline: true };
   reloaded = [];
 
   server = createServer((request, response) => {
@@ -44,10 +50,15 @@ beforeEach(async () => {
         changes.push(workspaceId);
         if (hookError) throw new Error("projection hook failed");
       },
-      publish: (share, version) => {
+      publish: (share, version, overwrite) => {
         published.push(share);
         publishedVersions.push(version);
+        publishedOverwrites.push(overwrite);
         return publishResult;
+      },
+      status: (share) => {
+        statuses.push(share);
+        return statusResult;
       },
       reload: (share) => {
         reloaded.push(share);
@@ -405,7 +416,7 @@ describe("publish and reload API", () => {
   }
 
   function draft(
-    action: "publish" | "reload",
+    action: "publish" | "reload" | "status",
     token: string,
     headers: Record<string, string> = {},
     body?: unknown,
@@ -414,6 +425,12 @@ describe("publish and reload API", () => {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  function status(token: string, headers?: Record<string, string>): Promise<Response> {
+    return fetch(`${baseUrl}/api/shares/${token}/status`, {
+      headers: headers ?? { authorization: ["Bearer", token].join(" ") },
     });
   }
 
@@ -578,6 +595,123 @@ describe("publish and reload API", () => {
     // Reload stays body-free and never sends a version.
     await draft("reload", editor.token);
     expect(publishedVersions).toHaveLength(2);
+  });
+
+  it("passes the overwrite list to the worker", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    expect((await draft("publish", editor.token, {}, { overwrite: ["card:a:body"] })).status).toBe(
+      200,
+    );
+    expect(publishedOverwrites).toEqual([["card:a:body"]]);
+
+    // An empty list is a real decision: keep every workspace value.
+    await draft("publish", editor.token, {}, { overwrite: [] });
+    expect(publishedOverwrites[1]).toEqual([]);
+
+    // Without the field the worker keeps the all-or-nothing policy.
+    await draft("publish", editor.token, {}, {});
+    expect(publishedOverwrites[2]).toBeUndefined();
+  });
+
+  it("rejects a malformed overwrite list", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    for (const body of [
+      { overwrite: "card:a:body" },
+      { overwrite: { key: "card:a:body" } },
+      { overwrite: [1] },
+      { overwrite: [""] },
+      { overwrite: ["   "] },
+    ]) {
+      const response = await draft("publish", editor.token, {}, body);
+      expect(response.status).toBe(400);
+    }
+    expect(published).toHaveLength(0);
+  });
+
+  it("reports the draft status to an editor token", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+
+    const response = await status(editor.token);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ dirty: true, hasBaseline: true });
+    expect(statuses[0]?.id).toBe(editor.id);
+
+    statusResult = { dirty: false, hasBaseline: false };
+    expect(await (await status(editor.token)).json()).toEqual({
+      dirty: false,
+      hasBaseline: false,
+    });
+  });
+
+  it("authenticates the status route", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    const missing = await fetch(`${baseUrl}/api/shares/${editor.token}/status`);
+    expect(missing.status).toBe(401);
+
+    expect((await status("unknown-token")).status).toBe(404);
+
+    const viewer = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    expect((await status(viewer.token)).status).toBe(403);
+
+    const workspace = await share({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    expect((await status(workspace.token)).status).toBe(403);
+
+    const revoked = await share({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    await revoke(revoked.id);
+    expect((await status(revoked.token)).status).toBe(404);
+
+    expect(statuses).toHaveLength(0);
+  });
+
+  it("answers status preflight and rejects other methods", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    const preflight = await fetch(`${baseUrl}/api/shares/${editor.token}/status`, {
+      method: "OPTIONS",
+    });
+    expect(preflight.status).toBe(204);
+
+    const post = await draft("status", editor.token);
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, OPTIONS");
   });
 
   it("rejects a malformed version", async () => {

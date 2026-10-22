@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useCardTitle } from "../hooks/useCardContainers";
+import { hasSavedRecoveryKey } from "../session/ownerKit";
+import { getSession } from "../session/session";
 import {
   downloadWorkspaceBackup,
   downloadWorkspaceJson,
@@ -7,6 +9,7 @@ import {
 } from "../session/workspaceTransfer";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { RecoveryKeyDialog } from "./RecoveryKeyDialog";
 import { ShareDialog } from "./ShareDialog";
 
 export interface WorkspaceActionsProps {
@@ -27,8 +30,11 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [backupPrompt, setBackupPrompt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
+  const ownerKey = getSession().ownerKey ?? "";
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -63,6 +69,9 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
       if (kind === "backup") downloadWorkspaceBackup(workspaceId, workspace, title);
       else if (kind === "json") downloadWorkspaceJson(workspace, title);
       else downloadWorkspaceMarkdown(workspace, title);
+      // A backup is exactly the moment someone should also save the key, so
+      // this single prompt is the only export-time follow-up.
+      if (kind === "backup" && !hasSavedRecoveryKey(workspaceId)) setBackupPrompt(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not export this workspace.");
     }
@@ -135,6 +144,18 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
             <button
               type="button"
               role="menuitem"
+              data-testid="workspace-recovery-key"
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                setMenuOpen(false);
+                setRecoveryOpen(true);
+              }}
+            >
+              Recovery key…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
               data-testid="workspace-home"
               className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
               onClick={() => void goHome()}
@@ -161,6 +182,23 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           cardId={selectedCardId}
           cardTitle={selectedCardId ? selectedCardTitle : null}
           onClose={() => setShareOpen(false)}
+        />
+      ) : null}
+      {ownerKey && recoveryOpen ? (
+        <RecoveryKeyDialog
+          workspaceId={workspaceId}
+          ownerKey={ownerKey}
+          title={title}
+          onClose={() => setRecoveryOpen(false)}
+        />
+      ) : null}
+      {ownerKey && backupPrompt ? (
+        <RecoveryKeyDialog
+          mode="backup-prompt"
+          workspaceId={workspaceId}
+          ownerKey={ownerKey}
+          title={title}
+          onClose={() => setBackupPrompt(false)}
         />
       ) : null}
     </div>

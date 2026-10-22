@@ -16,6 +16,12 @@ export interface WorkspaceRegistry {
   claimOrVerify: (workspaceId: string, ownerKey: string) => ClaimResult;
   /** True when this key owns the workspace; false when unknown or different. */
   verify: (workspaceId: string, ownerKey: string) => boolean;
+  /**
+   * Replaces the owner hash when `currentOwnerKey` still owns the workspace.
+   * The update is a single conditional statement, so a concurrent rotation
+   * cannot leave a stale key in place.
+   */
+  rotate: (workspaceId: string, currentOwnerKey: string, newOwnerKey: string) => boolean;
   /** True when the workspace has an owner key registered. */
   has: (workspaceId: string) => boolean;
   close: () => void;
@@ -38,6 +44,12 @@ export function validateClaimInput(workspaceId: unknown, ownerKey: unknown): str
 function assertClaimInput(workspaceId: string, ownerKey: string): void {
   const problem = validateClaimInput(workspaceId, ownerKey);
   if (problem) throw new Error(problem);
+}
+
+/** Validates a rotation payload; the current key arrives in the header. */
+export function validateRotateInput(newOwnerKey: unknown): string | null {
+  if (!isText(newOwnerKey, MAX_KEY_LENGTH)) return "A new owner key is required.";
+  return null;
 }
 
 /** Compares two hex digests without leaking where they differ. */
@@ -68,6 +80,10 @@ export function createWorkspaceRegistry(path: string): WorkspaceRegistry {
      VALUES (?, ?, ?, ?)`,
   );
   const select = db.prepare("SELECT owner_hash FROM workspaces WHERE workspace_id = ?");
+  const update = db.prepare(
+    `UPDATE workspaces SET owner_hash = ?, claimed_at = ?
+     WHERE workspace_id = ? AND owner_hash = ?`,
+  );
 
   const storedHash = (workspaceId: string): string | null => {
     const row = select.get(workspaceId) as WorkspaceRow | undefined;
@@ -91,6 +107,20 @@ export function createWorkspaceRegistry(path: string): WorkspaceRegistry {
       assertClaimInput(workspaceId, ownerKey);
       const stored = storedHash(workspaceId.trim());
       return stored !== null && sameHash(stored, hashOwnerKey(ownerKey));
+    },
+
+    rotate: (workspaceId, currentOwnerKey, newOwnerKey) => {
+      assertClaimInput(workspaceId, currentOwnerKey);
+      const problem = validateRotateInput(newOwnerKey);
+      if (problem) throw new Error(problem);
+
+      const id = workspaceId.trim();
+      const stored = storedHash(id);
+      if (stored === null || !sameHash(stored, hashOwnerKey(currentOwnerKey))) return false;
+      // The hash in the WHERE clause is the compare-and-swap: only the key that
+      // was just verified can replace itself.
+      const result = update.run(hashOwnerKey(newOwnerKey), Date.now(), id, stored);
+      return Number(result.changes) === 1;
     },
 
     has: (workspaceId) => {

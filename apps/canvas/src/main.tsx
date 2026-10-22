@@ -53,7 +53,7 @@ async function boot() {
     if (workspaceId) {
       const { ownerKey, claim } = await prepareOwnerSession(workspaceId);
       if (claim === "conflict") {
-        render(<WorkspaceProtected />);
+        render(<WorkspaceProtected workspaceId={workspaceId} />);
         return;
       }
       configureSession({ ...getSession(), ownerKey });

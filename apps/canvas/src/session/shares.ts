@@ -210,6 +210,12 @@ export interface SharePublishResult {
   applied: number;
 }
 
+/** Whether an editor's draft still holds changes the workspace has not seen. */
+export interface ShareStatus {
+  dirty: boolean;
+  hasBaseline: boolean;
+}
+
 /** A publish rejected because the draft and the source diverged. */
 export class SharePublishConflictError extends Error {
   readonly conflict: SharePublishConflict;
@@ -300,17 +306,32 @@ async function postShareAction(
  * Publishes the draft of an editor share to the owner's workspace. `version`
  * is the share document's version at click time: the worker waits until its
  * room has received at least that version, so a publish never applies a draft
- * that is behind the editor's last WebSocket update. A `409` rejects the
- * publish without touching either side and arrives as a
- * `SharePublishConflictError` carrying the field-level conflicts.
+ * that is behind the editor's last WebSocket update. `overwrite` names the
+ * conflicting keys whose draft value wins; an empty list keeps every workspace
+ * value. A `409` rejects the publish without touching either side and arrives
+ * as a `SharePublishConflictError` carrying the field-level conflicts.
  */
 export async function publishShare(
   token: string,
   version: Record<string, number>,
+  overwrite?: readonly string[],
 ): Promise<SharePublishResult> {
-  const body = await postShareAction(token, "publish", { version });
+  const payload = overwrite === undefined ? { version } : { version, overwrite: [...overwrite] };
+  const body = await postShareAction(token, "publish", payload);
   const applied = isRecord(body) && typeof body.applied === "number" ? body.applied : 0;
   return { applied };
+}
+
+/**
+ * Whether the editor's draft still holds unpublished changes. The token is the
+ * whole credential; the answer drives the small `Draft`/`Published` label.
+ */
+export async function shareStatus(token: string): Promise<ShareStatus> {
+  const body = await request<unknown>(`${SHARE_API_PATH}/${encodeURIComponent(token)}/status`, {
+    headers: bearerHeaders(token),
+  });
+  if (!isRecord(body)) throw new ShareApiError("The share server sent an unexpected response.");
+  return { dirty: body.dirty === true, hasBaseline: body.hasBaseline === true };
 }
 
 /**

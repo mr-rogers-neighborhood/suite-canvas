@@ -83,6 +83,16 @@ export type PublishValue =
   | { kind: "edge"; edge: GraphEdge }
   | { kind: "remove-edge"; edgeId: string };
 
+/**
+ * How a caller resolves keys that the draft and the workspace both changed.
+ * With `overwrite`, such a key is no longer a conflict: a selected key
+ * publishes the draft value, an unselected one keeps the workspace value.
+ * Without `overwrite`, every conflicting key rejects the publish.
+ */
+export interface PublishPlanOptions {
+  overwrite?: ReadonlySet<string>;
+}
+
 export interface PublishPlan {
   scope: PublishScope;
   /** Changes the draft made that the source still matches. */
@@ -253,6 +263,26 @@ function record(plan: PublishPlan, change: PublishChange, value: PublishValue): 
   plan.values[change.key] = value;
 }
 
+/**
+ * Records a key the draft and the workspace both changed. The draft value is
+ * captured even when the key is not selected, so planning stays deterministic;
+ * the change itself is only planned when `overwrite` selects the key.
+ */
+function resolveConflict(
+  plan: PublishPlan,
+  options: PublishPlanOptions | undefined,
+  change: PublishChange,
+  value: PublishValue,
+  message: string,
+): void {
+  plan.values[change.key] = value;
+  if (options?.overwrite === undefined) {
+    addConflict(plan, change.key, change.kind, message);
+    return;
+  }
+  if (options.overwrite.has(change.key)) plan.changes.push(change);
+}
+
 function byId<T extends { id: string }>(left: T, right: T): number {
   return left.id.localeCompare(right.id);
 }
@@ -342,6 +372,7 @@ function planCard(
   baseline: WorkspaceDocument,
   source: WorkspaceDocument,
   cardId: string,
+  options: PublishPlanOptions | undefined,
 ): void {
   const draftCard = draft.getCard(cardId);
   const baselineCard = baseline.getCard(cardId);
@@ -392,10 +423,11 @@ function planCard(
       record(plan, { key, kind, cardId }, { kind: "text", tree: draftValue });
       continue;
     }
-    addConflict(
+    resolveConflict(
       plan,
-      key,
-      kind,
+      options,
+      { key, kind, cardId },
+      { kind: "text", tree: draftValue },
       `The ${kind} of card ${cardId} changed in the workspace after this draft was taken.`,
     );
   }
@@ -413,10 +445,11 @@ function planCard(
     const key = `card:${cardId}:field:${fieldId}`;
     const sourceValue = sourceSnapshot?.properties[fieldId] ?? null;
     if (!sourceSnapshot || !same(sourceValue, baselineValue)) {
-      addConflict(
+      resolveConflict(
         plan,
-        key,
-        "property",
+        options,
+        { key, kind: "property", cardId, fieldId },
+        { kind: "property", value: draftValue },
         `Field ${fieldId} of card ${cardId} changed in the workspace after this draft was taken.`,
       );
       continue;
@@ -436,10 +469,11 @@ function planCard(
     const key = `card:${cardId}:tag:${tagId}`;
     const sourcePresent = sourceSnapshot?.tags.includes(tagId) ?? false;
     if (!sourceSnapshot || sourcePresent !== baselineSnapshot.tags.includes(tagId)) {
-      addConflict(
+      resolveConflict(
         plan,
-        key,
-        "tag",
+        options,
+        { key, kind: "tag", cardId, tagId },
+        { kind: "tag", present },
         `Tag ${tagId} on card ${cardId} changed in the workspace after this draft was taken.`,
       );
       continue;
@@ -455,6 +489,7 @@ function planPlacements(
   source: WorkspaceDocument,
   boardId: string,
   cardIds: readonly string[],
+  options: PublishPlanOptions | undefined,
 ): void {
   for (const cardId of cardIds) {
     const key = `board:${boardId}:card:${cardId}`;
@@ -476,10 +511,11 @@ function planPlacements(
     if (!draftSnapshot) {
       if (!baselineSnapshot) continue;
       if (!sourceSnapshot || !same(sourceSnapshot, baselineSnapshot)) {
-        addConflict(
+        resolveConflict(
           plan,
-          key,
-          "unplace",
+          options,
+          { key, kind: "unplace", cardId, boardId },
+          { kind: "unplace" },
           `Card ${cardId} was moved or removed on this board in the workspace after this draft was taken.`,
         );
         continue;
@@ -490,10 +526,11 @@ function planPlacements(
     if (!baselineSnapshot) continue;
     if (same(draftSnapshot, baselineSnapshot)) continue;
     if (!sourceSnapshot || !same(sourceSnapshot, baselineSnapshot)) {
-      addConflict(
+      resolveConflict(
         plan,
-        key,
-        "placement",
+        options,
+        { key, kind: "placement", cardId, boardId },
+        { kind: "placement", placement: draftSnapshot },
         `Card ${cardId} was moved or resized on this board in the workspace after this draft was taken.`,
       );
       continue;
@@ -512,6 +549,7 @@ function planSections(
   baseline: WorkspaceDocument,
   source: WorkspaceDocument,
   boardId: string,
+  options: PublishPlanOptions | undefined,
 ): void {
   const draftSections = new Map(
     draft.listSections(boardId).map((section) => [section.id, section]),
@@ -549,10 +587,11 @@ function planSections(
     if (same(draftValue, sectionFields(baselineSection))) continue;
     const sourceSection = sourceSections.get(sectionId);
     if (!sourceSection || !same(sectionFields(sourceSection), sectionFields(baselineSection))) {
-      addConflict(
+      resolveConflict(
         plan,
-        key,
-        "section",
+        options,
+        { key, kind: "section", sectionId, boardId },
+        { kind: "section", section: draftSection },
         `Section ${sectionId} changed in the workspace after this draft was taken.`,
       );
       continue;
@@ -571,6 +610,7 @@ function planEdges(
   baseline: WorkspaceDocument,
   source: WorkspaceDocument,
   boardId: string,
+  options: PublishPlanOptions | undefined,
 ): void {
   // Raw edges, not `listBoardEdges`: that view drops an arrow when an endpoint
   // is unplaced, and unplacing a card must not read as deleting its arrows.
@@ -610,10 +650,11 @@ function planEdges(
       if (!baselineEdge) continue;
       const sourceEdge = sourceEdges.get(edgeId);
       if (!same(edgeFields(sourceEdge), edgeFields(baselineEdge))) {
-        addConflict(
+        resolveConflict(
           plan,
-          key,
-          "edge",
+          options,
+          { key, kind: "edge", edgeId, boardId },
+          { kind: "remove-edge", edgeId },
           `Edge ${edgeId} changed in the workspace after this draft was taken.`,
         );
         continue;
@@ -633,10 +674,11 @@ function planEdges(
     if (same(edgeFields(draftEdge), edgeFields(baselineEdge))) continue;
     const sourceEdge = sourceEdges.get(edgeId);
     if (!same(edgeFields(sourceEdge), edgeFields(baselineEdge))) {
-      addConflict(
+      resolveConflict(
         plan,
-        key,
-        "edge",
+        options,
+        { key, kind: "edge", edgeId, boardId },
+        { kind: "edge", edge: draftEdge },
         `Edge ${edgeId} changed in the workspace after this draft was taken.`,
       );
       continue;
@@ -651,15 +693,20 @@ function planEdges(
  * The draft is authoritative only where it differs from the baseline. A key the
  * source changed since the baseline and the draft also changed is a conflict;
  * a key only the source changed keeps the source value and is not a change.
+ *
+ * `options.overwrite` resolves those conflicts: a selected key publishes the
+ * draft value, an unselected one keeps the source value. Unsupported changes
+ * reject the publish either way.
  */
 export function planPublish(
   draft: WorkspaceDocument,
   baseline: WorkspaceDocument,
   source: WorkspaceDocument,
-  options: PublishScope,
+  scope: PublishScope,
+  options?: PublishPlanOptions,
 ): PublishPlan {
   const plan: PublishPlan = {
-    scope: options,
+    scope,
     changes: [],
     conflicts: [],
     unsupported: [],
@@ -668,8 +715,8 @@ export function planPublish(
 
   if (!checkStructure(plan, draft, baseline)) return plan;
 
-  if (options.scope === "card") {
-    const cardId = options.cardId;
+  if (scope.scope === "card") {
+    const cardId = scope.cardId;
     const draftCard = draft.getCard(cardId);
     const baselineCard = baseline.getCard(cardId);
     if (!draftCard || draftCard.deletedAt) {
@@ -684,11 +731,11 @@ export function planPublish(
       );
       return plan;
     }
-    planCard(plan, draft, baseline, source, cardId);
+    planCard(plan, draft, baseline, source, cardId, options);
     return plan;
   }
 
-  const boardId = options.boardId;
+  const boardId = scope.boardId;
   const draftPlacements = draft.listBoardPlacements(boardId);
   const baselinePlacements = baseline.listBoardPlacements(boardId);
   const cardIds = [
@@ -698,10 +745,10 @@ export function planPublish(
     ]),
   ].sort();
 
-  for (const cardId of cardIds) planCard(plan, draft, baseline, source, cardId);
-  planPlacements(plan, draft, baseline, source, boardId, cardIds);
-  planSections(plan, draft, baseline, source, boardId);
-  planEdges(plan, draft, baseline, source, boardId);
+  for (const cardId of cardIds) planCard(plan, draft, baseline, source, cardId, options);
+  planPlacements(plan, draft, baseline, source, boardId, cardIds, options);
+  planSections(plan, draft, baseline, source, boardId, options);
+  planEdges(plan, draft, baseline, source, boardId, options);
 
   return plan;
 }
@@ -840,8 +887,18 @@ function applyChange(
     case "placement": {
       if (value.kind !== "placement") return false;
       const placement = value.placement;
-      const current = source.getPlacement(placement.boardId, placement.cardId);
-      if (!current) return false;
+      let current = source.getPlacement(placement.boardId, placement.cardId);
+      if (!current) {
+        // An overwrite selection can restore a placement the workspace removed;
+        // a plan never contains one the baseline did not have.
+        if (!source.getCard(placement.cardId)) return false;
+        source.placeCard(placement.boardId, placement.cardId, {
+          x: placement.x,
+          y: placement.y,
+        });
+        current = source.getPlacement(placement.boardId, placement.cardId);
+        if (!current) return false;
+      }
       let changed = false;
       if (current.x !== placement.x || current.y !== placement.y) {
         source.movePlacements(placement.boardId, [

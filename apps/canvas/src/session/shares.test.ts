@@ -10,6 +10,7 @@ import {
   SharePublishConflictError,
   shareErrorMessage,
   shareLink,
+  shareStatus,
 } from "./shares";
 
 const API = "http://localhost:1235/api/shares";
@@ -273,10 +274,54 @@ describe("publishShare", () => {
     expect(error.conflict.unsupported).toEqual([]);
   });
 
+  it("sends the selected conflicts as the overwrite list", async () => {
+    const fetchMock = stubFetch(() => reply({ applied: 1 }));
+
+    await publishShare("tok-1", VERSION, ["card:c1:body"]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      version: VERSION,
+      overwrite: ["card:c1:body"],
+    });
+
+    // An empty selection is meaningful: keep every workspace value.
+    await publishShare("tok-1", VERSION, []);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      version: VERSION,
+      overwrite: [],
+    });
+  });
+
   it("surfaces a rejected token as a readable error", async () => {
     stubFetch(() => reply({ error: "This link is read-only." }, 403));
     await expect(publishShare("viewer-token", VERSION)).rejects.toMatchObject({
       message: "This link is read-only.",
+      status: 403,
+    });
+  });
+});
+
+describe("shareStatus", () => {
+  it("reads the draft status with the share token", async () => {
+    const fetchMock = stubFetch(() => reply({ dirty: true, hasBaseline: true }));
+
+    await expect(shareStatus("tok-1")).resolves.toEqual({ dirty: true, hasBaseline: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${API}/tok-1/status`);
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      authorization: ["Bearer", "tok-1"].join(" "),
+    });
+  });
+
+  it("defaults a sparse status body to false", async () => {
+    stubFetch(() => reply({}));
+    await expect(shareStatus("tok-1")).resolves.toEqual({ dirty: false, hasBaseline: false });
+  });
+
+  it("surfaces a rejected token", async () => {
+    stubFetch(() => reply({ error: "Only an editor link has a publish status." }, 403));
+    await expect(shareStatus("viewer-token")).rejects.toMatchObject({
+      message: "Only an editor link has a publish status.",
       status: 403,
     });
   });

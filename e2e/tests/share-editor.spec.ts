@@ -1,5 +1,7 @@
 import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
 
+test.describe.configure({ timeout: 60_000 });
+
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   `/?workspace=e2e-share-editor-${name}-${Date.now()}-${++sequence}`;
@@ -138,6 +140,7 @@ test("board editor moves and edits a card, then publishes", async ({ page, brows
     .poll(async () => (await editorCard.boundingBox())?.x ?? box.x)
     .toBeGreaterThan(box.x + 40);
 
+  await expect(editor.getByTestId("publish-status")).toHaveText("Draft", { timeout: 15_000 });
   await editor.getByTestId("share-publish").click();
   await expect(editor.getByTestId("publish-status")).toHaveText("Published");
 
@@ -154,10 +157,7 @@ test("board editor moves and edits a card, then publishes", async ({ page, brows
   await editor.context().close();
 });
 
-test("a conflicting publish is rejected and reload returns the owner version", async ({
-  page,
-  browser,
-}) => {
+test("a conflicting publish is resolved field by field", async ({ page, browser }) => {
   await page.goto(workspaceUrl("board-conflict"));
   await expect(cards(page)).toHaveCount(2);
   await page.getByTestId("board-create").click();
@@ -173,32 +173,56 @@ test("a conflicting publish is rejected and reload returns the owner version", a
   // simply re-projected from the owner's save. So the editor writes first, and
   // the owner's later change is the one a publish must not overwrite.
   await typeBody(editor, editorCard, "Editor draft");
-  // The worker marks the draft dirty from the streamed edit; give the write a
-  // moment to land before the workspace changes on top of it.
-  await editor.waitForTimeout(300);
+  // The worker marks the draft dirty from the streamed edit; the badge polls.
+  await expect(editor.getByTestId("publish-status")).toHaveText("Draft", { timeout: 15_000 });
   await typeBody(page, cardByTitle(page, "Conflict card"), "Owner second");
   // The publish reads the owner's live room, so let that edit reach the server.
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(3000);
 
-  await editor.getByTestId("share-publish").click();
   const conflict = editor.getByTestId("publish-conflict");
+
+  // Default: every checkbox is unchecked, so the workspace version wins.
+  await editor.getByTestId("share-publish").click();
   await expect(conflict).toBeVisible({ timeout: 15_000 });
   await expect(conflict.getByTestId("publish-conflict-keys")).toContainText(
     "changed in the workspace",
   );
+  const keep = conflict.getByTestId("publish-keep").first();
+  await expect(keep).not.toBeChecked();
 
-  // Rejected means the source is untouched.
-  await expect(page.getByTestId("node-card").filter({ hasText: "Conflict card" })).toContainText(
-    "Owner second",
-  );
-
-  editor.once("dialog", (dialog) => void dialog.accept());
-  await editor.getByTestId("publish-reload").click();
+  await conflict.getByTestId("publish-selected").click();
   await expect(conflict).toHaveCount(0, { timeout: 15_000 });
+  await expect(editor.getByTestId("publish-status")).toHaveText("Published", {
+    timeout: 15_000,
+  });
+
+  // The owner's value survived, and the editor was rebuilt from it.
   await expect(editorCard.getByTestId("card-body")).toContainText("Owner second", {
     timeout: 15_000,
   });
   await expect(editorCard.getByTestId("card-body")).not.toContainText("Editor draft");
+  await expect(cardByTitle(page, "Conflict card").getByTestId("card-body")).toContainText(
+    "Owner second",
+  );
+
+  // Checked: the editor's version wins for that field.
+  await typeBody(editor, editorCard, "Editor wins");
+  await expect(editor.getByTestId("publish-status")).toHaveText("Draft", { timeout: 15_000 });
+  await typeBody(page, cardByTitle(page, "Conflict card"), "Owner third");
+  await page.waitForTimeout(3000);
+
+  await editor.getByTestId("share-publish").click();
+  await expect(conflict).toBeVisible({ timeout: 15_000 });
+  await conflict.getByTestId("publish-keep").first().check();
+  await conflict.getByTestId("publish-selected").click();
+  await expect(conflict).toHaveCount(0, { timeout: 15_000 });
+  await expect(editor.getByTestId("publish-status")).toHaveText("Published", {
+    timeout: 15_000,
+  });
+
+  const ownerBody = cardByTitle(page, "Conflict card").getByTestId("card-body");
+  await expect(ownerBody).toContainText("Editor wins", { timeout: 15_000 });
+  await expect(ownerBody).not.toContainText("Owner third");
 
   await editor.context().close();
 });

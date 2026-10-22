@@ -41,6 +41,12 @@ returned `"write"` for every unauthenticated non-share room.
    the draft is published to the workspace by `POST /api/shares/:token/publish`, which rejects a
    conflict and leaves the draft intact. `POST /api/shares/:token/reload` discards the draft. The
    owner workspace changes still flow into a clean draft and pause while the draft is dirty.
+
+   *Revised in S5:* a conflict is resolved field by field. The publish body becomes
+   `{ version?, overwrite?: string[] }`: a listed conflict key takes the draft value, an unlisted
+   one keeps the workspace value, and an unsupported change still rejects the whole publish.
+   `GET /api/shares/:token/status` reports `{ dirty, hasBaseline }` to an editor token, which drives
+   the single `Draft`/`Published` word beside Publish. Publishing stays manual.
 7. **Workspace viewer links are deferred.** A token that joins the workspace room necessarily
    learns the id that share management uses, and with no accounts that id is also write access.
    Minting a workspace viewer token would therefore allow an editor link. It waits for a separate
@@ -61,4 +67,5 @@ returned `"write"` for every unauthenticated non-share room.
   good projection rather than emptying a room a viewer may be reading.
 - Cross-document merge-back is a publish step, not a live loop: the worker diffs the draft
   against a per-share baseline, applies one `share:publish` commit to the workspace, and rebuilds
-  the projection. Conflicting fields reject the publish; there is no share-wins fallback.
+  the projection. Conflicting fields reject the publish unless the editor selects them in the
+  conflict dialog; there is no automatic share-wins fallback.

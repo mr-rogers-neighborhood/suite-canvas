@@ -7,6 +7,7 @@ import {
   ownerKeyFromFragment,
   prepareOwnerSession,
   readOwnerKey,
+  rotateOwnerKey,
   withOwnerFragment,
   writeOwnerKey,
 } from "./ownerKey";
@@ -167,5 +168,44 @@ describe("prepareOwnerSession", () => {
 
     expect(session.claim).toBe("offline");
     expect(readOwnerKey("ws-1")).toBe(session.ownerKey);
+  });
+});
+
+describe("rotateOwnerKey", () => {
+  it("posts the new key with the current key in the Authorization header", async () => {
+    const fetchMock = stubFetch(() => reply(200));
+
+    await rotateOwnerKey("ws-1", "old-key", "new-key");
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("http://localhost:1235/api/workspaces/ws-1/rotate");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({ newOwnerKey: "new-key" }));
+    expect(init?.headers).toMatchObject({ authorization: "Bearer old-key" });
+    // The key never travels in the URL.
+    expect(String(url)).not.toContain("old-key");
+  });
+
+  it("turns a refused rotation into a readable error", async () => {
+    stubFetch(
+      () =>
+        ({
+          ok: false,
+          status: 403,
+          json: async () => ({ error: "The current owner key does not match this workspace." }),
+        }) as Response,
+    );
+
+    await expect(rotateOwnerKey("ws-1", "wrong", "new-key")).rejects.toThrow(
+      "The current owner key does not match this workspace.",
+    );
+  });
+
+  it("explains an unreachable server", async () => {
+    stubFetch(() => Promise.reject(new Error("offline")));
+
+    await expect(rotateOwnerKey("ws-1", "old-key", "new-key")).rejects.toThrow(
+      "Could not reach the workspace server",
+    );
   });
 });

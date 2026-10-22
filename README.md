@@ -86,7 +86,10 @@ room and can switch boards. Board and card editor links write a draft: owner sav
 draft is dirty, `POST /api/shares/:token/publish` applies one conflict-checked commit to the
 workspace, and `POST /api/shares/:token/reload` discards the draft. A publish may carry the
 share document's version vector, so it waits for the editor's own edits to reach the share room
-before it plans. Links are capabilities, not accounts or an ACL. Room writes require the credential
+before it plans. A conflicting publish is resolved in one dialog: `overwrite` lists the fields
+whose draft value wins, unlisted conflicts keep the workspace value, and `Publish` stays manual.
+`GET /api/shares/:token/status` tells the editor whether the draft is still unpublished, which is
+the single `Draft`/`Published` word beside Publish. Links are capabilities, not accounts or an ACL. Room writes require the credential
 that matches the room: an owner key for a workspace, a share token for its share. Creating, listing
 and revoking links additionally needs the workspace owner key, so a share token can never mint or
 revoke another link.

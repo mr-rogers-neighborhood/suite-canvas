@@ -8,6 +8,7 @@ import { type PublishClient, SharePublishButton } from "./SharePublishButton";
 function fakeClient(overrides: Partial<PublishClient> = {}): PublishClient {
   return {
     publishShare: vi.fn(async () => ({ applied: 1 })),
+    shareStatus: vi.fn(async () => ({ dirty: false, hasBaseline: true })),
     reloadShare: vi.fn(async () => {}),
     ...overrides,
   };
@@ -54,7 +55,7 @@ describe("SharePublishButton", () => {
 
     expect(screen.getByTestId("share-publish")).toHaveTextContent("Publishing…");
     expect(await screen.findByTestId("publish-status")).toHaveTextContent("Published");
-    expect(client.publishShare).toHaveBeenCalledWith("tok-1", expect.any(Object));
+    expect(client.publishShare).toHaveBeenCalledWith("tok-1", expect.any(Object), undefined);
   });
 
   it("lists conflicts and reloads from the workspace after confirmation", async () => {
@@ -107,6 +108,101 @@ describe("SharePublishButton", () => {
 
     fireEvent.click(screen.getByTestId("publish-close"));
     expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument();
+  });
+
+  it("shows Draft while the draft holds unpublished changes", async () => {
+    const client = fakeClient({
+      shareStatus: vi.fn(async () => ({ dirty: true, hasBaseline: true })),
+    });
+
+    render(<SharePublishButton client={client} />);
+
+    expect(await screen.findByTestId("publish-status")).toHaveTextContent("Draft");
+  });
+
+  it("shows Published when the draft matches the workspace", async () => {
+    render(<SharePublishButton client={fakeClient()} />);
+
+    expect(await screen.findByTestId("publish-status")).toHaveTextContent("Published");
+  });
+
+  it("publishes the checked conflicts and keeps the workspace for the rest", async () => {
+    const publishShare = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new SharePublishConflictError({
+          conflicts: [
+            { key: "card:c1:body", kind: "body", message: "Body changed." },
+            { key: "card:c1:field:owner", kind: "property", message: "Field changed." },
+          ],
+          unsupported: [],
+          reason: null,
+        }),
+      )
+      .mockResolvedValueOnce({ applied: 1 });
+    const client = fakeClient({ publishShare });
+
+    render(<SharePublishButton client={client} />);
+    fireEvent.click(screen.getByTestId("share-publish"));
+    await screen.findByTestId("publish-conflict");
+
+    const boxes = screen.getAllByTestId("publish-keep");
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).not.toBeChecked();
+    expect(boxes[1]).not.toBeChecked();
+
+    fireEvent.click(boxes[1] as HTMLElement);
+    expect(boxes[1]).toBeChecked();
+    fireEvent.click(screen.getByTestId("publish-selected"));
+
+    await waitFor(() => expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument());
+    expect(publishShare).toHaveBeenLastCalledWith("tok-1", expect.any(Object), [
+      "card:c1:field:owner",
+    ]);
+  });
+
+  it("keeps the workspace version when no conflict is checked", async () => {
+    const publishShare = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new SharePublishConflictError({
+          conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
+          unsupported: [],
+          reason: null,
+        }),
+      )
+      .mockResolvedValueOnce({ applied: 0 });
+    const client = fakeClient({ publishShare });
+
+    render(<SharePublishButton client={client} />);
+    fireEvent.click(screen.getByTestId("share-publish"));
+    await screen.findByTestId("publish-conflict");
+
+    fireEvent.click(screen.getByTestId("publish-selected"));
+
+    await waitFor(() => expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument());
+    expect(publishShare).toHaveBeenLastCalledWith("tok-1", expect.any(Object), []);
+  });
+
+  it("keeps publishing blocked while a change cannot be published", async () => {
+    const publishShare = vi.fn(async () => {
+      throw new SharePublishConflictError({
+        conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
+        unsupported: [{ key: "card:c2", kind: "unsupported", message: "No new cards." }],
+        reason: null,
+      });
+    });
+    const client = fakeClient({ publishShare });
+
+    render(<SharePublishButton client={client} />);
+    fireEvent.click(screen.getByTestId("share-publish"));
+    await screen.findByTestId("publish-conflict");
+
+    expect(screen.getByTestId("publish-conflict-unsupported")).toHaveTextContent("No new cards.");
+    expect(screen.getByTestId("publish-selected")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("publish-selected"));
+    expect(publishShare).toHaveBeenCalledTimes(1);
   });
 
   it("shows a readable publish error", async () => {

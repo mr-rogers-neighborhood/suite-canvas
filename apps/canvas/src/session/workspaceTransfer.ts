@@ -125,7 +125,8 @@ export function openWorkspace(id: string, boardId?: string | null): void {
   window.location.assign(workspaceUrl(id, boardId, readOwnerKey(id)));
 }
 
-function downloadText(filename: string, text: string, mime = "application/json"): void {
+/** Downloads text as a file; the browser's download UI is the confirmation. */
+export function downloadText(filename: string, text: string, mime = "application/json"): void {
   const blob = new Blob([text], { type: mime });
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -135,7 +136,7 @@ function downloadText(filename: string, text: string, mime = "application/json")
   URL.revokeObjectURL(href);
 }
 
-function fileStem(title: string): string {
+export function fileStem(title: string): string {
   const stem = title
     .trim()
     .toLocaleLowerCase()

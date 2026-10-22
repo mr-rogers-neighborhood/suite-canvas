@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SharePublishResult } from "./projectionWorker.js";
+import type { SharePublishResult, ShareStatus } from "./projectionWorker.js";
 import {
   type CreateShareInput,
   type Share,
@@ -21,13 +21,17 @@ export interface ShareRequestHooks {
   /**
    * Publishes an editor's draft. `version` is the share document's version
    * vector as the editor saw it, so the worker can wait for the draft to arrive.
+   * `overwrite` names the conflicting keys whose draft value wins.
    */
   publish?: (
     share: Share,
     version?: Record<string, number>,
+    overwrite?: readonly string[],
   ) => Promise<SharePublishResult> | SharePublishResult;
   /** Discards an editor's draft and rebuilds it from the workspace. */
   reload?: (share: Share) => Promise<SharePublishResult> | SharePublishResult;
+  /** Whether the share's draft holds unpublished changes. */
+  status?: (share: Share) => Promise<ShareStatus> | ShareStatus;
 }
 
 function notify(hooks: ShareRequestHooks | undefined, workspaceId: string): void {
@@ -106,31 +110,60 @@ async function readOptionalJsonBody(request: IncomingMessage): Promise<unknown> 
   return buffer ? parseJson(buffer) : undefined;
 }
 
+/** A parsed publish body: the version gate and the optional resolution set. */
+interface PublishPayload {
+  version?: Record<string, number>;
+  overwrite?: string[];
+}
+
 /**
- * Reads `{ version?: { <peer>: <counter> } }` from a publish body. The version
- * is how the editor gates its own publish: the worker must hold that draft
- * before it plans, or it would publish a stale room.
+ * Reads `{ version?: { <peer>: <counter> }, overwrite?: string[] }` from a
+ * publish body. The version is how the editor gates its own publish: the worker
+ * must hold that draft before it plans, or it would publish a stale room.
+ * `overwrite` names the conflicts whose draft value wins; an empty list is a
+ * valid "keep every workspace value" decision.
  */
-function parsePublishVersion(body: unknown): Record<string, number> | undefined {
-  if (body === undefined) return undefined;
+function parsePublishPayload(body: unknown): PublishPayload {
+  if (body === undefined) return {};
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new HttpError(400, "The request body must be a JSON object.");
   }
 
-  const raw = (body as Record<string, unknown>).version;
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new HttpError(400, "version must be an object of peer counters.");
+  const record = body as Record<string, unknown>;
+  const payload: PublishPayload = {};
+
+  const rawVersion = record.version;
+  if (rawVersion !== undefined && rawVersion !== null) {
+    if (typeof rawVersion !== "object" || Array.isArray(rawVersion)) {
+      throw new HttpError(400, "version must be an object of peer counters.");
+    }
+
+    const version: Record<string, number> = {};
+    for (const [peer, counter] of Object.entries(rawVersion)) {
+      if (typeof counter !== "number" || !Number.isSafeInteger(counter) || counter < 0) {
+        throw new HttpError(400, "version counters must be non-negative integers.");
+      }
+      version[peer] = counter;
+    }
+    payload.version = version;
   }
 
-  const version: Record<string, number> = {};
-  for (const [peer, counter] of Object.entries(raw)) {
-    if (typeof counter !== "number" || !Number.isSafeInteger(counter) || counter < 0) {
-      throw new HttpError(400, "version counters must be non-negative integers.");
+  const rawOverwrite = record.overwrite;
+  if (rawOverwrite !== undefined && rawOverwrite !== null) {
+    if (!Array.isArray(rawOverwrite)) {
+      throw new HttpError(400, "overwrite must be an array of conflict keys.");
     }
-    version[peer] = counter;
+    const overwrite: string[] = [];
+    for (const entry of rawOverwrite) {
+      if (typeof entry !== "string" || entry.trim().length === 0) {
+        throw new HttpError(400, "overwrite entries must be non-empty strings.");
+      }
+      overwrite.push(entry);
+    }
+    payload.overwrite = overwrite;
   }
-  return version;
+
+  return payload;
 }
 
 const BEARER = /^bearer\s+(.+)$/iu;
@@ -257,6 +290,22 @@ function revokeShare(
 }
 
 /**
+ * The share a request authenticates. The path token must be the presented
+ * bearer token, so one token can never address another share's draft.
+ */
+function authenticatedShare(request: IncomingMessage, store: ShareStore, token: string): Share {
+  const presented = bearerToken(request);
+  if (!presented) throw new HttpError(401, "A share token is required.");
+
+  // Resolving the presented token (not the path token) is what authenticates.
+  const share = store.resolve(presented);
+  if (!share || share.roomId === null || token !== presented) {
+    throw new HttpError(404, "Share not found.");
+  }
+  return share;
+}
+
+/**
  * Publishes or reloads the draft behind an editor share. The share token is the
  * credential: a viewer's token must never reach the worker, and a workspace
  * share has no draft of its own.
@@ -269,14 +318,7 @@ async function draftAction(
   action: "publish" | "reload",
   hooks: ShareRequestHooks | undefined,
 ): Promise<void> {
-  const presented = bearerToken(request);
-  if (!presented) throw new HttpError(401, "A share token is required.");
-
-  // Resolving the presented token (not the path token) is what authenticates.
-  const share = store.resolve(presented);
-  if (!share || share.roomId === null || token !== presented) {
-    throw new HttpError(404, "Share not found.");
-  }
+  const share = authenticatedShare(request, store, token);
   if (share.scope === "workspace") {
     throw new HttpError(403, "Workspace shares do not publish.");
   }
@@ -288,8 +330,8 @@ async function draftAction(
   if (action === "publish") {
     const handler = hooks?.publish;
     if (!handler) throw new HttpError(503, "Publishing is not available.");
-    const version = parsePublishVersion(await readOptionalJsonBody(request));
-    result = await handler(share, version);
+    const { version, overwrite } = parsePublishPayload(await readOptionalJsonBody(request));
+    result = await handler(share, version, overwrite);
   } else {
     const handler = hooks?.reload;
     if (!handler) throw new HttpError(503, "Reloading is not available.");
@@ -303,6 +345,34 @@ async function draftAction(
     conflicts: result.conflicts,
     unsupported: result.unsupported,
     ...(result.reason ? { reason: result.reason } : {}),
+  });
+}
+
+/**
+ * Reports whether an editor's draft still holds unpublished changes. The token
+ * is the whole credential; a viewer link has no draft to report.
+ */
+async function statusAction(
+  request: IncomingMessage,
+  store: ShareStore,
+  response: ServerResponse,
+  token: string,
+  hooks: ShareRequestHooks | undefined,
+): Promise<void> {
+  const share = authenticatedShare(request, store, token);
+  if (share.scope === "workspace") {
+    throw new HttpError(403, "Workspace shares do not publish.");
+  }
+  if (share.role !== "editor") {
+    throw new HttpError(403, "Only an editor link has a publish status.");
+  }
+
+  const handler = hooks?.status;
+  if (!handler) throw new HttpError(503, "Publish status is not available.");
+  const status = await handler(share);
+  sendJson(response, 200, {
+    dirty: status.dirty === true,
+    hasBaseline: status.hasBaseline === true,
   });
 }
 
@@ -373,6 +443,11 @@ export async function handleShareRequest(
 
     if (parts.length === 2) {
       const [rawToken = "", action] = parts;
+      if (action === "status") {
+        if (method !== "GET") methodNotAllowed(response, "GET, OPTIONS");
+        await statusAction(request, store, response, decodeSegment(rawToken), hooks);
+        return true;
+      }
       if (action !== "publish" && action !== "reload") throw new HttpError(404, "Not found.");
       if (method !== "POST") methodNotAllowed(response, "POST, OPTIONS");
       await draftAction(request, store, response, decodeSegment(rawToken), action, hooks);

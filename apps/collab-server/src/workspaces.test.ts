@@ -75,4 +75,38 @@ describe("workspace registry", () => {
     expect(registry.has("")).toBe(false);
     expect(registry.has("unknown")).toBe(false);
   });
+
+  it("rotates the key only for the current owner", () => {
+    registry.claimOrVerify("ws-1", "owner-key-1");
+
+    expect(registry.rotate("ws-1", "owner-key-2", "owner-key-3")).toBe(false);
+    expect(registry.verify("ws-1", "owner-key-1")).toBe(true);
+
+    expect(registry.rotate("ws-1", "owner-key-1", "owner-key-2")).toBe(true);
+    expect(registry.verify("ws-1", "owner-key-1")).toBe(false);
+    expect(registry.verify("ws-1", "owner-key-2")).toBe(true);
+  });
+
+  it("refuses to rotate an unknown workspace", () => {
+    expect(registry.rotate("ws-unknown", "owner-key-1", "owner-key-2")).toBe(false);
+    expect(registry.has("ws-unknown")).toBe(false);
+  });
+
+  it("keeps the rotated key after the registry reopens", () => {
+    const path = join(directory, "workspaces.sqlite");
+    registry.claimOrVerify("ws-1", "owner-key-1");
+    expect(registry.rotate("ws-1", "owner-key-1", "owner-key-2")).toBe(true);
+    registry.close();
+
+    registry = createWorkspaceRegistry(path);
+    expect(registry.verify("ws-1", "owner-key-2")).toBe(true);
+    expect(registry.verify("ws-1", "owner-key-1")).toBe(false);
+  });
+
+  it("rejects blank rotation inputs", () => {
+    registry.claimOrVerify("ws-1", "owner-key-1");
+    expect(() => registry.rotate("ws-1", "owner-key-1", "  ")).toThrow("new owner key");
+    expect(() => registry.rotate("", "owner-key-1", "owner-key-2")).toThrow("workspace id");
+    expect(() => registry.rotate("ws-1", " ", "owner-key-2")).toThrow("owner key");
+  });
 });

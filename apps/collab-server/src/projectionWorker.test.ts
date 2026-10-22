@@ -16,7 +16,7 @@ import {
   loroDocumentKeys,
   ProjectionWorker,
 } from "./projectionWorker.js";
-import { createShareStore, type ShareStore } from "./shares.js";
+import { createShareStore, type Share, type ShareStore } from "./shares.js";
 
 const INTERNAL_TOKEN = "test-internal-token";
 const WORKSPACE_ID = "ws-1";
@@ -444,6 +444,21 @@ function textOf(workspace: WorkspaceDocument, cardId: string): string {
   return workspace.cardText(cardId);
 }
 
+/** Polls the worker until its status predicate holds. */
+async function waitForStatus(
+  worker: ProjectionWorker,
+  share: Share,
+  check: (status: { dirty: boolean; hasBaseline: boolean }) => boolean,
+  label: string,
+): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (check(await worker.status(share))) return;
+    await delay(25);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
 async function openEditor(state: Harness, shareRoomId: string, token: string): Promise<Viewer> {
   return openViewer(state.url, shareRoomId, token);
 }
@@ -607,6 +622,148 @@ describe("editor shares", () => {
         "the reloaded body",
       );
       expect(textOf(editor.workspace(), "a")).not.toContain("Editor text");
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("reports whether the draft has unpublished changes", async () => {
+    const { state, share, owner, editor } = await editorHarness();
+    try {
+      expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: true });
+
+      appendText(editor.workspace().getContent("a"), "Editor text");
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForStatus(
+        state.worker,
+        share,
+        (status) => status.dirty,
+        "the draft to read as dirty",
+      );
+
+      expect((await state.worker.publish(share)).ok).toBe(true);
+      await waitForStatus(
+        state.worker,
+        share,
+        (status) => !status.dirty,
+        "the draft to read as published",
+      );
+      expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: true });
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("opens a room on demand to answer status", async () => {
+    const state = await startHarness();
+    await state.worker.start();
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "editor",
+      boardId: BOARD_ID,
+    });
+    expect(state.worker.roomIds()).toEqual([]);
+
+    // The share was created after the worker started; status must join it.
+    expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: false });
+    expect(state.worker.roomIds()).toContain(share.roomId as string);
+
+    await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+    expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: true });
+
+    // A viewer has no draft of its own, even with an open projection room.
+    const viewer = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    expect(await state.worker.status(viewer.share)).toEqual({
+      dirty: false,
+      hasBaseline: false,
+    });
+    expect(token).toBeTruthy();
+  }, 20_000);
+
+  it("publishes only the selected conflict and keeps the workspace value for the rest", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      const draft = editor.workspace();
+      draft.placeCard(BOARD_ID, "a", { x: 500, y: 600 });
+      appendText(draft.getContent("a"), "Editor text");
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) =>
+          workspace.getPlacement(BOARD_ID, "a")?.x === 500 &&
+          textOf(workspace, "a").includes("Editor"),
+        "the editor's draft on the server",
+      );
+
+      owner.workspace().placeCard(BOARD_ID, "a", { x: 700, y: 800 });
+      appendText(owner.workspace().getContent("a"), "Owner text");
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) =>
+          workspace.getPlacement(BOARD_ID, "a")?.x === 700 &&
+          textOf(workspace, "a").includes("Owner"),
+        "the owner's edit on the server",
+      );
+
+      const result = await state.worker.publish(share, undefined, ["card:a:body"]);
+      expect(result).toEqual({ ok: true, applied: 1 });
+
+      // The selected body wins; the unselected placement keeps the workspace move.
+      await waitFor(
+        () => textOf(owner.workspace(), "a").includes("Editor text"),
+        "the selected body on the owner",
+      );
+      expect(textOf(owner.workspace(), "a")).not.toContain("Owner text");
+      expect(owner.workspace().getPlacement(BOARD_ID, "a")).toMatchObject({ x: 700, y: 800 });
+
+      await waitForStatus(
+        state.worker,
+        share,
+        (status) => !status.dirty,
+        "the merged draft to be clean",
+      );
+      await waitFor(
+        () => editor.workspace().getPlacement(BOARD_ID, "a")?.x === 700,
+        "the workspace placement in the rebuilt draft",
+      );
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("keeps unsupported changes blocking a conflict-resolving publish", async () => {
+    const { state, share, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 500, y: 600 });
+      editor.workspace().createCard({
+        boardId: BOARD_ID,
+        position: { x: 20, y: 20 },
+      });
+      editor.doc.commit({ origin: "editor:edit" });
+
+      owner.workspace().placeCard(BOARD_ID, "a", { x: 700, y: 800 });
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 700,
+        "the owner's edit on the server",
+      );
+
+      const result = await state.worker.publish(share, undefined, [`board:${BOARD_ID}:card:a`]);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected a rejected publish");
+      expect(result.unsupported.length).toBeGreaterThan(0);
+      expect(owner.workspace().getPlacement(BOARD_ID, "a")).toMatchObject({ x: 700, y: 800 });
     } finally {
       await closeOwnerAndEditor(owner, editor);
     }

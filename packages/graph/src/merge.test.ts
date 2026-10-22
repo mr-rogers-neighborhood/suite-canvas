@@ -383,6 +383,156 @@ describe("planPublish conflicts", () => {
   });
 });
 
+describe("planPublish overwrite", () => {
+  it("should publish only the selected title and keep the workspace body", () => {
+    const { source, baseline, draft, options } = setup();
+    writeText(draft, draft.getTitle("c1"), "Draft title");
+    writeText(draft, draft.getContent("c1"), "Draft body");
+    writeText(source, source.getTitle("c1"), "Owner title");
+    writeText(source, source.getContent("c1"), "Owner body");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set(["card:c1:title"]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.unsupported).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: "card:c1:title", kind: "title" }]);
+    // The unselected conflict still captures its draft value, deterministically.
+    expect(plan.values["card:c1:body"]).toMatchObject({ kind: "text" });
+
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.displayTitle("c1")).toBe("Draft title");
+    expect(source.cardText("c1")).toContain("Owner body");
+    expect(source.cardText("c1")).not.toContain("Draft body");
+  });
+
+  it("should publish a selected property and skip an unselected one", () => {
+    const { source, baseline, draft, options, owner } = setup();
+    draft.setProperty("c1", owner.id, "Grace");
+    source.setProperty("c1", owner.id, "Hopper");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`card:c1:field:${owner.id}`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([
+      { key: `card:c1:field:${owner.id}`, kind: "property", fieldId: owner.id },
+    ]);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getCard("c1")?.properties[owner.id]).toBe("Grace");
+  });
+
+  it("should clear a tag conflict that both sides resolved the same way", () => {
+    const { source, baseline, draft, options, tag } = setup();
+    draft.removeCardTag("c1", tag.id);
+    source.removeCardTag("c1", tag.id);
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`card:c1:tag:${tag.id}`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: `card:c1:tag:${tag.id}`, kind: "tag" }]);
+    expect(plan.values[`card:c1:tag:${tag.id}`]).toEqual({ kind: "tag", present: false });
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(source.getCard("c1")?.tags).toEqual([]);
+  });
+
+  it("should publish a selected placement", () => {
+    const { source, baseline, draft, options } = setup();
+    draft.movePlacements(BOARD, [{ cardId: "c2", x: 1, y: 1 }]);
+    source.movePlacements(BOARD, [{ cardId: "c2", x: 2, y: 2 }]);
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`board:${BOARD}:card:c2`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: `board:${BOARD}:card:c2`, kind: "placement" }]);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getPlacement(BOARD, "c2")).toMatchObject({ x: 1, y: 1 });
+  });
+
+  it("should restore a placement the workspace removed when selected", () => {
+    const { source, baseline, draft, options } = setup();
+    draft.movePlacements(BOARD, [{ cardId: "c1", x: 5, y: 6 }]);
+    source.unplaceCard(BOARD, "c1");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`board:${BOARD}:card:c1`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.values[`board:${BOARD}:card:c1`]).toMatchObject({ kind: "placement" });
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getPlacement(BOARD, "c1")).toMatchObject({ x: 5, y: 6 });
+  });
+
+  it("should publish a selected section", () => {
+    const { source, baseline, draft, options, section } = setup();
+    draft.renameSection(section.id, "Draft section");
+    source.renameSection(section.id, "Owner section");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`section:${section.id}`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: `section:${section.id}`, kind: "section" }]);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getSection(section.id)?.title).toBe("Draft section");
+  });
+
+  it("should publish a selected edge", () => {
+    const { source, baseline, draft, options, edge } = setup();
+    draft.setEdgePath(edge.id, "step");
+    source.setEdgePath(edge.id, "smoothstep");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([`edge:${edge.id}`]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: `edge:${edge.id}`, kind: "edge" }]);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getEdge(edge.id)?.path).toBe("step");
+  });
+
+  it("should keep every workspace value with an empty overwrite set", () => {
+    const { source, baseline, draft, options } = setup();
+    writeText(draft, draft.getTitle("c1"), "Draft title");
+    writeText(source, source.getTitle("c1"), "Owner title");
+
+    const plan = planPublish(draft, baseline, source, options, { overwrite: new Set() });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toEqual([]);
+    expect(plan.values["card:c1:title"]).toMatchObject({ kind: "text" });
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(source.displayTitle("c1")).toBe("Owner title");
+  });
+
+  it("should still reject a draft with unsupported changes", () => {
+    const { source, baseline, draft, options } = setup();
+    writeText(draft, draft.getTitle("c1"), "Draft title");
+    writeText(source, source.getTitle("c1"), "Owner title");
+    // A non-structural unsupported change: the plan still has a change to make.
+    draft.addCardTag("c1", "ghost-tag");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set(["card:c1:title"]),
+    });
+
+    expect(plan.unsupported.map((entry) => entry.key)).toContain("card:c1:tag:ghost-tag");
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toMatchObject([{ key: "card:c1:title" }]);
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(source.displayTitle("c1")).toBe("Owner title");
+  });
+});
+
 describe("planPublish unsupported", () => {
   it("should reject a draft schema change", () => {
     const { source, baseline, draft, options } = setup();

@@ -157,12 +157,13 @@ describe("MentionChip", () => {
     );
 
     const chip = screen.getByTestId("mention-chip");
-    expect(chip).toHaveTextContent("Beta");
     expect(chip).toHaveTextContent("Owner");
     expect(chip).toHaveTextContent("Ada");
     expect(chip).toHaveAttribute("data-field-id", "owner");
 
+    // A field chip opens its menu first: opening the card is one row inside.
     fireEvent.click(chip);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open card" }));
     expect(onOpen).toHaveBeenCalledWith("card-1", "owner");
   });
 

@@ -34,6 +34,7 @@ const PRESET_LABELS: Record<DisplayPreset, string> = {
   value: "Value",
   labeled: "Label \u00b7 value",
   trailing: "Value \u00b7 label",
+  carded: "@Card \u00b7 value",
 };
 
 const TOKEN_HINTS = [

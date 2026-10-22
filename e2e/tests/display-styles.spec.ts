@@ -131,10 +131,10 @@ test("overrides one mention without touching the field", async ({ page }) => {
 
   const card = cards(page).nth(1);
   const chip = card.getByTestId("mention-chip");
-  await expect(chip.getByTestId("mention-chip-value-template")).toHaveText("Status · Done");
+  await expect(chip.getByTestId("mention-chip-value-template")).toHaveText("@Beta · Done");
 
-  // Right-click → Display… → "Just this one".
-  await chip.click({ button: "right" });
+  // Click the chip → Display… → "Just this one".
+  await chip.click();
   await page.getByRole("menuitem", { name: "Display…" }).click();
   const dialog = page.getByTestId("display-style");
   await dialog.getByTestId("display-template-input").fill("{{value}} (verified)");
@@ -153,7 +153,7 @@ test("overrides one mention without touching the field", async ({ page }) => {
   await page.keyboard.press("Enter");
   const chips = card.getByTestId("mention-chip");
   await expect(chips).toHaveCount(2);
-  await expect(chips.nth(1).getByTestId("mention-chip-value-template")).toHaveText("Status · Done");
+  await expect(chips.nth(1).getByTestId("mention-chip-value-template")).toHaveText("@Beta · Done");
 
   // An override is stored on the mention, so it survives a reload.
   await page.reload();
@@ -162,6 +162,6 @@ test("overrides one mention without touching the field", async ({ page }) => {
     "Done (verified)",
   );
   await expect(reloaded.nth(1).getByTestId("mention-chip-value-template")).toHaveText(
-    "Status · Done",
+    "@Beta · Done",
   );
 });

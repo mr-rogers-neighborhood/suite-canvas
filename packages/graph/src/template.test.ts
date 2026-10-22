@@ -4,6 +4,7 @@ import {
   DISPLAY_PRESETS,
   displayTemplate,
   MAX_TEMPLATE_LENGTH,
+  MENTION_DISPLAY_TEMPLATE,
   normalizeTemplate,
   presetOf,
   renderTemplate,
@@ -64,13 +65,18 @@ describe("renderTemplate", () => {
 });
 
 describe("displayTemplate", () => {
-  it("should fall back to label and value", () => {
+  it("should fall back to the surface's default", () => {
     expect(displayTemplate({})).toBe(DEFAULT_DISPLAY_TEMPLATE);
     expect(displayTemplate({ display: "   " })).toBe(DEFAULT_DISPLAY_TEMPLATE);
+    // A chip names its target; a block sits on the card it describes.
+    expect(displayTemplate({}, MENTION_DISPLAY_TEMPLATE)).toBe(DISPLAY_PRESETS.carded);
+    expect(displayTemplate({}, DISPLAY_PRESETS.value)).toBe(DISPLAY_PRESETS.value);
+    expect(DEFAULT_DISPLAY_TEMPLATE).toBe(DISPLAY_PRESETS.labeled);
   });
 
-  it("should prefer the stored template", () => {
+  it("should prefer the stored template on every surface", () => {
     expect(displayTemplate({ display: "{{label}}: {{value}}" })).toBe("{{label}}: {{value}}");
+    expect(displayTemplate({ display: "{{value}}" }, MENTION_DISPLAY_TEMPLATE)).toBe("{{value}}");
   });
 });
 

@@ -121,6 +121,7 @@ export {
   displayTemplate,
   EMPTY_VALUE_TEXT,
   MAX_TEMPLATE_LENGTH,
+  MENTION_DISPLAY_TEMPLATE,
   normalizeTemplate,
   presetOf,
   renderTemplate,

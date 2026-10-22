@@ -214,12 +214,13 @@ test("links to one field of another card and lands on it", async ({ page }) => {
   // Field ids are generated, so the chip is identified by what it shows.
   await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/);
   await expect(chip).toContainText("Target card");
-  await expect(chip).toContainText("Owner");
   // The chip reads the value live; it is a link, not a copy.
   await expect(chip.getByTestId("mention-chip-value")).toHaveText("Ada");
 
-  // One click on the chip is one step from reading the value to editing it.
+  // A field chip opens its menu first; opening the card is one row inside, and
+  // it lands on the field rather than the top of the panel.
   await chip.click();
+  await page.getByRole("menuitem", { name: "Open card" }).click();
   await expect(page.getByTestId("card-inspector")).toContainText("Target card");
   const row = page.locator('.property-row[data-focused="true"]');
   await expect(row).toHaveCount(1);

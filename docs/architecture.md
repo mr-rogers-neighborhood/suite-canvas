@@ -416,7 +416,11 @@ source card's tree on demand — snippets are never indexed.
 
 **Values render through a display template.** `fieldDefinition.display` is a template string
 (`{{value}}`, `{{label}}`, `{{card}}`, `{{type}}` plus literal text, see
-`packages/graph/src/template.ts`); absent means `{{label}} · {{value}}`. `ValueTemplate` is the one
+`packages/graph/src/template.ts`). It describes the *whole* rendering, `@` included, so nothing is
+added behind the reader's back: a `{{value}}`-only style renders just the value. Absent means the
+surface's default — a block says `{{label}} · {{value}}` (it already sits on the card), a chip says
+`@{{card}} · {{value}}` (it is a reference from elsewhere, and a bare "Ada" would not say from
+where). An explicit style wins on every surface. `ValueTemplate` is the one
 place a template becomes pixels, so a chip, a body block and a future rollup cannot disagree about
 what the same style means. Presentation only: it never changes the stored value, and label segments
 stay muted so the value is still the part that carries ink. An empty value renders an em dash inside

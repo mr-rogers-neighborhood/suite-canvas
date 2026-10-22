@@ -35,20 +35,33 @@ export interface TemplateContext {
 /** Long enough for a sentence, short enough to stay a label. */
 export const MAX_TEMPLATE_LENGTH = 160;
 
-/** The templates the preset buttons write. `custom` means "whatever is stored". */
+/**
+ * The templates the preset buttons write. `custom` means "whatever is stored".
+ * The `@` is literal text on purpose: a mention marker is chrome the reader can
+ * drop, not something the chip adds behind their back.
+ */
 export const DISPLAY_PRESETS = {
   value: "{{value}}",
   labeled: "{{label}} \u00b7 {{value}}",
   trailing: "{{value}} \u00b7 {{label}}",
+  carded: "@{{card}} \u00b7 {{value}}",
 } as const;
 
 export type DisplayPreset = keyof typeof DISPLAY_PRESETS;
 
 /**
- * What an unset `display` means. The label comes along because a bare value is
- * ambiguous once several fields can be embedded in one body ("Ada" who?).
+ * What an unset `display` means in a body block: the field's own name and its
+ * value. The block sits on the card that owns the field, so naming the card
+ * again would only repeat the card it is already in.
  */
 export const DEFAULT_DISPLAY_TEMPLATE = DISPLAY_PRESETS.labeled;
+
+/**
+ * What an unset `display` means on a mention chip. A chip is a reference from
+ * somewhere else, so it names its target: a bare "Ada" is ambiguous once a body
+ * can hold several fields, and clicking it navigates somewhere invisible.
+ */
+export const MENTION_DISPLAY_TEMPLATE = DISPLAY_PRESETS.carded;
 
 /** Shown for an empty value so a template never renders as a dangling prefix. */
 export const EMPTY_VALUE_TEXT = "\u2014";
@@ -98,13 +111,19 @@ export function renderTemplate(template: string, context: TemplateContext): stri
     .join("");
 }
 
+type DisplayField = { display?: string | undefined };
+
 /**
- * The template a field should use: its own, or the default. Centralised so a
- * chip, a body block and a future rollup cannot drift apart.
+ * The template a field uses in one surface: its stored style, or that surface's
+ * default. Centralised so a chip, a body block and a future rollup cannot drift
+ * apart — an explicit style always wins, everywhere.
  */
-export function displayTemplate(field: { display?: string | undefined }): string {
+export function displayTemplate(
+  field: DisplayField,
+  fallback: string = DEFAULT_DISPLAY_TEMPLATE,
+): string {
   const stored = field.display?.trim();
-  return stored && stored.length > 0 ? stored : DEFAULT_DISPLAY_TEMPLATE;
+  return stored && stored.length > 0 ? stored : fallback;
 }
 
 /** Which preset a template matches, or `custom` for anything hand-written. */

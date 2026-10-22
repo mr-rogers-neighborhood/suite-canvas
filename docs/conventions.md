@@ -98,6 +98,10 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   `ValueTemplate`; never format a value by hand in a component, and never write a template into a
   value. Display is presentation: it cannot change what the card stores, and it must not reach other
   fields (that is what a `computed` field kind is for, and it should be derived, not stored).
+- **A template renders everything the surface shows.** No component may prepend a marker, a card
+  name or a separator to a templated value: `@`, labels and punctuation are template text, so
+  "value only" really means value only. The only defaults are per surface (`displayTemplate(field,
+  fallback)`), never per component.
 - **A `@card.field` chip is a link, not a copy.** It stores `cardId` + `fieldId` and renders the
   value live; clicking it opens that card's panel with the field focused, which is why the chip
   never needs an inline editor of its own.

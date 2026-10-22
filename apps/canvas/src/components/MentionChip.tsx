@@ -1,5 +1,5 @@
 import type { Card, CardType, FieldDefinition } from "@suite/graph";
-import { displayTemplate, type TemplateContext } from "@suite/graph";
+import { displayTemplate, MENTION_DISPLAY_TEMPLATE, type TemplateContext } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useState, useSyncExternalStore } from "react";
 import { propertyBlockDisplayValue } from "../editor/PropertyBlockChip";
@@ -111,6 +111,8 @@ export function MentionChip({
     ? { label: field.name, value: field.value, card: title, type: field.typeName }
     : null;
 
+  const openMenu = (x: number, y: number) => setMenu({ x, y });
+
   return (
     <>
       <button
@@ -134,23 +136,28 @@ export function MentionChip({
           event.preventDefault();
         }}
         onDoubleClick={(event) => event.stopPropagation()}
-        // Display is an opt-in detail, so it lives behind the secondary click.
+        // A field chip has more than one thing to offer (open it, restyle it),
+        // so a plain click opens the menu; a plain mention has only one, and
+        // going straight to the card is faster than a menu with one row.
         onContextMenu={(event) => {
           if (!field) return;
           event.preventDefault();
           event.stopPropagation();
-          setMenu({ x: event.clientX, y: event.clientY });
+          openMenu(event.clientX, event.clientY);
         }}
         onClick={(event) => {
           event.stopPropagation();
-          onOpen?.(cardId, field?.id);
+          if (!field) {
+            onOpen?.(cardId, undefined);
+            return;
+          }
+          const rect = event.currentTarget.getBoundingClientRect();
+          openMenu(rect.left, rect.bottom + 2);
         }}
       >
-        <span aria-hidden="true" className="mention-chip-at">
-          @
-        </span>
-        <span className="mention-chip-title">{title}</span>
         {field ? (
+          // The template is the chip: `@`, the card's name and the label are all
+          // tokens (or literal text) the reader can keep or drop.
           <ValueTemplate
             template={field.template}
             context={context ?? { label: "", value: "", card: title, type: "" }}
@@ -158,7 +165,14 @@ export function MentionChip({
             valueClassName="mention-chip-field-value"
             labelClassName="mention-chip-field-name"
           />
-        ) : null}
+        ) : (
+          <>
+            <span aria-hidden="true" className="mention-chip-at">
+              @
+            </span>
+            <span className="mention-chip-title">{title}</span>
+          </>
+        )}
       </button>
 
       {menu ? (
@@ -221,8 +235,8 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
           name: definition.name,
           // The same formatter the body block uses, so both read identically.
           value: propertyBlockDisplayValue(definition, value, cardLabel),
-          fieldTemplate: displayTemplate(definition),
-          template: ownDisplay || displayTemplate(definition),
+          fieldTemplate: displayTemplate(definition, MENTION_DISPLAY_TEMPLATE),
+          template: ownDisplay || displayTemplate(definition, MENTION_DISPLAY_TEMPLATE),
           typeName,
           overridden: ownDisplay.length > 0,
         }

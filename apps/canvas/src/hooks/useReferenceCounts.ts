@@ -27,32 +27,40 @@ const NO_COUNT = 0;
 /**
  * `referenceCount` for every card at once. The per-card helper walks the whole
  * workspace, so calling it in each card's render would be quadratic; this walks
- * each section once and tallies the same three sources (mentions pointing in,
- * `card` property values pointing here, arrows touching the card). Rows a
- * dangling property value names are tallied too; they are simply never asked for
- * unless a card with that id exists.
+ * each section once and records the *pairs* it finds, then counts how many
+ * distinct partners each card has — the same "distinct related cards" figure the
+ * helper returns, from either end of a link.
  */
 function buildCounts(input: ReferenceCountInput): ReferenceCountLookup {
-  const counts = new Map<string, number>();
-  const add = (cardId: string) => {
-    counts.set(cardId, (counts.get(cardId) ?? NO_COUNT) + 1);
+  const pairs = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!a || !b || a === b) return;
+    const forward = pairs.get(a) ?? pairs.set(a, new Set()).get(a);
+    forward?.add(b);
+    const backward = pairs.get(b) ?? pairs.set(b, new Set()).get(b);
+    backward?.add(a);
   };
 
-  for (const targets of Object.values(input.references)) {
-    for (const target of targets) add(target);
-  }
-  for (const card of input.cards) {
-    for (const value of Object.values(card.properties)) {
-      if (typeof value === "string") add(value);
-    }
-  }
-  for (const edge of input.edges) {
-    add(edge.target);
-    // A self-loop touches one card, exactly as `arrowSources` yields one row.
-    if (edge.source !== edge.target) add(edge.source);
+  for (const [source, targets] of Object.entries(input.references)) {
+    for (const target of targets) link(source, target);
   }
 
-  return (cardId) => counts.get(cardId) ?? NO_COUNT;
+  // Only `card` fields are links; a text value that happens to spell an id is not.
+  const cardFields = new Set(
+    input.types.flatMap((type) =>
+      type.fields.filter((field) => field.kind === "card").map((field) => field.id),
+    ),
+  );
+  for (const card of input.cards) {
+    for (const [fieldId, value] of Object.entries(card.properties)) {
+      if (!cardFields.has(fieldId) || typeof value !== "string") continue;
+      link(card.id, value);
+    }
+  }
+
+  for (const edge of input.edges) link(edge.source, edge.target);
+
+  return (cardId) => pairs.get(cardId)?.size ?? NO_COUNT;
 }
 
 /**

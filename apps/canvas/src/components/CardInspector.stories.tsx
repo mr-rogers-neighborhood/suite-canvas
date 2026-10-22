@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType, Tag } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { CardInspector } from "./CardInspector";
-import type { CardReferences } from "./CardPanel";
+import type { CardLinks } from "./CardPanel";
 
 const doc = new LoroDoc();
 const contentId = doc.getMap("content").ensureMergeableMap("c1").id;
@@ -53,49 +53,76 @@ const card: Card = {
   properties: { stage: "active" },
 };
 
-const references: CardReferences = {
+const links: CardLinks = {
   incoming: [
     {
-      key: "in:c2",
       cardId: "c2",
       title: "Onboarding friction",
       glyph: "P",
+      occurrences: [
+        {
+          key: "in:c2:mention:0",
+          kind: "mention",
+          detail: "\u2026pair this with Onboarding friction before the next review\u2026",
+          boardId: "b1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["mention"],
+      mutual: true,
       boardId: "b1",
       boardName: "Research",
-      snippet: "\u2026pair this with Onboarding friction before the next review\u2026",
+    },
+    {
+      cardId: "c4",
+      title: "Pricing memo",
+      glyph: "P",
+      occurrences: [
+        {
+          key: "in:c4:property:0",
+          kind: "property",
+          detail: "Contradicts",
+          boardId: "b1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["property"],
+      relationship: "Contradicts",
+      mutual: false,
+      boardId: "b1",
+      boardName: "Research",
     },
   ],
   outgoing: [
     {
-      key: "out:c3",
       cardId: "c3",
       title: "Retention spike",
       glyph: "\u25a1",
+      occurrences: [
+        { key: "out:c3:mention:0", kind: "mention", boardId: "b2", boardName: "Drafts" },
+      ],
+      kinds: ["mention"],
+      mutual: false,
       boardId: "b2",
       boardName: "Drafts",
     },
-  ],
-  property: [
     {
-      key: "field:c4:contradicts",
-      cardId: "c4",
-      title: "Pricing memo",
-      glyph: "P",
-      boardId: "b1",
-      boardName: "Research",
-      fieldName: "Contradicts",
-    },
-  ],
-  arrows: [
-    {
-      key: "arrow:e1",
-      edgeId: "e1",
       cardId: "c5",
       title: "Launch plan",
       glyph: "P",
+      occurrences: [
+        {
+          key: "out:c5:arrow:0",
+          kind: "arrow",
+          detail: "blocks the launch",
+          boardId: "b2",
+          boardName: "Drafts",
+        },
+      ],
+      kinds: ["arrow"],
+      mutual: false,
       boardId: "b2",
       boardName: "Drafts",
-      description: "blocks the launch",
     },
   ],
 };
@@ -139,7 +166,7 @@ const meta = {
       ],
     },
     cards: cardOptions,
-    references,
+    links,
     linkCount: 4,
     editing: null,
     cardDoc: doc,
@@ -166,8 +193,7 @@ const meta = {
     onFocusCard: () => {},
     onFocusSection: () => {},
     onRemoveFromBoard: () => {},
-    onFocusReference: () => {},
-    onFocusArrow: () => {},
+    onFocusLink: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof CardInspector>;

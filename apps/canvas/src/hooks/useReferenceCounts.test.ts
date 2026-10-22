@@ -70,17 +70,18 @@ describe("referenceCounts", () => {
     }
   });
 
-  it("counts mentions, property values and arrows touching a card", () => {
+  it("counts the distinct cards a card is linked to, from either end", () => {
     const lookup = referenceCounts(input);
 
-    // n1 is mentioned by n2 and n3, pointed at by three card fields and drawn on.
-    expect(lookup("n1")).toBe(6);
-    // n2 is its own self-loop, so it counts once.
+    // n1 is mentioned by n2 and n3, named by n3's and n4's card fields, and
+    // drawn to: three partners, however many links there are between them.
+    expect(lookup("n1")).toBe(3);
+    // n2 links to n1 and its self-loop is not a partner.
     expect(lookup("n2")).toBe(1);
-    // n3 is mentioned nowhere and has one arrow into it.
-    expect(lookup("n3")).toBe(1);
-    // n4 is mentioned by n3 and touched by two arrows.
-    expect(lookup("n4")).toBe(3);
+    // n3 mentions n1, names n1 and is drawn to n4.
+    expect(lookup("n3")).toBe(2);
+    // n4 names n1 and is drawn to by n1 and n3.
+    expect(lookup("n4")).toBe(2);
   });
 
   it("returns zero for a card nothing points at", () => {
@@ -100,9 +101,9 @@ describe("referenceCounts", () => {
     const second = referenceCounts(next);
 
     expect(second).not.toBe(first);
-    expect(first("n1")).toBe(6);
-    expect(second("n1")).toBe(7);
-    expect(second("n5")).toBe(0);
+    expect(first("n1")).toBe(3);
+    expect(second("n1")).toBe(4);
+    expect(second("n5")).toBe(1);
 
     // Only one section moved, so the next call with `next`'s exact objects reuses it.
     expect(referenceCounts(next)).toBe(second);

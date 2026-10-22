@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType, Tag } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
-import { CardPanel, type CardReferences, EMPTY_CARD_REFERENCES } from "./CardPanel";
+import { type CardLinks, CardPanel, EMPTY_CARD_LINKS } from "./CardPanel";
 
 const doc = new LoroDoc();
 const contentId = doc.getMap("content").ensureMergeableMap("c1").id;
@@ -30,57 +30,97 @@ const card: Card = {
 
 const tags: Tag[] = [{ id: "t1", name: "Research", createdAt: 0 }];
 
-const references: CardReferences = {
+const links: CardLinks = {
   incoming: [
     {
-      key: "in:c2",
       cardId: "c2",
       title: "Onboarding friction",
       glyph: "P",
+      occurrences: [
+        {
+          key: "in:c2:mention:0",
+          kind: "mention",
+          detail: "\u2026we should pair this with Onboarding friction before the next review\u2026",
+          boardId: "b1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["mention"],
+      mutual: true,
       boardId: "b1",
       boardName: "Research",
-      snippet:
-        "\u2026we should pair this with Onboarding friction before the next review, then re-read the notes\u2026",
     },
     {
-      key: "in:c3",
+      cardId: "c5",
+      title: "Pricing memo",
+      glyph: "P",
+      occurrences: [
+        {
+          key: "in:c5:property:0",
+          kind: "property",
+          detail: "Contradicts",
+          boardId: "b1",
+          boardName: "Research",
+        },
+        {
+          key: "in:c5:arrow:1",
+          kind: "arrow",
+          detail: "supersedes the earlier estimate",
+          boardId: "b1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["property", "arrow"],
+      relationship: "Contradicts",
+      mutual: false,
+      boardId: "b1",
+      boardName: "Research",
+    },
+    {
       cardId: "c3",
       title: "Interview notes",
       glyph: "\u25a1",
+      occurrences: [{ key: "in:c3:mention:0", kind: "mention", boardId: null }],
+      kinds: ["mention"],
+      mutual: false,
       boardId: null,
     },
   ],
   outgoing: [
     {
-      key: "out:c4",
       cardId: "c4",
       title: "Retention spike",
       glyph: "\u25a1",
+      occurrences: [
+        {
+          key: "out:c4:mention:0",
+          kind: "mention",
+          boardId: "b2",
+          boardName: "Drafts",
+        },
+      ],
+      kinds: ["mention"],
+      mutual: false,
       boardId: "b2",
       boardName: "Drafts",
     },
-  ],
-  property: [
     {
-      key: "field:c5:contradicts",
-      cardId: "c5",
-      title: "Pricing memo",
-      glyph: "P",
-      boardId: "b1",
-      boardName: "Research",
-      fieldName: "Contradicts",
-    },
-  ],
-  arrows: [
-    {
-      key: "arrow:e1",
-      edgeId: "e1",
       cardId: "c6",
       title: "Launch plan",
       glyph: "P",
+      occurrences: [
+        {
+          key: "out:c6:arrow:0",
+          kind: "arrow",
+          detail: "blocks the launch",
+          boardId: "b2",
+          boardName: "Drafts",
+        },
+      ],
+      kinds: ["arrow"],
+      mutual: false,
       boardId: "b2",
       boardName: "Drafts",
-      description: "blocks the launch",
     },
   ],
 };
@@ -122,7 +162,7 @@ const meta = {
       ],
     },
     cards: cardOptions,
-    references,
+    links,
     variant: "embedded",
     editing: null,
     cardDoc: doc,
@@ -147,8 +187,7 @@ const meta = {
     onFocusCard: () => {},
     onFocusSection: () => {},
     onRemoveFromBoard: () => {},
-    onFocusReference: () => {},
-    onFocusArrow: () => {},
+    onFocusLink: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof CardPanel>;
@@ -160,8 +199,8 @@ export const Embedded: Story = {};
 
 export const Inspector: Story = { args: { variant: "inspector" } };
 
-export const NoReferences: Story = {
-  args: { references: EMPTY_CARD_REFERENCES },
+export const NoLinks: Story = {
+  args: { links: EMPTY_CARD_LINKS },
 };
 
 export const EditingBody: Story = { args: { editing: "body" } };

@@ -98,9 +98,9 @@ test("links through a card property and navigates to the source", async ({ page 
   await expect(page.getByTestId("card-picker-selected")).toHaveText("Beta");
   await closeInspector(page);
 
-  // The target's header chip counts the property link; the source has none.
+  // The chip counts linked cards, so both ends of the pair report one.
   await expect(cardTitled(page, "Beta").getByTestId("card-link-count")).toContainText("1");
-  await expect(cardTitled(page, "Alpha").getByTestId("card-link-count")).toHaveCount(0);
+  await expect(cardTitled(page, "Alpha").getByTestId("card-link-count")).toContainText("1");
 
   // Place the target on a second board, so the row has somewhere to navigate.
   await createBoard(page);
@@ -109,7 +109,7 @@ test("links through a card property and navigates to the source", async ({ page 
 
   await openInspector(page, cards(page).first());
   await expect(page.getByTestId("inspector-link-count")).toContainText("1");
-  const row = page.getByTestId("reference-property");
+  const row = page.getByTestId("links-in").getByTestId("link-row");
   await expect(row).toContainText("Related");
   await expect(row).toContainText("Alpha");
 
@@ -136,7 +136,8 @@ test("lists a drawn arrow with its board and switches board when clicked", async
   await expect(cards(page)).toHaveCount(2);
 
   await openInspector(page, cardTitled(page, "Alpha"));
-  const row = page.getByTestId("reference-arrow");
+  // Alpha is the source end, so the arrow reads as an outgoing link.
+  const row = page.getByTestId("links-out").getByTestId("link-row");
   await expect(row).toContainText("Beta");
   await expect(row).toContainText("Board 2");
 
@@ -151,12 +152,11 @@ test("shows the empty state and hides the count for a fresh card", async ({ page
   await expect(page.getByTestId("card-link-count")).toHaveCount(0);
 
   await openInspector(page, cards(page).first());
-  await expect(page.getByTestId("card-references")).toBeVisible();
-  await expect(page.getByTestId("references-empty")).toHaveText(
-    "No references yet. Type @ in a card to link it.",
+  await expect(page.getByTestId("card-links")).toBeVisible();
+  await expect(page.getByTestId("links-empty")).toHaveText(
+    "No links yet. Type @ in a card, or draw an arrow between two cards.",
   );
-  await expect(page.getByTestId("reference-incoming")).toHaveCount(0);
-  await expect(page.getByTestId("reference-outgoing")).toHaveCount(0);
-  await expect(page.getByTestId("reference-property")).toHaveCount(0);
-  await expect(page.getByTestId("reference-arrow")).toHaveCount(0);
+  await expect(page.getByTestId("links-in")).toHaveCount(0);
+  await expect(page.getByTestId("links-out")).toHaveCount(0);
+  await expect(page.getByTestId("link-row")).toHaveCount(0);
 });

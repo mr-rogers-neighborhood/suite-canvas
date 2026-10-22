@@ -8,12 +8,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
-import {
-  cardReferences,
-  EMPTY_CARD_REFERENCES,
-  snippetAround,
-  useBodyPropertyBlocks,
-} from "./CardPanel";
+import { cardLinks, EMPTY_CARD_LINKS, snippetAround, useBodyPropertyBlocks } from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 /**
@@ -80,10 +75,10 @@ export function CardInspectorHost() {
   const cards = useCardTitles();
   const titles = useMemo(() => new Map(cards.map((entry) => [entry.id, entry.title])), [cards]);
 
-  const references = useMemo(
+  const links = useMemo(
     () =>
       card
-        ? cardReferences({
+        ? cardLinks({
             cardId: card.id,
             references: snapshot.references,
             cards: snapshot.cards,
@@ -109,7 +104,7 @@ export function CardInspectorHost() {
               );
             },
           })
-        : EMPTY_CARD_REFERENCES,
+        : EMPTY_CARD_LINKS,
     [
       card,
       workspace,
@@ -157,7 +152,7 @@ export function CardInspectorHost() {
       fields={fields}
       where={where}
       cards={cards}
-      references={references}
+      links={links}
       linkCount={countOf(card.id)}
       editing={panelEditing}
       cardDoc={workspace.doc}
@@ -199,12 +194,11 @@ export function CardInspectorHost() {
       onRemoveFromBoard={() => {
         if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
-      onFocusReference={(cardId, boardId) => {
+      onFocusLink={(cardId, boardId) => {
         // An unplaced card has nothing to reveal, so the panel is the target.
         if (boardId) focusCard(cardId, boardId);
         else openInspector(cardId);
       }}
-      onFocusArrow={(cardId, boardId) => focusCard(cardId, boardId)}
     />
   );
 }

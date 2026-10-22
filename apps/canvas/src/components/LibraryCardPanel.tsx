@@ -9,8 +9,8 @@ import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import {
   CardPanel,
-  cardReferences,
-  EMPTY_CARD_REFERENCES,
+  cardLinks,
+  EMPTY_CARD_LINKS,
   snippetAround,
   useBodyPropertyBlocks,
 } from "./CardPanel";
@@ -53,10 +53,10 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
   const cards = useCardTitles();
   const titles = useMemo(() => new Map(cards.map((entry) => [entry.id, entry.title])), [cards]);
 
-  const references = useMemo(
+  const links = useMemo(
     () =>
       card
-        ? cardReferences({
+        ? cardLinks({
             cardId: card.id,
             references: snapshot.references,
             cards: snapshot.cards,
@@ -80,7 +80,7 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
               );
             },
           })
-        : EMPTY_CARD_REFERENCES,
+        : EMPTY_CARD_LINKS,
     [
       card,
       workspace,
@@ -132,7 +132,7 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
       fields={fields}
       where={where}
       cards={cards}
-      references={references}
+      links={links}
       variant="embedded"
       editing={editing}
       cardDoc={workspace.doc}
@@ -164,11 +164,10 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
       onRemoveFromBoard={() => {
         if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
-      onFocusReference={(cardId, boardId) => {
+      onFocusLink={(cardId, boardId) => {
         if (boardId) focusCard(cardId, boardId);
         else openInspector(cardId);
       }}
-      onFocusArrow={(cardId, boardId) => focusCard(cardId, boardId)}
     />
   );
 }

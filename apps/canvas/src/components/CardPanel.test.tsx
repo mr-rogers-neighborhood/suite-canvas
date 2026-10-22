@@ -4,12 +4,12 @@ import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
 import { CardInspector } from "./CardInspector";
 import {
+  type CardLinks,
   CardPanel,
   type CardPanelProps,
-  type CardReferences,
   type CardWhere,
-  cardReferences,
-  EMPTY_CARD_REFERENCES,
+  cardLinks,
+  EMPTY_CARD_LINKS,
   snippetAround,
 } from "./CardPanel";
 
@@ -83,7 +83,7 @@ const base: CardPanelProps = {
     { id: "n1", title: "Mastering the timeline" },
     { id: "n2", title: "Onboarding friction" },
   ],
-  references: EMPTY_CARD_REFERENCES,
+  links: EMPTY_CARD_LINKS,
   editing: null,
   cardDoc: doc,
   contentId,
@@ -107,8 +107,7 @@ const base: CardPanelProps = {
   onFocusCard: () => {},
   onFocusSection: () => {},
   onRemoveFromBoard: () => {},
-  onFocusReference: () => {},
-  onFocusArrow: () => {},
+  onFocusLink: () => {},
 };
 
 function renderPanel(overrides: Partial<CardPanelProps> = {}) {
@@ -229,113 +228,158 @@ describe("CardPanel", () => {
   });
 });
 
-const populated: CardReferences = {
-  // Hosts hand rows over sorted by title, like `cardReferences` does.
+const populated: CardLinks = {
+  // Hosts hand rows over sorted by title, like `cardLinks` does.
   incoming: [
-    { key: "in:n3", cardId: "n3", title: "Interview notes", glyph: "\u25a1", boardId: null },
     {
-      key: "in:n2",
+      cardId: "n3",
+      title: "Interview notes",
+      glyph: "\u25a1",
+      occurrences: [{ key: "in:n3:mention::0", kind: "mention", boardId: null }],
+      kinds: ["mention"],
+      mutual: false,
+      boardId: null,
+    },
+    {
       cardId: "n2",
       title: "Onboarding friction",
       glyph: "P",
+      occurrences: [
+        {
+          key: "in:n2:mention:\u2026pair this with Onboarding friction\u2026:0",
+          kind: "mention",
+          detail: "\u2026pair this with Onboarding friction\u2026",
+          boardId: "board-2",
+          boardName: "Drafts",
+        },
+      ],
+      kinds: ["mention"],
+      mutual: true,
       boardId: "board-2",
       boardName: "Drafts",
-      snippet: "\u2026pair this with Onboarding friction\u2026",
+    },
+    {
+      cardId: "n5",
+      title: "Pricing memo",
+      glyph: "P",
+      occurrences: [
+        {
+          key: "in:n5:property:Contradicts:0",
+          kind: "property",
+          detail: "Contradicts",
+          boardId: "board-1",
+          boardName: "Research",
+        },
+        {
+          key: "in:n5:arrow:supersedes pricing:1",
+          kind: "arrow",
+          detail: "supersedes pricing",
+          boardId: "board-1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["property", "arrow"],
+      relationship: "Contradicts",
+      mutual: false,
+      boardId: "board-1",
+      boardName: "Research",
     },
   ],
   outgoing: [
     {
-      key: "out:n4",
       cardId: "n4",
       title: "Retention spike",
       glyph: "\u25a1",
+      occurrences: [
+        {
+          key: "out:n4:mention::0",
+          kind: "mention",
+          boardId: "board-1",
+          boardName: "Research",
+        },
+      ],
+      kinds: ["mention"],
+      mutual: false,
       boardId: "board-1",
       boardName: "Research",
-    },
-  ],
-  property: [
-    {
-      key: "field:n5:related",
-      cardId: "n5",
-      title: "Pricing memo",
-      glyph: "P",
-      boardId: "board-1",
-      boardName: "Research",
-      fieldName: "Contradicts",
-    },
-  ],
-  arrows: [
-    {
-      key: "arrow:e1",
-      edgeId: "e1",
-      cardId: "n6",
-      title: "Launch plan",
-      glyph: "P",
-      boardId: "board-2",
-      boardName: "Drafts",
-      description: "blocks the launch",
     },
   ],
 };
 
-describe("CardPanel references", () => {
-  it("renders every group and navigates its rows", () => {
-    const onFocusReference = vi.fn();
-    const onFocusArrow = vi.fn();
-    renderPanel({ references: populated, onFocusReference, onFocusArrow });
+/** The row itself is a list item; its first button is the navigation target. */
+function rowButton(row: HTMLElement): HTMLElement {
+  const button = row.querySelector("button");
+  if (!button) throw new Error("row has no navigation button");
+  return button;
+}
 
-    expect(screen.getByTestId("card-references")).toBeInTheDocument();
-    expect(screen.queryByTestId("references-empty")).not.toBeInTheDocument();
+describe("CardPanel links", () => {
+  it("renders both directions and navigates its rows", () => {
+    const onFocusLink = vi.fn();
+    renderPanel({ links: populated, onFocusLink });
 
-    const incoming = screen.getAllByTestId("reference-incoming");
-    expect(incoming).toHaveLength(2);
-    const [unplaced, placed] = incoming;
-    if (!unplaced || !placed) throw new Error("incoming rows missing");
+    expect(screen.getByTestId("card-links")).toBeInTheDocument();
+    expect(screen.queryByTestId("links-empty")).not.toBeInTheDocument();
+
+    const incoming = screen.getAllByTestId("link-row");
+    expect(incoming).toHaveLength(4);
+    const [unplaced, snippet, multi, outgoing] = incoming;
+    if (!unplaced || !snippet || !multi || !outgoing) throw new Error("link rows missing");
+
     expect(unplaced).toHaveTextContent("Interview notes");
-    expect(unplaced).toHaveTextContent("In the inbox");
-    expect(placed).toHaveTextContent("Onboarding friction");
-    expect(placed).toHaveTextContent("pair this with Onboarding friction");
+    fireEvent.click(rowButton(unplaced));
+    expect(onFocusLink).toHaveBeenLastCalledWith("n3", null);
 
-    fireEvent.click(placed);
-    expect(onFocusReference).toHaveBeenLastCalledWith("n2", "board-2");
-    fireEvent.click(unplaced);
-    expect(onFocusReference).toHaveBeenLastCalledWith("n3", null);
+    expect(snippet).toHaveTextContent("Onboarding friction");
+    expect(snippet).toHaveTextContent("pair this with Onboarding friction");
+    // Mentioned both ways, so the row carries the mutual marker.
+    expect(snippet.querySelector('[data-testid="link-markers"]')).toHaveTextContent("\u270e\u2194");
+    fireEvent.click(rowButton(snippet));
+    expect(onFocusLink).toHaveBeenLastCalledWith("n2", "board-2");
 
-    fireEvent.click(screen.getByTestId("reference-outgoing"));
-    expect(onFocusReference).toHaveBeenLastCalledWith("n4", "board-1");
+    expect(multi).toHaveTextContent("Pricing memo");
+    expect(multi).toHaveTextContent("Contradicts \u00b7 Research");
+    expect(multi.querySelector('[data-testid="link-markers"]')).toHaveTextContent("\u25a4\u2197");
 
-    const property = screen.getByTestId("reference-property");
-    expect(property).toHaveTextContent("Contradicts");
-    expect(property).toHaveTextContent("Pricing memo");
-    fireEvent.click(property);
-    expect(onFocusReference).toHaveBeenLastCalledWith("n5", "board-1");
+    // Two occurrences expand into a list that names each of them.
+    const toggle = multi.querySelector('[data-testid="link-occurrences-toggle"]');
+    if (!toggle) throw new Error("occurrence toggle missing");
+    expect(multi.querySelector('[data-testid="link-occurrences"]')).toBeNull();
+    fireEvent.click(toggle);
+    const occurrences = multi.querySelectorAll('[data-testid="link-occurrence"]');
+    expect([...occurrences].map((node) => node.getAttribute("data-kind"))).toEqual([
+      "property",
+      "arrow",
+    ]);
+    expect([...occurrences].map((node) => node.textContent)).toEqual([
+      "\u25a4ContradictsResearch",
+      "\u2197supersedes pricingResearch",
+    ]);
+    fireEvent.click(rowButton(multi));
+    expect(onFocusLink).toHaveBeenLastCalledWith("n5", "board-1");
 
-    const arrow = screen.getByTestId("reference-arrow");
-    expect(arrow).toHaveTextContent("Launch plan");
-    expect(arrow).toHaveTextContent("blocks the launch");
-    expect(arrow).toHaveTextContent("Drafts");
-    fireEvent.click(arrow);
-    expect(onFocusArrow).toHaveBeenLastCalledWith("n6", "board-2");
+    expect(outgoing).toHaveTextContent("Retention spike");
+    fireEvent.click(rowButton(outgoing));
+    expect(onFocusLink).toHaveBeenLastCalledWith("n4", "board-1");
   });
 
-  it("hides the groups that have no rows", () => {
-    renderPanel({ references: { ...populated, property: [], arrows: [] } });
+  it("hides a direction that has no rows", () => {
+    renderPanel({ links: { ...populated, outgoing: [] } });
 
-    expect(screen.getAllByTestId("reference-incoming")).toHaveLength(2);
-    expect(screen.getByTestId("reference-outgoing")).toBeInTheDocument();
-    expect(screen.queryByTestId("reference-property")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("reference-arrow")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("references-empty")).not.toBeInTheDocument();
+    expect(screen.getByTestId("links-in")).toBeInTheDocument();
+    expect(screen.queryByTestId("links-out")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("links-empty")).not.toBeInTheDocument();
   });
 
-  it("shows the empty state only when all four groups are empty", () => {
+  it("shows the empty state only when both directions are empty", () => {
     renderPanel();
 
-    expect(screen.getByTestId("card-references")).toBeInTheDocument();
-    expect(screen.getByTestId("references-empty")).toHaveTextContent(
-      "No references yet. Type @ in a card to link it.",
+    expect(screen.getByTestId("card-links")).toBeInTheDocument();
+    expect(screen.getByTestId("links-empty")).toHaveTextContent(
+      "No links yet. Type @ in a card, or draw an arrow between two cards.",
     );
-    expect(screen.queryByTestId("reference-incoming")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("links-in")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("links-out")).not.toBeInTheDocument();
   });
 
   it("offers Show in body for a field without a block", () => {
@@ -401,7 +445,7 @@ describe("CardInspector header count", () => {
   });
 });
 
-describe("cardReferences", () => {
+describe("cardLinks", () => {
   const projectType: CardType = {
     id: "project",
     name: "Project",
@@ -460,38 +504,49 @@ describe("cardReferences", () => {
     displayTitle: (cardId: string) => `Title ${cardId}`,
   };
 
-  it("unions mentions, properties and arrows, resolving placements", () => {
-    const rows = cardReferences(input);
+  it("groups mentions, properties and arrows by the other card", () => {
+    const rows = cardLinks(input);
 
-    expect(rows.incoming).toEqual([
-      expect.objectContaining({ cardId: "n2", title: "Title n2", boardId: "board-1", glyph: "P" }),
-    ]);
-    expect(rows.outgoing).toEqual([
-      expect.objectContaining({ cardId: "n4", boardId: "board-2", boardName: "Drafts" }),
-    ]);
-    expect(rows.property).toEqual([
-      expect.objectContaining({ cardId: "n3", fieldName: "Related", boardId: null }),
-    ]);
-    expect(rows.arrows).toEqual([
-      expect.objectContaining({
-        edgeId: "e1",
-        cardId: "n4",
-        boardId: "board-2",
-        boardName: "Drafts",
-        description: "blocks the launch",
-      }),
-    ]);
+    expect(rows.incoming.map((row) => row.cardId)).toEqual(["n2", "n3", "n4"]);
+    expect(rows.outgoing.map((row) => row.cardId)).toEqual(["n4"]);
+
+    const [mention, property, arrow] = rows.incoming;
+    expect(mention).toMatchObject({
+      title: "Title n2",
+      boardId: "board-1",
+      boardName: "Research",
+      glyph: "P",
+      kinds: ["mention"],
+      mutual: false,
+    });
+    expect(property).toMatchObject({
+      cardId: "n3",
+      boardId: null,
+      kinds: ["property"],
+      relationship: "Related",
+    });
+    expect(arrow).toMatchObject({ cardId: "n4", kinds: ["arrow"], boardId: "board-2" });
+    expect(arrow?.occurrences[0]?.detail).toBe("blocks the launch");
+  });
+
+  it("marks a pair that links both ways", () => {
+    const rows = cardLinks(input);
+
+    // n1 mentions n4 and an arrow runs from n4 to n1: one pair, both directions.
+    expect(rows.outgoing[0]?.mutual).toBe(true);
+    expect(rows.incoming.find((row) => row.cardId === "n4")?.mutual).toBe(true);
+    expect(rows.incoming.find((row) => row.cardId === "n2")?.mutual).toBe(false);
   });
 
   it("attaches the snippet the host provides and omits it otherwise", () => {
-    const withSnippet = cardReferences({
+    const withSnippet = cardLinks({
       ...input,
       mentionSnippet: (source, mentioned) => `${source} mentions ${mentioned}`,
     });
-    expect(withSnippet.incoming[0]?.snippet).toBe("n2 mentions n1");
+    expect(withSnippet.incoming[0]?.occurrences[0]?.detail).toBe("n2 mentions n1");
 
-    const withoutSnippet = cardReferences({ ...input, mentionSnippet: () => undefined });
-    expect(withoutSnippet.incoming[0]?.snippet).toBeUndefined();
+    const withoutSnippet = cardLinks({ ...input, mentionSnippet: () => undefined });
+    expect(withoutSnippet.incoming[0]?.occurrences[0]?.detail).toBeUndefined();
   });
 
   it("trims body text around the target's title", () => {

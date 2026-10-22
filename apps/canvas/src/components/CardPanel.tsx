@@ -6,6 +6,7 @@ import {
   type CardType,
   type GraphEdge,
   incomingReferences,
+  outgoingPropertyLinks,
   outgoingReferences,
   type Placement,
   type PropertyValue,
@@ -21,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
@@ -58,57 +60,48 @@ export interface CardWhere {
 }
 
 /** A card row in the References section, already resolved for display. */
-export interface CardReferenceRow {
+export type LinkProvenance = "mention" | "property" | "arrow";
+
+/** One thing that links two cards: a mention, a named value, an arrow. */
+export interface LinkOccurrence {
   key: string;
-  cardId: string;
-  title: string;
-  /** The card's type glyph. */
-  glyph: string;
-  /** Board to reveal on click; null means the card is unplaced. */
+  kind: LinkProvenance;
+  /** Mention snippet, arrow description, or the field name carrying a value. */
+  detail?: string;
   boardId: string | null;
   boardName?: string;
-  /** Text around the mention, when the source has one. */
-  snippet?: string;
-}
-
-export interface CardPropertyReferenceRow extends CardReferenceRow {
-  /** The `card` field whose name carries the link's meaning. */
-  fieldName: string;
-}
-
-export interface CardArrowReferenceRow {
-  key: string;
-  edgeId: string;
-  /** The endpoint that is not this card. */
-  cardId: string;
-  title: string;
-  glyph: string;
-  boardId: string;
-  boardName: string;
-  /** The arrow's free-text description. */
-  description?: string;
 }
 
 /**
- * Backlinks, unioned at read time from the four sources that can point at a
- * card. Nothing here is stored: mentions, `card` values and arrows stay the
- * only truth.
+ * One related card with every occurrence grouped under it. A pair joined by a
+ * mention, a named property and an arrow is one row with three markers, not
+ * three rows the reader has to reconcile.
  */
-export interface CardReferences {
-  incoming: CardReferenceRow[];
-  outgoing: CardReferenceRow[];
-  property: CardPropertyReferenceRow[];
-  arrows: CardArrowReferenceRow[];
+export interface LinkRow {
+  cardId: string;
+  title: string;
+  /** The other card's type glyph. */
+  glyph: string;
+  occurrences: LinkOccurrence[];
+  /** Provenance present, in display order. */
+  kinds: LinkProvenance[];
+  /** The name a `card` field gives this link in this direction, when it has one. */
+  relationship?: string;
+  /** The pair links both ways: mutual mentions or a bidirectional arrow. */
+  mutual: boolean;
+  /** Board to reveal on click; null means the card is unplaced. */
+  boardId: string | null;
+  boardName?: string;
 }
 
-export const EMPTY_CARD_REFERENCES: CardReferences = {
-  incoming: [],
-  outgoing: [],
-  property: [],
-  arrows: [],
-};
+export interface CardLinks {
+  incoming: LinkRow[];
+  outgoing: LinkRow[];
+}
 
-export interface CardReferenceInput {
+export const EMPTY_CARD_LINKS: CardLinks = { incoming: [], outgoing: [] };
+
+export interface CardLinkInput {
   cardId: string;
   references: ReferenceIndex;
   cards: readonly Card[];
@@ -129,22 +122,11 @@ function typeGlyph(cardId: string, cards: readonly Card[], types: readonly CardT
   return type?.glyph ?? "\u25a1";
 }
 
-function placementOf(
-  cardId: string,
-  placements: readonly Placement[],
-  boards: readonly Board[],
-): { boardId: string; boardName: string } | null {
-  const placement = placements.find((entry) => entry.cardId === cardId);
-  if (!placement) return null;
-  const board = boards.find((entry) => entry.id === placement.boardId);
-  return { boardId: placement.boardId, boardName: board?.name ?? "Board" };
-}
-
 /**
- * `cardText` trimmed to about `radius` characters either side of the first
- * occurrence of `needle`. Mentions are atoms, so a body can be missing the
- * target's title entirely; that case omits the snippet rather than inventing
- * one.
+ * `text` trimmed to about `radius` characters either side of the first
+ * occurrence of `needle`. Mentions are atoms, so a body can name the target
+ * without containing its title; that case returns undefined rather than
+ * inventing a snippet.
  */
 export function snippetAround(text: string, needle: string, radius = 60): string | undefined {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -156,63 +138,106 @@ export function snippetAround(text: string, needle: string, radius = 60): string
   return `${start > 0 ? "\u2026" : ""}${body}${end < flat.length ? "\u2026" : ""}`;
 }
 
-/**
- * Composes the panel's four groups from the snapshot. Pure so a host only needs
- * to hand over its data and the live title/text readers.
- */
-export function cardReferences(input: CardReferenceInput): CardReferences {
-  const { cardId, cards, types, placements, boards, displayTitle } = input;
+/** The first board an unplaced-card row can reveal, if any. */
+function placementOf(
+  cardId: string,
+  placements: readonly Placement[],
+  boards: readonly Board[],
+): { boardId: string; boardName: string } | null {
+  const placement = placements.find((entry) => entry.cardId === cardId);
+  if (!placement) return null;
+  const board = boards.find((entry) => entry.id === placement.boardId);
+  return { boardId: placement.boardId, boardName: board?.name ?? "Board" };
+}
 
-  const row = (sourceId: string, prefix: string): CardReferenceRow => {
-    const placement = placementOf(sourceId, placements, boards);
-    return {
-      key: `${prefix}:${sourceId}`,
-      cardId: sourceId,
-      title: displayTitle(sourceId),
-      glyph: typeGlyph(sourceId, cards, types),
+const KIND_ORDER: LinkProvenance[] = ["mention", "property", "arrow"];
+
+/**
+ * Groups every link a card has into incoming and outgoing lists keyed by the
+ * other card. All of it is derived: mentions, `card` values and arrows stay the
+ * only truth, so nothing here can drift out of sync with the body.
+ */
+export function cardLinks(input: CardLinkInput): CardLinks {
+  const { cardId, cards, types, edges, placements, boards, displayTitle } = input;
+  const byCard = new Map<"in" | "out", Map<string, LinkOccurrence[]>>([
+    ["in", new Map()],
+    ["out", new Map()],
+  ]);
+
+  const add = (
+    direction: "in" | "out",
+    otherCardId: string,
+    kind: LinkProvenance,
+    detail?: string,
+    /** Arrow links live on the board the arrow was drawn on, not the other card's. */
+    board?: { boardId: string; boardName: string },
+  ) => {
+    if (!otherCardId || otherCardId === cardId) return;
+    const map = byCard.get(direction);
+    if (!map) return;
+    const list = map.get(otherCardId) ?? [];
+    const placement = board ?? placementOf(otherCardId, placements, boards);
+    list.push({
+      key: `${direction}:${otherCardId}:${kind}:${detail ?? ""}:${list.length}`,
+      kind,
       boardId: placement?.boardId ?? null,
       ...(placement ? { boardName: placement.boardName } : {}),
-    };
+      ...(detail ? { detail } : {}),
+    });
+    map.set(otherCardId, list);
   };
 
-  const byTitle = (a: { title: string; cardId: string }, b: { title: string; cardId: string }) =>
+  for (const sourceId of incomingReferences(cardId, input.references)) {
+    add("in", sourceId, "mention", input.mentionSnippet?.(sourceId, cardId));
+  }
+  for (const targetId of outgoingReferences(cardId, input.references)) {
+    add("out", targetId, "mention");
+  }
+  for (const source of propertySources(cardId, cards, types)) {
+    add("in", source.cardId, "property", source.fieldName);
+  }
+  for (const link of outgoingPropertyLinks(cardId, cards, types)) {
+    add("out", link.cardId, "property", link.fieldName);
+  }
+  for (const arrow of arrowSources(cardId, edges)) {
+    const board = boards.find((entry) => entry.id === arrow.boardId);
+    add(arrow.direction, arrow.otherCardId, "arrow", arrow.description, {
+      boardId: arrow.boardId,
+      boardName: board?.name ?? "Board",
+    });
+  }
+
+  const rows = (direction: "in" | "out"): LinkRow[] => {
+    const map = byCard.get(direction);
+    if (!map) return [];
+    const opposite = direction === "in" ? "out" : "in";
+    return [...map].map(([otherCardId, occurrences]) => {
+      const relationship = occurrences.find(
+        (occurrence) => occurrence.kind === "property" && occurrence.detail,
+      )?.detail;
+      const placed = occurrences.find((occurrence) => occurrence.boardId !== null);
+      const kinds = KIND_ORDER.filter((kind) =>
+        occurrences.some((occurrence) => occurrence.kind === kind),
+      );
+      return {
+        cardId: otherCardId,
+        title: displayTitle(otherCardId),
+        glyph: typeGlyph(otherCardId, cards, types),
+        occurrences,
+        kinds,
+        mutual: byCard.get(opposite)?.has(otherCardId) ?? false,
+        boardId: placed?.boardId ?? null,
+        ...(placed?.boardName ? { boardName: placed.boardName } : {}),
+        ...(relationship ? { relationship } : {}),
+      };
+    });
+  };
+  const byTitle = (a: LinkRow, b: LinkRow) =>
     a.title.localeCompare(b.title) || a.cardId.localeCompare(b.cardId);
 
-  const incoming = incomingReferences(cardId, input.references).map((sourceId) => {
-    const entry = row(sourceId, "in");
-    const snippet = input.mentionSnippet?.(sourceId, cardId);
-    return { ...entry, ...(snippet ? { snippet } : {}) };
-  });
-
-  const outgoing = outgoingReferences(cardId, input.references).map((targetId) =>
-    row(targetId, "out"),
-  );
-
-  const property = propertySources(cardId, cards, types).map((source) => ({
-    ...row(source.cardId, `field:${source.fieldId}`),
-    key: `field:${source.cardId}:${source.fieldId}`,
-    fieldName: source.fieldName,
-  }));
-
-  const arrows = arrowSources(cardId, input.edges).map((source) => {
-    const board = boards.find((entry) => entry.id === source.boardId);
-    return {
-      key: `arrow:${source.edgeId}`,
-      edgeId: source.edgeId,
-      cardId: source.otherCardId,
-      title: displayTitle(source.otherCardId),
-      glyph: typeGlyph(source.otherCardId, cards, types),
-      boardId: source.boardId,
-      boardName: board?.name ?? "Board",
-      ...(source.description ? { description: source.description } : {}),
-    };
-  });
-
   return {
-    incoming: [...incoming].sort(byTitle),
-    outgoing: [...outgoing].sort(byTitle),
-    property: [...property].sort((a, b) => a.fieldName.localeCompare(b.fieldName) || byTitle(a, b)),
-    arrows: [...arrows].sort(byTitle),
+    incoming: rows("in").sort(byTitle),
+    outgoing: rows("out").sort(byTitle),
   };
 }
 
@@ -257,8 +282,8 @@ export interface CardPanelProps {
   where: CardWhere;
   /** Selectable cards for a `card` field's picker; memoised by the host. */
   cards: readonly CardPickerOption[];
-  /** Everything that points at this card, derived by the host. */
-  references: CardReferences;
+  /** Every link this card has, grouped and derived by the host. */
+  links: CardLinks;
   /** Inspector drawer or an embedded surface such as an expanded library row. */
   variant?: "inspector" | "embedded";
   /** Which field the panel currently owns; null keeps both read-only. */
@@ -290,10 +315,8 @@ export interface CardPanelProps {
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
   onRemoveFromBoard: () => void;
-  /** Reveal a referenced card, or open its inspector when it has no placement. */
-  onFocusReference: (cardId: string, boardId: string | null) => void;
-  /** Switch to the arrow's board and reveal the other endpoint. */
-  onFocusArrow: (cardId: string, boardId: string) => void;
+  /** Reveal a linked card, or open its inspector when it has no placement. */
+  onFocusLink: (cardId: string, boardId: string | null) => void;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -315,19 +338,123 @@ const referenceRowClass =
 
 const referenceMetaClass = "mt-0.5 block truncate text-[11px] text-[var(--ink-muted)]";
 
-/** Rows are quiet by design: a glyph, a title, and one line of provenance. */
-function ReferenceGroup({ title, children }: { title: string; children: ReactNode }) {
+/** One row per related card; provenance rides along as quiet markers. */
+const PROVENANCE: Record<LinkProvenance, { glyph: string; label: string }> = {
+  mention: { glyph: "\u270e", label: "Mentioned in the body" },
+  property: { glyph: "\u25a4", label: "Property value" },
+  arrow: { glyph: "\u2197", label: "Arrow on a board" },
+};
+
+const occurrenceClass =
+  "flex min-w-0 items-start gap-1 pl-4 pr-1 py-0.5 text-[11px] text-[var(--ink-muted)]";
+
+function LinkRowItem({
+  row,
+  direction,
+  onFocus,
+}: {
+  row: LinkRow;
+  direction: "in" | "out";
+  onFocus: (cardId: string, boardId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // One occurrence is already described on the row, so expanding only earns
+  // its keep when a pair is joined more than once.
+  const expandable = row.occurrences.length > 1;
+  const single = row.occurrences.length === 1 ? row.occurrences[0]?.detail : undefined;
+  const meta = [single ?? row.relationship, row.boardName]
+    .filter((part): part is string => Boolean(part))
+    .join(" \u00b7 ");
+
   return (
-    <div className="space-y-0.5">
-      <h3 className="text-[11px] text-[var(--ink-muted)]">{title}</h3>
-      <ul className="space-y-0.5">{children}</ul>
-    </div>
+    <li data-testid="link-row" data-direction={direction} data-card-id={row.cardId}>
+      <div className="flex items-start gap-1">
+        <button
+          type="button"
+          title={row.title}
+          className={referenceRowClass}
+          onClick={() => onFocus(row.cardId, row.boardId)}
+        >
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
+          >
+            {row.glyph}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{row.title}</span>
+            {meta ? <span className={referenceMetaClass}>{meta}</span> : null}
+          </span>
+          <span
+            aria-hidden="true"
+            className="shrink-0 leading-5 text-[11px] text-[var(--ink-muted)]"
+            data-testid="link-markers"
+          >
+            {row.kinds.map((kind) => PROVENANCE[kind].glyph).join("")}
+            {row.mutual ? "\u2194" : ""}
+          </span>
+        </button>
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} ${row.occurrences.length} links to ${row.title}`}
+            data-testid="link-occurrences-toggle"
+            className="shrink-0 rounded px-1 text-[10px] leading-5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? "\u25be" : "\u25b8"}
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <ul className="space-y-0.5" data-testid="link-occurrences">
+          {row.occurrences.map((occurrence) => (
+            <li
+              key={occurrence.key}
+              data-testid="link-occurrence"
+              data-kind={occurrence.kind}
+              className={occurrenceClass}
+            >
+              <span aria-hidden="true" className="shrink-0 leading-4">
+                {PROVENANCE[occurrence.kind].glyph}
+              </span>
+              <span className="min-w-0 flex-1 truncate" title={occurrence.detail}>
+                {occurrence.detail ?? PROVENANCE[occurrence.kind].label}
+              </span>
+              {occurrence.boardName ? (
+                <span className="shrink-0">{occurrence.boardName}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
   );
 }
 
-/** Second line: the snippet when there is one, then where the row goes. */
-function referenceProvenance(snippet: string | undefined, place: string): string {
-  return [snippet, place].filter((part): part is string => Boolean(part)).join(" \u00b7 ");
+function LinkGroup({
+  title,
+  direction,
+  rows,
+  onFocus,
+}: {
+  title: string;
+  direction: "in" | "out";
+  rows: LinkRow[];
+  onFocus: (cardId: string, boardId: string | null) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-0.5" data-testid={`links-${direction}`}>
+      <h3 className="text-[11px] text-[var(--ink-muted)]">{title}</h3>
+      <ul className="space-y-0.5">
+        {rows.map((row) => (
+          <LinkRowItem key={row.cardId} row={row} direction={direction} onFocus={onFocus} />
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /**
@@ -343,7 +470,7 @@ export function CardPanel({
   fields,
   where,
   cards,
-  references,
+  links,
   variant = "inspector",
   editing,
   cardDoc,
@@ -368,8 +495,7 @@ export function CardPanel({
   onFocusCard,
   onFocusSection,
   onRemoveFromBoard,
-  onFocusReference,
-  onFocusArrow,
+  onFocusLink,
 }: CardPanelProps) {
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
@@ -424,12 +550,7 @@ export function CardPanel({
     : {};
 
   const inspector = variant === "inspector";
-  const hasReferences =
-    references.incoming.length +
-      references.outgoing.length +
-      references.property.length +
-      references.arrows.length >
-    0;
+  const hasLinks = links.incoming.length + links.outgoing.length > 0;
 
   return (
     <div
@@ -599,136 +720,26 @@ export function CardPanel({
         )}
       </Section>
 
-      <Section title="References">
-        <div className="space-y-2.5" data-testid="card-references">
-          {hasReferences ? (
+      <Section title="Links">
+        <div className="space-y-2.5" data-testid="card-links">
+          {hasLinks ? (
             <>
-              {references.incoming.length > 0 ? (
-                <ReferenceGroup title="Referenced by">
-                  {references.incoming.map((row) => (
-                    <li key={row.key}>
-                      <button
-                        type="button"
-                        data-testid="reference-incoming"
-                        title={row.title}
-                        className={referenceRowClass}
-                        onClick={() => onFocusReference(row.cardId, row.boardId)}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
-                        >
-                          {row.glyph}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{row.title}</span>
-                          <span className={referenceMetaClass}>
-                            {referenceProvenance(row.snippet, row.boardName ?? "In the inbox")}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ReferenceGroup>
-              ) : null}
-
-              {references.outgoing.length > 0 ? (
-                <ReferenceGroup title="References">
-                  {references.outgoing.map((row) => (
-                    <li key={row.key}>
-                      <button
-                        type="button"
-                        data-testid="reference-outgoing"
-                        title={row.title}
-                        className={referenceRowClass}
-                        onClick={() => onFocusReference(row.cardId, row.boardId)}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
-                        >
-                          {row.glyph}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{row.title}</span>
-                          <span className={referenceMetaClass}>
-                            {row.boardName ?? "In the inbox"}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ReferenceGroup>
-              ) : null}
-
-              {references.property.length > 0 ? (
-                <ReferenceGroup title="Linked from properties">
-                  {references.property.map((row) => (
-                    <li key={row.key}>
-                      <button
-                        type="button"
-                        data-testid="reference-property"
-                        title={`${row.fieldName} \u00b7 ${row.title}`}
-                        className={referenceRowClass}
-                        onClick={() => onFocusReference(row.cardId, row.boardId)}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
-                        >
-                          {row.glyph}
-                        </span>
-                        <span className="flex min-w-0 flex-1 items-baseline gap-1">
-                          <span className="shrink-0 text-[var(--ink-muted)]">{row.fieldName}</span>
-                          <span aria-hidden="true" className="shrink-0 text-[var(--ink-muted)]">
-                            {"\u00b7"}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate">{row.title}</span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ReferenceGroup>
-              ) : null}
-
-              {references.arrows.length > 0 ? (
-                <ReferenceGroup title="Drawn to / from">
-                  {references.arrows.map((row) => (
-                    <li key={row.key}>
-                      <button
-                        type="button"
-                        data-testid="reference-arrow"
-                        title={row.title}
-                        className={referenceRowClass}
-                        onClick={() => onFocusArrow(row.cardId, row.boardId)}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
-                        >
-                          {row.glyph}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{row.title}</span>
-                          <span className={referenceMetaClass}>
-                            {referenceProvenance(row.description, row.boardName)}
-                          </span>
-                        </span>
-                        <span
-                          aria-hidden="true"
-                          className="shrink-0 text-[11px] leading-5 text-[var(--ink-muted)]"
-                        >
-                          {"\u2197"}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ReferenceGroup>
-              ) : null}
+              <LinkGroup
+                title="Incoming"
+                direction="in"
+                rows={links.incoming}
+                onFocus={onFocusLink}
+              />
+              <LinkGroup
+                title="Outgoing"
+                direction="out"
+                rows={links.outgoing}
+                onFocus={onFocusLink}
+              />
             </>
           ) : (
-            <p className="text-[12px] text-[var(--ink-muted)]" data-testid="references-empty">
-              No references yet. Type @ in a card to link it.
+            <p className="text-[12px] text-[var(--ink-muted)]" data-testid="links-empty">
+              No links yet. Type @ in a card, or draw an arrow between two cards.
             </p>
           )}
         </div>

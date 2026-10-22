@@ -2,12 +2,7 @@ import type { Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/g
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
-import {
-  CardPanel,
-  type CardPanelEditingField,
-  type CardReferences,
-  type CardWhere,
-} from "./CardPanel";
+import { type CardLinks, CardPanel, type CardPanelEditingField, type CardWhere } from "./CardPanel";
 import type { CardPickerOption } from "./CardPicker";
 
 export interface CardInspectorProps {
@@ -19,8 +14,8 @@ export interface CardInspectorProps {
   where: CardWhere;
   /** Selectable cards for a `card` field's picker. */
   cards: readonly CardPickerOption[];
-  /** Backlinks from mentions, `card` values and arrows. */
-  references: CardReferences;
+  /** Links from mentions, `card` values and arrows, grouped by card. */
+  links: CardLinks;
   /** Mentions, property links and arrows touching this card. */
   linkCount: number;
   editing: CardPanelEditingField | null;
@@ -50,8 +45,7 @@ export interface CardInspectorProps {
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
   onRemoveFromBoard: () => void;
-  onFocusReference: (cardId: string, boardId: string | null) => void;
-  onFocusArrow: (cardId: string, boardId: string) => void;
+  onFocusLink: (cardId: string, boardId: string | null) => void;
 }
 
 /**
@@ -66,7 +60,7 @@ export function CardInspector({
   fields,
   where,
   cards,
-  references,
+  links,
   linkCount,
   editing,
   cardDoc,
@@ -93,8 +87,7 @@ export function CardInspector({
   onFocusCard,
   onFocusSection,
   onRemoveFromBoard,
-  onFocusReference,
-  onFocusArrow,
+  onFocusLink,
 }: CardInspectorProps) {
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
@@ -148,7 +141,7 @@ export function CardInspector({
           fields={fields}
           where={where}
           cards={cards}
-          references={references}
+          links={links}
           variant="inspector"
           editing={editing}
           cardDoc={cardDoc}
@@ -173,8 +166,7 @@ export function CardInspector({
           onFocusCard={onFocusCard}
           onFocusSection={onFocusSection}
           onRemoveFromBoard={onRemoveFromBoard}
-          onFocusReference={onFocusReference}
-          onFocusArrow={onFocusArrow}
+          onFocusLink={onFocusLink}
         />
       </div>
     </aside>

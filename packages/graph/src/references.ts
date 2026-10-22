@@ -86,6 +86,84 @@ export function mentionTargets(root: unknown): string[] {
   return out;
 }
 
+export interface MentionContext {
+  /** Text before the mention, newest last. Empty when the mention starts the card. */
+  before: string;
+  /** Text after the mention. Empty when nothing follows it. */
+  after: string;
+}
+
+/** Block-ish nodes that should not run into each other in a snippet. */
+const BLOCK_NODES = new Set([
+  "paragraph",
+  "heading",
+  "listItem",
+  "blockquote",
+  "codeBlock",
+  "tableRow",
+]);
+
+interface ContextWalk {
+  text: string;
+  hit: number | null;
+}
+
+function contextWalk(value: unknown, target: string, state: ContextWalk): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) contextWalk(entry, target, state);
+    return;
+  }
+  if (isText(value)) {
+    state.text += value.toString();
+    return;
+  }
+  if (isList(value)) {
+    for (const child of value.toArray()) contextWalk(child, target, state);
+    return;
+  }
+  if (!isMap(value)) return;
+
+  const nodeName = value.get("nodeName");
+  if (typeof nodeName === "string" && BLOCK_NODES.has(nodeName) && state.text.length > 0) {
+    state.text += "\n";
+  }
+
+  if (nodeName === MENTION_NODE_NAME) {
+    const cardId = mentionCardId(value);
+    if (cardId === target) {
+      // Record where the mention sits; the caller renders the live title there.
+      if (state.hit === null) state.hit = state.text.length;
+    } else {
+      // A different mention still separates the words around it.
+      state.text += " ";
+    }
+  }
+
+  contextWalk(value.get("children"), target, state);
+}
+
+/**
+ * Plain text around the first mention of `targetCardId`, for a backlink row.
+ * The mention itself is omitted so the UI can place the target's live title
+ * between `before` and `after`; returns null when the card never mentions it.
+ */
+export function mentionContext(
+  root: unknown,
+  targetCardId: string,
+  radius = 90,
+): MentionContext | null {
+  const state: ContextWalk = { text: "", hit: null };
+  contextWalk(root, targetCardId, state);
+  if (state.hit === null) return null;
+
+  const before = state.text.slice(Math.max(0, state.hit - radius), state.hit).replace(/\n+/g, " ");
+  const after = state.text.slice(state.hit, state.hit + radius).replace(/\n+/g, " ");
+  return {
+    before: before.trim(),
+    after: after.trim(),
+  };
+}
+
 /** Set comparison: a reordered mention does not change the reference set. */
 export function sameTargets(a: readonly string[], b: readonly string[]): boolean {
   const left = new Set(a);

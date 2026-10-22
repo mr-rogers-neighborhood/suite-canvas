@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   arrowSources,
   incomingReferences,
+  mentionContext,
   mentionTargets,
   outgoingReferences,
   propertySources,
@@ -218,5 +219,42 @@ describe("reference helpers", () => {
     expect(sameTargets(["a", "b"], ["a"])).toBe(false);
     expect(sameTargets(["a", "a"], ["a", "b"])).toBe(false);
     expect(sameTargets([], [])).toBe(true);
+  });
+});
+
+describe("mentionContext", () => {
+  it("should return the text around the first matching mention", () => {
+    const { root } = bodyDoc();
+    const paragraphs = kids(root);
+    const first = node(paragraphs, "paragraph");
+    const firstKids = kids(first);
+    firstKids.insertContainer(0, new LoroText()).getAttached().insert(0, "Before text");
+    mention(firstKids, "card-a");
+
+    const second = node(paragraphs, "paragraph");
+    kids(second).insertContainer(0, new LoroText()).getAttached().insert(0, "After text");
+
+    const context = mentionContext(root, "card-a");
+    expect(context?.before).toBe("Before text");
+    expect(context?.after).toBe("After text");
+  });
+
+  it("should return null when the card never mentions the target", () => {
+    const { root } = bodyDoc();
+    const first = node(kids(root), "paragraph");
+    kids(first).insertContainer(0, new LoroText()).getAttached().insert(0, "Nothing here");
+    expect(mentionContext(root, "card-a")).toBeNull();
+  });
+
+  it("should separate text around a different mention", () => {
+    const { root } = bodyDoc();
+    const first = node(kids(root), "paragraph");
+    const children = kids(first);
+    children.insertContainer(0, new LoroText()).getAttached().insert(0, "one");
+    mention(children, "other");
+    children.insertContainer(children.length, new LoroText()).getAttached().insert(0, "two");
+    mention(children, "card-a");
+
+    expect(mentionContext(root, "card-a")?.before).toBe("one two");
   });
 });

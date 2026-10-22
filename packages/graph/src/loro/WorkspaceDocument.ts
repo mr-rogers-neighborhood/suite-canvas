@@ -2139,6 +2139,18 @@ export class WorkspaceDocument {
     });
   }
 
+  /** Free-text description of a drawn link; empty clears it. */
+  setEdgeLabel(id: string, label: string | null): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+    const next = label?.trim() ?? "";
+    if ((edge.label ?? "") === next) return;
+    this.mutateEdge(id, (fields) => {
+      if (next.length > 0) fields.set("label", next);
+      else fields.delete("label");
+    });
+  }
+
   setEdgeBidirectional(id: string, bidirectional: boolean): void {
     if (!this.getEdge(id)) return;
     this.mutateEdge(id, (fields) => fields.set("bidirectional", bidirectional));

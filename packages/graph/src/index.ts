@@ -34,6 +34,7 @@ export {
 } from "./loro/WorkspaceDocument.js";
 export type {
   ArrowSource,
+  MentionContext,
   PropertySource,
   ReferenceCountInput,
   ReferenceIndex,
@@ -42,6 +43,7 @@ export {
   arrowSources,
   incomingReferences,
   MENTION_NODE_NAME,
+  mentionContext,
   mentionTargets,
   outgoingReferences,
   propertySources,

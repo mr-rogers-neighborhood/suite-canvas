@@ -94,6 +94,13 @@ export interface ReconnectState {
   target?: ConnectorSelection;
 }
 
+/** A link's label a peer is sliding along the link's path. */
+export interface LabelDragState {
+  edgeId: string;
+  /** Fraction of the path the label sits at, 0..1. */
+  offset: number;
+}
+
 /** A link a peer is dragging out of one connector toward another. */
 export interface ConnectState {
   /** Card the gesture starts from; the pointer drags the other end. */
@@ -122,6 +129,7 @@ export const AWARENESS_FIELDS = {
   sectionResize: "sectionResize",
   reconnect: "reconnect",
   connect: "connect",
+  labelDrag: "labelDrag",
 } as const;
 
 export interface PeerPresence {
@@ -141,6 +149,7 @@ export interface PeerPresence {
   sectionResize: SectionResizeState | null;
   reconnect: ReconnectState | null;
   connect: ConnectState | null;
+  labelDrag: LabelDragState | null;
 }
 
 /** True while a peer is actively editing or manipulating something. */
@@ -154,6 +163,7 @@ export function peerIsInteracting(peer: PeerPresence): boolean {
       peer.connector ||
       peer.reconnect ||
       peer.connect ||
+      peer.labelDrag ||
       peer.selectionBox,
   );
 }

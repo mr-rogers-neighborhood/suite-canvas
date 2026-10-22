@@ -953,8 +953,13 @@ body {
 }
 
 /* Link descriptions. The chip lives in React Flow's label renderer (flow
-   coordinates), is counter-scaled by the edge component, and never takes
-   pointer events so the arc underneath still selects and opens its menu. */
+   coordinates), is counter-scaled by the edge component, and sits *on* the line:
+   a canvas-coloured halo opens a gap in the stroke around it. It is its own hit
+   target, so it must paint above the edge layer (which the app raises to z-index
+   4 so links are not hidden behind cards). */
+.react-flow__edgelabel-renderer {
+  z-index: 5;
+}
 .edge-description {
   position: absolute;
   top: 0;
@@ -965,6 +970,7 @@ body {
 }
 
 .edge-description-chip {
+  position: relative;
   display: block;
   max-width: 180px;
   padding: 0 6px;
@@ -972,12 +978,43 @@ body {
   border-radius: 9999px;
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  /* First shadow is the gap in the line, second is the chip's own lift. */
+  box-shadow:
+    0 0 0 4px var(--canvas-bg),
+    0 2px 6px -2px rgba(0, 0, 0, 0.35);
   font-size: 11px;
   line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.edge-description-chip:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.edge-description-chip[data-dragging="true"] {
+  cursor: grabbing;
+  box-shadow: 0 3px 10px -2px rgba(0, 0, 0, 0.35);
+}
+
+/* A peer sliding this label: their colour on the chip, their name above it. */
+.edge-description-chip[data-peer-name] {
+  border-style: dashed;
+  border-width: 1.5px;
+  background: var(--surface);
+}
+
+.edge-description-peer {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform-origin: 50% 100%;
+  translate: -50% 0;
+  pointer-events: none;
 }
 
 /* Inline editor, anchored on the click that opened it. */

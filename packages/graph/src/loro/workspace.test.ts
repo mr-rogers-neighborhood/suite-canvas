@@ -369,6 +369,31 @@ describe("WorkspaceDocument edges", () => {
     expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
   });
 
+  it("stores where a label sits along the link, clamped, and clears it", () => {
+    const workspace = new WorkspaceDocument();
+    const board = workspace.createBoard();
+    const a = workspace.createCard({ boardId: board.id });
+    const b = workspace.createCard({ boardId: board.id });
+    const edge = workspace.addEdge({ boardId: board.id, source: a.id, target: b.id });
+    if (!edge) throw new Error("expected edge");
+
+    expect(workspace.getEdge(edge.id)?.labelOffset).toBeUndefined();
+
+    workspace.setEdgeLabelOffset(edge.id, 0.25);
+    expect(workspace.getEdge(edge.id)?.labelOffset).toBe(0.25);
+
+    // A drag that overshoots an end still lands on the link.
+    workspace.setEdgeLabelOffset(edge.id, 1.7);
+    expect(workspace.getEdge(edge.id)?.labelOffset).toBe(1);
+
+    workspace.setEdgeLabelOffset(edge.id, Number.NaN);
+    expect(workspace.getEdge(edge.id)?.labelOffset).toBe(0.5);
+
+    // Null restores the midpoint, which is the absence of the field.
+    workspace.setEdgeLabelOffset(edge.id, null);
+    expect(workspace.getEdge(edge.id)?.labelOffset).toBeUndefined();
+  });
+
   it("refuses self links and supports reconnection and reversal", () => {
     const workspace = new WorkspaceDocument();
     const board = workspace.createBoard();

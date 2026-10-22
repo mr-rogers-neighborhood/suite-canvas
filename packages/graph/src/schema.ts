@@ -178,6 +178,8 @@ export const graphEdgeSchema = z.object({
   /** Renders an arrowhead at both ends when true. */
   bidirectional: z.boolean(),
   label: z.string().optional(),
+  /** Where the label sits along the path, 0..1; absent means the middle. */
+  labelOffset: z.number().min(0).max(1).optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

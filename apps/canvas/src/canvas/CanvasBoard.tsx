@@ -118,7 +118,12 @@ function followPointer(
   return { follow, stop };
 }
 
-function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edge {
+function toFlowEdge(
+  edge: GraphEdge,
+  selected: boolean,
+  data: Pick<EdgeDescriptionData, "onLabelDrag" | "onLabelEdit">,
+  peerColor?: string,
+): Edge {
   const marker = {
     type: MarkerType.ArrowClosed,
     width: 18,
@@ -131,8 +136,13 @@ function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edg
     source: edge.source,
     target: edge.target,
     type: "description",
-    // One edge component renders every routing style; the path travels with it.
-    data: { path: edge.path } satisfies EdgeDescriptionData,
+    // One edge component renders every routing style; path and label placement
+    // travel with it, along with the callbacks that make the label draggable.
+    data: {
+      path: edge.path,
+      ...(edge.labelOffset === undefined ? {} : { labelOffset: edge.labelOffset }),
+      ...data,
+    } satisfies EdgeDescriptionData,
     selected,
     ...(edge.sourceConnector ? { sourceHandle: edge.sourceConnector } : {}),
     ...(edge.targetConnector ? { targetHandle: edge.targetConnector } : {}),
@@ -589,6 +599,40 @@ export function CanvasBoard() {
     store,
   ]);
 
+  const startEdgeDescription = useCallback(
+    (edgeId: string, point: { x: number; y: number }) => {
+      const edge = workspace.getEdge(edgeId);
+      if (!edge) return;
+      // The edge keeps its selection: only the inline editor is opening.
+      setEdgeDescription({ edgeId, x: point.x, y: point.y, value: edge.label ?? "" });
+    },
+    [workspace],
+  );
+
+  const setLabelDrag = usePresenceStore((state) => state.setLabelDrag);
+
+  /**
+   * A label drag is a gesture like any other: peers see it live and it becomes
+   * one structural write on release, so a slide never streams CRDT commits.
+   */
+  const onLabelDrag = useCallback(
+    (edgeId: string, offset: number, phase: "start" | "move" | "stop") => {
+      if (phase === "stop") {
+        setLabelDrag(null);
+        workspace.setEdgeLabelOffset(edgeId, offset);
+        return;
+      }
+      setLabelDrag({ edgeId, offset });
+    },
+    [setLabelDrag, workspace],
+  );
+
+  // Stable so the edge list keeps its identity between unrelated board renders.
+  const labelHandlers = useMemo(
+    () => ({ onLabelDrag, onLabelEdit: startEdgeDescription }),
+    [onLabelDrag, startEdgeDescription],
+  );
+
   useEffect(() => {
     const peerByEdge = new Map<string, string>();
     for (const peer of Object.values(peers)) {
@@ -606,11 +650,16 @@ export function CanvasBoard() {
     }
 
     const flowEdges: Edge[] = boardEdges.map((edge) => {
-      const flowEdge = toFlowEdge(edge, selectedEdges.has(edge.id), peerByEdge.get(edge.id));
+      const flowEdge = toFlowEdge(
+        edge,
+        selectedEdges.has(edge.id),
+        labelHandlers,
+        peerByEdge.get(edge.id),
+      );
       return reconnecting.has(edge.id) ? { ...flowEdge, hidden: true } : flowEdge;
     });
     setEdges(flowEdges);
-  }, [boardEdges, peers, selectedEdgeIds, setEdges]);
+  }, [boardEdges, peers, selectedEdgeIds, setEdges, labelHandlers]);
 
   // React Flow registers this handler in an effect keyed on its identity, and
   // unregisters it during the cleanup phase of every commit that re-renders this
@@ -1173,16 +1222,6 @@ export function CanvasBoard() {
       startEditing(card.id, "title");
     },
     [workspace, activeBoardId, setSelectedNodeIds, startEditing],
-  );
-
-  const startEdgeDescription = useCallback(
-    (edgeId: string, point: { x: number; y: number }) => {
-      const edge = workspace.getEdge(edgeId);
-      if (!edge) return;
-      // The edge keeps its selection: only the inline editor is opening.
-      setEdgeDescription({ edgeId, x: point.x, y: point.y, value: edge.label ?? "" });
-    },
-    [workspace],
   );
 
   const commitEdgeDescription = useCallback(

@@ -60,6 +60,39 @@ async function edgeMidpoint(page: Page): Promise<{ x: number; y: number }> {
   return point;
 }
 
+/** Screen point a fraction of the way along the link, for drag targets and checks. */
+async function edgePointAt(page: Page, fraction: number): Promise<{ x: number; y: number }> {
+  const point = await page.evaluate((at) => {
+    const path = document.querySelector<SVGPathElement>("path.react-flow__edge-path");
+    if (!path) return null;
+    const onPath = path.getPointAtLength(path.getTotalLength() * at);
+    const matrix = path.getScreenCTM();
+    if (!matrix) return null;
+    const screen = new DOMPoint(onPath.x, onPath.y).matrixTransform(matrix);
+    return { x: screen.x, y: screen.y };
+  }, fraction);
+  if (!point) throw new Error("edge missing");
+  return point;
+}
+
+/** Dragging the chip slides it along the link; a fraction of 0.25 lands a quarter in. */
+async function slideLabel(
+  page: Page,
+  fraction: number,
+  settle: () => Promise<void> = async () => {},
+): Promise<void> {
+  const chip = await page.getByTestId("edge-description-chip").boundingBox();
+  if (!chip) throw new Error("label not rendered");
+  const target = await edgePointAt(page, fraction);
+
+  await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+  await page.mouse.down();
+  // Straight at the line: the chip is centred on it, not lifted above it.
+  await page.mouse.move(target.x, target.y, { steps: 10 });
+  await settle();
+  await page.mouse.up();
+}
+
 async function openEdgeMenu(page: Page): Promise<void> {
   await expect(async () => {
     await page.keyboard.press("Escape");
@@ -100,18 +133,19 @@ test("describes a link inline and keeps the description across a reload", async 
   await expect(page.locator(".react-flow__edge")).toHaveCount(1);
   await expect(page.getByTestId("edge-description")).toHaveText("blocks the plan");
 
-  // The chip is centred on the arc's label point, not offset by its own size.
+  // The chip sits on the arc: the line runs into it and its halo opens the gap.
+  // Measured on the chip itself, which is what carries the centring transform.
   const labelMid = await edgeMidpoint(page);
-  const chip = await page.getByTestId("edge-description").boundingBox();
+  const chip = await page.getByTestId("edge-description-chip").boundingBox();
   if (!chip) throw new Error("description not rendered");
-  expect(Math.abs(chip.x + chip.width / 2 - labelMid.x)).toBeLessThan(60);
-  expect(Math.abs(chip.y + chip.height / 2 - labelMid.y)).toBeLessThan(60);
+  expect(Math.abs(chip.x + chip.width / 2 - labelMid.x)).toBeLessThan(8);
+  expect(Math.abs(chip.y + chip.height / 2 - labelMid.y)).toBeLessThan(8);
 
   // Counter-scaled: zooming the canvas leaves the chip at its screen size.
   await page.mouse.move(labelMid.x, labelMid.y);
   await page.mouse.wheel(0, -240);
   await page.waitForTimeout(300);
-  const zoomed = await page.getByTestId("edge-description").boundingBox();
+  const zoomed = await page.getByTestId("edge-description-chip").boundingBox();
   if (!zoomed) throw new Error("description lost after zoom");
   expect(Math.abs(zoomed.width - chip.width)).toBeLessThan(2);
   expect(Math.abs(zoomed.height - chip.height)).toBeLessThan(2);
@@ -248,6 +282,109 @@ test("a peer sees a new description without reloading", async ({ browser }) => {
 
   await writeDescription(pageA, "shared meaning");
   await expect(pageB.getByTestId("edge-description")).toHaveText("shared meaning");
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test("slides the label along the link and keeps where it landed", async ({ page }) => {
+  await page.goto(docUrl("edge-description-slide"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(page);
+  await writeDescription(page, "blocks the plan");
+
+  const before = await page.getByTestId("edge-description-chip").boundingBox();
+  if (!before) throw new Error("label not rendered");
+  const cardsBefore = await page
+    .locator('[data-testid="node-card"]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+
+  await slideLabel(page, 0.2);
+
+  // The chip lands where it was dropped, on the line at that point.
+  const anchor = await edgePointAt(page, 0.2);
+  await expect
+    .poll(async () => {
+      const box = await page.getByTestId("edge-description-chip").boundingBox();
+      return box ? Math.round(Math.abs(box.x + box.width / 2 - anchor.x)) : 999;
+    })
+    .toBeLessThan(10);
+  const landed = await page.getByTestId("edge-description-chip").boundingBox();
+  if (!landed) throw new Error("label lost after the drag");
+  expect(Math.abs(landed.y + landed.height / 2 - anchor.y)).toBeLessThan(10);
+  // It really moved along the link rather than the board panning under it.
+  expect(Math.abs(landed.x - before.x)).toBeGreaterThan(20);
+  const cardsAfter = await page
+    .locator('[data-testid="node-card"]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+  for (const [index, box] of cardsAfter.entries()) {
+    expect(Math.round(box.x)).toBe(Math.round(cardsBefore[index]?.x ?? 0));
+    expect(Math.round(box.y)).toBe(Math.round(cardsBefore[index]?.y ?? 0));
+  }
+  await expect(page.getByTestId("edge-description")).toHaveText("blocks the plan");
+
+  // The position belongs to the link, so it survives a reload.
+  await page.reload();
+  await expect(page.getByTestId("edge-description")).toHaveText("blocks the plan");
+  const reloadedAnchor = await edgePointAt(page, 0.2);
+  await expect
+    .poll(async () => {
+      const box = await page.getByTestId("edge-description-chip").boundingBox();
+      return box ? Math.round(Math.abs(box.x + box.width / 2 - reloadedAnchor.x)) : 999;
+    })
+    .toBeLessThan(10);
+});
+
+test("a peer sees the label sliding before it is released", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = docUrl("edge-description-slide-peer");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await connectCards(pageA);
+  await writeDescription(pageA, "shared meaning");
+  await expect(pageB.getByTestId("edge-description")).toHaveText("shared meaning");
+
+  const beforeB = await pageB.getByTestId("edge-description-chip").boundingBox();
+  if (!beforeB) throw new Error("label not rendered for the peer");
+
+  await slideLabel(pageA, 0.2, async () => {
+    // Mid-gesture, with nothing written to the document yet: the peer's copy of
+    // the label follows in the dragger's colour, with their name on it.
+    await expect(pageB.getByTestId("edge-description-chip")).toHaveAttribute(
+      "data-peer-name",
+      /.+/,
+    );
+    await expect(pageB.getByTestId("edge-description")).toContainText("shared meaning");
+    await expect(pageB.getByTestId("peer-name-tag")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await pageB.getByTestId("edge-description-chip").boundingBox();
+        return box ? Math.round(beforeB.x - box.x) : 0;
+      })
+      .toBeGreaterThan(20);
+  });
+
+  // Released: presence clears and the stored offset keeps both clients in step.
+  await expect(pageB.getByTestId("edge-description-chip")).not.toHaveAttribute(
+    "data-peer-name",
+    /.+/,
+  );
+  await expect(pageB.getByTestId("peer-name-tag")).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const [a, b] = await Promise.all([
+        pageA.getByTestId("edge-description-chip").boundingBox(),
+        pageB.getByTestId("edge-description-chip").boundingBox(),
+      ]);
+      if (!a || !b) return 999;
+      return Math.round(Math.abs(a.x - b.x));
+    })
+    .toBeLessThan(3);
 
   await contextA.close();
   await contextB.close();

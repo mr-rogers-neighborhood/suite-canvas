@@ -516,6 +516,7 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
   const sourceConnector = readString(fields, "sourceConnector");
   const targetConnector = readString(fields, "targetConnector");
   const label = readString(fields, "label");
+  const labelOffset = readNumber(fields, "labelOffset");
   return normalizeEdge(
     graphEdgeSchema.parse({
       id,
@@ -528,6 +529,7 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
       path: readString(fields, "path") ?? "bezier",
       bidirectional: readBoolean(fields, "bidirectional") ?? false,
       ...(label ? { label } : {}),
+      ...(typeof labelOffset === "number" ? { labelOffset } : {}),
       createdAt: readNumber(fields, "createdAt") ?? 0,
       updatedAt: readNumber(fields, "updatedAt") ?? 0,
     }),
@@ -2300,6 +2302,25 @@ export class WorkspaceDocument {
       if (next.length > 0) fields.set("label", next);
       else fields.delete("label");
     });
+  }
+
+  /**
+   * Places the label along its path. `null` restores the midpoint; the value is
+   * clamped, so a drag that overshoots the ends still lands on the link.
+   */
+  setEdgeLabelOffset(id: string, offset: number | null): void {
+    const edge = this.getEdge(id);
+    if (!edge) return;
+    if (offset === null) {
+      if (edge.labelOffset === undefined) return;
+      this.mutateEdge(id, (fields) => {
+        if (fields.get("labelOffset") !== undefined) fields.delete("labelOffset");
+      });
+      return;
+    }
+    const clamped = Math.min(1, Math.max(0, Number.isFinite(offset) ? offset : 0.5));
+    if (edge.labelOffset !== undefined && Math.abs(edge.labelOffset - clamped) < 0.001) return;
+    this.mutateEdge(id, (fields) => fields.set("labelOffset", clamped));
   }
 
   setEdgeBidirectional(id: string, bidirectional: boolean): void {

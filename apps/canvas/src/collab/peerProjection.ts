@@ -4,6 +4,7 @@ import {
   type ConnectState,
   type DraggingState,
   type FocusState,
+  type LabelDragState,
   type PeerPresence,
   type PointerState,
   type PresenceUser,
@@ -87,6 +88,7 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
       (state[AWARENESS_FIELDS.sectionResize] as SectionResizeState | undefined) ?? null,
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
     connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
+    labelDrag: (state[AWARENESS_FIELDS.labelDrag] as LabelDragState | undefined) ?? null,
   };
 }
 
@@ -100,6 +102,7 @@ export function gestureSignature(peer: PeerPresence): string {
     !peer.sectionResize &&
     !peer.reconnect &&
     !peer.connect &&
+    !peer.labelDrag &&
     !peer.selectionBox
   ) {
     return "";
@@ -112,6 +115,7 @@ export function gestureSignature(peer: PeerPresence): string {
     peer.sectionResize,
     peer.reconnect,
     peer.connect,
+    peer.labelDrag,
     peer.selectionBox,
   ]);
 }
@@ -125,6 +129,7 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
     !peer.sectionResize &&
     !peer.reconnect &&
     !peer.connect &&
+    !peer.labelDrag &&
     !peer.selectionBox
   ) {
     return peer;
@@ -138,6 +143,7 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
     sectionResize: null,
     reconnect: null,
     connect: null,
+    labelDrag: null,
     selectionBox: null,
   };
 }

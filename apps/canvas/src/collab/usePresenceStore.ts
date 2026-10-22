@@ -9,6 +9,7 @@ import {
   type ConnectState,
   type DraggingState,
   type FocusState,
+  type LabelDragState,
   type PeerPresence,
   type PointerState,
   type ReconnectState,
@@ -39,6 +40,7 @@ interface PresenceState {
   setSectionResize: (section: SectionResizeState | null) => void;
   setReconnect: (reconnect: ReconnectState | null) => void;
   setConnect: (connect: ConnectState | null) => void;
+  setLabelDrag: (labelDrag: LabelDragState | null) => void;
 }
 
 /** Last gesture signature and arrival time per peer, for the staleness check. */
@@ -66,6 +68,7 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     AWARENESS_FIELDS.reconnect,
     AWARENESS_FIELDS.connect,
     AWARENESS_FIELDS.selectionBox,
+    AWARENESS_FIELDS.labelDrag,
   ] as const;
 
   const hasLocalInteraction = () =>
@@ -166,6 +169,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     setConnect: (connect) => {
       publish(AWARENESS_FIELDS.connect, connect);
       if (connect) clearPointer();
+    },
+    setLabelDrag: (labelDrag) => {
+      publish(AWARENESS_FIELDS.labelDrag, labelDrag);
+      if (labelDrag) clearPointer();
     },
   };
 });

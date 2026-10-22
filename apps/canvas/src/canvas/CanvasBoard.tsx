@@ -345,9 +345,11 @@ export function CanvasBoard() {
   const peerTargets = useRef(new Map<string, { x: number; y: number }>());
   const smoothPositions = useRef(new Map<string, { x: number; y: number }>());
   const smoothingFrame = useRef<number | null>(null);
+  const lastSmoothingTick = useRef(0);
 
   const runSmoothing = useCallback(() => {
     const tick = () => {
+      lastSmoothingTick.current = performance.now();
       let moving = false;
       for (const [id, target] of peerTargets.current) {
         const previous = smoothPositions.current.get(id) ?? target;
@@ -503,6 +505,19 @@ export function CanvasBoard() {
     },
     [],
   );
+
+  // A hidden or occluded window throttles `requestAnimationFrame`, which would
+  // freeze a peer's cards mid-drag until the local client writes on release.
+  // Nobody can watch that animation, so land on the latest target instead.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (smoothingFrame.current === null || peerTargets.current.size === 0) return;
+      if (performance.now() - lastSmoothingTick.current < 250) return;
+      for (const [id, target] of peerTargets.current) smoothPositions.current.set(id, target);
+      applyBoardNodes();
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [applyBoardNodes]);
 
   useEffect(() => () => setSelectionBox(null), [setSelectionBox]);
 

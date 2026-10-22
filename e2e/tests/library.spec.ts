@@ -16,6 +16,44 @@ async function createNoteFromDock(page: Page): Promise<void> {
   await page.getByTestId("dock-type-note").click();
 }
 
+async function createSectionAroundCard(page: Page, index: number, title: string): Promise<void> {
+  const card = cards(page).nth(index);
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card not visible");
+  await page.mouse.click(box.x + 40, box.y + 60);
+  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  const before = await page.locator(".section-header").count();
+  await page.keyboard.press("Control+g");
+  await expect(page.locator(".section-header")).toHaveCount(before + 1);
+  // Fill the title directly: the freshly created section owns this input.
+  const input = page.getByTestId("section-title-input");
+  await expect(input).toBeVisible();
+  await input.fill(title);
+  await input.press("Enter");
+  await expect(page.locator(".section-header").nth(before)).toContainText(title);
+}
+
+/** Grows the sole section from its south-east handle so a subsection can fit. */
+async function growSection(page: Page): Promise<void> {
+  const handle = await page.getByTestId("section-handle-se").boundingBox();
+  if (!handle) throw new Error("section handle not visible");
+  await page.mouse.move(handle.x + 4, handle.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 144, handle.y + 124, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator(".section-region").first()).toBeVisible();
+}
+
+async function addTextField(page: Page, name: string): Promise<void> {
+  await page.getByTestId("manage-types").click();
+  await expect(page.getByTestId("type-settings")).toBeVisible();
+  await page.getByLabel("New field name").fill(name);
+  await page.getByTestId("create-field").click();
+  await expect(page.getByLabel(`Field name ${name}`)).toHaveValue(name);
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByTestId("type-settings")).toHaveCount(0);
+}
+
 async function openLibrary(page: Page, tab: "inbox" | "cards" | "trash"): Promise<void> {
   if ((await page.getByTestId("library-drawer").count()) === 0) {
     await page.getByTestId("dock-library").click();
@@ -227,4 +265,132 @@ test("still resolves a legacy ?doc= link to a workspace", async ({ page }) => {
   await page.goto(`/?doc=e2e-legacy-${Date.now()}`);
   await expect(cards(page)).toHaveCount(2);
   await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+});
+
+test("scopes the cards list to the active board", async ({ page }) => {
+  await page.goto(workspaceUrl("scope"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // The second card leaves the board, so scope has something to hide.
+  await cards(page).nth(1).getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Remove from board" }).click();
+
+  await openLibrary(page, "cards");
+  const rows = page.locator('[data-testid^="library-item-"]');
+  await expect(rows).toHaveCount(2);
+
+  await expect(page.getByTestId("library-scope")).toBeVisible();
+  await page.getByTestId("library-scope-board").click();
+  await expect(rows).toHaveCount(1);
+
+  await page.getByTestId("library-scope-all").click();
+  await expect(rows).toHaveCount(2);
+
+  // Inbox and Trash ignore scope, so they do not offer it.
+  await page.getByTestId("library-tab-inbox").click();
+  await expect(page.getByTestId("library-scope")).toHaveCount(0);
+  await page.getByTestId("library-tab-trash").click();
+  await expect(page.getByTestId("library-scope")).toHaveCount(0);
+});
+
+test("filters the board-scoped list by section subtree and unsorted", async ({ page }) => {
+  await page.goto(workspaceUrl("section-filter"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await createSectionAroundCard(page, 0, "Research");
+  // Room for a section that is genuinely inside the first one.
+  await growSection(page);
+  await createSectionAroundCard(page, 0, "Sub");
+
+  await openLibrary(page, "cards");
+  await page.getByTestId("library-scope-board").click();
+
+  const rows = page.locator('[data-testid^="library-item-"]');
+  await expect(rows).toHaveCount(2);
+  // Row meta names the card's own (deepest) section, then the board.
+  await expect(page.getByTestId("library-row-meta").first()).toContainText("Sub \u00b7 Board 1");
+
+  const facets = page.locator('[data-testid^="facet-section-"]');
+  await expect(facets).toHaveCount(3);
+
+  // Selecting the parent includes the card that lives in its subsection.
+  const research = facets.filter({ hasText: "Research" });
+  await research.click();
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByTestId("library-row-meta")).toContainText("Sub \u00b7 Board 1");
+
+  await research.click();
+  await expect(rows).toHaveCount(2);
+
+  await page.getByTestId("facet-section-__unsorted__").click();
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByTestId("library-row-meta")).toContainText("Unsorted");
+
+  await page.getByTestId("clear-filters").click();
+  await expect(rows).toHaveCount(2);
+});
+
+test("groups board cards by section with unsorted last", async ({ page }) => {
+  await page.goto(workspaceUrl("group"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await createSectionAroundCard(page, 0, "Research");
+
+  await openLibrary(page, "cards");
+  await page.getByTestId("library-scope-board").click();
+  await page.getByTestId("library-group-toggle").click();
+
+  // `library-group-toggle` also starts with "library-group-", so match the group sections only.
+  const groups = page.locator('section[data-testid^="library-group-"]');
+  await expect(groups).toHaveCount(2);
+  await expect(groups.first()).toContainText("Research");
+  await expect(groups.first().locator('[data-testid^="library-item-"]')).toHaveCount(1);
+  await expect(groups.last()).toContainText("Unsorted");
+  await expect(groups.last().locator('[data-testid^="library-item-"]')).toHaveCount(1);
+});
+
+test("edits a card from an expanded row and collapses on close", async ({ page }) => {
+  await page.goto(workspaceUrl("row-panel"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // A text field to edit from the row.
+  await cards(page).first().getByTestId("card-type").click();
+  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await addTextField(page, "Status");
+  await page.getByTestId("inspector-close").click();
+
+  await openLibrary(page, "cards");
+  await page.getByTestId("library-scope-board").click();
+  await page
+    .locator('[data-testid^="library-item-"]')
+    .first()
+    .getByTestId("library-row-expand")
+    .click();
+
+  const panel = page.getByTestId("library-row-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId("card-panel")).toHaveAttribute("data-variant", "embedded");
+
+  const status = panel.getByLabel("Status");
+  await status.fill("active");
+  await status.blur();
+
+  // The canvas card sees the same write.
+  const canvasCard = cards(page).first();
+  await canvasCard.getByTestId("card-meta-toggle").click();
+  await expect(canvasCard.getByTestId("card-meta")).toContainText("active");
+
+  // The row's body editor writes the shared container the card renders.
+  await panel.getByTestId("card-panel-body").click();
+  await expect(panel.getByTestId("card-panel-body")).toHaveAttribute("data-editing", "true");
+  // React StrictMode remounts the editor once in dev; let the focused instance settle.
+  await page.waitForTimeout(300);
+  await page.keyboard.type("From the row");
+  await expect(canvasCard.locator(".node-card-editor")).toContainText("From the row");
+
+  // Closing the drawer releases the row; reopening starts collapsed.
+  await page.getByLabel("Close library").click();
+  await expect(page.getByTestId("library-drawer")).toHaveCount(0);
+  await openLibrary(page, "cards");
+  await expect(page.getByTestId("library-row-panel")).toHaveCount(0);
 });

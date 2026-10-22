@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { LibraryDrawer } from "./LibraryDrawer";
+import { UNSORTED_SECTION } from "./libraryFilters";
 
 const items = [
   {
@@ -8,8 +9,23 @@ const items = [
     boards: [{ id: "b1", name: "Research" }],
     typeIds: ["note"],
     tagIds: ["t1"],
+    sectionIds: ["s2", "s1"],
+    properties: {},
   },
-  { id: "c2", title: "Untitled", boards: [], typeIds: ["note"], tagIds: [] },
+  {
+    id: "c2",
+    title: "Untitled",
+    boards: [{ id: "b1", name: "Research" }],
+    typeIds: ["note"],
+    tagIds: [],
+    sectionIds: [UNSORTED_SECTION],
+    properties: {},
+  },
+];
+
+const sectionOrder = [
+  { id: "s1", title: "Sources", depth: 0 },
+  { id: "s2", title: "Primary sources", depth: 1 },
 ];
 
 const meta = {
@@ -29,6 +45,8 @@ const meta = {
         boards: [{ id: "b1", name: "Research" }],
         typeIds: ["concept"],
         tagIds: [],
+        sectionIds: [],
+        properties: {},
       },
     ],
     onTab: () => {},
@@ -51,6 +69,22 @@ const meta = {
     onToggleType: () => {},
     onToggleTag: () => {},
     onClearFilters: () => {},
+    activeBoardId: "b1",
+    activeBoardName: "Research",
+    scope: "all",
+    onScope: () => {},
+    sectionFilter: [],
+    onToggleSection: () => {},
+    sectionOrder,
+    groupBySection: false,
+    onToggleGroup: () => {},
+    expandedRowId: null,
+    onExpandRow: () => {},
+    renderRowPanel: (cardId: string) => (
+      <p className="px-2 py-3 text-[12px] text-[var(--ink-muted)]">
+        Card panel for {cardId} (store-connected in the app)
+      </p>
+    ),
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof LibraryDrawer>;
@@ -61,6 +95,14 @@ type Story = StoryObj<typeof meta>;
 export const Inbox: Story = {};
 
 export const Cards: Story = { args: { tab: "cards" } };
+
+export const BoardScope: Story = {
+  args: { tab: "cards", scope: "board", sectionFilter: ["s1"], expandedRowId: "c1" },
+};
+
+export const GroupedBySection: Story = {
+  args: { tab: "cards", scope: "board", groupBySection: true },
+};
 
 export const Trash: Story = { args: { tab: "trash" } };
 

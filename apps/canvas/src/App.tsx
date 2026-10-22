@@ -1,15 +1,18 @@
+import { sectionForCard, sectionMembership } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
+import { outlineRows } from "./canvas/outlineTree";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { BoardTabs } from "./components/BoardTabs";
 import { CardInspectorHost } from "./components/CardInspectorHost";
+import { sectionPath } from "./components/cardWhere";
 import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
-import { filterItems } from "./components/libraryFilters";
+import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { PerfOverlay } from "./dev/PerfOverlay";
@@ -56,9 +59,15 @@ function WorkspaceShell() {
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   const libraryTypeFilter = useUiStore((state) => state.libraryTypeFilter);
   const libraryTagFilter = useUiStore((state) => state.libraryTagFilter);
+  const libraryScope = useUiStore((state) => state.libraryScope);
+  const librarySectionFilter = useUiStore((state) => state.librarySectionFilter);
+  const libraryGroupBySection = useUiStore((state) => state.libraryGroupBySection);
   const toggleLibraryType = useUiStore((state) => state.toggleLibraryType);
   const toggleLibraryTag = useUiStore((state) => state.toggleLibraryTag);
+  const toggleLibrarySection = useUiStore((state) => state.toggleLibrarySection);
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
+  const setLibraryScope = useUiStore((state) => state.setLibraryScope);
+  const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const setFocus = usePresenceStore((state) => state.setFocus);
@@ -67,6 +76,7 @@ function WorkspaceShell() {
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
 
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const stagger = useRef(0);
 
   useEffect(() => {
@@ -171,19 +181,89 @@ function WorkspaceShell() {
     [activeBoardId, canvasPoint, workspace, startEditing],
   );
 
-  const toItem = useCallback(
-    (cardId: string): LibraryItem => ({
-      id: cardId,
-      title: workspace.displayTitle(cardId),
-      boards: workspace.listCardPlacements(cardId).flatMap((placement) => {
-        const board = workspace.getBoard(placement.boardId);
-        return board ? [{ id: board.id, name: board.name }] : [];
-      }),
-      typeIds: workspace.getCard(cardId)?.typeIds ?? [],
-      tagIds: workspace.getCard(cardId)?.tags ?? [],
-    }),
-    [workspace],
+  const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
+  const boardSections = useMemo(
+    () =>
+      activeBoardId ? snapshot.sections.filter((section) => section.boardId === activeBoardId) : [],
+    [snapshot.sections, activeBoardId],
   );
+  const boardPlacements = useMemo(
+    () =>
+      activeBoardId
+        ? snapshot.placements.filter((placement) => placement.boardId === activeBoardId)
+        : [],
+    [snapshot.placements, activeBoardId],
+  );
+  const boardMembership = useMemo(
+    () =>
+      activeBoardId ? sectionMembership(boardPlacements, boardSections) : new Map<string, string>(),
+    [activeBoardId, boardPlacements, boardSections],
+  );
+  // The same trees the outline rail draws, so the facet and the grouping agree
+  // with it about order and depth.
+  const sectionOrder = useMemo(
+    () =>
+      outlineRows(boardSections, boardMembership).map((row) => ({
+        id: row.section.id,
+        title: row.section.title.trim() || "Untitled section",
+        depth: row.depth,
+      })),
+    [boardSections, boardMembership],
+  );
+
+  /**
+   * A card's section on the active board plus every ancestor, innermost first,
+   * or the unsorted sentinel. Selecting a section therefore includes its subtree.
+   */
+  const sectionIdsByCard = useMemo(() => {
+    const ids = new Map<string, string[]>();
+    for (const placement of boardPlacements) {
+      const match = sectionForCard(placement, boardSections);
+      ids.set(
+        placement.cardId,
+        match
+          ? sectionPath(match, boardSections)
+              .map((section) => section.id)
+              .reverse()
+          : [UNSORTED_SECTION],
+      );
+    }
+    return ids;
+  }, [boardPlacements, boardSections]);
+
+  const sectionIdsFor = useCallback(
+    (cardId: string): string[] => sectionIdsByCard.get(cardId) ?? [UNSORTED_SECTION],
+    [sectionIdsByCard],
+  );
+
+  const toItem = useCallback(
+    (cardId: string): LibraryItem => {
+      const card = workspace.getCard(cardId);
+      return {
+        id: cardId,
+        title: workspace.displayTitle(cardId),
+        boards: workspace.listCardPlacements(cardId).flatMap((placement) => {
+          const board = workspace.getBoard(placement.boardId);
+          return board ? [{ id: board.id, name: board.name }] : [];
+        }),
+        typeIds: card?.typeIds ?? [],
+        tagIds: card?.tags ?? [],
+        sectionIds: sectionIdsFor(cardId),
+        properties: card?.properties ?? {},
+      };
+    },
+    [workspace, sectionIdsFor],
+  );
+
+  const expandRow = useCallback((cardId: string | null) => {
+    setExpandedRowId(cardId);
+    const state = useUiStore.getState();
+    if (cardId) {
+      state.setPanelOwner("library");
+      return;
+    }
+    if (state.panelOwner === "library") state.setPanelOwner(null);
+  }, []);
 
   const cards = snapshot.cards;
   const inbox = cards.filter((card) => !card.deletedAt).map((card) => card.id);
@@ -191,9 +271,11 @@ function WorkspaceShell() {
   const trashed = workspace.listTrashedCards().map((card) => card.id);
   const allCards = inbox.map((id) => id);
 
-  const filteredInbox = filterItems(unplaced.map(toItem), libraryTypeFilter, libraryTagFilter);
-  const filteredCards = filterItems(allCards.map(toItem), libraryTypeFilter, libraryTagFilter);
-  const filteredTrash = filterItems(trashed.map(toItem), libraryTypeFilter, libraryTagFilter);
+  // Facet filtering lives in the drawer: it owns the section facet, and every
+  // facet needs the counts computed against the others.
+  const inboxItems = unplaced.map(toItem);
+  const cardItems = allCards.map(toItem);
+  const trashItems = trashed.map(toItem);
 
   return (
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
@@ -239,9 +321,9 @@ function WorkspaceShell() {
         open={libraryOpen}
         tab={libraryTab}
         counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
-        inbox={filteredInbox}
-        cards={filteredCards}
-        trash={filteredTrash}
+        inbox={inboxItems}
+        cards={cardItems}
+        trash={trashItems}
         onTab={setLibraryTab}
         onClose={() => setLibraryOpen(false)}
         onPlace={placeCard}
@@ -259,6 +341,17 @@ function WorkspaceShell() {
         onToggleType={toggleLibraryType}
         onToggleTag={toggleLibraryTag}
         onClearFilters={clearLibraryFilters}
+        activeBoardId={activeBoardId}
+        activeBoardName={activeBoardName}
+        scope={libraryScope}
+        onScope={setLibraryScope}
+        sectionFilter={librarySectionFilter}
+        onToggleSection={toggleLibrarySection}
+        sectionOrder={sectionOrder}
+        groupBySection={libraryGroupBySection}
+        onToggleGroup={toggleLibraryGroupBySection}
+        expandedRowId={expandedRowId}
+        onExpandRow={expandRow}
       />
 
       <PerfOverlay />

@@ -549,6 +549,37 @@ body {
   user-select: none;
 }
 
+/* Board scope and an open row need room for a facet row and a card panel. */
+.library-drawer[data-wide="true"] {
+  display: flex;
+  width: min(640px, calc(100vw - 2rem));
+  max-height: 60vh;
+  flex-direction: column;
+}
+
+.library-list {
+  max-height: 46vh;
+}
+
+.library-drawer[data-wide="true"] .library-header,
+.library-drawer[data-wide="true"] .library-facets {
+  flex: 0 0 auto;
+}
+
+.library-drawer[data-wide="true"] .library-list {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+}
+
+.library-scope {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 4px;
+  border-left: 1px solid var(--hairline);
+}
+
 .library-tab {
   display: flex;
   align-items: center;
@@ -565,6 +596,10 @@ body {
   font-weight: 600;
 }
 
+.library-entry {
+  display: block;
+}
+
 .library-row {
   display: flex;
   align-items: center;
@@ -573,6 +608,42 @@ body {
   border-radius: 8px;
   cursor: grab;
   touch-action: none;
+}
+
+.library-row-expand {
+  padding: 2px 5px;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--ink-muted);
+}
+
+.library-row-expand:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+/* The embedded card surface: an expanded row, not a floating drawer. */
+.library-row-panel {
+  margin: 2px 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--ink));
+  overflow: hidden;
+  user-select: text;
+}
+
+.library-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+  padding-bottom: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
 }
 
 .library-row:hover {

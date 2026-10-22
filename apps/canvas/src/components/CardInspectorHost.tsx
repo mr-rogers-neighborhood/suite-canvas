@@ -1,4 +1,3 @@
-import { type Section, sectionForCard, sectionLineage } from "@suite/graph";
 import { useEffect, useMemo, useRef } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { useBoardPeers } from "../hooks/useBoardPeers";
@@ -7,25 +6,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
-import type { CardWhere, CardWhereSection } from "./CardPanel";
-
-/**
- * The chain of sections containing the card's section, outermost first.
- * Membership is derived from geometry, so renaming or moving a section updates
- * every breadcrumb without an extra write.
- */
-function sectionPath(match: Section, sections: Section[]): CardWhereSection[] {
-  return sections
-    .filter((candidate) =>
-      sectionLineage(candidate.id, sections).some((entry) => entry.id === match.id),
-    )
-    .sort((a, b) => a.width * a.height - b.width * b.height || a.id.localeCompare(b.id))
-    .map((section) => ({
-      id: section.id,
-      name: section.title || "Untitled section",
-      ...(section.color ? { color: `var(--section-${section.color})` } : {}),
-    }));
-}
+import { cardWhere } from "./cardWhere";
 
 /**
  * Binds the inspector panel to the workspace. Kept out of `CardInspector` so the
@@ -40,10 +21,12 @@ export function CardInspectorHost() {
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const editingSurface = useUiStore((state) => state.editingSurface);
+  const panelOwner = useUiStore((state) => state.panelOwner);
   const closeInspector = useUiStore((state) => state.closeInspector);
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   const startEditing = useUiStore((state) => state.startEditing);
   const stopEditing = useUiStore((state) => state.stopEditing);
+  const setPanelOwner = useUiStore((state) => state.setPanelOwner);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
 
@@ -67,45 +50,23 @@ export function CardInspectorHost() {
     previousInspectorId.current = inspectorNodeId;
     if (previous === inspectorNodeId) return;
     const state = useUiStore.getState();
-    if (state.editingSurface === "panel" && state.editingNodeId === previous) state.stopEditing();
+    if (
+      state.panelOwner === "inspector" &&
+      state.editingSurface === "panel" &&
+      state.editingNodeId === previous
+    ) {
+      state.stopEditing();
+    }
   }, [inspectorNodeId]);
 
   // Cheap: one lookup per type on the card, and the snapshot re-renders this
   // panel whenever a field definition changes.
   const fields = card ? workspace.viewCardFields(card) : [];
 
-  const where = useMemo<CardWhere>(() => {
-    if (!card) return { unplaced: true, entries: [] };
-    const placements = snapshot.placements.filter((entry) => entry.cardId === card.id);
-    if (placements.length === 0) return { unplaced: true, entries: [] };
-
-    const boardsById = new Map(snapshot.boards.map((board) => [board.id, board]));
-    const ordered = [...placements].sort(
-      (a, b) => a.createdAt - b.createdAt || a.boardId.localeCompare(b.boardId),
-    );
-    const homeId = ordered[0]?.boardId ?? null;
-    const entries = ordered
-      .flatMap((placement) => {
-        const board = boardsById.get(placement.boardId);
-        if (!board) return [];
-        const sections = snapshot.sections.filter((entry) => entry.boardId === board.id);
-        const match = sectionForCard(placement, sections);
-        return [
-          {
-            boardId: board.id,
-            boardName: board.name,
-            isCurrent: board.id === activeBoardId,
-            isHome: board.id === homeId,
-            sectionPath: match ? sectionPath(match, sections) : [],
-          },
-        ];
-      })
-      .sort(
-        (a, b) => Number(b.isHome) - Number(a.isHome) || a.boardName.localeCompare(b.boardName),
-      );
-
-    return { unplaced: false, entries };
-  }, [card, snapshot.placements, snapshot.sections, snapshot.boards, activeBoardId]);
+  const where = useMemo(
+    () => (card ? cardWhere(snapshot, card.id, activeBoardId) : { unplaced: true, entries: [] }),
+    [card, snapshot, activeBoardId],
+  );
 
   // Editors need a container to bind to; opening the panel is an editing
   // surface, so it may create the empty ones the same way the card does.
@@ -120,8 +81,12 @@ export function CardInspectorHost() {
 
   if (!card || contentId === null || titleId === null) return null;
 
+  // Only the inspector may own this panel's editing session; a library row
+  // editing the same card leaves this one read-only.
   const panelEditing =
-    editingNodeId === card.id && editingSurface === "panel" ? editingField : null;
+    editingNodeId === card.id && editingSurface === "panel" && panelOwner === "inspector"
+      ? editingField
+      : null;
 
   return (
     <CardInspector
@@ -138,12 +103,17 @@ export function CardInspectorHost() {
       cursorStore={cursorStore}
       localUser={localUser}
       peers={peers}
-      onClose={() => {
-        if (editingNodeId === card.id && editingSurface === "panel") stopEditing();
-        closeInspector();
+      onClose={closeInspector}
+      onEdit={() => {
+        setPanelOwner("inspector");
+        startEditing(card.id, "body", "panel");
       }}
-      onEdit={() => startEditing(card.id, "body", "panel")}
-      onStartEditing={(field) => startEditing(card.id, field, "panel")}
+      onStartEditing={(field) => {
+        // A click here means the inspector captures the keystrokes, even if an
+        // expanded library row was the last panel owner.
+        setPanelOwner("inspector");
+        startEditing(card.id, field, "panel");
+      }}
       onEditEnd={stopEditing}
       onSetType={(typeId) => workspace.setCardTypes(card.id, [typeId], typeId)}
       onAddTag={(tagId) => workspace.addCardTag(card.id, tagId)}

@@ -7,6 +7,7 @@ function resetUiState() {
     editingNodeId: null,
     editingField: "body",
     editingSurface: "canvas",
+    panelOwner: null,
     inspectorNodeId: null,
     selectedNodeIds: [],
     selectedEdgeIds: [],
@@ -62,6 +63,59 @@ describe("useUiStore", () => {
   it("should default the editing surface to the canvas", () => {
     useUiStore.getState().startEditing("card-a");
     expect(useUiStore.getState().editingSurface).toBe("canvas");
+  });
+
+  it("should mark the inspector as the panel owner and release it on close", () => {
+    useUiStore.getState().openInspector("card-a");
+    expect(useUiStore.getState().panelOwner).toBe("inspector");
+
+    useUiStore.getState().startEditing("card-a", "body", "panel");
+    expect(useUiStore.getState().panelOwner).toBe("inspector");
+
+    useUiStore.getState().closeInspector();
+
+    const state = useUiStore.getState();
+    expect(state.inspectorNodeId).toBeNull();
+    expect(state.panelOwner).toBeNull();
+    expect(state.editingNodeId).toBeNull();
+    expect(state.editingSurface).toBe("canvas");
+  });
+
+  it("should leave a canvas edit alone when the inspector closes", () => {
+    useUiStore.getState().startEditing("card-a", "title", "canvas");
+    useUiStore.getState().closeInspector();
+
+    const state = useUiStore.getState();
+    expect(state.editingNodeId).toBe("card-a");
+    expect(state.editingSurface).toBe("canvas");
+  });
+
+  it("should keep the panel owner when a panel edit starts", () => {
+    useUiStore.getState().setPanelOwner("library");
+    useUiStore.getState().startEditing("card-a", "body", "panel");
+
+    expect(useUiStore.getState().panelOwner).toBe("library");
+    expect(useUiStore.getState().editingNodeId).toBe("card-a");
+  });
+
+  it("should end the previous panel session when the owner changes", () => {
+    useUiStore.getState().openInspector("card-a");
+    useUiStore.getState().startEditing("card-a", "body", "panel");
+
+    useUiStore.getState().setPanelOwner("library");
+
+    const switched = useUiStore.getState();
+    expect(switched.panelOwner).toBe("library");
+    expect(switched.editingNodeId).toBeNull();
+    expect(switched.editingSurface).toBe("canvas");
+
+    useUiStore.getState().startEditing("card-a", "body", "panel");
+    useUiStore.getState().openInspector("card-b");
+
+    const reopened = useUiStore.getState();
+    expect(reopened.panelOwner).toBe("inspector");
+    expect(reopened.editingNodeId).toBeNull();
+    expect(reopened.editingSurface).toBe("canvas");
   });
 
   it("should select every card on the board and drop the other selections", () => {

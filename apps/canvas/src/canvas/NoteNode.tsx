@@ -40,7 +40,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const openInspector = useUiStore((state) => state.openInspector);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
-  const canManage = useUiStore((state) => state.canManage);
+  const canManageTrash = useUiStore((state) => state.canManageTrash);
+  // Connectors are workspace structure, not draft objects: moving or removing
+  // one follows the trash row of the matrix, so a board or card draft cannot.
+  const canManageStructure = canManageTrash;
   const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
@@ -200,7 +203,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         selectingConnectorPeers={selectingConnectorPeers}
         canEditContent={canEditContent}
         canEditLayout={canEditLayout}
-        canManage={canManage}
+        canManageTrash={canManageTrash}
         onStartEditing={(field) => startEditing(id, field, "canvas")}
         onEditEnd={stopEditing}
         {...(canEditLayout
@@ -208,13 +211,13 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
-        {...(canManage ? { onTrash: () => workspace.trashCard(id) } : {})}
+        {...(canManageTrash ? { onTrash: () => workspace.trashCard(id) } : {})}
         onConnectorMoveStart={(connectorId) => {
-          if (!canManage) return;
+          if (!canManageStructure) return;
           setMovingConnector({ nodeId: id, connectorId });
         }}
         onConnectorMove={(connectorId, position) => {
-          if (!canManage) return;
+          if (!canManageStructure) return;
           setMovingConnector({ nodeId: id, connectorId, position });
         }}
         onConnectorMoveFinished={() => setMovingConnector(null)}
@@ -223,11 +226,11 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         }
         onConnectorSelect={(connectorId) => setSelectedConnector({ nodeId: id, connectorId })}
         onConnectorMoveEnd={(connectorId, position) => {
-          if (!canManage) return;
+          if (!canManageStructure) return;
           workspace.moveConnector(id, connectorId, position);
         }}
         onConnectorContextMenu={(event, connectorId) => {
-          if (!canManage) return;
+          if (!canManageStructure) return;
           openContextMenu({
             x: event.clientX,
             y: event.clientY,

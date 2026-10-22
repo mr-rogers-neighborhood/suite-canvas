@@ -94,10 +94,20 @@ function WorkspaceShell({
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const readOnly = useUiStore((state) => state.readOnly);
+  const canCreateContent = useUiStore((state) => state.canCreateContent);
+  const canCreateBoards = useUiStore((state) => state.canCreateBoards);
+  const canManageBoards = useUiStore((state) => state.canManageBoards);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
+  const canManageTrash = useUiStore((state) => state.canManageTrash);
   const setFocus = usePresenceStore((state) => state.setFocus);
   const setBoard = usePresenceStore((state) => state.setBoard);
   const bindPresence = usePresenceStore((state) => state.bind);
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
+
+  // The live workspace surface — dock, library, boards and schema — belongs to
+  // the owner and to a workspace editor token. Board and card shares edit one
+  // projection and publish it, so they never see it.
+  const workspaceSurface = !share || share.scope === "workspace";
 
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
   const stagger = useRef(0);
@@ -355,12 +365,13 @@ function WorkspaceShell({
           )
         }
       >
-        {!share || share.scope === "workspace" ? (
+        {workspaceSurface ? (
           <BoardTabs
             boards={snapshot.boards}
             activeBoardId={activeBoardId}
             onSelect={setActiveBoardId}
-            readOnly={readOnly}
+            canCreateBoards={canCreateBoards}
+            canManageBoards={canManageBoards}
             onCreate={() => {
               const board = workspace.createBoard();
               setActiveBoardId(board.id);
@@ -380,8 +391,8 @@ function WorkspaceShell({
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
-        {!share &&
-        !readOnly &&
+        {workspaceSurface &&
+        canCreateContent &&
         activeBoardId &&
         workspace.listBoardCards(activeBoardId).length === 0 ? (
           <div
@@ -407,7 +418,7 @@ function WorkspaceShell({
         <CardInspectorHost />
       </main>
 
-      {share || readOnly ? null : (
+      {workspaceSurface && !readOnly ? (
         <Dock
           inboxCount={unplaced.length}
           libraryOpen={libraryOpen}
@@ -415,12 +426,13 @@ function WorkspaceShell({
           types={snapshot.types}
           onCreateCard={(typeId) => createCard(typeId)}
           onManageTypes={openTypeSettings}
+          canManageSchema={canManageSchema}
         />
-      )}
+      ) : null}
 
-      {share || readOnly ? null : <TypeSettingsHost />}
+      {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
 
-      {share || readOnly ? null : (
+      {workspaceSurface && !readOnly ? (
         <LibraryDrawer
           open={libraryOpen}
           tab={libraryTab}
@@ -455,8 +467,9 @@ function WorkspaceShell({
           groupBySection={libraryGroupBySection}
           onToggleGroup={toggleLibraryGroupBySection}
           onOpenCard={openInspector}
+          canManageTrash={canManageTrash}
         />
-      )}
+      ) : null}
 
       <PerfOverlay />
 

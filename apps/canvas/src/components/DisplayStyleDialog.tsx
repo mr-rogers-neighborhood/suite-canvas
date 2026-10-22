@@ -24,6 +24,11 @@ export interface DisplayStyleDialogProps {
    * single mention there to override.
    */
   allowScope?: boolean;
+  /**
+   * Whether the field-wide template may be written. A board or card draft only
+   * owns its own atoms: the field belongs to the workspace schema.
+   */
+  allowFieldScope?: boolean;
   /** True when this instance already differs from its field. */
   overridden?: boolean;
   onApply: (template: string | null, scope: DisplayScope) => void;
@@ -54,12 +59,13 @@ export function DisplayStyleDialog({
   sample,
   template,
   allowScope = false,
+  allowFieldScope = true,
   overridden = false,
   onApply,
   onClose,
 }: DisplayStyleDialogProps) {
   const [draft, setDraft] = useState(template || DEFAULT_DISPLAY_TEMPLATE);
-  const [scope, setScope] = useState<DisplayScope>("field");
+  const [scope, setScope] = useState<DisplayScope>(allowFieldScope ? "field" : "instance");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -162,16 +168,18 @@ export function DisplayStyleDialog({
         {allowScope ? (
           <fieldset className="mt-3 space-y-1" data-testid="display-scope">
             <legend className="text-[11px] text-[var(--ink-muted)]">Apply to</legend>
-            <label className="flex items-center gap-1.5 text-[12px]">
-              <input
-                type="radio"
-                name="display-scope"
-                checked={scope === "field"}
-                onChange={() => setScope("field")}
-                data-testid="display-scope-field"
-              />
-              Every use of this field
-            </label>
+            {allowFieldScope ? (
+              <label className="flex items-center gap-1.5 text-[12px]">
+                <input
+                  type="radio"
+                  name="display-scope"
+                  checked={scope === "field"}
+                  onChange={() => setScope("field")}
+                  data-testid="display-scope-field"
+                />
+                Every use of this field
+              </label>
+            ) : null}
             <label className="flex items-center gap-1.5 text-[12px]">
               <input
                 type="radio"

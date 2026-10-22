@@ -11,14 +11,21 @@ let directory: string;
 let registry: WorkspaceRegistry;
 let server: Server;
 let baseUrl: string;
+let rotations: [string, string][];
 
 beforeEach(async () => {
   resetRateLimits();
+  rotations = [];
   directory = mkdtempSync(join(tmpdir(), "suite-workspace-api-"));
   registry = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
 
   server = createServer((request, response) => {
-    void handleWorkspaceRequest(request, response, registry).then((handled) => {
+    const hooks = {
+      onRotated: (workspaceId: string, previousOwnerKey: string) => {
+        rotations.push([workspaceId, previousOwnerKey]);
+      },
+    };
+    void handleWorkspaceRequest(request, response, registry, hooks).then((handled) => {
       if (handled) return;
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not found");
@@ -125,6 +132,20 @@ describe("workspace claim API", () => {
 });
 
 describe("workspace rotate API", () => {
+  it("reports the previous owner key to the rotation hook", async () => {
+    await claim("ws-1", { ownerKey: "owner-key-1" });
+    const rotated = await rotate("ws-1", "owner-key-1", { newOwnerKey: "owner-key-2" });
+    expect(rotated.status).toBe(200);
+    expect(rotations).toEqual([["ws-1", "owner-key-1"]]);
+  });
+
+  it("does not report a rejected rotation", async () => {
+    await claim("ws-1", { ownerKey: "owner-key-1" });
+    const denied = await rotate("ws-1", "owner-key-9", { newOwnerKey: "owner-key-2" });
+    expect(denied.status).toBe(403);
+    expect(rotations).toEqual([]);
+  });
+
   it("rotates with the current key and accepts only the new one afterwards", async () => {
     await claim("ws-1", { ownerKey: "owner-key-1" });
 

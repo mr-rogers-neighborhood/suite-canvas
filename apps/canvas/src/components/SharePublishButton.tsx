@@ -193,6 +193,7 @@ function ConflictDialog({
   // row is the only way a draft value overwrites the workspace's.
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const blocked = conflict.unsupported.length > 0;
+  const onlyUnsupported = blocked && conflict.conflicts.length === 0;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -229,10 +230,13 @@ function ConflictDialog({
         data-testid="publish-conflict"
         className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
-        <h2 className="text-sm font-semibold">Resolve publish conflicts</h2>
+        <h2 className="text-sm font-semibold">
+          {onlyUnsupported ? "Can't publish yet" : "Resolve publish conflicts"}
+        </h2>
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--ink-muted)]">
-          The workspace changed since this draft started. Check a field to keep your version;
-          unchecked fields keep the workspace version.
+          {onlyUnsupported
+            ? "Some new items depend on workspace data that changed. Nothing has been published; your draft is still here."
+            : "The workspace changed since this draft started. Check a field to keep your version; unchecked fields keep the workspace version."}
         </p>
         {conflict.reason ? (
           <p className="mt-2 text-[11px] text-[var(--ink-muted)]">{conflict.reason}</p>
@@ -254,7 +258,9 @@ function ConflictDialog({
                     className="mt-0.5"
                   />
                   <span>
-                    <span className="font-medium text-[var(--ink)]">{entry.key}</span>
+                    <span className="font-medium text-[var(--ink)]">
+                      {entry.label ?? entry.key}
+                    </span>
                     <span className="ml-1 text-[var(--ink-muted)]">{entry.message}</span>
                     <span className="block text-[10px] text-[var(--ink-muted)]">
                       Keep my version
@@ -273,13 +279,15 @@ function ConflictDialog({
             <ul className="space-y-1">
               {conflict.unsupported.map((entry) => (
                 <li key={`${entry.key}:${entry.kind ?? ""}`} className="text-[11px] leading-5">
-                  <span className="font-medium text-[var(--ink)]">{entry.key}</span>
+                  <span className="font-medium text-[var(--ink)]">{entry.label ?? entry.key}</span>
                   <span className="ml-1 text-[var(--ink-muted)]">{entry.message}</span>
                 </li>
               ))}
             </ul>
             <p className="mt-1 text-[10px] text-[var(--ink-muted)]">
-              These changes cannot be published, so publishing stays blocked.
+              {onlyUnsupported
+                ? "Keep editing, or reload from the workspace to discard the draft."
+                : "These changes cannot be published, so publishing stays blocked."}
             </p>
           </div>
         ) : null}
@@ -290,7 +298,7 @@ function ConflictDialog({
             className="rounded-md px-3 py-1.5 text-xs text-[var(--ink-muted)] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
             onClick={onClose}
           >
-            Close
+            {onlyUnsupported ? "Keep editing" : "Close"}
           </button>
           <button
             type="button"
@@ -302,20 +310,22 @@ function ConflictDialog({
           >
             {reloading ? "Reloading\u2026" : "Reload from workspace"}
           </button>
-          <button
-            type="button"
-            data-testid="publish-selected"
-            disabled={publishing || blocked}
-            className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-xs text-[var(--surface)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => onPublishSelected([...selected])}
-            title={
-              blocked
-                ? "Resolve the changes that cannot be published first."
-                : "Publish the checked fields and keep the workspace for the rest."
-            }
-          >
-            {publishing ? "Publishing\u2026" : "Publish selected"}
-          </button>
+          {onlyUnsupported ? null : (
+            <button
+              type="button"
+              data-testid="publish-selected"
+              disabled={publishing || blocked}
+              className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-xs text-[var(--surface)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => onPublishSelected([...selected])}
+              title={
+                blocked
+                  ? "Resolve the changes that cannot be published first."
+                  : "Publish the checked fields and keep the workspace for the rest."
+              }
+            >
+              {publishing ? "Publishing\u2026" : "Publish selected"}
+            </button>
+          )}
         </div>
       </div>
     </div>,

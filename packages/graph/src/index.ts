@@ -87,6 +87,7 @@ export {
   MAX_PUBLISH_COORDINATE,
   placementIssue,
   RICH_TEXT_MARK_NAMES,
+  RICH_TEXT_NODE_ATTRIBUTE_NAMES,
   RICH_TEXT_NODE_NAMES,
   resolvePublishLimits,
   richTextBytes,

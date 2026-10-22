@@ -85,6 +85,35 @@ describe("SharePublishButton", () => {
     await waitFor(() => expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument());
   });
 
+  it("shows a named all-or-nothing rejection for blocked creations", async () => {
+    const client = fakeClient({
+      publishShare: vi.fn(async () => {
+        throw new SharePublishConflictError({
+          conflicts: [],
+          unsupported: [
+            {
+              key: "card:new:create",
+              kind: "unsupported",
+              label: 'Card "Launch plan"',
+              message: "references a card that was moved to Trash.",
+            },
+          ],
+          reason: null,
+        });
+      }),
+    });
+
+    render(<SharePublishButton client={client} />);
+    fireEvent.click(screen.getByTestId("share-publish"));
+
+    const dialog = await screen.findByTestId("publish-conflict");
+    expect(dialog).toHaveTextContent("Can't publish yet");
+    expect(dialog).toHaveTextContent('Card "Launch plan"');
+    expect(dialog).toHaveTextContent("moved to Trash");
+    expect(dialog).toHaveTextContent("Keep editing");
+    expect(screen.queryByTestId("publish-selected")).not.toBeInTheDocument();
+  });
+
   it("keeps the draft when reload is cancelled and closes on Close", async () => {
     const client = fakeClient({
       publishShare: vi.fn(async () => {

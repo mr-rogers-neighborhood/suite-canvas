@@ -199,8 +199,12 @@ export function CanvasBoard() {
   const contextMenu = useUiStore((state) => state.contextMenu);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
-  const canCreate = useUiStore((state) => state.canCreate);
-  const canManage = useUiStore((state) => state.canManage);
+  const canCreateContent = useUiStore((state) => state.canCreateContent);
+  const canManageTrash = useUiStore((state) => state.canManageTrash);
+  // Sections and connectors are workspace structure, not draft objects, so
+  // removing one follows the trash row of the matrix: owner and workspace
+  // editor tokens only, never a board or card draft.
+  const canManageStructure = canManageTrash;
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
@@ -767,13 +771,13 @@ export function CanvasBoard() {
 
   const trashSelected = useCallback(() => {
     const state = useUiStore.getState();
-    if (!canManage) return;
+    if (!canManageTrash) return;
     for (const id of state.selectedNodeIds) {
       workspace.trashCard(id);
     }
     state.setSelectedNodeIds([]);
     state.stopEditing();
-  }, [workspace, canManage]);
+  }, [workspace, canManageTrash]);
 
   // Selection elevates a card in React Flow, which would hide the new order, so
   // drop the selection once an explicit layer change lands.
@@ -906,7 +910,7 @@ export function CanvasBoard() {
 
   const createSectionAt = useCallback(
     (position: { x: number; y: number }, wrapSelection = false) => {
-      if (!canCreate || !activeBoardId) return;
+      if (!canCreateContent || !activeBoardId) return;
       const selected = useUiStore.getState().selectedNodeIds;
       let rect: Rect = { x: position.x, y: position.y, width: 360, height: 260 };
 
@@ -936,7 +940,7 @@ export function CanvasBoard() {
       selectSection(section.id);
       setEditingSection(section.id);
     },
-    [activeBoardId, store, workspace, selectSection, setEditingSection, canCreate],
+    [activeBoardId, store, workspace, selectSection, setEditingSection, canCreateContent],
   );
 
   /**
@@ -1021,7 +1025,7 @@ export function CanvasBoard() {
           return;
         }
 
-        if (key === "g" && canCreate) {
+        if (key === "g" && canCreateContent) {
           event.preventDefault();
           const centre = screenToFlowPosition({
             x: window.innerWidth / 2,
@@ -1046,19 +1050,19 @@ export function CanvasBoard() {
       if (event.key === "Delete" || event.key === "Backspace") {
         if (isTyping) return;
         if (state.selectedSectionId) {
-          // Sections are owner structure: an editor may change them, not delete them.
-          if (!canManage) return;
+          // Sections are workspace structure: an editor may change them, not delete them.
+          if (!canManageStructure) return;
           event.preventDefault();
           workspace.deleteSection(state.selectedSectionId);
           state.selectSection(null);
           return;
         }
         if (state.selectedNodeIds.length === 0) return;
-        if (!canManage && !canEditLayout) return;
+        if (!canManageTrash && !canEditLayout) return;
         event.preventDefault();
         // Shift is the explicit trash gesture and stays owner-only. A share
         // editor's Delete unplaces, which is the only destructive act it owns.
-        if (event.shiftKey && canManage) trashSelected();
+        if (event.shiftKey && canManageTrash) trashSelected();
         else if (canEditLayout) unplaceSelected();
         return;
       }
@@ -1081,15 +1085,16 @@ export function CanvasBoard() {
     createSectionAt,
     screenToFlowPosition,
     store,
-    canCreate,
+    canCreateContent,
     canEditContent,
     canEditLayout,
-    canManage,
+    canManageTrash,
+    canManageStructure,
   ]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (!canCreate) return;
+      if (!canCreateContent) return;
       if (!connection.source || !connection.target) return;
       if (!activeBoardId) return;
       workspace.addEdge({
@@ -1100,7 +1105,7 @@ export function CanvasBoard() {
         ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
       });
     },
-    [workspace, activeBoardId, canCreate],
+    [workspace, activeBoardId, canCreateContent],
   );
 
   // React Flow reports nothing while a reconnect drag moves, so follow the
@@ -1197,7 +1202,7 @@ export function CanvasBoard() {
 
   const onConnectStart = useCallback<OnConnectStart>(
     (event, params) => {
-      if (!canCreate) return;
+      if (!canCreateContent) return;
       // Edge updaters report their anchored handle here as well; that gesture
       // publishes `reconnect` and has its own preview.
       if (reconnectGesture.current) return;
@@ -1220,7 +1225,7 @@ export function CanvasBoard() {
         position: screenToFlowPosition(point),
       });
     },
-    [screenToFlowPosition, setConnect, setReconnect, canCreate],
+    [screenToFlowPosition, setConnect, setReconnect, canCreateContent],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(() => {
@@ -1276,12 +1281,12 @@ export function CanvasBoard() {
 
   const createNoteAt = useCallback(
     (position: { x: number; y: number }) => {
-      if (!canCreate || !activeBoardId) return;
+      if (!canCreateContent || !activeBoardId) return;
       const card = workspace.createCard({ boardId: activeBoardId, position });
       setSelectedNodeIds([card.id]);
       startEditing(card.id, "title");
     },
-    [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreate],
+    [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
   );
 
   const commitEdgeDescription = useCallback(
@@ -1301,7 +1306,7 @@ export function CanvasBoard() {
     // an action its publish would reject. A viewer gets no menu at all.
     if (!contextMenu) return [];
     if (contextMenu.kind === "canvas") {
-      if (!canCreate) return [];
+      if (!canCreateContent) return [];
       const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
       return [
         {
@@ -1353,7 +1358,7 @@ export function CanvasBoard() {
             selectSection(null);
           },
         },
-        ...(canManage
+        ...(canManageStructure
           ? [
               {
                 label: "Delete section",
@@ -1426,7 +1431,7 @@ export function CanvasBoard() {
     }
 
     if (contextMenu.kind === "connector") {
-      if (!canManage) return [];
+      if (!canManageStructure) return [];
       return [
         {
           label: "Reposition Connector",
@@ -1455,7 +1460,7 @@ export function CanvasBoard() {
     if (nodeId && selection.multiple && selection.ids.includes(nodeId)) {
       const anchor = contextMenu.flowPosition ?? { x: 0, y: 0 };
       return [
-        ...(canCreate
+        ...(canCreateContent
           ? [
               {
                 label: `New section from ${selection.noun}`,
@@ -1492,7 +1497,7 @@ export function CanvasBoard() {
               },
             ]
           : []),
-        ...(canManage
+        ...(canManageTrash
           ? [
               {
                 label: "Delete cards",
@@ -1505,7 +1510,7 @@ export function CanvasBoard() {
     }
 
     return [
-      ...(canManage
+      ...(canManageStructure
         ? [
             {
               label: "Add connector",
@@ -1550,7 +1555,7 @@ export function CanvasBoard() {
             },
           ]
         : []),
-      ...(canManage
+      ...(canManageTrash
         ? [
             {
               label: "Delete card",
@@ -1584,9 +1589,10 @@ export function CanvasBoard() {
     setSelectedNodeIds,
     setSelectedConnector,
     startEdgeDescription,
-    canCreate,
+    canCreateContent,
     canEditLayout,
-    canManage,
+    canManageTrash,
+    canManageStructure,
   ]);
 
   return (
@@ -1618,7 +1624,7 @@ export function CanvasBoard() {
         // Layout writes follow the session capabilities: an editor share may
         // move and reconnect what exists, but never draw a new link.
         nodesDraggable={canEditLayout}
-        nodesConnectable={canCreate}
+        nodesConnectable={canCreateContent}
         edgesReconnectable={canEditLayout}
         // Shift, Ctrl and Cmd all toggle membership; Shift also starts the
         // marquee (React Flow's `selectionKeyCode` default). `Partial` selects a
@@ -1689,7 +1695,7 @@ export function CanvasBoard() {
           handleSelectSection(null);
         }}
         onNodeContextMenu={(event, node) => {
-          if (!canEditContent && !canEditLayout && !canManage) return;
+          if (!canEditContent && !canEditLayout && !canManageTrash && !canManageStructure) return;
           // Rich text keeps the browser's own menu (copy, paste, spelling).
           // Chips inside the editor stop propagation before this handler.
           if (isEditorTarget(event)) return;
@@ -1705,7 +1711,7 @@ export function CanvasBoard() {
           });
         }}
         onPaneContextMenu={(event) => {
-          if (!canCreate) return;
+          if (!canCreateContent) return;
           event.preventDefault();
           const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", flowPosition });
@@ -1713,7 +1719,12 @@ export function CanvasBoard() {
         // A marquee leaves React Flow's selection overlay over the cards, so a
         // right-click there reaches this handler rather than the card's.
         onSelectionContextMenu={(event, selected) => {
-          if ((!canEditContent && !canEditLayout && !canManage) || isEditorTarget(event)) return;
+          if (
+            (!canEditContent && !canEditLayout && !canManageTrash && !canManageStructure) ||
+            isEditorTarget(event)
+          ) {
+            return;
+          }
           event.preventDefault();
           const anchor = selected[0];
           if (!anchor) return;

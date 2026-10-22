@@ -206,6 +206,8 @@ export interface SharePublishConflictEntry {
   message: string;
   /** Change kind (`body`, `placement`, `unsupported`, …) when the server sends one. */
   kind: string | null;
+  /** Human object name from the server, when it can name one. */
+  label?: string | null;
 }
 
 /** Body of a `409` publish response. */
@@ -255,7 +257,7 @@ function bearerHeaders(token: string): Record<string, string> {
 function conflictEntry(value: unknown): SharePublishConflictEntry | null {
   if (typeof value === "string") {
     const message = value.trim();
-    return message.length > 0 ? { key: message, message, kind: null } : null;
+    return message.length > 0 ? { key: message, message, kind: null, label: null } : null;
   }
   if (!isRecord(value)) return null;
   const key = typeof value.key === "string" ? value.key : null;
@@ -265,6 +267,7 @@ function conflictEntry(value: unknown): SharePublishConflictEntry | null {
     key: key ?? message ?? "change",
     message: message ?? key ?? "This change could not be published.",
     kind: typeof value.kind === "string" ? value.kind : null,
+    label: typeof value.label === "string" && value.label.trim() ? value.label.trim() : null,
   };
 }
 

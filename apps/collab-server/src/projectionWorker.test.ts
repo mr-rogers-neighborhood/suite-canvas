@@ -762,10 +762,8 @@ describe("editor shares", () => {
     const { state, share, owner, editor } = await editorHarness();
     try {
       editor.workspace().placeCard(BOARD_ID, "a", { x: 500, y: 600 });
-      editor.workspace().createCard({
-        boardId: BOARD_ID,
-        position: { x: 20, y: 20 },
-      });
+      // An unplaced new card is still outside what a board editor may publish.
+      editor.workspace().createCard();
       editor.doc.commit({ origin: "editor:edit" });
 
       owner.workspace().placeCard(BOARD_ID, "a", { x: 700, y: 800 });

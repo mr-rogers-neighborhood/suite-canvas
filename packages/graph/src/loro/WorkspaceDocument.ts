@@ -75,6 +75,8 @@ export interface CreateCardInput {
   /** Place the card on this board straight away; omit to create it in the inbox. */
   boardId?: string;
   position?: { x: number; y: number };
+  /** Preserve an existing connector layout; defaults to a fresh card layout. */
+  connectors?: Connector[];
 }
 
 export interface CreateTypeInput {
@@ -1483,7 +1485,7 @@ export class WorkspaceDocument {
       id: input.id ?? crypto.randomUUID(),
       createdAt: now,
       updatedAt: now,
-      connectors: defaultConnectors(),
+      connectors: input.connectors ?? defaultConnectors(),
       deletedAt: null,
       typeIds: [typeId],
       primaryTypeId: typeId,

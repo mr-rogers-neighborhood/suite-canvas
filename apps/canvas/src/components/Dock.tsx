@@ -8,6 +8,8 @@ export interface DockProps {
   onToggleLibrary: () => void;
   onCreateCard: (typeId: string) => void;
   onManageTypes: () => void;
+  /** Types, fields and tags; hidden when the session cannot change the schema. */
+  canManageSchema?: boolean;
 }
 
 /**
@@ -22,6 +24,7 @@ export function Dock({
   onToggleLibrary,
   onCreateCard,
   onManageTypes,
+  canManageSchema = true,
 }: DockProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -106,22 +109,26 @@ export function Dock({
                 <span className="min-w-0 flex-1 truncate">{type.name}</span>
               </button>
             ))}
-            <div className="my-1 h-px bg-[var(--hairline)]" />
-            <button
-              type="button"
-              role="menuitem"
-              data-testid="dock-manage-types"
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={() => {
-                setMenuOpen(false);
-                onManageTypes();
-              }}
-            >
-              <span aria-hidden="true" className="w-4 text-center">
-                {"\u2699"}
-              </span>
-              <span>Manage types</span>
-            </button>
+            {canManageSchema ? (
+              <>
+                <div className="my-1 h-px bg-[var(--hairline)]" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="dock-manage-types"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onManageTypes();
+                  }}
+                >
+                  <span aria-hidden="true" className="w-4 text-center">
+                    {"\u2699"}
+                  </span>
+                  <span>Manage types</span>
+                </button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>

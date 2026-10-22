@@ -76,7 +76,14 @@ export function utf8ByteLength(text: string): number {
 
 // ------------------------------------------------------------- rich text
 
-/** Node names the editor schema produces; anything else is not publishable. */
+/**
+ * Node names the editor schema produces; anything else is not publishable.
+ *
+ * This list and the one below are checked against the real Tiptap schema by
+ * `apps/canvas/src/editor/editorSchemaContract.test.ts`. Adding a node, mark or
+ * node attribute to the editor requires updating them here as well, or the
+ * contract test fails.
+ */
 export const RICH_TEXT_NODE_NAMES = [
   "doc",
   "paragraph",
@@ -94,28 +101,41 @@ export const RICH_TEXT_NODE_NAMES = [
 ] as const;
 
 /** Marks the editor schema produces. */
-export const RICH_TEXT_MARK_NAMES = ["bold", "italic", "strike", "code", "link"] as const;
+export const RICH_TEXT_MARK_NAMES = [
+  "bold",
+  "italic",
+  "strike",
+  "code",
+  "link",
+  "underline",
+] as const;
+
+/** Attributes each node may carry; the editor itself writes no others. */
+export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
+  doc: [],
+  paragraph: [],
+  heading: ["level"],
+  bulletList: [],
+  orderedList: ["start", "type"],
+  listItem: [],
+  blockquote: [],
+  codeBlock: ["language"],
+  horizontalRule: [],
+  hardBreak: [],
+  text: [],
+  mention: ["cardId", "display", "fieldId"],
+  propertyBlock: ["fieldId", "display"],
+} as const satisfies Record<string, readonly string[]>;
 
 const ALLOWED_NODES = new Set<string>(RICH_TEXT_NODE_NAMES);
 const ALLOWED_MARKS = new Set<string>(RICH_TEXT_MARK_NAMES);
 const NODE_FIELDS = new Set(["nodeName", "attributes", "children"]);
-
-/** Attributes each node may carry; the editor itself writes no others. */
-const NODE_ATTRIBUTES: Record<string, ReadonlySet<string>> = {
-  doc: new Set(),
-  paragraph: new Set(),
-  heading: new Set(["level"]),
-  bulletList: new Set(),
-  orderedList: new Set(["start", "type"]),
-  listItem: new Set(),
-  blockquote: new Set(),
-  codeBlock: new Set(["language"]),
-  horizontalRule: new Set(),
-  hardBreak: new Set(),
-  text: new Set(),
-  mention: new Set(["cardId", "display"]),
-  propertyBlock: new Set(["fieldId", "display"]),
-};
+const NODE_ATTRIBUTES: Record<string, ReadonlySet<string>> = Object.fromEntries(
+  Object.entries(RICH_TEXT_NODE_ATTRIBUTE_NAMES).map(([nodeName, attributes]) => [
+    nodeName,
+    new Set(attributes),
+  ]),
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -13,8 +13,11 @@ import { validateClaimInput, validateRotateInput, type WorkspaceRegistry } from 
 export const WORKSPACE_API_PATH = "/api/workspaces";
 
 export interface WorkspaceRequestHooks {
-  /** Called after a successful rotation so live owner sessions can be closed. */
-  onRotated?: (workspaceId: string) => void;
+  /**
+   * Called after a successful rotation so live sessions holding the previous
+   * owner key can be closed. The key is the request's current (now stale) key.
+   */
+  onRotated?: (workspaceId: string, previousOwnerKey: string) => void;
 }
 
 const CONFLICT_MESSAGE = "This workspace is protected by a different owner key.";
@@ -107,7 +110,7 @@ async function rotate(
   }
   sendJson(response, 200, { workspaceId: workspaceId.trim(), rotated: true });
   try {
-    hooks?.onRotated?.(workspaceId.trim());
+    hooks?.onRotated?.(workspaceId.trim(), currentOwnerKey);
   } catch (error) {
     console.error("[workspaces] rotation hook failed", error);
   }

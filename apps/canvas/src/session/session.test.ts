@@ -3,6 +3,8 @@ import {
   configureSession,
   getSession,
   resolveShareToken,
+  type SessionCapabilities,
+  type SessionConfig,
   sessionCapabilities,
   sessionForShare,
 } from "./session";
@@ -121,71 +123,125 @@ describe("session config", () => {
 });
 
 describe("session capabilities", () => {
-  const owner = {
+  const owner: SessionConfig = {
     workspaceId: "ws",
     roomId: "ws",
     share: null,
-    role: "editor" as const,
+    role: "editor",
     readOnly: false,
     ownerKey: "owner-key",
   };
 
-  it("grants the owner everything", () => {
-    expect(sessionCapabilities(owner)).toEqual({
-      canEditContent: true,
-      canEditLayout: true,
-      canPublish: true,
-      canCreate: true,
-      canManage: true,
-    });
-  });
+  const NONE = {
+    canEditContent: false,
+    canEditLayout: false,
+    canPublish: false,
+    canCreateContent: false,
+    canCreateBoards: false,
+    canManageBoards: false,
+    canManageSchema: false,
+    canManageTrash: false,
+    canManageLinks: false,
+  } as const;
 
-  it("grants every viewer nothing, whatever the scope", () => {
-    for (const scope of ["workspace", "board", "card"] as const) {
-      const config = sessionForShare("tok", share({ scope, role: "viewer" }));
-      expect(sessionCapabilities(config)).toEqual({
-        canEditContent: false,
-        canEditLayout: false,
+  function session(scope: Share["scope"], role: Share["role"]): SessionConfig {
+    return sessionForShare("tok", share({ scope, role }));
+  }
+
+  const cases: Array<{
+    name: string;
+    config: () => SessionConfig;
+    readOnly: boolean;
+    capabilities: SessionCapabilities;
+  }> = [
+    {
+      name: "the owner",
+      config: () => owner,
+      readOnly: false,
+      capabilities: {
+        canEditContent: true,
+        canEditLayout: true,
+        // An owner edits the live workspace; only a draft share publishes.
         canPublish: false,
-        canCreate: false,
-        canManage: false,
-      });
-      expect(config.readOnly).toBe(true);
-    }
-  });
+        canCreateContent: true,
+        canCreateBoards: true,
+        canManageBoards: true,
+        canManageSchema: true,
+        canManageTrash: true,
+        canManageLinks: true,
+      },
+    },
+    {
+      name: "a workspace editor token",
+      config: () => session("workspace", "editor"),
+      readOnly: false,
+      capabilities: {
+        canEditContent: true,
+        canEditLayout: true,
+        canPublish: false,
+        canCreateContent: true,
+        canCreateBoards: true,
+        canManageBoards: true,
+        canManageSchema: true,
+        canManageTrash: true,
+        canManageLinks: false,
+      },
+    },
+    {
+      name: "a board editor",
+      config: () => session("board", "editor"),
+      readOnly: false,
+      capabilities: {
+        canEditContent: true,
+        canEditLayout: true,
+        canPublish: true,
+        canCreateContent: true,
+        canCreateBoards: false,
+        canManageBoards: false,
+        canManageSchema: false,
+        canManageTrash: false,
+        canManageLinks: false,
+      },
+    },
+    {
+      name: "a card editor",
+      config: () => session("card", "editor"),
+      readOnly: false,
+      capabilities: {
+        canEditContent: true,
+        canEditLayout: false,
+        canPublish: true,
+        canCreateContent: false,
+        canCreateBoards: false,
+        canManageBoards: false,
+        canManageSchema: false,
+        canManageTrash: false,
+        canManageLinks: false,
+      },
+    },
+    {
+      name: "a workspace viewer",
+      config: () => session("workspace", "viewer"),
+      readOnly: true,
+      capabilities: NONE,
+    },
+    {
+      name: "a board viewer",
+      config: () => session("board", "viewer"),
+      readOnly: true,
+      capabilities: NONE,
+    },
+    {
+      name: "a card viewer",
+      config: () => session("card", "viewer"),
+      readOnly: true,
+      capabilities: NONE,
+    },
+  ];
 
-  it("lets a board editor change content and layout, not create or manage", () => {
-    const config = sessionForShare("tok", share({ scope: "board", role: "editor" }));
-    expect(config.readOnly).toBe(false);
-    expect(sessionCapabilities(config)).toEqual({
-      canEditContent: true,
-      canEditLayout: true,
-      canPublish: true,
-      canCreate: false,
-      canManage: false,
-    });
-  });
-
-  it("lets a card editor change content only", () => {
-    const config = sessionForShare("tok", share({ scope: "card", role: "editor" }));
-    expect(config.readOnly).toBe(false);
-    expect(sessionCapabilities(config)).toEqual({
-      canEditContent: true,
-      canEditLayout: false,
-      canPublish: true,
-      canCreate: false,
-      canManage: false,
-    });
-  });
-
-  it("gives a workspace editor token edit rights but not ownership", () => {
-    const config = sessionForShare("tok", share({ scope: "workspace", role: "editor" }));
-    expect(sessionCapabilities(config)).toEqual({
-      canEditContent: true,
-      canEditLayout: true,
-      canPublish: false,
-      canCreate: true,
-      canManage: false,
-    });
+  it.each(cases)("grants $name exactly its matrix row", ({ config, readOnly, capabilities }) => {
+    const resolved = config();
+    expect(resolved.readOnly).toBe(readOnly);
+    expect(sessionCapabilities(resolved)).toEqual(capabilities);
   });
 });

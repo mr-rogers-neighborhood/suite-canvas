@@ -8,8 +8,10 @@ export interface BoardTabsProps {
   onCreate: () => void;
   onRename: (boardId: string, name: string) => void;
   onDeleteRequest: (boardId: string) => void;
-  /** Viewers may switch boards but not create, rename or delete them. */
-  readOnly?: boolean;
+  /** Viewers and board/card shares may switch boards but not add one. */
+  canCreateBoards?: boolean;
+  /** Renaming and deleting a board belongs to the workspace surface, not a draft. */
+  canManageBoards?: boolean;
 }
 
 /** Board switcher in the app bar: one tab per board, plus create and delete. */
@@ -20,7 +22,8 @@ export function BoardTabs({
   onCreate,
   onRename,
   onDeleteRequest,
-  readOnly = false,
+  canCreateBoards = true,
+  canManageBoards = true,
 }: BoardTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -57,7 +60,7 @@ export function BoardTabs({
                 aria-selected={active}
                 data-testid={`board-tab-${board.id}`}
                 data-active={active ? "true" : undefined}
-                title={readOnly ? board.name : "Double-click to rename"}
+                title={canManageBoards ? "Double-click to rename" : board.name}
                 className={`max-w-[140px] truncate rounded px-2 py-1 text-[12px] transition-colors ${
                   active
                     ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
@@ -65,7 +68,7 @@ export function BoardTabs({
                 }`}
                 onClick={() => onSelect(board.id)}
                 onDoubleClick={() => {
-                  if (readOnly) return;
+                  if (!canManageBoards) return;
                   setRenamingId(board.id);
                   setDraft(board.name);
                 }}
@@ -73,7 +76,7 @@ export function BoardTabs({
                 {board.name}
               </button>
             )}
-            {active && !readOnly ? (
+            {active && canManageBoards ? (
               <button
                 type="button"
                 aria-label={`Delete ${board.name}`}
@@ -87,7 +90,7 @@ export function BoardTabs({
         );
       })}
 
-      {readOnly ? null : (
+      {canCreateBoards ? (
         <button
           type="button"
           aria-label="New board"
@@ -97,7 +100,7 @@ export function BoardTabs({
         >
           +
         </button>
-      )}
+      ) : null}
     </div>
   );
 }

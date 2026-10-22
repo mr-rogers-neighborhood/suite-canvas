@@ -9,7 +9,8 @@ export interface TagPickerProps {
   /** Creates the tag when the typed name is new, then adds it. */
   onCreate: (name: string) => void;
   /** Only the owner may create tags; an editor share assigns existing ones. */
-  canCreate?: boolean;
+  /** Inline tag creation belongs to the schema capability. */
+  allowCreate?: boolean;
 }
 
 export function TagPicker({
@@ -18,7 +19,7 @@ export function TagPicker({
   onAdd,
   onRemove,
   onCreate,
-  canCreate = true,
+  allowCreate = true,
 }: TagPickerProps) {
   const [draft, setDraft] = useState("");
   const selected = useMemo(
@@ -42,7 +43,7 @@ export function TagPicker({
       (tag) => tag.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
     );
     if (existing) onAdd(existing.id);
-    else if (canCreate) onCreate(trimmed);
+    else if (allowCreate) onCreate(trimmed);
     setDraft("");
   };
 

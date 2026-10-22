@@ -50,7 +50,8 @@ export interface CardInspectorProps {
   readOnly?: boolean;
   canEditContent?: boolean;
   canEditLayout?: boolean;
-  canManage?: boolean;
+  /** Types, fields, tags and card type reassignment. */
+  canManageSchema?: boolean;
   restrictLinks?: boolean;
 }
 
@@ -96,7 +97,7 @@ export function CardInspector({
   readOnly = false,
   canEditContent,
   canEditLayout,
-  canManage,
+  canManageSchema,
   restrictLinks,
 }: CardInspectorProps) {
   const editContent = canEditContent ?? !readOnly;
@@ -182,7 +183,7 @@ export function CardInspector({
           readOnly={readOnly}
           canEditContent={editContent}
           canEditLayout={canEditLayout ?? !readOnly}
-          canManage={canManage ?? !readOnly}
+          canManageSchema={canManageSchema ?? !readOnly}
           restrictLinks={restrictLinks ?? readOnly}
         />
       </div>

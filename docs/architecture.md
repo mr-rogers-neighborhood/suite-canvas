@@ -197,6 +197,15 @@ viewer or a board/card projection — read-only for a viewer, and a publishable 
 The capability boundaries, what the relay can read, and the operator reset/delete commands are
 summarized in [security-model.md](./security-model.md).
 
+A board or card editor starts from a projection of its share scope and publishes the diff back.
+A board draft can also create content: cards, sections and edges on its shared board. A card draft
+still edits only its one card. Creation stays within content — boards, card types, tags, trash and
+links are not creatable from a draft. The publish preserves the
+client UUID, rejects an id that already exists in the workspace, and requires a new card to be
+placed on the shared board only. Publishing is all-or-nothing: an invalid or conflicting creation
+keeps the draft and lists every rejected object in the “Can’t publish yet” dialog. Editing a
+published object still resolves conflicts field by field.
+
 ### Owner key
 
 A workspace has a 32-byte base64url owner key, generated in the browser, kept in local storage and
@@ -612,6 +621,18 @@ permission, in this order:
 Share management (`GET/POST/DELETE /api/shares`) requires `Authorization: Bearer <ownerKey>` and
 verifies it against the workspace registry; resolving a token stays public. The client sends the
 same credential to the document, presence and cursor joins.
+
+### Live revocation
+
+Revoking a link closes the sessions that already hold it. `loro-websocket@0.6.2` keeps its socket
+and room maps private, so `patches/loro-websocket@0.6.2.patch` records the auth credential used for
+each joined room and adds `disconnectRoomWhere(roomId, predicate)` and `disconnectAuth(auth)`, both
+covering the room's derived `:presence` / `:cursors` keys. The patch leaves client behavior alone;
+an upstream API of the same shape can replace it. `apps/collab-server/src/roomSockets.ts` wraps it:
+revoking a board or card link closes every session in `share-<token>` except the projection worker,
+revoking a workspace link closes only share credentials that no longer resolve (the owner key, the
+source worker and other active links stay), and rotating the owner key closes the sessions that
+hold the previous key.
 
 ### Opening a share link
 

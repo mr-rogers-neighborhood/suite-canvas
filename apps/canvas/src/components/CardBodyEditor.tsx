@@ -1,4 +1,3 @@
-import { Placeholder } from "@tiptap/extensions";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -13,10 +12,9 @@ import {
 } from "loro-prosemirror";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
+import { cardBodySchemaExtensions } from "../editor/cardEditorExtensions";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Mention } from "../editor/Mention";
-import { PropertyBlock } from "../editor/PropertyBlock";
-import { SlashCommands } from "../editor/SlashCommands";
 
 interface ToolbarState {
   bold: boolean;
@@ -163,27 +161,12 @@ export function CardBodyEditor({
     {
       editable,
       extensions: [
-        // Collaboration ships its own undo history, so StarterKit's is disabled.
-        StarterKit.configure({ undoRedo: false }),
-        // Both editors share the extension's one `@` suggestion config; the
-        // owner id is what adds this card's fields to the picker.
-        Mention.configure({ cardId }),
-        SlashCommands,
-        PropertyBlock.configure({
+        ...cardBodySchemaExtensions({
           cardId,
+          placeholder: readOnly ? null : placeholderText,
           openPanel: (id: string) => openPanelRef.current?.(id),
         }),
-        // An empty body still reads as a place to write, unless the reader has
-        // no way to write there. The decoration is render-only: it never
-        // touches the CRDT and leaves carets alone.
-        ...(placeholderText && !readOnly
-          ? [
-              Placeholder.configure({
-                placeholder: placeholderText,
-                showOnlyWhenEditable: false,
-              }),
-            ]
-          : []),
+        // Not part of the schema: plugins, cursors and its own undo stack.
         LoroCollaboration.configure({
           doc: cardDoc,
           containerId: contentId,

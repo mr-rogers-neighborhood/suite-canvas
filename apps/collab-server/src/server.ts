@@ -9,7 +9,11 @@ import {
   loroDocumentKeys,
   ProjectionWorker,
 } from "./projectionWorker.js";
-import { disconnectRooms } from "./roomSockets.js";
+import {
+  disconnectAuthSessions,
+  disconnectProjectionViewers,
+  disconnectWorkspaceShares,
+} from "./roomSockets.js";
 import { createShareStore, SHARE_ROOM_PREFIX, type Share } from "./shares.js";
 import { handleWorkspaceRequest } from "./workspaceHttp.js";
 import { createWorkspaceRegistry } from "./workspaces.js";
@@ -75,13 +79,14 @@ await worker.start();
 
 function removeShare(share: Share): void {
   if (share.roomId !== null && share.scope !== "workspace") {
-    disconnectRooms(server, [share.roomId]);
+    // The worker joins projection rooms with the projection token; every other
+    // session in the room is the revoked link itself.
+    disconnectProjectionViewers(server, share.roomId, projectionToken);
     for (const key of loroDocumentKeys(share.roomId)) store.delete(key);
   } else {
-    // A workspace share lives in the owner's room. There is no per-credential
-    // socket registry, so reconnect the room: the owner reconnects, the
-    // revoked token does not.
-    disconnectRooms(server, [share.workspaceId]);
+    // A workspace share lives in the owner's room: close the share credential
+    // that was just revoked and leave the owner and the publish worker alone.
+    disconnectWorkspaceShares(server, share.workspaceId, { sourceToken, workspaces, shares });
   }
   void worker.schedule(share.workspaceId, { immediate: true });
 }
@@ -107,8 +112,10 @@ const health = createServer((request, response) => {
     .then((handled) => {
       if (handled || response.writableEnded) return;
       return handleWorkspaceRequest(request, response, workspaces, {
-        onRotated: (workspaceId) => {
-          disconnectRooms(server, [workspaceId]);
+        onRotated: (_workspaceId, previousOwnerKey) => {
+          // Rotation already replaced the hash, so the old key authenticates
+          // nothing; drop the sessions that still hold it.
+          disconnectAuthSessions(server, previousOwnerKey);
         },
       });
     })

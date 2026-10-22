@@ -50,6 +50,13 @@ export interface ShareStore {
   create: (input: CreateShareInput) => CreatedShare;
   /** Active share for a raw token, or null when unknown or revoked. */
   resolve: (token: string) => Share | null;
+  /**
+   * True when the raw token belongs to a stored share, revoked or not. Revoking
+   * a workspace link has no plaintext token to compare against, so the live-kick
+   * path pairs this with `resolve` to close sessions whose share credential no
+   * longer authenticates.
+   */
+  isShareToken: (token: string) => boolean;
   /** Share by id, including revoked ones. */
   get: (id: string) => Share | null;
   /** Active shares of a workspace, newest first. */
@@ -221,6 +228,7 @@ export function createShareStore(path: string): ShareStore {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
   );
   const selectByHash = db.prepare("SELECT * FROM shares WHERE token_hash = ?");
+  const countByHash = db.prepare("SELECT 1 AS found FROM shares WHERE token_hash = ?");
   const selectById = db.prepare("SELECT * FROM shares WHERE id = ?");
   const selectActive = db.prepare(
     "SELECT * FROM shares WHERE workspace_id = ? AND revoked_at IS NULL ORDER BY created_at DESC, rowid DESC",
@@ -294,6 +302,9 @@ export function createShareStore(path: string): ShareStore {
       if (row.expires_at != null && row.expires_at <= Date.now()) return null;
       return toShare(row, token);
     },
+
+    isShareToken: (token) =>
+      token.length > 0 && countByHash.get(hashShareToken(token)) !== undefined,
 
     get,
 

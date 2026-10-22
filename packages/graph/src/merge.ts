@@ -39,13 +39,18 @@ export type PublishFieldKind =
   | "placement"
   | "unplace"
   | "section"
-  | "edge";
+  | "edge"
+  | "create-card"
+  | "create-section"
+  | "create-edge";
 
 export interface PublishConflict {
   /** Stable key, e.g. `card:<id>:title`, `board:<id>:card:<id>`, `section:<id>`. */
   key: string;
   kind: PublishFieldKind | "unsupported";
   message: string;
+  /** Human label for the dialog; ids stay in the key only. */
+  label?: string;
 }
 
 export interface PublishChange {
@@ -90,6 +95,18 @@ export interface PlacementSnapshot {
   height?: number;
 }
 
+/** A new card captured from the draft, including its required board placement. */
+export interface CreatedCardSnapshot {
+  id: string;
+  typeId: string;
+  title: RichTextSnapshot;
+  body: RichTextSnapshot;
+  properties: Record<string, PropertyValue | null>;
+  tags: string[];
+  connectors: Card["connectors"];
+  placement: PlacementSnapshot;
+}
+
 /** The value a change carries, captured from the draft at planning time. */
 export type PublishValue =
   | { kind: "text"; tree: RichTextSnapshot }
@@ -99,7 +116,10 @@ export type PublishValue =
   | { kind: "unplace" }
   | { kind: "section"; section: Section }
   | { kind: "edge"; edge: GraphEdge }
-  | { kind: "remove-edge"; edgeId: string };
+  | { kind: "remove-edge"; edgeId: string }
+  | { kind: "create-card"; card: CreatedCardSnapshot }
+  | { kind: "create-section"; section: Section }
+  | { kind: "create-edge"; edge: GraphEdge };
 
 /**
  * How a caller resolves keys that the draft and the workspace both changed.
@@ -315,8 +335,8 @@ function cardExistsIn(source: WorkspaceDocument): (cardId: string) => boolean {
 
 // -------------------------------------------------------------------- planning
 
-function addUnsupported(plan: PublishPlan, key: string, message: string): void {
-  plan.unsupported.push({ key, kind: "unsupported", message });
+function addUnsupported(plan: PublishPlan, key: string, message: string, label?: string): void {
+  plan.unsupported.push({ key, kind: "unsupported", message, ...(label ? { label } : {}) });
 }
 
 function addConflict(
@@ -375,6 +395,7 @@ function checkStructure(
   plan: PublishPlan,
   draft: WorkspaceDocument,
   baseline: WorkspaceDocument,
+  scope: PublishScope,
 ): boolean {
   const draftCards = new Set(draft.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
   const baselineCards = new Set(baseline.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
@@ -382,10 +403,11 @@ function checkStructure(
 
   for (const cardId of [...draftCards].sort()) {
     if (baselineCards.has(cardId)) continue;
+    if (scope.scope === "board") continue; // Creation is validated by planCreations.
     addUnsupported(
       plan,
       `card:${cardId}`,
-      `Card ${cardId} was created in the draft; publishing cannot add cards.`,
+      `Card ${cardId} was created in the draft; a card share cannot create cards.`,
     );
     ok = false;
   }
@@ -604,6 +626,8 @@ function planPlacements(
     const sourceSnapshot = sourcePlacement ? placementSnapshot(sourcePlacement) : undefined;
 
     if (draftSnapshot && !baselineSnapshot) {
+      // A brand-new draft card carries its own placement in the creation change.
+      if (!source.getCard(cardId)) continue;
       addUnsupported(
         plan,
         key,
@@ -675,14 +699,7 @@ function planSections(
     const key = `section:${sectionId}`;
     const draftSection = draftSections.get(sectionId);
     const baselineSection = baselineSections.get(sectionId);
-    if (draftSection && !baselineSection) {
-      addUnsupported(
-        plan,
-        key,
-        `Section ${sectionId} was created in the draft; publishing cannot create sections.`,
-      );
-      continue;
-    }
+    if (draftSection && !baselineSection) continue; // Creation is validated by planCreations.
     if (!draftSection) {
       addUnsupported(
         plan,
@@ -753,14 +770,7 @@ function planEdges(
     const key = `edge:${edgeId}`;
     const draftEdge = draftEdges.get(edgeId);
     const baselineEdge = baselineEdges.get(edgeId);
-    if (draftEdge && !baselineEdge) {
-      addUnsupported(
-        plan,
-        key,
-        `Edge ${edgeId} was drawn in the draft; publishing cannot create arrows.`,
-      );
-      continue;
-    }
+    if (draftEdge && !baselineEdge) continue; // Creation is validated by planCreations.
     if (!draftEdge) {
       if (!baselineEdge) continue;
       const sourceEdge = sourceEdges.get(edgeId);
@@ -809,6 +819,251 @@ function planEdges(
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function isCanonicalUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+function cardLabel(draft: WorkspaceDocument, cardId: string): string {
+  const title = draft.displayTitle(cardId).trim();
+  return title.length > 0 ? `Card "${title}"` : "Untitled card";
+}
+
+function sectionLabel(section: Section): string {
+  return section.title.trim().length > 0 ? `Section "${section.title}"` : "Untitled section";
+}
+
+function edgeLabel(edge: GraphEdge): string {
+  return edge.label?.trim() ? `Edge "${edge.label}"` : `Edge ${edge.source} to ${edge.target}`;
+}
+
+/** New cards, sections and edges are explicit creation changes, never relaxed edits. */
+function planCreations(
+  plan: PublishPlan,
+  draft: WorkspaceDocument,
+  baseline: WorkspaceDocument,
+  source: WorkspaceDocument,
+  scope: PublishScope,
+  limits: PublishLimits,
+): void {
+  if (scope.scope !== "board") return;
+  const boardId = scope.boardId;
+  const sourceBoard = source.getBoard(boardId);
+  const draftCards = new Set(draft.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
+  const baselineCards = new Set(baseline.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
+  const baselineSections = new Set(baseline.listSections(boardId).map((section) => section.id));
+  const baselineEdges = new Set(
+    baseline
+      .listEdges()
+      .filter((edge) => edge.boardId === boardId)
+      .map((edge) => edge.id),
+  );
+  const draftCardsById = new Set([...draftCards]);
+  const isCardLive = (cardId: string) =>
+    Boolean(source.getPlacement(boardId, cardId) || draftCardsById.has(cardId));
+
+  if (!sourceBoard) {
+    const hasNewCards = [...draftCards].some((id) => !baselineCards.has(id));
+    const hasNewSections = draft
+      .listSections(boardId)
+      .some((section) => !baselineSections.has(section.id));
+    const hasNewEdges = draft
+      .listEdges()
+      .some((edge) => edge.boardId === boardId && !baselineEdges.has(edge.id));
+    if (hasNewCards || hasNewSections || hasNewEdges) {
+      addUnsupported(
+        plan,
+        `board:${boardId}:create`,
+        "The shared board no longer exists in the workspace.",
+      );
+    }
+    return;
+  }
+
+  for (const cardId of [...draftCards].filter((id) => !baselineCards.has(id)).sort()) {
+    const label = cardLabel(draft, cardId);
+    const key = `card:${cardId}:create`;
+    if (!isCanonicalUuid(cardId)) {
+      addUnsupported(plan, key, "A new card id is not a canonical UUID.", label);
+      continue;
+    }
+    if (source.getCard(cardId)) {
+      addUnsupported(
+        plan,
+        key,
+        "A card with this id already exists in the workspace; the draft reused it.",
+        label,
+      );
+      continue;
+    }
+    const card = draft.getCard(cardId);
+    if (!card || card.deletedAt) {
+      addUnsupported(plan, key, "The new card is missing or trashed in the draft.", label);
+      continue;
+    }
+    if (card.typeIds.length !== 1 || card.primaryTypeId !== card.typeIds[0]) {
+      addUnsupported(plan, key, "A new card must have exactly one primary type.", label);
+      continue;
+    }
+    const type = source.getType(card.primaryTypeId);
+    if (!type) {
+      addUnsupported(
+        plan,
+        key,
+        `The type "${card.primaryTypeId}" no longer exists in the workspace.`,
+        label,
+      );
+      continue;
+    }
+    const placements = draft.listCardPlacements(cardId);
+    if (placements.length !== 1 || placements[0]?.boardId !== boardId) {
+      addUnsupported(
+        plan,
+        key,
+        "A new card must be placed on the shared board and nowhere else.",
+        label,
+      );
+      continue;
+    }
+    const placement = placements[0];
+    if (!placement) {
+      addUnsupported(plan, key, "The new card has no placement.", label);
+      continue;
+    }
+    const placementProblem = placementIssue(placementSnapshot(placement), limits);
+    if (placementProblem) {
+      addUnsupported(plan, key, placementProblem, label);
+      continue;
+    }
+    const snapshot = snapshotCard(draft, cardId);
+    if (!snapshot) {
+      addUnsupported(plan, key, "The new card could not be read.", label);
+      continue;
+    }
+    const textBytes = richTextBytes(snapshot.title) + richTextBytes(snapshot.body);
+    if (textBytes > limits.maxCardTextBytes) {
+      addUnsupported(
+        plan,
+        key,
+        `The new card holds ${textBytes} bytes of text; the per-card limit is ${limits.maxCardTextBytes}.`,
+        label,
+      );
+      continue;
+    }
+    const titleProblem = validateRichTextTree(snapshot.title, limits);
+    if (titleProblem) {
+      addUnsupported(plan, key, titleProblem, label);
+      continue;
+    }
+    const bodyProblem = validateRichTextTree(snapshot.body, limits);
+    if (bodyProblem) {
+      addUnsupported(plan, key, bodyProblem, label);
+      continue;
+    }
+    for (const [fieldId, value] of Object.entries(snapshot.properties)) {
+      const field = type.fields.find((entry) => entry.id === fieldId);
+      if (!field) {
+        addUnsupported(plan, key, `Field "${fieldId}" is not part of type "${type.name}".`, label);
+        break;
+      }
+      const problem = propertyValueError(field, value, {
+        cardId,
+        cardExists: (target) => target !== cardId && isCardLive(target),
+      });
+      if (problem) {
+        addUnsupported(plan, key, problem, label);
+        break;
+      }
+    }
+    if (plan.unsupported.some((entry) => entry.key === key)) continue;
+    for (const tagId of snapshot.tags) {
+      if (source.getTag(tagId)) continue;
+      addUnsupported(plan, key, `Tag "${tagId}" no longer exists in the workspace.`, label);
+      break;
+    }
+    if (plan.unsupported.some((entry) => entry.key === key)) continue;
+    record(
+      plan,
+      { key, kind: "create-card", cardId, boardId },
+      {
+        kind: "create-card",
+        card: {
+          id: cardId,
+          typeId: card.primaryTypeId,
+          title: snapshot.title,
+          body: snapshot.body,
+          properties: snapshot.properties,
+          tags: snapshot.tags,
+          connectors: card.connectors,
+          placement: placementSnapshot(placement),
+        },
+      },
+    );
+  }
+
+  const sourceSections = new Set(source.listSections(boardId).map((section) => section.id));
+  for (const section of draft.listSections(boardId)) {
+    if (baselineSections.has(section.id)) continue;
+    const key = `section:${section.id}:create`;
+    const label = sectionLabel(section);
+    if (!isCanonicalUuid(section.id)) {
+      addUnsupported(plan, key, "A new section id is not a canonical UUID.", label);
+      continue;
+    }
+    if (sourceSections.has(section.id)) {
+      addUnsupported(plan, key, "A section with this id already exists in the workspace.", label);
+      continue;
+    }
+    const problem = sectionIssue(section, limits);
+    if (problem) {
+      addUnsupported(plan, key, problem, label);
+      continue;
+    }
+    record(
+      plan,
+      { key, kind: "create-section", sectionId: section.id, boardId },
+      {
+        kind: "create-section",
+        section,
+      },
+    );
+  }
+
+  const sourceEdges = new Set(
+    source
+      .listEdges()
+      .filter((edge) => edge.boardId === boardId)
+      .map((edge) => edge.id),
+  );
+  for (const edge of draft.listEdges().filter((entry) => entry.boardId === boardId)) {
+    if (baselineEdges.has(edge.id)) continue;
+    const key = `edge:${edge.id}:create`;
+    const label = edgeLabel(edge);
+    if (!isCanonicalUuid(edge.id)) {
+      addUnsupported(plan, key, "A new edge id is not a canonical UUID.", label);
+      continue;
+    }
+    if (sourceEdges.has(edge.id)) {
+      addUnsupported(plan, key, "An edge with this id already exists in the workspace.", label);
+      continue;
+    }
+    const problem = edgeIssue(edge, limits, { isCardLive });
+    if (problem) {
+      addUnsupported(plan, key, problem, label);
+      continue;
+    }
+    record(
+      plan,
+      { key, kind: "create-edge", edgeId: edge.id, boardId },
+      {
+        kind: "create-edge",
+        edge,
+      },
+    );
+  }
+}
+
 function planPublishInto(
   plan: PublishPlan,
   draft: WorkspaceDocument,
@@ -818,7 +1073,7 @@ function planPublishInto(
   options: PublishPlanOptions | undefined,
   limits: PublishLimits,
 ): void {
-  if (!checkStructure(plan, draft, baseline)) return;
+  if (!checkStructure(plan, draft, baseline, scope)) return;
 
   if (scope.scope === "card") {
     const cardId = scope.cardId;
@@ -873,6 +1128,7 @@ function planPublishInto(
   planPlacements(plan, draft, baseline, source, boardId, cardIds, options, limits);
   planSections(plan, draft, baseline, source, boardId, options, limits);
   planEdges(plan, draft, baseline, source, boardId, options, limits);
+  planCreations(plan, draft, baseline, source, scope, limits);
 }
 
 /**
@@ -1049,6 +1305,67 @@ function applyChange(
       if (!change.cardId || !change.boardId) return false;
       if (!source.getPlacement(change.boardId, change.cardId)) return false;
       source.unplaceCard(change.boardId, change.cardId);
+      return true;
+    }
+
+    case "create-card": {
+      if (value.kind !== "create-card") return false;
+      const card = value.card;
+      if (source.getCard(card.id)) return false;
+      if (!source.getType(card.typeId)) return false;
+      const placement = card.placement;
+      if (placement.boardId !== change.boardId) return false;
+      source.createCard({
+        id: card.id,
+        typeId: card.typeId,
+        boardId: placement.boardId,
+        position: { x: placement.x, y: placement.y },
+        connectors: card.connectors,
+      });
+      writeRichText(source.getTitle(card.id), card.title);
+      writeRichText(source.getContent(card.id), card.body);
+      for (const [fieldId, value] of Object.entries(card.properties)) {
+        if (value !== null) source.setProperty(card.id, fieldId, value);
+      }
+      for (const tagId of card.tags) source.addCardTag(card.id, tagId);
+      const fields = placementFields(source, placement.boardId, card.id);
+      if (fields) {
+        fields.set("z", placement.z);
+        if (placement.width === undefined) fields.delete("width");
+        else fields.set("width", placement.width);
+        if (placement.height === undefined) fields.delete("height");
+        else fields.set("height", placement.height);
+      }
+      return true;
+    }
+
+    case "create-section": {
+      if (value.kind !== "create-section") return false;
+      const section = value.section;
+      if (source.getSection(section.id)) return false;
+      if (!source.getBoard(section.boardId)) return false;
+      source.createSection({
+        id: section.id,
+        boardId: section.boardId,
+        title: section.title,
+        x: section.x,
+        y: section.y,
+        width: section.width,
+        height: section.height,
+        ...(section.color ? { color: section.color } : {}),
+      });
+      const fields = source.doc.getMap(WorkspaceDocument.SECTIONS_KEY).get(section.id);
+      if (isMap(fields)) fields.set("z", section.z);
+      return true;
+    }
+
+    case "create-edge": {
+      if (value.kind !== "create-edge") return false;
+      const edge = value.edge;
+      if (source.getEdge(edge.id)) return false;
+      if (!source.getBoard(edge.boardId)) return false;
+      if (!source.getCard(edge.source) || !source.getCard(edge.target)) return false;
+      source.setEdge(edge);
       return true;
     }
 

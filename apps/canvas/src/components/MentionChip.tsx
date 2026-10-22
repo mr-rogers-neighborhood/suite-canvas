@@ -64,6 +64,8 @@ export interface MentionChipProps {
   onSetFieldDisplay?: ((template: string | null) => void) | undefined;
   /** Viewers can open the card but not restyle the chip. */
   allowDisplay?: boolean;
+  /** Only a session with schema capability may restyle every use of the field. */
+  allowFieldScope?: boolean;
 }
 
 /** The chip's own menu: this is a mention, so actions stay in place. */
@@ -93,6 +95,7 @@ export function MentionChip({
   onSetDisplay,
   onSetFieldDisplay,
   allowDisplay = true,
+  allowFieldScope = true,
 }: MentionChipProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingDisplay, setEditingDisplay] = useState(false);
@@ -203,10 +206,11 @@ export function MentionChip({
           sample={context}
           template={field.template}
           allowScope={Boolean(onSetDisplay)}
+          allowFieldScope={allowFieldScope}
           overridden={field.overridden}
           onApply={(template, scope) => {
             if (scope === "instance" && onSetDisplay) onSetDisplay(template);
-            else onSetFieldDisplay?.(template);
+            else if (allowFieldScope) onSetFieldDisplay?.(template);
           }}
           onClose={() => setEditingDisplay(false)}
         />
@@ -230,6 +234,7 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const openInspector = useUiStore((state) => state.openInspector);
   const readOnly = useUiStore((state) => state.readOnly);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
 
   const definition = card && fieldId ? fieldFor(card, fieldId, types) : undefined;
   const value = fieldId ? card?.properties[fieldId] : undefined;
@@ -274,6 +279,7 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
         field={field}
         onOpen={(id, openFieldId) => openInspector(id, openFieldId ?? null)}
         allowDisplay={!readOnly}
+        allowFieldScope={canManageSchema}
         {...(definition && !readOnly
           ? {
               onSetDisplay: setOwnDisplay,

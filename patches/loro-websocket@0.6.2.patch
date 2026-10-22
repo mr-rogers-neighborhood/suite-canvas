@@ -1,0 +1,216 @@
+diff --git a/dist/server/index.cjs b/dist/server/index.cjs
+index cf1dcdbfc25c215f637ab13e5b1227b50f3c595e..0fb2cbca065dc7ce37eec93de4b3107b8d1dac52 100644
+--- a/dist/server/index.cjs
++++ b/dist/server/index.cjs
+@@ -286,7 +286,8 @@ var SimpleServer = class SimpleServer {
+ 					ws: ws$1,
+ 					rooms: /* @__PURE__ */ new Set(),
+ 					fragments: /* @__PURE__ */ new Map(),
+-					permissions: /* @__PURE__ */ new Map()
++					permissions: /* @__PURE__ */ new Map(),
++					auths: /* @__PURE__ */ new Map()
+ 				};
+ 				this.clients.set(ws$1, client);
+ 				ws$1.on("message", (data, isBinary) => {
+@@ -435,6 +436,7 @@ var SimpleServer = class SimpleServer {
+ 			const roomKey = this.getRoomKey(message.roomId, message.crdt);
+ 			client.rooms.add(roomKey);
+ 			client.permissions.set(roomKey, permission);
++			client.auths.set(roomKey, this.decodeAuth(message.auth));
+ 			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
+ 			const response = {
+ 				...joinResult.response,
+@@ -577,12 +579,62 @@ var SimpleServer = class SimpleServer {
+ 		const roomKey = this.getRoomKey(message.roomId, message.crdt);
+ 		client.rooms.delete(roomKey);
+ 		client.permissions.delete(roomKey);
++		client.auths.delete(roomKey);
+ 	}
+ 	handleDisconnect(client) {
+ 		client.rooms.clear();
+ 		for (const [, frag] of client.fragments) if (frag.timeoutId) clearTimeout(frag.timeoutId);
+ 		client.fragments.clear();
+ 		client.permissions.clear();
++		client.auths.clear();
++	}
++
++	/**
++	 * Suite patch (not upstream): closes every socket whose auth credential for
++	 * `roomId`, or a derived `:presence`/`:cursors` room, satisfies `predicate`.
++	 * Returns the number of sockets this call closed.
++	 */
++	disconnectRoomWhere(roomId, predicate) {
++		if (typeof roomId !== "string" || roomId.length === 0) return 0;
++		const rooms = new Set([roomId, `${roomId}:presence`, `${roomId}:cursors`]);
++		return this.closeMatching((client) => {
++			for (const roomKey of client.rooms) {
++				const joinedRoom = this.parseRoomKey(roomKey).roomId;
++				if (!rooms.has(joinedRoom)) continue;
++				if (predicate(client.auths.get(roomKey) ?? "", joinedRoom)) return true;
++			}
++			return false;
++		});
++	}
++	/** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
++	disconnectAuth(auth) {
++		if (typeof auth !== "string" || auth.length === 0) return 0;
++		return this.closeMatching((client) => {
++			for (const roomKey of client.rooms) if (client.auths.get(roomKey) === auth) return true;
++			return false;
++		});
++	}
++	closeMatching(matches) {
++		let closed = 0;
++		const sockets = this.wss ? Array.from(this.wss.clients) : [];
++		for (const socket of sockets) {
++			const client = this.clients.get(socket);
++			if (!client || client.rooms.size === 0 || !matches(client)) continue;
++			if (socket.readyState !== ws.WebSocket.OPEN) continue;
++			try {
++				socket.close(1008, "Access revoked");
++				closed++;
++			} catch {}
++		}
++		return closed;
++	}
++	decodeAuth(auth) {
++		if (!auth || auth.length === 0) return "";
++		try {
++			return new TextDecoder().decode(auth);
++		} catch {
++			return "";
++		}
+ 	}
+ 	async getOrCreateRoomDocument(roomId, crdtType) {
+ 		const roomKey = this.getRoomKey(roomId, crdtType);
+diff --git a/dist/server/index.d.cts b/dist/server/index.d.cts
+index 5e2fa22d06a06f9659b8ca5eeaf26daf0deb7f4e..35cf30008980d2f8c3b54cc9b2e4c8f54fabfc49 100644
+--- a/dist/server/index.d.cts
++++ b/dist/server/index.d.cts
+@@ -37,6 +37,18 @@ declare class SimpleServer {
+   private sendAck;
+   private broadcastToRoom;
+   private hasOtherClientsInRoom;
++
++  /**
++   * Suite patch (not upstream): closes every socket whose auth credential for
++   * `roomId` (or a derived `:presence`/`:cursors` room) satisfies `predicate`,
++   * returning how many sockets were closed.
++   */
++  disconnectRoomWhere(
++    roomId: string,
++    predicate: (auth: string, roomId: string) => boolean,
++  ): number;
++  /** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
++  disconnectAuth(auth: string): number;
+   private getRoomKey;
+   private parseRoomKey;
+   private saveAllDirtyDocuments;
+diff --git a/dist/server/index.d.ts b/dist/server/index.d.ts
+index bf393145e8c48f7c115769b3cc163c8c4c40427c..edbadfea83b416afc94e7f0c1fd92d7b68b92fb1 100644
+--- a/dist/server/index.d.ts
++++ b/dist/server/index.d.ts
+@@ -37,6 +37,18 @@ declare class SimpleServer {
+   private sendAck;
+   private broadcastToRoom;
+   private hasOtherClientsInRoom;
++
++  /**
++   * Suite patch (not upstream): closes every socket whose auth credential for
++   * `roomId` (or a derived `:presence`/`:cursors` room) satisfies `predicate`,
++   * returning how many sockets were closed.
++   */
++  disconnectRoomWhere(
++    roomId: string,
++    predicate: (auth: string, roomId: string) => boolean,
++  ): number;
++  /** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
++  disconnectAuth(auth: string): number;
+   private getRoomKey;
+   private parseRoomKey;
+   private saveAllDirtyDocuments;
+diff --git a/dist/server/index.js b/dist/server/index.js
+index 2ba619565b2532df04d4f95c33dc329b5df0c776..7944611ffffc85133ea5ca6d26c22cefcc29f24c 100644
+--- a/dist/server/index.js
++++ b/dist/server/index.js
+@@ -286,7 +286,8 @@ var SimpleServer = class SimpleServer {
+ 					ws,
+ 					rooms: /* @__PURE__ */ new Set(),
+ 					fragments: /* @__PURE__ */ new Map(),
+-					permissions: /* @__PURE__ */ new Map()
++					permissions: /* @__PURE__ */ new Map(),
++					auths: /* @__PURE__ */ new Map()
+ 				};
+ 				this.clients.set(ws, client);
+ 				ws.on("message", (data, isBinary) => {
+@@ -435,6 +436,7 @@ var SimpleServer = class SimpleServer {
+ 			const roomKey = this.getRoomKey(message.roomId, message.crdt);
+ 			client.rooms.add(roomKey);
+ 			client.permissions.set(roomKey, permission);
++			client.auths.set(roomKey, this.decodeAuth(message.auth));
+ 			const joinResult = roomDoc.descriptor.adaptor.handleJoinRequest(roomDoc.data, message.version);
+ 			const response = {
+ 				...joinResult.response,
+@@ -577,12 +579,62 @@ var SimpleServer = class SimpleServer {
+ 		const roomKey = this.getRoomKey(message.roomId, message.crdt);
+ 		client.rooms.delete(roomKey);
+ 		client.permissions.delete(roomKey);
++		client.auths.delete(roomKey);
+ 	}
+ 	handleDisconnect(client) {
+ 		client.rooms.clear();
+ 		for (const [, frag] of client.fragments) if (frag.timeoutId) clearTimeout(frag.timeoutId);
+ 		client.fragments.clear();
+ 		client.permissions.clear();
++		client.auths.clear();
++	}
++
++	/**
++	 * Suite patch (not upstream): closes every socket whose auth credential for
++	 * `roomId`, or a derived `:presence`/`:cursors` room, satisfies `predicate`.
++	 * Returns the number of sockets this call closed.
++	 */
++	disconnectRoomWhere(roomId, predicate) {
++		if (typeof roomId !== "string" || roomId.length === 0) return 0;
++		const rooms = new Set([roomId, `${roomId}:presence`, `${roomId}:cursors`]);
++		return this.closeMatching((client) => {
++			for (const roomKey of client.rooms) {
++				const joinedRoom = this.parseRoomKey(roomKey).roomId;
++				if (!rooms.has(joinedRoom)) continue;
++				if (predicate(client.auths.get(roomKey) ?? "", joinedRoom)) return true;
++			}
++			return false;
++		});
++	}
++	/** Suite patch (not upstream): closes every socket authenticated with exactly `auth`. */
++	disconnectAuth(auth) {
++		if (typeof auth !== "string" || auth.length === 0) return 0;
++		return this.closeMatching((client) => {
++			for (const roomKey of client.rooms) if (client.auths.get(roomKey) === auth) return true;
++			return false;
++		});
++	}
++	closeMatching(matches) {
++		let closed = 0;
++		const sockets = this.wss ? Array.from(this.wss.clients) : [];
++		for (const socket of sockets) {
++			const client = this.clients.get(socket);
++			if (!client || client.rooms.size === 0 || !matches(client)) continue;
++			if (socket.readyState !== WebSocket.OPEN) continue;
++			try {
++				socket.close(1008, "Access revoked");
++				closed++;
++			} catch {}
++		}
++		return closed;
++	}
++	decodeAuth(auth) {
++		if (!auth || auth.length === 0) return "";
++		try {
++			return new TextDecoder().decode(auth);
++		} catch {
++			return "";
++		}
+ 	}
+ 	async getOrCreateRoomDocument(roomId, crdtType) {
+ 		const roomKey = this.getRoomKey(roomId, crdtType);

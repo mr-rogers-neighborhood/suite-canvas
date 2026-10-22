@@ -170,6 +170,20 @@ describe("share store", () => {
     expect(store.revoke("missing")).toBeNull();
   });
 
+  it("recognizes a revoked token as a share token but not as an active one", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "editor",
+    });
+    store.revoke(share.id);
+
+    expect(store.isShareToken(token)).toBe(true);
+    expect(store.resolve(token)).toBeNull();
+    expect(store.isShareToken("not-a-token")).toBe(false);
+    expect(store.isShareToken("")).toBe(false);
+  });
+
   it("creates, resolves and lists a workspace viewer link", () => {
     const { token, share } = store.create({
       workspaceId: "ws-1",

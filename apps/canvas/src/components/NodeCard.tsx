@@ -77,8 +77,8 @@ export interface NodeCardProps {
   canEditContent?: boolean;
   /** Placement-level actions such as removing the card from the board. */
   canEditLayout?: boolean;
-  /** Destructive or schema actions such as trashing the card. */
-  canManage?: boolean;
+  /** Destructive actions such as trashing the card. */
+  canManageTrash?: boolean;
   /** Shorthand for a viewer: no menu and no editing gesture at all. */
   readOnly?: boolean;
 }
@@ -121,13 +121,13 @@ export function NodeCard({
   onTrash,
   canEditContent,
   canEditLayout,
-  canManage,
+  canManageTrash,
   readOnly = false,
 }: NodeCardProps) {
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
-  const manage = canManage ?? !readOnly;
-  const hasMenu = editContent || editLayout || manage;
+  const canTrash = canManageTrash ?? !readOnly;
+  const hasMenu = editContent || editLayout || canTrash;
   countRender("card");
 
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
@@ -207,7 +207,7 @@ export function NodeCard({
         ]
       : []),
     ...(editLayout ? [{ label: "Remove from board", onSelect: () => onRemoveFromBoard?.() }] : []),
-    ...(manage ? [{ label: "Delete card", danger: true, onSelect: () => onTrash?.() }] : []),
+    ...(canTrash ? [{ label: "Delete card", danger: true, onSelect: () => onTrash?.() }] : []),
   ];
 
   return (

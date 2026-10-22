@@ -22,9 +22,13 @@ function resetUiState() {
     outlineOpen: true,
     canEditContent: true,
     canEditLayout: true,
-    canPublish: true,
-    canCreate: true,
-    canManage: true,
+    canPublish: false,
+    canCreateContent: true,
+    canCreateBoards: true,
+    canManageBoards: true,
+    canManageSchema: true,
+    canManageTrash: true,
+    canManageLinks: true,
   });
 }
 
@@ -81,15 +85,22 @@ describe("useUiStore", () => {
   });
 
   it("should allow an editor share to edit content without being read-only", () => {
-    useUiStore
-      .getState()
-      .setCapabilities({ canEditLayout: false, canCreate: false, canManage: false });
+    useUiStore.getState().setCapabilities({
+      canEditLayout: false,
+      canCreateContent: false,
+      canCreateBoards: false,
+      canManageBoards: false,
+      canManageSchema: false,
+      canManageTrash: false,
+      canManageLinks: false,
+    });
 
     useUiStore.getState().startEditing("card-a", "body", "panel");
 
     expect(useUiStore.getState().editingNodeId).toBe("card-a");
     expect(useUiStore.getState().canEditLayout).toBe(false);
-    expect(useUiStore.getState().canPublish).toBe(true);
+    expect(useUiStore.getState().canManageSchema).toBe(false);
+    expect(useUiStore.getState().canPublish).toBe(false);
   });
 
   it("should release the inspector's editing session on close", () => {

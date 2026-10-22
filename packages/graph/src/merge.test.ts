@@ -554,14 +554,16 @@ describe("planPublish unsupported", () => {
     expect(plan.unsupported).toMatchObject([{ key: "tags", kind: "unsupported" }]);
   });
 
-  it("should reject a card created in the draft", () => {
+  it("should plan a card created in the draft", () => {
     const { source, baseline, draft, options } = setup();
     const created = draft.createCard({ boardId: BOARD, position: { x: 1, y: 1 } });
 
     const plan = planPublish(draft, baseline, source, options);
 
-    expect(plan.unsupported.map((entry) => entry.key)).toContain(`card:${created.id}`);
-    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(plan.unsupported).toEqual([]);
+    expect(plan.changes.map((entry) => entry.key)).toContain(`card:${created.id}:create`);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getCard(created.id)).toBeDefined();
   });
 
   it("should reject a placement the baseline did not have", () => {
@@ -727,5 +729,144 @@ describe("applyPublish", () => {
 
     expect(applyPublish(source, draft, plan)).toBe(0);
     expect(source.displayTitle("c1")).toBe("Owner title");
+  });
+});
+
+describe("planPublish creations", () => {
+  it("plans and applies a new card with title, body, property, tag and placement", () => {
+    const { source, baseline, draft, options, owner, tag } = setup();
+    const id = crypto.randomUUID();
+    draft.createCard({ id, boardId: BOARD, position: { x: 700, y: 80 } });
+    draft.setProperty(id, owner.id, "New value");
+    draft.addCardTag(id, tag.id);
+    writeText(draft, draft.getTitle(id), "New note");
+    writeText(draft, draft.getContent(id), "New body");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.unsupported).toEqual([]);
+    expect(plan.changes.map((change) => change.key)).toContain(`card:${id}:create`);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(source.getCard(id)).toMatchObject({ id, tags: [tag.id] });
+    expect(source.getCard(id)?.properties[owner.id]).toBe("New value");
+    expect(source.getPlacement(BOARD, id)).toMatchObject({ x: 700, y: 80 });
+    expect(source.displayTitle(id)).toBe("New note");
+    expect(source.cardText(id)).toContain("New body");
+  });
+
+  it("preserves a mention from a new card to another new card", () => {
+    const { source, baseline, draft, options } = setup();
+    const first = crypto.randomUUID();
+    const second = crypto.randomUUID();
+    draft.createCard({ id: first, boardId: BOARD, position: { x: 700, y: 80 } });
+    draft.createCard({ id: second, boardId: BOARD, position: { x: 900, y: 80 } });
+    const root = draft.getContent(first);
+    root.set("nodeName", "doc");
+    root.ensureMergeableMap("attributes");
+    const blocks = root.ensureMergeableList("children");
+    const paragraph = blocks.insertContainer(0, new LoroMap());
+    paragraph.set("nodeName", "paragraph");
+    paragraph.ensureMergeableMap("attributes");
+    const inline = paragraph.ensureMergeableList("children");
+    const mention = inline.insertContainer(0, new LoroMap());
+    mention.set("nodeName", "mention");
+    mention.ensureMergeableMap("attributes").set("cardId", second);
+    commit(draft);
+
+    const plan = planPublish(draft, baseline, source, options);
+    expect(plan.unsupported).toEqual([]);
+    expect(applyPublish(source, draft, plan)).toBe(2);
+    expect(mentionTargets([source.peekTitle(first), source.peekContent(first)])).toContain(second);
+    expect(source.getCard(second)).toBeDefined();
+  });
+
+  it("plans a new section and an edge to a new card", () => {
+    const { source, baseline, draft, options } = setup();
+    const id = crypto.randomUUID();
+    draft.createCard({ id, boardId: BOARD, position: { x: 700, y: 80 } });
+    const section = draft.createSection({
+      boardId: BOARD,
+      title: "New section",
+      x: 600,
+      y: 0,
+      width: 300,
+      height: 220,
+    });
+    const edge = draft.addEdge({ boardId: BOARD, source: id, target: "c1" });
+    if (!edge) throw new Error("missing draft edge");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.unsupported).toEqual([]);
+    expect(plan.changes.map((change) => change.key)).toEqual(
+      expect.arrayContaining([
+        `card:${id}:create`,
+        `section:${section.id}:create`,
+        `edge:${edge.id}:create`,
+      ]),
+    );
+    expect(applyPublish(source, draft, plan)).toBe(3);
+    expect(source.getSection(section.id)).toBeDefined();
+    expect(source.getEdge(edge.id)).toMatchObject({ source: id, target: "c1" });
+    expect(source.listBoardEdges(BOARD).map((item) => item.id)).toContain(edge.id);
+  });
+
+  it("rejects all creations when one new card is unplaced", () => {
+    const { source, baseline, draft, options } = setup();
+    const placed = crypto.randomUUID();
+    const unplaced = crypto.randomUUID();
+    draft.createCard({ id: placed, boardId: BOARD, position: { x: 700, y: 80 } });
+    draft.createCard({ id: unplaced });
+    writeText(draft, draft.getTitle(unplaced), "Unplaced note");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    const blocked = plan.unsupported.find((entry) => entry.key === `card:${unplaced}:create`);
+    expect(blocked?.label).toBe('Card "Unplaced note"');
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(source.getCard(placed)).toBeUndefined();
+  });
+
+  it("rejects a collision with a source-only card id", () => {
+    const { source, baseline, draft, options } = setup();
+    const id = crypto.randomUUID();
+    source.createCard({ id });
+    commit(source);
+    draft.createCard({ id, boardId: BOARD, position: { x: 700, y: 80 } });
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.unsupported.map((entry) => entry.key)).toContain(`card:${id}:create`);
+    expect(applyPublish(source, draft, plan)).toBe(0);
+  });
+
+  it("rejects a new card whose tag was removed from the workspace", () => {
+    const { source, baseline, draft, options, tag } = setup();
+    const id = crypto.randomUUID();
+    draft.createCard({ id, boardId: BOARD, position: { x: 700, y: 80 } });
+    draft.addCardTag(id, tag.id);
+    source.deleteTag(tag.id);
+    commit(source);
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.unsupported.map((entry) => entry.key)).toContain(`card:${id}:create`);
+    expect(applyPublish(source, draft, plan)).toBe(0);
+  });
+
+  it("rejects a new card with a dangling card property", () => {
+    const { source, options } = setup();
+    const link = source.addField("note", { name: "Link", kind: "card" });
+    const baseline = projectWorkspace(source, options).workspace;
+    const draft = projectWorkspace(source, options).workspace;
+    const id = crypto.randomUUID();
+    draft.createCard({ id, boardId: BOARD, position: { x: 700, y: 80 } });
+    draft.setProperty(id, link.id, "missing-card");
+    commit(draft);
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.unsupported.map((entry) => entry.key)).toContain(`card:${id}:create`);
+    expect(applyPublish(source, draft, plan)).toBe(0);
   });
 });

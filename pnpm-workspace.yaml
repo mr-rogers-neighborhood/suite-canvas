@@ -14,3 +14,4 @@ minimumReleaseAgeExclude:
   - turbo@2.11.10
 patchedDependencies:
   loro-prosemirror@0.4.4: patches/loro-prosemirror@0.4.4.patch
+  loro-websocket@0.6.2: patches/loro-websocket@0.6.2.patch

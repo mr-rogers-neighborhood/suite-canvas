@@ -35,6 +35,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const [savedOnDevice, setSavedOnDevice] = useState(() => readSavedRecoveryKey(workspaceId));
   const [error, setError] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
+  const canManageLinks = useUiStore((state) => state.canManageLinks);
   const ownerKey = getSession().ownerKey ?? "";
 
   useEffect(() => {
@@ -77,6 +78,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
       setError(cause instanceof Error ? cause.message : "Could not export this workspace.");
     }
   };
+
+  // Share, export and recovery are the owner's links and keys: a workspace
+  // editor token edits the live document but never sees this menu.
+  if (!canManageLinks) return null;
 
   return (
     <div className="flex items-center gap-1" data-testid="workspace-actions">

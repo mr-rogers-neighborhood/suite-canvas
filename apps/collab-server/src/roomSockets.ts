@@ -1,68 +1,62 @@
 import type { SimpleServer } from "loro-websocket/server";
-
-interface SocketLike {
-  readyState: number;
-  close: (code?: number, reason?: string) => void;
-}
-
-interface ClientLike {
-  rooms: Set<string>;
-}
-
-interface ServerRuntime {
-  wss?: { clients?: Set<SocketLike> };
-  clients?: WeakMap<SocketLike, ClientLike>;
-}
-
-const CLOSE_REVOKED = 1008;
+import type { ShareStore } from "./shares.js";
+import type { WorkspaceRegistry } from "./workspaces.js";
 
 /**
- * The projection worker uses one socket for every room and the source worker
- * uses one for the workspace. Closing either would drop every projection, so a
- * socket with more than the browser's three room keys (document, presence,
- * cursors), or a lone workspace room, is the worker. A browser tab holds one
- * base room plus its ephemeral presence/cursor rooms.
+ * The slice of `SimpleServer` these helpers need. It is provided by the pinned
+ * `loro-websocket@0.6.2` patch (`patches/loro-websocket@0.6.2.patch`): the
+ * server records the auth credential used for every joined room and exposes
+ * `disconnectRoomWhere` and `disconnectAuth`. When upstream ships an equivalent
+ * API, drop the patch and keep this file.
  */
-function isWorkerSocket(client: ClientLike, _roomIds: readonly string[]): boolean {
-  // The worker joins only the document room (one room); a browser tab joins the
-  // document plus presence and cursors. A projection worker that holds several
-  // shares is identifiable by its several share base rooms.
-  if (client.rooms.size <= 1) return true;
-  const shareBases = new Set(
-    [...client.rooms].filter((key) => key.startsWith("share-")).map((key) => key.split(":")[0]),
-  );
-  return shareBases.size > 1;
+export type KickServer = Pick<SimpleServer, "disconnectRoomWhere" | "disconnectAuth">;
+
+/**
+ * Closes the viewers of a projection room, keeping the worker that builds it.
+ * A projection room admits two credentials: the projection token the worker
+ * joins with, and the link's own share token. Every other session in the room
+ * is a browser that just lost access.
+ */
+export function disconnectProjectionViewers(
+  server: KickServer,
+  roomId: string,
+  projectionToken: string,
+): number {
+  return server.disconnectRoomWhere(roomId, (auth) => auth !== projectionToken);
+}
+
+export interface WorkspaceShareKickDeps {
+  /** Token the publish worker joins workspace rooms with; it stays connected. */
+  sourceToken: string;
+  workspaces: Pick<WorkspaceRegistry, "verify">;
+  shares: Pick<ShareStore, "resolve" | "isShareToken">;
 }
 
 /**
- * `loro-websocket` keeps its socket and room maps private and has no public
- * kick API. We read them through a narrow runtime adapter so revoking a link or
- * rotating an owner key invalidates connections that were already open. The
- * adapter is covered by tests; keep the `loro-websocket` version pinned.
+ * Closes the share viewers of a workspace room. The owner key and the source
+ * worker stay connected, and so does a viewer of another link that is still
+ * active: only credentials that no longer authenticate are kicked.
  */
-export function disconnectRooms(server: SimpleServer, roomIds: readonly string[]): number {
-  const wanted = [...new Set(roomIds.filter((roomId) => roomId.length > 0))];
-  if (wanted.length === 0) return 0;
-
-  const runtime = server as unknown as ServerRuntime;
-  const sockets = runtime.wss?.clients;
-  const clients = runtime.clients;
-  if (!sockets || !clients) return 0;
-
-  let closed = 0;
-  for (const socket of sockets) {
-    const client = clients.get(socket);
-    if (!client || isWorkerSocket(client, wanted)) continue;
-    const matches = [...client.rooms].some((key) =>
-      wanted.some((roomId) => key === roomId || key.startsWith(`${roomId}:`)),
-    );
-    if (!matches) continue;
+export function disconnectWorkspaceShares(
+  server: KickServer,
+  workspaceId: string,
+  deps: WorkspaceShareKickDeps,
+): number {
+  return server.disconnectRoomWhere(workspaceId, (auth) => {
+    if (auth.length === 0 || auth === deps.sourceToken) return false;
     try {
-      socket.close(CLOSE_REVOKED, "Access revoked");
-      closed += 1;
+      if (deps.workspaces.verify(workspaceId, auth)) return false;
     } catch {
-      // The socket is already closing; nothing else to do.
+      // A malformed credential never owns a workspace.
     }
-  }
-  return closed;
+    return deps.shares.isShareToken(auth) && deps.shares.resolve(auth) === null;
+  });
+}
+
+/**
+ * Closes every session authenticated with a credential that is no longer valid,
+ * such as the previous owner key after a rotation.
+ */
+export function disconnectAuthSessions(server: KickServer, auth: string): number {
+  return server.disconnectAuth(auth);
 }

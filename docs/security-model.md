@@ -27,6 +27,14 @@ another link; that needs the owner key.
 Workspace editor tokens are the right way to invite someone to edit. Do not send the owner link as
 “editor”: it also lets the holder manage links and rotate the owner key.
 
+Inside the app these rows are explicit capabilities rather than one read-only switch:
+`canEditContent`, `canEditLayout`, `canCreateContent`, `canCreateBoards`, `canManageBoards`,
+`canManageSchema`, `canManageTrash`, `canPublish` and `canManageLinks`. A workspace editor token
+gets the live workspace surface — boards, types, tags and the trash — but no `WorkspaceActions`
+(share, export, recovery) and no link or owner-key controls. A board draft can create cards,
+sections and edges and edit what it publishes; a card draft edits only its card. Neither can create
+boards, schema, trash or links.
+
 ## What the relay can see
 
 - **Documents are plaintext.** SQLite stores the full Loro snapshot of every workspace and every

@@ -36,7 +36,7 @@ export function CardInspectorHost() {
   const readOnly = useUiStore((state) => state.readOnly);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
-  const canManage = useUiStore((state) => state.canManage);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
@@ -171,15 +171,15 @@ export function CardInspectorHost() {
       readOnly={readOnly}
       canEditContent={canEditContent}
       canEditLayout={canEditLayout}
-      canManage={canManage}
+      canManageSchema={canManageSchema}
       restrictLinks={isShareSession()}
       onClose={closeInspector}
       onEdit={() => startEditing(card.id, "body", "panel")}
       onStartEditing={(field) => startEditing(card.id, field, "panel")}
       onEditEnd={stopEditing}
       onSetType={(typeId) => {
-        // Type membership is schema, which a share may never change.
-        if (canManage) workspace.setCardTypes(card.id, [typeId], typeId);
+        // Type membership is schema, which a board or card share may never change.
+        if (canManageSchema) workspace.setCardTypes(card.id, [typeId], typeId);
       }}
       onAddTag={(tagId) => {
         if (canEditContent) workspace.addCardTag(card.id, tagId);
@@ -188,7 +188,7 @@ export function CardInspectorHost() {
         if (canEditContent) workspace.removeCardTag(card.id, tagId);
       }}
       onCreateTag={(name) => {
-        if (!canManage) return;
+        if (!canManageSchema) return;
         const tag = workspace.ensureTag(name);
         workspace.addCardTag(card.id, tag.id);
       }}

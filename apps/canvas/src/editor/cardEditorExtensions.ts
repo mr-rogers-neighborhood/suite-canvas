@@ -1,0 +1,56 @@
+import { Placeholder } from "@tiptap/extensions";
+import type { Extensions } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { Mention } from "./Mention";
+import { PropertyBlock } from "./PropertyBlock";
+import { SlashCommands } from "./SlashCommands";
+
+export interface CardBodySchemaOptions {
+  /** Card that owns the body; mentions and property blocks resolve against it. */
+  cardId: string;
+  /**
+   * Empty-state copy. `null` leaves the decoration out, which is what a
+   * read-only surface does; the placeholder contributes no schema.
+   */
+  placeholder?: string | null;
+  /** Opens the card panel from a read-only property block. */
+  openPanel?: ((cardId: string) => void) | undefined;
+}
+
+/**
+ * The node and mark schema of the body editor, without collaboration.
+ *
+ * `CardBodyEditor` appends `LoroCollaboration`, which contributes plugins and
+ * keyboard shortcuts but no nodes or marks. Keeping the schema here lets
+ * `editorSchemaContract.test.ts` instantiate the same schema as the app and
+ * compare it with the publish allowlist.
+ */
+export function cardBodySchemaExtensions({
+  cardId,
+  placeholder = null,
+  openPanel,
+}: CardBodySchemaOptions): Extensions {
+  return [
+    // Collaboration ships its own undo history, so StarterKit's is disabled.
+    StarterKit.configure({ undoRedo: false }),
+    // Both editors share the extension's one `@` suggestion config; the
+    // owner id is what adds this card's fields to the picker.
+    Mention.configure({ cardId }),
+    SlashCommands,
+    PropertyBlock.configure({
+      cardId,
+      openPanel: (id: string) => openPanel?.(id),
+    }),
+    // An empty body still reads as a place to write, unless the reader has
+    // no way to write there. The decoration is render-only: it never
+    // touches the CRDT and leaves carets alone.
+    ...(placeholder
+      ? [
+          Placeholder.configure({
+            placeholder,
+            showOnlyWhenEditable: false,
+          }),
+        ]
+      : []),
+  ];
+}

@@ -60,6 +60,8 @@ export interface LibraryDrawerProps {
   onToggleGroup: () => void;
   /** Opens a card in the inspector; rows never expand in place. */
   onOpenCard: (cardId: string) => void;
+  /** Trash, restore, purge and empty the trash; owner and workspace editor. */
+  canManageTrash?: boolean;
 }
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -104,6 +106,7 @@ export function LibraryDrawer({
   groupBySection,
   onToggleGroup,
   onOpenCard,
+  canManageTrash = true,
 }: LibraryDrawerProps) {
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
   const holdRef = useRef<{
@@ -243,18 +246,24 @@ export function LibraryDrawer({
 
           <div className="flex shrink-0 items-center gap-1">
             {tab === "trash" ? (
-              <>
-                <button type="button" className="library-action" onClick={() => onRestore(item.id)}>
-                  Restore
-                </button>
-                <button
-                  type="button"
-                  className="library-action text-red-600"
-                  onClick={() => onDeleteForever(item.id)}
-                >
-                  Delete
-                </button>
-              </>
+              canManageTrash ? (
+                <>
+                  <button
+                    type="button"
+                    className="library-action"
+                    onClick={() => onRestore(item.id)}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    className="library-action text-red-600"
+                    onClick={() => onDeleteForever(item.id)}
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : null
             ) : (
               <>
                 {item.boards.length > 0 ? (
@@ -269,13 +278,15 @@ export function LibraryDrawer({
                 <button type="button" className="library-action" onClick={() => onPlace(item.id)}>
                   Place
                 </button>
-                <button
-                  type="button"
-                  className="library-action text-red-600"
-                  onClick={() => onTrash(item.id)}
-                >
-                  Trash
-                </button>
+                {canManageTrash ? (
+                  <button
+                    type="button"
+                    className="library-action text-red-600"
+                    onClick={() => onTrash(item.id)}
+                  >
+                    Trash
+                  </button>
+                ) : null}
               </>
             )}
           </div>
@@ -314,7 +325,7 @@ export function LibraryDrawer({
     >
       <div className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5">
         <div role="tablist" aria-label="Library sections" className="flex items-center gap-1">
-          {TABS.map((entry) => (
+          {TABS.filter((entry) => canManageTrash || entry.id !== "trash").map((entry) => (
             <button
               key={entry.id}
               type="button"
@@ -369,7 +380,7 @@ export function LibraryDrawer({
               New
             </button>
           ) : null}
-          {tab === "trash" && trash.length > 0 ? (
+          {tab === "trash" && canManageTrash && trash.length > 0 ? (
             <button
               type="button"
               data-testid="library-empty-trash"

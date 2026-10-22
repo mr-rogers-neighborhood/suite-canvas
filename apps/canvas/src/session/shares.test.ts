@@ -240,7 +240,12 @@ describe("publishShare", () => {
         {
           conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
           unsupported: [
-            { key: "card:c2", kind: "unsupported", message: "New cards cannot be published." },
+            {
+              key: "card:c2",
+              kind: "unsupported",
+              message: "New cards cannot be published.",
+              label: null,
+            },
           ],
           reason: "The workspace changed.",
         },
@@ -253,10 +258,15 @@ describe("publishShare", () => {
     expect(error).toBeInstanceOf(SharePublishConflictError);
     const conflict = (error as SharePublishConflictError).conflict;
     expect(conflict.conflicts).toEqual([
-      { key: "card:c1:body", kind: "body", message: "Body changed." },
+      { key: "card:c1:body", kind: "body", message: "Body changed.", label: null },
     ]);
     expect(conflict.unsupported).toEqual([
-      { key: "card:c2", kind: "unsupported", message: "New cards cannot be published." },
+      {
+        key: "card:c2",
+        kind: "unsupported",
+        message: "New cards cannot be published.",
+        label: null,
+      },
     ]);
     expect(conflict.reason).toBe("The workspace changed.");
     expect((error as Error).message).toBe("The workspace changed.");
@@ -269,7 +279,7 @@ describe("publishShare", () => {
       (cause) => cause,
     )) as SharePublishConflictError;
     expect(error.conflict.conflicts).toEqual([
-      { key: "card:c1:title changed", message: "card:c1:title changed", kind: null },
+      { key: "card:c1:title changed", message: "card:c1:title changed", kind: null, label: null },
     ]);
     expect(error.conflict.unsupported).toEqual([]);
   });

@@ -254,6 +254,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
 
   const workspace = useCanvasStore((state) => state.workspace);
   const readOnly = useUiStore((state) => state.readOnly);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
   const card = useCard(cardId);
   const types = useCardTypes();
   const field = card ? fieldFor(card, fieldId, types) : undefined;
@@ -354,9 +355,11 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
           }}
           template={ownDisplay || displayTemplate(field)}
           allowScope
+          allowFieldScope={canManageSchema}
           overridden={ownDisplay.length > 0}
           onApply={(template, scope) => {
             if (scope !== "instance") {
+              if (!canManageSchema) return;
               const owning = types.find((type) =>
                 type.fields.some((entry) => entry.id === field.id),
               );

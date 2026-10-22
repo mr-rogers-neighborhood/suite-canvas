@@ -331,10 +331,10 @@ describe("validateRichTextTree", () => {
       {
         nodeName: "paragraph",
         attributes: {},
-        children: [{ $text: [{ insert: "m", attributes: { underline: true } }] }],
+        children: [{ $text: [{ insert: "m", attributes: { highlight: true } }] }],
       },
     ]);
-    expect(validateRichTextTree(tree)).toMatch(/unknown mark "underline"/);
+    expect(validateRichTextTree(tree)).toMatch(/unknown mark "highlight"/);
   });
 
   it("should reject a link that is not http, https or mailto", () => {

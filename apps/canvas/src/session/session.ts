@@ -32,55 +32,81 @@ export interface SessionConfig {
 }
 
 /**
- * What a session may do, derived once at boot. The UI hides what a session
- * cannot do rather than disabling it, so these flags — not `readOnly` — are the
- * primary gate for content, layout, publishing, creation and management.
+ * What a session may do, derived once at boot. Each row of the capability
+ * matrix is its own flag: the UI hides what a session cannot do rather than
+ * disabling it, so these flags — not a single read-only or owner switch — are
+ * the primary gate for every surface.
  */
 export interface SessionCapabilities {
-  /** Title, body, properties and existing tags. */
+  /** Title, body, properties, existing tags and new tags on a card. */
   canEditContent: boolean;
-  /** Placement, sections and edges on the shared board. */
+  /** Placement, sections, edges and card geometry on the shared board. */
   canEditLayout: boolean;
-  /** Write the draft back to the owner's workspace. */
+  /** Write a share draft back to the owner's workspace; an owner edits live. */
   canPublish: boolean;
-  /** New cards, sections, edges, connectors and boards. */
-  canCreate: boolean;
-  /** Trash, type/tag schema, share management — owner-only. */
-  canManage: boolean;
+  /** New cards, sections, edges and connectors. */
+  canCreateContent: boolean;
+  /** Add a board. */
+  canCreateBoards: boolean;
+  /** Rename or delete a board. */
+  canManageBoards: boolean;
+  /** Types, fields, tags and card type reassignment. */
+  canManageSchema: boolean;
+  /** Trash, restore, purge and empty the trash. */
+  canManageTrash: boolean;
+  /** Share links, owner-key rotation and workspace deletion — owner only. */
+  canManageLinks: boolean;
 }
 
+/** The owner edits the live workspace: there is no draft, so publishing does not apply. */
 const OWNER_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
   canEditLayout: true,
-  canPublish: true,
-  canCreate: true,
-  canManage: true,
+  canPublish: false,
+  canCreateContent: true,
+  canCreateBoards: true,
+  canManageBoards: true,
+  canManageSchema: true,
+  canManageTrash: true,
+  canManageLinks: true,
 };
 
 const VIEWER_CAPABILITIES: SessionCapabilities = {
   canEditContent: false,
   canEditLayout: false,
   canPublish: false,
-  canCreate: false,
-  canManage: false,
+  canCreateContent: false,
+  canCreateBoards: false,
+  canManageBoards: false,
+  canManageSchema: false,
+  canManageTrash: false,
+  canManageLinks: false,
 };
 
-/** A workspace editor token edits the whole workspace but cannot manage links or ownership. */
+/** A workspace editor token edits the whole live workspace but cannot manage links or ownership. */
 const WORKSPACE_EDITOR_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
   canEditLayout: true,
   canPublish: false,
-  canCreate: true,
-  canManage: false,
+  canCreateContent: true,
+  canCreateBoards: true,
+  canManageBoards: true,
+  canManageSchema: true,
+  canManageTrash: true,
+  canManageLinks: false,
 };
 
-/** A board editor may change what the board already contains, never grow it. */
+/** A board editor works on the shared board's draft: content, layout, creation and publish. */
 const BOARD_EDITOR_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
   canEditLayout: true,
   canPublish: true,
-  canCreate: false,
-  canManage: false,
+  canCreateContent: true,
+  canCreateBoards: false,
+  canManageBoards: false,
+  canManageSchema: false,
+  canManageTrash: false,
+  canManageLinks: false,
 };
 
 /** A card editor only touches one card's content. */
@@ -88,17 +114,21 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
   canEditLayout: false,
   canPublish: true,
-  canCreate: false,
-  canManage: false,
+  canCreateContent: false,
+  canCreateBoards: false,
+  canManageBoards: false,
+  canManageSchema: false,
+  canManageTrash: false,
+  canManageLinks: false,
 };
 
 /**
  * Capability matrix:
- * - no share (owner): everything;
+ * - no share (owner): everything, including links and ownership;
  * - any viewer: nothing;
- * - workspace editor token: content + layout + creation, no management or publish;
- * - board editor: content + layout + publish;
- * - card editor: content + publish.
+ * - workspace editor token: the live workspace minus links and ownership, and no publish;
+ * - board editor: content, layout, creation and publish on one board's draft;
+ * - card editor: content and publish for one card.
  */
 export function sessionCapabilities(session: SessionConfig): SessionCapabilities {
   const { share } = session;

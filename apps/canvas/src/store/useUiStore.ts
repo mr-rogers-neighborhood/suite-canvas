@@ -47,11 +47,11 @@ interface UiState extends SessionCapabilities {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
   /**
-   * Share viewers render the same shell with every write path closed. It is UI
-   * state (not read from the session in each component) so tests and stories
-   * can render a read-only surface without a `?share=` URL. Editing capabilities
-   * are separate: an editor share keeps `readOnly` false but cannot create,
-   * trash or manage.
+   * Viewer shorthand; capability flags remain the gate for every write path.
+   * It is UI state (not read from the session in each component) so tests and
+   * stories can render a read-only surface without a `?share=` URL. Editor
+   * shares keep `readOnly` false while their capability flags decide what they
+   * may create, publish, trash or manage.
    */
   readOnly: boolean;
   setReadOnly: (readOnly: boolean) => void;

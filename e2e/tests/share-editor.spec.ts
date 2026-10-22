@@ -83,6 +83,23 @@ async function editBody(page: Page, card: Locator): Promise<void> {
   await expect(panelBody.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
 }
 
+async function connectCards(page: Page, from: Locator, to: Locator): Promise<void> {
+  const edge = page.locator(".react-flow__edge");
+  const fromDot = from.locator('[data-testid="connector-dot"]').nth(1);
+  const toDot = to.locator('[data-testid="connector-dot"]').nth(3);
+  await expect(async () => {
+    const [sourceBox, targetBox] = await Promise.all([fromDot.boundingBox(), toDot.boundingBox()]);
+    if (!sourceBox || !targetBox) throw new Error("connector dots not visible");
+    await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+      steps: 14,
+    });
+    await page.mouse.up();
+    await expect(edge).toHaveCount(1, { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
 async function typeBody(page: Page, card: Locator, text: string): Promise<void> {
   await editBody(page, card);
   await page.keyboard.type(text);
@@ -272,7 +289,7 @@ test("card editor publishes one card and leaves the other alone", async ({ page,
   await editor.context().close();
 });
 
-test("board editor has no create, manage or library chrome and Delete unplaces", async ({
+test("board editor creates content but has no library, board or schema chrome", async ({
   page,
   browser,
 }) => {
@@ -293,11 +310,11 @@ test("board editor has no create, manage or library chrome and Delete unplaces",
   await expect(editor.getByTestId("board-create")).toHaveCount(0);
   await expect(editor.getByTestId("share-publish")).toBeVisible();
 
-  // A canvas right-click offers no creation menu.
+  // A canvas right-click offers the existing creation gestures.
   const point = await emptyCanvasPoint(editor);
   await editor.mouse.click(point.x, point.y, { button: "right" });
-  await expect(editor.getByRole("menuitem", { name: "New note" })).toHaveCount(0);
-  await expect(editor.getByRole("menuitem", { name: "New section" })).toHaveCount(0);
+  await expect(editor.getByRole("menuitem", { name: "New note" })).toBeVisible();
+  await expect(editor.getByRole("menuitem", { name: "New section" })).toBeVisible();
   await editor.keyboard.press("Escape");
 
   // Content is editable but schema and trash are not.
@@ -331,6 +348,36 @@ test("board editor has no create, manage or library chrome and Delete unplaces",
   await editor.context().close();
 });
 
+test("board editor creates a note, section and edge, then publishes", async ({ page, browser }) => {
+  await page.goto(workspaceUrl("board-create"));
+  await expect(cards(page)).toHaveCount(2);
+  const link = await createEditorLink(page, "board");
+  const editor = await openEditor(browser, link);
+  await expect(editor.locator('[data-testid="node-card"]')).toHaveCount(2, { timeout: 15_000 });
+
+  await createNote(editor, "Editor made");
+  const made = cardByTitle(editor, "Editor made");
+
+  const point = await emptyCanvasPoint(editor, 2);
+  await editor.mouse.click(point.x, point.y, { button: "right" });
+  await editor.getByRole("menuitem", { name: "New section", exact: true }).click();
+  await expect(editor.locator(".section-header")).toHaveCount(1, { timeout: 15_000 });
+
+  await connectCards(editor, made, cards(editor).first());
+  await editor.getByTestId("share-publish").click();
+  await expect(editor.getByTestId("publish-status")).toHaveText("Published", { timeout: 15_000 });
+  await expect(editor.locator(".react-flow__edge")).toHaveCount(1, { timeout: 15_000 });
+
+  // React Flow can keep the owner's node/edge internals stale until a reload
+  // after a remote publish; the data is already in the workspace.
+  await page.reload();
+  await expect(cardByTitle(page, "Editor made")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator(".section-header")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1, { timeout: 15_000 });
+
+  await editor.context().close();
+});
+
 test("workspace editor token edits the workspace without owner chrome", async ({
   page,
   browser,
@@ -355,6 +402,18 @@ test("workspace editor token edits the workspace without owner chrome", async ({
     await expect(editor.getByTestId("sync-status")).toHaveText(/Editor/, { timeout: 15_000 });
     await expect(editor.getByTestId("workspace-share")).toHaveCount(0);
     await expect(editor.getByTestId("workspace-file")).toHaveCount(0);
+    // Full live workspace editing: dock, library, board creation, type settings.
+    await expect(editor.getByTestId("dock-library")).toBeVisible();
+    await expect(editor.getByTestId("board-create")).toBeVisible();
+    await editor.getByTestId("dock-new-card").click();
+    await expect(editor.getByTestId("dock-manage-types")).toBeVisible();
+    await editor.getByTestId("dock-library").click();
+    await expect(editor.getByTestId("library-drawer")).toBeVisible();
+    await editor.keyboard.press("Escape");
+    await editor.getByTestId("dock-new-card").click();
+    await editor.getByTestId("dock-manage-types").click();
+    await expect(editor.getByTestId("type-settings")).toBeVisible();
+    await editor.keyboard.press("Escape");
 
     await typeBody(editor, cards(editor).first(), "Workspace editor note");
     await expect(page.getByTestId("card-body").first()).toContainText("Workspace editor note", {

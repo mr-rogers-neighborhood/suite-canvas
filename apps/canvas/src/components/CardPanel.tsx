@@ -297,7 +297,8 @@ export interface CardPanelProps {
   /** Board placement actions such as "Remove from board". */
   canEditLayout?: boolean;
   /** Schema and destructive actions; owner-only. */
-  canManage?: boolean;
+  /** Types, fields, tags and card type reassignment. */
+  canManageSchema?: boolean;
   /** A projection may not contain every linked card; those rows read inert. */
   restrictLinks?: boolean;
 }
@@ -508,12 +509,12 @@ export function CardPanel({
   readOnly = false,
   canEditContent,
   canEditLayout,
-  canManage,
+  canManageSchema,
   restrictLinks,
 }: CardPanelProps) {
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
-  const manage = canManage ?? !readOnly;
+  const manageSchema = canManageSchema ?? !readOnly;
   const inertLinks = restrictLinks ?? readOnly;
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
@@ -763,7 +764,7 @@ export function CardPanel({
           aria-labelledby={inspector ? detailsTabId : undefined}
         >
           <Section title="Type">
-            {!manage ? (
+            {!manageSchema ? (
               <div className="flex flex-wrap gap-1" data-testid="type-picker" data-readonly="true">
                 {card.typeIds.map((typeId) => {
                   const type = typesById.get(typeId);
@@ -801,7 +802,7 @@ export function CardPanel({
                     </button>
                   );
                 })}
-                {manage ? (
+                {manageSchema ? (
                   <button
                     type="button"
                     data-testid="manage-types"
@@ -836,7 +837,7 @@ export function CardPanel({
                 onAdd={onAddTag}
                 onRemove={onRemoveTag}
                 onCreate={onCreateTag}
-                canCreate={manage}
+                allowCreate={manageSchema}
               />
             )}
           </Section>
@@ -845,7 +846,7 @@ export function CardPanel({
             {fields.length === 0 ? (
               <p className="text-[12px] text-[var(--ink-muted)]">
                 This type has no fields yet.
-                {manage ? (
+                {manageSchema ? (
                   <>
                     {" "}
                     <button

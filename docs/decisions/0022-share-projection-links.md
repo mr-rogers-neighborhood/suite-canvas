@@ -47,6 +47,15 @@ returned `"write"` for every unauthenticated non-share room.
    one keeps the workspace value, and an unsupported change still rejects the whole publish.
    `GET /api/shares/:token/status` reports `{ dirty, hasBaseline }` to an editor token, which drives
    the single `Draft`/`Published` word beside Publish. Publishing stays manual.
+
+   *Revised in S7:* a board draft can create content. A board editor may create cards, sections
+   and edges on its shared board; a card editor still edits only its one card. Creation is
+   content-only — never boards, card types, tags, trash or links.
+   Client UUIDs are preserved, a collision with an existing source object rejects the publish, and
+   a new card must be placed on the shared board and nowhere else. The whole publish is
+   all-or-nothing: one invalid or conflicting creation leaves the draft intact and names every
+   rejected object in “Can’t publish yet”; there is no partial publish. Editing a published
+   object remains field-granular.
 7. **Workspace viewer links are deferred.** A token that joins the workspace room necessarily
    learns the id that share management uses, and with no accounts that id is also write access.
    Minting a workspace viewer token would therefore allow an editor link. It waits for a separate

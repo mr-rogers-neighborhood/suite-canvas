@@ -17,6 +17,30 @@ const workspace = useCanvasStore.getState().workspace;
 let boardId = "";
 let cardId = "";
 
+const FULL_CAPABILITIES = {
+  canEditContent: true,
+  canEditLayout: true,
+  canPublish: false,
+  canCreateContent: true,
+  canCreateBoards: true,
+  canManageBoards: true,
+  canManageSchema: true,
+  canManageTrash: true,
+  canManageLinks: true,
+} as const;
+
+const NO_CAPABILITIES = {
+  canEditContent: false,
+  canEditLayout: false,
+  canPublish: false,
+  canCreateContent: false,
+  canCreateBoards: false,
+  canManageBoards: false,
+  canManageSchema: false,
+  canManageTrash: false,
+  canManageLinks: false,
+} as const;
+
 beforeAll(() => {
   useCanvasStore.setState({ ready: true, synced: true });
   const board = workspace.ensureBoard();
@@ -29,11 +53,7 @@ afterAll(() => {
     readOnly: false,
     activeBoardId: null,
     selectedNodeIds: [],
-    canEditContent: true,
-    canEditLayout: true,
-    canPublish: true,
-    canCreate: true,
-    canManage: true,
+    ...FULL_CAPABILITIES,
   });
   cleanup();
 });
@@ -60,11 +80,7 @@ function mount(readOnly: boolean) {
     selectedNodeIds: [cardId],
     selectedEdgeIds: [],
     selectedSectionId: null,
-    canEditContent: !readOnly,
-    canEditLayout: !readOnly,
-    canPublish: !readOnly,
-    canCreate: !readOnly,
-    canManage: !readOnly,
+    ...(readOnly ? NO_CAPABILITIES : FULL_CAPABILITIES),
   });
   return render(
     <ReactFlowProvider>
@@ -139,8 +155,13 @@ describe("CanvasBoard board editor", () => {
       canEditContent: true,
       canEditLayout: true,
       canPublish: true,
-      canCreate: false,
-      canManage: false,
+      // A board draft owns cards, sections and edges, never boards or schema.
+      canCreateContent: true,
+      canCreateBoards: false,
+      canManageBoards: false,
+      canManageSchema: false,
+      canManageTrash: false,
+      canManageLinks: false,
     });
     return render(
       <ReactFlowProvider>
@@ -150,11 +171,11 @@ describe("CanvasBoard board editor", () => {
     );
   }
 
-  it("keeps layout gestures and reconnect but not new links", async () => {
+  it("keeps layout, reconnect and draft creation gestures", async () => {
     const { getByTestId } = mountBoardEditor();
     const machine = getByTestId("machine");
     await waitFor(() => expect(machine).toHaveAttribute("data-draggable", "true"));
-    expect(machine).toHaveAttribute("data-connectable", "false");
+    expect(machine).toHaveAttribute("data-connectable", "true");
     expect(machine).toHaveAttribute("data-reconnectable", "true");
   });
 
@@ -173,7 +194,7 @@ describe("CanvasBoard board editor", () => {
     trash.mockRestore();
   });
 
-  it("offers content edits but no delete or create actions", async () => {
+  it("offers content and layout edits but no destructive or schema actions", async () => {
     const { container } = mountBoardEditor();
     await waitFor(() =>
       expect(container.querySelector('[data-testid="card-menu"]')).not.toBeNull(),

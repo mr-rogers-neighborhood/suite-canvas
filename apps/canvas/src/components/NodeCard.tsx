@@ -68,6 +68,8 @@ export interface NodeCardProps {
   onStartEditing?: (field: EditingField) => void;
   onEditEnd?: () => void;
   onRemoveFromBoard?: () => void;
+  /** Mentions, property links and arrows touching this card; 0 hides the chip. */
+  linkCount?: number;
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
   onTrash?: () => void;
@@ -106,6 +108,7 @@ export function NodeCard({
   onStartEditing,
   onEditEnd,
   onRemoveFromBoard,
+  linkCount = 0,
   onOpenInfo,
   onTrash,
 }: NodeCardProps) {
@@ -275,6 +278,22 @@ export function NodeCard({
             onCommit={onEditEnd}
           />
         </div>
+
+        {linkCount > 0 ? (
+          <button
+            type="button"
+            aria-label={`${linkCount} reference${linkCount === 1 ? "" : "s"}`}
+            title={`${linkCount} reference${linkCount === 1 ? "" : "s"}`}
+            data-testid="card-link-count"
+            className="nodrag shrink-0 rounded px-0.5 text-[10px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenInfo?.();
+            }}
+          >
+            {"\u2194"} {linkCount}
+          </button>
+        ) : null}
 
         {presence.length > 0 || draggingPeers.length > 0 || selectingPeers.length > 0 ? (
           <PresenceAvatars

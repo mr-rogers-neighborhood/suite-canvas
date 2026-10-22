@@ -8,6 +8,7 @@ import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers } from "../hooks/useCardContainers";
+import { useReferenceCount } from "../hooks/useReferenceCounts";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -44,6 +45,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   // lets a card that mounted before the body existed adopt it without
   // subscribing to every other card on the board.
   const containers = useCardContainers(id);
+  // A number, not the snapshot: the header chip only re-renders when it moves.
+  const linkCount = useReferenceCount(id);
   const contentId = useMemo(
     () => containers.contentId ?? workspace.getContent(id).id,
     [workspace, id, containers],
@@ -191,6 +194,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         onStartEditing={(field) => startEditing(id, field, "canvas")}
         onEditEnd={stopEditing}
         onRemoveFromBoard={() => workspace.unplaceCard(placement.boardId, id)}
+        linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
         onTrash={() => workspace.trashCard(id)}
         onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}

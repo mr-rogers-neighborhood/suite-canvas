@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType, Tag } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { CardInspector } from "./CardInspector";
+import type { CardReferences } from "./CardPanel";
 
 const doc = new LoroDoc();
 const contentId = doc.getMap("content").ensureMergeableMap("c1").id;
@@ -52,6 +53,59 @@ const card: Card = {
   properties: { stage: "active" },
 };
 
+const references: CardReferences = {
+  incoming: [
+    {
+      key: "in:c2",
+      cardId: "c2",
+      title: "Onboarding friction",
+      glyph: "P",
+      boardId: "b1",
+      boardName: "Research",
+      snippet: "\u2026pair this with Onboarding friction before the next review\u2026",
+    },
+  ],
+  outgoing: [
+    {
+      key: "out:c3",
+      cardId: "c3",
+      title: "Retention spike",
+      glyph: "\u25a1",
+      boardId: "b2",
+      boardName: "Drafts",
+    },
+  ],
+  property: [
+    {
+      key: "field:c4:contradicts",
+      cardId: "c4",
+      title: "Pricing memo",
+      glyph: "P",
+      boardId: "b1",
+      boardName: "Research",
+      fieldName: "Contradicts",
+    },
+  ],
+  arrows: [
+    {
+      key: "arrow:e1",
+      edgeId: "e1",
+      cardId: "c5",
+      title: "Launch plan",
+      glyph: "P",
+      boardId: "b2",
+      boardName: "Drafts",
+      description: "blocks the launch",
+    },
+  ],
+};
+
+const cardOptions = [
+  { id: "c1", title: "Mastering the timeline" },
+  { id: "c2", title: "Onboarding friction" },
+  { id: "c3", title: "Retention spike" },
+];
+
 const meta = {
   title: "Components/CardInspector",
   component: CardInspector,
@@ -84,6 +138,9 @@ const meta = {
         },
       ],
     },
+    cards: cardOptions,
+    references,
+    linkCount: 4,
     editing: null,
     cardDoc: doc,
     contentId,
@@ -105,6 +162,8 @@ const meta = {
     onFocusCard: () => {},
     onFocusSection: () => {},
     onRemoveFromBoard: () => {},
+    onFocusReference: () => {},
+    onFocusArrow: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof CardInspector>;

@@ -1,11 +1,13 @@
+import { mentionContext } from "@suite/graph";
 import { useMemo } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers, useCardTitle } from "../hooks/useCardContainers";
+import { useCardTitles } from "../hooks/useReferenceCounts";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
-import { CardPanel } from "./CardPanel";
+import { CardPanel, cardReferences, EMPTY_CARD_REFERENCES, snippetAround } from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 export interface LibraryCardPanelProps {
@@ -32,12 +34,58 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
   const setPanelOwner = useUiStore((state) => state.setPanelOwner);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
+  const openInspector = useUiStore((state) => state.openInspector);
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
   const card = snapshot.cards.find((entry) => entry.id === cardId);
   const title = useCardTitle(cardId);
   const containers = useCardContainers(cardId);
+
+  // Same shape the inspector builds: options and rows read the live titles.
+  const cards = useCardTitles();
+  const titles = useMemo(() => new Map(cards.map((entry) => [entry.id, entry.title])), [cards]);
+
+  const references = useMemo(
+    () =>
+      card
+        ? cardReferences({
+            cardId: card.id,
+            references: snapshot.references,
+            cards: snapshot.cards,
+            types: snapshot.types,
+            edges: snapshot.edges,
+            placements: snapshot.placements,
+            boards: snapshot.boards,
+            displayTitle: (cardId) => titles.get(cardId) ?? workspace.displayTitle(cardId),
+            mentionSnippet: (sourceCardId, targetCardId) => {
+              const context = mentionContext(workspace.peekContent(sourceCardId), targetCardId);
+              // A mention alone on its line has no sentence to quote.
+              if (context && (context.before.length > 0 || context.after.length > 0)) {
+                const target = titles.get(targetCardId) ?? workspace.displayTitle(targetCardId);
+                return [context.before, target, context.after]
+                  .filter((part) => part.length > 0)
+                  .join(" ");
+              }
+              return snippetAround(
+                workspace.cardText(sourceCardId),
+                titles.get(targetCardId) ?? workspace.displayTitle(targetCardId),
+              );
+            },
+          })
+        : EMPTY_CARD_REFERENCES,
+    [
+      card,
+      workspace,
+      titles,
+      snapshot.references,
+      snapshot.cards,
+      snapshot.types,
+      snapshot.edges,
+      snapshot.placements,
+      snapshot.boards,
+    ],
+  );
 
   const where = useMemo(
     () => cardWhere(snapshot, cardId, activeBoardId),
@@ -76,6 +124,8 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
       tags={snapshot.tags}
       fields={fields}
       where={where}
+      cards={cards}
+      references={references}
       variant="embedded"
       editing={editing}
       cardDoc={workspace.doc}
@@ -103,6 +153,11 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
       onRemoveFromBoard={() => {
         if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
+      onFocusReference={(cardId, boardId) => {
+        if (boardId) focusCard(cardId, boardId);
+        else openInspector(cardId);
+      }}
+      onFocusArrow={(cardId, boardId) => focusCard(cardId, boardId)}
     />
   );
 }

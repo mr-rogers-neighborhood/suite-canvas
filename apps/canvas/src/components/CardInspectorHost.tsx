@@ -1,11 +1,14 @@
+import { mentionContext } from "@suite/graph";
 import { useEffect, useMemo, useRef } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers, useCardTitle } from "../hooks/useCardContainers";
+import { useCardTitles, useReferenceCounts } from "../hooks/useReferenceCounts";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
+import { cardReferences, EMPTY_CARD_REFERENCES, snippetAround } from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 /**
@@ -29,9 +32,11 @@ export function CardInspectorHost() {
   const setPanelOwner = useUiStore((state) => state.setPanelOwner);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
+  const openInspector = useUiStore((state) => state.openInspector);
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
+  const countOf = useReferenceCounts();
   const card = inspectorNodeId
     ? snapshot.cards.find((entry) => entry.id === inspectorNodeId)
     : undefined;
@@ -62,6 +67,54 @@ export function CardInspectorHost() {
   // Cheap: one lookup per type on the card, and the snapshot re-renders this
   // panel whenever a field definition changes.
   const fields = card ? workspace.viewCardFields(card) : [];
+
+  // Pickers and reference rows name other cards, so they read the live title
+  // source rather than a snapshot copy.
+  const cards = useCardTitles();
+  const titles = useMemo(() => new Map(cards.map((entry) => [entry.id, entry.title])), [cards]);
+
+  const references = useMemo(
+    () =>
+      card
+        ? cardReferences({
+            cardId: card.id,
+            references: snapshot.references,
+            cards: snapshot.cards,
+            types: snapshot.types,
+            edges: snapshot.edges,
+            placements: snapshot.placements,
+            boards: snapshot.boards,
+            displayTitle: (cardId) => titles.get(cardId) ?? workspace.displayTitle(cardId),
+            mentionSnippet: (sourceCardId, targetCardId) => {
+              const context = mentionContext(workspace.peekContent(sourceCardId), targetCardId);
+              // A mention alone on its line has no sentence to quote.
+              if (context && (context.before.length > 0 || context.after.length > 0)) {
+                const target = titles.get(targetCardId) ?? workspace.displayTitle(targetCardId);
+                return [context.before, target, context.after]
+                  .filter((part) => part.length > 0)
+                  .join(" ");
+              }
+              // No mention tree (e.g. a title-only mention): fall back to the
+              // body text when it names the target, otherwise show no snippet.
+              return snippetAround(
+                workspace.cardText(sourceCardId),
+                titles.get(targetCardId) ?? workspace.displayTitle(targetCardId),
+              );
+            },
+          })
+        : EMPTY_CARD_REFERENCES,
+    [
+      card,
+      workspace,
+      titles,
+      snapshot.references,
+      snapshot.cards,
+      snapshot.types,
+      snapshot.edges,
+      snapshot.placements,
+      snapshot.boards,
+    ],
+  );
 
   const where = useMemo(
     () => (card ? cardWhere(snapshot, card.id, activeBoardId) : { unplaced: true, entries: [] }),
@@ -96,6 +149,9 @@ export function CardInspectorHost() {
       tags={snapshot.tags}
       fields={fields}
       where={where}
+      cards={cards}
+      references={references}
+      linkCount={countOf(card.id)}
       editing={panelEditing}
       cardDoc={workspace.doc}
       contentId={contentId}
@@ -132,6 +188,12 @@ export function CardInspectorHost() {
       onRemoveFromBoard={() => {
         if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
+      onFocusReference={(cardId, boardId) => {
+        // An unplaced card has nothing to reveal, so the panel is the target.
+        if (boardId) focusCard(cardId, boardId);
+        else openInspector(cardId);
+      }}
+      onFocusArrow={(cardId, boardId) => focusCard(cardId, boardId)}
     />
   );
 }

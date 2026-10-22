@@ -2,7 +2,13 @@ import type { Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/g
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
-import { CardPanel, type CardPanelEditingField, type CardWhere } from "./CardPanel";
+import {
+  CardPanel,
+  type CardPanelEditingField,
+  type CardReferences,
+  type CardWhere,
+} from "./CardPanel";
+import type { CardPickerOption } from "./CardPicker";
 
 export interface CardInspectorProps {
   card: Card;
@@ -11,6 +17,12 @@ export interface CardInspectorProps {
   tags: Tag[];
   fields: CardFieldView[];
   where: CardWhere;
+  /** Selectable cards for a `card` field's picker. */
+  cards: readonly CardPickerOption[];
+  /** Backlinks from mentions, `card` values and arrows. */
+  references: CardReferences;
+  /** Mentions, property links and arrows touching this card. */
+  linkCount: number;
   editing: CardPanelEditingField | null;
   cardDoc: LoroDoc;
   contentId: ContainerID;
@@ -33,6 +45,8 @@ export interface CardInspectorProps {
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
   onRemoveFromBoard: () => void;
+  onFocusReference: (cardId: string, boardId: string | null) => void;
+  onFocusArrow: (cardId: string, boardId: string) => void;
 }
 
 /**
@@ -46,6 +60,9 @@ export function CardInspector({
   tags,
   fields,
   where,
+  cards,
+  references,
+  linkCount,
   editing,
   cardDoc,
   contentId,
@@ -67,6 +84,8 @@ export function CardInspector({
   onFocusCard,
   onFocusSection,
   onRemoveFromBoard,
+  onFocusReference,
+  onFocusArrow,
 }: CardInspectorProps) {
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
@@ -75,10 +94,20 @@ export function CardInspector({
           <p className="truncate text-[13px] font-semibold text-[var(--ink)]" title={title}>
             {title || "Untitled"}
           </p>
-          <p className="text-[11px] text-[var(--ink-muted)]">
-            {where.unplaced
-              ? "In the inbox"
-              : `On ${where.entries.length} board${where.entries.length === 1 ? "" : "s"}`}
+          <p className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
+            <span>
+              {where.unplaced
+                ? "In the inbox"
+                : `On ${where.entries.length} board${where.entries.length === 1 ? "" : "s"}`}
+            </span>
+            {linkCount > 0 ? (
+              <span
+                data-testid="inspector-link-count"
+                title={`${linkCount} reference${linkCount === 1 ? "" : "s"}`}
+              >
+                {"↔"} {linkCount}
+              </span>
+            ) : null}
           </p>
         </div>
         <button
@@ -109,6 +138,8 @@ export function CardInspector({
           tags={tags}
           fields={fields}
           where={where}
+          cards={cards}
+          references={references}
           variant="inspector"
           editing={editing}
           cardDoc={cardDoc}
@@ -129,6 +160,8 @@ export function CardInspector({
           onFocusCard={onFocusCard}
           onFocusSection={onFocusSection}
           onRemoveFromBoard={onRemoveFromBoard}
+          onFocusReference={onFocusReference}
+          onFocusArrow={onFocusArrow}
         />
       </div>
     </aside>

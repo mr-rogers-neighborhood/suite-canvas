@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType, Tag } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
-import { CardPanel } from "./CardPanel";
+import { CardPanel, type CardReferences, EMPTY_CARD_REFERENCES } from "./CardPanel";
 
 const doc = new LoroDoc();
 const contentId = doc.getMap("content").ensureMergeableMap("c1").id;
@@ -29,6 +29,68 @@ const card: Card = {
 };
 
 const tags: Tag[] = [{ id: "t1", name: "Research", createdAt: 0 }];
+
+const references: CardReferences = {
+  incoming: [
+    {
+      key: "in:c2",
+      cardId: "c2",
+      title: "Onboarding friction",
+      glyph: "P",
+      boardId: "b1",
+      boardName: "Research",
+      snippet:
+        "\u2026we should pair this with Onboarding friction before the next review, then re-read the notes\u2026",
+    },
+    {
+      key: "in:c3",
+      cardId: "c3",
+      title: "Interview notes",
+      glyph: "\u25a1",
+      boardId: null,
+    },
+  ],
+  outgoing: [
+    {
+      key: "out:c4",
+      cardId: "c4",
+      title: "Retention spike",
+      glyph: "\u25a1",
+      boardId: "b2",
+      boardName: "Drafts",
+    },
+  ],
+  property: [
+    {
+      key: "field:c5:contradicts",
+      cardId: "c5",
+      title: "Pricing memo",
+      glyph: "P",
+      boardId: "b1",
+      boardName: "Research",
+      fieldName: "Contradicts",
+    },
+  ],
+  arrows: [
+    {
+      key: "arrow:e1",
+      edgeId: "e1",
+      cardId: "c6",
+      title: "Launch plan",
+      glyph: "P",
+      boardId: "b2",
+      boardName: "Drafts",
+      description: "blocks the launch",
+    },
+  ],
+};
+
+const cardOptions = [
+  { id: "c1", title: "Mastering the timeline" },
+  { id: "c2", title: "Onboarding friction" },
+  { id: "c3", title: "Interview notes" },
+  { id: "c4", title: "Retention spike" },
+];
 
 const meta = {
   title: "Components/CardPanel",
@@ -59,6 +121,8 @@ const meta = {
         },
       ],
     },
+    cards: cardOptions,
+    references,
     variant: "embedded",
     editing: null,
     cardDoc: doc,
@@ -79,6 +143,8 @@ const meta = {
     onFocusCard: () => {},
     onFocusSection: () => {},
     onRemoveFromBoard: () => {},
+    onFocusReference: () => {},
+    onFocusArrow: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof CardPanel>;
@@ -89,6 +155,10 @@ type Story = StoryObj<typeof meta>;
 export const Embedded: Story = {};
 
 export const Inspector: Story = { args: { variant: "inspector" } };
+
+export const NoReferences: Story = {
+  args: { references: EMPTY_CARD_REFERENCES },
+};
 
 export const EditingBody: Story = { args: { editing: "body" } };
 

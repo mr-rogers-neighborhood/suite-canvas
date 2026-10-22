@@ -41,12 +41,14 @@ prevented is two editors accepting keystrokes for the same card.
    **focus primitive** (`focusTarget` with a nonce), which the canvas consumes by moving its
    viewport once the node exists. No document writes.
 
-3. **One editable surface per card per client.** `editingSurface: "canvas" | "panel"` joins
-   `editingNodeId`/`editingField`. The canvas card is editable only when the surface is `canvas`;
-   the panel (inspector or an expanded Library row) only when it is `panel`. Both surfaces may be
-   mounted, because the shared cursor store publishes a single caret and peer carets are
-   content-anchored; only one may accept keystrokes. Undo stays per editor, as it already does for
-   title and body.
+3. **One editable surface per card per client.** `editingSurface: "canvas" | "panel"` plus
+   `panelOwner: "inspector" | "library" | null` join `editingNodeId`/`editingField`. The canvas card
+   is editable only when the surface is `canvas`; the inspector only when the panel is owned by the
+   inspector, a Library row only when it is owned by the library. Both surfaces may be mounted, and
+   only the owning one receives the shared `cursorStore`; the read-only twin re-reads the container
+   through the sync plugin's mapping so it never goes stale. Peer carets are content-anchored, so
+   the caret published from a panel still renders in the collaborator's canvas card. Undo stays per
+   editor, as it already does for title and body.
 
 4. **The card panel is one presentational component.** `CardPanel` renders title, type, tags,
    properties, Where and the body editor; the inspector is a shell around it, an expanded Library

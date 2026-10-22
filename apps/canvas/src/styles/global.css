@@ -553,7 +553,7 @@ body {
 .library-drawer[data-wide="true"] {
   display: flex;
   width: min(640px, calc(100vw - 2rem));
-  max-height: 60vh;
+  max-height: min(60vh, 520px);
   flex-direction: column;
 }
 

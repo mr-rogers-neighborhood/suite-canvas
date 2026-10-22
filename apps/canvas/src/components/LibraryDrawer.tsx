@@ -194,6 +194,15 @@ export function LibraryDrawer({
     if (staleExpanded) onExpandRow(null);
   }, [staleExpanded, onExpandRow]);
 
+  // The list scrolls inside a capped drawer; open the panel where the reader is
+  // looking instead of below the fold.
+  useEffect(() => {
+    if (!expandedRowId || !open) return;
+    panel.current
+      ?.querySelector(`[data-row-id="${expandedRowId}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [expandedRowId, open]);
+
   if (!open) return null;
 
   const sectionLabel = (item: LibraryItem): string => {
@@ -204,7 +213,7 @@ export function LibraryDrawer({
   const renderRow = (item: LibraryItem) => {
     const expanded = tab === "cards" && expandedRowId === item.id;
     return (
-      <li key={item.id} className="library-entry">
+      <li key={item.id} className="library-entry" data-row-id={item.id}>
         <div
           data-testid={`library-item-${item.id}`}
           className="library-row"
@@ -323,7 +332,12 @@ export function LibraryDrawer({
     );
   };
 
-  const rows = grouped ? (
+  // An open row takes the list over: the panel needs the height more than the
+  // neighbouring rows do, and the chevron on the row brings the list back.
+  const openCard = expandedRowId ? visible.find((item) => item.id === expandedRowId) : undefined;
+  const rows = openCard ? (
+    <ul className="space-y-0.5">{[openCard].map(renderRow)}</ul>
+  ) : grouped ? (
     <div className="space-y-2">
       {grouped.map((group) => (
         <section key={group.id} data-testid={`library-group-${group.id}`}>

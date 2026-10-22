@@ -296,11 +296,15 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   and body. StarterKit's undo history is disabled because `LoroCollaboration` owns a scoped Loro
   undo stack.
 - **One editable surface per card per client.** The same card can be mounted on the canvas, in the
-  inspector and in an expanded Library row. `editingSurface` (`canvas | panel`) decides which of
-  them accepts keystrokes; the others stay read-only. This is safe because all editors in a tab
-  share one `CursorEphemeralStore`, which keeps a single local cursor per tab, and peer carets are
-  content-anchored — so a caret published from the panel renders in the collaborator's canvas card.
-  Undo remains per editor, exactly as it already is between title and body.
+  inspector and in an expanded Library row. `editingSurface` (`canvas | panel`) plus `panelOwner`
+  (`inspector | library`) decide which one accepts keystrokes; the others stay read-only.
+  `loro-prosemirror` ignores a local commit in every editor except its author, so a read-only twin
+  re-reads the container through the sync plugin's own mapping when the owning surface writes
+  (`useLocalMirrorSync`, coalesced per animation frame, dispatched as a non-local update so the
+  cursor store is untouched). Only the owning surface receives the shared `cursorStore`; the twin
+  gets `null`, so it cannot clear the caret the owning editor publishes. Peer carets are
+  content-anchored, so a caret published from the panel still renders in the collaborator's canvas
+  card. Undo remains per editor, exactly as it already is between title and body.
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
@@ -391,8 +395,10 @@ and links follow when the footer expands.
   something inside one board's namespace. Scope, facet and grouping are UI state; membership stays
   derived from geometry.
 - **Inline editing** — one row at a time expands into the shared card panel (title, tags,
-  properties, Where, body). It edits the same Loro containers as the canvas; `editingSurface`
-  guarantees the canvas copy is read-only while the panel has the caret.
+  properties, Where, body); the open row takes the list over and its chevron brings the list back,
+  so the panel gets the height it needs. It edits the same Loro containers as the canvas;
+  `panelOwner` guarantees the canvas copy and the inspector are read-only while the row has the
+  caret.
 - **Place** centres the card in the viewport, staggered so repeated placements don't stack. A row's
   `Open` action switches board and focuses the card through the focus primitive.
 - **Hold to place** is a pointer gesture (not HTML5 drag and drop): a row lifts into a card ghost

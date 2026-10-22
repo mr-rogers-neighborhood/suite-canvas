@@ -48,6 +48,17 @@ describe("types", () => {
     });
   });
 
+  it("should keep an explicit plural name and clear it back to the default", () => {
+    const { workspace, project } = setup();
+    expect(workspace.getType(project.id)?.pluralName).toBeUndefined();
+
+    workspace.updateType(project.id, { pluralName: "  Initiatives  " });
+    expect(workspace.getType(project.id)?.pluralName).toBe("Initiatives");
+
+    workspace.updateType(project.id, { pluralName: null });
+    expect(workspace.getType(project.id)?.pluralName).toBeUndefined();
+  });
+
   it("should refuse to delete the note type", () => {
     const { workspace } = setup();
     expect(() => workspace.deleteType("note")).toThrow();

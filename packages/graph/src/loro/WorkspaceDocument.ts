@@ -78,6 +78,7 @@ export interface CreateCardInput {
 export interface CreateTypeInput {
   id?: string;
   name: string;
+  pluralName?: string;
   glyph?: string;
   color?: string;
 }
@@ -420,6 +421,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
   definitions.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
   const color = readString(fields, "color");
+  const pluralName = readString(fields, "pluralName")?.trim();
   return cardTypeSchema.parse({
     id,
     name: readString(fields, "name") ?? "Type",
@@ -428,6 +430,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     fields: definitions,
     ...(color ? { color } : {}),
+    ...(pluralName ? { pluralName } : {}),
   });
 }
 
@@ -890,6 +893,8 @@ export class WorkspaceDocument {
     const fields = this.types.ensureMergeableMap(type.id);
     fields.set("name", type.name);
     fields.set("glyph", type.glyph);
+    if (type.pluralName) fields.set("pluralName", type.pluralName);
+    else if (fields.get("pluralName") !== undefined) fields.delete("pluralName");
     if (type.color) fields.set("color", type.color);
     else if (fields.get("color") !== undefined) fields.delete("color");
     fields.set("createdAt", type.createdAt);
@@ -912,18 +917,27 @@ export class WorkspaceDocument {
       updatedAt: now,
       fields: [],
       ...(input.color ? { color: input.color } : {}),
+      ...(input.pluralName?.trim() ? { pluralName: input.pluralName.trim() } : {}),
     });
     this.writeType(type, commit);
     this.typeCache.set(type.id, type);
     return type;
   }
 
-  updateType(id: string, patch: { name?: string; glyph?: string; color?: string | null }): void {
+  updateType(
+    id: string,
+    patch: { name?: string; pluralName?: string | null; glyph?: string; color?: string | null },
+  ): void {
     const type = this.getType(id);
     if (!type) return;
     const fields = this.types.get(id);
     if (!isMap(fields)) return;
     if (patch.name !== undefined) fields.set("name", patch.name.trim() || type.name);
+    if (patch.pluralName !== undefined) {
+      const pluralName = patch.pluralName?.trim();
+      if (pluralName) fields.set("pluralName", pluralName);
+      else if (fields.get("pluralName") !== undefined) fields.delete("pluralName");
+    }
     if (patch.glyph !== undefined) fields.set("glyph", patch.glyph || type.glyph);
     if (patch.color !== undefined) {
       if (patch.color) fields.set("color", patch.color);

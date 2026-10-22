@@ -65,12 +65,27 @@ export const fieldDefinitionSchema = z.object({
 export const cardTypeSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
+  /** Collection label ("Characters"); derived from the name when absent. */
+  pluralName: z.string().min(1).optional(),
   glyph: z.string().min(1),
   color: z.string().optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   fields: z.array(fieldDefinitionSchema),
 });
+
+/**
+ * Type names are singular wherever one card is labelled; collection labels need
+ * a plural. An explicit plural wins, and the fallback stays deliberately naive
+ * ("-es" after a sibilant, otherwise "-s") so the field can stay optional.
+ */
+export function typePluralName(type: { name: string; pluralName?: string | undefined }): string {
+  const explicit = type.pluralName?.trim();
+  if (explicit) return explicit;
+  const name = type.name.trim();
+  if (!name) return name;
+  return /(?:s|x|z|ch|sh)$/i.test(name) ? `${name}es` : `${name}s`;
+}
 
 /** A freeform label with no schema, used for retrieval only. */
 export const tagSchema = z.object({

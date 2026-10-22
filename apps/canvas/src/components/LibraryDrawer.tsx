@@ -1,4 +1,5 @@
 import type { CardType, PropertyValue, Tag } from "@suite/graph";
+import { typePluralName } from "@suite/graph";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
@@ -462,7 +463,7 @@ export function LibraryDrawer({
               onClick={() => onToggleType(type.id)}
             >
               <span aria-hidden="true">{type.glyph}</span>
-              {type.name}
+              {typePluralName(type)}
               <span className="tabular-nums text-[var(--ink-muted)]">{count}</span>
             </button>
           );

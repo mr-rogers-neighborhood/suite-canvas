@@ -1,5 +1,5 @@
 import type { CardType, CreateFieldInput, FieldDefinition } from "@suite/graph";
-import { fieldKinds } from "@suite/graph";
+import { fieldKinds, typePluralName } from "@suite/graph";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -7,7 +7,10 @@ export interface TypeSettingsDialogProps {
   types: CardType[];
   onClose: () => void;
   onCreateType: (input: { name: string; glyph: string }) => string;
-  onUpdateType: (id: string, patch: { name?: string; glyph?: string }) => void;
+  onUpdateType: (
+    id: string,
+    patch: { name?: string; pluralName?: string | null; glyph?: string },
+  ) => void;
   onDeleteType: (id: string, reassignTo: string) => void;
   onAddField: (typeId: string, input: CreateFieldInput) => void;
   onUpdateField: (
@@ -226,27 +229,48 @@ export function TypeSettingsDialog({
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center gap-2 border-b border-[var(--hairline)] px-3 py-2">
-            <input
-              key={selected?.id}
-              type="text"
-              defaultValue={selected?.name ?? ""}
-              aria-label="Type name"
-              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
-              onBlur={(event) => {
-                const name = event.target.value.trim();
-                if (!selected) return;
-                if (name && name !== selected.name) onUpdateType(selected.id, { name });
-                else event.target.value = selected.name;
-              }}
-            />
-            <button
-              type="button"
-              className="rounded px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={onClose}
-            >
-              Done
-            </button>
+          <header className="border-b border-[var(--hairline)] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <input
+                key={`${selected?.id}-name`}
+                type="text"
+                defaultValue={selected?.name ?? ""}
+                aria-label="Type name"
+                className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-[var(--ink)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
+                onBlur={(event) => {
+                  const name = event.target.value.trim();
+                  if (!selected) return;
+                  if (name && name !== selected.name) onUpdateType(selected.id, { name });
+                  else event.target.value = selected.name;
+                }}
+              />
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={onClose}
+              >
+                Done
+              </button>
+            </div>
+            {selected ? (
+              <div className="mt-1 flex items-center gap-1.5">
+                <span className="shrink-0 text-[11px] text-[var(--ink-muted)]">Plural</span>
+                <input
+                  key={`${selected.id}-plural`}
+                  type="text"
+                  defaultValue={selected.pluralName ?? ""}
+                  placeholder={typePluralName({ name: selected.name })}
+                  aria-label="Type plural name"
+                  data-testid="type-plural-name"
+                  className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-muted)] hover:border-[var(--hairline)] focus:border-[var(--ink-muted)] focus:outline-none"
+                  onBlur={(event) => {
+                    const pluralName = event.target.value.trim();
+                    if (pluralName === (selected.pluralName ?? "")) return;
+                    onUpdateType(selected.id, { pluralName: pluralName || null });
+                  }}
+                />
+              </div>
+            ) : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">

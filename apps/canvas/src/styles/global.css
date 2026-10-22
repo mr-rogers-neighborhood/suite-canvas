@@ -313,15 +313,6 @@ body {
   border-radius: 2px;
 }
 
-/* Editor typography */
-.node-card-editor p {
-  margin: 0;
-}
-
-.node-card-editor p + p {
-  margin-top: 0.5rem;
-}
-
 /* The body reads as text, but dragging still wins once the card moves. */
 [data-testid="card-body"],
 [data-testid="card-body"] * {
@@ -470,11 +461,10 @@ body {
   pointer-events: none;
 }
 
-/* Card chrome: header, title and the expandable footer sit inside the card so
-   connectors and links follow when the card grows. */
 /* Tiptap block typography. Tailwind Preflight removes heading sizes and list
    markers, so the editor restores the document styles explicitly. Scoped to the
    body editor: the title keeps its single-line chrome typography. */
+/* biome-ignore lint/style/noDescendingSpecificity: scoped to the body editor; the later title rules target a different element. */
 .node-card-editor > * + * {
   margin-top: 0.375rem;
 }
@@ -560,6 +550,9 @@ body {
   border: 0;
   border-top: 1px solid var(--hairline);
 }
+
+/* Card chrome: header, title and the expandable footer sit inside the card so
+   connectors and links follow when the card grows. */
 
 .card-header {
   background: color-mix(in srgb, var(--ink) 4%, transparent);

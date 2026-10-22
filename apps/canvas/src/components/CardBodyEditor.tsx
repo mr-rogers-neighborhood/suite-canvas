@@ -2,6 +2,7 @@ import { Fragment, Slice } from "@tiptap/pm/model";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
+import { SuggestionPluginKey } from "@tiptap/suggestion";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import {
   type CursorEphemeralStore,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useLayoutEffect } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
+import { Mention } from "../editor/Mention";
 
 interface ToolbarState {
   bold: boolean;
@@ -123,6 +125,8 @@ export function CardBodyEditor({
       extensions: [
         // Collaboration ships its own undo history, so StarterKit's is disabled.
         StarterKit.configure({ undoRedo: false }),
+        // Both editors share the extension's one `@` suggestion config.
+        Mention,
         LoroCollaboration.configure({
           doc: cardDoc,
           containerId: contentId,
@@ -276,6 +280,8 @@ export function CardTitleEditor({
       editable,
       extensions: [
         StarterKit.configure({ undoRedo: false }),
+        // Titles can reference cards too, with the same picker as the body.
+        Mention,
         LoroCollaboration.configure({
           doc: cardDoc,
           containerId: titleId,
@@ -292,13 +298,14 @@ export function CardTitleEditor({
           "aria-label": ariaLabel,
         },
         // Enter commits instead of adding a line: titles stay single-line.
-        handleKeyDown: (_view, event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            onCommit?.();
-            return true;
-          }
-          return false;
+        // The `@` picker gets the key first while it is open, so choosing a
+        // mention does not commit the title and drop the suggestion.
+        handleKeyDown: (view, event) => {
+          if (event.key !== "Enter") return false;
+          if (SuggestionPluginKey.getState(view.state)?.active) return false;
+          event.preventDefault();
+          onCommit?.();
+          return true;
         },
       },
       onFocus: () => onFocus?.(),

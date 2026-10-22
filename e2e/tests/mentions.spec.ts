@@ -1,0 +1,217 @@
+import { expect, type Page, test } from "@playwright/test";
+
+let sequence = 0;
+const workspaceUrl = (name: string) =>
+  `/?workspace=e2e-mentions-${name}-${Date.now()}-${++sequence}`;
+
+const cards = (page: Page) => page.locator('[data-testid="node-card"]');
+
+async function emptyCanvasPoint(page: Page, variant = 0): Promise<{ x: number; y: number }> {
+  const box = await page.getByTestId("canvas-board").boundingBox();
+  if (!box) throw new Error("canvas board not found");
+
+  const point = await page.evaluate(
+    ({ width, height, offsetX, offsetY, variant }) => {
+      const candidates: { x: number; y: number }[] = [];
+      for (let fy = 0.12; fy < 0.95; fy += 0.08) {
+        for (let fx = 0.12; fx < 0.95; fx += 0.08) {
+          const x = Math.round(width * fx);
+          const y = Math.round(height * fy);
+          const element = document.elementFromPoint(offsetX + x, offsetY + y);
+          if (!element) continue;
+          if (element.closest('[data-testid="node-card"]')) continue;
+          if (element.closest(".react-flow__panel")) continue;
+          if (element.closest(".react-flow__pane"))
+            candidates.push({ x: offsetX + x, y: offsetY + y });
+        }
+      }
+      if (candidates.length === 0) return null;
+      // Later attempts start further along the list so a card that appeared
+      // under the previous click does not get clicked again.
+      return candidates[(variant * 17) % candidates.length];
+    },
+    { width: box.width, height: box.height, offsetX: box.x, offsetY: box.y, variant },
+  );
+
+  if (!point) throw new Error("no empty canvas point found");
+  return point;
+}
+
+/** Creates a note and commits a title, leaving no editor focused. */
+async function createNote(page: Page, title: string): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const point = await emptyCanvasPoint(page, attempt);
+    await page.mouse.click(point.x, point.y, { button: "right" });
+    const newNote = page.getByRole("menuitem", { name: "New note" });
+    // A click can land on a card that mounted after the scan; try elsewhere.
+    if (!(await newNote.isVisible({ timeout: 800 }).catch(() => false))) {
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(150);
+      continue;
+    }
+    await newNote.click();
+    await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    await page.waitForTimeout(300);
+    await page.keyboard.type(title);
+    await page.keyboard.press("Escape");
+    await expect(cards(page).filter({ hasText: title })).toHaveCount(1);
+    return;
+  }
+  throw new Error("could not open the canvas menu");
+}
+
+/**
+ * Starts canvas body editing from the card menu. A double click would also open
+ * the inspector with the first click, which can then swallow the second click.
+ */
+async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<void> {
+  await card.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Edit body" }).click();
+  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
+}
+
+test("inserts a mention from the picker and keeps it after a reload", async ({ page }) => {
+  await page.goto(workspaceUrl("insert"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
+
+  await createNote(page, "Target card");
+  await createNote(page, "Source card");
+
+  const source = cards(page).filter({ hasText: "Source card" });
+  await editBody(page, source);
+
+  await page.keyboard.type("@Targ");
+  const picker = page.getByTestId("mention-picker");
+  await expect(picker).toBeVisible();
+  await expect(page.getByTestId("mention-option").filter({ hasText: "Target card" })).toBeVisible();
+  // The query filters: a card that does not match is not offered.
+  await expect(page.getByTestId("mention-option")).toHaveCount(1);
+
+  await page.keyboard.press("Enter");
+
+  const chip = source.getByTestId("mention-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText("Target card");
+  await expect(picker).toHaveCount(0);
+
+  // Typing continues after the atom, and the chip stays one node.
+  await page.keyboard.type("done");
+  await expect(source.getByTestId("card-body")).toContainText("done");
+  await expect(source.getByTestId("mention-chip")).toHaveCount(1);
+
+  // Clicking the chip opens the target's panel instead of editing this card.
+  await chip.click();
+  const inspector = page.getByTestId("card-inspector");
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText("Target card");
+  // Once the panel lists references, the mention also feeds the derived index;
+  // until then the chip itself is the proof that the target is linked.
+  if (
+    await inspector
+      .getByText("Referenced by")
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await expect(inspector).toContainText("Source card");
+  }
+
+  await page.reload();
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  const reloaded = cards(page).filter({ hasText: "Source card" });
+  await expect(reloaded.getByTestId("mention-chip")).toContainText("Target card");
+});
+
+test("mentions work in the title editor", async ({ page }) => {
+  await page.goto(workspaceUrl("title"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Target card");
+  await createNote(page, "Title host");
+
+  const host = cards(page).filter({ hasText: "Title host" });
+  await host.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Edit title" }).click();
+  await expect(host.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+
+  await page.keyboard.press("End");
+  await page.keyboard.type(" @Targ");
+  await expect(page.getByTestId("mention-option").filter({ hasText: "Target card" })).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  await expect(host.locator(".card-title-editor").getByTestId("mention-chip")).toContainText(
+    "Target card",
+  );
+  // Enter picked the suggestion instead of committing the title.
+  await expect(host.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+
+  await page.keyboard.press("Escape");
+  await expect(host.locator(".card-title-editor").getByTestId("mention-chip")).toContainText(
+    "Target card",
+  );
+});
+
+test("shows no-match feedback without inserting anything", async ({ page }) => {
+  await page.goto(workspaceUrl("empty"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Target card");
+
+  const target = cards(page).filter({ hasText: "Target card" });
+  await editBody(page, target);
+
+  await page.keyboard.type("@zzzz");
+  await expect(page.getByTestId("mention-empty")).toContainText("No cards match");
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mention-picker")).toHaveCount(0);
+  // Escape dismissed the picker; the typed text stays, and no chip was added.
+  await expect(target.getByTestId("mention-chip")).toHaveCount(0);
+});
+
+test("syncs a mention and its live title to a peer", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  const url = workspaceUrl("two-clients");
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  await expect(pageB.getByTestId("canvas-board")).toBeVisible();
+
+  await createNote(pageA, "Target card");
+  await createNote(pageA, "Source card");
+  await expect(cards(pageB)).toHaveCount(4);
+
+  const sourceA = cards(pageA).filter({ hasText: "Source card" });
+  await editBody(pageA, sourceA);
+  await pageA.keyboard.type("@Target");
+  await expect(
+    pageA.getByTestId("mention-option").filter({ hasText: "Target card" }),
+  ).toBeVisible();
+  await pageA.keyboard.press("Enter");
+
+  // B reads the shared body and renders its own chip with the live title.
+  const sourceB = cards(pageB).filter({ hasText: "Source card" });
+  await expect(sourceB.getByTestId("mention-chip")).toContainText("Target card");
+
+  // Renaming the target on B renames it inside A's mention.
+  const targetB = cards(pageB).filter({
+    has: pageB.locator(".card-title-editor", { hasText: "Target card" }),
+  });
+  await targetB.getByRole("button", { name: "Edit card title" }).dblclick();
+  await expect(pageB.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  await pageB.keyboard.type(" renamed");
+  await pageB.keyboard.press("Escape");
+
+  await expect(sourceA.getByTestId("mention-chip")).toContainText("Target card renamed");
+
+  await contextA.close();
+  await contextB.close();
+});

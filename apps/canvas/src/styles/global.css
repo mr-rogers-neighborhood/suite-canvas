@@ -951,3 +951,118 @@ body {
 .section-resize-handle[data-direction="w"] {
   cursor: ew-resize;
 }
+
+/* Link descriptions. The chip lives in React Flow's label renderer (flow
+   coordinates), is counter-scaled by the edge component, and never takes
+   pointer events so the arc underneath still selects and opens its menu. */
+.edge-description {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.edge-description-chip {
+  display: block;
+  max-width: 180px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translate(-50%, -50%);
+}
+
+/* Inline editor, anchored on the click that opened it. */
+.edge-description-input {
+  position: fixed;
+  z-index: 50;
+  width: 220px;
+  padding: 4px 8px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 10px 28px -14px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 18px;
+  outline: none;
+}
+
+.edge-description-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.edge-description-input:focus-visible {
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
+/* Mention chips: inline atoms that read as links but store only a card id. */
+.mention-node {
+  display: inline;
+}
+
+.mention-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  max-width: 16rem;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--section-blue) 14%, transparent);
+  color: var(--section-blue);
+  font-weight: 500;
+  line-height: 1.5;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.mention-chip:hover {
+  background: color-mix(in srgb, var(--section-blue) 22%, transparent);
+}
+
+.mention-chip:focus-visible {
+  outline: 2px solid var(--section-blue);
+  outline-offset: 1px;
+}
+
+.mention-chip-at {
+  opacity: 0.7;
+}
+
+.mention-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-chip-unavailable {
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+  cursor: default;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.mention-picker {
+  z-index: 60;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}

@@ -23,6 +23,8 @@ export interface MentionSuggestionItem {
   fieldId?: string;
   /** Set for `reference`: the card the field belongs to. */
   cardId?: string;
+  /** A card's fields, shown under it because that card is selected. */
+  nested?: boolean;
 }
 
 /** Everything the picker needs to draw itself; owned by the renderer below. */
@@ -59,8 +61,10 @@ function listStyle(rect: DOMRect | null): CSSProperties {
   return { ...base, top: below };
 }
 
-function optionClass(active: boolean): string {
-  return `flex w-full items-center gap-2 truncate rounded px-2 py-1 text-left text-[12px] transition-colors ${
+function optionClass(active: boolean, nested: boolean): string {
+  return `flex w-full items-center gap-2 truncate rounded py-1 pr-2 text-left text-[12px] transition-colors ${
+    nested ? "pl-5" : "pl-2"
+  } ${
     active
       ? "bg-[var(--segmented-bg)] text-[var(--ink)]"
       : "text-[var(--ink-muted)] hover:bg-[var(--segmented-bg)]"
@@ -92,34 +96,53 @@ export function SuggestionList({
       onMouseDown={(event) => event.preventDefault()}
     >
       {items.length > 0 ? (
-        items.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            role="option"
-            aria-selected={index === activeIndex}
-            data-testid="mention-option"
-            data-kind={item.kind}
-            data-card-id={item.id}
-            className={optionClass(index === activeIndex)}
-            onMouseEnter={() => onHover(index)}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onSelect(item)}
-          >
-            <span aria-hidden="true" className="w-3 shrink-0 text-center">
-              {item.glyph}
-            </span>
-            <span className="truncate">{item.title}</span>
-            {item.kind === "card" ? null : (
-              <span
-                data-testid="mention-option-kind"
-                className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]"
-              >
-                {item.kind === "field" ? "Field" : "Link"}
+        items.map((item, index) => {
+          const nested = item.nested === true;
+          // A card that has fields advertises them, so the submenu is not a
+          // surprise: the chevron and count say "there is more under here".
+          const fields = item.kind === "card" ? cardFieldRows(item.id).length : 0;
+          return (
+            <button
+              key={itemKey(item)}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              data-testid="mention-option"
+              data-kind={item.kind}
+              data-nested={nested ? "true" : undefined}
+              data-card-id={item.cardId ?? item.id}
+              className={optionClass(index === activeIndex, nested)}
+              onMouseEnter={() => onHover(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onSelect(item)}
+            >
+              <span aria-hidden="true" className="w-3 shrink-0 text-center">
+                {nested ? "\u00b7" : item.glyph}
               </span>
-            )}
-          </button>
-        ))
+              {/* Under its card the name would only repeat what the parent row
+                  says, so the submenu shows the field on its own. */}
+              <span className="truncate" title={item.title}>
+                {nested ? item.title.split(" \u00b7 ").pop() : item.title}
+              </span>
+              {item.kind === "card" && fields > 0 ? (
+                <span
+                  data-testid="mention-option-submenu"
+                  title={`${fields} field${fields === 1 ? "" : "s"} available`}
+                  className="ml-auto shrink-0 text-[11px] text-[var(--ink-muted)]"
+                >
+                  {fields} {"\u203a"}
+                </span>
+              ) : item.kind === "card" ? null : (
+                <span
+                  data-testid="mention-option-kind"
+                  className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]"
+                >
+                  {item.kind === "field" ? "Field" : "Link"}
+                </span>
+              )}
+            </button>
+          );
+        })
       ) : (
         <p className="px-2 py-1 text-[12px] text-[var(--ink-muted)]" data-testid="mention-empty">
           {loading ? "Searching…" : query.trim() ? "Nothing matches" : "No cards yet"}
@@ -196,6 +219,38 @@ function otherCards(ownCardId: string): Card[] {
   return currentSnapshot().cards.filter((card) => !card.deletedAt && card.id !== ownCardId);
 }
 
+/** The rows a card can offer as `@card.field`, for the submenu under it. */
+export function cardFieldRows(cardId: string): MentionSuggestionItem[] {
+  const workspace = useCanvasStore.getState().workspace;
+  const card = cardId ? workspace.getCard(cardId) : undefined;
+  if (!card) return [];
+  return referenceRowsFor(card, "").map((row) => ({ ...row, nested: true }));
+}
+
+/** Identity of a row across list rebuilds, so the active row can be re-found. */
+export function itemKey(item: MentionSuggestionItem): string {
+  return `${item.kind}:${item.id}`;
+}
+
+/**
+ * The list with one card's fields opened under it. This is the submenu: the
+ * selected card shows what it can link to without the reader having to know the
+ * dot syntax, and nothing is written until a row is picked.
+ */
+export function expandedRows(
+  items: MentionSuggestionItem[],
+  cardId: string | null,
+): MentionSuggestionItem[] {
+  if (!cardId) return items;
+  const index = items.findIndex((item) => item.kind === "card" && item.id === cardId);
+  if (index < 0) return items;
+  // A query that already names the card lists its fields itself.
+  if (items.some((item) => item.kind === "reference" && item.cardId === cardId)) return items;
+  const rows = cardFieldRows(cardId);
+  if (rows.length === 0) return items;
+  return [...items.slice(0, index + 1), ...rows, ...items.slice(index + 1)];
+}
+
 /**
  * `@card.field` rows for a typed dot: the text before it names a card, the text
  * after it narrows that card's fields.
@@ -256,7 +311,7 @@ export function rankItems(query: string, cardId = ""): MentionSuggestionItem[] {
   // One card left in the running: offer its fields, below the card itself.
   const [only] = matching;
   if (matching.length === 1 && only && needle.length >= 2) {
-    for (const item of referenceRowsFor(only, "")) matches.push({ item, rank: 3 });
+    for (const item of cardFieldRows(only.id)) matches.push({ item, rank: 3 });
   }
 
   matches.sort(
@@ -272,6 +327,8 @@ interface PickerState {
   items: MentionSuggestionItem[];
   query: string;
   active: number;
+  /** Card whose fields are open under it, if any. */
+  expanded: string | null;
   loading: boolean;
   rect: DOMRect | null;
 }
@@ -279,24 +336,31 @@ interface PickerState {
 function createPickerRenderer() {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
-  let state: PickerState = { items: [], query: "", active: 0, loading: false, rect: null };
+  let state: PickerState = {
+    items: [],
+    query: "",
+    active: 0,
+    expanded: null,
+    loading: false,
+    rect: null,
+  };
   let run: ((item: MentionSuggestionItem) => void) | null = null;
+  let current: SuggestionProps<MentionSuggestionItem, MentionSuggestionItem> | null = null;
   let picked = false;
+
+  /** The list as drawn: base rows plus the selected card's fields. */
+  const shown = () => expandedRows(state.items, state.expanded);
 
   const paint = () => {
     if (!root) return;
     root.render(
       createElement(SuggestionList, {
-        items: state.items,
+        items: shown(),
         query: state.query,
         activeIndex: state.active,
         loading: state.loading,
         rect: state.rect,
-        onHover: (index: number) => {
-          if (index === state.active) return;
-          state = { ...state, active: index };
-          paint();
-        },
+        onHover: (index: number) => setActive(index),
         onSelect: (item: MentionSuggestionItem) => {
           picked = true;
           run?.(item);
@@ -305,14 +369,51 @@ function createPickerRenderer() {
     );
   };
 
+  /**
+   * Moves the cursor in the list, opening the submenu under a card. Indices are
+   * re-found by row identity because opening or closing the submenu changes the
+   * list's length.
+   */
+  const setActive = (index: number) => {
+    const rows = shown();
+    const item = rows[Math.max(0, Math.min(index, rows.length - 1))];
+    if (!item) return;
+    // A card row opens its fields; a field row keeps its card open; anything
+    // else closes what was open.
+    const owner =
+      item.kind === "card" ? item.id : item.kind === "reference" ? (item.cardId ?? null) : null;
+    const expanded = owner && cardFieldRows(owner).length > 0 ? owner : null;
+    const next = expandedRows(state.items, expanded);
+    const at = next.findIndex((row) => itemKey(row) === itemKey(item));
+    state = { ...state, expanded, active: at < 0 ? 0 : at };
+    paint();
+  };
+
+  /** Completes the typed query to the row's name, so typing `.` can follow. */
+  const completeTo = (item: MentionSuggestionItem) => {
+    if (!current || item.kind !== "card") return;
+    const replacement = `@${item.title}`;
+    // The suggestion cannot span whitespace, so only single-word names can be
+    // completed; a longer name stays as typed and the submenu does the work.
+    if (/\s/.test(item.title) || state.query === item.title) return;
+    const { editor, range } = current;
+    editor.view.dispatch(
+      editor.state.tr.insertText(replacement, range.from, range.to).setMeta("addToHistory", false),
+    );
+  };
+
   const setFromProps = (props: SuggestionProps<MentionSuggestionItem, MentionSuggestionItem>) => {
     run = (item) => props.command(item);
+    current = props;
     const queryChanged = props.query !== state.query;
+    const items = props.items;
     state = {
-      items: props.items,
+      items,
       query: props.query,
       // A new query starts from the best match, not wherever the cursor was.
-      active: queryChanged ? 0 : Math.min(state.active, Math.max(0, props.items.length - 1)),
+      active: queryChanged ? 0 : Math.min(state.active, Math.max(0, items.length - 1)),
+      // Typing closes the submenu: the list it would open is now a query away.
+      expanded: queryChanged ? null : state.expanded,
       loading: props.loading,
       rect: props.clientRect?.() ?? null,
     };
@@ -325,6 +426,7 @@ function createPickerRenderer() {
     container?.remove();
     container = null;
     run = null;
+    current = null;
   };
 
   return {
@@ -341,21 +443,41 @@ function createPickerRenderer() {
     },
     onExit: () => {
       teardown();
-      state = { items: [], query: "", active: 0, loading: false, rect: null };
+      state = { items: [], query: "", active: 0, expanded: null, loading: false, rect: null };
     },
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {
       if (picked) return true;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
+        const rows = shown();
+        if (rows.length === 0) return true;
         const delta = event.key === "ArrowDown" ? 1 : -1;
-        const count = state.items.length;
-        if (count === 0) return true;
-        state = { ...state, active: (state.active + delta + count) % count };
-        paint();
+        setActive((state.active + delta + rows.length) % rows.length);
+        // Arrow keys complete the name, so `.` can drill in from the keyboard.
+        const active = shown()[state.active];
+        if (active) completeTo(active);
         return true;
       }
+      if (event.key === ".") {
+        // `.` on a card row rewrites the query as `@card.`, which lists that
+        // card's fields; the same result the submenu shows, ready to filter.
+        const item = shown()[state.active];
+        if (item?.kind === "card" && !/\s/.test(item.title) && cardFieldRows(item.id).length > 0) {
+          if (!current) return false;
+          event.preventDefault();
+          const { editor, range } = current;
+          editor.view.dispatch(
+            editor.state.tr
+              .insertText(`@${item.title}.`, range.from, range.to)
+              .setMeta("addToHistory", false),
+          );
+          editor.commands.focus();
+          return true;
+        }
+        return false;
+      }
       if (event.key === "Enter") {
-        const item = state.items[state.active];
+        const item = shown()[state.active];
         if (!item) return false;
         event.preventDefault();
         picked = true;

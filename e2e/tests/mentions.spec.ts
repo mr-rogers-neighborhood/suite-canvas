@@ -227,6 +227,102 @@ test("links to one field of another card and lands on it", async ({ page }) => {
   await expect(row.getByLabel("Owner")).toBeFocused();
 });
 
+test("opens a card's fields from the submenu while arrowing", async ({ page }) => {
+  await page.goto(workspaceUrl("submenu"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Target");
+  await createNote(page, "Source");
+
+  // A field on the shared note type, filled in on the target.
+  const target = cards(page).filter({ hasText: "Target" });
+  await target.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
+  const inspector = page.getByTestId("card-inspector");
+  await inspector.getByTestId("manage-types").click();
+  const settings = page.getByTestId("type-settings");
+  await settings.getByTestId("settings-type-note").click();
+  await settings.getByLabel("New field name").fill("Owner");
+  await settings.getByTestId("create-field").click();
+  await expect(settings.getByLabel("Field name Owner")).toBeVisible();
+  await settings.getByRole("button", { name: "Done" }).click();
+  await inspector.getByLabel("Owner").fill("Ada");
+  await inspector.getByLabel("Owner").blur();
+  await inspector.getByTestId("inspector-close").click();
+
+  const source = cards(page).filter({ hasText: "Source" });
+  await editBody(page, source);
+
+  // Almost no typing: the card row advertises its fields, and selecting it
+  // completes its name and opens them, so the property is arrows away.
+  await page.keyboard.type("@");
+  const options = page.getByTestId("mention-option");
+  const cardRows = page.locator('[data-testid="mention-option"][data-kind="card"]');
+  const targetRow = cardRows.filter({ hasText: "Target" });
+  await expect(targetRow).toHaveCount(1);
+  await expect(targetRow.getByTestId("mention-option-submenu")).toContainText("1");
+
+  // Row 0 is this card's own field; row 1 is the other card, which opens its
+  // fields as soon as it is selected.
+  await page.keyboard.press("ArrowDown");
+  await expect(targetRow).toHaveAttribute("aria-selected", "true");
+  // Selecting a card completes the typed query to its name, so a `.` follows.
+  await expect(source.getByTestId("card-body")).toContainText("@Target");
+  const nested = page.locator('[data-testid="mention-option"][data-nested="true"]');
+  await expect(nested).toHaveCount(1);
+  await expect(nested).toHaveAttribute("data-kind", "reference");
+  await expect(nested).toContainText("Owner");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(nested).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Enter");
+
+  const chip = source.getByTestId("mention-chip");
+  await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/);
+  await expect(chip.getByTestId("mention-chip-value")).toHaveText("Ada");
+  await expect(options).toHaveCount(0);
+});
+
+test("drills into the selected card when a dot is typed", async ({ page }) => {
+  await page.goto(workspaceUrl("dot-drill"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Target");
+  await createNote(page, "Source");
+
+  const target = cards(page).filter({ hasText: "Target" });
+  await target.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
+  const inspector = page.getByTestId("card-inspector");
+  await inspector.getByTestId("manage-types").click();
+  const settings = page.getByTestId("type-settings");
+  await settings.getByTestId("settings-type-note").click();
+  await settings.getByLabel("New field name").fill("Owner");
+  await settings.getByTestId("create-field").click();
+  await expect(settings.getByLabel("Field name Owner")).toBeVisible();
+  await settings.getByRole("button", { name: "Done" }).click();
+  await inspector.getByLabel("Owner").fill("Ada");
+  await inspector.getByLabel("Owner").blur();
+  await inspector.getByTestId("inspector-close").click();
+
+  const source = cards(page).filter({ hasText: "Source" });
+  await editBody(page, source);
+
+  // A unique prefix already lists the card's fields under it; `.` turns the
+  // query into a field lookup, which is the same list, ready to filter.
+  await page.keyboard.type("@Tar");
+  await expect(page.locator('[data-testid="mention-option"][data-kind="reference"]')).toHaveCount(
+    1,
+  );
+  await page.keyboard.type(".");
+  const fields = page.locator('[data-testid="mention-option"][data-kind="reference"]');
+  await expect(fields).toHaveCount(1);
+  await expect(fields.first()).toContainText("Owner");
+  await page.keyboard.press("Enter");
+
+  await expect(source.getByTestId("mention-chip").getByTestId("mention-chip-value")).toHaveText(
+    "Ada",
+  );
+});
+
 test("syncs a mention and its live title to a peer", async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();

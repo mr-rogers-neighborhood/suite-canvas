@@ -25,7 +25,7 @@ const host: Card = {
 const other: Card = { ...host, id: "c2" };
 
 const workspace = {
-  getCard: (id: string) => (id === host.id ? host : undefined),
+  getCard: (id: string) => (id === host.id ? host : id === other.id ? other : undefined),
   viewCardFields: () => [owner, stage],
   displayTitle: (id: string) => (id === other.id ? "Beta" : "Alpha"),
 };
@@ -44,7 +44,7 @@ vi.mock("../store/workspaceSnapshotStore", () => ({
   }),
 }));
 
-const { rankItems } = await import("./SuggestionList");
+const { cardFieldRows, expandedRows, itemKey, rankItems } = await import("./SuggestionList");
 
 describe("rankItems", () => {
   it("should list this card's fields above every card", () => {
@@ -112,5 +112,57 @@ describe("rankItems", () => {
 
   it("should filter reference rows by the text after the dot", () => {
     expect(rankItems("Beta.sta", host.id).map((item) => item.kind)).toEqual(["reference"]);
+  });
+});
+
+describe("expandedRows", () => {
+  const base = () => rankItems("", host.id);
+
+  it("should open a card's fields under it, marked as nested", () => {
+    const items = base();
+    const cardIndex = items.findIndex((item) => item.kind === "card");
+    const rows = expandedRows(items, items[cardIndex]?.id ?? "");
+
+    // Same list plus two nested rows, inserted directly after the card.
+    expect(rows).toHaveLength(items.length + 2);
+    expect(rows[cardIndex + 1]).toMatchObject({
+      kind: "reference",
+      nested: true,
+      fieldId: "owner",
+    });
+    expect(rows[cardIndex + 2]).toMatchObject({
+      kind: "reference",
+      nested: true,
+      fieldId: "stage",
+    });
+  });
+
+  it("should not repeat fields a query already listed", () => {
+    const items = rankItems("beta", host.id);
+    const card = items[0];
+    expect(card?.kind).toBe("card");
+
+    expect(expandedRows(items, card?.id ?? "")).toBe(items);
+  });
+
+  it("should leave the list alone for a card with no fields or no card", () => {
+    const items = base();
+    expect(expandedRows(items, null)).toBe(items);
+    expect(expandedRows(items, "nobody")).toEqual(items);
+  });
+
+  it("should give every row a stable key across rebuilds", () => {
+    const [first] = base();
+    const [same] = base();
+    expect(first && same && itemKey(first)).toBe(same ? itemKey(same) : "");
+    expect(new Set(base().map(itemKey)).size).toBe(base().length);
+  });
+
+  it("should describe one card's fields for the submenu", () => {
+    expect(cardFieldRows(other.id)).toEqual([
+      expect.objectContaining({ kind: "reference", fieldId: "owner", nested: true }),
+      expect.objectContaining({ kind: "reference", fieldId: "stage", nested: true }),
+    ]);
+    expect(cardFieldRows("nobody")).toEqual([]);
   });
 });

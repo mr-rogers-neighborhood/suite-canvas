@@ -214,8 +214,10 @@ test("shows a field in the body, edits it inline, and removes the block", async 
   await expect(page.getByTestId("slash-menu")).toBeVisible();
   await page.getByTestId("slash-option").filter({ hasText: "Property" }).click();
 
-  const fieldOption = page.getByTestId("mention-option").filter({ hasText: "Owner" });
-  await expect(fieldOption).toHaveAttribute("data-kind", "field");
+  // This card's own field is the row that inserts a block; a card's field row
+  // (which links instead) can be open in the submenu at the same time.
+  const fieldOption = page.locator('[data-testid="mention-option"][data-kind="field"]');
+  await expect(fieldOption).toContainText("Owner");
   await fieldOption.click();
 
   const panelBlock = panel.getByTestId("property-block");

@@ -8,7 +8,12 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
-import { cardReferences, EMPTY_CARD_REFERENCES, snippetAround } from "./CardPanel";
+import {
+  cardReferences,
+  EMPTY_CARD_REFERENCES,
+  snippetAround,
+  useBodyPropertyBlocks,
+} from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 /**
@@ -40,6 +45,8 @@ export function CardInspectorHost() {
   const card = inspectorNodeId
     ? snapshot.cards.find((entry) => entry.id === inspectorNodeId)
     : undefined;
+  // Field ids whose block is in the body, for the Show/Remove toggle.
+  const bodyFields = useBodyPropertyBlocks(card?.id ?? "");
   const title = useCardTitle(card?.id ?? "");
   const containers = useCardContainers(card?.id ?? "");
 
@@ -180,6 +187,10 @@ export function CardInspectorHost() {
       }}
       onSetProperty={(fieldId, value) => workspace.setProperty(card.id, fieldId, value)}
       onClearProperty={(fieldId) => workspace.clearProperty(card.id, fieldId)}
+      bodyFields={bodyFields}
+      onShowInBody={(fieldId) => workspace.appendPropertyBlock(card.id, fieldId)}
+      onHideFromBody={(fieldId) => workspace.removePropertyBlock(card.id, fieldId)}
+      onOpenCardPanel={openInspector}
       onManageTypes={openTypeSettings}
       onFocusCard={(boardId) => focusCard(card.id, boardId)}
       onFocusSection={(sectionId) => {

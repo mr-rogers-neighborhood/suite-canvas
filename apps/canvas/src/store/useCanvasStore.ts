@@ -48,9 +48,12 @@ interface CanvasState {
   connect: () => void;
 }
 
+/** Unit tests mount components without a sync server; a socket there only adds noise. */
+const TEST_MODE = import.meta.env.MODE === "test";
+
 export const useCanvasStore = create<CanvasState>((set) => {
   const provider =
-    typeof window === "undefined"
+    typeof window === "undefined" || TEST_MODE
       ? null
       : new LoroProvider({
           url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",

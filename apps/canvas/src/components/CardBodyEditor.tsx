@@ -10,10 +10,12 @@ import {
   type LoroNode,
   loroSyncPluginKey,
 } from "loro-prosemirror";
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { LoroCollaboration } from "../editor/LoroCollaboration";
 import { Mention } from "../editor/Mention";
+import { PropertyBlock } from "../editor/PropertyBlock";
+import { SlashCommands } from "../editor/SlashCommands";
 
 interface ToolbarState {
   bold: boolean;
@@ -26,6 +28,8 @@ interface ToolbarState {
 }
 
 export interface CardBodyEditorProps {
+  /** Card that owns this body; property blocks resolve fields and values from it. */
+  cardId: string;
   /** Card document that owns the body rich text. */
   cardDoc: LoroDoc;
   /** Body rich-text container. */
@@ -40,24 +44,28 @@ export interface CardBodyEditorProps {
   className?: string | undefined;
   onFocus?: (() => void) | undefined;
   onBlur?: (() => void) | undefined;
+  /** Opens the card panel from a read-only property block. */
+  onOpenCardPanel?: ((cardId: string) => void) | undefined;
 }
 
 /**
  * `loro-prosemirror` ignores a local commit in every editor except the one that
  * authored it. One client mounts the same card body in two places (the canvas
- * card and the panel), but only one is editable, so the read-only twin has to
- * re-read the shared container when the focused surface writes. The rebuild uses
- * the plugin's own mapping and tags the transaction as a non-local update, which
- * keeps the caret store untouched (unlike remounting the editor).
+ * card and the panel), so the twin has to re-read the shared container when the
+ * other surface — or a workspace call such as `appendPropertyBlock` — writes.
+ *
+ * The rebuild uses the plugin's own mapping and tags the transaction as a
+ * non-local update, which keeps the caret store untouched (unlike remounting).
+ * An event this editor authored is skipped: the document already matches Loro,
+ * so dispatching would only collapse the caret mid-keystroke.
  */
 function useLocalMirrorSync(
   cardDoc: LoroDoc,
   containerId: ContainerID,
-  editable: boolean,
   editor: Editor | null,
 ): void {
   useEffect(() => {
-    if (editable || !editor) return;
+    if (!editor) return;
     const container = cardDoc.getContainerById(containerId);
     if (!container) return;
 
@@ -67,6 +75,13 @@ function useLocalMirrorSync(
       const editorState = editor.state;
       const syncState = loroSyncPluginKey.getState(editorState);
       if (!syncState) return;
+
+      const fresh = createNodeFromLoroObj(
+        editorState.schema,
+        container as unknown as LoroNode,
+        new Map(),
+      );
+      if (fresh === null || Array.isArray(fresh) || fresh.eq(editorState.doc)) return;
 
       // Rebuild from scratch: the stored mapping points at the nodes that just
       // changed, which is exactly what a full re-read must replace.
@@ -85,7 +100,9 @@ function useLocalMirrorSync(
       editor.view.dispatch(transaction);
     };
     const subscription = container.subscribe((event) => {
-      if (event.by !== "local" || frame !== null) return;
+      // Own edits are written from this editor's transaction; the frame check
+      // coalesces a burst of keystrokes into one comparison.
+      if (event.by !== "local" || event.origin === "undo" || frame !== null) return;
       frame = requestAnimationFrame(rebuild);
     });
 
@@ -93,7 +110,7 @@ function useLocalMirrorSync(
       subscription();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [cardDoc, containerId, editable, editor]);
+  }, [cardDoc, containerId, editor]);
 }
 
 function buttonClass(active: boolean) {
@@ -110,6 +127,7 @@ function buttonClass(active: boolean) {
  * renders it editable.
  */
 export function CardBodyEditor({
+  cardId,
   cardDoc,
   contentId,
   cursorStore,
@@ -118,7 +136,15 @@ export function CardBodyEditor({
   className,
   onFocus,
   onBlur,
+  onOpenCardPanel,
 }: CardBodyEditorProps) {
+  // The editor outlives renders, so the callback is read through a ref instead
+  // of being captured by the extension options at creation time.
+  const openPanelRef = useRef(onOpenCardPanel);
+  useEffect(() => {
+    openPanelRef.current = onOpenCardPanel;
+  }, [onOpenCardPanel]);
+
   const editor = useEditor(
     {
       editable,
@@ -127,6 +153,11 @@ export function CardBodyEditor({
         StarterKit.configure({ undoRedo: false }),
         // Both editors share the extension's one `@` suggestion config.
         Mention,
+        SlashCommands,
+        PropertyBlock.configure({
+          cardId,
+          openPanel: (id: string) => openPanelRef.current?.(id),
+        }),
         LoroCollaboration.configure({
           doc: cardDoc,
           containerId: contentId,
@@ -145,10 +176,10 @@ export function CardBodyEditor({
       onFocus: () => onFocus?.(),
       onBlur: () => onBlur?.(),
     },
-    [cardDoc, contentId, cursorStore, localUser],
+    [cardId, cardDoc, contentId, cursorStore, localUser],
   );
 
-  useLocalMirrorSync(cardDoc, contentId, editable, editor);
+  useLocalMirrorSync(cardDoc, contentId, editor);
 
   const toolbar = useEditorState({
     editor,
@@ -314,7 +345,7 @@ export function CardTitleEditor({
     [cardDoc, titleId, cursorStore, localUser],
   );
 
-  useLocalMirrorSync(cardDoc, titleId, editable, title);
+  useLocalMirrorSync(cardDoc, titleId, title);
 
   const titleEmpty = useEditorState({
     editor: title,

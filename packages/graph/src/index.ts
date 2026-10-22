@@ -26,6 +26,7 @@ export {
   fieldFromMap,
   INDEX_ORIGIN,
   normalizeCard,
+  PROPERTY_BLOCK_NODE_NAME,
   placementKey,
   SCHEMA_VERSION,
   sectionFromMap,

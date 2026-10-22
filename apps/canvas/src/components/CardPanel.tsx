@@ -15,8 +15,16 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
 import { PeerNameTag } from "./PeerNameTag";
@@ -208,6 +216,38 @@ export function cardReferences(input: CardReferenceInput): CardReferences {
   };
 }
 
+const NO_BODY_FIELDS: readonly string[] = [];
+
+/**
+ * Field ids that already have a property block in the body. Body text changes
+ * notify `observeTitle`, so the toggles stay in step with the canvas editor
+ * without a second subscription type. Contents are compared, so an unchanged
+ * set keeps its identity and does not re-render the panel.
+ */
+export function useBodyPropertyBlocks(cardId: string): readonly string[] {
+  const workspace = useCanvasStore((state) => state.workspace);
+  const last = useRef<readonly string[]>(NO_BODY_FIELDS);
+
+  const subscribe = useCallback(
+    (listener: () => void) => (cardId ? workspace.observeTitle(cardId, listener) : () => undefined),
+    [workspace, cardId],
+  );
+  const get = useCallback(() => {
+    const next = cardId ? workspace.bodyPropertyBlocks(cardId) : NO_BODY_FIELDS;
+    const previous = last.current;
+    if (
+      previous.length === next.length &&
+      previous.every((fieldId, index) => fieldId === next[index])
+    ) {
+      return previous;
+    }
+    last.current = next;
+    return next;
+  }, [workspace, cardId]);
+
+  return useSyncExternalStore(subscribe, get, get);
+}
+
 export interface CardPanelProps {
   card: Card;
   title: string;
@@ -238,6 +278,14 @@ export interface CardPanelProps {
   onCreateTag: (name: string) => void;
   onSetProperty: (fieldId: string, value: PropertyValue) => void;
   onClearProperty: (fieldId: string) => void;
+  /** Field ids that already have a block in the body. */
+  bodyFields: readonly string[];
+  /** Appends a property block for this field; an explicit user action. */
+  onShowInBody: (fieldId: string) => void;
+  /** Removes the block; the value itself stays on the card. */
+  onHideFromBody: (fieldId: string) => void;
+  /** Opens the card panel from a read-only property block. */
+  onOpenCardPanel: (cardId: string) => void;
   onManageTypes: () => void;
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
@@ -312,6 +360,10 @@ export function CardPanel({
   onCreateTag,
   onSetProperty,
   onClearProperty,
+  bodyFields,
+  onShowInBody,
+  onHideFromBody,
+  onOpenCardPanel,
   onManageTypes,
   onFocusCard,
   onFocusSection,
@@ -498,13 +550,14 @@ export function CardPanel({
                   {group.map(({ field }) => {
                     const value = card.properties[field.id];
                     const missing = field.required && isPropertyEmpty(value);
+                    const inBody = bodyFields.includes(field.id);
                     return (
                       <div
                         key={field.id}
                         className="block space-y-1"
                         data-testid={`property-${field.id}`}
                       >
-                        <span className="flex items-center gap-1 text-[11px] text-[var(--ink-muted)]">
+                        <span className="flex w-full items-center gap-1 text-[11px] text-[var(--ink-muted)]">
                           {field.name}
                           {missing ? (
                             <span
@@ -512,6 +565,22 @@ export function CardPanel({
                               className="h-1.5 w-1.5 rounded-full bg-[var(--ink-muted)]"
                             />
                           ) : null}
+                          <button
+                            type="button"
+                            data-testid={`body-toggle-${field.id}`}
+                            aria-pressed={inBody}
+                            title={
+                              inBody
+                                ? "Remove this field's block from the body; the value stays"
+                                : "Show this field in the body as a compact block"
+                            }
+                            className="ml-auto rounded px-1 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:bg-black/5 hover:underline dark:hover:bg-white/10"
+                            onClick={() =>
+                              inBody ? onHideFromBody(field.id) : onShowInBody(field.id)
+                            }
+                          >
+                            {inBody ? "Remove from body" : "Show in body"}
+                          </button>
                         </span>
                         <PropertyField
                           field={field}
@@ -786,6 +855,7 @@ export function CardPanel({
         >
           {bodyPeer ? <PeerNameTag user={bodyPeer} className="card-peer-tag" /> : null}
           <CardBodyEditor
+            cardId={card.id}
             cardDoc={cardDoc}
             contentId={contentId}
             // Only the surface that owns the body publishes carets; a read-only
@@ -795,6 +865,7 @@ export function CardPanel({
             editable={editing === "body"}
             onFocus={keepFocusAlive}
             onBlur={releaseFocusSoon}
+            onOpenCardPanel={onOpenCardPanel}
           />
         </div>
       </Section>

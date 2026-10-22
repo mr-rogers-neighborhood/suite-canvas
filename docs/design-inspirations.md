@@ -56,7 +56,7 @@ A card can appear on five boards, in two views and on one website without knowin
 
 | Source | Borrow | Reject | Why |
 | --- | --- | --- | --- |
-| **Heptabase** | Card library + whiteboards; one card on many boards; sections; sub-whiteboards; toolbar; card info and backlinks | Board-owned cards; mandatory document tree; whiteboard-as-the-only-container | Objects first, spatial contexts second. "Remove from board" is not "delete", and sub-boards are navigation, not ownership. |
+| **Heptabase** | Card library + whiteboards; one card on many boards; sections; sub-whiteboards; toolbar; card info and backlinks; untyped arrows with descriptions; `@` mentions; relation properties | Board-owned cards; mandatory document tree; whiteboard-as-the-only-container; **link types** (they have none) | Objects first, spatial contexts second. "Remove from board" is not "delete", and sub-boards are navigation, not ownership. Meaning lives in names and mentions, not in a link-type registry. |
 | **Tana** | Supertags as typed objects; typed fields; saved queries/views; keyboard-first capture | A single uniform node type for everything; implicit graph semantics | A type must be light enough to apply while writing yet strong enough to drive fields and queries; a uniform node graph makes "object vs placement" ambiguous. |
 | **Obsidian Semantic Canvas** | Canvas groups; labeled/typed links; deliberate canvas ↔ note property projection | Continuous two-way property sync on every move; note frontmatter as the schema | Projection should be an explicit command, not a background sync that silently rewrites cards. |
 | **Obsidian Metadata Menu** | Typed field definitions; presets; autocomplete; per-type field sets | File/frontmatter as the storage model; per-note ad-hoc schemas | Field definitions are a workspace concern, not a per-file convention. |
@@ -556,6 +556,11 @@ every web concern lives where it belongs.
 - Shared card panel: title, tags, properties and body editable from the inspector and the Library *(current)*
 - Board-scoped Library with a Sections facet (subtree), `Unsorted` and group-by-section *(current)*
 - Multi-select (Shift/Ctrl/Cmd, marquee, select-all), one-commit multi-drag, collaborator rings and labels *(current)*
+- **`@` mentions** in titles and bodies, with chips that follow the target's live title *(current)*
+- **References section** in the card panel: mentions with context, card-valued properties, drawn arrows and placements, every row navigating *(current)*
+- **`card` field kind**, so a property name ("Contradicts", "Prerequisite") carries the semantics *(current)*
+- **Free-text descriptions on drawn links**, edited by double-click or the edge menu *(current)*
+- **`/` insert menu** over the existing nodes plus mentions, and **property blocks** that render a field's value in the body as a view *(current)*
 
 ### Thinking tools
 

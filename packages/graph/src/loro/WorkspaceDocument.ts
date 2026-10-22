@@ -3,8 +3,8 @@ import {
   getType,
   isContainer,
   LoroDoc,
-  type LoroList,
-  type LoroMap,
+  LoroList,
+  LoroMap,
   type LoroText,
   UndoManager,
   type Value,
@@ -136,6 +136,17 @@ const MIN_RANK_GAP = 1e-7;
 
 export const CONNECTORS_FIELD = "connectors";
 
+/** The ProseMirror node name of an inline property block. */
+export const PROPERTY_BLOCK_NODE_NAME = "propertyBlock";
+
+/**
+ * Origin of body property-block writes. `text:body` keeps the insertion in the
+ * same Loro history as the body editor's own edits, so a mounted editor can
+ * undo "Show in body" with Cmd-Z; a `struct:` origin is excluded from the
+ * editor's undo stack and would leave an edit that cannot be reverted there.
+ */
+const BODY_BLOCK_ORIGIN = "text:body";
+
 /** Origin prefixes that keep text/editor history out of the structural undo stack. */
 export const TEXT_ORIGIN_PREFIX = "loroSyncPlugin";
 export const INIT_ORIGIN = "sys:init";
@@ -252,6 +263,51 @@ function textOf(value: unknown): string {
 
 function firstLine(text: string): string {
   return text.split("\n")[0]?.trim() ?? "";
+}
+
+/**
+ * The field a property block points at. `loro-prosemirror` stores node attrs on
+ * the node's own `attributes` map; reading the node's key as well tolerates
+ * hand-built containers.
+ */
+function propertyBlockFieldId(node: LoroMap): string | undefined {
+  const attributes = node.get("attributes");
+  const raw = isMap(attributes) ? attributes.get("fieldId") : node.get("fieldId");
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Children list of a `loro-prosemirror` node. Its containers are plain
+ * (`getOrCreateContainer`), not mergeable, so `ensureMergeableList` would throw
+ * on a body an editor already wrote.
+ */
+function loroChildren(parent: LoroMap): LoroList {
+  const existing = parent.get("children");
+  return isList(existing) ? existing : parent.getOrCreateContainer("children", new LoroList());
+}
+
+/** Attributes map of a `loro-prosemirror` node, created the same way it does. */
+function loroAttributes(node: LoroMap): LoroMap {
+  const existing = node.get("attributes");
+  return isMap(existing) ? existing : node.getOrCreateContainer("attributes", new LoroMap());
+}
+
+/** Field ids of the property blocks in a ProseMirror tree, in document order. */
+function propertyBlockFieldIds(root: unknown, out: string[] = []): string[] {
+  if (isList(root)) {
+    for (const child of root.toArray()) propertyBlockFieldIds(child, out);
+    return out;
+  }
+  if (!isMap(root)) return out;
+  if (root.get("nodeName") === PROPERTY_BLOCK_NODE_NAME) {
+    const fieldId = propertyBlockFieldId(root);
+    if (fieldId !== undefined && !out.includes(fieldId)) out.push(fieldId);
+  }
+  const children = root.get("children");
+  if (children !== undefined) propertyBlockFieldIds(children, out);
+  return out;
 }
 
 function connectorFromMap(id: string, fields: LoroMap): Connector {
@@ -1533,6 +1589,87 @@ export class WorkspaceDocument {
   /** Plain text of a card's body, for backlink snippets. Never indexed. */
   cardText(cardId: string): string {
     return textOf(this.peekContent(cardId));
+  }
+
+  // ------------------------------------------------- property blocks in body
+
+  /**
+   * Field ids that already have a property block in the body, in document
+   * order. Drives the panel's Show/Remove toggle; never stored separately.
+   */
+  bodyPropertyBlocks(cardId: string): string[] {
+    const content = this.peekContent(cardId);
+    return content ? propertyBlockFieldIds(content) : [];
+  }
+
+  /**
+   * Appends a `propertyBlock` view to the end of the card's body, followed by
+   * an empty paragraph so typing can continue. Idempotent per field, and a
+   * no-op for a card or field that does not exist: the block is only a view,
+   * so pointing it at a missing field would render nothing useful.
+   */
+  appendPropertyBlock(cardId: string, fieldId: string): boolean {
+    const card = this.getCard(cardId);
+    if (!card) return false;
+    if (!this.fieldForCard(card, fieldId)) return false;
+    if (this.bodyPropertyBlocks(cardId).includes(fieldId)) return false;
+
+    const content = this.getContent(cardId);
+    if (content.get("nodeName") == null) content.set("nodeName", "doc");
+    const paragraph = this.appendBodyNode(content, "paragraph");
+    const block = this.appendBodyNode(paragraph, PROPERTY_BLOCK_NODE_NAME);
+    loroAttributes(block).set("fieldId", fieldId);
+    this.appendBodyNode(content, "paragraph");
+    this.doc.commit({ origin: BODY_BLOCK_ORIGIN });
+    return true;
+  }
+
+  /**
+   * Drops the block for one field and the paragraph that held it, since the
+   * block was that paragraph's whole content. The property value itself is
+   * untouched: deleting a view never deletes the value. Idempotent.
+   */
+  removePropertyBlock(cardId: string, fieldId: string): boolean {
+    const content = this.peekContent(cardId);
+    if (!content) return false;
+    const blocks = content.get("children");
+    if (!isList(blocks)) return false;
+
+    const blockNodes = blocks.toArray();
+    let removed = false;
+    for (let index = blockNodes.length - 1; index >= 0; index -= 1) {
+      const paragraph = blockNodes[index];
+      if (!isMap(paragraph)) continue;
+      const inline = paragraph.get("children");
+      if (!isList(inline)) continue;
+
+      const inlineNodes = inline.toArray();
+      let removedHere = false;
+      for (let position = inlineNodes.length - 1; position >= 0; position -= 1) {
+        const node = inlineNodes[position];
+        if (!isMap(node) || node.get("nodeName") !== PROPERTY_BLOCK_NODE_NAME) continue;
+        if (propertyBlockFieldId(node) !== fieldId) continue;
+        inline.delete(position, 1);
+        removedHere = true;
+        removed = true;
+      }
+      if (removedHere && inline.length === 0) blocks.delete(index, 1);
+    }
+    if (!removed) return false;
+    // A body must keep one block so the ProseMirror document stays valid.
+    if (blocks.length === 0) this.appendBodyNode(content, "paragraph");
+    this.doc.commit({ origin: BODY_BLOCK_ORIGIN });
+    return true;
+  }
+
+  /** Appends one `loro-prosemirror` node (and its containers) to a parent. */
+  private appendBodyNode(parent: LoroMap, nodeName: string): LoroMap {
+    const children = loroChildren(parent);
+    const node = children.insertContainer(children.length, new LoroMap());
+    node.set("nodeName", nodeName);
+    loroAttributes(node);
+    loroChildren(node);
+    return node;
   }
 
   /** What the card's title and body mention right now, ignoring the index. */

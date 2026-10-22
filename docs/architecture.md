@@ -400,6 +400,16 @@ Mention chips subscribe to their target's title, so renames propagate and a tras
 to an unavailable chip. Snippets for backlink rows come from `mentionContext`, which walks the
 source card's tree on demand — snippets are never indexed.
 
+**The body can carry views of index data.** `/` opens an insert menu over the existing nodes plus a
+mention; a property row in the panel can also be pinned into the body. A `propertyBlock` is an
+inline atom holding only a `fieldId`: it renders `card.properties[fieldId]` from the snapshot and
+writes through `setProperty`/`clearProperty`, so deleting the block deletes a view and never the
+value. `WorkspaceDocument.appendPropertyBlock`/`removePropertyBlock` edit the body container
+directly (origin `text:body`), so pinning works even when the card is not mounted. Scalar kinds edit
+in place through a node view with `contenteditable={false}` and `stopEvent`, which keeps ProseMirror
+from stealing keystrokes; `card` and `multiSelect` values are read-only chips that open the panel.
+Field definitions are never created from the editor — that keeps the two undo scopes honest.
+
 ## Card chrome
 
 Each card renders in-card chrome rather than React Flow's `NodeToolbar`, which counter-scales with

@@ -7,7 +7,13 @@ import { useCardTitles } from "../hooks/useReferenceCounts";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
-import { CardPanel, cardReferences, EMPTY_CARD_REFERENCES, snippetAround } from "./CardPanel";
+import {
+  CardPanel,
+  cardReferences,
+  EMPTY_CARD_REFERENCES,
+  snippetAround,
+  useBodyPropertyBlocks,
+} from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 export interface LibraryCardPanelProps {
@@ -39,6 +45,7 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
   const card = snapshot.cards.find((entry) => entry.id === cardId);
+  const bodyFields = useBodyPropertyBlocks(cardId);
   const title = useCardTitle(cardId);
   const containers = useCardContainers(cardId);
 
@@ -145,6 +152,10 @@ export function LibraryCardPanel({ cardId }: LibraryCardPanelProps) {
       }}
       onSetProperty={(fieldId, value) => workspace.setProperty(card.id, fieldId, value)}
       onClearProperty={(fieldId) => workspace.clearProperty(card.id, fieldId)}
+      bodyFields={bodyFields}
+      onShowInBody={(fieldId) => workspace.appendPropertyBlock(card.id, fieldId)}
+      onHideFromBody={(fieldId) => workspace.removePropertyBlock(card.id, fieldId)}
+      onOpenCardPanel={openInspector}
       onManageTypes={openTypeSettings}
       onFocusCard={(boardId) => focusCard(card.id, boardId)}
       onFocusSection={(sectionId) => {

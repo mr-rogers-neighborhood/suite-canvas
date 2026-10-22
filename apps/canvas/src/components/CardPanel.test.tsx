@@ -99,6 +99,10 @@ const base: CardPanelProps = {
   onCreateTag: () => {},
   onSetProperty: () => {},
   onClearProperty: () => {},
+  bodyFields: [],
+  onShowInBody: () => {},
+  onHideFromBody: () => {},
+  onOpenCardPanel: () => {},
   onManageTypes: () => {},
   onFocusCard: () => {},
   onFocusSection: () => {},
@@ -332,6 +336,34 @@ describe("CardPanel references", () => {
       "No references yet. Type @ in a card to link it.",
     );
     expect(screen.queryByTestId("reference-incoming")).not.toBeInTheDocument();
+  });
+
+  it("offers Show in body for a field without a block", () => {
+    const onShowInBody = vi.fn();
+    const onHideFromBody = vi.fn();
+    renderPanel({ onShowInBody, onHideFromBody });
+
+    const toggle = screen.getByTestId("body-toggle-owner");
+    expect(toggle).toHaveTextContent("Show in body");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+    expect(onShowInBody).toHaveBeenCalledWith("owner");
+    expect(onHideFromBody).not.toHaveBeenCalled();
+  });
+
+  it("offers Remove from body once the field has a block", () => {
+    const onShowInBody = vi.fn();
+    const onHideFromBody = vi.fn();
+    renderPanel({ bodyFields: ["owner"], onShowInBody, onHideFromBody });
+
+    const toggle = screen.getByTestId("body-toggle-owner");
+    expect(toggle).toHaveTextContent("Remove from body");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(toggle);
+    expect(onHideFromBody).toHaveBeenCalledWith("owner");
+    expect(onShowInBody).not.toHaveBeenCalled();
   });
 
   it("includes the card picker options for a card field", () => {

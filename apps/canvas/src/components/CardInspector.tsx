@@ -41,6 +41,11 @@ export interface CardInspectorProps {
   onCreateTag: (name: string) => void;
   onSetProperty: (fieldId: string, value: PropertyValue) => void;
   onClearProperty: (fieldId: string) => void;
+  /** Field ids that already have a block in the body. */
+  bodyFields: readonly string[];
+  onShowInBody: (fieldId: string) => void;
+  onHideFromBody: (fieldId: string) => void;
+  onOpenCardPanel: (cardId: string) => void;
   onManageTypes: () => void;
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
@@ -80,6 +85,10 @@ export function CardInspector({
   onCreateTag,
   onSetProperty,
   onClearProperty,
+  bodyFields,
+  onShowInBody,
+  onHideFromBody,
+  onOpenCardPanel,
   onManageTypes,
   onFocusCard,
   onFocusSection,
@@ -156,6 +165,10 @@ export function CardInspector({
           onCreateTag={onCreateTag}
           onSetProperty={onSetProperty}
           onClearProperty={onClearProperty}
+          bodyFields={bodyFields}
+          onShowInBody={onShowInBody}
+          onHideFromBody={onHideFromBody}
+          onOpenCardPanel={onOpenCardPanel}
           onManageTypes={onManageTypes}
           onFocusCard={onFocusCard}
           onFocusSection={onFocusSection}

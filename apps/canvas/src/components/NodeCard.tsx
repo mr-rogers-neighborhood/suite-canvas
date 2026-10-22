@@ -368,6 +368,7 @@ export function NodeCard({
         }}
       >
         <CardBodyEditor
+          cardId={card.id}
           cardDoc={cardDoc}
           contentId={contentId}
           cursorStore={cursorStore}
@@ -375,6 +376,7 @@ export function NodeCard({
           editable={editing === "body"}
           onFocus={keepFocusAlive}
           onBlur={releaseFocusSoon}
+          onOpenCardPanel={() => onOpenInfo?.()}
         />
       </div>
 

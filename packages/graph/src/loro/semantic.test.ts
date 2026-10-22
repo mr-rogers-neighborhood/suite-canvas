@@ -59,6 +59,19 @@ describe("types", () => {
     expect(workspace.getType(project.id)?.pluralName).toBeUndefined();
   });
 
+  it("should store a field's display template and clear it back to the default", () => {
+    const { workspace, project } = setup();
+    const field = workspace.addField(project.id, { name: "Status", kind: "text" });
+    expect(field.display).toBeUndefined();
+
+    workspace.updateField(project.id, field.id, { display: "  {{label}}: {{value}}  " });
+    expect(workspace.getType(project.id)?.fields[0]?.display).toBe("{{label}}: {{value}}");
+
+    // A cleared style is the absence of the field, not an empty string.
+    workspace.updateField(project.id, field.id, { display: "   " });
+    expect(workspace.getType(project.id)?.fields[0]?.display).toBeUndefined();
+  });
+
   it("should refuse to delete the note type", () => {
     const { workspace } = setup();
     expect(() => workspace.deleteType("note")).toThrow();

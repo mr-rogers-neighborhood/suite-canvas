@@ -54,6 +54,15 @@ export const PropertyBlock = Node.create<PropertyBlockOptions>({
             ? { "data-field-id": attributes.fieldId }
             : {},
       },
+      /** A display template for this one block; absent means the field's. */
+      display: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-display"),
+        renderHTML: (attributes) =>
+          typeof attributes.display === "string" && attributes.display.length > 0
+            ? { "data-display": attributes.display }
+            : {},
+      },
     };
   },
 

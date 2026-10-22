@@ -94,6 +94,10 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - **Blocks are inserted from the body, not from the panel.** `/property` (and `@`) hand over to the
   one picker, which lists this card's fields above every card; `/` never writes a property value and
   the panel never inserts a block. Removing a block removes the view only.
+- **One stored style, many views.** A value is rendered through `displayTemplate(field)` by
+  `ValueTemplate`; never format a value by hand in a component, and never write a template into a
+  value. Display is presentation: it cannot change what the card stores, and it must not reach other
+  fields (that is what a `computed` field kind is for, and it should be derived, not stored).
 - **A `@card.field` chip is a link, not a copy.** It stores `cardId` + `fieldId` and renders the
   value live; clicking it opens that card's panel with the field focused, which is why the chip
   never needs an inline editor of its own.

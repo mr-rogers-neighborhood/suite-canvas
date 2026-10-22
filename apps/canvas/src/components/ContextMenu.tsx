@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface ContextMenuItem {
   label: string;
@@ -33,7 +34,10 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  return (
+  // Portalled: a `position: fixed` menu inside the canvas viewport (or an
+  // editor) would be positioned against that transformed ancestor instead of
+  // the window, which puts it off-screen.
+  return createPortal(
     <>
       <button
         type="button"
@@ -107,6 +111,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           ),
         )}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

@@ -109,3 +109,21 @@ export {
   sectionsAt,
   unionRect,
 } from "./sections.js";
+export type {
+  DisplayPreset,
+  TemplateContext,
+  TemplateSegment,
+  TemplateToken,
+} from "./template.js";
+export {
+  DEFAULT_DISPLAY_TEMPLATE,
+  DISPLAY_PRESETS,
+  displayTemplate,
+  EMPTY_VALUE_TEXT,
+  MAX_TEMPLATE_LENGTH,
+  normalizeTemplate,
+  presetOf,
+  renderTemplate,
+  TEMPLATE_TOKENS,
+  templateSegments,
+} from "./template.js";

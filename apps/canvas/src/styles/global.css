@@ -1085,9 +1085,23 @@ body {
   outline-offset: 1px;
 }
 
+/* Display templates: one stored style, rendered the same in every view. Literals
+   and labels stay quiet; the value is the part that carries the ink. */
+.value-template {
+  display: inline;
+}
+
+.value-template__literal,
+.value-template__ref {
+  color: var(--ink-muted);
+}
+
+.value-template__label {
+  color: var(--ink-muted);
+}
+
 .mention-chip-field-name {
   margin-left: 2px;
-  color: var(--ink-muted);
   font-size: 0.92em;
 }
 
@@ -1098,6 +1112,16 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.9;
+}
+
+.mention-chip-field-value.value-template__empty {
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
+/* A chip whose style was overridden says so only to the pointer. */
+.mention-chip[data-overridden="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--section-blue) 45%, transparent);
 }
 
 .mention-chip-at {
@@ -1187,9 +1211,13 @@ body {
   font-weight: 500;
 }
 
-.property-block-separator {
+.property-block-template-value {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.property-block-template-empty {
   color: var(--ink-muted);
-  opacity: 0.6;
 }
 
 .property-block-value {

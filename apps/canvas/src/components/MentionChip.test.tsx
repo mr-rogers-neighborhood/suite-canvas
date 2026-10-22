@@ -93,13 +93,65 @@ describe("MentionChipNodeView", () => {
 });
 
 describe("MentionChip", () => {
+  it("should render the value through its template", () => {
+    render(
+      <MentionChip
+        cardId="card-1"
+        title="Beta"
+        field={{
+          id: "owner",
+          name: "Owner",
+          value: "Ada",
+          template: "{{card}}: {{value}}",
+          fieldTemplate: "{{label}} \u00b7 {{value}}",
+          typeName: "Note",
+          overridden: true,
+        }}
+      />,
+    );
+
+    const chip = screen.getByTestId("mention-chip");
+    expect(chip).toHaveTextContent("Beta: Ada");
+    expect(chip).toHaveAttribute("data-overridden", "true");
+    // The label token is gone from this template, so its text is not there either.
+    expect(chip).not.toHaveTextContent("Owner");
+  });
+
+  it("should show a placeholder for an empty value", () => {
+    render(
+      <MentionChip
+        cardId="card-1"
+        title="Beta"
+        field={{
+          id: "owner",
+          name: "Owner",
+          value: "",
+          template: "{{label}}: {{value}}",
+          fieldTemplate: "{{label}} \u00b7 {{value}}",
+          typeName: "Note",
+          overridden: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("mention-chip-value")).toHaveTextContent("\u2014");
+  });
+
   it("should read as a field and open that field", () => {
     const onOpen = vi.fn();
     render(
       <MentionChip
         cardId="card-1"
         title="Beta"
-        field={{ id: "owner", name: "Owner", display: "Ada" }}
+        field={{
+          id: "owner",
+          name: "Owner",
+          value: "Ada",
+          template: "{{label}} \u00b7 {{value}}",
+          fieldTemplate: "{{label}} \u00b7 {{value}}",
+          typeName: "Note",
+          overridden: false,
+        }}
         onOpen={onOpen}
       />,
     );

@@ -59,6 +59,11 @@ export const fieldDefinitionSchema = z.object({
   required: z.boolean(),
   order: z.number().int(),
   options: z.array(selectOptionSchema),
+  /**
+   * How the value reads where it is shown (see `template.ts`). Absent means the
+   * value alone; it is presentation only and never changes the stored value.
+   */
+  display: z.string().min(1).max(160).optional(),
 });
 
 /** A schema-bearing classification. Exactly one is primary on a card. */

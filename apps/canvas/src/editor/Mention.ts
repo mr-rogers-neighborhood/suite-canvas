@@ -63,6 +63,18 @@ export const Mention = Node.create<MentionOptions, MentionStorage>({
             ? { "data-card-id": attributes.cardId }
             : {},
       },
+      /**
+       * A display template for this one mention. Absent means "use the field's",
+       * so a chip only carries a value when the reader overrode it.
+       */
+      display: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-display"),
+        renderHTML: (attributes) =>
+          typeof attributes.display === "string" && attributes.display.length > 0
+            ? { "data-display": attributes.display }
+            : {},
+      },
       /** Set when the mention points at one field: the `@card.field` form. */
       fieldId: {
         default: null,

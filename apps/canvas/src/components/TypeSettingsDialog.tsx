@@ -1,7 +1,8 @@
 import type { CardType, CreateFieldInput, FieldDefinition } from "@suite/graph";
-import { fieldKinds, typePluralName } from "@suite/graph";
+import { displayTemplate, fieldKinds, typePluralName } from "@suite/graph";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { DisplayStyleDialog } from "./DisplayStyleDialog";
 
 export interface TypeSettingsDialogProps {
   types: CardType[];
@@ -16,7 +17,7 @@ export interface TypeSettingsDialogProps {
   onUpdateField: (
     typeId: string,
     fieldId: string,
-    patch: { name?: string; required?: boolean },
+    patch: { name?: string; required?: boolean; display?: string | null },
   ) => void;
   onRemoveField: (typeId: string, fieldId: string) => void;
   onMoveField: (typeId: string, fieldId: string, toIndex: number) => void;
@@ -110,6 +111,7 @@ export function TypeSettingsDialog({
   const [fieldName, setFieldName] = useState("");
   const [fieldKind, setFieldKind] = useState<CreateFieldInput["kind"]>("text");
   const [fieldOptions, setFieldOptions] = useState("");
+  const [displayFieldId, setDisplayFieldId] = useState<string | null>(null);
 
   const selected = useMemo(
     () => types.find((type) => type.id === selectedId) ?? types[0],
@@ -144,6 +146,8 @@ export function TypeSettingsDialog({
     setFieldOptions("");
     setFieldKind("text");
   };
+
+  const displayField = selected?.fields.find((field) => field.id === displayFieldId);
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -323,6 +327,16 @@ export function TypeSettingsDialog({
                         <button
                           type="button"
                           className={smallButton}
+                          data-testid={`field-display-${field.id}`}
+                          title={field.display ?? "Value style"}
+                          aria-label={`Display style for ${field.name}`}
+                          onClick={() => setDisplayFieldId(field.id)}
+                        >
+                          {"\u25a4"}
+                        </button>
+                        <button
+                          type="button"
+                          className={smallButton}
                           aria-label={`Move ${field.name} up`}
                           disabled={index === 0}
                           onClick={() => onMoveField(selected.id, field.id, index - 1)}
@@ -436,6 +450,25 @@ export function TypeSettingsDialog({
             </footer>
           ) : null}
         </div>
+
+        {displayField ? (
+          <DisplayStyleDialog
+            fieldName={displayField.name}
+            sample={{
+              label: displayField.name,
+              // A representative value: a preview of an em dash teaches nothing.
+              value: "Value",
+              card: "Card",
+              type: selected?.name ?? "Type",
+            }}
+            template={displayTemplate(displayField)}
+            onApply={(template) => {
+              if (!selected) return;
+              onUpdateField(selected.id, displayField.id, { display: template });
+            }}
+            onClose={() => setDisplayFieldId(null)}
+          />
+        ) : null}
       </div>
     </div>,
     document.body,

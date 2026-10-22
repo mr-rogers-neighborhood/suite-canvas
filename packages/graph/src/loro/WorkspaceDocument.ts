@@ -39,6 +39,7 @@ import {
   type Tag,
   tagSchema,
 } from "../schema.js";
+import { normalizeTemplate } from "../template.js";
 
 export type WorkspaceSection =
   | "boards"
@@ -399,6 +400,7 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
   }
   options.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
+  const display = readString(fields, "display");
   return fieldDefinitionSchema.parse({
     id,
     name: readString(fields, "name") ?? "Field",
@@ -406,6 +408,7 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
     required: readBoolean(fields, "required") ?? false,
     order: readNumber(fields, "order") ?? Number.MAX_SAFE_INTEGER,
     options,
+    ...(display ? { display } : {}),
   });
 }
 
@@ -1044,11 +1047,20 @@ export class WorkspaceDocument {
   }
 
   /** The kind is immutable: deleting and recreating a field is the migration. */
-  updateField(typeId: string, fieldId: string, patch: { name?: string; required?: boolean }): void {
+  updateField(
+    typeId: string,
+    fieldId: string,
+    patch: { name?: string; required?: boolean; display?: string | null },
+  ): void {
     const field = this.typeFields(typeId)?.get(fieldId);
     if (!isMap(field)) return;
     if (patch.name !== undefined) field.set("name", patch.name.trim() || "Field");
     if (patch.required !== undefined) field.set("required", patch.required);
+    if (patch.display !== undefined) {
+      const display = normalizeTemplate(patch.display);
+      if (display) field.set("display", display);
+      else if (field.get("display") !== undefined) field.delete("display");
+    }
     this.touchType(typeId);
     this.commit(`${STRUCT_ORIGIN}field`);
   }

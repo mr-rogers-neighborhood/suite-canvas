@@ -414,6 +414,16 @@ Mention chips subscribe to their target's title, so renames propagate and a tras
 to an unavailable chip. Snippets for backlink rows come from `mentionContext`, which walks the
 source card's tree on demand — snippets are never indexed.
 
+**Values render through a display template.** `fieldDefinition.display` is a template string
+(`{{value}}`, `{{label}}`, `{{card}}`, `{{type}}` plus literal text, see
+`packages/graph/src/template.ts`); absent means `{{label}} · {{value}}`. `ValueTemplate` is the one
+place a template becomes pixels, so a chip, a body block and a future rollup cannot disagree about
+what the same style means. Presentation only: it never changes the stored value, and label segments
+stay muted so the value is still the part that carries ink. An empty value renders an em dash inside
+the template rather than collapsing it, so `"Status: {{value}}"` never reads as a stray prefix. A
+mention or a block can carry its own `display` attribute, which is how one instance differs from its
+field without forking the schema.
+
 **The body can carry views of index data.** `/` opens an insert menu over the existing nodes plus
 `Mention` and `Property`, both of which hand over to the one `@` picker; the picker lists this
 card's fields first (they insert a block), then cards (they insert a mention), and then a

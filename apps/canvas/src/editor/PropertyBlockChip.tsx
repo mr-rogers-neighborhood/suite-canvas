@@ -1,6 +1,10 @@
 import type { Card, CardType, FieldDefinition, PropertyValue } from "@suite/graph";
+import { displayTemplate } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ContextMenu } from "../components/ContextMenu";
+import { DisplayStyleDialog } from "../components/DisplayStyleDialog";
+import { ValueTemplate } from "../components/ValueTemplate";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useCard, useWorkspaceStore } from "../store/workspaceStore";
@@ -63,6 +67,11 @@ export interface PropertyBlockChipProps {
   value: PropertyValue | undefined;
   /** Live title of the card a `card` value points at. */
   cardLabel?: string;
+  /** The block's own card, for `{{card}}` and `{{type}}` in its template. */
+  cardTitle?: string;
+  typeName?: string;
+  /** The template in effect: the field's, or this block's override. */
+  template?: string;
   /** One property write; `null` clears the key. */
   onCommit: (value: PropertyValue | null) => void;
   /** Read-only kinds are edited in the panel. */
@@ -79,6 +88,9 @@ export function PropertyBlockChip({
   field,
   value,
   cardLabel = "",
+  cardTitle = "",
+  typeName = "",
+  template,
   onCommit,
   onOpenPanel,
   onRemove,
@@ -280,11 +292,21 @@ export function PropertyBlockChip({
       // "edit here"), which would steal focus from the inline input.
       onClick={(event) => event.stopPropagation()}
     >
-      <span className="property-block-label">{field.name}</span>
-      <span aria-hidden="true" className="property-block-separator">
-        {"\u00b7"}
-      </span>
-      {control}
+      {/* One template describes the whole line: label, separators and the
+          editable value all come from it, so a block and a chip agree. */}
+      <ValueTemplate
+        template={template ?? displayTemplate(field)}
+        context={{
+          label: field.name,
+          value: display === EM_DASH ? "" : display,
+          card: cardTitle,
+          type: typeName,
+        }}
+        renderValue={control}
+        labelClassName="property-block-label"
+        valueClassName="property-block-template-value"
+        emptyClassName="property-block-template-empty"
+      />
       {onRemove ? (
         <button
           type="button"
@@ -313,6 +335,8 @@ export function PropertyBlockChip({
  * panel uses — the block never holds a copy of the value.
  */
 export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeViewProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editingDisplay, setEditingDisplay] = useState(false);
   const options = extension.options as PropertyBlockOptions;
   const cardId = options.cardId;
   const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : "";
@@ -323,6 +347,10 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
   const field = card ? fieldFor(card, fieldId, types) : undefined;
   const value = card?.properties[fieldId];
   const cardLabel = useCardTitle(field?.kind === "card" && typeof value === "string" ? value : "");
+  const cardTitle = useCardTitle(cardId);
+  const typeName =
+    types.find((type) => type.id === (card?.primaryTypeId ?? card?.typeIds[0]))?.name ?? "";
+  const ownDisplay = typeof node.attrs.display === "string" ? node.attrs.display : "";
 
   const commit = (next: PropertyValue | null) => {
     try {
@@ -334,12 +362,37 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
     }
   };
 
+  /** Writes the override onto this atom; clearing it removes the attribute. */
+  const setOwnDisplay = (template: string | null) => {
+    const position = getPos();
+    if (position === undefined) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(position, undefined, {
+        ...node.attrs,
+        display: template ?? null,
+      }),
+    );
+  };
+
   return (
-    <NodeViewWrapper as="span" className="property-block-node" contentEditable={false}>
+    <NodeViewWrapper
+      as="span"
+      className="property-block-node"
+      contentEditable={false}
+      onContextMenu={(event: React.MouseEvent) => {
+        if (!field) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}
+    >
       <PropertyBlockChip
         field={field}
         value={value}
         cardLabel={cardLabel}
+        cardTitle={cardTitle}
+        typeName={typeName}
+        {...(ownDisplay ? { template: ownDisplay } : {})}
         onCommit={commit}
         onOpenPanel={() => options.openPanel(cardId)}
         onRemove={() => {
@@ -354,6 +407,54 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
             .run();
         }}
       />
+
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: "Open card", onSelect: () => options.openPanel(cardId) },
+            ...(field
+              ? [
+                  {
+                    label: "Display\u2026",
+                    onSelect: () => {
+                      setMenu(null);
+                      setEditingDisplay(true);
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ) : null}
+
+      {editingDisplay && field ? (
+        <DisplayStyleDialog
+          fieldName={field.name}
+          sample={{
+            label: field.name,
+            value: propertyBlockDisplayValue(field, value, cardLabel),
+            card: cardTitle,
+            type: typeName,
+          }}
+          template={ownDisplay || displayTemplate(field)}
+          allowScope
+          overridden={ownDisplay.length > 0}
+          onApply={(template, scope) => {
+            if (scope !== "instance") {
+              const owning = types.find((type) =>
+                type.fields.some((entry) => entry.id === field.id),
+              );
+              if (owning) workspace.updateField(owning.id, field.id, { display: template });
+              return;
+            }
+            setOwnDisplay(template);
+          }}
+          onClose={() => setEditingDisplay(false)}
+        />
+      ) : null}
     </NodeViewWrapper>
   );
 }

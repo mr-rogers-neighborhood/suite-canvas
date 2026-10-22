@@ -50,12 +50,18 @@ docs/                Architecture, conventions, ADRs
 A single `LoroDoc` per workspace is the source of truth:
 
 - `boards` — named boards in this workspace
-- `cards` — workspace-level cards (kind, connectors, `deletedAt`); content lives independently of
-  any board
+- `cards` — workspace-level objects with one primary type, tags, typed properties, connectors and
+  `deletedAt`; content lives independently of any board
+- `types` / `tags` — type definitions with fields, and freeform workspace labels
 - `placements` — where a card sits on a board (`x`, `y`, `z`, `createdAt`); one per card and board
-- `edges` — links drawn on a board, dormant while an endpoint is off it
+- `sections` — board-scoped rectangles; a card's section is derived from geometry, never stored
+- `edges` — described links drawn on a board, dormant while an endpoint is off it
+- `references` — a derived index of mention targets, rebuilt from card content
 - `content` / `titles` — per-card body and title rich text (Loro maps shaped by
   `loro-prosemirror`), edited with Tiptap
+
+A card keeps its identity when it moves between boards; a mention, a `card` property or an arrow
+is a reference, while only an explicit place action puts a card on a board.
 
 `LoroIndexeddbPersistence` persists locally; the `loro-websocket` sync server flushes each room to
 SQLite (`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a

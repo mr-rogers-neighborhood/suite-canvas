@@ -132,7 +132,7 @@ edges, types, tags and properties are field-granular per
 | `edges` | `boardId`, `source`, `target`, connectors, `kind`, `path`, `bidirectional`, `label?` | Semantic link and drawing are conflated in one record; still target for the relation split. |
 | `sections` | `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?` | Spatial regions; membership is derived, never stored on a placement. |
 | `content` / `titles` | `loro-prosemirror` tree per card | Body and title rich text, same document. |
-| `meta` | `schemaVersion`, `seeded` | Current schema version is 3. |
+| `meta` | `schemaVersion`, `seeded` | Current schema version is 4. |
 
 Derived today: `homeBoardId` (oldest placement), `listBoardCards`, `listBoardEdges`,
 `listInboxCards`, `listTrashedCards`, `displayTitle`, `viewCardFields` and
@@ -544,7 +544,7 @@ every web concern lives where it belongs.
 
 - Workspace with boards, cards, placements, Inbox and Trash *(current)*
 - Rich-text title and body with collaborative carets *(current)*
-- Connectors and typed links, dormant when an endpoint leaves *(current)*
+- Connectors and described links, dormant when an endpoint leaves *(current)*
 - Layers, undo/redo split by scope, offline persistence, live sync *(current)*
 - Library dock and drawer, hold-to-place *(current)*
 - Card types, typed fields and field values *(current)*
@@ -561,12 +561,13 @@ every web concern lives where it belongs.
 - **`card` field kind**, so a property name ("Contradicts", "Prerequisite") carries the semantics *(current)*
 - **Free-text descriptions on drawn links**, edited by double-click or the edge menu *(current)*
 - **`/` insert menu** over the existing nodes plus mentions, and **property blocks** that render a field's value in the body as a view *(current)*
+- **Per-field display templates** for mentions and property blocks, with a per-mention override and a reset to the field style *(current)*
 
 ### Thinking tools
 
 - **Views/collections** as saved read-only queries
 - **Relations** separated from **edge placements**
-- Backlinks, type dashboards, templates, command palette
+- Type dashboards, creation templates, command palette
 - Explicit "apply section/view as tags or properties" commands
 - Later card kinds: journal, mindmap, PDF and other embeds
 

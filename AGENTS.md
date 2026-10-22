@@ -44,8 +44,9 @@ pnpm storybook        # storybook dev server
 ## Architecture in one paragraph
 
 A single `LoroDoc` per workspace is the source of truth. `boards`, `cards`, `placements`,
-`edges`, and per-card rich text (`content`/`titles`) live in the same doc; `@suite/graph`
-validates every write with Zod before it reaches the CRDT. The doc is persisted offline as a Loro
+`sections`, `types`, `tags`, `edges`, the derived `references` index, and per-card rich text
+(`content`/`titles`) live in the same doc; `@suite/graph` validates every write with Zod before it
+reaches the CRDT. The doc is persisted offline as a Loro
 snapshot plus an update log in IndexedDB and synced by the `loro-websocket` provider when online.
 The workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias). Zustand holds **UI
 state only** (selection, active node, context menu) — never document data. Every node is a Tiptap

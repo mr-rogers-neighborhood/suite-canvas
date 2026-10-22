@@ -15,8 +15,11 @@ import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
+import { WorkspaceActions } from "./components/WorkspaceActions";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
+import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
+import { rememberWorkspace } from "./session/workspaceTransfer";
 import { resolveBoardId, useCanvasStore, WORKSPACE_ID } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
@@ -29,14 +32,17 @@ const CARD_HALF_HEIGHT = 40;
 export default function App() {
   useEffect(() => initTheme(), []);
 
+  const workspaceId = WORKSPACE_ID;
+  if (!workspaceId) return <WorkspaceLauncher />;
+
   return (
     <ReactFlowProvider>
-      <WorkspaceShell />
+      <WorkspaceShell workspaceId={workspaceId} />
     </ReactFlowProvider>
   );
 }
 
-function WorkspaceShell() {
+function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   const workspace = useCanvasStore((state) => state.workspace);
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
@@ -97,7 +103,10 @@ function WorkspaceShell() {
     workspace.ensureDefaultTypes();
     if (!workspace.hasSeeded()) {
       const board = workspace.ensureBoard();
-      if (workspace.listCards().length === 0) {
+      // A workspace created from the launcher starts blank; older workspaces
+      // keep the two-card demo they were seeded with.
+      const fresh = new URLSearchParams(window.location.search).get("fresh") === "1";
+      if (!fresh && workspace.listCards().length === 0) {
         workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
         workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
       }
@@ -127,10 +136,20 @@ function WorkspaceShell() {
   useEffect(() => {
     if (!activeBoardId) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("workspace", WORKSPACE_ID);
+    url.searchParams.set("workspace", workspaceId);
     url.searchParams.set("board", activeBoardId);
+    url.searchParams.delete("fresh");
     window.history.replaceState(null, "", url);
-  }, [activeBoardId]);
+  }, [activeBoardId, workspaceId]);
+
+  useEffect(() => {
+    if (!activeBoardId) return;
+    rememberWorkspace({
+      id: workspaceId,
+      title: snapshot.boards.find((board) => board.id === activeBoardId)?.name,
+      boardId: activeBoardId,
+    });
+  }, [workspaceId, activeBoardId, snapshot.boards]);
 
   useEffect(() => {
     setBoard(activeBoardId);
@@ -283,7 +302,18 @@ function WorkspaceShell() {
 
   return (
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
-      <TitleBar status={status} peerCount={peerCount} documentId={WORKSPACE_ID}>
+      <TitleBar
+        status={status}
+        peerCount={peerCount}
+        documentId={workspaceId}
+        actions={
+          <WorkspaceActions
+            workspaceId={workspaceId}
+            boardId={activeBoardId}
+            title={activeBoardName ?? "Workspace"}
+          />
+        }
+      >
         <BoardTabs
           boards={snapshot.boards}
           activeBoardId={activeBoardId}
@@ -306,6 +336,26 @@ function WorkspaceShell() {
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
+        {activeBoardId && workspace.listBoardCards(activeBoardId).length === 0 ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
+            data-testid="empty-board"
+          >
+            <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
+              <p className="text-[13px] font-semibold">A blank board</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">
+                Double-click anywhere, or start with a note.
+              </p>
+              <button
+                type="button"
+                className="mt-3 rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium text-[var(--surface)] hover:opacity-90"
+                onClick={() => createCard("note")}
+              >
+                New note
+              </button>
+            </div>
+          </div>
+        ) : null}
         <BoardOutlineHost />
         <CardInspectorHost />
       </main>

@@ -7,6 +7,8 @@ export interface TitleBarProps {
   documentId?: string;
   /** Board switcher, rendered between the document id and the status. */
   children?: React.ReactNode;
+  /** Workspace-level actions (share, export), rendered before the status. */
+  actions?: React.ReactNode;
 }
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -21,10 +23,16 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   disconnected: "bg-gray-400 dark:bg-gray-500",
 };
 
-export function TitleBar({ status, peerCount = 0, documentId, children }: TitleBarProps) {
+export function TitleBar({ status, peerCount = 0, documentId, children, actions }: TitleBarProps) {
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
-      <span className="text-[13px] font-semibold tracking-tight">Suite</span>
+      <a
+        href="/"
+        aria-label="Back to workspace launcher"
+        className="text-[13px] font-semibold tracking-tight hover:opacity-70"
+      >
+        Suite
+      </a>
 
       {documentId ? (
         <span className="truncate text-[11px] text-[var(--ink-muted)]">{documentId}</span>
@@ -33,6 +41,7 @@ export function TitleBar({ status, peerCount = 0, documentId, children }: TitleB
       {children ? <div className="ml-2 flex min-w-0 items-center">{children}</div> : null}
 
       <div className="ml-auto flex items-center gap-3">
+        {actions}
         <span
           data-testid="sync-status"
           className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]"

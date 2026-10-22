@@ -34,6 +34,18 @@ export {
   WorkspaceDocument,
 } from "./loro/WorkspaceDocument.js";
 export type {
+  PortableCard,
+  PortableNode,
+  PortableProperty,
+  PortableWorkspace,
+} from "./portable.js";
+export {
+  exportPortable,
+  loroTreeToJson,
+  PORTABLE_EXPORT_KIND,
+  PORTABLE_EXPORT_VERSION,
+} from "./portable.js";
+export type {
   ArrowSource,
   MentionContext,
   PropertyLink,
@@ -128,3 +140,17 @@ export {
   TEMPLATE_TOKENS,
   templateSegments,
 } from "./template.js";
+export type {
+  WorkspaceFile,
+  WorkspaceFileExport,
+  WorkspaceFileManifest,
+} from "./workspaceFile.js";
+export {
+  createWorkspaceFile,
+  parseWorkspaceFile,
+  readWorkspaceFile,
+  WORKSPACE_FILE_KIND,
+  WORKSPACE_FILE_VERSION,
+  workspaceFileManifestSchema,
+  workspaceFileSchema,
+} from "./workspaceFile.js";

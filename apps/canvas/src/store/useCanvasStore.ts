@@ -14,8 +14,8 @@ function searchParam(key: string): string | null {
 }
 
 /** A workspace owns its boards and cards. `?doc=` remains a legacy alias. */
-export function resolveWorkspaceId(): string {
-  return searchParam("workspace") ?? searchParam("doc") ?? "default-workspace";
+export function resolveWorkspaceId(): string | null {
+  return searchParam("workspace") ?? searchParam("doc");
 }
 
 export function resolveBoardId(): string | null {
@@ -30,7 +30,9 @@ const presence = new EphemeralStore(30_000);
 const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 
 const persistence =
-  typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(WORKSPACE_ID, doc) : null;
+  WORKSPACE_ID && typeof indexedDB !== "undefined"
+    ? new LoroIndexeddbPersistence(WORKSPACE_ID, doc)
+    : null;
 
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
@@ -46,6 +48,8 @@ interface CanvasState {
   /** True once the first server sync landed (or the wait ran out). */
   synced: boolean;
   connect: () => void;
+  /** Write the current document snapshot to IndexedDB before leaving. */
+  flush: () => Promise<void>;
 }
 
 /** Unit tests mount components without a sync server; a socket there only adds noise. */
@@ -53,7 +57,7 @@ const TEST_MODE = import.meta.env.MODE === "test";
 
 export const useCanvasStore = create<CanvasState>((set) => {
   const provider =
-    typeof window === "undefined" || TEST_MODE
+    !WORKSPACE_ID || typeof window === "undefined" || TEST_MODE
       ? null
       : new LoroProvider({
           url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
@@ -98,6 +102,9 @@ export const useCanvasStore = create<CanvasState>((set) => {
     synced: provider === null,
     connect: () => {
       void provider?.connect();
+    },
+    flush: async () => {
+      await persistence?.flush();
     },
   };
 });

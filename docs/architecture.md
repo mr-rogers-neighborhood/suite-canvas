@@ -189,8 +189,8 @@ A `.suite` backup is a versioned JSON envelope around `doc.export({ mode: "snaps
 small manifest. Import validates the envelope, refuses a newer file/schema by name, creates a new
 workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
 the open document. Portable JSON and Markdown exports are read-only projections of the same
-document; only the exact backup is an import format. Sharing is link-based editing of the workspace
-URL; card-level sharing is deferred ([ADR-0021](./decisions/0021-sharing-seam-deferred.md)).
+document; only the exact backup is an import format. Sharing is link-based: a workspace editor link
+is the ordinary workspace URL, and `?share=<token>` opens a reader ([ADR-0021](./decisions/0021-sharing-seam-deferred.md)).
 
 ## Session start
 
@@ -318,9 +318,9 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
 - **Editor:** each card mounts two Tiptap editors (`StarterKit` + `LoroCollaboration`) for its title
   and body. StarterKit's undo history is disabled because `LoroCollaboration` owns a scoped Loro
   undo stack.
-- **One editable surface per card per client.** The same card can be mounted on the canvas, in the
-  inspector and in an expanded Library row. `editingSurface` (`canvas | panel`) plus `panelOwner`
-  (`inspector | library`) decide which one accepts keystrokes; the others stay read-only.
+- **One editable surface per card per client.** The same card can be mounted on the canvas and in
+  the inspector. `editingSurface` (`canvas | panel`) decides which one accepts keystrokes; the
+  other stays read-only.
   `loro-prosemirror` ignores a local commit in every editor except its author, so a read-only twin
   re-reads the container through the sync plugin's own mapping when the owning surface writes
   (`useLocalMirrorSync`, coalesced per animation frame, dispatched as a non-local update so the
@@ -328,6 +328,15 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   gets `null`, so it cannot clear the caret the owning editor publishes. Peer carets are
   content-anchored, so a caret published from the panel still renders in the collaborator's canvas
   card. Undo remains per editor, exactly as it already is between title and body.
+- **Inspector tabs:** the inspector splits the shared card surface into `Details` (type, tags,
+  properties, links, Where) and `Content` (the body). A card whose body is still empty opens on
+  Content, everything else opens on Details; Edit, a click on the body and a `@card.field` reveal
+  move the inspector to the tab that request belongs to. The body gets its own surface — background,
+  border and padding — so it reads as a destination instead of a section buried under the metadata.
+- **Empty body:** the `Placeholder` extension from `@tiptap/extensions` decorates the empty
+  paragraph with `Begin writing, or type / for commands.` in the canvas card and the inspector. It
+  is a decoration only: it never writes to the CRDT and leaves collaborative carets untouched. A
+  read-only share viewer keeps the empty body blank instead of inviting a write.
 - **Formatting toolbar:** Tiptap's built-in `BubbleMenu` (`@tiptap/react/menus`) handles
   positioning (Floating UI), show/hide on selection, and portalling. The buttons are plain
   markup inside it — Tiptap's documented pattern; there is no prebuilt button set in the library.
@@ -487,11 +496,10 @@ and links follow when the footer expands.
   offers **group by section**. Sections are never a global facet: a section title only means
   something inside one board's namespace. Scope, facet and grouping are UI state; membership stays
   derived from geometry.
-- **Inline editing** — one row at a time expands into the shared card panel (title, tags,
-  properties, Where, body); the open row takes the list over and its chevron brings the list back,
-  so the panel gets the height it needs. It edits the same Loro containers as the canvas;
-  `panelOwner` guarantees the canvas copy and the inspector are read-only while the row has the
-  caret.
+- **Rows open the inspector** — a click on a row (a press that never becomes a hold-to-place drag)
+  opens that card in the same inspector drawer the canvas uses; a row never expands into an editor
+  of its own. The drawer widens only for board scope, where the section facet and grouping need the
+  room.
 - **Place** centres the card in the viewport, staggered so repeated placements don't stack. A row's
   `Open` action switches board and focuses the card through the focus primitive.
 - **Hold to place** is a pointer gesture (not HTML5 drag and drop): a row lifts into a card ghost
@@ -538,3 +546,42 @@ snap members back, and on release one `movePlacements` call writes all the geome
 2. `App` calls `connect()`, joining the workspace room through `LoroProvider` over WebSocket.
 3. `status` reflects `connecting | connected | disconnected`; the UI stays functional in every
    state.
+
+## Share projections
+
+A board or card share opens `share-<token>`, a room that holds a self-contained projection instead
+of the workspace. `ProjectionWorker` keeps those rooms live: it joins every active board and card
+share over the sync server with the internal token, holds one `LoroDoc` per room, and rebuilds a
+workspace's shares after each save (debounced, one rebuild at a time per workspace). A rebuild calls
+`projectWorkspace` on the saved workspace and `applyProjection` into the room document, which clears
+and rewrites every projection root in a single commit; the room keeps one peer for its lifetime, so
+each rebuild wins the LWW race against the previous one. A share whose card is missing or trashed
+keeps its previous projection. Sharing a workspace creates its share row with a `room_id`: only the
+token hash is stored, so the worker can name a projection room without ever seeing the token.
+Creating a share rebuilds immediately and revoking one closes its room. Resolving a board or card
+token reports the projection room as its `workspaceId`; the owner workspace id never reaches that
+holder, so a board or card link cannot be exchanged for a workspace link.
+
+### Opening a share link
+
+`main.tsx` resolves `?share=<token>` through the share API before it imports `App`, then
+`configureSession` records the room, role and read-only flag that `useCanvasStore` reads at module
+load. `?workspace=` stays the synchronous default, so stories and unit tests boot the editor
+unchanged.
+
+- **Board and card viewer:** the session targets `share-<token>` only. `workspaceId`, the IndexedDB
+  key and the provider room are that projection room, so a viewer never learns or loads the owner's
+  workspace id. The token is the provider's `auth`.
+- **Workspace viewer (S2a, deferred):** a token that joins the workspace room necessarily learns
+  the workspace id, which is also the share-management key; a viewer could mint an editor link.
+  The share API therefore refuses to create workspace viewer links until management has its own
+  credential or the viewer reads a full-workspace projection room. The viewer shell already supports
+  the scope for when that lands.
+- **Read-only path:** `useUiStore.readOnly` closes every write surface — canvas drag/connect/delete
+  and context menus, section gestures, the card menu and inline editors, panel type/tag/property
+  edits, and the dock, library and share actions. Board tabs remain (workspace viewers may switch),
+  without create/rename/delete. Presence and cursor rooms are skipped: the server authorizes a
+  viewer token for its document room only. A card share opens the inspector on its card once the
+  projection has it.
+- **Failure:** a revoked or unknown token renders `ShareUnavailable` ("This link is no longer
+  available.") instead of the shell.

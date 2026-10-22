@@ -19,8 +19,9 @@ import { WorkspaceActions } from "./components/WorkspaceActions";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
+import { getSession, type ShareSession } from "./session/session";
 import { rememberWorkspace } from "./session/workspaceTransfer";
-import { resolveBoardId, useCanvasStore, WORKSPACE_ID } from "./store/useCanvasStore";
+import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme } from "./theme/useThemeStore";
@@ -29,20 +30,34 @@ import { initTheme } from "./theme/useThemeStore";
 const CARD_HALF_WIDTH = 112;
 const CARD_HALF_HEIGHT = 40;
 
+/** What the app bar calls this document. A share never names its owner's workspace. */
+function documentLabel(share: ShareSession, workspaceId: string): string {
+  if (share.scope === "board") return "Board share";
+  if (share.scope === "card") return "Card share";
+  return workspaceId;
+}
+
 export default function App() {
   useEffect(() => initTheme(), []);
 
-  const workspaceId = WORKSPACE_ID;
+  const session = getSession();
+  const workspaceId = session.workspaceId;
   if (!workspaceId) return <WorkspaceLauncher />;
 
   return (
     <ReactFlowProvider>
-      <WorkspaceShell workspaceId={workspaceId} />
+      <WorkspaceShell workspaceId={workspaceId} share={session.share} />
     </ReactFlowProvider>
   );
 }
 
-function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
+function WorkspaceShell({
+  workspaceId,
+  share,
+}: {
+  workspaceId: string;
+  share: ShareSession | null;
+}) {
   const workspace = useCanvasStore((state) => state.workspace);
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
@@ -63,6 +78,7 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   const setLibraryTab = useUiStore((state) => state.setLibraryTab);
   const startEditing = useUiStore((state) => state.startEditing);
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
+  const openInspector = useUiStore((state) => state.openInspector);
   const libraryTypeFilter = useUiStore((state) => state.libraryTypeFilter);
   const libraryTagFilter = useUiStore((state) => state.libraryTagFilter);
   const libraryScope = useUiStore((state) => state.libraryScope);
@@ -76,14 +92,15 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
+  const readOnly = useUiStore((state) => state.readOnly);
   const setFocus = usePresenceStore((state) => state.setFocus);
   const setBoard = usePresenceStore((state) => state.setBoard);
   const bindPresence = usePresenceStore((state) => state.bind);
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
 
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const stagger = useRef(0);
+  const shareCardOpened = useRef(false);
 
   useEffect(() => {
     connect();
@@ -97,7 +114,9 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
   // waits for the first server sync: seeding an empty local doc would resurrect
   // starter cards in a workspace someone emptied on another client.
   useEffect(() => {
-    if (!ready || !synced) return;
+    // A viewer reads a projection the owner's workspace already seeded; writing
+    // here (even the idempotent type repair) is rejected by the server.
+    if (readOnly || !ready || !synced) return;
     // Starter types are structural, not sample data: every workspace has them,
     // and the note type is the fallback for cards with no type.
     workspace.ensureDefaultTypes();
@@ -115,14 +134,16 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
     // The reference index is derived, so repairing it is safe and idempotent. It
     // runs after the first sync so mentions that arrived offline are indexed too.
     workspace.ensureReferences();
-  }, [ready, synced, workspace]);
+  }, [ready, synced, workspace, readOnly]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {
     if (!ready || !synced) return;
     const boards = snapshot.boards;
     if (boards.length === 0) {
-      workspace.ensureBoard();
+      // A projection can arrive a moment after the room joins; wait for it
+      // instead of minting a board the viewer may not write.
+      if (!readOnly) workspace.ensureBoard();
       return;
     }
     if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
@@ -130,26 +151,47 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
     const requested = resolveBoardId();
     const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace]);
+  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace, readOnly]);
 
-  // Keep the URL shareable without a reload.
+  // Keep the URL shareable without a reload. A share keeps its token and never
+  // gains a workspace id: the link is the whole credential.
   useEffect(() => {
     if (!activeBoardId) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("workspace", workspaceId);
-    url.searchParams.set("board", activeBoardId);
-    url.searchParams.delete("fresh");
+    if (share) {
+      url.searchParams.set("share", share.token);
+      url.searchParams.set("board", activeBoardId);
+      // A share link carries no workspace id, even if it was pasted with one.
+      url.searchParams.delete("workspace");
+      url.searchParams.delete("doc");
+      url.searchParams.delete("fresh");
+    } else {
+      url.searchParams.set("workspace", workspaceId);
+      url.searchParams.set("board", activeBoardId);
+      url.searchParams.delete("fresh");
+    }
     window.history.replaceState(null, "", url);
-  }, [activeBoardId, workspaceId]);
+  }, [activeBoardId, workspaceId, share]);
 
   useEffect(() => {
-    if (!activeBoardId) return;
+    // A share is a visit, not a workspace to come back to from the launcher.
+    if (!activeBoardId || share) return;
     rememberWorkspace({
       id: workspaceId,
       title: snapshot.boards.find((board) => board.id === activeBoardId)?.name,
       boardId: activeBoardId,
     });
-  }, [workspaceId, activeBoardId, snapshot.boards]);
+  }, [workspaceId, activeBoardId, snapshot.boards, share]);
+
+  // A card link opens on that card. The projection may still be syncing, so wait
+  // for the card to exist; once opened, closing the panel is the reader's choice.
+  useEffect(() => {
+    if (share?.scope !== "card" || shareCardOpened.current) return;
+    if (!ready || !synced || !share.cardId) return;
+    if (!snapshot.cards.some((card) => card.id === share.cardId)) return;
+    shareCardOpened.current = true;
+    openInspector(share.cardId);
+  }, [share, ready, synced, snapshot.cards, openInspector]);
 
   useEffect(() => {
     setBoard(activeBoardId);
@@ -278,16 +320,6 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
     [workspace, sectionIdsFor],
   );
 
-  const expandRow = useCallback((cardId: string | null) => {
-    setExpandedRowId(cardId);
-    const state = useUiStore.getState();
-    if (cardId) {
-      state.setPanelOwner("library");
-      return;
-    }
-    if (state.panelOwner === "library") state.setPanelOwner(null);
-  }, []);
-
   const cards = snapshot.cards;
   const inbox = cards.filter((card) => !card.deletedAt).map((card) => card.id);
   const unplaced = inbox.filter((id) => workspace.listCardPlacements(id).length === 0);
@@ -304,39 +336,45 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
       <TitleBar
         status={status}
+        {...(share ? { role: share.role } : {})}
         peerCount={peerCount}
-        documentId={workspaceId}
+        documentId={share ? documentLabel(share, workspaceId) : workspaceId}
         actions={
-          <WorkspaceActions
-            workspaceId={workspaceId}
-            boardId={activeBoardId}
-            title={activeBoardName ?? "Workspace"}
-          />
+          readOnly ? undefined : (
+            <WorkspaceActions
+              workspaceId={workspaceId}
+              boardId={activeBoardId}
+              title={activeBoardName ?? "Workspace"}
+            />
+          )
         }
       >
-        <BoardTabs
-          boards={snapshot.boards}
-          activeBoardId={activeBoardId}
-          onSelect={setActiveBoardId}
-          onCreate={() => {
-            const board = workspace.createBoard();
-            setActiveBoardId(board.id);
-          }}
-          onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-          onDeleteRequest={(boardId) => {
-            // Nothing to lose on an empty board, so skip the dialog.
-            if (workspace.listBoardCards(boardId).length === 0) {
-              workspace.deleteBoard(boardId);
-              return;
-            }
-            setBoardToDelete(boardId);
-          }}
-        />
+        {!share || share.scope === "workspace" ? (
+          <BoardTabs
+            boards={snapshot.boards}
+            activeBoardId={activeBoardId}
+            onSelect={setActiveBoardId}
+            readOnly={readOnly}
+            onCreate={() => {
+              const board = workspace.createBoard();
+              setActiveBoardId(board.id);
+            }}
+            onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
+            onDeleteRequest={(boardId) => {
+              // Nothing to lose on an empty board, so skip the dialog.
+              if (workspace.listBoardCards(boardId).length === 0) {
+                workspace.deleteBoard(boardId);
+                return;
+              }
+              setBoardToDelete(boardId);
+            }}
+          />
+        ) : null}
       </TitleBar>
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
-        {activeBoardId && workspace.listBoardCards(activeBoardId).length === 0 ? (
+        {!readOnly && activeBoardId && workspace.listBoardCards(activeBoardId).length === 0 ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -360,53 +398,56 @@ function WorkspaceShell({ workspaceId }: { workspaceId: string }) {
         <CardInspectorHost />
       </main>
 
-      <Dock
-        inboxCount={unplaced.length}
-        libraryOpen={libraryOpen}
-        onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
-        types={snapshot.types}
-        onCreateCard={(typeId) => createCard(typeId)}
-        onManageTypes={openTypeSettings}
-      />
+      {readOnly ? null : (
+        <Dock
+          inboxCount={unplaced.length}
+          libraryOpen={libraryOpen}
+          onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
+          types={snapshot.types}
+          onCreateCard={(typeId) => createCard(typeId)}
+          onManageTypes={openTypeSettings}
+        />
+      )}
 
-      <TypeSettingsHost />
+      {readOnly ? null : <TypeSettingsHost />}
 
-      <LibraryDrawer
-        open={libraryOpen}
-        tab={libraryTab}
-        counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
-        inbox={inboxItems}
-        cards={cardItems}
-        trash={trashItems}
-        onTab={setLibraryTab}
-        onClose={() => setLibraryOpen(false)}
-        onPlace={placeCard}
-        onCreateInInbox={() => workspace.createCard()}
-        onTrash={(cardId) => workspace.trashCard(cardId)}
-        onRestore={(cardId) => workspace.restoreCard(cardId)}
-        onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
-        onEmptyTrash={() => workspace.emptyTrash()}
-        onGoToBoard={setActiveBoardId}
-        onDropAt={(cardId, point) => placeCard(cardId, point)}
-        types={snapshot.types}
-        tags={snapshot.tags}
-        typeFilter={libraryTypeFilter}
-        tagFilter={libraryTagFilter}
-        onToggleType={toggleLibraryType}
-        onToggleTag={toggleLibraryTag}
-        onClearFilters={clearLibraryFilters}
-        activeBoardId={activeBoardId}
-        activeBoardName={activeBoardName}
-        scope={libraryScope}
-        onScope={setLibraryScope}
-        sectionFilter={librarySectionFilter}
-        onToggleSection={toggleLibrarySection}
-        sectionOrder={sectionOrder}
-        groupBySection={libraryGroupBySection}
-        onToggleGroup={toggleLibraryGroupBySection}
-        expandedRowId={expandedRowId}
-        onExpandRow={expandRow}
-      />
+      {readOnly ? null : (
+        <LibraryDrawer
+          open={libraryOpen}
+          tab={libraryTab}
+          counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
+          inbox={inboxItems}
+          cards={cardItems}
+          trash={trashItems}
+          onTab={setLibraryTab}
+          onClose={() => setLibraryOpen(false)}
+          onPlace={placeCard}
+          onCreateInInbox={() => workspace.createCard()}
+          onTrash={(cardId) => workspace.trashCard(cardId)}
+          onRestore={(cardId) => workspace.restoreCard(cardId)}
+          onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
+          onEmptyTrash={() => workspace.emptyTrash()}
+          onGoToBoard={setActiveBoardId}
+          onDropAt={(cardId, point) => placeCard(cardId, point)}
+          types={snapshot.types}
+          tags={snapshot.tags}
+          typeFilter={libraryTypeFilter}
+          tagFilter={libraryTagFilter}
+          onToggleType={toggleLibraryType}
+          onToggleTag={toggleLibraryTag}
+          onClearFilters={clearLibraryFilters}
+          activeBoardId={activeBoardId}
+          activeBoardName={activeBoardName}
+          scope={libraryScope}
+          onScope={setLibraryScope}
+          sectionFilter={librarySectionFilter}
+          onToggleSection={toggleLibrarySection}
+          sectionOrder={sectionOrder}
+          groupBySection={libraryGroupBySection}
+          onToggleGroup={toggleLibraryGroupBySection}
+          onOpenCard={openInspector}
+        />
+      )}
 
       <PerfOverlay />
 

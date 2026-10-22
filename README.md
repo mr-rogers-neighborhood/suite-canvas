@@ -68,15 +68,23 @@ is a reference, while only an explicit place action puts a card on a board.
 
 `LoroIndexeddbPersistence` persists locally; the `loro-websocket` sync server flushes each room to
 SQLite (`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a
-server restart. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus editor carets) and
-the canvas gesture channel ride Loro `EphemeralStore`s; they are not persisted in the document. All
-writes go through `WorkspaceDocument`, which validates with Zod. See
+server restart. Share links are capability tokens kept in `SUITE_SHARES_DB` (default
+`apps/collab-server/suite.shares.sqlite`) as SHA-256 hashes only; a join is authorized per room as
+`read` or `write`. The projection worker presents `SUITE_INTERNAL_TOKEN` (generated at startup when
+unset) to write any room. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus editor
+carets) and the canvas gesture channel ride Loro `EphemeralStore`s; they are not persisted in the
+document. All writes go through `WorkspaceDocument`, which validates with Zod. See
 [docs/architecture.md](docs/architecture.md).
 
 ## Workspace files
 
-`Share` copies a link that grants collaborative editing of that workspace. It is link-based, not an
-account or ACL.
+`Share` opens one dialog for the workspace, the active board or the selected card. A workspace
+editor link is the ordinary `?workspace=` URL; a board or card viewer link is a capability token
+opened through `?share=`. Board and card links read a live projection of that scope, never the
+workspace index. Links are capabilities, not accounts or an ACL. A workspace viewer link is
+deliberately deferred: the workspace room id is also the share-management key, so that link would
+let a viewer mint an editor link; it needs a separate management credential or a full-workspace
+projection first.
 
 `File → Export backup…` writes a versioned `.suite` file containing the exact Loro snapshot. Import
 it from the launcher; it always opens as a **new** workspace and never merges into the open

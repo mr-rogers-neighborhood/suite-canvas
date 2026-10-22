@@ -25,15 +25,14 @@ export function CardInspectorHost() {
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const editingSurface = useUiStore((state) => state.editingSurface);
-  const panelOwner = useUiStore((state) => state.panelOwner);
   const closeInspector = useUiStore((state) => state.closeInspector);
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
   const startEditing = useUiStore((state) => state.startEditing);
   const stopEditing = useUiStore((state) => state.stopEditing);
-  const setPanelOwner = useUiStore((state) => state.setPanelOwner);
   const focusCard = useUiStore((state) => state.focusCard);
   const focusSection = useUiStore((state) => state.focusSection);
   const openInspector = useUiStore((state) => state.openInspector);
+  const readOnly = useUiStore((state) => state.readOnly);
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
@@ -49,19 +48,14 @@ export function CardInspectorHost() {
     if (inspectorNodeId && !card) closeInspector();
   }, [inspectorNodeId, card, closeInspector]);
 
-  // Closing or switching the panel releases this card's panel editing session;
-  // a panel edit in another surface (a library row) is left alone.
+  // Closing or switching the panel releases this card's panel editing session.
   const previousInspectorId = useRef(inspectorNodeId);
   useEffect(() => {
     const previous = previousInspectorId.current;
     previousInspectorId.current = inspectorNodeId;
     if (previous === inspectorNodeId) return;
     const state = useUiStore.getState();
-    if (
-      state.panelOwner === "inspector" &&
-      state.editingSurface === "panel" &&
-      state.editingNodeId === previous
-    ) {
+    if (state.editingSurface === "panel" && state.editingNodeId === previous) {
       state.stopEditing();
     }
   }, [inspectorNodeId]);
@@ -123,25 +117,32 @@ export function CardInspectorHost() {
     [card, snapshot, activeBoardId],
   );
 
-  // Editors need a container to bind to; opening the panel is an editing
-  // surface, so it may create the empty ones the same way the card does.
-  const contentId = useMemo(
-    () => (card ? (containers.contentId ?? workspace.getContent(card.id).id) : null),
-    [workspace, card, containers],
-  );
-  const titleId = useMemo(
-    () => (card ? (containers.titleId ?? workspace.getTitle(card.id).id) : null),
-    [workspace, card, containers],
+  // Editors need a container to bind to. An owner opening the panel is an
+  // editing surface and may create the empty ones; a viewer must never write,
+  // so it reads whatever the projection carries and shows static text otherwise.
+  const contentId = useMemo(() => {
+    if (!card) return null;
+    if (containers.contentId) return containers.contentId;
+    return readOnly ? workspace.contentId(card.id) : workspace.getContent(card.id).id;
+  }, [workspace, card, containers, readOnly]);
+  const titleId = useMemo(() => {
+    if (!card) return null;
+    if (containers.titleId) return containers.titleId;
+    return readOnly ? workspace.titleId(card.id) : workspace.getTitle(card.id).id;
+  }, [workspace, card, containers, readOnly]);
+
+  // Only seeds the tab a card opens on, so one read per card is enough; the
+  // panel owns the tab from then on.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seeded once per card, not per edit.
+  const bodyEmpty = useMemo(
+    () => (card ? workspace.cardText(card.id).trim().length === 0 : false),
+    [card?.id],
   );
 
-  if (!card || contentId === null || titleId === null) return null;
+  if (!card) return null;
 
-  // Only the inspector may own this panel's editing session; a library row
-  // editing the same card leaves this one read-only.
   const panelEditing =
-    editingNodeId === card.id && editingSurface === "panel" && panelOwner === "inspector"
-      ? editingField
-      : null;
+    editingNodeId === card.id && editingSurface === "panel" ? editingField : null;
 
   return (
     <CardInspector
@@ -154,6 +155,7 @@ export function CardInspectorHost() {
       cards={cards}
       links={links}
       focusedField={inspectorFieldId}
+      bodyEmpty={bodyEmpty}
       linkCount={countOf(card.id)}
       editing={panelEditing}
       cardDoc={workspace.doc}
@@ -162,17 +164,10 @@ export function CardInspectorHost() {
       cursorStore={cursorStore}
       localUser={localUser}
       peers={peers}
+      readOnly={readOnly}
       onClose={closeInspector}
-      onEdit={() => {
-        setPanelOwner("inspector");
-        startEditing(card.id, "body", "panel");
-      }}
-      onStartEditing={(field) => {
-        // A click here means the inspector captures the keystrokes, even if an
-        // expanded library row was the last panel owner.
-        setPanelOwner("inspector");
-        startEditing(card.id, field, "panel");
-      }}
+      onEdit={() => startEditing(card.id, "body", "panel")}
+      onStartEditing={(field) => startEditing(card.id, field, "panel")}
       onEditEnd={stopEditing}
       onSetType={(typeId) => workspace.setCardTypes(card.id, [typeId], typeId)}
       onAddTag={(tagId) => workspace.addCardTag(card.id, tagId)}
@@ -183,7 +178,10 @@ export function CardInspectorHost() {
       }}
       onSetProperty={(fieldId, value) => workspace.setProperty(card.id, fieldId, value)}
       onClearProperty={(fieldId) => workspace.clearProperty(card.id, fieldId)}
-      onOpenCardPanel={openInspector}
+      onOpenCardPanel={(cardId) => {
+        // A mention or property block may name a card this share leaves out.
+        if (snapshot.cards.some((entry) => entry.id === cardId)) openInspector(cardId);
+      }}
       onManageTypes={openTypeSettings}
       onFocusCard={(boardId) => focusCard(card.id, boardId)}
       onFocusSection={(sectionId) => {
@@ -193,6 +191,8 @@ export function CardInspectorHost() {
         if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
       onFocusLink={(cardId, boardId) => {
+        // Links to cards outside the projection render inert; never navigate.
+        if (!snapshot.cards.some((entry) => entry.id === cardId)) return;
         // An unplaced card has nothing to reveal, so the panel is the target.
         if (boardId) focusCard(cardId, boardId);
         else openInspector(cardId);

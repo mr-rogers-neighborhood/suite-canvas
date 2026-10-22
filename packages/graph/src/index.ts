@@ -45,6 +45,20 @@ export {
   PORTABLE_EXPORT_KIND,
   PORTABLE_EXPORT_VERSION,
 } from "./portable.js";
+export type {
+  ProjectionOptions,
+  ProjectionReference,
+  ProjectionResult,
+  ShareScope,
+} from "./projection.js";
+export {
+  applyProjection,
+  PRIVATE_REFERENCE_TITLE,
+  PROJECTION_APPLY_ORIGIN,
+  projectWorkspace,
+  SHARE_BOARD_ID,
+  SHARE_BOARD_NAME,
+} from "./projection.js";
 export type { FormatPropertyOptions } from "./property.js";
 export { formatPropertyValue, isPropertyValueEmpty } from "./property.js";
 export type {

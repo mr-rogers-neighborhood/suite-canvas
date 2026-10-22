@@ -1,0 +1,268 @@
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createShareStore, type ShareRole, type ShareScope, type ShareStore } from "./shares.js";
+
+let directory: string;
+let path: string;
+let store: ShareStore;
+
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), "suite-shares-"));
+  path = join(directory, "shares.sqlite");
+  store = createShareStore(path);
+});
+
+afterEach(() => {
+  store.close();
+  rmSync(directory, { recursive: true, force: true });
+});
+
+describe("share store", () => {
+  it("creates a workspace editor share with a token and a workspace room", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "editor",
+    });
+
+    expect(token.length).toBeGreaterThanOrEqual(32);
+    expect(share.workspaceId).toBe("ws-1");
+    expect(share.scope).toBe("workspace");
+    expect(share.role).toBe("editor");
+    expect(share.roomId).toBe("ws-1");
+    expect(share.revokedAt).toBeNull();
+    expect(share.boardId).toBeNull();
+    expect(share.cardId).toBeNull();
+  });
+
+  it("derives a per-token room for board and card shares", () => {
+    const board = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    const card = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      boardId: "board-1",
+      cardId: "card-1",
+    });
+
+    expect(board.share.roomId).toBe(`share-${board.token}`);
+    expect(card.share.roomId).toBe(`share-${card.token}`);
+    expect(board.share.boardId).toBe("board-1");
+    expect(card.share.cardId).toBe("card-1");
+  });
+
+  it("stores only the hashed token", () => {
+    const { token } = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+
+    const db = new DatabaseSync(path);
+    const rows = db.prepare("SELECT * FROM shares").all();
+    db.close();
+
+    expect(JSON.stringify(rows)).not.toContain(token);
+    expect(rows).toHaveLength(1);
+    const [row] = rows as { token_hash?: string }[];
+    expect(row?.token_hash).toBe(createHash("sha256").update(token).digest("hex"));
+  });
+
+  it("issues a distinct token per share", () => {
+    const first = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const second = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+
+    expect(first.token).not.toBe(second.token);
+    expect(first.share.id).not.toBe(second.share.id);
+  });
+
+  it("resolves a token to the same share", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+    });
+
+    const resolved = store.resolve(token);
+
+    expect(resolved?.id).toBe(share.id);
+    expect(resolved?.roomId).toBe(share.roomId);
+    expect(resolved?.cardId).toBe("card-1");
+  });
+
+  it("returns null for unknown and empty tokens", () => {
+    expect(store.resolve("not-a-token")).toBeNull();
+    expect(store.resolve("")).toBeNull();
+  });
+
+  it("lists only active shares of one workspace, newest first", () => {
+    const older = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const newer = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    store.create({ workspaceId: "ws-2", scope: "workspace", role: "editor" });
+
+    const ids = store.list("ws-1").map((share) => share.id);
+
+    expect(ids).toEqual([newer.share.id, older.share.id]);
+    expect(ids).not.toContain("ws-2");
+  });
+
+  it("keeps every room id on listed shares", () => {
+    store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const created = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+
+    const [board, workspace] = store.list("ws-1");
+
+    expect(workspace?.roomId).toBe("ws-1");
+    // The projection room is persisted so the worker can rebuild without the token.
+    expect(board?.roomId).toBe(`share-${created.token}`);
+    expect(board?.roomId).toBe(created.share.roomId);
+  });
+
+  it("lists active shares across workspaces for the projection worker", () => {
+    const first = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+    });
+    const second = store.create({ workspaceId: "ws-2", scope: "workspace", role: "editor" });
+    const revoked = store.create({
+      workspaceId: "ws-2",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    store.revoke(revoked.share.id);
+
+    const all = store.listAllActive();
+
+    expect(all.map((share) => share.id)).toEqual([second.share.id, first.share.id]);
+    expect(all[1]?.roomId).toBe(`share-${first.token}`);
+  });
+
+  it("revokes a share so it no longer resolves or lists", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "editor",
+    });
+
+    const revoked = store.revoke(share.id);
+
+    expect(revoked?.revokedAt).toBeTypeOf("number");
+    expect(store.resolve(token)).toBeNull();
+    expect(store.list("ws-1")).toHaveLength(0);
+    expect(store.get(share.id)?.revokedAt).toBeTypeOf("number");
+  });
+
+  it("returns null when revoking an unknown share", () => {
+    expect(store.revoke("missing")).toBeNull();
+  });
+
+  it("refuses to create a workspace viewer link", () => {
+    expect(() => store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" })).toThrow(
+      "Workspace viewer links are coming next.",
+    );
+  });
+
+  it("rejects invalid scope, role and targets", () => {
+    expect(() => store.create({ workspaceId: "", scope: "workspace", role: "editor" })).toThrow(
+      "workspace id",
+    );
+    expect(() =>
+      store.create({ workspaceId: "ws-1", scope: "folder" as ShareScope, role: "viewer" }),
+    ).toThrow("Scope");
+    expect(() =>
+      store.create({ workspaceId: "ws-1", scope: "workspace", role: "owner" as ShareRole }),
+    ).toThrow("Role");
+    expect(() => store.create({ workspaceId: "ws-1", scope: "board", role: "viewer" })).toThrow(
+      "board id",
+    );
+    expect(() => store.create({ workspaceId: "ws-1", scope: "card", role: "viewer" })).toThrow(
+      "card id",
+    );
+    expect(() =>
+      store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor", boardId: "board-1" }),
+    ).toThrow("do not take a board");
+  });
+
+  it("keeps board and card editor shares creatable for the next phase", () => {
+    const { share } = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    expect(share.role).toBe("editor");
+  });
+
+  it("survives a reopen", () => {
+    const { token } = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const card = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+    });
+    store.close();
+
+    const reopened = createShareStore(path);
+    expect(reopened.resolve(token)?.workspaceId).toBe("ws-1");
+    expect(reopened.listAllActive().find((share) => share.id === card.share.id)?.roomId).toBe(
+      card.share.roomId,
+    );
+    reopened.close();
+    store = createShareStore(path);
+  });
+
+  it("adds the room id column to a store created before it existed", () => {
+    store.close();
+    const legacy = new DatabaseSync(path);
+    legacy.exec("DROP TABLE shares");
+    legacy.exec(
+      `CREATE TABLE shares (
+         id TEXT PRIMARY KEY,
+         token_hash TEXT NOT NULL UNIQUE,
+         scope TEXT NOT NULL,
+         role TEXT NOT NULL,
+         workspace_id TEXT NOT NULL,
+         board_id TEXT,
+         card_id TEXT,
+         created_at INTEGER NOT NULL,
+         revoked_at INTEGER
+       )`,
+    );
+    legacy
+      .prepare(
+        `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run("legacy", "hash", "board", "viewer", "ws-1", "board-1", null, 1);
+    legacy.close();
+
+    store = createShareStore(path);
+
+    const legacyShare = store.get("legacy");
+    expect(legacyShare?.roomId).toBeNull();
+    expect(store.listAllActive().map((share) => share.id)).toEqual(["legacy"]);
+    const created = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "b",
+    });
+    expect(store.get(created.share.id)?.roomId).toBe(`share-${created.token}`);
+  });
+});

@@ -340,9 +340,10 @@ rather than surrounding it with chrome.
   with counts (OR within a facet, AND across), and — on the Cards tab — an `All | <board>` scope
   with a **Sections** facet and "group by section". Sections are never a global facet: a section
   title only means something inside one board's namespace, and Heptabase's library filters by
-  tags and properties alone. An expanded row hosts the same card panel as the inspector, so a
-  property or a paragraph can be fixed without going to the canvas. The drawer widens and grows
-  when it is scoped or a row is open; saved views arrive without turning it into a sidebar.
+  tags and properties alone. A row opens the same card panel as the inspector — Details and
+  Content tabs included — so a property or a paragraph can be fixed without going to the canvas,
+  and no row ever grows an editor of its own. The drawer widens when it is scoped; saved views
+  arrive without turning it into a sidebar.
 - **Board tabs** *(current)*: switch boards inside the same workspace; switching tabs must never
   feel like switching documents.
 - **Canvas toolbar** *(target)*: contextual tools for select, section and connect, in the spirit of

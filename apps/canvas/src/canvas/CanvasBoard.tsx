@@ -71,6 +71,21 @@ const EMPTY_META: CardMeta = { properties: [], tags: [] };
 /** The connector a local new-link drag started from, minus the live pointer. */
 type ConnectAnchor = Omit<ConnectState, "position" | "target">;
 
+/**
+ * True when a right-click landed in rich text that is being edited. The
+ * browser's native menu (copy, paste, spelling) is more useful there than the
+ * card menu. A read-only ProseMirror body keeps the card menu, which is how
+ * right-clicking a card without an active editor reaches it. Field mentions
+ * and property blocks handle their own context menu earlier and stop
+ * propagation, so they still open the app menu.
+ */
+function isEditorTarget(event: { target: EventTarget | null }): boolean {
+  const target = event.target as HTMLElement | null;
+  const editor = target?.closest<HTMLElement>(".ProseMirror");
+  if (!editor) return false;
+  return editor.isContentEditable || editor.getAttribute("contenteditable") === "true";
+}
+
 /** Client coordinates of a mouse or touch event, when it carries any. */
 function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
   if ("clientX" in event) return { x: event.clientX, y: event.clientY };
@@ -182,6 +197,7 @@ export function CanvasBoard() {
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const contextMenu = useUiStore((state) => state.contextMenu);
+  const readOnly = useUiStore((state) => state.readOnly);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
@@ -733,40 +749,41 @@ export function CanvasBoard() {
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
-    if (!activeBoardId) return;
+    if (readOnly || !activeBoardId) return;
     for (const id of state.selectedNodeIds) {
       workspace.unplaceCard(activeBoardId, id);
     }
     state.setSelectedNodeIds([]);
     state.stopEditing();
-  }, [workspace, activeBoardId]);
+  }, [workspace, activeBoardId, readOnly]);
 
   const trashSelected = useCallback(() => {
     const state = useUiStore.getState();
+    if (readOnly) return;
     for (const id of state.selectedNodeIds) {
       workspace.trashCard(id);
     }
     state.setSelectedNodeIds([]);
     state.stopEditing();
-  }, [workspace]);
+  }, [workspace, readOnly]);
 
   // Selection elevates a card in React Flow, which would hide the new order, so
   // drop the selection once an explicit layer change lands.
   const changeLayer = useCallback(
     (nodeId: string, action: LayerAction) => {
-      if (!activeBoardId) return;
+      if (readOnly || !activeBoardId) return;
       workspace.moveLayer(activeBoardId, nodeId, action);
       setSelectedNodeIds([]);
       setPresenceSelection(null);
     },
-    [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection],
+    [workspace, activeBoardId, setSelectedNodeIds, setPresenceSelection, readOnly],
   );
 
   // A bulk layer change is N single-card moves applied in an order that keeps
   // the selection's relative stacking (see `layerActions`).
   const changeLayerBulk = useCallback(
     (ids: string[], action: LayerAction) => {
-      if (!activeBoardId) return;
+      if (readOnly || !activeBoardId) return;
       for (const id of layerActions(orderedSelection(boardOrder, ids), action)) {
         workspace.moveLayer(activeBoardId, id, action);
       }
@@ -774,7 +791,15 @@ export function CanvasBoard() {
       setSelectedNodeIds([]);
       setPresenceSelection(null);
     },
-    [workspace, activeBoardId, boardOrder, setSelectedNodeIds, setPresenceSelection, store],
+    [
+      workspace,
+      activeBoardId,
+      boardOrder,
+      setSelectedNodeIds,
+      setPresenceSelection,
+      store,
+      readOnly,
+    ],
   );
 
   const handleSelectSection = useCallback(
@@ -805,6 +830,7 @@ export function CanvasBoard() {
 
   const handleSectionDragEnd = useCallback(
     (sectionId: string, position: { x: number; y: number }) => {
+      if (readOnly) return;
       const root = boardSections.find((section) => section.id === sectionId);
       if (root) {
         const dx = position.x - root.x;
@@ -829,7 +855,7 @@ export function CanvasBoard() {
       setLocalSectionDrag(null);
       setSectionDragPresence(null);
     },
-    [boardSections, boardPlacementList, workspace, setSectionDragPresence],
+    [boardSections, boardPlacementList, workspace, setSectionDragPresence, readOnly],
   );
 
   const handleSectionResize = useCallback(
@@ -850,24 +876,29 @@ export function CanvasBoard() {
 
   const handleSectionResizeEnd = useCallback(
     (sectionId: string, rect: Rect) => {
+      if (readOnly) return;
       workspace.updateSectionGeometry(sectionId, rect);
       setLocalSectionResize(null);
       setSectionResizePresence(null);
     },
-    [workspace, setSectionResizePresence],
+    [workspace, setSectionResizePresence, readOnly],
   );
 
   const handleSectionRename = useCallback(
     (sectionId: string, title: string) => {
+      if (readOnly) {
+        setEditingSection(null);
+        return;
+      }
       workspace.renameSection(sectionId, title.trim());
       setEditingSection(null);
     },
-    [workspace, setEditingSection],
+    [workspace, setEditingSection, readOnly],
   );
 
   const createSectionAt = useCallback(
     (position: { x: number; y: number }, wrapSelection = false) => {
-      if (!activeBoardId) return;
+      if (readOnly || !activeBoardId) return;
       const selected = useUiStore.getState().selectedNodeIds;
       let rect: Rect = { x: position.x, y: position.y, width: 360, height: 260 };
 
@@ -897,7 +928,7 @@ export function CanvasBoard() {
       selectSection(section.id);
       setEditingSection(section.id);
     },
-    [activeBoardId, store, workspace, selectSection, setEditingSection],
+    [activeBoardId, store, workspace, selectSection, setEditingSection, readOnly],
   );
 
   /**
@@ -908,7 +939,7 @@ export function CanvasBoard() {
    */
   const commitDrop = useCallback(
     (dragged: Node[]) => {
-      if (!activeBoardId || dragged.length === 0) return;
+      if (readOnly || !activeBoardId || dragged.length === 0) return;
       const moves = dragMoves(dragged);
       const plan = sectionsExpandPlan(boardSections, dragRects(dragged));
       if (plan.length > 0) {
@@ -922,7 +953,7 @@ export function CanvasBoard() {
       // silent when the whole gesture ended where it started.
       workspace.movePlacements(activeBoardId, moves);
     },
-    [activeBoardId, boardSections, workspace],
+    [activeBoardId, boardSections, workspace, readOnly],
   );
 
   useEffect(() => {
@@ -974,6 +1005,7 @@ export function CanvasBoard() {
         // covers structure: moves, links, connectors, place and trash.
         if (key === "z" || key === "y") {
           event.preventDefault();
+          if (readOnly) return;
           if (key === "z" && !event.shiftKey) workspace.undo();
           else workspace.redo();
           state.setSelectedNodeIds([]);
@@ -981,7 +1013,7 @@ export function CanvasBoard() {
           return;
         }
 
-        if (key === "g") {
+        if (key === "g" && !readOnly) {
           event.preventDefault();
           const centre = screenToFlowPosition({
             x: window.innerWidth / 2,
@@ -1004,7 +1036,7 @@ export function CanvasBoard() {
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
-        if (isTyping) return;
+        if (isTyping || readOnly) return;
         if (state.selectedSectionId) {
           event.preventDefault();
           workspace.deleteSection(state.selectedSectionId);
@@ -1018,7 +1050,7 @@ export function CanvasBoard() {
         return;
       }
 
-      if (event.key === "Enter" && !isTyping && !state.editingNodeId) {
+      if (event.key === "Enter" && !isTyping && !readOnly && !state.editingNodeId) {
         const first = state.selectedNodeIds[0];
         if (first) {
           event.preventDefault();
@@ -1029,10 +1061,19 @@ export function CanvasBoard() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [trashSelected, unplaceSelected, workspace, createSectionAt, screenToFlowPosition, store]);
+  }, [
+    trashSelected,
+    unplaceSelected,
+    workspace,
+    createSectionAt,
+    screenToFlowPosition,
+    store,
+    readOnly,
+  ]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
+      if (readOnly) return;
       if (!connection.source || !connection.target) return;
       if (!activeBoardId) return;
       workspace.addEdge({
@@ -1043,7 +1084,7 @@ export function CanvasBoard() {
         ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
       });
     },
-    [workspace, activeBoardId],
+    [workspace, activeBoardId, readOnly],
   );
 
   // React Flow reports nothing while a reconnect drag moves, so follow the
@@ -1140,6 +1181,7 @@ export function CanvasBoard() {
 
   const onConnectStart = useCallback<OnConnectStart>(
     (event, params) => {
+      if (readOnly) return;
       // Edge updaters report their anchored handle here as well; that gesture
       // publishes `reconnect` and has its own preview.
       if (reconnectGesture.current) return;
@@ -1162,7 +1204,7 @@ export function CanvasBoard() {
         position: screenToFlowPosition(point),
       });
     },
-    [screenToFlowPosition, setConnect, setReconnect],
+    [screenToFlowPosition, setConnect, setReconnect, readOnly],
   );
 
   const onConnectEnd = useCallback<OnConnectEnd>(() => {
@@ -1172,6 +1214,7 @@ export function CanvasBoard() {
 
   const onReconnectStart = useCallback(
     (event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
+      if (readOnly) return;
       // React Flow also fires onConnectStart for this drag; mark it so the
       // new-link presence stays out of it.
       reconnectGesture.current = true;
@@ -1190,7 +1233,7 @@ export function CanvasBoard() {
         position: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       });
     },
-    [screenToFlowPosition, setReconnect, setConnect],
+    [screenToFlowPosition, setReconnect, setConnect, readOnly],
   );
 
   const onReconnectStop = useCallback(() => {
@@ -1237,7 +1280,9 @@ export function CanvasBoard() {
   const cancelEdgeDescription = useCallback(() => setEdgeDescription(null), []);
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
-    if (!contextMenu) return [];
+    // Every menu here writes (create, rename, color, layer, delete), so a
+    // viewer never gets one.
+    if (!contextMenu || readOnly) return [];
     if (contextMenu.kind === "canvas") {
       const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
       return [
@@ -1490,6 +1535,7 @@ export function CanvasBoard() {
     setSelectedNodeIds,
     setSelectedConnector,
     startEdgeDescription,
+    readOnly,
   ]);
 
   return (
@@ -1517,6 +1563,11 @@ export function CanvasBoard() {
         onlyRenderVisibleElements
         fitView
         deleteKeyCode={null}
+        // A viewer keeps selection, panning, zoom and the inspector; dragging,
+        // linking, reconnecting and section gestures would all write.
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        edgesReconnectable={!readOnly}
         // Shift, Ctrl and Cmd all toggle membership; Shift also starts the
         // marquee (React Flow's `selectionKeyCode` default). `Partial` selects a
         // card the box merely touches, which is what a card board should do.
@@ -1538,17 +1589,19 @@ export function CanvasBoard() {
         onReconnect={onReconnect}
         onReconnectStart={onReconnectStart}
         onReconnectEnd={onReconnectStop}
-        edgesReconnectable
         onEdgeContextMenu={(event, edge) => {
+          if (readOnly) return;
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
         onEdgeClick={() => setSelectedConnector(null)}
         onEdgeDoubleClick={(event, edge) => {
+          if (readOnly) return;
           event.preventDefault();
           startEdgeDescription(edge.id, { x: event.clientX, y: event.clientY });
         }}
         onNodeDragStart={(_, node, dragged) => {
+          if (readOnly) return;
           // React Flow drags the whole selection; the node under the pointer is
           // the anchor peers derive every other member's position from.
           const ids = dragged.length > 0 ? dragged.map((entry) => entry.id) : [node.id];
@@ -1557,6 +1610,7 @@ export function CanvasBoard() {
           setDragging({ nodeId: node.id, position: node.position, nodeIds: ids });
         }}
         onNodeDrag={(_, node) => {
+          if (readOnly) return;
           const now = performance.now();
           if (now - lastDragSent.current < DRAG_THROTTLE_MS) return;
           lastDragSent.current = now;
@@ -1567,6 +1621,7 @@ export function CanvasBoard() {
           });
         }}
         onNodeDragStop={(_, node, dragged) => {
+          if (readOnly) return;
           const dropped = dragged.length > 0 ? dragged : [node];
           draggedNodeIds.current = [];
           locallyDraggingIds.current = new Set();
@@ -1582,6 +1637,10 @@ export function CanvasBoard() {
           handleSelectSection(null);
         }}
         onNodeContextMenu={(event, node) => {
+          if (readOnly) return;
+          // Rich text keeps the browser's own menu (copy, paste, spelling).
+          // Chips inside the editor stop propagation before this handler.
+          if (isEditorTarget(event)) return;
           event.preventDefault();
           openContextMenu({
             x: event.clientX,
@@ -1594,6 +1653,7 @@ export function CanvasBoard() {
           });
         }}
         onPaneContextMenu={(event) => {
+          if (readOnly) return;
           event.preventDefault();
           const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", flowPosition });
@@ -1601,6 +1661,7 @@ export function CanvasBoard() {
         // A marquee leaves React Flow's selection overlay over the cards, so a
         // right-click there reaches this handler rather than the card's.
         onSelectionContextMenu={(event, selected) => {
+          if (readOnly || isEditorTarget(event)) return;
           event.preventDefault();
           const anchor = selected[0];
           if (!anchor) return;
@@ -1629,7 +1690,9 @@ export function CanvasBoard() {
           onDragEnd={handleSectionDragEnd}
           onResize={handleSectionResize}
           onResizeEnd={handleSectionResizeEnd}
+          readOnly={readOnly}
           onContextMenu={(event, sectionId) => {
+            if (readOnly) return;
             event.preventDefault();
             openContextMenu({
               x: event.clientX,

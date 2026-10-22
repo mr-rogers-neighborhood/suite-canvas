@@ -665,7 +665,7 @@ body {
   user-select: none;
 }
 
-/* Board scope and an open row need room for a facet row and a card panel. */
+/* Board scope needs room for the section facet row and the grouped list. */
 .library-drawer[data-wide="true"] {
   display: flex;
   width: min(640px, calc(100vw - 2rem));
@@ -724,29 +724,6 @@ body {
   border-radius: 8px;
   cursor: grab;
   touch-action: none;
-}
-
-.library-row-expand {
-  padding: 2px 5px;
-  border-radius: 6px;
-  font-size: 10px;
-  line-height: 12px;
-  color: var(--ink-muted);
-}
-
-.library-row-expand:hover {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  color: var(--ink);
-}
-
-/* The embedded card surface: an expanded row, not a floating drawer. */
-.library-row-panel {
-  margin: 2px 4px 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 96%, var(--ink));
-  overflow: hidden;
-  user-select: text;
 }
 
 .library-group-heading {
@@ -822,7 +799,7 @@ body {
   }
 }
 
-/* Shared card surface: the inspector drawer and an expanded library row. */
+/* Shared card surface, hosted by the inspector drawer. */
 .card-panel {
   display: flex;
   flex-direction: column;
@@ -836,10 +813,46 @@ body {
   margin: 0;
 }
 
+.card-panel-tabs {
+  flex: 0 0 auto;
+}
+
+/* The body is its own surface: a blank card reads as a place to write instead
+   of an empty gap under the metadata. */
 .card-panel-body {
   position: relative;
-  border-width: 1px;
-  transition: box-shadow 120ms ease;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  padding: 0.5rem 0.75rem 0.625rem;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.card-panel-body:hover {
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.card-panel-body.is-editing {
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+/* The surface owns the padding; the editor keeps its own inside a canvas card. */
+.card-panel-body .node-card-editor {
+  min-height: 44px;
+  padding: 0;
+}
+
+/* Empty-body copy. The Placeholder extension decorates the empty paragraph, so
+   this is render-only and never reaches the shared document. */
+.node-card-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--ink-muted);
+  opacity: 0.7;
 }
 
 /* Caret labels sit above the first line; let them escape the body box. */

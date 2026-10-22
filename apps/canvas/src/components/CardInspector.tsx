@@ -18,12 +18,14 @@ export interface CardInspectorProps {
   links: CardLinks;
   /** Field to reveal, when a link asked for one. */
   focusedField?: string | null;
+  /** Whether the body has no text yet; a blank card opens on Content. */
+  bodyEmpty?: boolean;
   /** Mentions, property links and arrows touching this card. */
   linkCount: number;
   editing: CardPanelEditingField | null;
   cardDoc: LoroDoc;
-  contentId: ContainerID;
-  titleId: ContainerID;
+  contentId: ContainerID | null;
+  titleId: ContainerID | null;
   cursorStore: CursorEphemeralStore | null;
   localUser: PresenceUser | null;
   peers?: PeerPresence[];
@@ -44,6 +46,8 @@ export interface CardInspectorProps {
   onFocusSection: (sectionId: string) => void;
   onRemoveFromBoard: () => void;
   onFocusLink: (cardId: string, boardId: string | null) => void;
+  /** A share viewer: the drawer keeps reading and navigation, nothing else. */
+  readOnly?: boolean;
 }
 
 /**
@@ -84,6 +88,8 @@ export function CardInspector({
   onRemoveFromBoard,
   onFocusLink,
   focusedField = null,
+  bodyEmpty = false,
+  readOnly = false,
 }: CardInspectorProps) {
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
@@ -108,15 +114,17 @@ export function CardInspector({
             ) : null}
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Edit card text"
-          data-testid="inspector-edit"
-          className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={onEdit}
-        >
-          Edit
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            aria-label="Edit card text"
+            data-testid="inspector-edit"
+            className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={onEdit}
+          >
+            Edit
+          </button>
+        )}
         <button
           type="button"
           aria-label="Close card info"
@@ -140,6 +148,7 @@ export function CardInspector({
           links={links}
           focusedField={focusedField}
           variant="inspector"
+          bodyEmpty={bodyEmpty}
           editing={editing}
           cardDoc={cardDoc}
           contentId={contentId}
@@ -161,6 +170,7 @@ export function CardInspector({
           onFocusSection={onFocusSection}
           onRemoveFromBoard={onRemoveFromBoard}
           onFocusLink={onFocusLink}
+          readOnly={readOnly}
         />
       </div>
     </aside>

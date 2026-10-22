@@ -31,6 +31,7 @@ test("creates a section from a card and persists its title", async ({ page }) =>
 
   // The member card sees the section in its inspector.
   await cards(page).first().getByTestId("card-body").click();
+  await page.getByTestId("card-panel-tab-details").click();
   await expect(page.getByTestId("inspector-section")).toContainText("Research");
   await page.getByTestId("inspector-close").click();
 
@@ -140,6 +141,7 @@ test("collapses and expands card frontmatter from the header", async ({ page }) 
   const box = await card.boundingBox();
   if (!box) throw new Error("card not visible");
   await page.mouse.click(box.x + 40, box.y + 60);
+  await page.getByTestId("card-panel-tab-details").click();
   await page.getByTestId("tag-input").fill("Research");
   await page.getByTestId("tag-input").press("Enter");
   await expect(page.getByTestId("tag-chip")).toContainText("Research");

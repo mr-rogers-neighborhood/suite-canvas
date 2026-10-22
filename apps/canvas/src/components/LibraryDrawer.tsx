@@ -1,9 +1,8 @@
 import type { CardType, PropertyValue, Tag } from "@suite/graph";
 import { typePluralName } from "@suite/graph";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
-import { LibraryCardPanel } from "./LibraryCardPanel";
 import {
   facetCounts,
   filterItems,
@@ -59,11 +58,8 @@ export interface LibraryDrawerProps {
   sectionOrder: SectionOrderEntry[];
   groupBySection: boolean;
   onToggleGroup: () => void;
-  /** Card whose panel is open; at most one at a time. */
-  expandedRowId: string | null;
-  onExpandRow: (cardId: string | null) => void;
-  /** Replaces the store-connected panel in stories and tests. */
-  renderRowPanel?: (cardId: string) => ReactNode;
+  /** Opens a card in the inspector; rows never expand in place. */
+  onOpenCard: (cardId: string) => void;
 }
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -107,11 +103,8 @@ export function LibraryDrawer({
   sectionOrder,
   groupBySection,
   onToggleGroup,
-  expandedRowId,
-  onExpandRow,
-  renderRowPanel = (cardId) => <LibraryCardPanel cardId={cardId} />,
+  onOpenCard,
 }: LibraryDrawerProps) {
-  const panel = useRef<HTMLDivElement | null>(null);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
   const holdRef = useRef<{
     cardId: string;
@@ -133,11 +126,6 @@ export function LibraryDrawer({
     if (!open) setHold(null);
   }, [open]);
 
-  // Scope is a Cards-tab idea, and so is the row panel: leaving either collapses it.
-  useEffect(() => {
-    if (!open || tab !== "cards") onExpandRow(null);
-  }, [open, tab, onExpandRow]);
-
   // Pointer-based hold: the row lifts into a ghost that follows the cursor, and
   // dropping over the canvas places the card there.
   useEffect(() => {
@@ -158,7 +146,12 @@ export function LibraryDrawer({
       const current = holdRef.current;
       holdRef.current = null;
       setHold(null);
-      if (!current?.dragging) return;
+      if (!current) return;
+      // A press that never became a drag is a plain click on the row.
+      if (!current.dragging) {
+        onOpenCard(current.cardId);
+        return;
+      }
       const canvas = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest('[data-testid="canvas-board"]');
@@ -173,7 +166,7 @@ export function LibraryDrawer({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onDropAt]);
+  }, [onDropAt, onOpenCard]);
 
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
   const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
@@ -185,24 +178,8 @@ export function LibraryDrawer({
   const visible = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);
   const filtering = typeFilter.length > 0 || tagFilter.length > 0 || activeSectionFilter.length > 0;
   const grouped = boardScope && groupBySection ? groupSections(visible, sectionOrder) : null;
-  const wide = boardScope || expandedRowId !== null;
+  const wide = boardScope;
   const sectionsById = new Map(sectionOrder.map((section) => [section.id, section]));
-  // The open row fell out of the facet or out of scope; do not keep a stale panel.
-  const staleExpanded =
-    expandedRowId !== null && tab === "cards" && !visible.some((item) => item.id === expandedRowId);
-
-  useEffect(() => {
-    if (staleExpanded) onExpandRow(null);
-  }, [staleExpanded, onExpandRow]);
-
-  // The list scrolls inside a capped drawer; open the panel where the reader is
-  // looking instead of below the fold.
-  useEffect(() => {
-    if (!expandedRowId || !open) return;
-    panel.current
-      ?.querySelector(`[data-row-id="${expandedRowId}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [expandedRowId, open]);
 
   if (!open) return null;
 
@@ -212,7 +189,6 @@ export function LibraryDrawer({
   };
 
   const renderRow = (item: LibraryItem) => {
-    const expanded = tab === "cards" && expandedRowId === item.id;
     return (
       <li key={item.id} className="library-entry" data-row-id={item.id}>
         <div
@@ -222,7 +198,7 @@ export function LibraryDrawer({
             if (event.button !== 0) return;
             if (
               (event.target as HTMLElement).closest(
-                'button, input, textarea, select, [contenteditable="true"], [data-testid="library-row-panel"]',
+                'button, input, textarea, select, [contenteditable="true"]',
               )
             ) {
               return;
@@ -300,45 +276,15 @@ export function LibraryDrawer({
                 >
                   Trash
                 </button>
-                {tab === "cards" ? (
-                  <button
-                    type="button"
-                    className="library-row-expand"
-                    data-testid="library-row-expand"
-                    aria-expanded={expanded}
-                    aria-controls={expanded ? `library-row-panel-${item.id}` : undefined}
-                    aria-label={expanded ? `Close ${item.title}` : `Open ${item.title}`}
-                    // Disclosure must not take focus from an editor that owns it.
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => onExpandRow(expanded ? null : item.id)}
-                  >
-                    <span aria-hidden="true">{expanded ? "\u25be" : "\u25b8"}</span>
-                  </button>
-                ) : null}
               </>
             )}
           </div>
         </div>
-
-        {expanded ? (
-          <div
-            className="library-row-panel"
-            data-testid="library-row-panel"
-            id={`library-row-panel-${item.id}`}
-          >
-            {renderRowPanel(item.id)}
-          </div>
-        ) : null}
       </li>
     );
   };
 
-  // An open row takes the list over: the panel needs the height more than the
-  // neighbouring rows do, and the chevron on the row brings the list back.
-  const openCard = expandedRowId ? visible.find((item) => item.id === expandedRowId) : undefined;
-  const rows = openCard ? (
-    <ul className="space-y-0.5">{[openCard].map(renderRow)}</ul>
-  ) : grouped ? (
+  const rows = grouped ? (
     <div className="space-y-2">
       {grouped.map((group) => (
         <section key={group.id} data-testid={`library-group-${group.id}`}>
@@ -360,7 +306,6 @@ export function LibraryDrawer({
 
   return createPortal(
     <div
-      ref={panel}
       role="dialog"
       aria-label="Library"
       data-testid="library-drawer"

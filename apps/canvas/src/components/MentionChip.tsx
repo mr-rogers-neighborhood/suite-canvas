@@ -62,6 +62,8 @@ export interface MentionChipProps {
   onSetDisplay?: ((template: string | null) => void) | undefined;
   /** Applies a template to the field, for every use. */
   onSetFieldDisplay?: ((template: string | null) => void) | undefined;
+  /** Viewers can open the card but not restyle the chip. */
+  allowDisplay?: boolean;
 }
 
 /** The chip's own menu: this is a mention, so actions stay in place. */
@@ -70,10 +72,11 @@ function chipMenuItems(
   onOpen: MentionChipProps["onOpen"],
   cardId: string,
   openDisplay: () => void,
+  allowDisplay: boolean,
 ) {
   return [
     { label: "Open card", onSelect: () => onOpen?.(cardId, field?.id) },
-    ...(field ? [{ label: "Display\u2026", onSelect: openDisplay }] : []),
+    ...(field && allowDisplay ? [{ label: "Display\u2026", onSelect: openDisplay }] : []),
   ];
 }
 
@@ -89,6 +92,7 @@ export function MentionChip({
   onOpen,
   onSetDisplay,
   onSetFieldDisplay,
+  allowDisplay = true,
 }: MentionChipProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingDisplay, setEditingDisplay] = useState(false);
@@ -180,10 +184,16 @@ export function MentionChip({
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={chipMenuItems(field, onOpen, cardId, () => {
-            setMenu(null);
-            setEditingDisplay(true);
-          })}
+          items={chipMenuItems(
+            field,
+            onOpen,
+            cardId,
+            () => {
+              setMenu(null);
+              setEditingDisplay(true);
+            },
+            allowDisplay,
+          )}
         />
       ) : null}
 
@@ -219,6 +229,7 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
   const types = useTypes();
   const workspace = useCanvasStore((state) => state.workspace);
   const openInspector = useUiStore((state) => state.openInspector);
+  const readOnly = useUiStore((state) => state.readOnly);
 
   const definition = card && fieldId ? fieldFor(card, fieldId, types) : undefined;
   const value = fieldId ? card?.properties[fieldId] : undefined;
@@ -262,7 +273,8 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
         unavailable={!card || Boolean(card.deletedAt)}
         field={field}
         onOpen={(id, openFieldId) => openInspector(id, openFieldId ?? null)}
-        {...(definition
+        allowDisplay={!readOnly}
+        {...(definition && !readOnly
           ? {
               onSetDisplay: setOwnDisplay,
               onSetFieldDisplay: (template: string | null) => {

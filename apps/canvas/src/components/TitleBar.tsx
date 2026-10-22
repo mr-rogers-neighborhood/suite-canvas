@@ -1,8 +1,15 @@
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "./ThemeToggle";
 
+export type TitleBarRole = "editor" | "viewer";
+
 export interface TitleBarProps {
   status: ConnectionStatus;
+  /**
+   * Present on a share link: the connected slot then names what the reader can
+   * do instead of claiming a live editing session.
+   */
+  role?: TitleBarRole;
   peerCount?: number;
   documentId?: string;
   /** Board switcher, rendered between the document id and the status. */
@@ -23,7 +30,20 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   disconnected: "bg-gray-400 dark:bg-gray-500",
 };
 
-export function TitleBar({ status, peerCount = 0, documentId, children, actions }: TitleBarProps) {
+export function TitleBar({
+  status,
+  role,
+  peerCount = 0,
+  documentId,
+  children,
+  actions,
+}: TitleBarProps) {
+  const statusLabel =
+    status === "connected" && role
+      ? role === "viewer"
+        ? "Viewer"
+        : "Editor"
+      : STATUS_LABEL[status];
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
       <a
@@ -45,10 +65,11 @@ export function TitleBar({ status, peerCount = 0, documentId, children, actions 
         {actions}
         <span
           data-testid="sync-status"
+          data-role={role}
           className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]"
         >
           <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
-          {STATUS_LABEL[status]}
+          {statusLabel}
           {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
         </span>
         <ThemeToggle />

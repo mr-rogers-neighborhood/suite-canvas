@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { useCardTitle } from "../hooks/useCardContainers";
 import {
   downloadWorkspaceBackup,
   downloadWorkspaceJson,
   downloadWorkspaceMarkdown,
-  workspaceUrl,
 } from "../session/workspaceTransfer";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
+import { ShareDialog } from "./ShareDialog";
 
 export interface WorkspaceActionsProps {
   workspaceId: string;
@@ -14,15 +16,17 @@ export interface WorkspaceActionsProps {
 }
 
 /**
- * The workspace-level actions that belong in the app bar: copy the share link,
- * export the exact backup, and return to the launcher. Import lives on the
- * launcher so it can never merge into the open document.
+ * The workspace-level actions that belong in the app bar: share the workspace, a
+ * board or a card, export the exact backup, and return to the launcher. Import
+ * lives on the launcher so it can never merge into the open document.
  */
 export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActionsProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const flush = useCanvasStore((state) => state.flush);
+  const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
+  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
 
@@ -42,17 +46,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
     };
   }, [menuOpen]);
 
-  const share = async () => {
-    setError(null);
-    const url = workspaceUrl(workspaceId, boardId);
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setError("Could not copy the link. Copy the address bar instead.");
-    }
-  };
+  // The dialog shares one card: the inspected one, or a lone selection.
+  const soleSelection = selectedNodeIds.length === 1 ? (selectedNodeIds[0] ?? null) : null;
+  const selectedCardId = inspectorNodeId ?? soleSelection;
+  const selectedCardTitle = useCardTitle(selectedCardId ?? "");
 
   const goHome = async () => {
     setMenuOpen(false);
@@ -77,10 +74,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
         type="button"
         data-testid="workspace-share"
         className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-        onClick={() => void share()}
-        title="Copy a link to this board. Anyone with the link can edit."
+        onClick={() => setShareOpen(true)}
+        title="Share this workspace, a board or a card."
       >
-        {copied ? "Copied" : "Share"}
+        Share
       </button>
       <div className="relative" ref={menu}>
         <button
@@ -155,6 +152,16 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
         >
           {error}
         </span>
+      ) : null}
+      {shareOpen ? (
+        <ShareDialog
+          workspaceId={workspaceId}
+          boardId={boardId}
+          boardName={boardId ? title : null}
+          cardId={selectedCardId}
+          cardTitle={selectedCardId ? selectedCardTitle : null}
+          onClose={() => setShareOpen(false)}
+        />
       ) : null}
     </div>
   );

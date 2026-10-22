@@ -13,6 +13,8 @@ async function openInspector(page: Page, card = cards(page).first()): Promise<vo
   if (!box) throw new Error("card not visible");
   await page.mouse.click(box.x + 80, box.y + 24);
   await expect(page.getByTestId("card-inspector")).toBeVisible();
+  // Blank cards open on Content; links and properties live on Details.
+  await page.getByTestId("card-panel-tab-details").click();
 }
 
 async function closeInspector(page: Page): Promise<void> {

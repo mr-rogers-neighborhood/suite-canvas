@@ -38,6 +38,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const openInspector = useUiStore((state) => state.openInspector);
+  const readOnly = useUiStore((state) => state.readOnly);
   const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
@@ -158,7 +159,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   return (
     <div>
       <NodeResizer
-        isVisible={Boolean(selected) && !(editingNodeId === id && editingSurface === "canvas")}
+        isVisible={
+          !readOnly && Boolean(selected) && !(editingNodeId === id && editingSurface === "canvas")
+        }
         minWidth={160}
         minHeight={80}
         onResize={handleResize}
@@ -191,33 +194,40 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
+        readOnly={readOnly}
         onStartEditing={(field) => startEditing(id, field, "canvas")}
         onEditEnd={stopEditing}
         onRemoveFromBoard={() => workspace.unplaceCard(placement.boardId, id)}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
         onTrash={() => workspace.trashCard(id)}
-        onConnectorMoveStart={(connectorId) => setMovingConnector({ nodeId: id, connectorId })}
-        onConnectorMove={(connectorId, position) =>
-          setMovingConnector({ nodeId: id, connectorId, position })
-        }
+        onConnectorMoveStart={(connectorId) => {
+          if (readOnly) return;
+          setMovingConnector({ nodeId: id, connectorId });
+        }}
+        onConnectorMove={(connectorId, position) => {
+          if (readOnly) return;
+          setMovingConnector({ nodeId: id, connectorId, position });
+        }}
         onConnectorMoveFinished={() => setMovingConnector(null)}
         selectedConnectorId={
           selectedConnector?.nodeId === id ? selectedConnector.connectorId : null
         }
         onConnectorSelect={(connectorId) => setSelectedConnector({ nodeId: id, connectorId })}
-        onConnectorMoveEnd={(connectorId, position) =>
-          workspace.moveConnector(id, connectorId, position)
-        }
-        onConnectorContextMenu={(event, connectorId) =>
+        onConnectorMoveEnd={(connectorId, position) => {
+          if (readOnly) return;
+          workspace.moveConnector(id, connectorId, position);
+        }}
+        onConnectorContextMenu={(event, connectorId) => {
+          if (readOnly) return;
           openContextMenu({
             x: event.clientX,
             y: event.clientY,
             kind: "connector",
             nodeId: id,
             connectorId,
-          })
-        }
+          });
+        }}
       />
     </div>
   );

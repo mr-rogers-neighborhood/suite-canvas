@@ -14,6 +14,7 @@ async function renameCard(
   await card.getByTestId("card-menu").click();
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const inspector = page.getByTestId("card-inspector");
+  await inspector.getByTestId("card-panel-tab-details").click();
   await inspector.getByTestId("card-panel-title").click();
   await page.locator(".card-inspector .card-title-editor.ProseMirror-focused").type(title);
   await page.keyboard.press("Escape");
@@ -27,6 +28,7 @@ async function addStatusField(page: Page, title: string, value: string): Promise
   await card.getByTestId("card-menu").click();
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const inspector = page.getByTestId("card-inspector");
+  await inspector.getByTestId("card-panel-tab-details").click();
   await inspector.getByTestId("manage-types").click();
   const settings = page.getByTestId("type-settings");
   await settings.getByTestId("settings-type-note").click();
@@ -60,6 +62,7 @@ test("styles a field once and every view follows", async ({ page }) => {
   await cards(page).nth(0).getByTestId("card-menu").click();
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const panel = page.getByTestId("card-inspector");
+  await panel.getByTestId("card-panel-tab-details").click();
   await panel.getByTestId("manage-types").click();
   const settings = page.getByTestId("type-settings");
   await settings.getByTestId("settings-type-note").click();
@@ -110,6 +113,7 @@ test("styles a field once and every view follows", async ({ page }) => {
   await cards(page).nth(0).getByTestId("card-menu").click();
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const betaPanel = page.getByTestId("card-inspector");
+  await betaPanel.getByTestId("card-panel-tab-details").click();
   await betaPanel.getByLabel("Status").fill("");
   await betaPanel.getByLabel("Status").blur();
   await betaPanel.getByTestId("inspector-close").click();

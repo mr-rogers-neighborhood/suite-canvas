@@ -73,6 +73,11 @@ export interface NodeCardProps {
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
   onTrash?: () => void;
+  /**
+   * Read-only share surface: the card keeps its chips and inspector entry
+   * points but loses the menu and both editing gestures.
+   */
+  readOnly?: boolean;
 }
 
 export function NodeCard({
@@ -111,6 +116,7 @@ export function NodeCard({
   linkCount = 0,
   onOpenInfo,
   onTrash,
+  readOnly = false,
 }: NodeCardProps) {
   countRender("card");
 
@@ -252,7 +258,7 @@ export function NodeCard({
         </button>
 
         <div className="card-title relative min-w-0 flex-1">
-          {editing === "title" ? null : (
+          {editing === "title" || readOnly ? null : (
             <button
               type="button"
               aria-label="Edit card title"
@@ -311,19 +317,21 @@ export function NodeCard({
           <PeerNameTag user={activePeer} />
         ) : null}
 
-        <button
-          type="button"
-          aria-label="Card actions"
-          data-testid="card-menu"
-          className="nodrag shrink-0 rounded px-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={(event) => {
-            event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            setMenu({ x: rect.right - 4, y: rect.bottom + 4 });
-          }}
-        >
-          {"\u22ef"}
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            aria-label="Card actions"
+            data-testid="card-menu"
+            className="nodrag shrink-0 rounded px-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              setMenu({ x: rect.right - 4, y: rect.bottom + 4 });
+            }}
+          >
+            {"\u22ef"}
+          </button>
+        )}
       </div>
 
       {hasMeta && metaExpanded ? (
@@ -362,7 +370,7 @@ export function NodeCard({
         }`}
         data-testid="card-body"
         onDoubleClick={(event) => {
-          if (editing === "body") return;
+          if (readOnly || editing === "body") return;
           event.stopPropagation();
           onStartEditing?.("body");
         }}
@@ -373,7 +381,8 @@ export function NodeCard({
           contentId={contentId}
           cursorStore={cursorStore}
           localUser={localUser}
-          editable={editing === "body"}
+          editable={!readOnly && editing === "body"}
+          readOnly={readOnly}
           onFocus={keepFocusAlive}
           onBlur={releaseFocusSoon}
           onOpenCardPanel={() => onOpenInfo?.()}

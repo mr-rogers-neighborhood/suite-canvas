@@ -8,6 +8,7 @@ import { FieldValueInput } from "../components/PropertyField";
 import { ValueTemplate } from "../components/ValueTemplate";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
 import { useCard, useWorkspaceStore } from "../store/workspaceStore";
 import type { PropertyBlockOptions } from "./PropertyBlock";
 
@@ -61,6 +62,8 @@ export interface PropertyBlockChipProps {
   onOpenPanel: () => void;
   /** Removes the block from the body; the value stays on the card. */
   onRemove?: () => void;
+  /** A share viewer reads the block; nothing in it writes. */
+  readOnly?: boolean;
 }
 
 /**
@@ -77,6 +80,7 @@ export function PropertyBlockChip({
   onCommit,
   onOpenPanel,
   onRemove,
+  readOnly = false,
 }: PropertyBlockChipProps) {
   const [editing, setEditing] = useState(false);
 
@@ -98,12 +102,22 @@ export function PropertyBlockChip({
   }
 
   const display = propertyBlockDisplayValue(field, value, cardLabel);
-  const readOnly = field.kind === "card" || field.kind === "multiSelect";
+  const opensPanelOnly = field.kind === "card" || field.kind === "multiSelect";
 
   const stopPointer = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
   let control: ReactNode;
   if (readOnly) {
+    control = (
+      <span
+        data-testid="property-block-value"
+        data-readonly="true"
+        className="property-block-value property-block-readonly"
+      >
+        {display}
+      </span>
+    );
+  } else if (opensPanelOnly) {
     control = (
       <button
         type="button"
@@ -204,7 +218,7 @@ export function PropertyBlockChip({
         valueClassName="property-block-template-value"
         emptyClassName="property-block-template-empty"
       />
-      {onRemove ? (
+      {onRemove && !readOnly ? (
         <button
           type="button"
           tabIndex={-1}
@@ -239,6 +253,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
   const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : "";
 
   const workspace = useCanvasStore((state) => state.workspace);
+  const readOnly = useUiStore((state) => state.readOnly);
   const card = useCard(cardId);
   const types = useCardTypes();
   const field = card ? fieldFor(card, fieldId, types) : undefined;
@@ -292,6 +307,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
         {...(ownDisplay ? { template: ownDisplay } : {})}
         onCommit={commit}
         onOpenPanel={() => options.openPanel(cardId)}
+        readOnly={readOnly}
         onRemove={() => {
           // Deleting the atom writes through the editor's own CRDT binding, so
           // peers see the same removal as any other body edit.
@@ -312,7 +328,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
           onClose={() => setMenu(null)}
           items={[
             { label: "Open card", onSelect: () => options.openPanel(cardId) },
-            ...(field
+            ...(field && !readOnly
               ? [
                   {
                     label: "Display\u2026",

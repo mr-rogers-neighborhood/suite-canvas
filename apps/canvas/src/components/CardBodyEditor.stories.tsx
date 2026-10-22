@@ -43,6 +43,9 @@ function seedBody(): { doc: LoroDoc; contentId: ContainerID } {
 
 const { doc, contentId } = seedBody();
 
+const emptyDoc = new LoroDoc();
+const emptyContentId = emptyDoc.getMap("content").ensureMergeableMap("n1").id;
+
 const meta = {
   title: "Components/CardBodyEditor",
   component: CardBodyEditor,
@@ -65,6 +68,18 @@ export const Blocks: Story = {
     cardId: "n1",
     cardDoc: doc,
     contentId,
+    cursorStore: null,
+    localUser: null,
+    editable: false,
+  },
+};
+
+/** An empty body shows the placeholder copy without touching the document. */
+export const Empty: Story = {
+  args: {
+    cardId: "n1",
+    cardDoc: emptyDoc,
+    contentId: emptyContentId,
     cursorStore: null,
     localUser: null,
     editable: false,

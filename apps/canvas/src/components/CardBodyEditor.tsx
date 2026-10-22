@@ -1,3 +1,4 @@
+import { Placeholder } from "@tiptap/extensions";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { type Editor, EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -27,6 +28,9 @@ interface ToolbarState {
   orderedList: boolean;
 }
 
+/** Empty-body copy, shared by the canvas card and the inspector. */
+export const BODY_PLACEHOLDER = "Begin writing, or type / for commands.";
+
 export interface CardBodyEditorProps {
   /** Card that owns this body; property blocks resolve fields and values from it. */
   cardId: string;
@@ -40,6 +44,13 @@ export interface CardBodyEditorProps {
   localUser: PresenceUser | null;
   /** Only one surface per card may be editable at a time. */
   editable: boolean;
+  /**
+   * A share viewer never writes, and an empty body must not advertise a
+   * placeholder it cannot act on.
+   */
+  readOnly?: boolean | undefined;
+  /** Copy for the empty state; `null` turns it off. */
+  placeholder?: string | null | undefined;
   /** Extra classes for the editor wrapper (for example `nodrag nopan`). */
   className?: string | undefined;
   onFocus?: (() => void) | undefined;
@@ -133,11 +144,14 @@ export function CardBodyEditor({
   cursorStore,
   localUser,
   editable,
+  readOnly = false,
+  placeholder,
   className,
   onFocus,
   onBlur,
   onOpenCardPanel,
 }: CardBodyEditorProps) {
+  const placeholderText = placeholder === undefined ? BODY_PLACEHOLDER : placeholder;
   // The editor outlives renders, so the callback is read through a ref instead
   // of being captured by the extension options at creation time.
   const openPanelRef = useRef(onOpenCardPanel);
@@ -159,6 +173,17 @@ export function CardBodyEditor({
           cardId,
           openPanel: (id: string) => openPanelRef.current?.(id),
         }),
+        // An empty body still reads as a place to write, unless the reader has
+        // no way to write there. The decoration is render-only: it never
+        // touches the CRDT and leaves carets alone.
+        ...(placeholderText && !readOnly
+          ? [
+              Placeholder.configure({
+                placeholder: placeholderText,
+                showOnlyWhenEditable: false,
+              }),
+            ]
+          : []),
         LoroCollaboration.configure({
           doc: cardDoc,
           containerId: contentId,
@@ -177,7 +202,7 @@ export function CardBodyEditor({
       onFocus: () => onFocus?.(),
       onBlur: () => onBlur?.(),
     },
-    [cardId, cardDoc, contentId, cursorStore, localUser],
+    [cardId, cardDoc, contentId, cursorStore, localUser, placeholderText, readOnly],
   );
 
   useLocalMirrorSync(cardDoc, contentId, editor);

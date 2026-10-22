@@ -2,6 +2,7 @@ import type { Card, CardFieldView, CardType, FieldDefinition } from "@suite/grap
 import { fireEvent, render, screen } from "@testing-library/react";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
+import { BODY_PLACEHOLDER } from "./CardBodyEditor";
 import { CardInspector } from "./CardInspector";
 import {
   type CardLinks,
@@ -129,7 +130,7 @@ describe("CardPanel", () => {
 
   it("starts body editing when the read-only body is clicked", () => {
     const onStartEditing = vi.fn();
-    const { container } = renderPanel({ onStartEditing });
+    const { container } = renderPanel({ onStartEditing, bodyEmpty: true });
 
     expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
     fireEvent.click(screen.getByTestId("card-panel-body"));
@@ -138,7 +139,7 @@ describe("CardPanel", () => {
   });
 
   it("keeps the body read-only while the title owns the surface", () => {
-    const { container } = renderPanel({ editing: "title" });
+    const { container } = renderPanel({ editing: "title", bodyEmpty: true });
 
     expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
     expect(container.querySelector(".card-title-editor")).toHaveAttribute(
@@ -201,6 +202,7 @@ describe("CardPanel", () => {
 
   it("labels a peer editing the body", () => {
     renderPanel({
+      bodyEmpty: true,
       peers: [
         {
           clientId: "peer-a",
@@ -310,6 +312,71 @@ function rowButton(row: HTMLElement): HTMLElement {
   if (!button) throw new Error("row has no navigation button");
   return button;
 }
+
+describe("CardPanel tabs", () => {
+  it("opens an empty card on Content", () => {
+    renderPanel({ bodyEmpty: true });
+
+    expect(screen.getByTestId("card-panel-tab-content")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("card-panel-body")).toBeInTheDocument();
+    expect(screen.queryByTestId("property-owner")).not.toBeInTheDocument();
+  });
+
+  it("opens a card with content on Details", () => {
+    renderPanel();
+
+    expect(screen.getByTestId("card-panel-tab-details")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("property-owner")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-panel-body")).not.toBeInTheDocument();
+  });
+
+  it("switches tabs and ends a body edit when Details hides the editor", () => {
+    const onEditEnd = vi.fn();
+    renderPanel({ editing: "body", onEditEnd });
+
+    // Editing the body from anywhere lands on Content.
+    expect(screen.getByTestId("card-panel-tab-content")).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByTestId("card-panel-tab-details"));
+
+    expect(onEditEnd).toHaveBeenCalled();
+    expect(screen.getByTestId("card-panel-tab-details")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("card-panel-body")).not.toBeInTheDocument();
+    expect(screen.getByTestId("property-owner")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("card-panel-tab-content"));
+
+    expect(screen.getByTestId("card-panel-body")).toBeInTheDocument();
+    expect(screen.queryByTestId("property-owner")).not.toBeInTheDocument();
+  });
+
+  it("opens on Details when it was asked to reveal a field", () => {
+    renderPanel({ bodyEmpty: true, focusedField: "owner" });
+
+    expect(screen.getByTestId("card-panel-tab-details")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Owner")).toHaveFocus();
+  });
+
+  it("switches to Details when the panel is asked to reveal a field", () => {
+    const { rerender } = renderPanel({ bodyEmpty: true });
+    expect(screen.getByTestId("card-panel-tab-content")).toHaveAttribute("aria-selected", "true");
+
+    rerender(<CardPanel {...base} bodyEmpty focusedField="owner" />);
+
+    expect(screen.getByTestId("card-panel-tab-details")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("property-owner")).toHaveAttribute("data-focused", "true");
+    expect(screen.getByLabelText("Owner")).toHaveFocus();
+  });
+
+  it("writes the placeholder onto the empty paragraph without content", () => {
+    const { container } = renderPanel({ bodyEmpty: true });
+
+    const paragraph = bodyEditor(container).querySelector("p");
+    expect(paragraph).toHaveAttribute("data-placeholder", BODY_PLACEHOLDER);
+    expect(paragraph).toHaveClass("is-editor-empty");
+    expect(paragraph?.textContent).toBe("");
+  });
+});
 
 describe("CardPanel links", () => {
   it("renders both directions and navigates its rows", () => {
@@ -540,5 +607,94 @@ describe("cardLinks", () => {
     expect(snippet?.startsWith("\u2026")).toBe(true);
     expect(snippet?.endsWith("\u2026")).toBe(true);
     expect(snippetAround(text, "missing title")).toBeUndefined();
+  });
+});
+
+describe("CardPanel read-only (share viewer)", () => {
+  const links: CardLinks = {
+    incoming: [],
+    outgoing: [
+      {
+        cardId: "n2",
+        title: "Onboarding friction",
+        glyph: "\u25a1",
+        occurrences: [{ key: "n2:mention", kind: "mention", boardId: null }],
+        kinds: ["mention"],
+        mutual: false,
+        boardId: null,
+      },
+      {
+        cardId: "n3",
+        title: "Private card",
+        glyph: "\u25a1",
+        occurrences: [{ key: "n3:mention", kind: "mention", boardId: null }],
+        kinds: ["mention"],
+        mutual: false,
+        boardId: null,
+      },
+    ],
+  };
+
+  it("renders without edit affordances or the empty-body placeholder", () => {
+    const onStartEditing = vi.fn();
+    const onRemoveFromBoard = vi.fn();
+    const { container } = renderPanel({
+      readOnly: true,
+      bodyEmpty: true,
+      onStartEditing,
+      onRemoveFromBoard,
+    });
+
+    expect(screen.queryByTestId("manage-types")).toBeNull();
+    expect(screen.queryByTestId("inspector-edit")).toBeNull();
+    expect(screen.queryByText("Remove")).toBeNull();
+    expect(container.querySelector('[data-testid="property-owner"] input')).toBeNull();
+    expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
+    // The viewer has no way to write, so the body must not invite typing. The
+    // placeholder is a decoration on the empty paragraph, not body text.
+    expect(container.querySelector(".node-card-editor p.is-editor-empty")).toBeNull();
+    expect(container.textContent).not.toContain(BODY_PLACEHOLDER);
+
+    fireEvent.click(screen.getByTestId("card-panel-title"));
+    fireEvent.click(screen.getByTestId("card-panel-body"));
+    expect(onStartEditing).not.toHaveBeenCalled();
+  });
+
+  it("still advertises the placeholder to the owner", () => {
+    const { container } = renderPanel({ bodyEmpty: true });
+    expect(container.querySelector(".node-card-editor p.is-editor-empty")).toHaveAttribute(
+      "data-placeholder",
+      BODY_PLACEHOLDER,
+    );
+  });
+
+  it("keeps navigation to shared cards but renders out-of-share rows inert", () => {
+    const onFocusLink = vi.fn();
+    renderPanel({ readOnly: true, links, onFocusLink });
+
+    const inert = screen.getByTestId("link-row-inert");
+    expect(inert.tagName).toBe("SPAN");
+    expect(inert).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(inert);
+    expect(onFocusLink).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("Onboarding friction"));
+    expect(onFocusLink).toHaveBeenCalledWith("n2", null);
+  });
+
+  it("shows types, tags and property values as static text", () => {
+    renderPanel({
+      readOnly: true,
+      tags: [
+        { id: "tag-1", name: "alpha", createdAt: 0 },
+        { id: "tag-2", name: "beta", createdAt: 0 },
+      ],
+      card: { ...card, tags: ["tag-1"], properties: { owner: "Ada" } },
+    });
+
+    expect(screen.getByTestId("type-view-project")).toHaveTextContent("Project");
+    expect(screen.getByTestId("tag-list")).toHaveTextContent("#alpha");
+    expect(screen.getByTestId("tag-list")).not.toHaveTextContent("#beta");
+    expect(screen.getByTestId("property-value-owner")).toHaveTextContent("Ada");
   });
 });

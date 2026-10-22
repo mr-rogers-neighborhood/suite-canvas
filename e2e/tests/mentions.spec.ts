@@ -197,6 +197,7 @@ test("links to one field of another card and lands on it", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const inspector = page.getByTestId("card-inspector");
   await expect(inspector).toBeVisible();
+  await inspector.getByTestId("card-panel-tab-details").click();
   await inspector.getByTestId("manage-types").click();
   const settings = page.getByTestId("type-settings");
   await settings.getByTestId("settings-type-note").click();
@@ -257,6 +258,7 @@ async function addOwnerField(page: Page, card: ReturnType<typeof cards>): Promis
   await card.getByTestId("card-menu").click();
   await page.getByRole("menuitem", { name: "Card info" }).click();
   const inspector = page.getByTestId("card-inspector");
+  await inspector.getByTestId("card-panel-tab-details").click();
   await inspector.getByTestId("manage-types").click();
   const settings = page.getByTestId("type-settings");
   await settings.getByTestId("settings-type-note").click();

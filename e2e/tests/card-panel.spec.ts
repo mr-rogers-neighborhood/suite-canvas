@@ -5,6 +5,14 @@ const workspaceUrl = (name: string) => `/?workspace=e2e-panel-${name}-${Date.now
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
+const BODY_PLACEHOLDER = "Begin writing, or type / for commands.";
+
+/** Details holds the metadata; an empty card opens on Content instead. */
+async function showDetails(page: Page): Promise<void> {
+  await page.getByTestId("card-panel-tab-details").click();
+  await expect(page.getByTestId("card-panel-details")).toBeVisible();
+}
+
 /** Opens the inspector with a click on the card header, not the editors. */
 async function openCardInfo(page: Page, card = cards(page).first()): Promise<void> {
   const box = await card.boundingBox();
@@ -60,6 +68,7 @@ test("shows the section breadcrumb and keeps the card visible when focused", asy
   await createSectionAroundFirstCard(page, "Research");
   // Creating a section moves focus to the canvas; reopen the panel.
   await openCardInfo(page);
+  await showDetails(page);
 
   const crumb = page.getByTestId("inspector-section");
   await expect(crumb).toContainText("Research");
@@ -77,6 +86,56 @@ test("shows the section breadcrumb and keeps the card visible when focused", asy
   if (!after) throw new Error("card disappeared after focusing its section");
   expect(after.x).toBeGreaterThanOrEqual(0);
   expect(after.y).toBeGreaterThanOrEqual(0);
+});
+
+test("splits the inspector into Details and Content tabs", async ({ page }) => {
+  await page.goto(workspaceUrl("tabs"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await openCardInfo(page);
+  const detailsTab = page.getByTestId("card-panel-tab-details");
+  const contentTab = page.getByTestId("card-panel-tab-content");
+  await expect(detailsTab).toHaveText("Details");
+  await expect(contentTab).toHaveText("Content");
+
+  // A blank card starts where the writing happens, not under the metadata.
+  await expect(contentTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("card-panel-body")).toBeVisible();
+  await expect(page.getByTestId("card-panel-details")).toHaveCount(0);
+  // The body is a surface of its own, not bare text.
+  await expect(page.getByTestId("card-panel-body")).toHaveCSS("border-top-width", "1px");
+
+  await detailsTab.click();
+  await expect(detailsTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("card-panel-details")).toBeVisible();
+  await expect(page.getByTestId("type-picker")).toBeVisible();
+  await expect(page.getByTestId("card-panel-body")).toHaveCount(0);
+
+  // Edit is the shortcut back to the body.
+  await page.getByTestId("inspector-edit").click();
+  await expect(contentTab).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.locator(".card-inspector .card-panel-body .node-card-editor.ProseMirror-focused"),
+  ).toHaveCount(1);
+});
+
+test("shows the empty-body placeholder on the card and in the inspector", async ({ page }) => {
+  await page.goto(workspaceUrl("placeholder"));
+  await expect(cards(page)).toHaveCount(2);
+
+  const card = cards(page).first();
+  const canvasPlaceholder = card.locator(".node-card-editor p.is-editor-empty");
+  await expect(canvasPlaceholder).toHaveAttribute("data-placeholder", BODY_PLACEHOLDER);
+
+  await openCardInfo(page, card);
+  const panelPlaceholder = page.locator(".card-inspector .card-panel-body p.is-editor-empty");
+  await expect(panelPlaceholder).toHaveAttribute("data-placeholder", BODY_PLACEHOLDER);
+
+  // The decoration is what paints the copy; the body itself stays empty.
+  const painted = await panelPlaceholder.evaluate(
+    (element) => getComputedStyle(element, "::before").content,
+  );
+  expect(painted).toContain(BODY_PLACEHOLDER);
 });
 
 test("syncs panel text and a caret to a peer's canvas card", async ({ browser }) => {

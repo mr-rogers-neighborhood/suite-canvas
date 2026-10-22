@@ -4,6 +4,7 @@ import {
   type Card,
   type CardFieldView,
   type CardType,
+  formatPropertyValue,
   type GraphEdge,
   incomingReferences,
   outgoingPropertyLinks,
@@ -16,7 +17,15 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
@@ -25,6 +34,9 @@ import { isPropertyEmpty, PropertyField } from "./PropertyField";
 import { TagPicker } from "./TagPicker";
 
 export type CardPanelEditingField = "title" | "body";
+
+/** Inspector tabs: metadata and relations, or the body itself. */
+export type CardPanelTab = "details" | "content";
 
 export interface CardWhereSection {
   id: string;
@@ -245,13 +257,19 @@ export interface CardPanelProps {
   links: CardLinks;
   /** Field the panel was asked to reveal; it scrolls into view and takes focus. */
   focusedField?: string | null;
-  /** Inspector drawer or an embedded surface such as an expanded library row. */
+  /** The inspector drawer, or a plain surface that stacks every section. */
   variant?: "inspector" | "embedded";
+  /**
+   * Whether the body has no text yet. A blank card opens on its Content tab so
+   * the first keystroke lands where the reader expects it.
+   */
+  bodyEmpty?: boolean;
   /** Which field the panel currently owns; null keeps both read-only. */
   editing: CardPanelEditingField | null;
   cardDoc: LoroDoc;
-  contentId: ContainerID;
-  titleId: ContainerID;
+  /** Null when the projection has no body yet; readers then see static text. */
+  contentId: ContainerID | null;
+  titleId: ContainerID | null;
   cursorStore: CursorEphemeralStore | null;
   localUser: PresenceUser | null;
   /** Peers on the active board, for the caret label and the editor halo. */
@@ -272,6 +290,8 @@ export interface CardPanelProps {
   onRemoveFromBoard: () => void;
   /** Reveal a linked card, or open its inspector when it has no placement. */
   onFocusLink: (cardId: string, boardId: string | null) => void;
+  /** A share viewer reads the card; nothing on this surface writes. */
+  readOnly?: boolean;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -307,10 +327,13 @@ function LinkRowItem({
   row,
   direction,
   onFocus,
+  inert = false,
 }: {
   row: LinkRow;
   direction: "in" | "out";
   onFocus: (cardId: string, boardId: string | null) => void;
+  /** The card is not part of this share, so the row reads but does not navigate. */
+  inert?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // One occurrence is already described on the row, so expanding only earns
@@ -321,34 +344,48 @@ function LinkRowItem({
     .filter((part): part is string => Boolean(part))
     .join(" \u00b7 ");
 
+  const body = (
+    <>
+      <span aria-hidden="true" className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]">
+        {row.glyph}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{row.title}</span>
+        {meta ? <span className={referenceMetaClass}>{meta}</span> : null}
+      </span>
+      <span
+        aria-hidden="true"
+        className="shrink-0 leading-5 text-[11px] text-[var(--ink-muted)]"
+        data-testid="link-markers"
+      >
+        {row.kinds.map((kind) => PROVENANCE[kind].glyph).join("")}
+        {row.mutual ? "\u2194" : ""}
+      </span>
+    </>
+  );
+
   return (
     <li data-testid="link-row" data-direction={direction} data-card-id={row.cardId}>
       <div className="flex items-start gap-1">
-        <button
-          type="button"
-          title={row.title}
-          className={referenceRowClass}
-          onClick={() => onFocus(row.cardId, row.boardId)}
-        >
+        {inert ? (
           <span
-            aria-hidden="true"
-            className="shrink-0 text-[12px] leading-5 text-[var(--ink-muted)]"
+            title={`${row.title} is not part of this share`}
+            aria-disabled="true"
+            data-testid="link-row-inert"
+            className={`${referenceRowClass} cursor-default text-[var(--ink-muted)] opacity-70 hover:bg-transparent`}
           >
-            {row.glyph}
+            {body}
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate">{row.title}</span>
-            {meta ? <span className={referenceMetaClass}>{meta}</span> : null}
-          </span>
-          <span
-            aria-hidden="true"
-            className="shrink-0 leading-5 text-[11px] text-[var(--ink-muted)]"
-            data-testid="link-markers"
+        ) : (
+          <button
+            type="button"
+            title={row.title}
+            className={referenceRowClass}
+            onClick={() => onFocus(row.cardId, row.boardId)}
           >
-            {row.kinds.map((kind) => PROVENANCE[kind].glyph).join("")}
-            {row.mutual ? "\u2194" : ""}
-          </span>
-        </button>
+            {body}
+          </button>
+        )}
         {expandable ? (
           <button
             type="button"
@@ -393,11 +430,14 @@ function LinkGroup({
   direction,
   rows,
   onFocus,
+  availableCardIds,
 }: {
   title: string;
   direction: "in" | "out";
   rows: LinkRow[];
   onFocus: (cardId: string, boardId: string | null) => void;
+  /** Cards this surface may open; the rest render as inert rows. */
+  availableCardIds?: ReadonlySet<string>;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -405,7 +445,13 @@ function LinkGroup({
       <h3 className="text-[11px] text-[var(--ink-muted)]">{title}</h3>
       <ul className="space-y-0.5">
         {rows.map((row) => (
-          <LinkRowItem key={row.cardId} row={row} direction={direction} onFocus={onFocus} />
+          <LinkRowItem
+            key={row.cardId}
+            row={row}
+            direction={direction}
+            onFocus={onFocus}
+            {...(availableCardIds && !availableCardIds.has(row.cardId) ? { inert: true } : {})}
+          />
         ))}
       </ul>
     </div>
@@ -413,9 +459,10 @@ function LinkGroup({
 }
 
 /**
- * The shared card surface: title, type, tags, properties, "Where", body.
- * Presentation only — every read is a prop and every write is a callback, so the
- * inspector shell, the library row and a future card tab can all host it.
+ * The shared card surface. The inspector splits it into two tabs — Details
+ * (type, tags, properties, links, where) and Content (the body) — so the body
+ * is a destination of its own rather than a section below the metadata.
+ * Presentation only: every read is a prop and every write is a callback.
  */
 export function CardPanel({
   card,
@@ -428,6 +475,7 @@ export function CardPanel({
   links,
   focusedField = null,
   variant = "inspector",
+  bodyEmpty = false,
   editing,
   cardDoc,
   contentId,
@@ -449,16 +497,59 @@ export function CardPanel({
   onFocusSection,
   onRemoveFromBoard,
   onFocusLink,
+  readOnly = false,
 }: CardPanelProps) {
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
   const focusedRow = useRef<HTMLDivElement | null>(null);
 
+  const inspector = variant === "inspector";
+  const idPrefix = useId();
+  const detailsTabId = `${idPrefix}-details-tab`;
+  const detailsPanelId = `${idPrefix}-details-panel`;
+  const contentTabId = `${idPrefix}-content-tab`;
+  const contentPanelId = `${idPrefix}-content-panel`;
+  const [tab, setTab] = useState<CardPanelTab>(() => {
+    if (editing === "body") return "content";
+    if (focusedField) return "details";
+    return bodyEmpty ? "content" : "details";
+  });
+
+  // A different card starts on the tab its body suggests: blank cards open
+  // where the writing happens, cards with content open on their metadata.
+  const tabCardId = useRef(card.id);
+  useEffect(() => {
+    if (tabCardId.current === card.id) return;
+    tabCardId.current = card.id;
+    setTab(bodyEmpty ? "content" : "details");
+  }, [card.id, bodyEmpty]);
+
+  // Edit and a click on the read-only body land on Content; a field the panel
+  // was asked to reveal (a `@card.field` chip) lands on Details.
+  const previousEditing = useRef(editing);
+  useEffect(() => {
+    if (editing === "body" && previousEditing.current !== "body") setTab("content");
+    previousEditing.current = editing;
+  }, [editing]);
+
+  const previousFocusedField = useRef(focusedField);
+  useEffect(() => {
+    if (focusedField && focusedField !== previousFocusedField.current) setTab("details");
+    previousFocusedField.current = focusedField;
+  }, [focusedField]);
+
+  const selectTab = (next: CardPanelTab) => {
+    setTab(next);
+    // Details hides the editor; leaving it must not keep the keystrokes.
+    if (next === "details" && editing === "body") onEditEnd();
+  };
+
   // A `@card.field` chip in any body opens this panel at that field, so the
   // value is one click from where it was read. Keyed by card too: the same
   // field id on a different card is a different target.
   const revealKey = focusedField ? `${card.id}:${focusedField}` : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tab switch mounts the row this reveals.
   useEffect(() => {
     if (!revealKey) return;
     const row = focusedRow.current;
@@ -466,7 +557,7 @@ export function CardPanel({
     // jsdom has no layout, and no scrolling to do there either.
     row.scrollIntoView?.({ block: "nearest" });
     row.querySelector<HTMLElement>("input, select, button")?.focus();
-  }, [revealKey]);
+  }, [revealKey, tab]);
 
   useEffect(
     () => () => {
@@ -516,9 +607,52 @@ export function CardPanel({
     ? { borderColor: titlePeer.color, boxShadow: `0 0 0 2px ${titlePeer.color}33` }
     : {};
 
-  const inspector = variant === "inspector";
   const cardIds = useMemo(() => new Set(cards.map((entry) => entry.id)), [cards]);
   const hasLinks = links.incoming.length + links.outgoing.length > 0;
+  const startEditing = (field: CardPanelEditingField) => {
+    if (readOnly) return;
+    onStartEditing(field);
+  };
+
+  const showDetails = !inspector || tab === "details";
+  const showContent = !inspector || tab === "content";
+  const bodySurface = (
+    // biome-ignore lint/a11y/noStaticElementInteractions: a click on the read-only body moves the editable surface here
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the panel title and Edit button are the keyboard path
+    <div
+      className={`card-panel-body ${editing === "body" ? "is-editing" : "cursor-text"}`}
+      data-testid="card-panel-body"
+      data-editing={editing === "body" ? "true" : undefined}
+      style={bodyPeerStyle}
+      onClick={(event) => {
+        if (readOnly || editing === "body") return;
+        event.stopPropagation();
+        startEditing("body");
+      }}
+    >
+      {bodyPeer ? <PeerNameTag user={bodyPeer} className="card-peer-tag" /> : null}
+      {contentId === null ? (
+        <p className="text-[13px] text-[var(--ink-muted)]" data-testid="card-panel-empty-body">
+          No content yet.
+        </p>
+      ) : (
+        <CardBodyEditor
+          cardId={card.id}
+          cardDoc={cardDoc}
+          contentId={contentId}
+          // Only the surface that owns the body publishes carets; a read-only
+          // twin must not clear the shared local cursor on its own updates.
+          cursorStore={editing === "body" ? cursorStore : null}
+          localUser={localUser}
+          editable={!readOnly && editing === "body"}
+          readOnly={readOnly}
+          onFocus={keepFocusAlive}
+          onBlur={releaseFocusSoon}
+          onOpenCardPanel={onOpenCardPanel}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -533,12 +667,12 @@ export function CardPanel({
         data-testid="card-panel-title"
         style={titlePeerStyle}
         onClick={(event) => {
-          if (editing === "title") return;
+          if (readOnly || editing === "title") return;
           event.stopPropagation();
-          onStartEditing("title");
+          startEditing("title");
         }}
       >
-        {editing === "title" ? (
+        {editing === "title" && titleId ? (
           <CardTitleEditor
             cardDoc={cardDoc}
             titleId={titleId}
@@ -552,15 +686,17 @@ export function CardPanel({
           />
         ) : (
           <>
-            <button
-              type="button"
-              aria-label="Edit card title"
-              className="absolute inset-0 z-10 cursor-text"
-              onClick={(event) => {
-                event.stopPropagation();
-                onStartEditing("title");
-              }}
-            />
+            {readOnly ? null : (
+              <button
+                type="button"
+                aria-label="Edit card title"
+                className="absolute inset-0 z-10 cursor-text"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  startEditing("title");
+                }}
+              />
+            )}
             <p className="truncate text-[13px] font-semibold text-[var(--ink)]">
               {title || "Untitled"}
             </p>
@@ -569,271 +705,368 @@ export function CardPanel({
         {titlePeer ? <PeerNameTag user={titlePeer} className="card-peer-tag" /> : null}
       </div>
 
-      <Section title="Type">
-        <div className="flex flex-wrap gap-1" data-testid="type-picker">
-          {types.map((type) => {
-            const active = type.id === card.primaryTypeId;
-            return (
-              <button
-                key={type.id}
-                type="button"
-                aria-pressed={active}
-                data-testid={`type-option-${type.id}`}
-                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
-                  active
-                    ? "border-transparent bg-[var(--segmented-bg)] text-[var(--ink)]"
-                    : "border-[var(--hairline)] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                }`}
-                onClick={() => onSetType(type.id)}
-              >
-                <span aria-hidden="true">{type.glyph}</span>
-                {type.name}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            data-testid="manage-types"
-            className="rounded-full px-2 py-0.5 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:underline"
-            onClick={onManageTypes}
-          >
-            Manage
-          </button>
-        </div>
-      </Section>
-
-      <Section title="Tags">
-        <TagPicker
-          tags={tags}
-          selectedIds={card.tags}
-          onAdd={onAddTag}
-          onRemove={onRemoveTag}
-          onCreate={onCreateTag}
-        />
-      </Section>
-
-      <Section title="Properties">
-        {fields.length === 0 ? (
-          <p className="text-[12px] text-[var(--ink-muted)]">
-            This type has no fields yet.{" "}
+      {inspector ? (
+        <div className="card-panel-tabs px-3 pb-2" data-testid="card-panel-tabs">
+          <div role="tablist" aria-label="Card sections" className="segmented">
             <button
               type="button"
-              className="underline underline-offset-2 hover:text-[var(--ink)]"
-              onClick={onManageTypes}
+              role="tab"
+              id={detailsTabId}
+              aria-controls={detailsPanelId}
+              aria-selected={tab === "details"}
+              data-testid="card-panel-tab-details"
+              className="segmented-option"
+              data-checked={tab === "details" ? "true" : undefined}
+              onClick={() => selectTab("details")}
             >
-              Add one
+              Details
             </button>
-          </p>
-        ) : (
-          <div className="space-y-3" data-testid="property-list">
-            {groups.map((typeId) => {
-              const group = typeId ? fields.filter((entry) => entry.typeId === typeId) : fields;
-              if (group.length === 0) return null;
-              return (
-                <div key={typeId ?? "single"} className="space-y-2">
-                  {typeId ? (
-                    <p className="text-[11px] text-[var(--ink-muted)]">
-                      {typesById.get(typeId)?.name ?? "Type"}
-                    </p>
-                  ) : null}
-                  {group.map(({ field }) => {
-                    const value = card.properties[field.id];
-                    const missing = field.required && isPropertyEmpty(value, field, cardIds);
-                    return (
-                      <div
-                        key={field.id}
-                        ref={field.id === focusedField ? focusedRow : undefined}
-                        className="property-row block space-y-1"
-                        data-focused={field.id === focusedField ? "true" : undefined}
-                        data-testid={`property-${field.id}`}
-                      >
-                        <span className="flex w-full items-center gap-1 text-[11px] text-[var(--ink-muted)]">
-                          {field.name}
-                          {missing ? (
-                            <span
-                              title="Required"
-                              className="h-1.5 w-1.5 rounded-full bg-[var(--ink-muted)]"
-                            />
-                          ) : null}
-                        </span>
-                        <PropertyField
-                          field={field}
-                          value={value}
-                          cards={cards}
-                          excludeCardId={card.id}
-                          onChange={(next) => onSetProperty(field.id, next)}
-                          onClear={() => onClearProperty(field.id)}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+            <button
+              type="button"
+              role="tab"
+              id={contentTabId}
+              aria-controls={contentPanelId}
+              aria-selected={tab === "content"}
+              data-testid="card-panel-tab-content"
+              className="segmented-option"
+              data-checked={tab === "content" ? "true" : undefined}
+              onClick={() => selectTab("content")}
+            >
+              Content
+            </button>
           </div>
-        )}
-      </Section>
-
-      <Section title="Links">
-        <div className="space-y-2.5" data-testid="card-links">
-          {hasLinks ? (
-            <>
-              <LinkGroup
-                title="Incoming"
-                direction="in"
-                rows={links.incoming}
-                onFocus={onFocusLink}
-              />
-              <LinkGroup
-                title="Outgoing"
-                direction="out"
-                rows={links.outgoing}
-                onFocus={onFocusLink}
-              />
-            </>
-          ) : (
-            <p className="text-[12px] text-[var(--ink-muted)]" data-testid="links-empty">
-              No links yet. Type @ in a card, or draw an arrow between two cards.
-            </p>
-          )}
         </div>
-      </Section>
+      ) : null}
 
-      <Section title="Where">
-        {where.unplaced || !current ? (
-          <p className="text-[12px] text-[var(--ink-muted)]" data-testid="card-where-empty">
-            In the inbox
-          </p>
-        ) : (
-          <ul
-            className="space-y-1"
-            data-testid={inspector ? "inspector-boards" : "card-where-boards"}
-          >
-            <li className="flex items-center gap-1 text-[12px]" data-testid="card-where-current">
-              <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                {current.isHome ? "\u2302" : "\u2197"}
-              </span>
-              <span className="flex min-w-0 flex-1 items-center gap-1">
-                <button
-                  type="button"
-                  className={crumbClass}
-                  onClick={() => onFocusCard(current.boardId)}
-                >
-                  {current.boardName}
-                </button>
-                <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                  {"\u203a"}
-                </span>
-                {currentSection ? (
-                  current.sectionPath.map((section, index) => {
-                    const deepest = index === current.sectionPath.length - 1;
-                    return (
-                      <span key={section.id} className="flex min-w-0 items-center gap-1">
-                        <button
-                          type="button"
-                          data-testid={
-                            deepest && inspector
-                              ? "inspector-section"
-                              : deepest
-                                ? "card-where-section"
-                                : undefined
-                          }
-                          className={`${crumbClass} flex items-center gap-1`}
-                          onClick={() => onFocusSection(section.id)}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{ background: section.color ?? "var(--ink-muted)" }}
-                          />
-                          <span className="min-w-0 truncate">{section.name}</span>
-                        </button>
-                        {deepest ? null : (
-                          <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                            {"\u203a"}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span
-                    className="text-[var(--ink-muted)]"
-                    data-testid={inspector ? undefined : "card-where-unsorted"}
-                  >
-                    Unsorted
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                className="rounded px-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                onClick={onRemoveFromBoard}
-              >
-                Remove
-              </button>
-            </li>
-            {others.map((entry) => (
-              <li
-                key={entry.boardId}
-                className="flex items-center gap-1.5 text-[12px]"
-                data-testid="card-where-board"
-              >
-                <span aria-hidden="true" className="text-[var(--ink-muted)]">
-                  {entry.isHome ? "\u2302" : "\u2197"}
-                </span>
-                <button
-                  type="button"
-                  className={`${crumbClass} flex-1 text-left`}
-                  onClick={() => onFocusCard(entry.boardId)}
-                >
-                  {entry.boardName}
-                </button>
-                <button
-                  type="button"
-                  className="rounded px-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                  onClick={() => onFocusCard(entry.boardId)}
-                >
-                  Go
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section title="Body">
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: a click on the read-only body moves the editable surface here */}
-        {/* biome-ignore lint/a11y/useKeyWithClickEvents: the panel title and Edit button are the keyboard path */}
+      {showDetails ? (
+        // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is set whenever the aria attributes are.
         <div
-          className={`card-panel-body rounded border border-transparent ${
-            editing === "body" ? "is-editing" : "cursor-text"
-          }`}
-          data-testid="card-panel-body"
-          data-editing={editing === "body" ? "true" : undefined}
-          style={bodyPeerStyle}
-          onClick={(event) => {
-            if (editing === "body") return;
-            event.stopPropagation();
-            onStartEditing("body");
-          }}
+          data-testid="card-panel-details"
+          role={inspector ? "tabpanel" : undefined}
+          id={inspector ? detailsPanelId : undefined}
+          aria-labelledby={inspector ? detailsTabId : undefined}
         >
-          {bodyPeer ? <PeerNameTag user={bodyPeer} className="card-peer-tag" /> : null}
-          <CardBodyEditor
-            cardId={card.id}
-            cardDoc={cardDoc}
-            contentId={contentId}
-            // Only the surface that owns the body publishes carets; a read-only
-            // twin must not clear the shared local cursor on its own updates.
-            cursorStore={editing === "body" ? cursorStore : null}
-            localUser={localUser}
-            editable={editing === "body"}
-            onFocus={keepFocusAlive}
-            onBlur={releaseFocusSoon}
-            onOpenCardPanel={onOpenCardPanel}
-          />
+          <Section title="Type">
+            {readOnly ? (
+              <div className="flex flex-wrap gap-1" data-testid="type-picker" data-readonly="true">
+                {card.typeIds.map((typeId) => {
+                  const type = typesById.get(typeId);
+                  return type ? (
+                    <span
+                      key={type.id}
+                      data-testid={`type-view-${type.id}`}
+                      className="flex items-center gap-1 rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--ink)]"
+                    >
+                      <span aria-hidden="true">{type.glyph}</span>
+                      {type.name}
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1" data-testid="type-picker">
+                {types.map((type) => {
+                  const active = type.id === card.primaryTypeId;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      aria-pressed={active}
+                      data-testid={`type-option-${type.id}`}
+                      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                        active
+                          ? "border-transparent bg-[var(--segmented-bg)] text-[var(--ink)]"
+                          : "border-[var(--hairline)] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                      }`}
+                      onClick={() => onSetType(type.id)}
+                    >
+                      <span aria-hidden="true">{type.glyph}</span>
+                      {type.name}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  data-testid="manage-types"
+                  className="rounded-full px-2 py-0.5 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:underline"
+                  onClick={onManageTypes}
+                >
+                  Manage
+                </button>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Tags">
+            {readOnly ? (
+              <div className="flex flex-wrap gap-1" data-testid="tag-list" data-readonly="true">
+                {tags
+                  .filter((tag) => card.tags.includes(tag.id))
+                  .map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--ink)]"
+                    >
+                      #{tag.name}
+                    </span>
+                  ))}
+              </div>
+            ) : (
+              <TagPicker
+                tags={tags}
+                selectedIds={card.tags}
+                onAdd={onAddTag}
+                onRemove={onRemoveTag}
+                onCreate={onCreateTag}
+              />
+            )}
+          </Section>
+
+          <Section title="Properties">
+            {fields.length === 0 ? (
+              <p className="text-[12px] text-[var(--ink-muted)]">
+                This type has no fields yet.
+                {readOnly ? null : (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2 hover:text-[var(--ink)]"
+                      onClick={onManageTypes}
+                    >
+                      Add one
+                    </button>
+                  </>
+                )}
+              </p>
+            ) : (
+              <div className="space-y-3" data-testid="property-list">
+                {groups.map((typeId) => {
+                  const group = typeId ? fields.filter((entry) => entry.typeId === typeId) : fields;
+                  if (group.length === 0) return null;
+                  return (
+                    <div key={typeId ?? "single"} className="space-y-2">
+                      {typeId ? (
+                        <p className="text-[11px] text-[var(--ink-muted)]">
+                          {typesById.get(typeId)?.name ?? "Type"}
+                        </p>
+                      ) : null}
+                      {group.map(({ field }) => {
+                        const value = card.properties[field.id];
+                        const missing = field.required && isPropertyEmpty(value, field, cardIds);
+                        if (readOnly) {
+                          return (
+                            <div
+                              key={field.id}
+                              ref={field.id === focusedField ? focusedRow : undefined}
+                              className="property-row block space-y-1"
+                              data-focused={field.id === focusedField ? "true" : undefined}
+                              data-testid={`property-${field.id}`}
+                            >
+                              <span className="flex w-full items-center gap-1 text-[11px] text-[var(--ink-muted)]">
+                                {field.name}
+                              </span>
+                              <p
+                                className="text-[13px] text-[var(--ink)]"
+                                data-testid={`property-value-${field.id}`}
+                              >
+                                {formatPropertyValue(field, value, {
+                                  cardTitle:
+                                    typeof value === "string"
+                                      ? cards.find((entry) => entry.id === value)?.title
+                                      : undefined,
+                                })}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div
+                            key={field.id}
+                            ref={field.id === focusedField ? focusedRow : undefined}
+                            className="property-row block space-y-1"
+                            data-focused={field.id === focusedField ? "true" : undefined}
+                            data-testid={`property-${field.id}`}
+                          >
+                            <span className="flex w-full items-center gap-1 text-[11px] text-[var(--ink-muted)]">
+                              {field.name}
+                              {missing ? (
+                                <span
+                                  title="Required"
+                                  className="h-1.5 w-1.5 rounded-full bg-[var(--ink-muted)]"
+                                />
+                              ) : null}
+                            </span>
+                            <PropertyField
+                              field={field}
+                              value={value}
+                              cards={cards}
+                              excludeCardId={card.id}
+                              onChange={(next) => onSetProperty(field.id, next)}
+                              onClear={() => onClearProperty(field.id)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Links">
+            <div className="space-y-2.5" data-testid="card-links">
+              {hasLinks ? (
+                <>
+                  <LinkGroup
+                    title="Incoming"
+                    direction="in"
+                    rows={links.incoming}
+                    onFocus={onFocusLink}
+                    {...(readOnly ? { availableCardIds: cardIds } : {})}
+                  />
+                  <LinkGroup
+                    title="Outgoing"
+                    direction="out"
+                    rows={links.outgoing}
+                    onFocus={onFocusLink}
+                    {...(readOnly ? { availableCardIds: cardIds } : {})}
+                  />
+                </>
+              ) : (
+                <p className="text-[12px] text-[var(--ink-muted)]" data-testid="links-empty">
+                  No links yet. Type @ in a card, or draw an arrow between two cards.
+                </p>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Where">
+            {where.unplaced || !current ? (
+              <p className="text-[12px] text-[var(--ink-muted)]" data-testid="card-where-empty">
+                In the inbox
+              </p>
+            ) : (
+              <ul
+                className="space-y-1"
+                data-testid={inspector ? "inspector-boards" : "card-where-boards"}
+              >
+                <li
+                  className="flex items-center gap-1 text-[12px]"
+                  data-testid="card-where-current"
+                >
+                  <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                    {current.isHome ? "\u2302" : "\u2197"}
+                  </span>
+                  <span className="flex min-w-0 flex-1 items-center gap-1">
+                    <button
+                      type="button"
+                      className={crumbClass}
+                      onClick={() => onFocusCard(current.boardId)}
+                    >
+                      {current.boardName}
+                    </button>
+                    <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                      {"\u203a"}
+                    </span>
+                    {currentSection ? (
+                      current.sectionPath.map((section, index) => {
+                        const deepest = index === current.sectionPath.length - 1;
+                        return (
+                          <span key={section.id} className="flex min-w-0 items-center gap-1">
+                            <button
+                              type="button"
+                              data-testid={
+                                deepest && inspector
+                                  ? "inspector-section"
+                                  : deepest
+                                    ? "card-where-section"
+                                    : undefined
+                              }
+                              className={`${crumbClass} flex items-center gap-1`}
+                              onClick={() => onFocusSection(section.id)}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{ background: section.color ?? "var(--ink-muted)" }}
+                              />
+                              <span className="min-w-0 truncate">{section.name}</span>
+                            </button>
+                            {deepest ? null : (
+                              <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                                {"\u203a"}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span
+                        className="text-[var(--ink-muted)]"
+                        data-testid={inspector ? undefined : "card-where-unsorted"}
+                      >
+                        Unsorted
+                      </span>
+                    )}
+                  </span>
+                  {readOnly ? null : (
+                    <button
+                      type="button"
+                      className="rounded px-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={onRemoveFromBoard}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </li>
+                {others.map((entry) => (
+                  <li
+                    key={entry.boardId}
+                    className="flex items-center gap-1.5 text-[12px]"
+                    data-testid="card-where-board"
+                  >
+                    <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                      {entry.isHome ? "\u2302" : "\u2197"}
+                    </span>
+                    <button
+                      type="button"
+                      className={`${crumbClass} flex-1 text-left`}
+                      onClick={() => onFocusCard(entry.boardId)}
+                    >
+                      {entry.boardName}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded px-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => onFocusCard(entry.boardId)}
+                    >
+                      Go
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
         </div>
-      </Section>
+      ) : null}
+
+      {showContent ? (
+        inspector ? (
+          <div
+            className="px-3 py-3"
+            data-testid="card-panel-content"
+            role="tabpanel"
+            id={contentPanelId}
+            aria-labelledby={contentTabId}
+          >
+            {bodySurface}
+          </div>
+        ) : (
+          <Section title="Body">{bodySurface}</Section>
+        )
+      ) : null}
     </div>
   );
 }

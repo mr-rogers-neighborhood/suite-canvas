@@ -45,6 +45,8 @@ async function growSection(page: Page): Promise<void> {
 }
 
 async function addTextField(page: Page, name: string): Promise<void> {
+  // Metadata lives on the Details tab; blank cards open on Content.
+  await page.getByTestId("card-panel-tab-details").click();
   await page.getByTestId("manage-types").click();
   await expect(page.getByTestId("type-settings")).toBeVisible();
   await page.getByLabel("New field name").fill(name);
@@ -143,6 +145,7 @@ test("shares one card across boards and lists both in the inspector", async ({ p
 
   const card = cards(page).first();
   await card.getByTestId("card-type").click();
+  await page.getByTestId("card-panel-tab-details").click();
   const boards = page.getByTestId("inspector-boards");
   await expect(boards).toContainText("Board 1");
   await expect(boards.locator("li")).toHaveCount(2);
@@ -349,11 +352,11 @@ test("groups board cards by section with unsorted last", async ({ page }) => {
   await expect(groups.last().locator('[data-testid^="library-item-"]')).toHaveCount(1);
 });
 
-test("edits a card from an expanded row and collapses on close", async ({ page }) => {
+test("opens a library row in the inspector instead of expanding it", async ({ page }) => {
   await page.goto(workspaceUrl("row-panel"));
   await expect(cards(page)).toHaveCount(2);
 
-  // A text field to edit from the row.
+  // A text field to edit from the inspector.
   await cards(page).first().getByTestId("card-type").click();
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   await addTextField(page, "Status");
@@ -361,26 +364,28 @@ test("edits a card from an expanded row and collapses on close", async ({ page }
 
   await openLibrary(page, "cards");
   await page.getByTestId("library-scope-board").click();
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByTestId("library-row-expand")
-    .click();
+  await page.locator('[data-testid^="library-item-"]').first().click();
 
-  const panel = page.getByTestId("library-row-panel");
+  const panel = page.getByTestId("card-inspector");
   await expect(panel).toBeVisible();
-  await expect(panel.getByTestId("card-panel")).toHaveAttribute("data-variant", "embedded");
+  await expect(panel.getByTestId("card-panel")).toHaveAttribute("data-variant", "inspector");
+  // The row is a list entry, never an editor of its own.
+  await expect(page.getByTestId("library-row-panel")).toHaveCount(0);
+  await expect(page.getByTestId("library-row-expand")).toHaveCount(0);
 
+  // Metadata is on Details; the field write reaches the canvas card.
+  await expect(panel.getByTestId("card-panel-tab-details")).toBeVisible();
+  await panel.getByTestId("card-panel-tab-details").click();
   const status = panel.getByLabel("Status");
   await status.fill("active");
   await status.blur();
 
-  // The canvas card sees the same write.
   const canvasCard = cards(page).first();
   await canvasCard.getByTestId("card-meta-toggle").click();
   await expect(canvasCard.getByTestId("card-meta")).toContainText("active");
 
-  // The row's body editor writes the shared container the card renders.
+  // Content edits the shared body the canvas card renders.
+  await panel.getByTestId("card-panel-tab-content").click();
   await panel.getByTestId("card-panel-body").click();
   await expect(panel.getByTestId("card-panel-body")).toHaveAttribute("data-editing", "true");
   // React StrictMode remounts the editor once in dev; let the focused instance settle.
@@ -388,7 +393,7 @@ test("edits a card from an expanded row and collapses on close", async ({ page }
   await page.keyboard.type("From the row");
   await expect(canvasCard.locator(".node-card-editor")).toContainText("From the row");
 
-  // Closing the drawer releases the row; reopening starts collapsed.
+  // The drawer stays a list: closing and reopening shows rows, not a panel.
   await page.getByLabel("Close library").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
   await openLibrary(page, "cards");

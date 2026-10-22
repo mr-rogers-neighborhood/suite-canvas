@@ -78,13 +78,7 @@ const meta = {
     sectionOrder,
     groupBySection: false,
     onToggleGroup: () => {},
-    expandedRowId: null,
-    onExpandRow: () => {},
-    renderRowPanel: (cardId: string) => (
-      <p className="px-2 py-3 text-[12px] text-[var(--ink-muted)]">
-        Card panel for {cardId} (store-connected in the app)
-      </p>
-    ),
+    onOpenCard: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof LibraryDrawer>;
@@ -97,7 +91,7 @@ export const Inbox: Story = {};
 export const Cards: Story = { args: { tab: "cards" } };
 
 export const BoardScope: Story = {
-  args: { tab: "cards", scope: "board", sectionFilter: ["s1"], expandedRowId: "c1" },
+  args: { tab: "cards", scope: "board", sectionFilter: ["s1"] },
 };
 
 export const GroupedBySection: Story = {

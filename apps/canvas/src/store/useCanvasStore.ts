@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
+import { getSession } from "../session/session";
 
 export type ConnectionStatus = LoroConnectionStatus;
 
@@ -22,17 +23,26 @@ export function resolveBoardId(): string | null {
   return searchParam("board");
 }
 
-export const WORKSPACE_ID = resolveWorkspaceId();
+/**
+ * The document this tab edits: the workspace room, or the projection room of a
+ * share link. Both come from the session so a share never reads the owner's id.
+ */
+const SESSION = getSession();
+export const WORKSPACE_ID = SESSION.workspaceId;
+const ROOM_ID = SESSION.roomId;
 
 const doc = new LoroDoc();
 const workspace = new WorkspaceDocument(doc);
 const presence = new EphemeralStore(30_000);
 const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 
+// Keyed by room, not workspace: a viewer of a board projection must not load
+// whatever this browser cached for the owner's workspace.
 const persistence =
-  WORKSPACE_ID && typeof indexedDB !== "undefined"
-    ? new LoroIndexeddbPersistence(WORKSPACE_ID, doc)
-    : null;
+  ROOM_ID && typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(ROOM_ID, doc) : null;
+
+/** A share token is the only credential a projection room accepts. */
+const auth = SESSION.share ? new TextEncoder().encode(SESSION.share.token) : undefined;
 
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
@@ -57,14 +67,16 @@ const TEST_MODE = import.meta.env.MODE === "test";
 
 export const useCanvasStore = create<CanvasState>((set) => {
   const provider =
-    !WORKSPACE_ID || typeof window === "undefined" || TEST_MODE
+    !ROOM_ID || typeof window === "undefined" || TEST_MODE
       ? null
       : new LoroProvider({
           url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
-          workspaceId: WORKSPACE_ID,
+          workspaceId: ROOM_ID,
           doc,
           presence,
           cursors,
+          ...(auth ? { auth } : {}),
+          readOnly: SESSION.readOnly,
           onStatus: (status) => set({ status }),
           onSynced: () => set({ synced: true }),
         });

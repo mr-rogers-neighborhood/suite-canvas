@@ -8,6 +8,8 @@ const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 async function openInspector(page: Page, card: Locator): Promise<void> {
   await card.getByTestId("card-type").click();
   await expect(page.getByTestId("card-inspector")).toBeVisible();
+  // Blank cards open on Content; types, tags and properties live on Details.
+  await page.getByTestId("card-panel-tab-details").click();
 }
 
 async function addTextField(page: Page, name: string): Promise<void> {

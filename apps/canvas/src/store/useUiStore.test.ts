@@ -7,7 +7,7 @@ function resetUiState() {
     editingNodeId: null,
     editingField: "body",
     editingSurface: "canvas",
-    panelOwner: null,
+    readOnly: false,
     inspectorNodeId: null,
     selectedNodeIds: [],
     selectedEdgeIds: [],
@@ -65,18 +65,23 @@ describe("useUiStore", () => {
     expect(useUiStore.getState().editingSurface).toBe("canvas");
   });
 
-  it("should mark the inspector as the panel owner and release it on close", () => {
-    useUiStore.getState().openInspector("card-a");
-    expect(useUiStore.getState().panelOwner).toBe("inspector");
+  it("should refuse to start an edit in a read-only session", () => {
+    useUiStore.getState().setReadOnly(true);
 
     useUiStore.getState().startEditing("card-a", "body", "panel");
-    expect(useUiStore.getState().panelOwner).toBe("inspector");
+
+    expect(useUiStore.getState().editingNodeId).toBeNull();
+    expect(useUiStore.getState().editingField).toBe("body");
+  });
+
+  it("should release the inspector's editing session on close", () => {
+    useUiStore.getState().openInspector("card-a");
+    useUiStore.getState().startEditing("card-a", "body", "panel");
 
     useUiStore.getState().closeInspector();
 
     const state = useUiStore.getState();
     expect(state.inspectorNodeId).toBeNull();
-    expect(state.panelOwner).toBeNull();
     expect(state.editingNodeId).toBeNull();
     expect(state.editingSurface).toBe("canvas");
   });
@@ -90,32 +95,26 @@ describe("useUiStore", () => {
     expect(state.editingSurface).toBe("canvas");
   });
 
-  it("should keep the panel owner when a panel edit starts", () => {
-    useUiStore.getState().setPanelOwner("library");
-    useUiStore.getState().startEditing("card-a", "body", "panel");
-
-    expect(useUiStore.getState().panelOwner).toBe("library");
-    expect(useUiStore.getState().editingNodeId).toBe("card-a");
-  });
-
-  it("should end the previous panel session when the owner changes", () => {
+  it("should keep a panel edit when the same card's inspector opens again", () => {
     useUiStore.getState().openInspector("card-a");
     useUiStore.getState().startEditing("card-a", "body", "panel");
 
-    useUiStore.getState().setPanelOwner("library");
+    useUiStore.getState().openInspector("card-a");
 
-    const switched = useUiStore.getState();
-    expect(switched.panelOwner).toBe("library");
-    expect(switched.editingNodeId).toBeNull();
-    expect(switched.editingSurface).toBe("canvas");
+    expect(useUiStore.getState().editingNodeId).toBe("card-a");
+    expect(useUiStore.getState().editingSurface).toBe("panel");
+  });
 
+  it("should end the previous card's panel session when the inspector switches cards", () => {
+    useUiStore.getState().openInspector("card-a");
     useUiStore.getState().startEditing("card-a", "body", "panel");
+
     useUiStore.getState().openInspector("card-b");
 
-    const reopened = useUiStore.getState();
-    expect(reopened.panelOwner).toBe("inspector");
-    expect(reopened.editingNodeId).toBeNull();
-    expect(reopened.editingSurface).toBe("canvas");
+    const switched = useUiStore.getState();
+    expect(switched.inspectorNodeId).toBe("card-b");
+    expect(switched.editingNodeId).toBeNull();
+    expect(switched.editingSurface).toBe("canvas");
   });
 
   it("should select every card on the board and drop the other selections", () => {

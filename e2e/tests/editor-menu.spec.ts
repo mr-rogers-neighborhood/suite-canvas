@@ -76,6 +76,7 @@ async function openCardInfo(page: Page, card = cards(page).first()): Promise<voi
   if (!box) throw new Error("card not visible");
   await page.mouse.click(box.x + 80, box.y + 24);
   await expect(page.getByTestId("card-inspector")).toBeVisible();
+  await page.getByTestId("card-panel-tab-details").click();
 }
 
 test("turns `/h1` into a heading", async ({ page }) => {
@@ -263,6 +264,7 @@ test("shows a field in the body, edits it inline, and removes the block", async 
   // A block is inserted from the body: `/property` hands over to the same
   // picker as `@`, which lists this card's fields above its cards.
   await expect(panel.getByTestId("property-block")).toHaveCount(0);
+  await panel.getByTestId("card-panel-tab-content").click();
   await panel.getByTestId("card-panel-body").click();
   await expect(panel.locator(".card-panel-body .node-card-editor")).toHaveClass(
     /ProseMirror-focused/,
@@ -293,12 +295,17 @@ test("shows a field in the body, edits it inline, and removes the block", async 
 
   await expect(panelBlock.getByTestId("property-block-value")).toHaveText("Grace Hopper");
   await expect(card.getByTestId("property-block")).toContainText("Grace Hopper");
+
+  // The property row follows the inline edit, on its own tab.
+  await panel.getByTestId("card-panel-tab-details").click();
   await expect(panel.getByLabel("Owner")).toHaveValue("Grace Hopper");
 
   // Removing the block removes the view only: the property value stays.
+  await panel.getByTestId("card-panel-tab-content").click();
   await panelBlock.hover();
   await panelBlock.getByTestId("property-block-remove").click();
   await expect(panel.getByTestId("property-block")).toHaveCount(0);
   await expect(card.getByTestId("property-block")).toHaveCount(0);
+  await panel.getByTestId("card-panel-tab-details").click();
   await expect(panel.getByLabel("Owner")).toHaveValue("Grace Hopper");
 });

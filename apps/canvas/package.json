@@ -14,6 +14,7 @@
   "dependencies": {
     "@loro-dev/flock": "^4.5.2",
     "@suite/graph": "workspace:*",
+    "@tiptap/extensions": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",

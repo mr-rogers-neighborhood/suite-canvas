@@ -202,6 +202,9 @@ importers:
       '@suite/graph':
         specifier: workspace:*
         version: link:../../packages/graph
+      '@tiptap/extensions':
+        specifier: ^3.32.0
+        version: 3.32.0(@tiptap/core@3.32.0(@tiptap/pm@3.32.0))(@tiptap/pm@3.32.0)
       '@tiptap/pm':
         specifier: ^3.32.0
         version: 3.32.0
@@ -296,6 +299,9 @@ importers:
       '@loro-dev/flock':
         specifier: ^4.5.2
         version: 4.5.2
+      '@suite/graph':
+        specifier: workspace:*
+        version: link:../../packages/graph
       loro-adaptors:
         specifier: ^0.6.1
         version: 0.6.1(@loro-dev/flock@4.5.2)(loro-crdt@1.16.4)(yjs@13.6.33)

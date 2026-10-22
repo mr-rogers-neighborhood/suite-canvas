@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getSession } from "../session/session";
 
 export interface ContextMenuState {
   x: number;
@@ -20,13 +21,6 @@ export type LibraryTab = "inbox" | "cards" | "trash";
 
 /** Which editor of one card holds the keystrokes; only one may be editable at a time. */
 export type EditingSurface = "canvas" | "panel";
-
-/**
- * Which panel owns a card's `editingSurface: "panel"` session. The inspector
- * and an expanded library row are both panels, and the surface alone cannot
- * tell them apart.
- */
-export type PanelOwner = "inspector" | "library";
 
 /** Library scope: the whole workspace, or the cards placed on the active board. */
 export type LibraryScope = "all" | "board";
@@ -52,6 +46,13 @@ const nextFocusTarget = (kind: FocusTarget["kind"], id: string, boardId: string)
 interface UiState {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
+  /**
+   * Share viewers render the same shell with every write path closed. It is UI
+   * state (not read from the session in each component) so tests and stories
+   * can render a read-only surface without a `?share=` URL.
+   */
+  readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
   libraryOpen: boolean;
   libraryTab: LibraryTab;
   selectedNodeIds: string[];
@@ -64,8 +65,6 @@ interface UiState {
   /** Which editor on the card has focus; titles come first for new cards. */
   editingField: "title" | "body";
   editingSurface: EditingSurface;
-  /** Panel that owns the current panel editing session, if any. */
-  panelOwner: PanelOwner | null;
   /** Card or section a surface asked to reveal; consumed once by the canvas. */
   focusTarget: FocusTarget | null;
   /** Card whose inspector panel is open, if any. */
@@ -99,7 +98,6 @@ interface UiState {
   stopEditing: () => void;
   setEditingField: (field: "title" | "body") => void;
   setEditingSurface: (surface: EditingSurface) => void;
-  setPanelOwner: (owner: PanelOwner | null) => void;
   focusCard: (cardId: string, boardId: string) => void;
   focusSection: (sectionId: string, boardId: string) => void;
   clearFocusTarget: () => void;
@@ -123,6 +121,8 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   activeBoardId: null,
+  readOnly: getSession().readOnly,
+  setReadOnly: (readOnly) => set({ readOnly }),
   libraryOpen: false,
   libraryTab: "inbox",
   selectedNodeIds: [],
@@ -132,7 +132,6 @@ export const useUiStore = create<UiState>((set) => ({
   editingNodeId: null,
   editingField: "body",
   editingSurface: "canvas",
-  panelOwner: null,
   focusTarget: null,
   inspectorNodeId: null,
   inspectorFieldId: null,
@@ -168,19 +167,10 @@ export const useUiStore = create<UiState>((set) => ({
   setEditingSection: (editingSectionId) => set({ editingSectionId }),
   setSelectedConnector: (selectedConnector) => set({ selectedConnector }),
   startEditing: (editingNodeId, editingField = "body", editingSurface = "canvas") =>
-    set({ editingNodeId, editingField, editingSurface }),
+    set((state) => (state.readOnly ? {} : { editingNodeId, editingField, editingSurface })),
   stopEditing: () => set({ editingNodeId: null, editingSurface: "canvas" }),
   setEditingField: (editingField) => set({ editingField }),
   setEditingSurface: (editingSurface) => set({ editingSurface }),
-  setPanelOwner: (panelOwner) =>
-    set((state) => ({
-      panelOwner,
-      // Changing panels ends the previous panel's session; the new owner has
-      // to start its own edit before an editor accepts keystrokes.
-      ...(state.panelOwner !== panelOwner && state.editingSurface === "panel"
-        ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
-        : {}),
-    })),
   focusCard: (cardId, boardId) => set({ focusTarget: nextFocusTarget("card", cardId, boardId) }),
   focusSection: (sectionId, boardId) =>
     set({ focusTarget: nextFocusTarget("section", sectionId, boardId) }),
@@ -197,9 +187,9 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       inspectorNodeId,
       inspectorFieldId: fieldId,
-      panelOwner: "inspector",
-      // A library row that was editable a moment ago must not keep a session.
-      ...(state.panelOwner === "library" && state.editingSurface === "panel"
+      // Opening another card's inspector ends the previous card's panel
+      // session; the panel has to start its own edit before accepting keys.
+      ...(state.editingSurface === "panel" && state.editingNodeId !== inspectorNodeId
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
         : {}),
       selectedNodeIds: [inspectorNodeId],
@@ -210,7 +200,6 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       inspectorNodeId: null,
       inspectorFieldId: null,
-      panelOwner: null,
       ...(state.editingSurface === "panel"
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
         : {}),

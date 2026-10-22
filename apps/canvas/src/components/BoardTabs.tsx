@@ -8,6 +8,8 @@ export interface BoardTabsProps {
   onCreate: () => void;
   onRename: (boardId: string, name: string) => void;
   onDeleteRequest: (boardId: string) => void;
+  /** Viewers may switch boards but not create, rename or delete them. */
+  readOnly?: boolean;
 }
 
 /** Board switcher in the app bar: one tab per board, plus create and delete. */
@@ -18,6 +20,7 @@ export function BoardTabs({
   onCreate,
   onRename,
   onDeleteRequest,
+  readOnly = false,
 }: BoardTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -54,7 +57,7 @@ export function BoardTabs({
                 aria-selected={active}
                 data-testid={`board-tab-${board.id}`}
                 data-active={active ? "true" : undefined}
-                title="Double-click to rename"
+                title={readOnly ? board.name : "Double-click to rename"}
                 className={`max-w-[140px] truncate rounded px-2 py-1 text-[12px] transition-colors ${
                   active
                     ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
@@ -62,6 +65,7 @@ export function BoardTabs({
                 }`}
                 onClick={() => onSelect(board.id)}
                 onDoubleClick={() => {
+                  if (readOnly) return;
                   setRenamingId(board.id);
                   setDraft(board.name);
                 }}
@@ -69,7 +73,7 @@ export function BoardTabs({
                 {board.name}
               </button>
             )}
-            {active ? (
+            {active && !readOnly ? (
               <button
                 type="button"
                 aria-label={`Delete ${board.name}`}
@@ -83,15 +87,17 @@ export function BoardTabs({
         );
       })}
 
-      <button
-        type="button"
-        aria-label="New board"
-        data-testid="board-create"
-        className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-        onClick={onCreate}
-      >
-        +
-      </button>
+      {readOnly ? null : (
+        <button
+          type="button"
+          aria-label="New board"
+          data-testid="board-create"
+          className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={onCreate}
+        >
+          +
+        </button>
+      )}
     </div>
   );
 }

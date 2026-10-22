@@ -47,6 +47,8 @@ export interface SectionLayerProps {
   onResize: (id: string, rect: Rect) => void;
   onResizeEnd: (id: string, rect: Rect) => void;
   onContextMenu: (event: React.MouseEvent, id: string) => void;
+  /** A viewer may select a section, never move, resize or rename it. */
+  readOnly?: boolean;
 }
 
 export function SectionLayer({
@@ -66,6 +68,7 @@ export function SectionLayer({
   onResize,
   onResizeEnd,
   onContextMenu,
+  readOnly = false,
 }: SectionLayerProps) {
   const { screenToFlowPosition } = useReactFlow();
   const { zoom } = useViewport();
@@ -161,7 +164,7 @@ export function SectionLayer({
     event.preventDefault();
     event.stopPropagation();
     onSelect(section.id);
-    if (editingSectionId === section.id) return;
+    if (readOnly || editingSectionId === section.id) return;
 
     const start = screenToFlowPosition({ x: event.clientX, y: event.clientY });
     const origin = { x: section.x, y: section.y };
@@ -180,7 +183,7 @@ export function SectionLayer({
   };
 
   const startResize = (event: React.PointerEvent, section: Section, direction: ResizeDirection) => {
-    if (event.button !== 0) return;
+    if (readOnly || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     onSelect(section.id);
@@ -317,6 +320,7 @@ export function SectionLayer({
                     aria-label={`Section: ${section.title || "Untitled section"}`}
                     onDoubleClick={(event) => {
                       event.stopPropagation();
+                      if (readOnly) return;
                       onStartRename(section.id);
                     }}
                   >
@@ -330,7 +334,7 @@ export function SectionLayer({
           })}
 
           {sections
-            .filter((section) => section.id === selectedSectionId)
+            .filter((section) => !readOnly && section.id === selectedSectionId)
             .flatMap((section) => {
               const rect = rectFor(section);
               return RESIZE_DIRECTIONS.map((direction) => {

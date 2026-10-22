@@ -196,11 +196,26 @@ export const Embedded: Story = {};
 
 export const Inspector: Story = { args: { variant: "inspector" } };
 
+/** A card with no body opens straight into Content, placeholder included. */
+export const EmptyBody: Story = {
+  args: { variant: "inspector", bodyEmpty: true, links: EMPTY_CARD_LINKS },
+};
+
 export const NoLinks: Story = {
   args: { links: EMPTY_CARD_LINKS },
 };
 
 export const EditingBody: Story = { args: { editing: "body" } };
+
+/** A share viewer: static values, inert out-of-share links, no edit affordances. */
+export const ReadOnly: Story = {
+  args: { variant: "inspector", readOnly: true },
+};
+
+/** The same surface with nothing to read yet: no placeholder invites typing. */
+export const ReadOnlyEmptyBody: Story = {
+  args: { variant: "inspector", readOnly: true, bodyEmpty: true, links: EMPTY_CARD_LINKS },
+};
 
 export const Unsorted: Story = {
   args: {

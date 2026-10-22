@@ -48,6 +48,8 @@ export interface NodeCardProps {
   editing?: EditingField | null;
   presence?: PresenceUser[];
   draggingPeers?: PresenceUser[];
+  /** Cards the dragging peer is moving, so the label can say "3 cards". */
+  draggingCount?: number;
   selectingPeers?: PresenceUser[];
   /** Peers currently resizing this card. */
   resizingPeers?: PresenceUser[];
@@ -86,6 +88,7 @@ export function NodeCard({
   editing = null,
   presence = [],
   draggingPeers = [],
+  draggingCount = 1,
   selectingPeers = [],
   resizingPeers = [],
   movingConnectorPeers = {},
@@ -282,7 +285,12 @@ export function NodeCard({
           />
         ) : null}
 
-        {activePeer ? <PeerNameTag user={activePeer} /> : null}
+        {activePeer ? (
+          <PeerNameTag
+            user={activePeer}
+            detail={draggingPeer && draggingCount > 1 ? `${draggingCount} cards` : undefined}
+          />
+        ) : null}
 
         <button
           type="button"

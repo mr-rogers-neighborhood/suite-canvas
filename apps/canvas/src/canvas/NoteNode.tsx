@@ -63,6 +63,17 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [peers, id],
   );
 
+  // Only the anchor carries the label; the count tells peers how many cards
+  // are moving with it.
+  const draggingCount = useMemo(() => {
+    for (const peer of peers) {
+      if (peer.dragging?.nodeId !== id) continue;
+      const count = peer.dragging.nodeIds?.length ?? 1;
+      if (count > 1) return count;
+    }
+    return 1;
+  }, [peers, id]);
+
   const movingConnectorPeers = useMemo<Record<string, ConnectorPeerState>>(() => {
     const result: Record<string, ConnectorPeerState> = {};
     for (const peer of peers) {
@@ -174,6 +185,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         editing={editingNodeId === id && editingSurface === "canvas" ? editingField : null}
         presence={presence}
         draggingPeers={draggingPeers}
+        draggingCount={draggingCount}
         selectingPeers={selectingPeers}
         resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}

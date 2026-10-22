@@ -285,6 +285,7 @@ test("a peer sees a multi-card drag and lands the same positions", async ({ brow
     })
     .toBeGreaterThan(80);
   await expect(pageB.getByTestId("peer-name-tag")).toHaveCount(1);
+  await expect(pageB.getByTestId("peer-name-tag")).toContainText("2 cards");
 
   await pageA.mouse.up();
   await expect(pageB.getByTestId("peer-name-tag")).toHaveCount(0);

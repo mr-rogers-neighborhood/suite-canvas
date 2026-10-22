@@ -1,8 +1,8 @@
 # ADR-0021: Card-level sharing is a per-card room, recorded but deferred
 
-- **Status:** accepted
+- **Status:** superseded for S1 by [ADR-0022](./0022-share-projection-links.md); the card-document split rationale remains future work
 - **Date:** 2026-10-22
-- **Related:** [ADR-0020](./0020-main-and-loro-plan-of-record.md), `docs/design-inspirations.md` §7
+- **Related:** [ADR-0020](./0020-main-and-loro-plan-of-record.md), [ADR-0022](./0022-share-projection-links.md), `docs/design-inspirations.md` §7
 
 ## Context
 

@@ -190,7 +190,7 @@ small manifest. Import validates the envelope, refuses a newer file/schema by na
 workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
 the open document. Portable JSON and Markdown exports are read-only projections of the same
 document; only the exact backup is an import format. Sharing is link-based: a workspace editor link
-is the ordinary workspace URL, and `?share=<token>` opens a reader ([ADR-0021](./decisions/0021-sharing-seam-deferred.md)).
+is the ordinary workspace URL, and `?share=<token>` opens a reader ([ADR-0022](./decisions/0022-share-projection-links.md)).
 
 ## Session start
 

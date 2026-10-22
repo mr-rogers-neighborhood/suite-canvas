@@ -95,6 +95,85 @@ async function marqueeSelectAll(page: Page): Promise<void> {
   await page.keyboard.up("Shift");
 }
 
+/**
+ * Shift-drag a band across the top of every card. The band only overlaps each
+ * card's header, so this exercises `SelectionMode.Partial` rather than a box
+ * that fully contains everything — the case that used to drop cards.
+ */
+async function marqueeAcrossCardTops(page: Page): Promise<void> {
+  const boxes = await cardBoxes(page);
+  const board = await page.getByTestId("canvas-board").boundingBox();
+  if (!board || boxes.length === 0) throw new Error("canvas not ready");
+
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const start = { x: left + 10, y: top - 18 };
+  const end = { x: right - 10, y: top + 28 };
+
+  const onPane = await page.evaluate(
+    ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest(".react-flow__pane")),
+    start,
+  );
+  if (!onPane) throw new Error("marquee start is not on the pane");
+
+  await page.keyboard.down("Shift");
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  // Few steps: a fast drag must not lose cards to a stale repaint either.
+  await page.mouse.move(end.x, end.y, { steps: 3 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+}
+
+test("shift-drag catches cards it only partly covers, repeatedly", async ({ page }) => {
+  await page.goto(workspaceUrl("marquee-partial"));
+  await expect(cards(page)).toHaveCount(2);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.keyboard.press("Escape");
+    await expect(selectedNodes(page)).toHaveCount(0);
+    await marqueeAcrossCardTops(page);
+    await expect(selectedNodes(page)).toHaveCount(2);
+  }
+});
+
+test("a peer sees the marquee while it is being drawn", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  const url = workspaceUrl("marquee-peer");
+
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(cards(pageA)).toHaveCount(2);
+  await expect(cards(pageB)).toHaveCount(2);
+
+  const boxes = await cardBoxes(pageA);
+  const top = Math.min(...boxes.map((box) => box.y));
+  const left = Math.min(...boxes.map((box) => box.x));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+
+  await pageA.keyboard.down("Shift");
+  await pageA.mouse.move(left + 10, top - 18);
+  await pageA.mouse.down();
+  await pageA.mouse.move(right - 10, top + 40, { steps: 8 });
+
+  const peerBox = pageB.getByTestId("peer-selection-box");
+  await expect(peerBox).toHaveCount(1);
+  const colour = await peerBox.evaluate((element) => getComputedStyle(element).borderColor);
+  expect(colour).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(peerBox.getByTestId("peer-name-tag")).toBeVisible();
+
+  await pageA.mouse.up();
+  await pageA.keyboard.up("Shift");
+  await expect(peerBox).toHaveCount(0);
+
+  await contextA.close();
+  await contextB.close();
+});
+
 /** Largest gap between two position lists, so assertions can allow sub-pixels. */
 function maxDelta(left: readonly Box[], right: readonly Box[]): number {
   let delta = 0;
@@ -265,7 +344,9 @@ test("a peer sees a multi-card drag and lands the same positions", async ({ brow
   await expect(cards(pageA)).toHaveCount(2);
   await expect(cards(pageB)).toHaveCount(2);
 
-  await pageA.keyboard.press("Control+a");
+  // Select with the marquee (not Ctrl+A): the gesture a user actually performs
+  // before dragging a group, and the one whose live motion peers must see.
+  await marqueeAcrossCardTops(pageA);
   await expect(selectedNodes(pageA)).toHaveCount(2);
 
   const beforeB = await cardBoxes(pageB);
@@ -284,10 +365,20 @@ test("a peer sees a multi-card drag and lands the same positions", async ({ brow
       return Math.min(...during.map((box, index) => Math.round(box.x - (beforeB[index]?.x ?? 0))));
     })
     .toBeGreaterThan(80);
-  await expect(pageB.getByTestId("peer-name-tag")).toHaveCount(1);
-  await expect(pageB.getByTestId("peer-name-tag")).toContainText("2 cards");
+  // Mid-gesture, before any CRDT write: both cards have already moved.
+  const duringB = await cardBoxes(pageB);
+  for (const [index, box] of duringB.entries()) {
+    expect(Math.round(box.x - (beforeB[index]?.x ?? 0))).toBeGreaterThan(80);
+    expect(Math.round(box.y - (beforeB[index]?.y ?? 0))).toBeGreaterThan(60);
+  }
+  // The chip rides the group outline, not the card under the pointer.
+  const group = pageB.getByTestId("peer-drag-group");
+  await expect(group).toHaveCount(1);
+  await expect(group.getByTestId("peer-name-tag")).toContainText("2 cards");
+  await expect(cards(pageB).first().getByTestId("peer-name-tag")).toHaveCount(0);
 
   await pageA.mouse.up();
+  await expect(group).toHaveCount(0);
   await expect(pageB.getByTestId("peer-name-tag")).toHaveCount(0);
 
   // After release the peer's document matches the local one card for card.

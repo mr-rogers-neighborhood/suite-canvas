@@ -63,16 +63,14 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [peers, id],
   );
 
-  // Only the anchor carries the label; the count tells peers how many cards
-  // are moving with it.
-  const draggingCount = useMemo(() => {
-    for (const peer of peers) {
-      if (peer.dragging?.nodeId !== id) continue;
-      const count = peer.dragging.nodeIds?.length ?? 1;
-      if (count > 1) return count;
-    }
-    return 1;
-  }, [peers, id]);
+  // A multi-card drag labels its group outline, not the card under the pointer.
+  const draggingGroup = useMemo(
+    () =>
+      peers.some(
+        (peer) => peer.dragging?.nodeId === id && (peer.dragging.nodeIds?.length ?? 0) > 1,
+      ),
+    [peers, id],
+  );
 
   const movingConnectorPeers = useMemo<Record<string, ConnectorPeerState>>(() => {
     const result: Record<string, ConnectorPeerState> = {};
@@ -185,7 +183,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         editing={editingNodeId === id && editingSurface === "canvas" ? editingField : null}
         presence={presence}
         draggingPeers={draggingPeers}
-        draggingCount={draggingCount}
+        showDragLabel={!draggingGroup}
         selectingPeers={selectingPeers}
         resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}

@@ -15,6 +15,7 @@ import {
   type ResizingState,
   type SectionDragState,
   type SectionResizeState,
+  type SelectionBoxState,
   type SelectionState,
 } from "./presence";
 import { TAB_ID } from "./tabId";
@@ -31,6 +32,7 @@ interface PresenceState {
   setFocus: (focus: FocusState | null) => void;
   setDragging: (dragging: DraggingState | null) => void;
   setSelection: (selection: SelectionState | null) => void;
+  setSelectionBox: (box: SelectionBoxState | null) => void;
   setMovingConnector: (connector: ConnectorState | null) => void;
   setResizing: (resizing: ResizingState | null) => void;
   setSectionDrag: (section: SectionDragState | null) => void;
@@ -63,6 +65,7 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     AWARENESS_FIELDS.sectionResize,
     AWARENESS_FIELDS.reconnect,
     AWARENESS_FIELDS.connect,
+    AWARENESS_FIELDS.selectionBox,
   ] as const;
 
   const hasLocalInteraction = () =>
@@ -135,6 +138,11 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       publish(AWARENESS_FIELDS.dragging, null);
     },
     setSelection: (selection) => publish(AWARENESS_FIELDS.selection, selection),
+    setSelectionBox: (box) => {
+      publish(AWARENESS_FIELDS.selectionBox, box);
+      // The marquee is a gesture: the arrow would only clutter the box.
+      if (box) clearPointer();
+    },
     setMovingConnector: (connector) => {
       publish(AWARENESS_FIELDS.connector, connector);
       if (connector) clearPointer();

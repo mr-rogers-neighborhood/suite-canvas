@@ -52,6 +52,7 @@ function peer(
       : null,
     reconnect: null,
     connect: null,
+    selectionBox: null,
   };
 }
 

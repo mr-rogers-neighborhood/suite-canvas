@@ -358,8 +358,10 @@ rather than surrounding it with chrome.
   boards it is placed on) and the body editor. A click opens it; clicking the body or title edits it
   in place, with the same caret peers see on the canvas. Relations and backlinks join it next.
 - **Multi-selection** *(current)*: Shift or Ctrl/Cmd toggles, Shift-drag marquees, `Cmd/Ctrl+A`
-  selects the board. Moving a selection is one commit and one undo step, collaborators see every
-  ring and one drag label, and right-clicking a selection offers "New section from N cards".
+  selects the board. Moving a selection is one commit and one undo step; right-clicking a selection
+  offers "New section from N cards". Collaborators see the marquee as it is drawn and, while the
+  group moves, a dashed outline carrying the dragger's chip (`Name · N cards`) instead of a label
+  on one card.
 
 - **Backlinks** *(target)*: derived from relations, split into incoming and outgoing, naming the
   board(s) where each relation is drawn; clicking one navigates to the card.

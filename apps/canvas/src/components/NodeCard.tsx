@@ -48,8 +48,11 @@ export interface NodeCardProps {
   editing?: EditingField | null;
   presence?: PresenceUser[];
   draggingPeers?: PresenceUser[];
-  /** Cards the dragging peer is moving, so the label can say "3 cards". */
-  draggingCount?: number;
+  /**
+   * Whether the dragging peer's name tag belongs on this card. A multi-card
+   * drag carries its chip on the group outline instead.
+   */
+  showDragLabel?: boolean;
   selectingPeers?: PresenceUser[];
   /** Peers currently resizing this card. */
   resizingPeers?: PresenceUser[];
@@ -88,7 +91,7 @@ export function NodeCard({
   editing = null,
   presence = [],
   draggingPeers = [],
-  draggingCount = 1,
+  showDragLabel = true,
   selectingPeers = [],
   resizingPeers = [],
   movingConnectorPeers = {},
@@ -285,11 +288,8 @@ export function NodeCard({
           />
         ) : null}
 
-        {activePeer ? (
-          <PeerNameTag
-            user={activePeer}
-            detail={draggingPeer && draggingCount > 1 ? `${draggingCount} cards` : undefined}
-          />
+        {activePeer && (activePeer !== draggingPeer || showDragLabel) ? (
+          <PeerNameTag user={activePeer} />
         ) : null}
 
         <button

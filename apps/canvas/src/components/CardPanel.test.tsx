@@ -194,6 +194,7 @@ describe("CardPanel", () => {
           focus: { nodeId: "n1", field: "body" },
           dragging: null,
           selection: null,
+          selectionBox: null,
           connector: null,
           resizing: null,
           sectionDrag: null,

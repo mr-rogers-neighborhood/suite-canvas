@@ -49,6 +49,14 @@ export interface ConnectorState {
   position?: { x: number; y: number };
 }
 
+/** A live marquee a peer is dragging, in flow units. */
+export interface SelectionBoxState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** A section a peer is dragging, with its live top-left in flow units. */
 export interface SectionDragState {
   sectionId: string;
@@ -107,6 +115,7 @@ export const AWARENESS_FIELDS = {
   focus: "focus",
   dragging: "dragging",
   selection: "selection",
+  selectionBox: "selectionBox",
   connector: "connector",
   resizing: "resizing",
   sectionDrag: "sectionDrag",
@@ -124,6 +133,8 @@ export interface PeerPresence {
   focus: FocusState | null;
   dragging: DraggingState | null;
   selection: SelectionState | null;
+  /** Marquee a peer is drawing right now, so collaborators see the gesture. */
+  selectionBox: SelectionBoxState | null;
   connector: ConnectorState | null;
   resizing: ResizingState | null;
   sectionDrag: SectionDragState | null;
@@ -142,6 +153,7 @@ export function peerIsInteracting(peer: PeerPresence): boolean {
       peer.sectionResize ||
       peer.connector ||
       peer.reconnect ||
-      peer.connect,
+      peer.connect ||
+      peer.selectionBox,
   );
 }

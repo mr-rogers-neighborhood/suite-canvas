@@ -353,6 +353,40 @@ body {
   transform-origin: left center;
 }
 
+/* A peer's live marquee, drawn in flow space inside the viewport portal. */
+.peer-selection-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* The same gesture once the marquee has closed: the group being dragged. */
+.peer-drag-group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 1px dashed currentColor;
+  border-radius: 6px;
+  pointer-events: none;
+  transition:
+    transform 60ms linear,
+    width 60ms linear,
+    height 60ms linear;
+}
+
+.peer-selection-box__tag {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  display: block;
+  transform-origin: left top;
+  translate: 0 -100%;
+  pointer-events: none;
+}
+
 [data-testid="peer-cursor"] {
   animation: peer-cursor-in 140ms ease-out;
 }

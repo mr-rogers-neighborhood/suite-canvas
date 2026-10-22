@@ -348,6 +348,11 @@ edges, their interaction strokes, and the reconnect handles. Without it the reco
   `nodeIds`; peers derive the other members from their stored placements plus the anchor delta,
   the same way a section drag is derived. Peer selection rings need no extra work because
   `selection.nodeIds` is already a list.
+- **The selection gesture is visible.** A live marquee publishes `selectionBox` (flow coordinates,
+  throttled like a drag); peers draw it in the dragger's colour with their name chip. Once the box
+  closes and the group is dragged, the chip moves onto a dashed **group outline** derived from
+  `dragging.nodeIds`, so it never sits on one card of a set that is moving together. Both expire
+  with the gesture TTL.
 
 ## Orientation
 

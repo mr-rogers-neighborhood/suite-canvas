@@ -19,6 +19,7 @@ import {
   useNodesState,
   useOnSelectionChange,
   useReactFlow,
+  useStore,
   useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -156,6 +157,7 @@ export function CanvasBoard() {
   const setPointer = usePresenceStore((state) => state.setPointer);
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);
+  const setSelectionBox = usePresenceStore((state) => state.setSelectionBox);
   const setReconnect = usePresenceStore((state) => state.setReconnect);
   const setConnect = usePresenceStore((state) => state.setConnect);
   const setSectionDragPresence = usePresenceStore((state) => state.setSectionDrag);
@@ -315,6 +317,12 @@ export function CanvasBoard() {
    * value wins.
    */
   const paintedSelection = useRef(selectedKey);
+  /**
+   * React Flow owns the selection while a marquee runs. Repainting `selected`
+   * from the store mid-gesture makes the pane diff against a stale set and skip
+   * re-selecting a card that is still inside the box.
+   */
+  const marqueeActive = useRef(false);
 
   useEffect(() => {
     boardCardIds.current = boardOrder;
@@ -371,8 +379,8 @@ export function CanvasBoard() {
   const applyBoardNodes = useCallback(() => {
     // Computed once per pass: an unchanged key means React Flow's live selection
     // is the truth, a changed one means a surface asked for a different set.
-    const repaintSelection = selectedKey !== paintedSelection.current;
-    paintedSelection.current = selectedKey;
+    const repaintSelection = !marqueeActive.current && selectedKey !== paintedSelection.current;
+    if (!marqueeActive.current) paintedSelection.current = selectedKey;
     setNodes((current) => {
       const byId = new Map(current.map((node) => [node.id, node]));
       // Paint order comes from the sorted board list; ranks are fractional, so
@@ -495,6 +503,8 @@ export function CanvasBoard() {
     },
     [],
   );
+
+  useEffect(() => () => setSelectionBox(null), [setSelectionBox]);
 
   // Reveal a card or section a surface asked for. A request can land before the
   // board has rendered its nodes (switching boards rebuilds them on the next
@@ -629,6 +639,31 @@ export function CanvasBoard() {
     selectedSectionId,
     setPresenceSelection,
   ]);
+
+  // React Flow owns the marquee rectangle in screen space; publish it in flow
+  // coordinates so peers draw the same gesture in the dragger's colour.
+  const selectionRect = useStore((state) => state.userSelectionRect);
+  const lastBoxSent = useRef(0);
+  useEffect(() => {
+    if (!selectionRect) {
+      setSelectionBox(null);
+      return;
+    }
+    const now = performance.now();
+    if (now - lastBoxSent.current < DRAG_THROTTLE_MS) return;
+    lastBoxSent.current = now;
+    const start = screenToFlowPosition({ x: selectionRect.x, y: selectionRect.y });
+    const end = screenToFlowPosition({
+      x: selectionRect.x + selectionRect.width,
+      y: selectionRect.y + selectionRect.height,
+    });
+    setSelectionBox({
+      x: Math.min(start.x, end.x),
+      y: Math.min(start.y, end.y),
+      width: Math.abs(end.x - start.x),
+      height: Math.abs(end.y - start.y),
+    });
+  }, [selectionRect, screenToFlowPosition, setSelectionBox]);
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -1394,6 +1429,15 @@ export function CanvasBoard() {
         // card the box merely touches, which is what a card board should do.
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         selectionMode={SelectionMode.Partial}
+        onSelectionStart={() => {
+          marqueeActive.current = true;
+        }}
+        onSelectionEnd={() => {
+          marqueeActive.current = false;
+          // React Flow's final selection is authoritative; this re-aligns the
+          // store echo with what is on screen after the box closes.
+          applyBoardNodes();
+        }}
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}
         onConnectStart={onConnectStart}

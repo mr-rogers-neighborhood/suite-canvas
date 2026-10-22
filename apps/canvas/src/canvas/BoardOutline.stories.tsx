@@ -64,6 +64,7 @@ const peer: PeerPresence = {
   sectionResize: null,
   reconnect: null,
   connect: null,
+  selectionBox: null,
 };
 
 const meta = {

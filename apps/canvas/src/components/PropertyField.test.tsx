@@ -61,3 +61,81 @@ describe("PropertyField", () => {
     expect(isPropertyEmpty(0)).toBe(false);
   });
 });
+
+describe("PropertyField card kind", () => {
+  const pickerCards = [
+    { id: "c1", title: "Onboarding friction" },
+    { id: "c2", title: "Pricing page rewrite" },
+  ];
+  const cardField = field({ kind: "card", name: "Contradicts" });
+
+  it("should pick an existing card by title", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyField
+        field={cardField}
+        value={undefined}
+        onChange={onChange}
+        onClear={vi.fn()}
+        cards={pickerCards}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Contradicts"), { target: { value: "pricing" } });
+    fireEvent.click(screen.getByRole("option", { name: "Pricing page rewrite" }));
+
+    expect(onChange).toHaveBeenCalledWith("c2");
+  });
+
+  it("should select with the keyboard", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyField
+        field={cardField}
+        value={undefined}
+        onChange={onChange}
+        onClear={vi.fn()}
+        cards={pickerCards}
+      />,
+    );
+
+    const input = screen.getByLabelText("Contradicts");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).toHaveBeenCalledWith("c2");
+  });
+
+  it("should render a dangling value as unavailable", () => {
+    render(
+      <PropertyField
+        field={cardField}
+        value="purged-card"
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        cards={pickerCards}
+      />,
+    );
+
+    expect(screen.getByTestId("card-picker-selected")).toHaveTextContent("Unavailable card");
+  });
+
+  it("should clear a card value", () => {
+    const onClear = vi.fn();
+    render(
+      <PropertyField
+        field={cardField}
+        value="c1"
+        onChange={vi.fn()}
+        onClear={onClear}
+        cards={pickerCards}
+      />,
+    );
+
+    expect(screen.getByTestId("card-picker-selected")).toHaveTextContent("Onboarding friction");
+    fireEvent.click(screen.getByLabelText("Clear Contradicts"));
+
+    expect(onClear).toHaveBeenCalled();
+  });
+});

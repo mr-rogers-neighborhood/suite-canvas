@@ -9,7 +9,7 @@ import type {
   WorkspaceAction,
   WorkspaceChange,
 } from "@suite/graph";
-import { DEFAULT_TYPE_ID, placementKey } from "@suite/graph";
+import { DEFAULT_TYPE_ID, placementKey, sameTargets } from "@suite/graph";
 import type { WorkspaceSnapshot } from "./snapshotMerge";
 
 /**
@@ -209,6 +209,18 @@ export function applyWorkspaceChange(
         compareSections,
       );
       return sections === snapshot.sections ? snapshot : { ...snapshot, sections };
+    }
+    case "references": {
+      const targets = Array.isArray(change.value) ? [...change.value].sort() : [];
+      const existing = snapshot.references[change.key];
+      if (targets.length === 0) {
+        if (existing === undefined) return snapshot;
+        const references = { ...snapshot.references };
+        delete references[change.key];
+        return { ...snapshot, references };
+      }
+      if (existing !== undefined && sameTargets(existing, targets)) return snapshot;
+      return { ...snapshot, references: { ...snapshot.references, [change.key]: targets } };
     }
   }
 }

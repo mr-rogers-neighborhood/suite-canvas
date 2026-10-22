@@ -1,6 +1,11 @@
 import type { Card, GraphEdge, Placement } from "@suite/graph";
 import { describe, expect, it } from "vitest";
-import { mergeSnapshots, reuseArray, type WorkspaceSnapshot } from "./snapshotMerge";
+import {
+  mergeSnapshots,
+  reuseArray,
+  reuseReferences,
+  type WorkspaceSnapshot,
+} from "./snapshotMerge";
 
 const card = (id: string): Card => ({
   id,
@@ -45,6 +50,7 @@ function snapshot(cards: Card[], base?: WorkspaceSnapshot): WorkspaceSnapshot {
     types: base?.types ?? [],
     tags: base?.tags ?? [],
     sections: base?.sections ?? [],
+    references: base?.references ?? {},
   };
 }
 
@@ -86,5 +92,36 @@ describe("mergeSnapshots", () => {
   it("passes the first snapshot through", () => {
     const first = snapshot([card("a")]);
     expect(mergeSnapshots(undefined, first)).toBe(first);
+  });
+});
+
+describe("reuseReferences", () => {
+  it("reuses the whole object and each unchanged array", () => {
+    const targets = ["b"];
+    const previous = { a: targets };
+    const next = { a: ["b"] };
+
+    const merged = reuseReferences(previous, next);
+    expect(merged).toBe(previous);
+    expect(merged.a).toBe(targets);
+  });
+
+  it("keeps unchanged cards' arrays and replaces changed ones", () => {
+    const first = ["b"];
+    const previous = { a: first, b: ["a"] };
+    const merged = reuseReferences(previous, { a: ["b"], b: ["c"] });
+
+    expect(merged).not.toBe(previous);
+    expect(merged.a).toBe(first);
+    expect(merged.b).toEqual(["c"]);
+  });
+
+  it("drops removed cards and returns a new object", () => {
+    const previous = { a: ["b"], gone: ["a"] };
+    const merged = reuseReferences(previous, { a: ["b"] });
+
+    expect(merged).not.toBe(previous);
+    expect(Object.keys(merged)).toEqual(["a"]);
+    expect(merged.a).toBe(previous.a);
   });
 });

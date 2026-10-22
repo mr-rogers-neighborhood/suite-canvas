@@ -31,6 +31,10 @@ function formatValue(value: PropertyValue, field: FieldDefinition): string | nul
     }
     case "number":
       return typeof value === "number" ? String(value) : null;
+    case "card":
+      // The title lives in the target card; the panel resolves it, so the
+      // compact card face omits card-valued properties.
+      return null;
     case "date":
     case "text":
       return typeof value === "string" && value.trim() ? value : null;

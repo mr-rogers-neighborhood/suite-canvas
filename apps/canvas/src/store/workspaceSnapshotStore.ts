@@ -11,6 +11,7 @@ export function readWorkspace(workspace: WorkspaceDocument): WorkspaceSnapshot {
     types: workspace.listTypes(),
     tags: workspace.listTags(),
     sections: workspace.listSections(),
+    references: workspace.listReferences(),
   };
 }
 

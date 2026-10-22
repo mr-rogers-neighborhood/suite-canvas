@@ -2,7 +2,15 @@ import { z } from "zod";
 
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
-export const fieldKinds = ["text", "number", "date", "select", "multiSelect", "checkbox"] as const;
+export const fieldKinds = [
+  "text",
+  "number",
+  "date",
+  "select",
+  "multiSelect",
+  "checkbox",
+  "card",
+] as const;
 export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
 
 export const edgeKindSchema = z.enum(edgeKinds);
@@ -74,8 +82,10 @@ export const tagSchema = z.object({
 
 /**
  * A property value. The field definition decides how to read it: text/date/
- * select are strings, number is a number, checkbox is a boolean, and
- * multi-select is the list of selected option ids.
+ * select/card are strings, number is a number, checkbox is a boolean, and
+ * multi-select is the list of selected option ids. A `card` value is a card id
+ * that may point at a card that no longer exists; it renders as unavailable
+ * rather than failing validation.
  */
 export const propertyValueSchema = z.union([
   z.string(),

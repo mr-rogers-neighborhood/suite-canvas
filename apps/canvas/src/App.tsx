@@ -95,13 +95,17 @@ function WorkspaceShell() {
     // Starter types are structural, not sample data: every workspace has them,
     // and the note type is the fallback for cards with no type.
     workspace.ensureDefaultTypes();
-    if (workspace.hasSeeded()) return;
-    const board = workspace.ensureBoard();
-    if (workspace.listCards().length === 0) {
-      workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
-      workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
+    if (!workspace.hasSeeded()) {
+      const board = workspace.ensureBoard();
+      if (workspace.listCards().length === 0) {
+        workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
+        workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
+      }
+      workspace.markSeeded();
     }
-    workspace.markSeeded();
+    // The reference index is derived, so repairing it is safe and idempotent. It
+    // runs after the first sync so mentions that arrived offline are indexed too.
+    workspace.ensureReferences();
   }, [ready, synced, workspace]);
 
   // Resolve the board from the URL, falling back to the first one.

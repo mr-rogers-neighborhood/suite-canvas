@@ -1,4 +1,5 @@
 import { WorkspaceDocument } from "@suite/graph";
+import { LoroMap } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
 import { WorkspaceSnapshotStore, workspaceSnapshotStore } from "./workspaceSnapshotStore";
 
@@ -82,5 +83,26 @@ describe("WorkspaceSnapshotStore", () => {
     workspace.doc.getMap("content").delete("a");
     workspace.doc.commit({ origin: "test" });
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("should carry the derived reference index", async () => {
+    const { workspace } = setup();
+    const store = new WorkspaceSnapshotStore(workspace);
+    const content = workspace.getContent("a");
+    const children = content.ensureMergeableList("children");
+    const paragraph = children.insertContainer(children.length, new LoroMap());
+    paragraph.set("nodeName", "paragraph");
+    paragraph.ensureMergeableMap("attributes");
+    const mention = paragraph.ensureMergeableList("children").insertContainer(0, new LoroMap());
+    mention.set("nodeName", "mention");
+    mention.ensureMergeableMap("attributes").set("cardId", "b");
+    workspace.doc.commit({ origin: "text:body" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const references = store.getSnapshot().references;
+    expect(references).toEqual({ a: ["b"] });
+
+    store.refresh();
+    expect(store.getSnapshot().references.a).toBe(references.a);
   });
 });

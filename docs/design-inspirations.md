@@ -207,35 +207,36 @@ This is a deliberate exception to "rich text lives in card docs", not an acciden
   per tag id (`Y.Map<boolean>`), so concurrent add/remove of different tags never clobbers.
 - Tag names are unique case-insensitively; renaming a tag is one workspace write, not N card writes.
 
-### 4.4 Relations vs edge placements
+### 4.4 Drawings, references and relational properties
 
-The target mirrors cards/placements:
+Links serve two different needs, and Heptabase — the closest reference — keeps them separate:
 
-| Concept | Stores | Scope |
-| --- | --- | --- |
-| **Relation type** | `id`, `name`, `color`, directed/symmetric, allowed source and target types | Workspace |
-| **Relation** | `id`, `relationTypeId`, `fromCardId`, `toCardId`, optional typed properties, `createdAt` | Workspace |
-| **Edge placement** | `boardId`, `relationId`, `sourceConnector?`, `targetConnector?`, `path`, `label?`, `z` | Board |
+| Need | Mechanism | Scope | Where it appears |
+| --- | --- | --- | --- |
+| **"This leads to that"** | An arrow on a board with an optional free-text description | Board | Canvas; listed for both endpoints |
+| **"This note mentions that one"** | An `@` mention inside a card's title or body | Workspace | Backlinks in the card panel |
+| **"This card has a Contradicts value"** | A `card`-valued **property**, whose *name* is the semantics | Workspace | Card panel; filterable without opening a body |
 
-Relation types are workspace records rather than a hard-coded enum: "references", "relates to" and
-"tagged" become seeded relation types, and a user can add "contradicts" without a schema release.
+Heptabase's arrows are untyped (`v1.34.2` adds editing the connection *description*), their mentions
+produce block-level backlinks, and their **Relation Property** (`v1.30.0`) is exactly the property
+mechanism above. They ship no link-type registry, and a mention never draws a connection.
 
-Invariants:
+Decisions that follow:
 
-- A relation exists whether or not any board draws it. Unplacing a card from a board does not delete
-  a relation; it only suspends drawings whose endpoint is absent (the current "dormant edge"
-  behavior becomes a property of edge placements).
-- At most one edge placement per (board, relation), matching the card-placement rule. Two different
-  statements need two relations, not two drawings of one.
-- Deleting a relation deletes its edge placements. Deleting a board deletes only its edge
-  placements.
-- Several relations of different kinds may connect the same pair of cards.
-
-**This split is a later refactor.** Today's `edges` record is both statement and drawing, scoped to
-a board. The migration is mechanical: every current edge becomes a relation (endpoints, its `kind`
-mapped to a seeded relation type, `label`) plus an edge placement (`boardId`, connectors, `path`,
-`bidirectional` as an arrowhead option). We do not auto-deduplicate identical relations across
-boards during migration; a merge is an explicit user action.
+- **No relation types** ([ADR-0019](./decisions/0019-references-not-typed-links.md)). A type picker
+  only pays off once queries consume the types; until views exist it is a decision per link and an
+  invitation to constraints. Naming a property costs nothing and says more.
+- **Semantic links never create placements.** A mention, a property value or a backlink is a
+  reference. Only an explicit place action puts a card on a board.
+- **Backlinks are derived**, never stored beside the facts: mentions come from a derived, rebuildable
+  index; property links from scanning `card.properties`; arrows from `edges`; board/section
+  appearances from placements and derived membership. Caches are allowed only if discardable.
+- **A property block in the body is a view.** It stores a `fieldId`, renders the indexed value, and
+  writes through the same calls as the panel. Values never live in the rich text, or every filter and
+  dashboard would have to parse bodies.
+- **Arrows stay board-scoped.** The workspace-level statement is the reference (mention or
+  property); the arrow is a drawing of it on one board. If typed links ever earn their cost, a
+  `relationTypeId` can be added to `edges` as a field without a migration.
 
 ### 4.5 Boards, placements, sections, views
 
@@ -288,9 +289,10 @@ That failure is silent, which is why the rule is non-negotiable rather than a pr
    ambiguity. The migration path is `typeId` → `typeIds` with property values namespaced by field
    id; it is additive when it arrives.
 
-2. **Typed relations are the only semantic links.** A relation field is a typed view over relation
-   records, not a duplicated array of card ids in a property. Two stores would drift, and backlinks
-   would need reconciliation. Backlinks are always derived from the relation store.
+2. **Meaning lives in names, not in a link-type registry.** A property whose field is called
+   "Contradicts" says what a type picker would say, without a decision per link and without
+   constraints to maintain. Reference *facts* are content (an `@` mention) or a `card` property
+   value; backlinks are always derived from those, never mirrored onto a card.
 
 3. **Sections derive membership from geometry and never write card state.** A section is a rectangle
    on a board; membership is computed at read time from the card's header anchor. Dragging a card
@@ -305,10 +307,10 @@ That failure is silent, which is why the rule is non-negotiable rather than a pr
    result as tags/placements" is an explicit command, like section application. This is the
    Semantic Canvas lesson: projection is a deliberate act, not a side effect of layout.
 
-5. **Links are statements; board context is a placement.** "A references B" is workspace truth.
-   "A is wired to B on the Research board with a curved arrow" is a drawing. The same relation can be
-   drawn on several boards, or on none. Today this distinction is collapsed into `edges`; the target
-   model separates it.
+5. **A reference is workspace truth; an arrow is a drawing.** "A mentions B" or "A's Contradicts
+   property is B" exists with no board involved. "A is wired to B on the Research board with a
+   curved arrow" is a spatial act with an optional description, and it never implies a reference by
+   itself. Conversely, a reference never places a card anywhere.
 
 6. **Derived facts are never persisted as authority.** Home, section membership, view results,
    backlinks and display titles are computed. A stored copy is a cache with an invalidation problem

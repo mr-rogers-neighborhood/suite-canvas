@@ -1,11 +1,18 @@
 import type { FieldDefinition, PropertyValue } from "@suite/graph";
 import { useEffect, useState } from "react";
+import { CardPicker, type CardPickerOption } from "./CardPicker";
 
 export interface PropertyFieldProps {
   field: FieldDefinition;
   value: PropertyValue | undefined;
   onChange: (value: PropertyValue) => void;
   onClear: () => void;
+  /**
+   * Selectable cards for a `card` field. The panel passes the workspace's live
+   * cards with their display titles; omitting them leaves a stored value shown
+   * as unavailable rather than blocking the write.
+   */
+  cards?: readonly CardPickerOption[] | undefined;
 }
 
 const inputClass =
@@ -57,7 +64,7 @@ function DraftInput({
   );
 }
 
-export function PropertyField({ field, value, onChange, onClear }: PropertyFieldProps) {
+export function PropertyField({ field, value, onChange, onClear, cards }: PropertyFieldProps) {
   switch (field.kind) {
     case "text":
       return (
@@ -104,6 +111,16 @@ export function PropertyField({ field, value, onChange, onClear }: PropertyField
             if (event.target.checked) onChange(true);
             else onClear();
           }}
+        />
+      );
+    case "card":
+      return (
+        <CardPicker
+          cards={cards ?? []}
+          label={field.name}
+          value={asString(value) || undefined}
+          onChange={(cardId) => onChange(cardId)}
+          onClear={onClear}
         />
       );
     case "select":

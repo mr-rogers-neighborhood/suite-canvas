@@ -15,6 +15,7 @@ import {
   nextFreeAnchor,
   snapToAnchor,
 } from "../connectors.js";
+import { mentionTargets, sameTargets } from "../references.js";
 import {
   type Board,
   boardSchema,
@@ -46,7 +47,8 @@ export type WorkspaceSection =
   | "edges"
   | "types"
   | "tags"
-  | "sections";
+  | "sections"
+  | "references";
 export type WorkspaceAction = "add" | "update" | "delete";
 export type LayerAction = "forward" | "front" | "backward" | "back";
 
@@ -54,7 +56,8 @@ export interface WorkspaceChange {
   section: WorkspaceSection;
   action: WorkspaceAction;
   key: string;
-  value: Board | Card | Placement | GraphEdge | CardType | Tag | Section | null;
+  /** `references` changes carry the card's sorted target ids instead of a record. */
+  value: Board | Card | Placement | GraphEdge | CardType | Tag | Section | string[] | null;
 }
 
 /** Shared text containers for one card, stable until the cards map changes. */
@@ -110,6 +113,9 @@ export interface PlacementMoveInput {
 
 const placementMoveSchema = placementSchema.pick({ cardId: true, x: true, y: true });
 
+/** Shared empty target list; reference arrays are read-only to callers. */
+const NO_REFERENCES: string[] = [];
+
 export interface CreateSectionInput {
   id?: string;
   boardId: string;
@@ -133,6 +139,11 @@ export const CONNECTORS_FIELD = "connectors";
 /** Origin prefixes that keep text/editor history out of the structural undo stack. */
 export const TEXT_ORIGIN_PREFIX = "loroSyncPlugin";
 export const INIT_ORIGIN = "sys:init";
+/**
+ * Origin of derived reference-index writes. Excluded from both undo stacks: the
+ * index is rebuilt from content, so reverting it would make it lie.
+ */
+export const INDEX_ORIGIN = "struct:index-refs";
 const STRUCT_ORIGIN = "struct:";
 
 export function placementKey(boardId: string, cardId: string): string {
@@ -401,6 +412,10 @@ function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void
     case "date":
       if (typeof value !== "string") fail("a string");
       return;
+    case "card":
+      // Soft validation: the target may be trashed or purged already.
+      if (typeof value !== "string" || value.trim().length === 0) fail("a card id");
+      return;
     case "number":
       if (typeof value !== "number" || !Number.isFinite(value)) fail("a finite number");
       return;
@@ -476,6 +491,7 @@ export class WorkspaceDocument {
   static readonly SECTIONS_KEY = "sections";
   static readonly CONTENT_KEY = "content";
   static readonly TITLES_KEY = "titles";
+  static readonly REFERENCES_KEY = "references";
   static readonly META_KEY = "meta";
 
   readonly doc: LoroDoc;
@@ -488,6 +504,7 @@ export class WorkspaceDocument {
   private readonly sections: LoroMap;
   private readonly content: LoroMap;
   private readonly titles: LoroMap;
+  private readonly references: LoroMap;
   private readonly meta: LoroMap;
   private readonly cardCache = new Map<string, Card>();
   private readonly placementCache = new Map<string, Placement>();
@@ -496,6 +513,9 @@ export class WorkspaceDocument {
   private readonly typeCache = new Map<string, CardType>();
   private readonly tagCache = new Map<string, Tag>();
   private readonly sectionCache = new Map<string, Section>();
+  private readonly referenceCache = new Map<string, string[]>();
+  private readonly pendingReferences = new Set<string>();
+  private referencesScheduled = false;
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
@@ -514,6 +534,7 @@ export class WorkspaceDocument {
     this.sections = doc.getMap(WorkspaceDocument.SECTIONS_KEY);
     this.content = doc.getMap(WorkspaceDocument.CONTENT_KEY);
     this.titles = doc.getMap(WorkspaceDocument.TITLES_KEY);
+    this.references = doc.getMap(WorkspaceDocument.REFERENCES_KEY);
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
     this.known = {
       boards: new Set(this.boards.keys()),
@@ -523,6 +544,7 @@ export class WorkspaceDocument {
       types: new Set(this.types.keys()),
       tags: new Set(this.tags.keys()),
       sections: new Set(this.sections.keys()),
+      references: new Set(this.references.keys()),
     };
 
     doc.subscribe((batch) => {
@@ -545,7 +567,8 @@ export class WorkspaceDocument {
           root !== WorkspaceDocument.EDGES_KEY &&
           root !== WorkspaceDocument.TYPES_KEY &&
           root !== WorkspaceDocument.TAGS_KEY &&
-          root !== WorkspaceDocument.SECTIONS_KEY
+          root !== WorkspaceDocument.SECTIONS_KEY &&
+          root !== WorkspaceDocument.REFERENCES_KEY
         ) {
           continue;
         }
@@ -573,6 +596,12 @@ export class WorkspaceDocument {
         const titles = this.titleListeners.get(cardId);
         if (titles) for (const listener of titles) listener();
       }
+      // Derived index: re-parse every card whose text changed. Our own index
+      // writes are skipped so a write cannot schedule another one.
+      if (containers.size > 0 && batch.origin !== INDEX_ORIGIN) {
+        for (const cardId of containers) this.pendingReferences.add(cardId);
+        this.scheduleReferences();
+      }
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {
         for (const key of keys) {
@@ -595,7 +624,7 @@ export class WorkspaceDocument {
     this.undoManager = new UndoManager(doc, {
       mergeInterval: 0,
       maxUndoSteps: 100,
-      excludeOriginPrefixes: [TEXT_ORIGIN_PREFIX, INIT_ORIGIN, "text:"],
+      excludeOriginPrefixes: [TEXT_ORIGIN_PREFIX, INIT_ORIGIN, "text:", INDEX_ORIGIN],
     });
   }
 
@@ -626,6 +655,9 @@ export class WorkspaceDocument {
       case "sections":
         this.sectionCache.delete(key);
         break;
+      case "references":
+        this.referenceCache.delete(key);
+        break;
     }
   }
 
@@ -645,9 +677,12 @@ export class WorkspaceDocument {
         return this.getTag(key) ?? null;
       case "sections":
         return this.getSection(key) ?? null;
+      case "references": {
+        const targets = this.referencesFor(key);
+        return targets.length > 0 ? targets : null;
+      }
     }
   }
-
   undo(): void {
     this.undoManager.undo();
   }
@@ -1386,6 +1421,9 @@ export class WorkspaceDocument {
     for (const edge of edges) this.edges.delete(edge.id);
     this.content.delete(id);
     this.titles.delete(id);
+    // The card's own outgoing refs are derived from content that is gone;
+    // other cards keep their dangling ids on purpose.
+    this.references.delete(id);
     this.commit(`${STRUCT_ORIGIN}purge-card`);
   }
 
@@ -1465,6 +1503,113 @@ export class WorkspaceDocument {
     if (title) return title;
     const body = firstLine(textOf(this.peekContent(cardId)));
     return body || "Untitled";
+  }
+
+  // ----------------------------------------------------------- references
+
+  /**
+   * Outgoing reference ids for a card, sorted. Identity-stable until the set
+   * changes; callers must not mutate the returned array.
+   */
+  referencesFor(cardId: string): string[] {
+    const cached = this.referenceCache.get(cardId);
+    if (cached) return cached;
+    const value = this.references.get(cardId);
+    const targets = isMap(value) ? value.keys().sort() : NO_REFERENCES;
+    this.referenceCache.set(cardId, targets);
+    return targets;
+  }
+
+  /** The derived index in the shape the snapshot consumes. */
+  listReferences(): Record<string, string[]> {
+    const index: Record<string, string[]> = {};
+    for (const cardId of this.references.keys()) {
+      const targets = this.referencesFor(cardId);
+      if (targets.length > 0) index[cardId] = targets;
+    }
+    return index;
+  }
+
+  /** Plain text of a card's body, for backlink snippets. Never indexed. */
+  cardText(cardId: string): string {
+    return textOf(this.peekContent(cardId));
+  }
+
+  /** What the card's title and body mention right now, ignoring the index. */
+  private contentTargets(cardId: string): string[] {
+    return mentionTargets([this.peekTitle(cardId), this.peekContent(cardId)]);
+  }
+
+  private storedTargets(cardId: string): string[] {
+    const value = this.references.get(cardId);
+    return isMap(value) ? value.keys() : NO_REFERENCES;
+  }
+
+  /**
+   * Repairs entries whose stored set disagrees with their content. Idempotent:
+   * a second call writes nothing. Safe to run on every client after the first
+   * sync, which is what makes the index converge without coordination.
+   */
+  ensureReferences(): number {
+    const changed: Array<[string, string[]]> = [];
+    for (const card of this.listCards()) {
+      const targets = this.contentTargets(card.id);
+      if (!sameTargets(this.storedTargets(card.id), targets)) changed.push([card.id, targets]);
+    }
+    if (changed.length === 0) return 0;
+    this.writeReferences(changed);
+    return changed.length;
+  }
+
+  /** Rewrites every card's entry and drops entries for cards that are gone. */
+  rebuildReferences(): number {
+    const entries = this.listCards().map(
+      (card) => [card.id, this.contentTargets(card.id)] as [string, string[]],
+    );
+    const wanted = new Set(entries.map(([cardId]) => cardId));
+    const stale = this.references.keys().filter((cardId) => !wanted.has(cardId));
+    this.writeReferences(entries, stale);
+    return entries.length;
+  }
+
+  /** One commit for any number of cards, so the index is never half-written. */
+  private writeReferences(entries: Array<[string, string[]]>, remove: string[] = []): void {
+    for (const cardId of remove) {
+      if (this.references.get(cardId) !== undefined) this.references.delete(cardId);
+    }
+    for (const [cardId, targets] of entries) {
+      if (targets.length === 0) {
+        if (this.references.get(cardId) !== undefined) this.references.delete(cardId);
+        continue;
+      }
+      const map = this.references.ensureMergeableMap(cardId);
+      const wanted = new Set(targets);
+      for (const key of map.keys()) {
+        if (!wanted.has(key)) map.delete(key);
+      }
+      for (const key of targets) {
+        if (!map.get(key)) map.set(key, true);
+      }
+    }
+    this.doc.commit({ origin: INDEX_ORIGIN });
+  }
+
+  /** Coalesces a burst of text edits into one re-parse per card. */
+  private scheduleReferences(): void {
+    if (this.referencesScheduled) return;
+    this.referencesScheduled = true;
+    queueMicrotask(() => {
+      this.referencesScheduled = false;
+      const pending = [...this.pendingReferences];
+      this.pendingReferences.clear();
+      const changed: Array<[string, string[]]> = [];
+      for (const cardId of pending) {
+        if (!this.getCard(cardId)) continue;
+        const targets = this.contentTargets(cardId);
+        if (!sameTargets(this.storedTargets(cardId), targets)) changed.push([cardId, targets]);
+      }
+      if (changed.length > 0) this.writeReferences(changed);
+    });
   }
 
   private cardMemberships(
@@ -1571,11 +1716,19 @@ export class WorkspaceDocument {
     return undefined;
   }
 
-  setProperty(cardId: string, fieldId: string, value: PropertyValue): void {
+  /**
+   * Writes one property value. `null` clears the key, the same as
+   * `clearProperty`, so a picker can commit either gesture with one call.
+   */
+  setProperty(cardId: string, fieldId: string, value: PropertyValue | null): void {
     const card = this.getCard(cardId);
     if (!card) throw new Error(`Unknown card: ${cardId}`);
     const field = this.fieldForCard(card, fieldId);
     if (!field) throw new Error(`Unknown field on this card: ${fieldId}`);
+    if (value === null) {
+      this.clearProperty(cardId, fieldId);
+      return;
+    }
     assertPropertyValue(field, value);
     this.mutateCard(cardId, (fields) => {
       const properties = fields.ensureMergeableMap("properties");

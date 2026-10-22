@@ -24,6 +24,7 @@ export {
   cardTypeFromMap,
   DEFAULT_BOARD_ID,
   fieldFromMap,
+  INDEX_ORIGIN,
   normalizeCard,
   placementKey,
   SCHEMA_VERSION,
@@ -31,6 +32,22 @@ export {
   tagFromMap,
   WorkspaceDocument,
 } from "./loro/WorkspaceDocument.js";
+export type {
+  ArrowSource,
+  PropertySource,
+  ReferenceCountInput,
+  ReferenceIndex,
+} from "./references.js";
+export {
+  arrowSources,
+  incomingReferences,
+  MENTION_NODE_NAME,
+  mentionTargets,
+  outgoingReferences,
+  propertySources,
+  referenceCount,
+  sameTargets,
+} from "./references.js";
 export type {
   Board,
   Card,

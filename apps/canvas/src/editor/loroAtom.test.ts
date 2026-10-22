@@ -1,7 +1,13 @@
 import { type Node as PMNode, Schema } from "@tiptap/pm/model";
 import { EditorState } from "@tiptap/pm/state";
 import { LoroDoc } from "loro-crdt";
-import { createNodeFromLoroObj, ROOT_DOC_KEY, updateLoroToPmState } from "loro-prosemirror";
+import {
+  createNodeFromLoroObj,
+  type LoroDocType,
+  type LoroNode,
+  ROOT_DOC_KEY,
+  updateLoroToPmState,
+} from "loro-prosemirror";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -31,12 +37,18 @@ const docWith = (children: PMNode[]) => schema.node("doc", null, children);
 
 function push(doc: LoroDoc, pmDoc: PMNode): void {
   const state = EditorState.create({ schema, doc: pmDoc });
-  updateLoroToPmState(doc, new Map(), state, undefined, "text:body");
+  // `loro-prosemirror` types the document as its own generic container shape;
+  // a plain LoroDoc is the same runtime object.
+  updateLoroToPmState(doc as unknown as LoroDocType, new Map(), state, undefined, "text:body");
 }
 
 /** Reads the document back the way a peer's editor would after an import. */
 function pull(doc: LoroDoc): PMNode {
-  return createNodeFromLoroObj(schema, doc.getMap(ROOT_DOC_KEY), new Map()) as PMNode;
+  return createNodeFromLoroObj(
+    schema,
+    doc.getMap(ROOT_DOC_KEY) as unknown as LoroNode,
+    new Map(),
+  ) as PMNode;
 }
 
 describe("loro atom nodes", () => {

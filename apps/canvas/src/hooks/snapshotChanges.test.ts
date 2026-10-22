@@ -64,6 +64,7 @@ function snapshot(overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot
     types: [],
     tags: [],
     sections: [],
+    references: {},
     ...overrides,
   };
 }
@@ -306,6 +307,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       types: workspace.listTypes(),
       tags: workspace.listTags(),
       sections: workspace.listSections(),
+      references: workspace.listReferences(),
     });
 
     let snapshot = read();
@@ -354,6 +356,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       types: remote.listTypes(),
       tags: remote.listTags(),
       sections: remote.listSections(),
+      references: remote.listReferences(),
     });
 
     let snapshot = read();
@@ -369,5 +372,56 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
 
     expect(snapshot).toEqual(read());
     expect(snapshot.placements[0]).toMatchObject({ x: 12, y: 34 });
+  });
+});
+
+describe("applyWorkspaceChange references", () => {
+  it("should add, re-sort and remove reference lists", () => {
+    const base = snapshot();
+    const added = applyWorkspaceChange(base, {
+      section: "references",
+      action: "add",
+      key: "a",
+      value: ["b"],
+    });
+    expect(added.references).toEqual({ a: ["b"] });
+
+    const unchanged = applyWorkspaceChange(added, {
+      section: "references",
+      action: "update",
+      key: "a",
+      value: ["b"],
+    });
+    expect(unchanged).toBe(added);
+
+    const updated = applyWorkspaceChange(added, {
+      section: "references",
+      action: "update",
+      key: "a",
+      value: ["c", "b"],
+    });
+    expect(updated.references).toEqual({ a: ["b", "c"] });
+    expect(updated.boards).toBe(base.boards);
+
+    const removed = applyWorkspaceChange(updated, {
+      section: "references",
+      action: "delete",
+      key: "a",
+      value: null,
+    });
+    expect(removed.references).toEqual({});
+  });
+
+  it("should keep other cards' reference arrays identical", () => {
+    const base = snapshot({ references: { a: ["b"] } });
+    const next = applyWorkspaceChange(base, {
+      section: "references",
+      action: "add",
+      key: "c",
+      value: ["b"],
+    });
+
+    expect(next.references.a).toBe(base.references.a);
+    expect(next.references.c).toEqual(["b"]);
   });
 });

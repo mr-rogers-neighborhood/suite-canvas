@@ -16,7 +16,7 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
@@ -517,6 +517,7 @@ export function CardPanel({
     : {};
 
   const inspector = variant === "inspector";
+  const cardIds = useMemo(() => new Set(cards.map((entry) => entry.id)), [cards]);
   const hasLinks = links.incoming.length + links.outgoing.length > 0;
 
   return (
@@ -637,7 +638,7 @@ export function CardPanel({
                   ) : null}
                   {group.map(({ field }) => {
                     const value = card.properties[field.id];
-                    const missing = field.required && isPropertyEmpty(value);
+                    const missing = field.required && isPropertyEmpty(value, field, cardIds);
                     return (
                       <div
                         key={field.id}
@@ -659,6 +660,7 @@ export function CardPanel({
                           field={field}
                           value={value}
                           cards={cards}
+                          excludeCardId={card.id}
                           onChange={(next) => onSetProperty(field.id, next)}
                           onClear={() => onClearProperty(field.id)}
                         />

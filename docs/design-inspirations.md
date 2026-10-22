@@ -562,6 +562,8 @@ every web concern lives where it belongs.
 - **Free-text descriptions on drawn links**, edited by double-click or the edge menu *(current)*
 - **`/` insert menu** over the existing nodes plus mentions, and **property blocks** that render a field's value in the body as a view *(current)*
 - **Per-field display templates** for mentions and property blocks, with a per-mention override and a reset to the field style *(current)*
+- **Workspace launcher** at `/`, with recent workspaces, new workspace, and `.suite` import *(current)*
+- **Exact workspace backup and restore**, plus readable JSON/Markdown export *(current)*
 
 ### Thinking tools
 

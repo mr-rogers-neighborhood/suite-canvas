@@ -16,7 +16,7 @@ async function addTextField(page: Page, name: string): Promise<void> {
   await page.getByLabel("New field name").fill(name);
   await page.getByTestId("create-field").click();
   await expect(page.getByLabel(`Field name ${name}`)).toHaveValue(name);
-  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.getByTestId("type-settings")).toHaveCount(0);
 }
 
@@ -132,4 +132,55 @@ test("filters the library by type and tag, then clears", async ({ page }) => {
 
   await page.locator('[data-testid^="facet-type-"]').first().click();
   await expect(page.getByTestId("clear-filters")).toBeVisible();
+});
+
+test("edits every scalar field kind and survives a reload", async ({ page }) => {
+  await page.goto(workspaceUrl("kinds"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await openInspector(page, cards(page).first());
+  await page.getByTestId("manage-types").click();
+  await expect(page.getByTestId("type-settings")).toBeVisible();
+
+  const fields: Array<{ name: string; kind: string; options?: string }> = [
+    { name: "Owner", kind: "text" },
+    { name: "Estimate", kind: "number" },
+    { name: "Due", kind: "date" },
+    { name: "Stage", kind: "select", options: "Backlog, Doing" },
+    { name: "Labels", kind: "multiSelect", options: "Research, Design" },
+    { name: "Done", kind: "checkbox" },
+  ];
+  for (const entry of fields) {
+    await page.getByLabel("New field name").fill(entry.name);
+    await page.getByLabel("New field kind").selectOption(entry.kind);
+    if (entry.options) await page.getByLabel("New field options").fill(entry.options);
+    await page.getByTestId("create-field").click();
+    await expect(page.getByLabel(`Field name ${entry.name}`)).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByTestId("type-settings")).toHaveCount(0);
+
+  const panel = page.getByTestId("card-panel");
+  await panel.getByLabel("Owner").fill("Ada");
+  await panel.getByLabel("Owner").blur();
+  await panel.getByLabel("Estimate").fill("5.5");
+  await panel.getByLabel("Estimate").blur();
+  await panel.getByLabel("Due").fill("2026-10-22");
+  await panel.getByLabel("Due").blur();
+  await panel.getByLabel("Stage").selectOption({ label: "Doing" });
+  await panel.getByLabel("Labels: Research").click();
+  await panel.getByLabel("Labels: Design").click();
+  await panel.getByLabel("Done").click();
+
+  await page.reload();
+  await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
+  await openInspector(page, cards(page).first());
+  const reloaded = page.getByTestId("card-panel");
+  await expect(reloaded.getByLabel("Owner")).toHaveValue("Ada");
+  await expect(reloaded.getByLabel("Estimate")).toHaveValue("5.5");
+  await expect(reloaded.getByLabel("Due")).toHaveValue("2026-10-22");
+  await expect(reloaded.getByLabel("Stage")).toHaveValue(/.+/);
+  await expect(reloaded.getByLabel("Labels: Research")).toHaveAttribute("aria-pressed", "true");
+  await expect(reloaded.getByLabel("Labels: Design")).toHaveAttribute("aria-pressed", "true");
+  await expect(reloaded.getByLabel("Done")).toBeChecked();
 });

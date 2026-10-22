@@ -59,6 +59,7 @@ async function createNote(page: Page, title: string): Promise<void> {
     );
     await page.waitForTimeout(300);
     await page.keyboard.type(title);
+    await expect(page.locator(".card-title-editor.ProseMirror-focused")).toContainText(title);
     await page.keyboard.press("Escape");
     await expect(cards(page).filter({ hasText: title })).toHaveCount(1);
     return;
@@ -141,7 +142,10 @@ test("mentions work in the title editor", async ({ page }) => {
 
   await page.keyboard.press("End");
   await page.keyboard.type(" @Targ");
-  await expect(page.getByTestId("mention-option").filter({ hasText: "Target card" })).toBeVisible();
+  await expect(page.getByTestId("mention-picker")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("mention-option").filter({ hasText: "Target card" })).toBeVisible({
+    timeout: 10_000,
+  });
   await page.keyboard.press("Enter");
 
   await expect(host.locator(".card-title-editor").getByTestId("mention-chip")).toContainText(
@@ -202,7 +206,9 @@ test("links to one field of another card and lands on it", async ({ page }) => {
   // reachable without knowing the dot syntax: Enter takes the card, one arrow
   // down starts browsing that card's fields.
   await page.keyboard.type("@Targ");
+  await expect(page.getByTestId("mention-picker")).toBeVisible({ timeout: 10_000 });
   const options = page.getByTestId("mention-option");
+  await expect(options.first()).toBeVisible({ timeout: 10_000 });
   await expect(options.first()).toHaveAttribute("data-kind", "card");
   await expect(options.nth(1)).toHaveAttribute("data-kind", "reference");
   await expect(options.nth(1)).toContainText("Owner");
@@ -268,8 +274,10 @@ test("steps into a card's fields with the arrow keys", async ({ page }) => {
   // The card row advertises its fields, and arrowing onto it *shadows* the
   // completion instead of typing it: the card holds only what was typed.
   await page.keyboard.type("@Tar");
+  await expect(page.getByTestId("mention-picker")).toBeVisible({ timeout: 10_000 });
   const cardRows = page.locator('[data-testid="mention-option"][data-kind="card"]');
   const targetRow = cardRows.filter({ hasText: "Target" });
+  await expect(targetRow).toBeVisible({ timeout: 10_000 });
   await expect(targetRow).toHaveAttribute("aria-selected", "true");
   await expect(targetRow.getByTestId("mention-option-submenu")).toContainText("1");
   await expect(source.locator(".mention-ghost")).toHaveText("get");
@@ -306,6 +314,7 @@ test("opens the submenu with a dot without typing it", async ({ page }) => {
   // `.` is a gesture on the highlighted card, not text: nothing is inserted,
   // so a title with a space is no obstacle either.
   await page.keyboard.type("@Tar");
+  await expect(page.getByTestId("mention-picker")).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press(".");
   const fields = page.locator('[data-testid="mention-option"][data-kind="reference"]');
   await expect(fields).toHaveCount(1);

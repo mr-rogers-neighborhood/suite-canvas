@@ -45,6 +45,8 @@ export {
   PORTABLE_EXPORT_KIND,
   PORTABLE_EXPORT_VERSION,
 } from "./portable.js";
+export type { FormatPropertyOptions } from "./property.js";
+export { formatPropertyValue, isPropertyValueEmpty } from "./property.js";
 export type {
   ArrowSource,
   MentionContext,

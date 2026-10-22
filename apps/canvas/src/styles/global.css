@@ -472,15 +472,6 @@ body {
 
 /* Card chrome: header, title and the expandable footer sit inside the card so
    connectors and links follow when the card grows. */
-.card-header {
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
-}
-
-.card-title-editor {
-  min-height: 1.25rem;
-  word-break: break-word;
-}
-
 /* Tiptap block typography. Tailwind Preflight removes heading sizes and list
    markers, so the editor restores the document styles explicitly. Scoped to the
    body editor: the title keeps its single-line chrome typography. */
@@ -568,6 +559,15 @@ body {
   margin: 0.5rem 0;
   border: 0;
   border-top: 1px solid var(--hairline);
+}
+
+.card-header {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.card-title-editor {
+  min-height: 1.25rem;
+  word-break: break-word;
 }
 
 .node-card .card-title-editor p {

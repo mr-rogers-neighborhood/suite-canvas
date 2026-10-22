@@ -139,3 +139,127 @@ describe("PropertyField card kind", () => {
     expect(onClear).toHaveBeenCalled();
   });
 });
+
+describe("PropertyField per kind", () => {
+  it("should commit a number as a number and clear an empty one", () => {
+    const onChange = vi.fn();
+    const onClear = vi.fn();
+    render(
+      <PropertyField
+        field={field({ kind: "number", name: "Estimate" })}
+        value={3}
+        onChange={onChange}
+        onClear={onClear}
+      />,
+    );
+
+    const input = screen.getByLabelText("Estimate");
+    expect(input).toHaveValue(3);
+    fireEvent.change(input, { target: { value: "5.5" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith(5.5);
+
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("should commit a date and reject an empty one", () => {
+    const onChange = vi.fn();
+    const onClear = vi.fn();
+    render(
+      <PropertyField
+        field={field({ kind: "date", name: "Due" })}
+        value="2026-10-22"
+        onChange={onChange}
+        onClear={onClear}
+      />,
+    );
+
+    const input = screen.getByLabelText("Due");
+    fireEvent.change(input, { target: { value: "2026-11-01" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith("2026-11-01");
+
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("should show a deleted option as unavailable and let the user clear it", () => {
+    const onChange = vi.fn();
+    const onClear = vi.fn();
+    const select = field({
+      kind: "select",
+      name: "Stage",
+      options: [{ id: "a", label: "Alpha", order: 0 }],
+    });
+    render(<PropertyField field={select} value="gone" onChange={onChange} onClear={onClear} />);
+
+    const input = screen.getByLabelText("Stage");
+    expect(input).toHaveValue("gone");
+    expect(screen.getByRole("option", { name: "Unavailable option" })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("should toggle a checkbox and clear it on uncheck", () => {
+    const onChange = vi.fn();
+    const onClear = vi.fn();
+    const checkbox = field({ kind: "checkbox", name: "Done" });
+    const { rerender } = render(
+      <PropertyField field={checkbox} value={false} onChange={onChange} onClear={onClear} />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Done"));
+    expect(onChange).toHaveBeenCalledWith(true);
+
+    rerender(<PropertyField field={checkbox} value={true} onChange={onChange} onClear={onClear} />);
+    fireEvent.click(screen.getByLabelText("Done"));
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("should clear a multi-select when its last option is removed", () => {
+    const onChange = vi.fn();
+    const onClear = vi.fn();
+    const multi = field({
+      kind: "multiSelect",
+      name: "Labels",
+      options: [{ id: "a", label: "Alpha", order: 0 }],
+    });
+    render(<PropertyField field={multi} value={["a"]} onChange={onChange} onClear={onClear} />);
+
+    fireEvent.click(screen.getByLabelText("Labels: Alpha"));
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("should treat a deleted option or dangling card as empty for required fields", () => {
+    const select = field({ kind: "select", name: "Stage", options: [] });
+    expect(isPropertyEmpty("gone", select)).toBe(true);
+    const card = field({ kind: "card", name: "Contradicts" });
+    expect(isPropertyEmpty("missing", card, new Set(["c1"]))).toBe(true);
+    expect(isPropertyEmpty("c1", card, new Set(["c1"]))).toBe(false);
+  });
+
+  it("should exclude the card being edited from a card picker", () => {
+    const card = field({ kind: "card", name: "Contradicts" });
+    render(
+      <PropertyField
+        field={card}
+        value={undefined}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        cards={[
+          { id: "c1", title: "Self" },
+          { id: "c2", title: "Other" },
+        ]}
+        excludeCardId="c1"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Contradicts"), { target: { value: "o" } });
+    expect(screen.getByRole("option", { name: "Other" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Self" })).not.toBeInTheDocument();
+  });
+});

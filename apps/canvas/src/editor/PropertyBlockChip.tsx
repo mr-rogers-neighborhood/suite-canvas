@@ -1,9 +1,10 @@
 import type { Card, CardType, FieldDefinition, PropertyValue } from "@suite/graph";
-import { displayTemplate } from "@suite/graph";
+import { displayTemplate, formatPropertyValue } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { ContextMenu } from "../components/ContextMenu";
 import { DisplayStyleDialog } from "../components/DisplayStyleDialog";
+import { FieldValueInput } from "../components/PropertyField";
 import { ValueTemplate } from "../components/ValueTemplate";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -36,29 +37,11 @@ export function propertyBlockDisplayValue(
   value: PropertyValue | undefined,
   cardLabel = "",
 ): string {
-  switch (field.kind) {
-    case "checkbox":
-      return value === true ? "\u2713" : EM_DASH;
-    case "select": {
-      if (typeof value !== "string") return EM_DASH;
-      return field.options.find((option) => option.id === value)?.label ?? value;
-    }
-    case "multiSelect": {
-      const ids = Array.isArray(value) ? value : [];
-      if (ids.length === 0) return EM_DASH;
-      return ids
-        .map((id) => field.options.find((option) => option.id === id)?.label ?? id)
-        .join(", ");
-    }
-    case "card":
-      return (
-        cardLabel || (typeof value === "string" && value.length > 0 ? "Unavailable card" : EM_DASH)
-      );
-    case "number":
-      return typeof value === "number" ? String(value) : EM_DASH;
-    default:
-      return typeof value === "string" && value.trim().length > 0 ? value : EM_DASH;
-  }
+  return formatPropertyValue(field, value, {
+    cardTitle: cardLabel,
+    empty: EM_DASH,
+    unavailable: "Unavailable",
+  });
 }
 
 export interface PropertyBlockChipProps {
@@ -96,9 +79,6 @@ export function PropertyBlockChip({
   onRemove,
 }: PropertyBlockChipProps) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  // Escape unmounts the input, and a blur may still arrive afterwards.
-  const cancelled = useRef(false);
 
   // A field can disappear while its input is open (a peer edits the type).
   useEffect(() => {
@@ -119,34 +99,6 @@ export function PropertyBlockChip({
 
   const display = propertyBlockDisplayValue(field, value, cardLabel);
   const readOnly = field.kind === "card" || field.kind === "multiSelect";
-
-  const beginEditing = () => {
-    const current =
-      field.kind === "number"
-        ? typeof value === "number"
-          ? String(value)
-          : ""
-        : typeof value === "string"
-          ? value
-          : "";
-    setDraft(current);
-    cancelled.current = false;
-    setEditing(true);
-  };
-
-  const commitDraft = () => {
-    if (field.kind === "number") {
-      if (draft.trim().length === 0) {
-        onCommit(null);
-        return;
-      }
-      const parsed = Number(draft);
-      if (Number.isFinite(parsed)) onCommit(parsed);
-      return;
-    }
-    if (draft.trim().length === 0) onCommit(null);
-    else onCommit(draft);
-  };
 
   const stopPointer = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
@@ -189,72 +141,17 @@ export function PropertyBlockChip({
         {display}
       </button>
     );
-  } else if (editing && field.kind === "select") {
-    control = (
-      <select
-        // biome-ignore lint/a11y/noAutofocus: the value was just clicked; the caret belongs here.
-        autoFocus
-        aria-label={field.name}
-        data-testid="property-block-input"
-        className="property-block-input"
-        value={typeof value === "string" ? value : ""}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Escape") {
-            event.preventDefault();
-            cancelled.current = true;
-            setEditing(false);
-          }
-        }}
-        onChange={(event) => {
-          const next = event.target.value;
-          onCommit(next.length > 0 ? next : null);
-          setEditing(false);
-        }}
-        onBlur={() => setEditing(false)}
-      >
-        <option value="">None</option>
-        {field.options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    );
   } else if (editing) {
     control = (
-      <input
-        // biome-ignore lint/a11y/noAutofocus: the value was just clicked; the caret belongs here.
+      <FieldValueInput
+        field={field}
+        value={value}
+        onCommit={onCommit}
         autoFocus
-        type={field.kind === "number" ? "number" : field.kind === "date" ? "date" : "text"}
-        aria-label={field.name}
-        data-testid="property-block-input"
+        testId="property-block-input"
         className="property-block-input"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onPointerDown={stopPointer}
-        onMouseDown={stopPointer}
-        onKeyDown={(event) => {
-          // The node view also stops these events; this keeps React handlers
-          // and ProseMirror's keymap from seeing Enter/Escape twice.
-          event.stopPropagation();
-          if (event.key === "Enter") {
-            event.preventDefault();
-            event.currentTarget.blur();
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            cancelled.current = true;
-            setEditing(false);
-          }
-        }}
-        onBlur={() => {
-          if (cancelled.current) {
-            cancelled.current = false;
-            return;
-          }
-          setEditing(false);
-          commitDraft();
-        }}
+        onDone={() => setEditing(false)}
+        onCancel={() => setEditing(false)}
       />
     );
   } else {
@@ -268,7 +165,7 @@ export function PropertyBlockChip({
         onMouseDown={stopPointer}
         onClick={(event) => {
           event.stopPropagation();
-          beginEditing();
+          setEditing(true);
         }}
       >
         {display}

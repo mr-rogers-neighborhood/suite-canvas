@@ -1,4 +1,9 @@
-import { createWorkspaceFile, exportPortable, WorkspaceDocument } from "@suite/graph";
+import {
+  createWorkspaceFile,
+  exportPortable,
+  readWorkspaceFile,
+  WorkspaceDocument,
+} from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 
@@ -187,7 +192,6 @@ export interface ImportedWorkspace {
  */
 export async function importWorkspaceFile(file: File): Promise<ImportedWorkspace> {
   const text = await file.text();
-  const { readWorkspaceFile } = await import("@suite/graph");
   const { workspace } = readWorkspaceFile(text);
   const id = newWorkspaceId();
   const doc = workspace.doc;

@@ -179,6 +179,19 @@ Remote updates and local hydration carry non-local origins, so **undo can never 
 collaborator's work**. Structural edits commit with a `struct:` origin; editor commits carry a
 `text:` origin so the two stacks never capture each other.
 
+## Workspace launcher and files
+
+The app starts at `/` on a **workspace launcher**. It lists recent workspaces from local metadata
+(`localStorage`, never document truth), starts a blank workspace (`?fresh=1`), and imports a
+`.suite` backup. Opening a workspace navigates to the ordinary `?workspace=<id>` canvas.
+
+A `.suite` backup is a versioned JSON envelope around `doc.export({ mode: "snapshot" })` with a
+small manifest. Import validates the envelope, refuses a newer file/schema by name, creates a new
+workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
+the open document. Portable JSON and Markdown exports are read-only projections of the same
+document; only the exact backup is an import format. Sharing is link-based editing of the workspace
+URL; card-level sharing is deferred ([ADR-0021](./decisions/0021-sharing-seam-deferred.md)).
+
 ## Session start
 
 A client holds two copies of a workspace: the local IndexedDB one and the server's. Startup order

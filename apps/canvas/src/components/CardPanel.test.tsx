@@ -394,7 +394,7 @@ describe("CardPanel links", () => {
     expect(screen.getByTestId("property-owner")).not.toHaveAttribute("data-focused");
   });
 
-  it("includes the card picker options for a card field", () => {
+  it("offers other cards for a card field, never itself", () => {
     renderPanel({
       fields: [
         { typeId: "project", field: { ...owner, id: "related", name: "Related", kind: "card" } },
@@ -403,7 +403,6 @@ describe("CardPanel links", () => {
 
     fireEvent.focus(screen.getByLabelText("Related"));
     expect(screen.getAllByTestId("card-option").map((option) => option.textContent)).toEqual([
-      "Mastering the timeline",
       "Onboarding friction",
     ]);
   });

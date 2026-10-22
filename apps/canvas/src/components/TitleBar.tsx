@@ -29,9 +29,10 @@ export function TitleBar({ status, peerCount = 0, documentId, children, actions 
       <a
         href="/"
         aria-label="Back to workspace launcher"
-        className="text-[13px] font-semibold tracking-tight hover:opacity-70"
+        className="flex items-center hover:opacity-70"
       >
-        Suite
+        <img src="/suite-logo-black.svg" alt="" className="h-6 w-auto dark:hidden" />
+        <img src="/suite-logo-white.svg" alt="" className="hidden h-6 w-auto dark:block" />
       </a>
 
       {documentId ? (

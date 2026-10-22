@@ -20,9 +20,9 @@ Claude Code, …). Read it first; keep it high-signal.
 
 | Path | Purpose |
 | --- | --- |
-| `apps/canvas` | The React canvas app (board, editor, collab provider, Zustand store) |
+| `apps/canvas` | The React canvas app (launcher, board, editor, collab provider, Zustand store) |
 | `apps/collab-server` | Loro WebSocket sync server |
-| `packages/graph` | `@suite/graph` — schema, types, typed Loro layer |
+| `packages/graph` | `@suite/graph` — schema, types, typed Loro layer, workspace file and portable export |
 | `e2e` | Playwright end-to-end tests |
 | `docs/` | Architecture, conventions, ADRs (read [docs/conventions.md](docs/conventions.md) before big changes) |
 | `.github/` | CI, PR/issue templates, [copilot-instructions.md](.github/copilot-instructions.md) |

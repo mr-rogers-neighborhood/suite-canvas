@@ -312,3 +312,44 @@ describe("convergence", () => {
     expect(a.getCard("c1")?.tags).toEqual([left.id, right.id].sort());
   });
 });
+
+describe("multi-select convergence", () => {
+  it("should keep both options when two clients toggle different ones", () => {
+    const a = new WorkspaceDocument();
+    const b = new WorkspaceDocument();
+    a.ensureDefaultTypes();
+    a.createCard({ id: "c1" });
+    const field = a.addField("note", {
+      name: "Labels",
+      kind: "multiSelect",
+      options: ["One", "Two"],
+    });
+    sync(a.doc, b.doc);
+    const [one, two] = field.options;
+
+    a.setProperty("c1", field.id, [one?.id ?? ""]);
+    b.setProperty("c1", field.id, [two?.id ?? ""]);
+    sync(a.doc, b.doc);
+
+    const expected = [one?.id ?? "", two?.id ?? ""].sort();
+    expect(a.getCard("c1")?.properties[field.id]).toEqual(expected);
+    expect(b.getCard("c1")?.properties[field.id]).toEqual(expected);
+  });
+
+  it("should keep edits to different fields when two clients write at once", () => {
+    const a = new WorkspaceDocument();
+    const b = new WorkspaceDocument();
+    a.ensureDefaultTypes();
+    a.createCard({ id: "c1" });
+    const owner = a.addField("note", { name: "Owner", kind: "text" });
+    const done = a.addField("note", { name: "Done", kind: "checkbox" });
+    sync(a.doc, b.doc);
+
+    a.setProperty("c1", owner.id, "Ada");
+    b.setProperty("c1", done.id, true);
+    sync(a.doc, b.doc);
+
+    expect(a.getCard("c1")?.properties).toMatchObject({ [owner.id]: "Ada", [done.id]: true });
+    expect(b.getCard("c1")?.properties).toMatchObject({ [owner.id]: "Ada", [done.id]: true });
+  });
+});

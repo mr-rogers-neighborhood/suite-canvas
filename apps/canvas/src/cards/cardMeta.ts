@@ -1,4 +1,5 @@
-import type { Card, CardType, FieldDefinition, PropertyValue, Tag } from "@suite/graph";
+import type { Card, CardType, Tag } from "@suite/graph";
+import { formatPropertyValue } from "@suite/graph";
 
 export interface CardMetaProperty {
   fieldId: string;
@@ -12,34 +13,6 @@ export interface CardMeta {
 }
 
 const EMPTY: CardMeta = { properties: [], tags: [] };
-
-function formatValue(value: PropertyValue, field: FieldDefinition): string | null {
-  switch (field.kind) {
-    case "checkbox":
-      return value === true ? "" : null;
-    case "select": {
-      if (typeof value !== "string") return null;
-      return field.options.find((option) => option.id === value)?.label ?? null;
-    }
-    case "multiSelect": {
-      if (!Array.isArray(value)) return null;
-      const labels = value.flatMap((optionId) => {
-        const option = field.options.find((candidate) => candidate.id === optionId);
-        return option ? [option.label] : [];
-      });
-      return labels.length > 0 ? labels.join(", ") : null;
-    }
-    case "number":
-      return typeof value === "number" ? String(value) : null;
-    case "card":
-      // The title lives in the target card; the panel resolves it, so the
-      // compact card face omits card-valued properties.
-      return null;
-    case "date":
-    case "text":
-      return typeof value === "string" && value.trim() ? value : null;
-  }
-}
 
 /**
  * A compact, read-only projection for the card face: every non-empty scalar
@@ -64,13 +37,9 @@ export function cardMeta(
     if (properties.length >= limit) break;
     const value = card.properties[field.id];
     if (value === undefined) continue;
-    const formatted = formatValue(value, field);
-    if (formatted === null) continue;
-    properties.push({
-      fieldId: field.id,
-      label: field.name,
-      value: field.kind === "checkbox" ? "\u2713" : formatted,
-    });
+    const formatted = formatPropertyValue(field, value, { includeCard: false, empty: "" });
+    if (!formatted) continue;
+    properties.push({ fieldId: field.id, label: field.name, value: formatted });
   }
   return properties.length === 0 && tagNames.length === 0 ? EMPTY : { properties, tags: tagNames };
 }

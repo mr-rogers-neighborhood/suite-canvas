@@ -74,9 +74,9 @@ describe("portable export", () => {
     const { markdown } = exportPortable(workspace);
 
     expect(markdown).toContain("# Research");
-    expect(markdown).toContain("## Heading text");
+    expect(markdown).toContain("### Heading text");
     expect(markdown).toContain("| Status | Doing |");
-    expect(markdown).toContain("| Done | yes |");
+    expect(markdown).toContain("| Done | ✓ |");
     expect(markdown).toContain("- First item");
     expect(markdown).toContain("[[Card two]]");
     expect(markdown).toContain("**Status:** Doing");

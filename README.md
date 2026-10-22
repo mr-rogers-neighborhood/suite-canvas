@@ -13,6 +13,9 @@ pnpm install
 pnpm dev          # canvas app (http://localhost:5173) + collab server (:1234)
 ```
 
+The app opens on the **workspace launcher**: start a blank workspace, open a `.suite` backup, or
+pick a recent workspace. Recent workspaces are local metadata only.
+
 Open two browser windows at the same URL — including `?workspace=<any-id>` to work in a separate
 workspace (`?doc=` still works as an alias) — and edits, carets, titles, and presence appear in
 both. Board tabs in the app bar switch boards inside the same workspace.
@@ -69,6 +72,16 @@ server restart. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus 
 the canvas gesture channel ride Loro `EphemeralStore`s; they are not persisted in the document. All
 writes go through `WorkspaceDocument`, which validates with Zod. See
 [docs/architecture.md](docs/architecture.md).
+
+## Workspace files
+
+`Share` copies a link that grants collaborative editing of that workspace. It is link-based, not an
+account or ACL.
+
+`File → Export backup…` writes a versioned `.suite` file containing the exact Loro snapshot. Import
+it from the launcher; it always opens as a **new** workspace and never merges into the open
+document. `File → Export JSON…` and `Export Markdown…` are readable projections for other tools;
+they are export-only, not import formats.
 
 ## Publishing
 

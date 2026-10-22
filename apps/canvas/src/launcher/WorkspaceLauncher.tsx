@@ -76,11 +76,9 @@ export function WorkspaceLauncher() {
                 this browser until you export it.
               </p>
             </div>
-            <span
-              aria-hidden="true"
-              className="hidden h-14 w-14 items-center justify-center rounded-2xl border border-[var(--hairline)] bg-[var(--canvas-bg)] text-[22px] sm:flex"
-            >
-              ▤
+            <span aria-hidden="true" className="hidden sm:block">
+              <img src="/suite-logo-black.svg" alt="" className="h-14 w-14 dark:hidden" />
+              <img src="/suite-logo-white.svg" alt="" className="hidden h-14 w-14 dark:block" />
             </span>
           </div>
           <div className="mt-6 flex flex-wrap items-center gap-2">

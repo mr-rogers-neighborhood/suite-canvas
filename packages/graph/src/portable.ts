@@ -1,5 +1,6 @@
 import { getType, isContainer, type LoroList, type LoroMap, type LoroText } from "loro-crdt";
 import type { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
+import { formatPropertyValue } from "./property.js";
 import type { Card, CardType, FieldDefinition, PropertyValue, Tag } from "./schema.js";
 
 export const PORTABLE_EXPORT_KIND = "suite.portable";
@@ -119,29 +120,17 @@ function escapeCell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\n+/g, " ");
 }
 
-function formatValue(field: FieldDefinition, value: PropertyValue | undefined): string {
-  if (value === undefined) return "";
-  switch (field.kind) {
-    case "checkbox":
-      return value === true ? "yes" : "no";
-    case "select":
-      return typeof value === "string"
-        ? (field.options.find((option) => option.id === value)?.label ?? value)
-        : "";
-    case "multiSelect":
-      return Array.isArray(value)
-        ? value
-            .map((id) => field.options.find((option) => option.id === id)?.label ?? id)
-            .join(", ")
-        : "";
-    case "card":
-      return typeof value === "string" ? `[[${value}]]` : "";
-    case "number":
-      return typeof value === "number" ? String(value) : "";
-    case "date":
-    case "text":
-      return typeof value === "string" ? value : "";
-  }
+function formatValue(
+  field: FieldDefinition,
+  value: PropertyValue | undefined,
+  context: MarkdownContext,
+): string {
+  return formatPropertyValue(field, value, {
+    cardTitle: typeof value === "string" ? context.titles.get(value) : undefined,
+    empty: "",
+    unavailable: "Unavailable",
+    formatCard: (title) => `[[${title}]]`,
+  });
 }
 
 interface MarkdownContext {
@@ -180,8 +169,9 @@ function blockText(nodes: PortableNode[] | undefined, context: MarkdownContext):
         case "paragraph":
           return inlineText(node.content, context);
         case "heading": {
-          const level = Number(node.attrs?.level ?? 1);
-          return `${"#".repeat(Math.min(6, Math.max(1, level)))} ${inlineText(node.content, context)}`;
+          // Board is `#`, card is `##`; body headings start below them.
+          const level = Number(node.attrs?.level ?? 1) + 2;
+          return `${"#".repeat(Math.min(6, Math.max(3, level)))} ${inlineText(node.content, context)}`;
         }
         case "bulletList":
           return (node.content ?? [])
@@ -211,7 +201,7 @@ function blockText(nodes: PortableNode[] | undefined, context: MarkdownContext):
           const fieldId = typeof node.attrs?.fieldId === "string" ? node.attrs.fieldId : "";
           const field = context.fields.get(fieldId);
           if (!field) return "_Missing field_";
-          return `**${field.name}:** ${formatValue(field, context.values[fieldId])}`;
+          return `**${field.name}:** ${formatValue(field, context.values[fieldId], context)}`;
         }
         case "mention":
           return inlineText([node], context);
@@ -230,9 +220,17 @@ function cardMarkdown(card: PortableCard, context: MarkdownContext): string {
   if (card.properties.length > 0) {
     lines.push("", "| Field | Value |", "| --- | --- |");
     for (const property of card.properties) {
-      lines.push(
-        `| ${escapeCell(property.name)} | ${escapeCell(formatValue({ ...context.fields.get(property.fieldId), ...property } as FieldDefinition, property.value))} |`,
-      );
+      const field = context.fields.get(property.fieldId);
+      const fallback: FieldDefinition = {
+        id: property.fieldId,
+        name: property.name,
+        kind: property.kind,
+        required: false,
+        order: 0,
+        options: [],
+      };
+      const value = formatValue(field ?? fallback, property.value, context);
+      lines.push(`| ${escapeCell(field?.name ?? property.name)} | ${escapeCell(value)} |`);
     }
   }
   const body = blockText(card.body, context);

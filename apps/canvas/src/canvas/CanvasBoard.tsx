@@ -34,6 +34,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import {
   dragMoves,
   dragRects,
@@ -66,13 +67,6 @@ type CardNodeData = {
 };
 
 const EMPTY_META: CardMeta = { properties: [], tags: [] };
-
-const EDGE_TYPE: Record<GraphEdge["path"], Edge["type"]> = {
-  bezier: "default",
-  straight: "straight",
-  step: "step",
-  smoothstep: "smoothstep",
-};
 
 /** The connector a local new-link drag started from, minus the live pointer. */
 type ConnectAnchor = Omit<ConnectState, "position" | "target">;
@@ -136,7 +130,9 @@ function toFlowEdge(edge: GraphEdge, selected: boolean, peerColor?: string): Edg
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: EDGE_TYPE[edge.path] ?? "default",
+    type: "description",
+    // One edge component renders every routing style; the path travels with it.
+    data: { path: edge.path } satisfies EdgeDescriptionData,
     selected,
     ...(edge.sourceConnector ? { sourceHandle: edge.sourceConnector } : {}),
     ...(edge.targetConnector ? { targetHandle: edge.targetConnector } : {}),
@@ -191,6 +187,12 @@ export function CanvasBoard() {
     anchorConnector: string | null;
   } | null>(null);
   const [connecting, setConnecting] = useState<ConnectAnchor | null>(null);
+  const [edgeDescription, setEdgeDescription] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+    value: string;
+  } | null>(null);
 
   // Board-scoped views derived from the snapshot, so a CRDT change anywhere
   // recomputes exactly once per board.
@@ -1173,6 +1175,28 @@ export function CanvasBoard() {
     [workspace, activeBoardId, setSelectedNodeIds, startEditing],
   );
 
+  const startEdgeDescription = useCallback(
+    (edgeId: string, point: { x: number; y: number }) => {
+      const edge = workspace.getEdge(edgeId);
+      if (!edge) return;
+      // The edge keeps its selection: only the inline editor is opening.
+      setEdgeDescription({ edgeId, x: point.x, y: point.y, value: edge.label ?? "" });
+    },
+    [workspace],
+  );
+
+  const commitEdgeDescription = useCallback(
+    (value: string) => {
+      if (!edgeDescription) return;
+      // Empty text removes the description rather than storing a blank one.
+      workspace.setEdgeLabel(edgeDescription.edgeId, value.trim() ? value : null);
+      setEdgeDescription(null);
+    },
+    [workspace, edgeDescription],
+  );
+
+  const cancelEdgeDescription = useCallback(() => setEdgeDescription(null), []);
+
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!contextMenu) return [];
     if (contextMenu.kind === "canvas") {
@@ -1243,6 +1267,19 @@ export function CanvasBoard() {
     if (contextMenu.kind === "edge" && edgeId) {
       const edge = workspace.getEdge(edgeId);
       return [
+        {
+          label: edge?.label ? "Edit description…" : "Add description…",
+          onSelect: () => startEdgeDescription(edgeId, { x: contextMenu.x, y: contextMenu.y }),
+        },
+        ...(edge?.label
+          ? [
+              {
+                label: "Remove description",
+                danger: true,
+                onSelect: () => workspace.setEdgeLabel(edgeId, null),
+              },
+            ]
+          : []),
         {
           label: "Reverse direction",
           onSelect: () => workspace.reverseEdge(edgeId),
@@ -1413,6 +1450,7 @@ export function CanvasBoard() {
     store,
     setSelectedNodeIds,
     setSelectedConnector,
+    startEdgeDescription,
   ]);
 
   return (
@@ -1433,6 +1471,7 @@ export function CanvasBoard() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         // Unmount nodes and edges outside the viewport. React Flow keeps measured
         // sizes and handle bounds for unmounted nodes, so edges still route and
         // connectors remeasure when a card scrolls back in.
@@ -1466,6 +1505,10 @@ export function CanvasBoard() {
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
         onEdgeClick={() => setSelectedConnector(null)}
+        onEdgeDoubleClick={(event, edge) => {
+          event.preventDefault();
+          startEdgeDescription(edge.id, { x: event.clientX, y: event.clientY });
+        }}
         onNodeDragStart={(_, node, dragged) => {
           // React Flow drags the whole selection; the node under the pointer is
           // the anchor peers derive every other member's position from.
@@ -1562,6 +1605,16 @@ export function CanvasBoard() {
         <PresenceLayer />
         <PeerReconnectLayer />
       </ReactFlow>
+      {edgeDescription ? (
+        <EdgeDescriptionInput
+          key={edgeDescription.edgeId}
+          x={edgeDescription.x}
+          y={edgeDescription.y}
+          value={edgeDescription.value}
+          onCommit={commitEdgeDescription}
+          onCancel={cancelEdgeDescription}
+        />
+      ) : null}
       {contextMenu ? (
         <ContextMenu
           x={contextMenu.x}

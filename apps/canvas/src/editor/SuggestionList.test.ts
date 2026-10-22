@@ -44,7 +44,9 @@ vi.mock("../store/workspaceSnapshotStore", () => ({
   }),
 }));
 
-const { cardFieldRows, expandedRows, itemKey, rankItems } = await import("./SuggestionList");
+const { cardFieldRows, expandedRows, ghostFor, itemKey, rankItems } = await import(
+  "./SuggestionList"
+);
 
 describe("rankItems", () => {
   it("should list this card's fields above every card", () => {
@@ -164,5 +166,24 @@ describe("expandedRows", () => {
       expect.objectContaining({ kind: "reference", fieldId: "stage", nested: true }),
     ]);
     expect(cardFieldRows("nobody")).toEqual([]);
+  });
+});
+
+describe("ghostFor", () => {
+  it("should preview the rest of a card's name after what is typed", () => {
+    expect(ghostFor({ id: "c2", title: "Beta", glyph: "", kind: "card" }, "bet")).toBe("a");
+    // A title with a space is fine: the shadow is a decoration, not text.
+    expect(ghostFor({ id: "c2", title: "Target card", glyph: "", kind: "card" }, "targ")).toBe(
+      "et card",
+    );
+  });
+
+  it("should preview nothing for a name that does not match", () => {
+    expect(ghostFor({ id: "c2", title: "Beta", glyph: "", kind: "card" }, "alp")).toBe("");
+  });
+
+  it("should preview nothing for a field row or an empty list", () => {
+    expect(ghostFor({ id: "f1", title: "Owner", glyph: "", kind: "field" }, "ow")).toBe("");
+    expect(ghostFor(undefined, "ow")).toBe("");
   });
 });

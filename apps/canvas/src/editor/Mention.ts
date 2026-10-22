@@ -1,6 +1,7 @@
 import { mergeAttributes, Node, ReactNodeViewRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
 import { MentionChipNodeView } from "../components/MentionChip";
+import { MentionGhost } from "./mentionGhost";
 import {
   fieldNameForId,
   type MentionSuggestionItem,
@@ -102,5 +103,11 @@ export const Mention = Node.create<MentionOptions, MentionStorage>({
 
   addProseMirrorPlugins() {
     return [Suggestion({ editor: this.editor, ...this.options.suggestion })];
+  },
+
+  // The shadow completion is part of the mention experience: it renders what
+  // Enter would insert without touching the document.
+  addExtensions() {
+    return [MentionGhost];
   },
 });

@@ -111,12 +111,14 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   (`labelDrag`) and persist it once on release; never commit per pointer move.
 - **The `@` list has three row kinds.** `field` inserts a block for this card, `card` inserts a
   mention, `reference` links to another card's field. Own fields first (they are the common case),
-  then cards. Selecting a card opens its fields as a nested submenu, so the drill-in is visible
-  rather than something you have to know; a query that names one card lists them directly, and a
-  typed `.` re-queries as `@card.field`.
-- **Completing a query is not an edit.** Arrow-key completion writes through a transaction with
-  `setMeta("addToHistory", false)`, so arrowing through suggestions never fills the undo stack, and
-  it is skipped for titles containing whitespace (the suggestion cannot span a space).
+  then cards. A query that names one card lists that card's fields under it; otherwise the row's
+  `N ›` chevron advertises them, ArrowRight steps in, ArrowLeft steps back out, and `.` opens the
+  submenu as a gesture (no dot is inserted, so a title with a space is no obstacle). While the
+  submenu is open the query filters field names, not cards.
+- **A suggestion is previewed, never typed.** The completion is a ProseMirror widget decoration
+  (`mentionGhost.ts`), so arrowing the list cannot write into the card, cannot land in the undo
+  stack, and cannot strand text when the pointer or a key arrives mid-update. Highlighting a row
+  does not open a submenu either: the list must not change shape under the cursor.
 
 ## Data layer
 

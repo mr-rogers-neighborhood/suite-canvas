@@ -417,7 +417,7 @@ source card's tree on demand — snippets are never indexed.
 **The body can carry views of index data.** `/` opens an insert menu over the existing nodes plus
 `Mention` and `Property`, both of which hand over to the one `@` picker; the picker lists this
 card's fields first (they insert a block), then cards (they insert a mention), and then a
-`@card.field` reference once the query names one. A `propertyBlock` is an inline atom holding only a
+`@card.field` reference once the query names one (or when ArrowRight/`.` steps into it). A `propertyBlock` is an inline atom holding only a
 `fieldId`: it renders `card.properties[fieldId]` from the snapshot and writes through
 `setProperty`/`clearProperty`, so deleting the block deletes a view and never the value. Scalar
 kinds edit in place through a node view with `contenteditable={false}` and `stopEvent`, which keeps

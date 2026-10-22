@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { workspaceSnapshotStore } from "../store/workspaceSnapshotStore";
 import type { MentionStorage } from "./Mention";
+import { mentionGhostKey } from "./mentionGhost";
 
 /**
  * One row of the `@` picker: a card to mention, or one of this card's own
@@ -329,8 +330,23 @@ interface PickerState {
   active: number;
   /** Card whose fields are open under it, if any. */
   expanded: string | null;
+  /** Query at the moment the submenu was opened, so a filter can be measured. */
+  openedAt: string;
   loading: boolean;
   rect: DOMRect | null;
+}
+
+/**
+ * The shadow a row would complete: the rest of its name after what is already
+ * typed. Only a card row has one — a field row's name is filtered by text that
+ * has nothing to do with the card query.
+ */
+export function ghostFor(item: MentionSuggestionItem | undefined, query: string): string {
+  if (item?.kind !== "card") return "";
+  const title = item.title;
+  if (!title.toLocaleLowerCase().startsWith(query.toLocaleLowerCase())) return "";
+  // Nothing to preview once the name is complete or the caret has moved on.
+  return title.slice(query.length);
 }
 
 function createPickerRenderer() {
@@ -340,7 +356,9 @@ function createPickerRenderer() {
     items: [],
     query: "",
     active: 0,
+    // Card whose fields are open under it, and the query the reader opened it at.
     expanded: null,
+    openedAt: "",
     loading: false,
     rect: null,
   };
@@ -348,10 +366,44 @@ function createPickerRenderer() {
   let current: SuggestionProps<MentionSuggestionItem, MentionSuggestionItem> | null = null;
   let picked = false;
 
-  /** The list as drawn: base rows plus the selected card's fields. */
-  const shown = () => expandedRows(state.items, state.expanded);
+  /**
+   * What has been typed since the submenu opened. While a submenu is open the
+   * query is a field filter, not a card search, so the rows come from the card.
+   */
+  const fieldFilter = () =>
+    state.expanded && state.query.startsWith(state.openedAt)
+      ? state.query.slice(state.openedAt.length).trim()
+      : "";
+
+  /** The list as drawn: base rows plus the open card's fields. */
+  const shown = () => {
+    if (!state.expanded) return state.items;
+    const filter = fieldFilter();
+    if (!filter) return expandedRows(state.items, state.expanded);
+    const needle = filter.toLocaleLowerCase();
+    return cardFieldRows(state.expanded).filter((row) =>
+      row.title.toLocaleLowerCase().includes(needle),
+    );
+  };
+
+  /**
+   * Draws the completion as shadow text after the caret. This is the whole
+   * preview: nothing is written to the document until a row is picked.
+   */
+  const syncGhost = () => {
+    if (!current) return;
+    const { editor, range } = current;
+    if (editor.isDestroyed) return;
+    const text = ghostFor(shown()[state.active], state.query);
+    const previous = mentionGhostKey.getState(editor.state);
+    if ((previous?.text ?? "") === text) return;
+    editor.view.dispatch(
+      editor.state.tr.setMeta(mentionGhostKey, text ? { pos: range.to, text } : null),
+    );
+  };
 
   const paint = () => {
+    syncGhost();
     if (!root) return;
     root.render(
       createElement(SuggestionList, {
@@ -370,36 +422,44 @@ function createPickerRenderer() {
   };
 
   /**
-   * Moves the cursor in the list, opening the submenu under a card. Indices are
-   * re-found by row identity because opening or closing the submenu changes the
-   * list's length.
+   * Highlights a row. This deliberately does not open submenus: the list must
+   * not change shape because the pointer happens to pass over it, which would
+   * move rows under the cursor and make a keystroke land somewhere else.
    */
   const setActive = (index: number) => {
     const rows = shown();
-    const item = rows[Math.max(0, Math.min(index, rows.length - 1))];
-    if (!item) return;
-    // A card row opens its fields; a field row keeps its card open; anything
-    // else closes what was open.
-    const owner =
-      item.kind === "card" ? item.id : item.kind === "reference" ? (item.cardId ?? null) : null;
-    const expanded = owner && cardFieldRows(owner).length > 0 ? owner : null;
-    const next = expandedRows(state.items, expanded);
-    const at = next.findIndex((row) => itemKey(row) === itemKey(item));
-    state = { ...state, expanded, active: at < 0 ? 0 : at };
+    if (rows.length === 0) return;
+    const next = Math.max(0, Math.min(index, rows.length - 1));
+    if (next === state.active) return;
+    state = { ...state, active: next };
     paint();
   };
 
-  /** Completes the typed query to the row's name, so typing `.` can follow. */
-  const completeTo = (item: MentionSuggestionItem) => {
-    if (!current || item.kind !== "card") return;
-    const replacement = `@${item.title}`;
-    // The suggestion cannot span whitespace, so only single-word names can be
-    // completed; a longer name stays as typed and the submenu does the work.
-    if (/\s/.test(item.title) || state.query === item.title) return;
-    const { editor, range } = current;
-    editor.view.dispatch(
-      editor.state.tr.insertText(replacement, range.from, range.to).setMeta("addToHistory", false),
-    );
+  /** Enters the open submenu, or opens one and steps into its first field. */
+  const enterSubmenu = () => {
+    const item = shown()[state.active];
+    if (item?.kind !== "card") return;
+    const rows = cardFieldRows(item.id);
+    if (rows.length === 0) return;
+    const next = expandedRows(state.items, item.id);
+    const at = next.findIndex((row) => itemKey(row) === itemKey(rows[0] as MentionSuggestionItem));
+    state = { ...state, expanded: item.id, openedAt: state.query, active: at < 0 ? 0 : at };
+    paint();
+  };
+
+  /** Leaves the submenu: the cursor lands back on the card that opened it. */
+  const leaveSubmenu = () => {
+    const item = shown()[state.active];
+    const owner = item?.kind === "reference" ? (item.cardId ?? null) : state.expanded;
+    if (!owner) return;
+    const parent = state.items.find((row) => row.kind === "card" && row.id === owner);
+    // A query that names the card has no card row to return to; it just closes.
+    state = { ...state, expanded: null, openedAt: "" };
+    const at = parent
+      ? expandedRows(state.items, null).findIndex((row) => itemKey(row) === itemKey(parent))
+      : 0;
+    state = { ...state, active: at < 0 ? 0 : at };
+    paint();
   };
 
   const setFromProps = (props: SuggestionProps<MentionSuggestionItem, MentionSuggestionItem>) => {
@@ -407,20 +467,31 @@ function createPickerRenderer() {
     current = props;
     const queryChanged = props.query !== state.query;
     const items = props.items;
+    // Typing past the point the submenu was opened turns it into a filter over
+    // that card's fields; it closes when the query no longer starts with it.
+    const stillFiltering = state.expanded !== null && props.query.startsWith(state.openedAt);
     state = {
       items,
       query: props.query,
       // A new query starts from the best match, not wherever the cursor was.
-      active: queryChanged ? 0 : Math.min(state.active, Math.max(0, items.length - 1)),
-      // Typing closes the submenu: the list it would open is now a query away.
-      expanded: queryChanged ? null : state.expanded,
+      active: queryChanged ? 0 : state.active,
+      expanded: stillFiltering ? state.expanded : null,
+      openedAt: stillFiltering ? state.openedAt : "",
       loading: props.loading,
       rect: props.clientRect?.() ?? null,
     };
     paint();
   };
 
+  const clearGhost = () => {
+    if (!current || current.editor.isDestroyed) return;
+    const { editor } = current;
+    if (!mentionGhostKey.getState(editor.state)) return;
+    editor.view.dispatch(editor.state.tr.setMeta(mentionGhostKey, null));
+  };
+
   const teardown = () => {
+    clearGhost();
     root?.unmount();
     root = null;
     container?.remove();
@@ -443,7 +514,15 @@ function createPickerRenderer() {
     },
     onExit: () => {
       teardown();
-      state = { items: [], query: "", active: 0, expanded: null, loading: false, rect: null };
+      state = {
+        items: [],
+        query: "",
+        active: 0,
+        expanded: null,
+        openedAt: "",
+        loading: false,
+        rect: null,
+      };
     },
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {
       if (picked) return true;
@@ -453,25 +532,27 @@ function createPickerRenderer() {
         if (rows.length === 0) return true;
         const delta = event.key === "ArrowDown" ? 1 : -1;
         setActive((state.active + delta + rows.length) % rows.length);
-        // Arrow keys complete the name, so `.` can drill in from the keyboard.
-        const active = shown()[state.active];
-        if (active) completeTo(active);
+        return true;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        enterSubmenu();
+        return true;
+      }
+      if (event.key === "ArrowLeft") {
+        if (!state.expanded) return false;
+        event.preventDefault();
+        leaveSubmenu();
         return true;
       }
       if (event.key === ".") {
-        // `.` on a card row rewrites the query as `@card.`, which lists that
-        // card's fields; the same result the submenu shows, ready to filter.
+        // `.` opens the submenu under the highlighted card, exactly as the
+        // chevron promises. The dot itself is not inserted: it is a gesture,
+        // not text, so a title with a space is no obstacle.
         const item = shown()[state.active];
-        if (item?.kind === "card" && !/\s/.test(item.title) && cardFieldRows(item.id).length > 0) {
-          if (!current) return false;
+        if (item?.kind === "card" && cardFieldRows(item.id).length > 0) {
           event.preventDefault();
-          const { editor, range } = current;
-          editor.view.dispatch(
-            editor.state.tr
-              .insertText(`@${item.title}.`, range.from, range.to)
-              .setMeta("addToHistory", false),
-          );
-          editor.commands.focus();
+          enterSubmenu();
           return true;
         }
         return false;
@@ -481,6 +562,7 @@ function createPickerRenderer() {
         if (!item) return false;
         event.preventDefault();
         picked = true;
+        clearGhost();
         run?.(item);
         return true;
       }

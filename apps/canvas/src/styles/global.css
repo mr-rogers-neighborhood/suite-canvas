@@ -1047,6 +1047,16 @@ body {
   display: inline;
 }
 
+/* Shadow completion: what Enter would insert. A decoration, never text, so it
+   cannot be typed into the document or reach the undo stack. */
+.mention-ghost {
+  color: var(--ink-muted);
+  opacity: 0.55;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+}
+
 .mention-chip {
   display: inline-flex;
   align-items: baseline;

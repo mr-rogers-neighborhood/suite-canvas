@@ -198,10 +198,16 @@ test("links to one field of another card and lands on it", async ({ page }) => {
 
   const source = cards(page).filter({ hasText: "Source card" });
   await editBody(page, source);
-  await page.keyboard.type("@Target.own");
-
-  const option = page.getByTestId("mention-option").filter({ hasText: "Owner" });
-  await expect(option).toHaveAttribute("data-kind", "reference");
+  // Naming a single card opens its fields underneath it, so the property is
+  // reachable without knowing the dot syntax: Enter takes the card, one arrow
+  // down starts browsing that card's fields.
+  await page.keyboard.type("@Targ");
+  const options = page.getByTestId("mention-option");
+  await expect(options.first()).toHaveAttribute("data-kind", "card");
+  await expect(options.nth(1)).toHaveAttribute("data-kind", "reference");
+  await expect(options.nth(1)).toContainText("Owner");
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
 
   const chip = source.getByTestId("mention-chip");

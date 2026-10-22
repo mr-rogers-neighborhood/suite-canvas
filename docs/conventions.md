@@ -107,6 +107,12 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
   cannot reach.
 - **Arrow descriptions are free text.** Arrows stay untyped; meaning belongs to a property name or a
   description, not to a link-type registry.
+- **A label drag is a gesture, not a stream.** Publish the in-flight offset as presence
+  (`labelDrag`) and persist it once on release; never commit per pointer move.
+- **The `@` list has three row kinds.** `field` inserts a block for this card, `card` inserts a
+  mention, `reference` links to another card's field. Own fields first (they are the common case),
+  then cards, then — once the query names exactly one card — that card's fields, so Enter still
+  takes the card and one arrow down starts browsing them.
 
 ## Data layer
 

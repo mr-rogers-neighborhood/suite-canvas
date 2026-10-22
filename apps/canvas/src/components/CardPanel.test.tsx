@@ -217,6 +217,7 @@ describe("CardPanel", () => {
           sectionResize: null,
           reconnect: null,
           connect: null,
+          labelDrag: null,
         },
       ],
     });

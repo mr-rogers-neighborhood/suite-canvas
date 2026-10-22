@@ -61,7 +61,7 @@ now; the target index/card-doc split is described in
 | `tags` | `LoroMap`, one key per tag: `id`, `name`, `color?`, `createdAt` |
 | `sections` | `LoroMap`, one key per field: `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?`, `createdAt`, `updatedAt` |
 | `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
-| `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` (the free-text description) |
+| `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` (the free-text description), `labelOffset?` (where along the path it sits, 0..1) |
 | `references` | derived `LoroMap` per card: `targetCardId -> true`, rebuilt from mention nodes in the title and body |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
@@ -262,6 +262,15 @@ link as a dashed path in the peer's colour from the anchored connector to their 
 same path helper as the real edge. The shared edge is hidden for the duration, so only the preview
 is visible until the drop rewrites it. React Flow reports the *anchored* handle from
 `onReconnectStart`, so the moving end is the opposite one.
+
+**The description sits on the line.** `labelOffset` places it as a fraction of the path (absent =
+the midpoint), and the chip's canvas-coloured halo opens the gap in the stroke, so the link reads
+as running into the label rather than behind a floating pill. Dragging the chip slides it along the
+link: the pointer is projected onto the path (`nearestFractionOnPath`, sampled then refined in
+`EdgeDescription.tsx`), and the position is published as `labelDrag` presence and written once on
+release (`setEdgeLabelOffset`), so a slide never streams commits. Peers see the chip move in the
+dragger's colour with their name on it, like every other gesture. The edge-label layer is raised to
+`z-index: 5` because the app draws links above cards (4) and the chip has to be hit-testable.
 
 Arrowheads follow the finished link, not the gesture: dragging the target end puts the arrow on the
 free end, dragging the source end keeps it on the anchored target, and a bidirectional link shows

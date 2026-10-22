@@ -1,3 +1,4 @@
+import type { Card } from "@suite/graph";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
 import { type CSSProperties, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -110,8 +111,11 @@ export function SuggestionList({
             </span>
             <span className="truncate">{item.title}</span>
             {item.kind === "card" ? null : (
-              <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
-                Field
+              <span
+                data-testid="mention-option-kind"
+                className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]"
+              >
+                {item.kind === "field" ? "Field" : "Link"}
               </span>
             )}
           </button>
@@ -166,8 +170,35 @@ function fieldItems(cardId: string, needle: string): MentionSuggestionItem[] {
 }
 
 /**
- * `@card.field` rows: a typed dot after a card name picks one of its fields.
- * The row is a link to the value rather than a copy of it.
+ * One card's fields as `@card.field` rows — links to the value, not copies. The
+ * title carries the card so a drilled-in list still says what it belongs to.
+ */
+function referenceRowsFor(card: Card, needle: string): MentionSuggestionItem[] {
+  const workspace = useCanvasStore.getState().workspace;
+  const title = workspace.displayTitle(card.id);
+  const glyph =
+    currentSnapshot().types.find((type) => type.id === card.primaryTypeId)?.glyph ?? "\u25c7";
+  return workspace
+    .viewCardFields(card)
+    .filter((view) => !needle || view.field.name.toLocaleLowerCase().includes(needle))
+    .map((view) => ({
+      id: `reference:${card.id}:${view.field.id}`,
+      title: `${title} \u00b7 ${view.field.name}`,
+      glyph,
+      kind: "reference" as const,
+      cardId: card.id,
+      fieldId: view.field.id,
+    }));
+}
+
+/** Cards a `.`-query or an exact-title query can point at. */
+function otherCards(ownCardId: string): Card[] {
+  return currentSnapshot().cards.filter((card) => !card.deletedAt && card.id !== ownCardId);
+}
+
+/**
+ * `@card.field` rows for a typed dot: the text before it names a card, the text
+ * after it narrows that card's fields.
  */
 function referenceItems(query: string, ownCardId: string): MentionSuggestionItem[] {
   const dot = query.indexOf(".");
@@ -179,40 +210,28 @@ function referenceItems(query: string, ownCardId: string): MentionSuggestionItem
     .toLocaleLowerCase();
   if (!cardPart) return [];
 
-  const snapshot = currentSnapshot();
   const workspace = useCanvasStore.getState().workspace;
-  const glyphs = new Map(snapshot.types.map((type) => [type.id, type.glyph]));
-  const items: MentionSuggestionItem[] = [];
-  for (const card of snapshot.cards) {
-    if (card.deletedAt || card.id === ownCardId) continue;
-    const title = workspace.displayTitle(card.id);
-    if (!title.toLocaleLowerCase().includes(cardPart)) continue;
-    for (const view of workspace.viewCardFields(card)) {
-      const name = view.field.name;
-      if (fieldPart && !name.toLocaleLowerCase().includes(fieldPart)) continue;
-      items.push({
-        id: `reference:${card.id}:${view.field.id}`,
-        title: `${title} \u00b7 ${name}`,
-        glyph: glyphs.get(card.primaryTypeId) ?? "\u25c7",
-        kind: "reference",
-        cardId: card.id,
-        fieldId: view.field.id,
-      });
-    }
-  }
-  return items;
+  return otherCards(ownCardId)
+    .filter((card) => workspace.displayTitle(card.id).toLocaleLowerCase().includes(cardPart))
+    .flatMap((card) => referenceRowsFor(card, fieldPart));
 }
 
 /**
- * This card's fields first — they insert a block rather than a link — then
- * cards, then a `card.field` reference once the query names one. Prefix
- * matches rank above substring matches; ties are alphabetical.
+ * The `@` list. This card's own fields come first — they insert a block rather
+ * than a link — then cards. Once the query names exactly one other card, that
+ * card's fields are appended below it: Enter still inserts the card, and one
+ * arrow down starts browsing `@card.field`. A typed dot does the same without
+ * needing the name at all. Prefix matches rank above substring matches; ties
+ * are alphabetical.
  */
 export function rankItems(query: string, cardId = ""): MentionSuggestionItem[] {
-  const snapshot = currentSnapshot();
   const workspace = useCanvasStore.getState().workspace;
-  const glyphs = new Map(snapshot.types.map((type) => [type.id, type.glyph]));
+  const types = currentSnapshot().types;
+  const glyphOf = (typeId: string) => types.find((type) => type.id === typeId)?.glyph ?? "\u25c7";
   const needle = query.trim().toLocaleLowerCase();
+
+  // A dotted query is asking for a field, so cards themselves step aside.
+  if (needle.includes(".")) return referenceItems(needle, cardId).slice(0, 8);
 
   const matches: { item: MentionSuggestionItem; rank: number }[] = [];
   for (const item of fieldItems(cardId, needle)) {
@@ -221,19 +240,23 @@ export function rankItems(query: string, cardId = ""): MentionSuggestionItem[] {
       rank: needle && item.title.toLocaleLowerCase().startsWith(needle) ? 0 : 1,
     });
   }
-  for (const card of snapshot.cards) {
-    if (card.deletedAt) continue;
+
+  const matching: Card[] = [];
+  for (const card of otherCards(cardId)) {
     const title = workspace.displayTitle(card.id);
     const haystack = title.toLocaleLowerCase();
-    // A dotted query is asking for a field, so cards themselves step aside.
-    if (needle.includes(".") || (needle && !haystack.includes(needle))) continue;
+    if (needle && !haystack.includes(needle)) continue;
+    matching.push(card);
     matches.push({
-      item: { id: card.id, title, glyph: glyphs.get(card.primaryTypeId) ?? "\u25c7", kind: "card" },
+      item: { id: card.id, title, glyph: glyphOf(card.primaryTypeId), kind: "card" },
       rank: needle && haystack.startsWith(needle) ? 0 : needle ? 1 : 2,
     });
   }
-  for (const item of referenceItems(needle, cardId)) {
-    matches.push({ item, rank: 0 });
+
+  // One card left in the running: offer its fields, below the card itself.
+  const [only] = matching;
+  if (matching.length === 1 && only && needle.length >= 2) {
+    for (const item of referenceRowsFor(only, "")) matches.push({ item, rank: 3 });
   }
 
   matches.sort(

@@ -36,6 +36,7 @@ export {
 export type {
   ArrowSource,
   MentionContext,
+  PropertyLink,
   PropertySource,
   ReferenceCountInput,
   ReferenceIndex,
@@ -46,6 +47,7 @@ export {
   MENTION_NODE_NAME,
   mentionContext,
   mentionTargets,
+  outgoingPropertyLinks,
   outgoingReferences,
   propertySources,
   referenceCount,
@@ -91,6 +93,7 @@ export {
   sectionSchema,
   selectOptionSchema,
   tagSchema,
+  typePluralName,
 } from "./schema.js";
 export type { Point, Rect } from "./sections.js";
 export {

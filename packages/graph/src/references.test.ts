@@ -5,6 +5,7 @@ import {
   incomingReferences,
   mentionContext,
   mentionTargets,
+  outgoingPropertyLinks,
   outgoingReferences,
   propertySources,
   referenceCount,
@@ -169,7 +170,7 @@ describe("reference helpers", () => {
       card("three", { f1: "target", f2: 3, f3: ["target"] }),
       card("self", { f1: "self" }),
     ];
-    const types = [type([field({ id: "f1", name: "Contradicts" })])];
+    const types = [type([field({ id: "f1", name: "Contradicts", kind: "card" })])];
 
     expect(propertySources("target", cards, types)).toEqual([
       { cardId: "one", fieldId: "f1", fieldName: "Contradicts" },
@@ -192,17 +193,30 @@ describe("reference helpers", () => {
     ];
 
     expect(arrowSources("target", edges)).toEqual([
-      { edgeId: "e1", otherCardId: "other", boardId: "b1", description: "causes" },
-      { edgeId: "e2", otherCardId: "other", boardId: "b1" },
-      { edgeId: "e4", otherCardId: "target", boardId: "b1", description: "itself" },
+      {
+        edgeId: "e1",
+        otherCardId: "other",
+        boardId: "b1",
+        direction: "out",
+        description: "causes",
+      },
+      { edgeId: "e2", otherCardId: "other", boardId: "b1", direction: "in" },
+      {
+        edgeId: "e4",
+        otherCardId: "target",
+        boardId: "b1",
+        direction: "out",
+        description: "itself",
+      },
     ]);
   });
 
-  it("should count mentions, property links and arrows together", () => {
+  it("should count distinct related cards across every source", () => {
     const cards = [card("source", { f1: "target" })];
     const edges = [edge("e1", "target", "neighbour")];
-    const types = [type([field({ id: "f1" })])];
+    const types = [type([field({ id: "f1", kind: "card" })])];
 
+    // source mentions target and points at it; neighbour draws an arrow.
     expect(
       referenceCount("target", {
         references: { source: ["target"], other: ["nobody"] },
@@ -210,7 +224,7 @@ describe("reference helpers", () => {
         edges,
         types,
       }),
-    ).toBe(3);
+    ).toBe(2);
     expect(referenceCount("target", { references: {}, cards: [], edges: [] })).toBe(0);
   });
 
@@ -261,5 +275,91 @@ describe("mentionContext", () => {
     mention(children, "card-a");
 
     expect(mentionContext(root, "card-a")?.before).toBe("one two");
+  });
+});
+
+describe("outgoingPropertyLinks", () => {
+  const types = [
+    {
+      id: "concept",
+      name: "Concept",
+      glyph: "\u25c6",
+      fields: [
+        { id: "partOf", name: "Part of", kind: "card" as const, order: 0, options: [] },
+        { id: "status", name: "Status", kind: "text" as const, order: 1, options: [] },
+      ],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ];
+  const card = (id: string, properties: Record<string, string>) => ({
+    id,
+    createdAt: 0,
+    updatedAt: 0,
+    deletedAt: null,
+    connectors: [],
+    typeIds: ["concept"],
+    primaryTypeId: "concept",
+    tags: [],
+    properties,
+  });
+
+  it("should name the field that carries each outgoing link", () => {
+    const links = outgoingPropertyLinks("a", [card("a", { partOf: "b", status: "draft" })], types);
+    expect(links).toEqual([{ cardId: "b", fieldId: "partOf", fieldName: "Part of" }]);
+  });
+
+  it("should ignore self references and empty values", () => {
+    const links = outgoingPropertyLinks(
+      "a",
+      [card("a", { partOf: "a" }), card("b", { partOf: "" })],
+      types,
+    );
+    expect(links).toEqual([]);
+  });
+});
+
+describe("referenceCount", () => {
+  const types = [
+    {
+      id: "concept",
+      name: "Concept",
+      glyph: "\u25c6",
+      fields: [{ id: "partOf", name: "Part of", kind: "card" as const, order: 0, options: [] }],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ];
+  const card = (id: string, properties: Record<string, string> = {}) => ({
+    id,
+    createdAt: 0,
+    updatedAt: 0,
+    deletedAt: null,
+    connectors: [],
+    typeIds: ["concept"],
+    primaryTypeId: "concept",
+    tags: [],
+    properties,
+  });
+
+  it("should count distinct related cards rather than occurrences", () => {
+    const count = referenceCount("a", {
+      references: { b: ["a"] },
+      cards: [card("b", { partOf: "a" }), card("a")],
+      edges: [],
+      types,
+    });
+    // b mentions a and points at it through a field; it is still one card.
+    expect(count).toBe(1);
+  });
+
+  it("should count both directions and ignore self links", () => {
+    const count = referenceCount("a", {
+      references: { a: ["a", "b"] },
+      cards: [card("a", { partOf: "c" })],
+      edges: [],
+      types,
+    });
+    expect(count).toBe(2);
   });
 });

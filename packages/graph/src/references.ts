@@ -17,6 +17,8 @@ export interface ArrowSource {
   edgeId: string;
   otherCardId: string;
   boardId: string;
+  /** `out` when the arrow leaves this card, `in` when it arrives. */
+  direction: "out" | "in";
   description?: string;
 }
 
@@ -197,16 +199,19 @@ export function propertySources(
   cards: readonly Card[],
   types: readonly CardType[] = [],
 ): PropertySource[] {
-  const names = new Map<string, string>();
+  const fields = new Map<string, { name: string; kind: string }>();
   for (const type of types) {
-    for (const field of type.fields) names.set(field.id, field.name);
+    for (const field of type.fields) fields.set(field.id, { name: field.name, kind: field.kind });
   }
 
   const sources: PropertySource[] = [];
   for (const card of cards) {
     for (const [fieldId, value] of Object.entries(card.properties)) {
       if (typeof value !== "string" || value !== cardId) continue;
-      sources.push({ cardId: card.id, fieldId, fieldName: names.get(fieldId) ?? fieldId });
+      // A known field must be card-valued; an unknown one is kept so a missing
+      // type definition does not silently hide a link.
+      if (fields.get(fieldId)?.kind !== undefined && fields.get(fieldId)?.kind !== "card") continue;
+      sources.push({ cardId: card.id, fieldId, fieldName: fields.get(fieldId)?.name ?? fieldId });
     }
   }
   return sources.sort(
@@ -228,6 +233,7 @@ export function arrowSources(cardId: string, edges: readonly GraphEdge[]): Arrow
       edgeId: edge.id,
       otherCardId: outgoing ? edge.target : edge.source,
       boardId: edge.boardId,
+      direction: outgoing ? "out" : "in",
       ...(edge.label === undefined ? {} : { description: edge.label }),
     });
   }
@@ -235,10 +241,56 @@ export function arrowSources(cardId: string, edges: readonly GraphEdge[]): Arrow
 }
 
 /** What the header chip counts: mentions, property links and arrows pointing in. */
+/**
+ * Distinct cards this one is linked to, in either direction. Occurrences do not
+ * add up: three mentions of the same card are one link.
+ */
 export function referenceCount(cardId: string, input: ReferenceCountInput): number {
-  return (
-    incomingReferences(cardId, input.references).length +
-    propertySources(cardId, input.cards, input.types ?? []).length +
-    arrowSources(cardId, input.edges).length
+  const related = new Set<string>();
+  for (const sourceId of incomingReferences(cardId, input.references)) related.add(sourceId);
+  for (const targetId of outgoingReferences(cardId, input.references)) related.add(targetId);
+  for (const source of propertySources(cardId, input.cards, input.types ?? [])) {
+    related.add(source.cardId);
+  }
+  for (const link of outgoingPropertyLinks(cardId, input.cards, input.types ?? [])) {
+    related.add(link.cardId);
+  }
+  for (const arrow of arrowSources(cardId, input.edges)) related.add(arrow.otherCardId);
+  related.delete(cardId);
+  return related.size;
+}
+
+export interface PropertyLink {
+  cardId: string;
+  fieldId: string;
+  fieldName: string;
+}
+
+/** Cards this card points at through its own `card` fields. */
+export function outgoingPropertyLinks(
+  cardId: string,
+  cards: readonly Card[],
+  types: readonly CardType[] = [],
+): PropertyLink[] {
+  const card = cards.find((entry) => entry.id === cardId);
+  if (!card) return [];
+
+  const fields = new Map<string, { name: string; kind: string }>();
+  for (const type of types) {
+    for (const field of type.fields) fields.set(field.id, { name: field.name, kind: field.kind });
+  }
+
+  const links: PropertyLink[] = [];
+  for (const [fieldId, value] of Object.entries(card.properties)) {
+    if (typeof value !== "string" || value.length === 0 || value === cardId) continue;
+    const field = fields.get(fieldId);
+    if (field !== undefined && field.kind !== "card") continue;
+    links.push({ cardId: value, fieldId, fieldName: field?.name ?? fieldId });
+  }
+  return links.sort(
+    (a, b) =>
+      a.cardId.localeCompare(b.cardId) ||
+      a.fieldName.localeCompare(b.fieldName) ||
+      a.fieldId.localeCompare(b.fieldId),
   );
 }

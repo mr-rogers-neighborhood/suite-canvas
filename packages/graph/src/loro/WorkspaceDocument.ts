@@ -1903,6 +1903,9 @@ export class WorkspaceDocument {
       this.clearProperty(cardId, fieldId);
       return;
     }
+    if (field.kind === "card" && value === cardId) {
+      throw new Error(`Field "${field.name}" cannot point at its own card`);
+    }
     assertPropertyValue(field, value);
     this.mutateCard(cardId, (fields) => {
       const properties = fields.ensureMergeableMap("properties");

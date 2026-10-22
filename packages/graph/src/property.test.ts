@@ -109,3 +109,17 @@ describe("date validation in the document", () => {
     expect(() => workspace.setProperty("c1", due.id, "not-a-date")).toThrow(/date/);
   });
 });
+
+describe("card self-reference", () => {
+  it("should refuse a card-valued property that points at its own card", async () => {
+    const { WorkspaceDocument } = await import("./loro/WorkspaceDocument.js");
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    workspace.createCard({ id: "c1" });
+    const related = workspace.addField("note", { name: "Related", kind: "card" });
+    expect(() => workspace.setProperty("c1", related.id, "c1")).toThrow(/own card/);
+    workspace.createCard({ id: "c2" });
+    workspace.setProperty("c1", related.id, "c2");
+    expect(workspace.getCard("c1")?.properties[related.id]).toBe("c2");
+  });
+});

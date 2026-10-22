@@ -228,11 +228,13 @@ describe("mentionContext", () => {
     const paragraphs = kids(root);
     const first = node(paragraphs, "paragraph");
     const firstKids = kids(first);
-    firstKids.insertContainer(0, new LoroText()).getAttached().insert(0, "Before text");
+    const before = firstKids.insertContainer(0, new LoroText());
+    before.insert(0, "Before text");
     mention(firstKids, "card-a");
 
     const second = node(paragraphs, "paragraph");
-    kids(second).insertContainer(0, new LoroText()).getAttached().insert(0, "After text");
+    const after = kids(second).insertContainer(0, new LoroText());
+    after.insert(0, "After text");
 
     const context = mentionContext(root, "card-a");
     expect(context?.before).toBe("Before text");
@@ -242,7 +244,8 @@ describe("mentionContext", () => {
   it("should return null when the card never mentions the target", () => {
     const { root } = bodyDoc();
     const first = node(kids(root), "paragraph");
-    kids(first).insertContainer(0, new LoroText()).getAttached().insert(0, "Nothing here");
+    const only = kids(first).insertContainer(0, new LoroText());
+    only.insert(0, "Nothing here");
     expect(mentionContext(root, "card-a")).toBeNull();
   });
 
@@ -250,9 +253,11 @@ describe("mentionContext", () => {
     const { root } = bodyDoc();
     const first = node(kids(root), "paragraph");
     const children = kids(first);
-    children.insertContainer(0, new LoroText()).getAttached().insert(0, "one");
+    const firstText = children.insertContainer(0, new LoroText());
+    firstText.insert(0, "one");
     mention(children, "other");
-    children.insertContainer(children.length, new LoroText()).getAttached().insert(0, "two");
+    const secondText = children.insertContainer(children.length, new LoroText());
+    secondText.insert(0, "two");
     mention(children, "card-a");
 
     expect(mentionContext(root, "card-a")?.before).toBe("one two");

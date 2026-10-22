@@ -4,8 +4,13 @@ const shareApi = process.env.VITE_COLLAB_HTTP_URL ?? "http://localhost:1235";
 
 test("creates and revokes links from the Share dialog", async ({ page, request }) => {
   // A fresh workspace per run: shares are stored per workspace id on the server.
-  await page.goto(`/?workspace=e2e-share-${Date.now()}`);
+  const workspaceId = `e2e-share-${Date.now()}`;
+  await page.goto(`/?workspace=${workspaceId}`);
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+
+  // Management needs the owner key the editor holds; a bare request is refused.
+  const denied = await request.get(`${shareApi}/api/shares?workspaceId=${workspaceId}`);
+  expect(denied.status()).toBe(401);
 
   await page.getByTestId("workspace-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();

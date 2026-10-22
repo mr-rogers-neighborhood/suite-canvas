@@ -55,6 +55,11 @@ export interface ShareStore {
   listAllActive: () => Share[];
   /** Revokes a share; returns the updated record, or null when it does not exist. */
   revoke: (id: string) => Share | null;
+  /** Last projection snapshot a share room was rebuilt from, or null when none was stored. */
+  getBaseline: (shareId: string) => Uint8Array | null;
+  /** Replaces the baseline snapshot of a share; the draft lifecycle reads it on reopen. */
+  setBaseline: (shareId: string, snapshot: Uint8Array) => void;
+  deleteBaseline: (shareId: string) => void;
   close: () => void;
 }
 
@@ -88,16 +93,6 @@ function isId(value: unknown): value is string {
 
 function normalizeId(value: unknown): string | null {
   return isId(value) ? value.trim() : null;
-}
-
-/**
- * A workspace viewer would join the workspace room and learn the id that share
- * management is keyed by; with the current link-only owner path that id is also
- * write access. Such links are deferred until management has a credential of
- * its own, so neither creation nor a legacy row may resolve.
- */
-function isDeferredShare(scope: string, role: string): boolean {
-  return scope === "workspace" && role === "viewer";
 }
 
 /** Validates a create payload; returns a human-readable problem, or null when valid. */
@@ -182,7 +177,12 @@ export function createShareStore(path: string): ShareStore {
        revoked_at INTEGER,
        room_id TEXT
      );
-     CREATE INDEX IF NOT EXISTS shares_by_workspace ON shares (workspace_id, created_at);`,
+     CREATE INDEX IF NOT EXISTS shares_by_workspace ON shares (workspace_id, created_at);
+     CREATE TABLE IF NOT EXISTS share_baselines (
+       share_id TEXT PRIMARY KEY,
+       snapshot BLOB NOT NULL,
+       updated_at INTEGER NOT NULL
+     );`,
   );
   migrateRoomIdColumn(db);
 
@@ -201,6 +201,12 @@ export function createShareStore(path: string): ShareStore {
   const revokeById = db.prepare(
     "UPDATE shares SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
   );
+  const selectBaseline = db.prepare("SELECT snapshot FROM share_baselines WHERE share_id = ?");
+  const upsertBaseline = db.prepare(
+    `INSERT INTO share_baselines (share_id, snapshot, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(share_id) DO UPDATE SET snapshot = excluded.snapshot, updated_at = excluded.updated_at`,
+  );
+  const deleteBaselineById = db.prepare("DELETE FROM share_baselines WHERE share_id = ?");
 
   const get = (id: string): Share | null => {
     const row = selectById.get(id) as ShareRow | undefined;
@@ -211,9 +217,6 @@ export function createShareStore(path: string): ShareStore {
     create: (input) => {
       const problem = validateShareInput(input);
       if (problem) throw new Error(problem);
-      if (isDeferredShare(input.scope, input.role)) {
-        throw new Error("Workspace viewer links are coming next.");
-      }
 
       const id = randomUUID();
       const token = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -238,25 +241,37 @@ export function createShareStore(path: string): ShareStore {
     resolve: (token) => {
       if (token.length === 0) return null;
       const row = selectByHash.get(hashShareToken(token)) as ShareRow | undefined;
-      if (!row || row.revoked_at != null || isDeferredShare(row.scope, row.role)) return null;
+      if (!row || row.revoked_at != null) return null;
       return toShare(row, token);
     },
 
     get,
 
     list: (workspaceId) =>
-      (selectActive.all(workspaceId) as unknown as ShareRow[])
-        .filter((row) => !isDeferredShare(row.scope, row.role))
-        .map((row) => toShare(row, null)),
+      (selectActive.all(workspaceId) as unknown as ShareRow[]).map((row) => toShare(row, null)),
 
     listAllActive: () =>
-      (selectAllActive.all() as unknown as ShareRow[])
-        .filter((row) => !isDeferredShare(row.scope, row.role))
-        .map((row) => toShare(row, null)),
+      (selectAllActive.all() as unknown as ShareRow[]).map((row) => toShare(row, null)),
 
     revoke: (id) => {
       revokeById.run(Date.now(), id);
+      // A revoked share is never projected again, so its draft baseline has no
+      // reader. Dropping it keeps the table to active shares only.
+      deleteBaselineById.run(id);
       return get(id);
+    },
+
+    getBaseline: (shareId) => {
+      const row = selectBaseline.get(shareId) as { snapshot?: Uint8Array } | undefined;
+      return row?.snapshot ? new Uint8Array(row.snapshot) : null;
+    },
+
+    setBaseline: (shareId, snapshot) => {
+      upsertBaseline.run(shareId, snapshot, Date.now());
+    },
+
+    deleteBaseline: (shareId) => {
+      deleteBaselineById.run(shareId);
     },
 
     close: () => db.close(),

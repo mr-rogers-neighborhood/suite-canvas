@@ -17,6 +17,17 @@ const links: Share[] = [
     roomId: "ws-demo",
   },
   {
+    id: "share-workspace-viewer",
+    scope: "workspace",
+    role: "viewer",
+    workspaceId: "ws-demo",
+    boardId: null,
+    cardId: null,
+    createdAt: created - 60_000,
+    revokedAt: null,
+    roomId: "ws-demo",
+  },
+  {
     id: "share-board",
     scope: "board",
     role: "viewer",
@@ -31,7 +42,7 @@ const links: Share[] = [
 
 function demoClient(shares: Share[]): ShareClient {
   return {
-    createShare: async (input) => ({
+    createShare: async (input, _ownerKey) => ({
       token: "demo-token",
       share: {
         id: "demo-share",
@@ -45,8 +56,8 @@ function demoClient(shares: Share[]): ShareClient {
         roomId: "share-demo-token",
       },
     }),
-    listShares: async () => shares,
-    revokeShare: async (id) => {
+    listShares: async (_workspaceId, _ownerKey) => shares,
+    revokeShare: async (id, _ownerKey) => {
       const base: Share = shares.find((entry) => entry.id === id) ?? {
         id,
         scope: "workspace",

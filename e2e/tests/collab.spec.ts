@@ -56,7 +56,10 @@ const editingCard = (page: Page) =>
  * random suffix keeps repeats of the same test apart even when two workers start
  * in the same millisecond.
  */
-const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`;
+// The owner key rides in the fragment so both contexts of a test can claim the
+// same workspace; a second context without it is a different owner.
+const docUrl = (name: string) =>
+  `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}#owner=${crypto.randomUUID()}`;
 
 test("creates, edits, and deletes a note", async ({ page }) => {
   await page.goto(docUrl("create-edit-delete"));

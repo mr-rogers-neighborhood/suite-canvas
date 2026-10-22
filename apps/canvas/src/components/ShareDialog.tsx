@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getSession } from "../session/session";
 import type {
   CreatedShare,
   CreateShareInput,
@@ -13,9 +14,9 @@ import { workspaceUrl } from "../session/workspaceTransfer";
 
 /** The slice of the share API the dialog needs; stories and tests may replace it. */
 export interface ShareClient {
-  createShare: (input: CreateShareInput) => Promise<CreatedShare>;
-  listShares: (workspaceId: string) => Promise<Share[]>;
-  revokeShare: (id: string) => Promise<Share>;
+  createShare: (input: CreateShareInput, ownerKey: string | null) => Promise<CreatedShare>;
+  listShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
+  revokeShare: (id: string, ownerKey: string | null) => Promise<Share>;
 }
 
 const defaultClient: ShareClient = {
@@ -67,9 +68,10 @@ function createdLabel(createdAt: number): string {
 }
 
 /**
- * One dialog for every kind of share. Viewer links are capability tokens;
- * editor links for board and card shares wait on the projection phase, so the
- * dialog says so instead of asking the server for a link it will reject.
+ * One dialog for every kind of share. Token links are capability links and
+ * management calls carry the owner key. Board and card editors change a
+ * projection and publish it back; a workspace editor link is the plain editor
+ * URL with the owner key in the fragment.
  */
 export function ShareDialog({
   workspaceId,
@@ -81,6 +83,7 @@ export function ShareDialog({
   client,
 }: ShareDialogProps) {
   const api = useMemo(() => client ?? defaultClient, [client]);
+  const ownerKey = getSession().ownerKey;
   const [scope, setScope] = useState<ShareScope>("workspace");
   const [role, setRole] = useState<ShareRole>("editor");
   const [shares, setShares] = useState<Share[]>([]);
@@ -98,12 +101,8 @@ export function ShareDialog({
 
   const boardAvailable = Boolean(boardId);
   const cardAvailable = Boolean(cardId);
-  // A workspace viewer would join the owner's workspace room and learn the id
-  // that share management is keyed by, so it cannot be offered until that
-  // management has a credential of its own.
-  const viewerBlocked = scope === "workspace" && role === "viewer";
-  const editorBlocked = scope !== "workspace" && role === "editor";
-  const linkBlocked = viewerBlocked || editorBlocked;
+  // Every role and scope is served by the API: viewers read a projection and
+  // editors change it, then publish back to the workspace.
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -128,7 +127,7 @@ export function ShareDialog({
     const id = ++loadId.current;
     setLoading(true);
     try {
-      const next = await api.listShares(workspaceId);
+      const next = await api.listShares(workspaceId, ownerKey);
       if (id === loadId.current) setShares(next);
     } catch (cause) {
       if (id === loadId.current) {
@@ -138,7 +137,7 @@ export function ShareDialog({
     } finally {
       if (id === loadId.current) setLoading(false);
     }
-  }, [api, workspaceId]);
+  }, [api, ownerKey, workspaceId]);
 
   useEffect(() => {
     void load();
@@ -180,22 +179,26 @@ export function ShareDialog({
   };
 
   const create = async () => {
-    if (linkBlocked) return;
     setError(null);
     setCopied(null);
     setBusy(true);
     try {
       if (scope === "workspace" && role === "editor") {
-        setLink({ url: workspaceUrl(workspaceId, boardId), shareId: null });
+        // The editor link is the recovery path for a lost browser profile, so it
+        // carries the owner key in the fragment.
+        setLink({ url: workspaceUrl(workspaceId, boardId, getSession().ownerKey), shareId: null });
         return;
       }
-      const created = await api.createShare({
-        workspaceId,
-        scope,
-        role,
-        boardId: scope === "board" ? boardId : null,
-        cardId: scope === "card" ? cardId : null,
-      });
+      const created = await api.createShare(
+        {
+          workspaceId,
+          scope,
+          role,
+          boardId: scope === "board" ? boardId : null,
+          cardId: scope === "card" ? cardId : null,
+        },
+        ownerKey,
+      );
       tokens.current.set(created.share.id, created.token);
       setLink({ url: sharesApi.shareLink(created.token), shareId: created.share.id });
       void load();
@@ -210,7 +213,7 @@ export function ShareDialog({
     setError(null);
     setBusy(true);
     try {
-      await api.revokeShare(share.id);
+      await api.revokeShare(share.id, ownerKey);
       setLink((current) => (current?.shareId === share.id ? null : current));
       void load();
     } catch (cause) {
@@ -225,7 +228,7 @@ export function ShareDialog({
     if (token) return sharesApi.shareLink(token);
     // Workspace editor links are the plain editor URL and need no token.
     if (share.scope === "workspace" && share.role === "editor") {
-      return workspaceUrl(workspaceId, null);
+      return workspaceUrl(workspaceId, null, getSession().ownerKey);
     }
     return null;
   };
@@ -234,13 +237,19 @@ export function ShareDialog({
     scope === "workspace"
       ? role === "editor"
         ? "This is the editor link: anyone with it can change the workspace."
-        : "Workspace viewer links are coming next. Use the editor link, or share one board."
-      : scope === "board"
-        ? `Viewers see only ${boardName ?? "this board"}.`
-        : `Viewers see only ${cardTitle ?? "this card"}.`;
+        : "Viewers can read every board, but cannot change anything or manage links."
+      : role === "editor"
+        ? `Editors can change this ${scope} and publish. No new cards or type changes.`
+        : scope === "board"
+          ? `Viewers see only ${boardName ?? "this board"}.`
+          : `Viewers see only ${cardTitle ?? "this card"}.`;
 
   const createLabel =
-    scope === "workspace" && role === "editor" ? "Get editor link" : "Create viewer link";
+    scope === "workspace" && role === "editor"
+      ? "Get editor link"
+      : role === "editor"
+        ? "Create editor link"
+        : "Create viewer link";
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
@@ -343,22 +352,11 @@ export function ShareDialog({
           {hint}
         </p>
 
-        {linkBlocked ? (
-          <p
-            className="mt-2 rounded-lg border border-dashed border-[var(--hairline)] px-2 py-1.5 text-[11px] text-[var(--ink-muted)]"
-            data-testid="share-coming-next"
-          >
-            {viewerBlocked
-              ? "Workspace viewer links are coming next. Use the editor link, or share one board."
-              : "Board and card editor links are coming next. Use a viewer link for now."}
-          </p>
-        ) : null}
-
         <div className="mt-2 flex items-center justify-end">
           <button
             type="button"
             data-testid="share-create"
-            disabled={busy || linkBlocked}
+            disabled={busy}
             className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-[11px] text-[var(--surface)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => void create()}
           >

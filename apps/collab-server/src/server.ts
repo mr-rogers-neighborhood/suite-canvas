@@ -5,6 +5,8 @@ import { handleShareRequest } from "./http.js";
 import { createDocumentStore } from "./persistence.js";
 import { loadLoroDocument, loroDocumentKey, ProjectionWorker } from "./projectionWorker.js";
 import { createShareStore, SHARE_ROOM_PREFIX } from "./shares.js";
+import { handleWorkspaceRequest } from "./workspaceHttp.js";
+import { createWorkspaceRegistry } from "./workspaces.js";
 
 const port = Number(process.env.PORT ?? 1234);
 const healthPort = Number(process.env.HEALTH_PORT ?? 1235);
@@ -12,6 +14,11 @@ const store = createDocumentStore(process.env.SUITE_DB ?? "suite.documents.sqlit
 // Shares live in their own file so token writes never contend with the
 // document store's save interval.
 const shares = createShareStore(process.env.SUITE_SHARES_DB ?? "suite.shares.sqlite");
+// Owner key hashes live beside the share hashes: both are credentials, neither
+// is document state, so they stay out of the document store's save loop.
+const workspaces = createWorkspaceRegistry(
+  process.env.SUITE_WORKSPACES_DB ?? "suite.workspaces.sqlite",
+);
 const internalToken = resolveInternalToken();
 
 // Board and card shares read a projection room kept up to date by this worker.
@@ -44,7 +51,7 @@ const server = new SimpleServer({
   },
 
   authenticate(roomId, _crdtType, auth) {
-    return authorize(roomId, auth, { shares, internalToken });
+    return authorize(roomId, auth, { shares, workspaces, internalToken });
   },
 });
 
@@ -52,11 +59,17 @@ await server.start();
 await worker.start();
 
 const health = createServer((request, response) => {
-  void handleShareRequest(request, response, shares, {
+  void handleShareRequest(request, response, shares, workspaces, {
     onSharesChanged: (workspaceId) => {
       void worker.schedule(workspaceId, { immediate: true });
     },
+    publish: (share, version) => worker.publish(share, version),
+    reload: (share) => worker.reload(share),
   })
+    .then((handled) => {
+      if (handled || response.writableEnded) return;
+      return handleWorkspaceRequest(request, response, workspaces);
+    })
     .then((handled) => {
       if (handled || response.writableEnded) return;
       if (request.url === "/health") {
@@ -87,6 +100,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         health.close();
         store.close();
         shares.close();
+        workspaces.close();
         process.exit(0);
       });
   });

@@ -8,9 +8,18 @@ export interface TagPickerProps {
   onRemove: (tagId: string) => void;
   /** Creates the tag when the typed name is new, then adds it. */
   onCreate: (name: string) => void;
+  /** Only the owner may create tags; an editor share assigns existing ones. */
+  canCreate?: boolean;
 }
 
-export function TagPicker({ tags, selectedIds, onAdd, onRemove, onCreate }: TagPickerProps) {
+export function TagPicker({
+  tags,
+  selectedIds,
+  onAdd,
+  onRemove,
+  onCreate,
+  canCreate = true,
+}: TagPickerProps) {
   const [draft, setDraft] = useState("");
   const selected = useMemo(
     () => tags.filter((tag) => selectedIds.includes(tag.id)),
@@ -33,7 +42,7 @@ export function TagPicker({ tags, selectedIds, onAdd, onRemove, onCreate }: TagP
       (tag) => tag.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
     );
     if (existing) onAdd(existing.id);
-    else onCreate(trimmed);
+    else if (canCreate) onCreate(trimmed);
     setDraft("");
   };
 

@@ -1,8 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  `/?workspace=e2e-selection-${name}-${Date.now()}-${++sequence}`;
+  withOwnerKey(`/?workspace=e2e-selection-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const selectedNodes = (page: Page) => page.locator(".react-flow__node.selected");

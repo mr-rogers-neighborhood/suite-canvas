@@ -1,10 +1,19 @@
-import { applyProjection, projectWorkspace, WorkspaceDocument } from "@suite/graph";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  applyProjection,
+  applyPublish,
+  PROJECTION_APPLY_ORIGIN,
+  type PublishConflict,
+  planPublish,
+  projectWorkspace,
+  WorkspaceDocument,
+} from "@suite/graph";
 import { LoroAdaptor } from "loro-adaptors/loro";
-import { LoroDoc } from "loro-crdt";
+import { LoroDoc, VersionVector } from "loro-crdt";
 import { CrdtType } from "loro-protocol";
-import { LoroWebsocketClient, type LoroWebsocketClientRoom } from "loro-websocket";
+import { LoroWebsocketClient, type LoroWebsocketClientRoom, RoomJoinStatus } from "loro-websocket";
 import type { DocumentStore } from "./persistence.js";
-import type { Share, ShareStore } from "./shares.js";
+import type { Share, ShareRole, ShareStore } from "./shares.js";
 
 /**
  * Store key of the Loro document in a sync room.
@@ -43,7 +52,18 @@ export function loadLoroDocument(
 /** Scopes a projection worker keeps alive; workspace shares open the real room. */
 type ProjectionTarget = { scope: "board"; boardId: string } | { scope: "card"; cardId: string };
 
-export type ProjectionWorkerShares = Pick<ShareStore, "list" | "listAllActive">;
+export type ProjectionWorkerShares = Pick<
+  ShareStore,
+  "list" | "listAllActive" | "getBaseline" | "setBaseline" | "deleteBaseline"
+>;
+
+/** A share document's version vector as JSON, keyed by peer id. */
+export type ShareVersion = Record<string, number>;
+
+/** What a publish or reload did. A rejected publish returns the reasons instead. */
+export type SharePublishResult =
+  | { ok: true; applied: number }
+  | { ok: false; conflicts: PublishConflict[]; unsupported: PublishConflict[]; reason?: string };
 
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
@@ -61,12 +81,30 @@ interface RoomState {
   roomId: string;
   shareId: string;
   workspaceId: string;
+  role: ShareRole;
   target: ProjectionTarget;
   doc: LoroDoc;
   adaptor: LoroAdaptor;
   /** Wrapper kept for the life of the room so the target peer id stays stable. */
   workspace: WorkspaceDocument;
   room: LoroWebsocketClientRoom;
+  /** Projection the draft was last written from; the base of a publish diff. */
+  baseline: WorkspaceDocument | null;
+  /** Version vector of `doc` when `baseline` was taken, as canonical JSON. */
+  baselineVersion: string;
+  /** True once an editor changed the draft after the last projection. */
+  dirty: boolean;
+}
+
+/** The worker's writer connection to a real workspace room, used by publish. */
+interface SourceRoom {
+  workspaceId: string;
+  doc: LoroDoc;
+  adaptor: LoroAdaptor;
+  workspace: WorkspaceDocument;
+  room: LoroWebsocketClientRoom;
+  /** Live connection state; a publish must not write into a dead room. */
+  status: () => string;
 }
 
 interface PendingRebuild {
@@ -78,6 +116,11 @@ interface PendingRebuild {
 const DEFAULT_DEBOUNCE_MS = 200;
 /** A brand-new room never reaches a server version, so cap the wait. */
 const JOIN_SETTLE_MS = 1000;
+/** Cap the post-publish wait for the source room; the write is already local. */
+const SOURCE_FLUSH_MS = 200;
+/** How long a publish waits for the editor's draft to reach the share room. */
+const VERSION_GATE_MS = 2000;
+const VERSION_POLL_MS = 25;
 const encoder = new TextEncoder();
 
 function isProjectionShare(share: Share): boolean {
@@ -97,6 +140,28 @@ function targetOf(share: Share): ProjectionTarget | null {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Canonical form of a version vector, so two documents compare by value. */
+function versionJson(doc: LoroDoc): string {
+  const entries = [...doc.version().toJSON()].map(
+    ([peer, counter]) => [String(peer), counter] as const,
+  );
+  entries.sort((left, right) => left[0].localeCompare(right[0]));
+  return JSON.stringify(entries);
+}
+
+function failure(reason: string): SharePublishResult {
+  return { ok: false, conflicts: [], unsupported: [], reason };
+}
+
+/** Why a share cannot publish, or null when it may. */
+function publishProblem(share: Share): string | null {
+  if (share.revokedAt !== null) return "This share was revoked.";
+  if (share.scope === "workspace") return "Workspace shares do not publish.";
+  if (share.role !== "editor") return "This link is read-only.";
+  if (!share.roomId) return "This share has no room.";
+  return null;
 }
 
 /** Resolves when the work settles, or after `ms`, so a stale room cannot block. */
@@ -130,6 +195,8 @@ export class ProjectionWorker {
   private readonly debounceMs: number;
   private client: LoroWebsocketClient | null = null;
   private readonly rooms = new Map<string, RoomState>();
+  private readonly sources = new Map<string, SourceRoom>();
+  private readonly openingSources = new Map<string, Promise<SourceRoom | null>>();
   private readonly pending = new Map<string, PendingRebuild>();
   private readonly queues = new Map<string, Promise<void>>();
   private started = false;
@@ -200,7 +267,7 @@ export class ProjectionWorker {
     return promise;
   }
 
-  /** Leaves every room and closes the client. */
+  /** Leaves every room (source room included) and closes the client. */
   async stop(): Promise<void> {
     this.started = false;
     for (const pending of this.pending.values()) {
@@ -209,12 +276,16 @@ export class ProjectionWorker {
     }
     this.pending.clear();
 
-    await Promise.allSettled([...this.queues.values()]);
+    await Promise.allSettled([...this.queues.values(), ...this.openingSources.values()]);
     this.queues.clear();
+    this.openingSources.clear();
 
     const rooms = [...this.rooms.values()];
     this.rooms.clear();
     for (const room of rooms) await this.closeRoom(room);
+
+    const sources = [...this.sources.keys()];
+    for (const workspaceId of sources) await this.closeSource(workspaceId);
 
     this.client?.destroy();
     this.client = null;
@@ -225,24 +296,63 @@ export class ProjectionWorker {
     return [...this.rooms.keys()];
   }
 
+  /** Workspaces with a live source-room writer, for tests and diagnostics. */
+  sourceIds(): string[] {
+    return [...this.sources.keys()];
+  }
+
+  /** Connection state of a workspace's source room, for tests and diagnostics. */
+  sourceStatus(workspaceId: string): string | null {
+    return this.sources.get(workspaceId)?.status() ?? null;
+  }
+
+  /**
+   * Publishes an editor's draft into its workspace. The share room, its source
+   * room and a baseline are all required: a publish never falls back to saved
+   * bytes, because those may lag the owner's live edits.
+   */
+  publish(share: Share, version?: ShareVersion): Promise<SharePublishResult> {
+    if (!this.started) return Promise.resolve(failure("The share service is not running."));
+    return this.enqueue(share.workspaceId, () => this.publishNow(share, version)).catch(
+      (error: unknown) => failure(message(error)),
+    );
+  }
+
+  /** Discards an editor's draft and rebuilds it from the workspace. */
+  reload(share: Share): Promise<SharePublishResult> {
+    if (!this.started) return Promise.resolve(failure("The share service is not running."));
+    return this.enqueue(share.workspaceId, () => this.reloadNow(share)).catch((error: unknown) =>
+      failure(message(error)),
+    );
+  }
+
   private fire(workspaceId: string): void {
     const pending = this.pending.get(workspaceId);
     this.pending.delete(workspaceId);
     void this.run(workspaceId).then(() => pending?.resolve());
   }
 
-  /** Serializes rebuilds per workspace so two saves cannot interleave writes. */
-  private run(workspaceId: string): Promise<void> {
+  /**
+   * Serializes work per workspace so two saves, or a save and a publish, cannot
+   * interleave writes. Every task runs even when the task before it failed.
+   */
+  private enqueue<T>(workspaceId: string, work: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(workspaceId) ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(() => this.refresh(workspaceId))
-      .catch((error: unknown) => this.warn(`rebuild of ${workspaceId} failed: ${message(error)}`));
-    this.queues.set(workspaceId, next);
-    void next.then(() => {
-      if (this.queues.get(workspaceId) === next) this.queues.delete(workspaceId);
+    const next = previous.then(work, work);
+    const settled = next.then(
+      () => undefined,
+      (error: unknown) => this.warn(`work for ${workspaceId} failed: ${message(error)}`),
+    );
+    this.queues.set(workspaceId, settled);
+    void settled.then(() => {
+      if (this.queues.get(workspaceId) === settled) this.queues.delete(workspaceId);
     });
     return next;
+  }
+
+  /** Serializes rebuilds per workspace so two saves cannot interleave writes. */
+  private run(workspaceId: string): Promise<void> {
+    return this.enqueue(workspaceId, () => this.refresh(workspaceId));
   }
 
   private async refresh(workspaceId: string): Promise<void> {
@@ -271,12 +381,24 @@ export class ProjectionWorker {
       if (wanted.has(roomId)) continue;
       this.rooms.delete(roomId);
       await this.closeRoom(room);
+      // The share was revoked or lost its target; a draft baseline has no reader.
+      try {
+        this.options.shares.deleteBaseline(room.shareId);
+      } catch (error) {
+        this.warn(`could not drop the baseline for ${room.shareId}: ${message(error)}`);
+      }
     }
 
     for (const [roomId, share] of wanted) {
       if (this.rooms.has(roomId)) continue;
       await this.openRoom(share);
     }
+
+    // Only a workspace with an editor share needs a writer connection: viewers
+    // are served from the saved bytes, and a publish must see live owner state.
+    const hasEditor = [...wanted.values()].some((share) => share.role === "editor");
+    if (hasEditor) await this.ensureSource(workspaceId);
+    else await this.closeSource(workspaceId);
   }
 
   private async openRoom(share: Share): Promise<void> {
@@ -302,20 +424,71 @@ export class ProjectionWorker {
         adaptor.destroy();
         return;
       }
-      this.rooms.set(roomId, {
+
+      const baseline = this.loadBaseline(share.id);
+      const state: RoomState = {
         roomId,
         shareId: share.id,
         workspaceId: share.workspaceId,
+        role: share.role,
         target,
         doc,
         adaptor,
         workspace: new WorkspaceDocument(doc),
         room,
-      });
+        baseline,
+        baselineVersion: baseline ? versionJson(baseline.doc) : "",
+        dirty: false,
+      };
+      // A draft that survived a restart is still the editor's until it is
+      // published or reloaded. The version vector cannot answer that on its own:
+      // a projection written after the baseline was persisted advances the room
+      // history without changing a value, so compare the allowed content.
+      state.dirty =
+        share.role === "editor" &&
+        baseline !== null &&
+        this.draftDiffers(state.workspace, baseline, target);
+      this.watchDraft(state);
+      this.rooms.set(roomId, state);
     } catch (error) {
       adaptor.destroy();
       this.warn(`could not join ${roomId}: ${message(error)}`);
     }
+  }
+
+  /**
+   * Whether the draft's allowed content differs from the baseline. A restarted
+   * worker cannot use the version vector for this: the server may have applied a
+   * projection after the baseline was persisted, which advances the history
+   * without changing a value. Only real draft edits should pause projection.
+   */
+  private draftDiffers(
+    draft: WorkspaceDocument,
+    baseline: WorkspaceDocument,
+    target: ProjectionTarget,
+  ): boolean {
+    try {
+      return planPublish(draft, baseline, baseline, target).changes.length > 0;
+    } catch (error) {
+      // Comparing must never freeze a room; a broken comparison reads as clean.
+      this.warn(`could not compare a draft with its baseline: ${message(error)}`);
+      return false;
+    }
+  }
+
+  /**
+   * Marks an editor room dirty when a change arrives that did not come from the
+   * projection. The origin alone is not enough: a remote editor's import may
+   * carry any origin, so the current version is compared with the baseline too.
+   */
+  private watchDraft(room: RoomState): void {
+    if (room.role !== "editor") return;
+    room.doc.subscribe((batch) => {
+      if (batch.origin === PROJECTION_APPLY_ORIGIN) return;
+      if (room.dirty) return;
+      if (versionJson(room.doc) === room.baselineVersion) return;
+      room.dirty = true;
+    });
   }
 
   private async closeRoom(room: RoomState): Promise<void> {
@@ -338,27 +511,254 @@ export class ProjectionWorker {
     }
   }
 
-  private loadSource(workspaceId: string): WorkspaceDocument | null {
-    const state = loadLoroDocument(this.options.documents, workspaceId);
-    if (!state) return null;
+  private documentFrom(snapshot: Uint8Array): WorkspaceDocument | null {
     const doc = new LoroDoc();
     try {
-      doc.import(state);
+      doc.import(snapshot);
     } catch (error) {
-      this.warn(`ignoring unreadable workspace state for ${workspaceId}: ${message(error)}`);
+      this.warn(`ignoring unreadable snapshot: ${message(error)}`);
       return null;
     }
     return new WorkspaceDocument(doc);
   }
 
-  private project(source: WorkspaceDocument, room: RoomState): void {
+  private loadBaseline(shareId: string): WorkspaceDocument | null {
+    let snapshot: Uint8Array | null = null;
     try {
-      const projection = projectWorkspace(source, room.target);
-      applyProjection(room.workspace, projection.workspace);
+      snapshot = this.options.shares.getBaseline(shareId);
+    } catch (error) {
+      this.warn(`could not read the baseline for ${shareId}: ${message(error)}`);
+      return null;
+    }
+    return snapshot ? this.documentFrom(snapshot) : null;
+  }
+
+  /** Persists the projection just written and makes it the draft's base. */
+  private captureBaseline(room: RoomState): void {
+    const snapshot = room.doc.export({ mode: "snapshot" });
+    try {
+      this.options.shares.setBaseline(room.shareId, snapshot);
+    } catch (error) {
+      this.warn(`could not persist the baseline for ${room.shareId}: ${message(error)}`);
+    }
+    room.baseline = this.documentFrom(snapshot);
+    room.baselineVersion = versionJson(room.doc);
+    room.dirty = false;
+  }
+
+  /**
+   * Loads a workspace for projection: the live source room when the workspace
+   * has editor shares, otherwise the last saved bytes.
+   */
+  private loadSource(workspaceId: string): WorkspaceDocument | null {
+    const live = this.sources.get(workspaceId);
+    if (live) return live.workspace;
+
+    const state = loadLoroDocument(this.options.documents, workspaceId);
+    if (!state) return null;
+    return this.documentFrom(state);
+  }
+
+  private ensureSource(workspaceId: string): Promise<SourceRoom | null> {
+    const open = this.sources.get(workspaceId);
+    if (open) return Promise.resolve(open);
+    const pending = this.openingSources.get(workspaceId);
+    if (pending) return pending;
+
+    // Creation is serialized per workspace: two saves racing to open the writer
+    // would otherwise join the room twice.
+    const task = this.openSource(workspaceId).then((source) => {
+      if (this.openingSources.get(workspaceId) === task) {
+        this.openingSources.delete(workspaceId);
+      }
+      if (source && this.started) this.sources.set(workspaceId, source);
+      return source;
+    });
+    this.openingSources.set(workspaceId, task);
+    return task;
+  }
+
+  private async openSource(workspaceId: string): Promise<SourceRoom | null> {
+    const client = this.client;
+    if (!client) return null;
+
+    const doc = new LoroDoc();
+    const state = loadLoroDocument(this.options.documents, workspaceId);
+    if (state) {
+      try {
+        doc.import(state);
+      } catch (error) {
+        this.warn(`ignoring unreadable workspace state for ${workspaceId}: ${message(error)}`);
+      }
+    }
+
+    const adaptor = new LoroAdaptor(doc);
+    let status: string = RoomJoinStatus.Connecting;
+    try {
+      const room = await client.join({
+        roomId: workspaceId,
+        crdtAdaptor: adaptor,
+        auth: () => encoder.encode(this.options.internalToken),
+        onStatusChange: (next) => {
+          status = next;
+        },
+      });
+      // Bounded: a workspace room that has never been saved has no version.
+      await settleWithin(room.waitForReachingServerVersion(), JOIN_SETTLE_MS);
+      if (!this.started) {
+        await room.leave().catch(() => undefined);
+        adaptor.destroy();
+        return null;
+      }
+      return {
+        workspaceId,
+        doc,
+        adaptor,
+        workspace: new WorkspaceDocument(doc),
+        room,
+        status: () => status,
+      };
+    } catch (error) {
+      adaptor.destroy();
+      this.warn(`could not join workspace ${workspaceId}: ${message(error)}`);
+      return null;
+    }
+  }
+
+  private async closeSource(workspaceId: string): Promise<void> {
+    const source = this.sources.get(workspaceId);
+    if (!source) return;
+    this.sources.delete(workspaceId);
+    await source.room.leave().catch(() => undefined);
+    source.adaptor.destroy();
+  }
+
+  private project(source: WorkspaceDocument, room: RoomState): void {
+    // A dirty draft belongs to the editor: an owner save must not overwrite it.
+    if (room.dirty) return;
+    try {
+      this.reproject(source, room);
     } catch (error) {
       // A trashed or deleted card has nothing to publish; keep the last good
       // projection rather than emptying a share the viewer may be reading.
       this.warn(`projection for ${room.shareId} skipped: ${message(error)}`);
+    }
+  }
+
+  /** Rebuilds the projection and resets the draft's baseline. */
+  private reproject(source: WorkspaceDocument, room: RoomState): void {
+    const projection = projectWorkspace(source, room.target);
+    applyProjection(room.workspace, projection.workspace);
+    // Viewers never publish; only an editor draft needs a baseline snapshot.
+    if (room.role === "editor") this.captureBaseline(room);
+  }
+
+  private async prepareDraft(
+    share: Share,
+  ): Promise<{ room: RoomState; source: SourceRoom } | SharePublishResult> {
+    const problem = publishProblem(share);
+    if (problem) return failure(problem);
+    const roomId = share.roomId as string;
+
+    // A share created since the last refresh has no room yet.
+    if (!this.rooms.has(roomId)) await this.syncRooms(share.workspaceId);
+    const room = this.rooms.get(roomId);
+    if (!room) return failure("The share room is not open.");
+    if (room.role !== "editor") return failure("This link is read-only.");
+
+    if (!room.baseline) {
+      const baseline = this.loadBaseline(room.shareId);
+      if (baseline) {
+        room.baseline = baseline;
+        room.baselineVersion = versionJson(baseline.doc);
+      }
+    }
+
+    // A publish must see the owner's live state; saved bytes are not good enough.
+    const source = await this.ensureSource(share.workspaceId);
+    if (!source) return failure("The workspace is not reachable right now; try again.");
+    if (source.status() !== RoomJoinStatus.Joined) {
+      return failure("The workspace connection is not available right now; try again.");
+    }
+    return { room, source };
+  }
+
+  private async publishNow(share: Share, version?: ShareVersion): Promise<SharePublishResult> {
+    const prepared = await this.prepareDraft(share);
+    if ("ok" in prepared) return prepared;
+    const { room, source } = prepared;
+    const baseline = room.baseline;
+    if (!baseline) return failure("This share has no baseline yet; reload it from the workspace.");
+
+    if (version) {
+      const target = this.versionVector(version);
+      if (!target) return failure("The publish version is malformed.");
+      // The editor's write travels over the sync socket, the publish over HTTP.
+      // Without this gate a fast click publishes the room before that write
+      // lands, and the rebuild puts the old value back.
+      if (!(await this.waitForVersion(room, target))) {
+        return failure("The draft is still syncing; publish again in a moment.");
+      }
+    }
+
+    const plan = planPublish(room.workspace, baseline, source.workspace, room.target);
+    if (plan.conflicts.length > 0 || plan.unsupported.length > 0) {
+      return { ok: false, conflicts: plan.conflicts, unsupported: plan.unsupported };
+    }
+
+    const applied = applyPublish(source.workspace, room.workspace, plan);
+    await settleWithin(source.room.waitForReachingServerVersion(), SOURCE_FLUSH_MS);
+
+    try {
+      this.reproject(source.workspace, room);
+    } catch (error) {
+      // The publish landed; the view just cannot be rebuilt (e.g. the card was
+      // trashed in the workspace). Keep the draft as the new baseline so the
+      // editor is not stuck dirty.
+      this.warn(`could not rebuild ${room.shareId} after publish: ${message(error)}`);
+      this.captureBaseline(room);
+    }
+    return { ok: true, applied };
+  }
+
+  private async reloadNow(share: Share): Promise<SharePublishResult> {
+    const prepared = await this.prepareDraft(share);
+    if ("ok" in prepared) return prepared;
+    const { room, source } = prepared;
+
+    // Count what the discard drops, so the caller can report it.
+    let discarded = 0;
+    if (room.baseline) {
+      discarded = planPublish(room.workspace, room.baseline, room.baseline, room.target).changes
+        .length;
+    }
+
+    try {
+      this.reproject(source.workspace, room);
+    } catch (error) {
+      this.warn(`could not reload ${room.shareId}: ${message(error)}`);
+      return failure("The workspace has nothing to show for this share right now.");
+    }
+    return { ok: true, applied: discarded };
+  }
+
+  private versionVector(version: ShareVersion): VersionVector | null {
+    try {
+      return VersionVector.parseJSON(new Map(Object.entries(version)) as Map<`${number}`, number>);
+    } catch (error) {
+      this.warn(`ignoring a malformed publish version: ${message(error)}`);
+      return null;
+    }
+  }
+
+  /** Polls the share room until its version includes `target`, or gives up. */
+  private async waitForVersion(room: RoomState, target: VersionVector): Promise<boolean> {
+    const deadline = Date.now() + VERSION_GATE_MS;
+    for (;;) {
+      const comparison = room.doc.version().compare(target);
+      if (comparison !== undefined && comparison >= 0) return true;
+      if (Date.now() >= deadline) return false;
+      await delay(VERSION_POLL_MS);
     }
   }
 

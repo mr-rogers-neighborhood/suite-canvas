@@ -1,7 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
-const workspaceUrl = (name: string) => `/?workspace=e2e-panel-${name}-${Date.now()}-${++sequence}`;
+const workspaceUrl = (name: string) =>
+  withOwnerKey(`/?workspace=e2e-panel-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 

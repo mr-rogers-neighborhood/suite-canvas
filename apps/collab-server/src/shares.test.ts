@@ -170,10 +170,19 @@ describe("share store", () => {
     expect(store.revoke("missing")).toBeNull();
   });
 
-  it("refuses to create a workspace viewer link", () => {
-    expect(() => store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" })).toThrow(
-      "Workspace viewer links are coming next.",
-    );
+  it("creates, resolves and lists a workspace viewer link", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "viewer",
+    });
+
+    expect(share.role).toBe("viewer");
+    // A workspace viewer joins the real workspace room; there is no projection.
+    expect(share.roomId).toBe("ws-1");
+    expect(store.resolve(token)).toMatchObject({ id: share.id, role: "viewer" });
+    expect(store.list("ws-1").map((entry) => entry.id)).toEqual([share.id]);
+    expect(store.listAllActive().map((entry) => entry.id)).toEqual([share.id]);
   });
 
   it("rejects invalid scope, role and targets", () => {
@@ -264,5 +273,61 @@ describe("share store", () => {
       boardId: "b",
     });
     expect(store.get(created.share.id)?.roomId).toBe(`share-${created.token}`);
+  });
+});
+
+describe("share baselines", () => {
+  function editorShare(): string {
+    return store.create({ workspaceId: "ws-1", scope: "board", role: "editor", boardId: "b" }).share
+      .id;
+  }
+
+  it("stores, replaces and deletes a snapshot", () => {
+    const shareId = editorShare();
+
+    expect(store.getBaseline(shareId)).toBeNull();
+
+    const first = new Uint8Array([1, 2, 3]);
+    store.setBaseline(shareId, first);
+    expect(store.getBaseline(shareId)).toEqual(first);
+
+    const second = new Uint8Array([9]);
+    store.setBaseline(shareId, second);
+    expect(store.getBaseline(shareId)).toEqual(second);
+
+    store.deleteBaseline(shareId);
+    expect(store.getBaseline(shareId)).toBeNull();
+  });
+
+  it("keeps baselines of revoked shares out of the table", () => {
+    const shareId = editorShare();
+    store.setBaseline(shareId, new Uint8Array([1]));
+
+    store.revoke(shareId);
+
+    expect(store.getBaseline(shareId)).toBeNull();
+  });
+
+  it("survives a reopen", () => {
+    const shareId = editorShare();
+    store.setBaseline(shareId, new Uint8Array([4, 5]));
+    store.close();
+
+    store = createShareStore(path);
+
+    expect(store.getBaseline(shareId)).toEqual(new Uint8Array([4, 5]));
+  });
+
+  it("creates the baseline table for a store built before it existed", () => {
+    store.close();
+    const legacy = new DatabaseSync(path);
+    legacy.exec("DROP TABLE share_baselines");
+    legacy.close();
+
+    store = createShareStore(path);
+    const shareId = editorShare();
+    store.setBaseline(shareId, new Uint8Array([7]));
+
+    expect(store.getBaseline(shareId)).toEqual(new Uint8Array([7]));
   });
 });

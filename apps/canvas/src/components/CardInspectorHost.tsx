@@ -4,6 +4,7 @@ import { usePresenceStore } from "../collab/usePresenceStore";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers, useCardTitle } from "../hooks/useCardContainers";
 import { useCardTitles, useReferenceCounts } from "../hooks/useReferenceCounts";
+import { isShareSession } from "../session/session";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -33,6 +34,9 @@ export function CardInspectorHost() {
   const focusSection = useUiStore((state) => state.focusSection);
   const openInspector = useUiStore((state) => state.openInspector);
   const readOnly = useUiStore((state) => state.readOnly);
+  const canEditContent = useUiStore((state) => state.canEditContent);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
+  const canManage = useUiStore((state) => state.canManage);
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
@@ -117,19 +121,19 @@ export function CardInspectorHost() {
     [card, snapshot, activeBoardId],
   );
 
-  // Editors need a container to bind to. An owner opening the panel is an
-  // editing surface and may create the empty ones; a viewer must never write,
-  // so it reads whatever the projection carries and shows static text otherwise.
+  // Editors need a container to bind to. A content editor opening the panel
+  // may create the empty ones; a viewer must never write, so it reads whatever
+  // the projection carries and shows static text otherwise.
   const contentId = useMemo(() => {
     if (!card) return null;
     if (containers.contentId) return containers.contentId;
-    return readOnly ? workspace.contentId(card.id) : workspace.getContent(card.id).id;
-  }, [workspace, card, containers, readOnly]);
+    return canEditContent ? workspace.getContent(card.id).id : workspace.contentId(card.id);
+  }, [workspace, card, containers, canEditContent]);
   const titleId = useMemo(() => {
     if (!card) return null;
     if (containers.titleId) return containers.titleId;
-    return readOnly ? workspace.titleId(card.id) : workspace.getTitle(card.id).id;
-  }, [workspace, card, containers, readOnly]);
+    return canEditContent ? workspace.getTitle(card.id).id : workspace.titleId(card.id);
+  }, [workspace, card, containers, canEditContent]);
 
   // Only seeds the tab a card opens on, so one read per card is enough; the
   // panel owns the tab from then on.
@@ -165,14 +169,26 @@ export function CardInspectorHost() {
       localUser={localUser}
       peers={peers}
       readOnly={readOnly}
+      canEditContent={canEditContent}
+      canEditLayout={canEditLayout}
+      canManage={canManage}
+      restrictLinks={isShareSession()}
       onClose={closeInspector}
       onEdit={() => startEditing(card.id, "body", "panel")}
       onStartEditing={(field) => startEditing(card.id, field, "panel")}
       onEditEnd={stopEditing}
-      onSetType={(typeId) => workspace.setCardTypes(card.id, [typeId], typeId)}
-      onAddTag={(tagId) => workspace.addCardTag(card.id, tagId)}
-      onRemoveTag={(tagId) => workspace.removeCardTag(card.id, tagId)}
+      onSetType={(typeId) => {
+        // Type membership is schema, which a share may never change.
+        if (canManage) workspace.setCardTypes(card.id, [typeId], typeId);
+      }}
+      onAddTag={(tagId) => {
+        if (canEditContent) workspace.addCardTag(card.id, tagId);
+      }}
+      onRemoveTag={(tagId) => {
+        if (canEditContent) workspace.removeCardTag(card.id, tagId);
+      }}
       onCreateTag={(name) => {
+        if (!canManage) return;
         const tag = workspace.ensureTag(name);
         workspace.addCardTag(card.id, tag.id);
       }}
@@ -188,7 +204,7 @@ export function CardInspectorHost() {
         if (activeBoardId) focusSection(sectionId, activeBoardId);
       }}
       onRemoveFromBoard={() => {
-        if (activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
+        if (canEditLayout && activeBoardId) workspace.unplaceCard(activeBoardId, card.id);
       }}
       onFocusLink={(cardId, boardId) => {
         // Links to cards outside the projection render inert; never navigate.

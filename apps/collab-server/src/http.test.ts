@@ -4,26 +4,54 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleShareRequest } from "./http.js";
-import { createShareStore, type ShareStore } from "./shares.js";
+import type { SharePublishResult } from "./projectionWorker.js";
+import { createShareStore, type Share, type ShareStore } from "./shares.js";
+import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
+
+const OWNER_KEY = "owner-key-1";
+const OTHER_KEY = "owner-key-2";
+const MANAGED_WORKSPACES = ["ws-1", "ws-owner", "ws-secret"];
 
 let directory: string;
 let store: ShareStore;
+let workspaces: WorkspaceRegistry;
 let server: Server;
 let baseUrl: string;
 let changes: string[];
 let hookError: boolean;
+let publishResult: SharePublishResult;
+let reloadResult: SharePublishResult;
+let published: Share[];
+let publishedVersions: (Record<string, number> | undefined)[];
+let reloaded: Share[];
 
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "suite-share-api-"));
   store = createShareStore(join(directory, "shares.sqlite"));
+  workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
+  for (const workspaceId of MANAGED_WORKSPACES) workspaces.claimOrVerify(workspaceId, OWNER_KEY);
   changes = [];
   hookError = false;
+  publishResult = { ok: true, applied: 1 };
+  reloadResult = { ok: true, applied: 0 };
+  published = [];
+  publishedVersions = [];
+  reloaded = [];
 
   server = createServer((request, response) => {
-    void handleShareRequest(request, response, store, {
+    void handleShareRequest(request, response, store, workspaces, {
       onSharesChanged: (workspaceId) => {
         changes.push(workspaceId);
         if (hookError) throw new Error("projection hook failed");
+      },
+      publish: (share, version) => {
+        published.push(share);
+        publishedVersions.push(version);
+        return publishResult;
+      },
+      reload: (share) => {
+        reloaded.push(share);
+        return reloadResult;
       },
     }).then((handled) => {
       if (handled) return;
@@ -41,15 +69,26 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   store.close();
+  workspaces.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
-function post(body: unknown): Promise<Response> {
+const owner = { authorization: `Bearer ${OWNER_KEY}` };
+
+function post(body: unknown, headers: Record<string, string> = owner): Promise<Response> {
   return fetch(`${baseUrl}/api/shares`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { ...headers, "content-type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
+}
+
+function list(workspaceId: string, headers: Record<string, string> = owner): Promise<Response> {
+  return fetch(`${baseUrl}/api/shares?workspaceId=${encodeURIComponent(workspaceId)}`, { headers });
+}
+
+function revoke(id: string, headers: Record<string, string> = owner): Promise<Response> {
+  return fetch(`${baseUrl}/api/shares/${id}`, { method: "DELETE", headers });
 }
 
 describe("share API", () => {
@@ -64,27 +103,78 @@ describe("share API", () => {
     expect(share.roomId).toBe("ws-1");
     expect(share.role).toBe("editor");
 
-    const listed = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`);
+    const listed = await list("ws-1");
     expect(listed.status).toBe(200);
     const listBody = (await listed.json()) as { shares: { id: string }[] };
     expect(listBody.shares.map((entry) => entry.id)).toEqual([share.id]);
 
+    // Resolving a token is public: the recipient holds the token, not the key.
     const resolved = await fetch(`${baseUrl}/api/shares/${token}`);
     expect(resolved.status).toBe(200);
     const resolveBody = (await resolved.json()) as { share: { id: string; roomId: string } };
     expect(resolveBody.share.id).toBe(share.id);
     expect(resolveBody.share.roomId).toBe("ws-1");
 
-    const revoked = await fetch(`${baseUrl}/api/shares/${share.id}`, { method: "DELETE" });
+    const revoked = await revoke(share.id);
     expect(revoked.status).toBe(200);
     const revokeBody = (await revoked.json()) as { share: { revokedAt: number | null } };
     expect(revokeBody.share.revokedAt).toBeTypeOf("number");
 
     expect((await fetch(`${baseUrl}/api/shares/${token}`)).status).toBe(404);
-    const empty = (await (await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`)).json()) as {
-      shares: unknown[];
-    };
+    const empty = (await (await list("ws-1")).json()) as { shares: unknown[] };
     expect(empty.shares).toHaveLength(0);
+  });
+
+  it("requires the owner key for management", async () => {
+    const body = { workspaceId: "ws-1", scope: "workspace", role: "viewer" };
+
+    const missing = await post(body, {});
+    expect(missing.status).toBe(401);
+    expect(((await missing.json()) as { error: string }).error).toContain("owner key");
+
+    const wrong = await post(body, { authorization: `Bearer ${OTHER_KEY}` });
+    expect(wrong.status).toBe(403);
+    expect(((await wrong.json()) as { error: string }).error).toContain("different owner key");
+
+    const created = await post(body);
+    expect(created.status).toBe(201);
+
+    expect((await list("ws-1", {})).status).toBe(401);
+    expect((await list("ws-1", { authorization: `Bearer ${OTHER_KEY}` })).status).toBe(403);
+    expect((await list("ws-1")).status).toBe(200);
+
+    const { share } = (await created.json()) as { share: { id: string } };
+    expect((await revoke(share.id, {})).status).toBe(401);
+    expect((await revoke(share.id, { authorization: `Bearer ${OTHER_KEY}` })).status).toBe(403);
+    expect((await revoke(share.id)).status).toBe(200);
+  });
+
+  it("accepts x-suite-owner as an owner key fallback", async () => {
+    const created = await post(
+      { workspaceId: "ws-1", scope: "workspace", role: "viewer" },
+      { "x-suite-owner": OWNER_KEY },
+    );
+
+    expect(created.status).toBe(201);
+    expect((await list("ws-1", { "x-suite-owner": OWNER_KEY })).status).toBe(200);
+  });
+
+  it("never accepts a share token as a management credential", async () => {
+    const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const { token, share } = (await created.json()) as {
+      token: string;
+      share: { id: string };
+    };
+    const asShareToken = { authorization: `Bearer ${token}` };
+
+    const minted = await post(
+      { workspaceId: "ws-1", scope: "workspace", role: "viewer" },
+      asShareToken,
+    );
+    expect(minted.status).toBe(403);
+
+    expect((await list("ws-1", asShareToken)).status).toBe(403);
+    expect((await revoke(share.id, asShareToken)).status).toBe(403);
   });
 
   it("returns the projection room for board and card viewers", async () => {
@@ -110,6 +200,18 @@ describe("share API", () => {
     expect(cardBody.share.roomId).toBe(`share-${cardBody.token}`);
   });
 
+  it("creates a workspace viewer link", async () => {
+    const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+
+    expect(created.status).toBe(201);
+    const { share } = (await created.json()) as { share: { role: string; roomId: string } };
+    expect(share.role).toBe("viewer");
+    expect(share.roomId).toBe("ws-1");
+
+    const listed = (await (await list("ws-1")).json()) as { shares: { role: string }[] };
+    expect(listed.shares.map((entry) => entry.role)).toEqual(["viewer"]);
+  });
+
   it("never reveals the owner workspace id to a board or card viewer", async () => {
     const created = await post({
       workspaceId: "ws-secret",
@@ -130,16 +232,17 @@ describe("share API", () => {
     expect(body.share.roomId).toBe(`share-${token}`);
     expect(JSON.stringify(body)).not.toContain("ws-secret");
 
-    // A viewer cannot mint a workspace share, even from the projection id.
-    const minted = await post({
-      workspaceId: body.share.workspaceId,
-      scope: "workspace",
-      role: "viewer",
-    });
-    expect(minted.status).toBe(400);
-    expect(((await minted.json()) as { error: string }).error).toBe(
-      "Workspace viewer links are coming next.",
-    );
+    // The token is not a management credential either.
+    expect(
+      (
+        await post(
+          { workspaceId: body.share.workspaceId, scope: "workspace", role: "viewer" },
+          {
+            authorization: `Bearer ${token}`,
+          },
+        )
+      ).status,
+    ).toBe(403);
   });
 
   it("keeps the workspace id for a workspace share and redacts a revoked card share", async () => {
@@ -160,7 +263,7 @@ describe("share API", () => {
       cardId: "card-9",
     });
     const created = (await card.json()) as { token: string; share: { id: string } };
-    const revoked = await fetch(`${baseUrl}/api/shares/${created.share.id}`, { method: "DELETE" });
+    const revoked = await revoke(created.share.id);
     expect(revoked.status).toBe(200);
     const body = (await revoked.json()) as { share: { workspaceId: string } };
     expect(body.share.workspaceId).toBe(`share-${created.token}`);
@@ -178,7 +281,7 @@ describe("share API", () => {
     const { share } = (await created.json()) as { share: { id: string } };
     expect(changes).toEqual(["ws-1"]);
 
-    await fetch(`${baseUrl}/api/shares/${share.id}`, { method: "DELETE" });
+    await revoke(share.id);
     expect(changes).toEqual(["ws-1", "ws-1"]);
   });
 
@@ -195,7 +298,8 @@ describe("share API", () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
     expect(preflight.headers.get("access-control-allow-methods")).toContain("DELETE");
-    expect(preflight.headers.get("access-control-allow-headers")).toBe("content-type");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("content-type");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("authorization");
 
     const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
     expect(created.headers.get("access-control-allow-origin")).toBe("*");
@@ -227,26 +331,17 @@ describe("share API", () => {
     expect(strayTarget.status).toBe(400);
   });
 
-  it("defers workspace viewer links until management has a credential", async () => {
-    const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
-
-    expect(created.status).toBe(400);
-    expect(((await created.json()) as { error: string }).error).toBe(
-      "Workspace viewer links are coming next.",
-    );
-  });
-
-  it("defers board and card editor links", async () => {
+  it("creates board and card editor links", async () => {
     const boardEditor = await post({
       workspaceId: "ws-1",
       scope: "board",
       role: "editor",
       boardId: "board-1",
     });
-    expect(boardEditor.status).toBe(400);
-    expect(((await boardEditor.json()) as { error: string }).error).toBe(
-      "Board and card editor links are coming next.",
-    );
+    expect(boardEditor.status).toBe(201);
+    const board = (await boardEditor.json()) as { token: string; share: { role: string } };
+    expect(board.share.role).toBe("editor");
+    expect(board.token.length).toBeGreaterThanOrEqual(32);
 
     const cardEditor = await post({
       workspaceId: "ws-1",
@@ -254,7 +349,9 @@ describe("share API", () => {
       role: "editor",
       cardId: "card-1",
     });
-    expect(cardEditor.status).toBe(400);
+    expect(cardEditor.status).toBe(201);
+    const card = (await cardEditor.json()) as { share: { role: string } };
+    expect(card.share.role).toBe("editor");
 
     const workspaceEditor = await post({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
     expect(workspaceEditor.status).toBe(201);
@@ -279,7 +376,7 @@ describe("share API", () => {
 
   it("returns 404 for unknown shares and routes", async () => {
     expect((await fetch(`${baseUrl}/api/shares/unknown-token`)).status).toBe(404);
-    expect((await fetch(`${baseUrl}/api/shares/missing`, { method: "DELETE" })).status).toBe(404);
+    expect((await revoke("missing")).status).toBe(404);
     expect((await fetch(`${baseUrl}/api/shares/a/b`)).status).toBe(404);
     expect((await fetch(`${baseUrl}/api/shares`)).status).toBe(400);
   });
@@ -296,5 +393,227 @@ describe("share API", () => {
   it("leaves non-API routes to the caller", async () => {
     const response = await fetch(`${baseUrl}/health`);
     expect(response.status).toBe(404);
+  });
+});
+
+describe("publish and reload API", () => {
+  async function share(body: Record<string, unknown>): Promise<{ token: string; id: string }> {
+    const response = await post(body);
+    if (response.status !== 201) throw new Error(`create failed: ${response.status}`);
+    const created = (await response.json()) as { token: string; share: { id: string } };
+    return { token: created.token, id: created.share.id };
+  }
+
+  function draft(
+    action: "publish" | "reload",
+    token: string,
+    headers: Record<string, string> = {},
+    body?: unknown,
+  ): Promise<Response> {
+    return fetch(`${baseUrl}/api/shares/${token}/${action}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, ...headers },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  it("publishes with the editor token and reports the applied count", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+    publishResult = { ok: true, applied: 4 };
+
+    const response = await draft("publish", editor.token);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ applied: 4 });
+    expect(published).toHaveLength(1);
+    expect(published[0]?.id).toBe(editor.id);
+  });
+
+  it("returns the conflicts of a rejected publish", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    publishResult = {
+      ok: false,
+      conflicts: [{ key: "card:card-1:body", kind: "body", message: "changed" }],
+      unsupported: [],
+      reason: "Resolve the conflicts first.",
+    };
+
+    const response = await draft("publish", editor.token);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      conflicts: [{ key: "card:card-1:body", kind: "body", message: "changed" }],
+      unsupported: [],
+      reason: "Resolve the conflicts first.",
+    });
+  });
+
+  it("reloads with an editor token", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+    reloadResult = { ok: true, applied: 2 };
+
+    const response = await draft("reload", editor.token);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ applied: 2 });
+    expect(reloaded[0]?.id).toBe(editor.id);
+  });
+
+  it("requires the share token", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    const missing = await fetch(`${baseUrl}/api/shares/${editor.token}/publish`, {
+      method: "POST",
+    });
+    expect(missing.status).toBe(401);
+
+    const wrong = await draft("publish", editor.token, { authorization: "Bearer other-token" });
+    expect(wrong.status).toBe(404);
+
+    const other = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+    const crossed = await fetch(`${baseUrl}/api/shares/${editor.token}/publish`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${other.token}` },
+    });
+    expect(crossed.status).toBe(404);
+    expect(published).toHaveLength(0);
+  });
+
+  it("rejects viewers and workspace shares", async () => {
+    const viewer = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    const viewerResponse = await draft("publish", viewer.token);
+    expect(viewerResponse.status).toBe(403);
+    expect(((await viewerResponse.json()) as { error: string }).error).toContain("editor");
+
+    const workspace = await share({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const workspaceResponse = await draft("publish", workspace.token);
+    expect(workspaceResponse.status).toBe(403);
+    expect(((await workspaceResponse.json()) as { error: string }).error).toContain("Workspace");
+
+    expect(published).toHaveLength(0);
+  });
+
+  it("returns 404 for unknown and revoked tokens", async () => {
+    expect((await draft("publish", "unknown-token")).status).toBe(404);
+
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    await revoke(editor.id);
+    expect((await draft("publish", editor.token)).status).toBe(404);
+  });
+
+  it("keeps GET/DELETE routes and methods intact", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    expect((await fetch(`${baseUrl}/api/shares/${editor.token}`)).status).toBe(200);
+    expect((await revoke(editor.id)).status).toBe(200);
+
+    const get = await fetch(`${baseUrl}/api/shares/${editor.token}/publish`);
+    expect(get.status).toBe(405);
+    expect(get.headers.get("allow")).toBe("POST, OPTIONS");
+
+    const unknownAction = await fetch(`${baseUrl}/api/shares/${editor.token}/merge`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${editor.token}` },
+    });
+    expect(unknownAction.status).toBe(404);
+  });
+
+  it("passes the editor's version to the worker", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    const response = await draft("publish", editor.token, {}, { version: { "12": 7 } });
+
+    expect(response.status).toBe(200);
+    expect(publishedVersions).toEqual([{ "12": 7 }]);
+
+    // A body with no version is still a valid publish.
+    await draft("publish", editor.token, {}, {});
+    expect(publishedVersions[1]).toBeUndefined();
+
+    // Reload stays body-free and never sends a version.
+    await draft("reload", editor.token);
+    expect(publishedVersions).toHaveLength(2);
+  });
+
+  it("rejects a malformed version", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+
+    for (const body of [
+      { version: "abc" },
+      { version: ["1"] },
+      { version: { "1": -1 } },
+      { version: { "1": 1.5 } },
+      { version: { "1": "2" } },
+      [1, 2],
+      "text",
+    ]) {
+      const response = await draft("publish", editor.token, {}, body);
+      expect(response.status).toBe(400);
+    }
+    expect(published).toHaveLength(0);
+  });
+
+  it("answers publish preflight", async () => {
+    const editor = await share({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+    const response = await fetch(`${baseUrl}/api/shares/${editor.token}/publish`, {
+      method: "OPTIONS",
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-methods")).toContain("POST");
   });
 });

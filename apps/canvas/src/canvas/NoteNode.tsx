@@ -38,7 +38,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const openInspector = useUiStore((state) => state.openInspector);
-  const readOnly = useUiStore((state) => state.readOnly);
+  const canEditContent = useUiStore((state) => state.canEditContent);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
+  const canManage = useUiStore((state) => state.canManage);
   const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
@@ -160,7 +162,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     <div>
       <NodeResizer
         isVisible={
-          !readOnly && Boolean(selected) && !(editingNodeId === id && editingSurface === "canvas")
+          canEditLayout &&
+          Boolean(selected) &&
+          !(editingNodeId === id && editingSurface === "canvas")
         }
         minWidth={160}
         minHeight={80}
@@ -194,19 +198,23 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         resizingPeers={resizingPeers}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
-        readOnly={readOnly}
+        canEditContent={canEditContent}
+        canEditLayout={canEditLayout}
+        canManage={canManage}
         onStartEditing={(field) => startEditing(id, field, "canvas")}
         onEditEnd={stopEditing}
-        onRemoveFromBoard={() => workspace.unplaceCard(placement.boardId, id)}
+        {...(canEditLayout
+          ? { onRemoveFromBoard: () => workspace.unplaceCard(placement.boardId, id) }
+          : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
-        onTrash={() => workspace.trashCard(id)}
+        {...(canManage ? { onTrash: () => workspace.trashCard(id) } : {})}
         onConnectorMoveStart={(connectorId) => {
-          if (readOnly) return;
+          if (!canManage) return;
           setMovingConnector({ nodeId: id, connectorId });
         }}
         onConnectorMove={(connectorId, position) => {
-          if (readOnly) return;
+          if (!canManage) return;
           setMovingConnector({ nodeId: id, connectorId, position });
         }}
         onConnectorMoveFinished={() => setMovingConnector(null)}
@@ -215,11 +223,11 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         }
         onConnectorSelect={(connectorId) => setSelectedConnector({ nodeId: id, connectorId })}
         onConnectorMoveEnd={(connectorId, position) => {
-          if (readOnly) return;
+          if (!canManage) return;
           workspace.moveConnector(id, connectorId, position);
         }}
         onConnectorContextMenu={(event, connectorId) => {
-          if (readOnly) return;
+          if (!canManage) return;
           openContextMenu({
             x: event.clientX,
             y: event.clientY,

@@ -6,6 +6,7 @@ import {
 } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
+import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "./ownerKey";
 
 const RECENT_KEY = "suite.recentWorkspaces.v1";
 const RECENT_LIMIT = 12;
@@ -89,11 +90,18 @@ export function forgetWorkspace(id: string): void {
   }
 }
 
-export function workspaceUrl(workspaceId: string, boardId?: string | null): string {
+export function workspaceUrl(
+  workspaceId: string,
+  boardId?: string | null,
+  ownerKey?: string | null,
+): string {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("workspace", workspaceId);
   if (boardId) url.searchParams.set("board", boardId);
+  // The owner key is a fragment, never a query parameter: it must not reach the
+  // server or a referrer, and an unrelated fragment must not leak into a link.
+  url.hash = ownerKey ? `owner=${encodeURIComponent(ownerKey)}` : "";
   return url.toString();
 }
 
@@ -104,17 +112,17 @@ export function newWorkspaceId(): string {
 /** A new workspace starts empty; the flag keeps the starter demo cards out. */
 export function openNewWorkspace(): void {
   const id = newWorkspaceId();
+  const ownerKey = generateOwnerKey();
+  writeOwnerKey(id, ownerKey);
   rememberWorkspace({ id, title: "Untitled workspace" });
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.searchParams.set("workspace", id);
+  const url = new URL(workspaceUrl(id, null, ownerKey));
   url.searchParams.set("fresh", "1");
   window.location.assign(url.toString());
 }
 
 export function openWorkspace(id: string, boardId?: string | null): void {
   rememberWorkspace({ id, ...(boardId ? { boardId } : {}) });
-  window.location.assign(workspaceUrl(id, boardId));
+  window.location.assign(workspaceUrl(id, boardId, readOwnerKey(id)));
 }
 
 function downloadText(filename: string, text: string, mime = "application/json"): void {
@@ -194,6 +202,8 @@ export async function importWorkspaceFile(file: File): Promise<ImportedWorkspace
   const text = await file.text();
   const { workspace } = readWorkspaceFile(text);
   const id = newWorkspaceId();
+  // An import is a new workspace, so it gets a new owner key of its own.
+  writeOwnerKey(id, generateOwnerKey());
   const doc = workspace.doc;
   const persistence = new LoroIndexeddbPersistence(id, doc);
   try {

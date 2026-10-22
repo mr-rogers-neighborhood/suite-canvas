@@ -13,6 +13,7 @@ import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
+import { SharePublishButton } from "./components/SharePublishButton";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { WorkspaceActions } from "./components/WorkspaceActions";
@@ -114,9 +115,10 @@ function WorkspaceShell({
   // waits for the first server sync: seeding an empty local doc would resurrect
   // starter cards in a workspace someone emptied on another client.
   useEffect(() => {
-    // A viewer reads a projection the owner's workspace already seeded; writing
-    // here (even the idempotent type repair) is rejected by the server.
-    if (readOnly || !ready || !synced) return;
+    // A share reads a projection the owner's workspace already seeded; writing
+    // in a share room (even the idempotent type repair) belongs to the draft,
+    // not to this page's boot.
+    if (share || readOnly || !ready || !synced) return;
     // Starter types are structural, not sample data: every workspace has them,
     // and the note type is the fallback for cards with no type.
     workspace.ensureDefaultTypes();
@@ -134,7 +136,7 @@ function WorkspaceShell({
     // The reference index is derived, so repairing it is safe and idempotent. It
     // runs after the first sync so mentions that arrived offline are indexed too.
     workspace.ensureReferences();
-  }, [ready, synced, workspace, readOnly]);
+  }, [ready, synced, workspace, readOnly, share]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {
@@ -142,8 +144,8 @@ function WorkspaceShell({
     const boards = snapshot.boards;
     if (boards.length === 0) {
       // A projection can arrive a moment after the room joins; wait for it
-      // instead of minting a board the viewer may not write.
-      if (!readOnly) workspace.ensureBoard();
+      // instead of minting a board the share may not write.
+      if (!share && !readOnly) workspace.ensureBoard();
       return;
     }
     if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
@@ -151,7 +153,7 @@ function WorkspaceShell({
     const requested = resolveBoardId();
     const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace, readOnly]);
+  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace, readOnly, share]);
 
   // Keep the URL shareable without a reload. A share keeps its token and never
   // gains a workspace id: the link is the whole credential.
@@ -161,10 +163,12 @@ function WorkspaceShell({
     if (share) {
       url.searchParams.set("share", share.token);
       url.searchParams.set("board", activeBoardId);
-      // A share link carries no workspace id, even if it was pasted with one.
+      // A share link carries no workspace id, even if it was pasted with one,
+      // and never carries the owner fragment of the page it was created from.
       url.searchParams.delete("workspace");
       url.searchParams.delete("doc");
       url.searchParams.delete("fresh");
+      url.hash = "";
     } else {
       url.searchParams.set("workspace", workspaceId);
       url.searchParams.set("board", activeBoardId);
@@ -340,7 +344,9 @@ function WorkspaceShell({
         peerCount={peerCount}
         documentId={share ? documentLabel(share, workspaceId) : workspaceId}
         actions={
-          readOnly ? undefined : (
+          share ? (
+            <SharePublishButton />
+          ) : (
             <WorkspaceActions
               workspaceId={workspaceId}
               boardId={activeBoardId}
@@ -374,7 +380,10 @@ function WorkspaceShell({
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
-        {!readOnly && activeBoardId && workspace.listBoardCards(activeBoardId).length === 0 ? (
+        {!share &&
+        !readOnly &&
+        activeBoardId &&
+        workspace.listBoardCards(activeBoardId).length === 0 ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -398,7 +407,7 @@ function WorkspaceShell({
         <CardInspectorHost />
       </main>
 
-      {readOnly ? null : (
+      {share || readOnly ? null : (
         <Dock
           inboxCount={unplaced.length}
           libraryOpen={libraryOpen}
@@ -409,9 +418,9 @@ function WorkspaceShell({
         />
       )}
 
-      {readOnly ? null : <TypeSettingsHost />}
+      {share || readOnly ? null : <TypeSettingsHost />}
 
-      {readOnly ? null : (
+      {share || readOnly ? null : (
         <LibraryDrawer
           open={libraryOpen}
           tab={libraryTab}

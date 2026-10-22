@@ -11,13 +11,12 @@ export interface LoroProviderOptions {
   doc: LoroDoc;
   presence: EphemeralStore;
   cursors: EphemeralStore;
-  /** Capability token; a share room rejects the join without it. */
-  auth?: Uint8Array;
   /**
-   * Read-only peers may only enter the document room. Presence and cursor rooms
-   * are not part of the capability, so joining them would fail.
+   * Capability token: the owner key or a share token. The server scopes the
+   * derived presence and cursor rooms to the same credential, so it is sent to
+   * both joins. Optional only so tests can build a provider without one.
    */
-  readOnly?: boolean;
+  auth?: Uint8Array;
   onStatus?: (status: LoroConnectionStatus) => void;
   onSynced?: () => void;
 }
@@ -63,20 +62,21 @@ export class LoroProvider {
       // gate startup on it.
       if (!this.disposed) this.options.onSynced?.();
 
-      // A viewer's token opens exactly the document room; presence rooms would
-      // be rejected, so skip the optimistic join instead of logging a failure.
-      if (this.options.readOnly) return;
-
+      // A viewer token also writes the derived ephemeral rooms, so presence and
+      // cursors work for every role.
+      const auth = this.options.auth ? { auth: this.options.auth } : {};
       try {
         this.presenceRoom = await this.client.join({
           roomId: `${this.options.workspaceId}:presence`,
           // Presence must not be replayed to late joiners: a stale tab would
           // otherwise remain as a frozen collaborator until manually cleared.
           crdtAdaptor: new LoroEphemeralAdaptor(this.options.presence),
+          ...auth,
         });
         this.cursorRoom = await this.client.join({
           roomId: `${this.options.workspaceId}:cursors`,
           crdtAdaptor: new LoroEphemeralAdaptor(this.options.cursors),
+          ...auth,
         });
       } catch (error) {
         console.warn("[loro] presence rooms unavailable", error);

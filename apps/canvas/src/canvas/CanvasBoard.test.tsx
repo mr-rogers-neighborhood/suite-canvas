@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReactFlowProvider, useStore } from "@xyflow/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -25,7 +25,16 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  useUiStore.setState({ readOnly: false, activeBoardId: null, selectedNodeIds: [] });
+  useUiStore.setState({
+    readOnly: false,
+    activeBoardId: null,
+    selectedNodeIds: [],
+    canEditContent: true,
+    canEditLayout: true,
+    canPublish: true,
+    canCreate: true,
+    canManage: true,
+  });
   cleanup();
 });
 
@@ -51,6 +60,11 @@ function mount(readOnly: boolean) {
     selectedNodeIds: [cardId],
     selectedEdgeIds: [],
     selectedSectionId: null,
+    canEditContent: !readOnly,
+    canEditLayout: !readOnly,
+    canPublish: !readOnly,
+    canCreate: !readOnly,
+    canManage: !readOnly,
   });
   return render(
     <ReactFlowProvider>
@@ -111,5 +125,65 @@ describe("CanvasBoard read-only", () => {
 
     unplace.mockRestore();
     trash.mockRestore();
+  });
+});
+
+describe("CanvasBoard board editor", () => {
+  function mountBoardEditor() {
+    useUiStore.setState({
+      readOnly: false,
+      activeBoardId: boardId,
+      selectedNodeIds: [cardId],
+      selectedEdgeIds: [],
+      selectedSectionId: null,
+      canEditContent: true,
+      canEditLayout: true,
+      canPublish: true,
+      canCreate: false,
+      canManage: false,
+    });
+    return render(
+      <ReactFlowProvider>
+        <CanvasBoard />
+        <MachineProbe />
+      </ReactFlowProvider>,
+    );
+  }
+
+  it("keeps layout gestures and reconnect but not new links", async () => {
+    const { getByTestId } = mountBoardEditor();
+    const machine = getByTestId("machine");
+    await waitFor(() => expect(machine).toHaveAttribute("data-draggable", "true"));
+    expect(machine).toHaveAttribute("data-connectable", "false");
+    expect(machine).toHaveAttribute("data-reconnectable", "true");
+  });
+
+  it("unplaces on Delete instead of trashing", () => {
+    mountBoardEditor();
+    const unplace = vi.spyOn(workspace, "unplaceCard").mockImplementation(() => {});
+    const trash = vi.spyOn(workspace, "trashCard").mockImplementation(() => {});
+
+    fireEvent.keyDown(window, { key: "Delete" });
+    fireEvent.keyDown(window, { key: "Backspace", shiftKey: true });
+
+    expect(unplace).toHaveBeenCalledWith(boardId, cardId);
+    expect(trash).not.toHaveBeenCalled();
+
+    unplace.mockRestore();
+    trash.mockRestore();
+  });
+
+  it("offers content edits but no delete or create actions", async () => {
+    const { container } = mountBoardEditor();
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="card-menu"]')).not.toBeNull(),
+    );
+
+    fireEvent.click(container.querySelector('[data-testid="card-menu"]') as HTMLElement);
+
+    expect(screen.getByRole("menuitem", { name: "Edit body" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Remove from board" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Delete card" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Add connector" })).not.toBeInTheDocument();
   });
 });

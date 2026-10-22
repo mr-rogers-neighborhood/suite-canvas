@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { WorkspaceDocument } from "@suite/graph";
+import { applyProjection, projectWorkspace, WorkspaceDocument } from "@suite/graph";
 import { LoroAdaptor } from "loro-adaptors/loro";
 import { LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { LoroWebsocketClient } from "loro-websocket";
@@ -100,9 +100,10 @@ async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> 
   const server = new SimpleServer({
     port,
     saveInterval: 50,
-    onLoadDocument: async (roomId, crdtType) => documents.load(`${crdtType}:${roomId}`),
-    async onSaveDocument(roomId, crdtType, data) {
-      documents.save(`${crdtType}:${roomId}`, data);
+    // Mirrors the production server: one normalized key for loads and saves.
+    onLoadDocument: async (roomId) => loadLoroDocument(documents, roomId),
+    async onSaveDocument(roomId, _crdtType, data) {
+      documents.save(loroDocumentKey(roomId), data);
     },
     authenticate: async (roomId, _crdtType, auth) => {
       const token = Buffer.from(auth).toString("utf8");
@@ -382,4 +383,441 @@ describe("projection worker", () => {
     expect(state.worker.roomIds()).toEqual([]);
     await expect(state.worker.schedule(WORKSPACE_ID, { immediate: true })).resolves.toBeUndefined();
   });
+});
+
+function createWorker(
+  state: Pick<Harness, "url" | "documents" | "shares" | "warnings">,
+): ProjectionWorker {
+  return new ProjectionWorker({
+    url: state.url,
+    internalToken: INTERNAL_TOKEN,
+    documents: state.documents,
+    shares: state.shares,
+    debounceMs: 60,
+    logger: { warn: (text: string) => state.warnings.push(text) },
+  });
+}
+
+/** A workspace rebuilt from what the sync server last saved for a room. */
+function savedWorkspace(documents: DocumentStore, roomId: string): WorkspaceDocument | null {
+  const state = loadLoroDocument(documents, roomId);
+  if (!state) return null;
+  const doc = new LoroDoc();
+  try {
+    doc.import(state);
+  } catch {
+    return null;
+  }
+  return new WorkspaceDocument(doc);
+}
+
+/** Canonical version vector of what the server last saved for a room. */
+function savedVersion(documents: DocumentStore, roomId: string): string | null {
+  const state = loadLoroDocument(documents, roomId);
+  if (!state) return null;
+  const doc = new LoroDoc();
+  try {
+    doc.import(state);
+  } catch {
+    return null;
+  }
+  const entries = [...doc.version().toJSON()].map(
+    ([peer, counter]) => [String(peer), counter] as const,
+  );
+  entries.sort((left, right) => left[0].localeCompare(right[0]));
+  return JSON.stringify(entries);
+}
+
+async function waitForSaved(
+  state: Harness,
+  roomId: string,
+  check: (workspace: WorkspaceDocument) => boolean,
+  label: string,
+): Promise<void> {
+  await waitFor(() => {
+    const workspace = savedWorkspace(state.documents, roomId);
+    return workspace !== null && check(workspace);
+  }, label);
+}
+
+function textOf(workspace: WorkspaceDocument, cardId: string): string {
+  return workspace.cardText(cardId);
+}
+
+async function openEditor(state: Harness, shareRoomId: string, token: string): Promise<Viewer> {
+  return openViewer(state.url, shareRoomId, token);
+}
+
+describe("editor shares", () => {
+  async function editorHarness(options: { field?: boolean } = {}) {
+    const state = await startHarness();
+    const fieldId = options.field
+      ? state.source.addField("note", { name: "Status", kind: "text" }).id
+      : undefined;
+    if (fieldId) saveSource(state);
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "editor",
+      boardId: BOARD_ID,
+    });
+    const roomId = share.roomId as string;
+    const owner = await openViewer(state.url, WORKSPACE_ID, INTERNAL_TOKEN);
+    const editor = await openEditor(state, roomId, token);
+    await state.worker.start();
+    await waitFor(() => boardCards(editor).length === 2, "the editor projection");
+    await waitFor(() => owner.workspace().getCard("a") !== undefined, "the owner copy");
+    return { state, token, share, roomId, owner, editor, fieldId };
+  }
+
+  async function closeOwnerAndEditor(owner: Viewer, editor: Viewer): Promise<void> {
+    for (const viewer of [owner, editor]) {
+      await viewer.room.leave().catch(() => undefined);
+      try {
+        viewer.client.destroy();
+      } catch {
+        // The client already closed itself; nothing left to release.
+      }
+    }
+  }
+
+  it("publishes an editor's layout, body and property changes", async () => {
+    const { state, share, roomId, owner, editor, fieldId } = await editorHarness({ field: true });
+    try {
+      const draft = editor.workspace();
+      expect(fieldId).toBeDefined();
+
+      draft.placeCard(BOARD_ID, "a", { x: 400, y: 300 });
+      appendText(draft.getContent("a"), "Editor note");
+      if (fieldId) draft.setProperty("a", fieldId, "Doing");
+      editor.doc.commit({ origin: "editor:edit" });
+
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 400,
+        "the editor update on the server",
+      );
+
+      const result = await state.worker.publish(share);
+      expect(result).toEqual({ ok: true, applied: 3 });
+
+      await waitFor(
+        () => owner.workspace().getPlacement(BOARD_ID, "a")?.x === 400,
+        "the owner to receive the placement",
+      );
+      await waitFor(
+        () => textOf(owner.workspace(), "a").includes("Editor note"),
+        "the owner to receive the body",
+      );
+      if (fieldId) {
+        expect(owner.workspace().getCard("a")?.properties[fieldId]).toBe("Doing");
+      }
+
+      // The share room shows the rebuilt projection, too.
+      await waitFor(
+        () => editor.workspace().getPlacement(BOARD_ID, "a")?.x === 400,
+        "the rebuilt projection",
+      );
+      expect(textOf(editor.workspace(), "a")).toContain("Editor note");
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("keeps a dirty draft when the owner saves, then reconciles on publish", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 500, y: 600 });
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 500,
+        "the draft on the server",
+      );
+
+      appendText(owner.workspace().getContent("b"), "Owner note");
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) => textOf(workspace, "b").includes("Owner note"),
+        "the owner write on the server",
+      );
+
+      // An owner save must not overwrite the editor's draft.
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+      expect(editor.workspace().getPlacement(BOARD_ID, "a")?.x).toBe(500);
+      expect(textOf(editor.workspace(), "b")).not.toContain("Owner note");
+
+      const result = await state.worker.publish(share);
+      expect(result).toEqual({ ok: true, applied: 1 });
+
+      await waitFor(
+        () => textOf(editor.workspace(), "b").includes("Owner note"),
+        "the pending owner change after publish",
+      );
+      expect(editor.workspace().getPlacement(BOARD_ID, "a")).toMatchObject({ x: 500, y: 600 });
+      await waitFor(
+        () => owner.workspace().getPlacement(BOARD_ID, "a")?.x === 500,
+        "the published placement on the owner",
+      );
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("rejects a conflicting publish and leaves the source untouched", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      appendText(owner.workspace().getContent("a"), "Owner text");
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) => textOf(workspace, "a").includes("Owner text"),
+        "the owner write on the server",
+      );
+
+      appendText(editor.workspace().getContent("a"), "Editor text");
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => textOf(workspace, "a").includes("Editor text"),
+        "the draft on the server",
+      );
+
+      const result = await state.worker.publish(share);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected a rejected publish");
+      expect(result.conflicts.map((conflict) => conflict.key)).toContain("card:a:body");
+      expect(result.unsupported).toEqual([]);
+
+      expect(textOf(owner.workspace(), "a")).toContain("Owner text");
+      expect(textOf(owner.workspace(), "a")).not.toContain("Editor text");
+      expect(textOf(editor.workspace(), "a")).toContain("Editor text");
+
+      // Reload is the discard path: the owner's version replaces the draft.
+      const reloaded = await state.worker.reload(share);
+      expect(reloaded.ok).toBe(true);
+      await waitFor(
+        () => textOf(editor.workspace(), "a").includes("Owner text"),
+        "the reloaded body",
+      );
+      expect(textOf(editor.workspace(), "a")).not.toContain("Editor text");
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("reloads a draft back to the workspace version", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 700, y: 800 });
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 700,
+        "the draft on the server",
+      );
+
+      expect(await state.worker.reload(share)).toEqual({ ok: true, applied: 1 });
+
+      await waitFor(
+        () => editor.workspace().getPlacement(BOARD_ID, "a")?.x === 10,
+        "the workspace placement",
+      );
+      expect(editor.workspace().getPlacement(BOARD_ID, "a")).toMatchObject({ x: 10, y: 20 });
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("restores a dirty draft and its baseline after a worker restart", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 440, y: 550 });
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 440,
+        "the draft on the server",
+      );
+
+      await state.worker.stop();
+      state.worker = createWorker(state);
+      await state.worker.start();
+      await waitFor(() => state.worker.roomIds().includes(roomId), "the reopened room");
+
+      // The draft survived: the persisted baseline made it dirty again.
+      await delay(100);
+      expect(editor.workspace().getPlacement(BOARD_ID, "a")?.x).toBe(440);
+
+      const result = await state.worker.publish(share);
+      expect(result).toEqual({ ok: true, applied: 1 });
+      await waitFor(
+        () => owner.workspace().getPlacement(BOARD_ID, "a")?.x === 440,
+        "the published placement after restart",
+      );
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("does not freeze a restarted room whose history advanced without draft edits", async () => {
+    const { state, roomId, owner, editor } = await editorHarness();
+    try {
+      await state.worker.stop();
+
+      // Someone rewrites the room with the same projection: every value matches
+      // the baseline, but the room version advances past it.
+      const historyBefore = savedVersion(state.documents, roomId);
+      const rewriter = await openViewer(state.url, roomId, INTERNAL_TOKEN);
+      try {
+        applyProjection(
+          rewriter.workspace(),
+          projectWorkspace(state.source, { scope: "board", boardId: BOARD_ID }).workspace,
+        );
+        rewriter.doc.commit({ origin: "owner:projection" });
+        await waitFor(
+          () => savedVersion(state.documents, roomId) !== historyBefore,
+          "the room history to advance",
+        );
+      } finally {
+        await rewriter.room.leave().catch(() => undefined);
+        rewriter.client.destroy();
+      }
+
+      state.worker = createWorker(state);
+      await state.worker.start();
+      await waitFor(() => state.worker.roomIds().includes(roomId), "the reopened room");
+
+      // No draft edits: the next owner save is projected as usual.
+      appendText(owner.workspace().getContent("b"), "Owner after restart");
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) => textOf(workspace, "b").includes("Owner after restart"),
+        "the owner save",
+      );
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+      await waitFor(
+        () => textOf(editor.workspace(), "b").includes("Owner after restart"),
+        "the projection after restart",
+      );
+
+      // A real draft edit marks the room dirty and stops owner projections.
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 777, y: 888 });
+      editor.doc.commit({ origin: "editor:edit" });
+      await waitForSaved(
+        state,
+        roomId,
+        (workspace) => workspace.getPlacement(BOARD_ID, "a")?.x === 777,
+        "the draft edit",
+      );
+
+      appendText(owner.workspace().getContent("b"), "Second owner note");
+      owner.doc.commit({ origin: "owner:edit" });
+      await waitForSaved(
+        state,
+        WORKSPACE_ID,
+        (workspace) => textOf(workspace, "b").includes("Second owner note"),
+        "the second owner save",
+      );
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      expect(editor.workspace().getPlacement(BOARD_ID, "a")?.x).toBe(777);
+      expect(textOf(editor.workspace(), "b")).not.toContain("Second owner note");
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("waits for the editor's version before publishing the draft", async () => {
+    const { state, share, roomId, owner, editor } = await editorHarness();
+    try {
+      // A second writer holds the unplace but has not joined the room yet. The
+      // publish starts first, so only the version gate can save it: without the
+      // gate the worker would plan against the stale room and put the card back.
+      const next = new LoroDoc();
+      next.import(editor.doc.export({ mode: "snapshot" }));
+      new WorkspaceDocument(next).unplaceCard(BOARD_ID, "b");
+      const version = Object.fromEntries(
+        [...next.version().toJSON()].map(([peer, counter]) => [String(peer), counter]),
+      );
+
+      const pending = state.worker.publish(share, version);
+
+      const writer = new LoroWebsocketClient({ url: state.url });
+      const writerRoom = await writer.join({
+        roomId,
+        crdtAdaptor: new LoroAdaptor(next),
+        auth: () => new TextEncoder().encode(INTERNAL_TOKEN),
+      });
+      try {
+        expect(await pending).toEqual({ ok: true, applied: 1 });
+      } finally {
+        await writerRoom.leave().catch(() => undefined);
+        writer.destroy();
+      }
+
+      await waitFor(
+        () => owner.workspace().getPlacement(BOARD_ID, "b") === undefined,
+        "the owner to receive the unplace",
+      );
+      expect(editor.workspace().getPlacement(BOARD_ID, "b")).toBeUndefined();
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("refuses a publish whose version never reaches the room", async () => {
+    const { state, share, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().unplaceCard(BOARD_ID, "b");
+      editor.doc.commit({ origin: "editor:edit" });
+
+      const [peer] = [...editor.doc.version().toJSON().keys()];
+      expect(peer).toBeDefined();
+      const result = await state.worker.publish(share, { [String(peer)]: 999_999 });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain("syncing");
+
+      // Nothing was written or rebuilt: the owner still has the card placed and
+      // the draft keeps its own unplace.
+      await delay(100);
+      expect(owner.workspace().getPlacement(BOARD_ID, "b")).toBeDefined();
+      expect(editor.workspace().getPlacement(BOARD_ID, "b")).toBeUndefined();
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
+
+  it("refuses to publish when the workspace connection is gone", async () => {
+    const { state, share, owner, editor } = await editorHarness();
+    try {
+      editor.workspace().placeCard(BOARD_ID, "a", { x: 480, y: 580 });
+      editor.doc.commit({ origin: "editor:edit" });
+
+      // Dropping the server takes the live writer down; saved bytes may lag, so
+      // the publish must fail instead of writing into a stale document.
+      await state.server.stop();
+      await waitFor(
+        () => state.worker.sourceStatus(WORKSPACE_ID) !== "joined",
+        "the writer to notice the outage",
+      );
+
+      const result = await state.worker.publish(share);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain("not available");
+    } finally {
+      await closeOwnerAndEditor(owner, editor);
+    }
+  }, 20_000);
 });

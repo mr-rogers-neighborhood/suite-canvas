@@ -17,9 +17,11 @@ returned `"write"` for every unauthenticated non-share room.
 ## Decision
 
 1. **A share is a capability token.** The server stores only its SHA-256 hash. A token authorizes
-   exactly one room, with `read` or `write`. There is no account, ACL or per-person attribution.
-2. **Workspace editing stays the ordinary room.** The workspace editor link remains
-   `?workspace=<id>`; the room id is the owner secret. The API does not mint workspace editor links.
+   one document room with `read` or `write`, plus that room's derived ephemeral presence/cursor
+   rooms. There is no account, ACL or per-person attribution.
+2. **Workspace editing stays the ordinary room.** The workspace editor link is
+   `?workspace=<id>#owner=<key>`; the owner key, not the room id, is the secret. The API does not
+   mint workspace editor links.
 3. **Board and card viewers get a projection room.** A board share copies the board, its sections,
    placements, edges, placed cards, used schema and content into a self-contained Loro document.
    A card share copies one card into a synthetic `share-board`. The room is `share-<token>`, and
@@ -34,11 +36,20 @@ returned `"write"` for every unauthenticated non-share room.
 6. **Roles ship in stages.** S1 is workspace edit plus board/card viewer. Board and card editors
    need merge-back from a projection room to the source workspace; the Share dialog marks them
    “coming next” instead of pretending they exist.
+
+   *Revised in S3:* board and card editors exist. An editor token writes only its projection room;
+   the draft is published to the workspace by `POST /api/shares/:token/publish`, which rejects a
+   conflict and leaves the draft intact. `POST /api/shares/:token/reload` discards the draft. The
+   owner workspace changes still flow into a clean draft and pause while the draft is dirty.
 7. **Workspace viewer links are deferred.** A token that joins the workspace room necessarily
    learns the id that share management uses, and with no accounts that id is also write access.
    Minting a workspace viewer token would therefore allow an editor link. It waits for a separate
    management credential or a full-workspace projection room. The viewer shell already supports
    the scope.
+
+   *Revised in S2a:* the owner credential is now required for workspace rooms and for share
+   management, so the workspace id is no longer write access. Workspace viewer links are enabled;
+   they open the real workspace room read-only and join presence with the share token.
 
 ## Consequences
 
@@ -48,5 +59,6 @@ returned `"write"` for every unauthenticated non-share room.
   incremental projection is an optimization, not a semantic change.
 - A shared card can become unavailable when the source card is trashed; the worker keeps the last
   good projection rather than emptying a room a viewer may be reading.
-- Cross-document merge-back remains the blocking prerequisite for editor links, as ADR-0021
-  predicted.
+- Cross-document merge-back is a publish step, not a live loop: the worker diffs the draft
+  against a per-share baseline, applies one `share:publish` commit to the workspace, and rebuilds
+  the projection. Conflicting fields reject the publish; there is no share-wins fallback.

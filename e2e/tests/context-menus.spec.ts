@@ -1,8 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  `/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`;
+  withOwnerKey(`/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -73,10 +74,13 @@ async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<voi
 
 /** Opens the inspector with a click on the card header, not the editors. */
 async function openCardInfo(page: Page, card = cards(page).first()): Promise<void> {
-  const box = await card.boundingBox();
-  if (!box) throw new Error("card not visible");
-  await page.mouse.click(box.x + 80, box.y + 24);
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+  const inspector = page.getByTestId("card-inspector");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await card.click({ position: { x: 80, y: 24 } });
+    if (await inspector.isVisible().catch(() => false)) return;
+    await page.waitForTimeout(150);
+  }
+  await expect(inspector).toBeVisible();
 }
 
 /** Adds a `Status` text field to the shared note type and fills it on one card. */
@@ -101,6 +105,7 @@ async function addStatusField(page: Page, card: ReturnType<typeof cards>): Promi
 test("leaves ordinary body text to the browser's native menu", async ({ page }) => {
   await page.goto(workspaceUrl("native"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
 
   await createNote(page, "Body host");
   const card = cards(page).filter({ hasText: "Body host" });
@@ -120,6 +125,7 @@ test("leaves ordinary body text to the browser's native menu", async ({ page }) 
 test("keeps the card menu on a read-only body", async ({ page }) => {
   await page.goto(workspaceUrl("readonly"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
 
   await createNote(page, "Idle card");
   const card = cards(page).filter({ hasText: "Idle card" });
@@ -135,6 +141,7 @@ test("keeps the card menu on a read-only body", async ({ page }) => {
 test("keeps the app menu on a field mention", async ({ page }) => {
   await page.goto(workspaceUrl("mention"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
 
   await createNote(page, "Target card");
   await createNote(page, "Source card");
@@ -165,6 +172,7 @@ test("keeps the app menu on a field mention", async ({ page }) => {
 test("keeps the app menu on a property block", async ({ page }) => {
   await page.goto(workspaceUrl("property"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
 
   const card = cards(page).first();
   await addStatusField(page, card);

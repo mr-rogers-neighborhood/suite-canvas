@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { configureSession, getSession } from "../session/session";
 import type { Share } from "../session/shares";
 import { type ShareClient, ShareDialog } from "./ShareDialog";
+
+const OWNER_KEY = "owner-key-1";
 
 function shareAt(overrides: Partial<Share> = {}): Share {
   return {
@@ -44,8 +47,21 @@ function renderDialog(
   );
 }
 
+beforeEach(() => {
+  // The dialog reads the owner key from the booted session.
+  configureSession({
+    workspaceId: "ws-1",
+    roomId: "ws-1",
+    share: null,
+    role: "editor",
+    readOnly: false,
+    ownerKey: OWNER_KEY,
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  configureSession({ ...getSession(), ownerKey: null });
 });
 
 describe("ShareDialog", () => {
@@ -58,7 +74,7 @@ describe("ShareDialog", () => {
     expect(screen.getByTestId("share-role-editor")).toHaveAttribute("aria-pressed", "true");
 
     expect(await screen.findByTestId("share-row-share-1")).toBeInTheDocument();
-    expect(client.listShares).toHaveBeenCalledWith("ws-1");
+    expect(client.listShares).toHaveBeenCalledWith("ws-1", OWNER_KEY);
   });
 
   it("disables the card tab when no card is selected", async () => {
@@ -93,13 +109,16 @@ describe("ShareDialog", () => {
 
     const input = await screen.findByLabelText("Share link");
     expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
-    expect(client.createShare).toHaveBeenCalledWith({
-      workspaceId: "ws-1",
-      scope: "board",
-      role: "viewer",
-      boardId: "board-1",
-      cardId: null,
-    });
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "board",
+        role: "viewer",
+        boardId: "board-1",
+        cardId: null,
+      },
+      OWNER_KEY,
+    );
 
     // The dialog reloads the list so the new link shows up without reopening.
     await waitFor(() => expect(client.listShares).toHaveBeenCalledTimes(2));
@@ -113,42 +132,97 @@ describe("ShareDialog", () => {
     fireEvent.click(screen.getByTestId("share-create"));
 
     await screen.findByLabelText("Share link");
-    expect(client.createShare).toHaveBeenCalledWith({
-      workspaceId: "ws-1",
-      scope: "card",
-      role: "viewer",
-      boardId: null,
-      cardId: "card-1",
-    });
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "card",
+        role: "viewer",
+        boardId: null,
+        cardId: "card-1",
+      },
+      OWNER_KEY,
+    );
   });
 
-  it("marks a workspace viewer link as coming next", async () => {
+  it("creates a workspace viewer link", async () => {
     const client = fakeClient();
     renderDialog(client);
 
     fireEvent.click(screen.getByTestId("share-role-viewer"));
 
-    expect(screen.getByTestId("share-create")).toBeDisabled();
-    expect(screen.getByTestId("share-coming-next")).toHaveTextContent(
-      "Workspace viewer links are coming next",
-    );
+    expect(screen.getByTestId("share-hint")).toHaveTextContent("Viewers can read every board");
+    expect(screen.queryByTestId("share-coming-next")).not.toBeInTheDocument();
+    expect(screen.getByTestId("share-create")).toBeEnabled();
 
     fireEvent.click(screen.getByTestId("share-create"));
-    expect(client.createShare).not.toHaveBeenCalled();
+
+    const input = await screen.findByLabelText("Share link");
+    expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "workspace",
+        role: "viewer",
+        boardId: null,
+        cardId: null,
+      },
+      OWNER_KEY,
+    );
   });
 
-  it("marks board and card editors as coming next", async () => {
+  it("creates a board editor token with the publishing hint", async () => {
     const client = fakeClient();
     renderDialog(client);
 
     fireEvent.click(screen.getByTestId("share-tab-board"));
     fireEvent.click(screen.getByTestId("share-role-editor"));
 
-    expect(await screen.findByTestId("share-coming-next")).toBeInTheDocument();
-    expect(screen.getByTestId("share-create")).toBeDisabled();
+    expect(screen.getByTestId("share-hint")).toHaveTextContent(
+      "Editors can change this board and publish. No new cards or type changes.",
+    );
+    expect(screen.queryByTestId("share-coming-next")).not.toBeInTheDocument();
+    expect(screen.getByTestId("share-create")).toHaveTextContent("Create editor link");
+    expect(screen.getByTestId("share-create")).toBeEnabled();
 
     fireEvent.click(screen.getByTestId("share-create"));
-    expect(client.createShare).not.toHaveBeenCalled();
+
+    const input = await screen.findByLabelText("Share link");
+    expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "board",
+        role: "editor",
+        boardId: "board-1",
+        cardId: null,
+      },
+      OWNER_KEY,
+    );
+  });
+
+  it("creates a card editor token", async () => {
+    const client = fakeClient();
+    renderDialog(client);
+
+    fireEvent.click(screen.getByTestId("share-tab-card"));
+    fireEvent.click(screen.getByTestId("share-role-editor"));
+
+    expect(screen.getByTestId("share-hint")).toHaveTextContent(
+      "Editors can change this card and publish. No new cards or type changes.",
+    );
+    fireEvent.click(screen.getByTestId("share-create"));
+
+    await screen.findByLabelText("Share link");
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "card",
+        role: "editor",
+        boardId: null,
+        cardId: "card-1",
+      },
+      OWNER_KEY,
+    );
   });
 
   it("revokes a link and refreshes the list", async () => {
@@ -157,7 +231,7 @@ describe("ShareDialog", () => {
 
     fireEvent.click(await screen.findByTestId("share-revoke-share-1"));
 
-    await waitFor(() => expect(client.revokeShare).toHaveBeenCalledWith("share-1"));
+    await waitFor(() => expect(client.revokeShare).toHaveBeenCalledWith("share-1", OWNER_KEY));
     await waitFor(() => expect(client.listShares).toHaveBeenCalledTimes(2));
   });
 
@@ -180,16 +254,14 @@ describe("ShareDialog", () => {
 
   it("shows the API error when a link cannot be created", async () => {
     const client = fakeClient();
-    client.createShare.mockRejectedValueOnce(
-      new Error("Board and card editor links are coming next."),
-    );
+    client.createShare.mockRejectedValueOnce(new Error("This workspace is protected."));
     renderDialog(client);
 
     fireEvent.click(screen.getByTestId("share-tab-board"));
     fireEvent.click(screen.getByTestId("share-create"));
 
     expect(await screen.findByTestId("share-error")).toHaveTextContent(
-      "Board and card editor links are coming next.",
+      "This workspace is protected.",
     );
     expect(screen.queryByTestId("share-link")).not.toBeInTheDocument();
   });

@@ -1,8 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  `/?workspace=e2e-mentions-${name}-${Date.now()}-${++sequence}`;
+  withOwnerKey(`/?workspace=e2e-mentions-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -140,6 +141,7 @@ test("inserts a mention from the picker and keeps it after a reload", async ({ p
 test("mentions work in the title editor", async ({ page }) => {
   await page.goto(workspaceUrl("title"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target card");
   await createNote(page, "Title host");
 
@@ -171,6 +173,7 @@ test("mentions work in the title editor", async ({ page }) => {
 test("shows no-match feedback without inserting anything", async ({ page }) => {
   await page.goto(workspaceUrl("empty"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target card");
 
   const target = cards(page).filter({ hasText: "Target card" });
@@ -188,6 +191,7 @@ test("shows no-match feedback without inserting anything", async ({ page }) => {
 test("links to one field of another card and lands on it", async ({ page }) => {
   await page.goto(workspaceUrl("field-ref"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target card");
   await createNote(page, "Source card");
 
@@ -274,6 +278,7 @@ async function addOwnerField(page: Page, card: ReturnType<typeof cards>): Promis
 test("steps into a card's fields with the arrow keys", async ({ page }) => {
   await page.goto(workspaceUrl("submenu"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target");
   await createNote(page, "Source");
   await addOwnerField(page, cards(page).filter({ hasText: "Target" }));
@@ -314,6 +319,7 @@ test("steps into a card's fields with the arrow keys", async ({ page }) => {
 test("opens the submenu with a dot without typing it", async ({ page }) => {
   await page.goto(workspaceUrl("dot-drill"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target");
   await createNote(page, "Source");
   await addOwnerField(page, cards(page).filter({ hasText: "Target" }));
@@ -354,6 +360,8 @@ test("syncs a mention and its live title to a peer", async ({ browser }) => {
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
   await expect(pageB.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(pageA)).toHaveCount(2);
+  await expect(cards(pageB)).toHaveCount(2);
 
   await createNote(pageA, "Target card");
   await createNote(pageA, "Source card");

@@ -1,11 +1,13 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
 
 /**
  * Each test gets its own document so parallel tests never share CRDT state.
  */
-const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`;
+const docUrl = (name: string) =>
+  withOwnerKey(`/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`);
 
 /**
  * React Flow re-renders nodes (detaching handles) while a second client syncs, so

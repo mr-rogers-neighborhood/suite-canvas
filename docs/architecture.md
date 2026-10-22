@@ -190,7 +190,20 @@ small manifest. Import validates the envelope, refuses a newer file/schema by na
 workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
 the open document. Portable JSON and Markdown exports are read-only projections of the same
 document; only the exact backup is an import format. Sharing is link-based: a workspace editor link
-is the ordinary workspace URL, and `?share=<token>` opens a reader ([ADR-0022](./decisions/0022-share-projection-links.md)).
+is the ordinary workspace URL plus its owner-key fragment, while `?share=<token>` opens the real
+workspace for a workspace viewer or a board/card projection — read-only for a viewer, and a
+publishable draft for an editor ([ADR-0022](./decisions/0022-share-projection-links.md)).
+
+### Owner key
+
+A workspace has a 32-byte base64url owner key, generated in the browser, kept in local storage and
+the URL fragment (`#owner=<key>`), and stored on the server only as a SHA-256 hash
+(`SUITE_WORKSPACES_DB`, default `suite.workspaces.sqlite`). `POST /api/workspaces/:id/claim`
+registers the first key and reports a conflict for a different one; an online open claims the key,
+while an offline open keeps working locally and claims on the next sync. Empty auth never writes a
+workspace room after a claim. The editor link is the recovery path for a lost browser profile: it
+carries the fragment, so copying it is also copying the owner capability. Share management requires
+`Authorization: Bearer <ownerKey>`; a share token cannot list, create or revoke links.
 
 ## Session start
 
@@ -562,6 +575,24 @@ Creating a share rebuilds immediately and revoking one closes its room. Resolvin
 token reports the projection room as its `workspaceId`; the owner workspace id never reaches that
 holder, so a board or card link cannot be exchanged for a workspace link.
 
+### Room authorization
+
+Every sync join carries an `auth` payload that `authorize(roomId, auth, deps)` maps to a
+permission, in this order:
+
+1. the internal token writes any room (the projection worker);
+2. a share token opens exactly its share room, `read` for a viewer and `write` for an editor, and
+   writes the derived `<room>:presence` / `<room>:cursors` rooms, which are ephemeral and scoped to
+   the same share;
+3. an owner key writes its workspace and that workspace's derived presence/cursor rooms; the first
+   use claims an unclaimed workspace, and a different key is refused;
+4. an empty or mismatched credential is rejected. The workspace id alone is not a secret, and an
+   owner key can never claim a `share-` projection room.
+
+Share management (`GET/POST/DELETE /api/shares`) requires `Authorization: Bearer <ownerKey>` and
+verifies it against the workspace registry; resolving a token stays public. The client sends the
+same credential to the document, presence and cursor joins.
+
 ### Opening a share link
 
 `main.tsx` resolves `?share=<token>` through the share API before it imports `App`, then
@@ -572,16 +603,15 @@ unchanged.
 - **Board and card viewer:** the session targets `share-<token>` only. `workspaceId`, the IndexedDB
   key and the provider room are that projection room, so a viewer never learns or loads the owner's
   workspace id. The token is the provider's `auth`.
-- **Workspace viewer (S2a, deferred):** a token that joins the workspace room necessarily learns
-  the workspace id, which is also the share-management key; a viewer could mint an editor link.
-  The share API therefore refuses to create workspace viewer links until management has its own
-  credential or the viewer reads a full-workspace projection room. The viewer shell already supports
-  the scope for when that lands.
+- **Workspace viewer:** the session targets the real workspace room, so the viewer learns the
+  workspace id but not the owner key. Empty auth no longer writes a workspace room, and share
+  management requires the owner key, so the id alone neither writes nor mints links. Presence and
+  cursor rooms are joined with the share token.
 - **Read-only path:** `useUiStore.readOnly` closes every write surface — canvas drag/connect/delete
   and context menus, section gestures, the card menu and inline editors, panel type/tag/property
   edits, and the dock, library and share actions. Board tabs remain (workspace viewers may switch),
-  without create/rename/delete. Presence and cursor rooms are skipped: the server authorizes a
-  viewer token for its document room only. A card share opens the inspector on its card once the
-  projection has it.
+  without create/rename/delete. Presence and cursor rooms are joined with the same credential: the
+  server scopes them to the share, so a viewer writes the ephemeral rooms while staying read-only
+  on the document. A card share opens the inspector on its card once the projection has it.
 - **Failure:** a revoked or unknown token renders `ShareUnavailable` ("This link is no longer
   available.") instead of the shell.

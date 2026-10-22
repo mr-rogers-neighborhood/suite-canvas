@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { withOwnerKey } from "./ownerUrl";
 
 test("canvas app boots and renders the board", async ({ page }) => {
   // A fresh workspace per run: the default one is shared state on the collab server.
@@ -22,7 +23,7 @@ test("shows render counters with ?perf=1", async ({ page }) => {
 });
 
 test("does not reseed a workspace another client emptied", async ({ browser }) => {
-  const url = `/?workspace=e2e-no-reseed-${Date.now()}`;
+  const url = withOwnerKey(`/?workspace=e2e-no-reseed-${Date.now()}`);
 
   const first = await browser.newContext();
   const pageA = await first.newPage();

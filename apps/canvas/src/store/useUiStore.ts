@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getSession } from "../session/session";
+import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 
 export interface ContextMenuState {
   x: number;
@@ -43,16 +43,20 @@ const nextFocusTarget = (kind: FocusTarget["kind"], id: string, boardId: string)
   return { kind, id, boardId, nonce: focusNonce };
 };
 
-interface UiState {
+interface UiState extends SessionCapabilities {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
   /**
    * Share viewers render the same shell with every write path closed. It is UI
    * state (not read from the session in each component) so tests and stories
-   * can render a read-only surface without a `?share=` URL.
+   * can render a read-only surface without a `?share=` URL. Editing capabilities
+   * are separate: an editor share keeps `readOnly` false but cannot create,
+   * trash or manage.
    */
   readOnly: boolean;
   setReadOnly: (readOnly: boolean) => void;
+  /** Tests and stories override the capability matrix derived from the session. */
+  setCapabilities: (capabilities: Partial<SessionCapabilities>) => void;
   libraryOpen: boolean;
   libraryTab: LibraryTab;
   selectedNodeIds: string[];
@@ -120,9 +124,11 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
+  ...sessionCapabilities(getSession()),
   activeBoardId: null,
   readOnly: getSession().readOnly,
   setReadOnly: (readOnly) => set({ readOnly }),
+  setCapabilities: (capabilities) => set(capabilities),
   libraryOpen: false,
   libraryTab: "inbox",
   selectedNodeIds: [],
@@ -167,7 +173,7 @@ export const useUiStore = create<UiState>((set) => ({
   setEditingSection: (editingSectionId) => set({ editingSectionId }),
   setSelectedConnector: (selectedConnector) => set({ selectedConnector }),
   startEditing: (editingNodeId, editingField = "body", editingSurface = "canvas") =>
-    set((state) => (state.readOnly ? {} : { editingNodeId, editingField, editingSurface })),
+    set((state) => (state.canEditContent ? { editingNodeId, editingField, editingSurface } : {})),
   stopEditing: () => set({ editingNodeId: null, editingSurface: "canvas" }),
   setEditingField: (editingField) => set({ editingField }),
   setEditingSurface: (editingSurface) => set({ editingSurface }),

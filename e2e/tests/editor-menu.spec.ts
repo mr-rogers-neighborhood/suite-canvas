@@ -114,6 +114,7 @@ test("turns `/h1` into a heading", async ({ page }) => {
 test("navigates the menu with the arrow keys", async ({ page }) => {
   await page.goto(workspaceUrl("arrows"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Arrow host");
   const card = cards(page).filter({ hasText: "Arrow host" });
   await editBody(page, card);
@@ -142,6 +143,7 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
 test("inserts a divider", async ({ page }) => {
   await page.goto(workspaceUrl("divider"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Divider host");
   const card = cards(page).filter({ hasText: "Divider host" });
   await editBody(page, card);
@@ -163,6 +165,7 @@ test("inserts a divider", async ({ page }) => {
 test("styles quotes and code blocks", async ({ page }) => {
   await page.goto(workspaceUrl("blocks"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Block host");
   const card = cards(page).filter({ hasText: "Block host" });
   await editBody(page, card);
@@ -197,6 +200,7 @@ test("styles quotes and code blocks", async ({ page }) => {
 test("hands `/mention` over to the mention picker", async ({ page }) => {
   await page.goto(workspaceUrl("mention"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Target card");
   await createNote(page, "Mention host");
   const card = cards(page).filter({ hasText: "Mention host" });
@@ -222,6 +226,7 @@ test("hands `/mention` over to the mention picker", async ({ page }) => {
 test("Escape dismisses the menu and keeps the typed text", async ({ page }) => {
   await page.goto(workspaceUrl("escape"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Escape host");
   const card = cards(page).filter({ hasText: "Escape host" });
   await editBody(page, card);
@@ -239,6 +244,7 @@ test("Escape dismisses the menu and keeps the typed text", async ({ page }) => {
 test("shows a field in the body, edits it inline, and removes the block", async ({ page }) => {
   await page.goto(workspaceUrl("property-block"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Field host");
   const card = cards(page).filter({ hasText: "Field host" });
 

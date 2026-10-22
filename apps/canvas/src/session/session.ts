@@ -24,6 +24,78 @@ export interface SessionConfig {
   share: ShareSession | null;
   role: ShareRole;
   readOnly: boolean;
+  /**
+   * Owner credential of a normal editor session. Share sessions never carry it;
+   * they authenticate with their token instead.
+   */
+  ownerKey: string | null;
+}
+
+/**
+ * What a session may do, derived once at boot. The UI hides what a session
+ * cannot do rather than disabling it, so these flags — not `readOnly` — are the
+ * primary gate for content, layout, publishing, creation and management.
+ */
+export interface SessionCapabilities {
+  /** Title, body, properties and existing tags. */
+  canEditContent: boolean;
+  /** Placement, sections and edges on the shared board. */
+  canEditLayout: boolean;
+  /** Write the draft back to the owner's workspace. */
+  canPublish: boolean;
+  /** New cards, sections, edges, connectors and boards. */
+  canCreate: boolean;
+  /** Trash, type/tag schema, share management — owner-only. */
+  canManage: boolean;
+}
+
+const OWNER_CAPABILITIES: SessionCapabilities = {
+  canEditContent: true,
+  canEditLayout: true,
+  canPublish: true,
+  canCreate: true,
+  canManage: true,
+};
+
+const VIEWER_CAPABILITIES: SessionCapabilities = {
+  canEditContent: false,
+  canEditLayout: false,
+  canPublish: false,
+  canCreate: false,
+  canManage: false,
+};
+
+/** A board editor may change what the board already contains, never grow it. */
+const BOARD_EDITOR_CAPABILITIES: SessionCapabilities = {
+  canEditContent: true,
+  canEditLayout: true,
+  canPublish: true,
+  canCreate: false,
+  canManage: false,
+};
+
+/** A card editor only touches one card's content. */
+const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
+  canEditContent: true,
+  canEditLayout: false,
+  canPublish: true,
+  canCreate: false,
+  canManage: false,
+};
+
+/**
+ * Capability matrix:
+ * - no share (owner) or a workspace editor link: everything;
+ * - any viewer: nothing;
+ * - board editor: content + layout + publish;
+ * - card editor: content + publish.
+ */
+export function sessionCapabilities(session: SessionConfig): SessionCapabilities {
+  const { share } = session;
+  if (!share) return OWNER_CAPABILITIES;
+  if (share.role === "viewer") return VIEWER_CAPABILITIES;
+  if (share.scope === "workspace") return OWNER_CAPABILITIES;
+  return share.scope === "board" ? BOARD_EDITOR_CAPABILITIES : CARD_EDITOR_CAPABILITIES;
 }
 
 function searchParam(key: string): string | null {
@@ -46,6 +118,7 @@ function defaultSession(): SessionConfig {
     share: null,
     role: "editor",
     readOnly: false,
+    ownerKey: null,
   };
 }
 
@@ -79,6 +152,7 @@ export function sessionForShare(token: string, share: Share): SessionConfig {
     },
     role: share.role,
     readOnly: share.role === "viewer",
+    ownerKey: null,
   };
 }
 

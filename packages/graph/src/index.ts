@@ -34,6 +34,18 @@ export {
   WorkspaceDocument,
 } from "./loro/WorkspaceDocument.js";
 export type {
+  PlacementSnapshot,
+  PublishChange,
+  PublishConflict,
+  PublishFieldKind,
+  PublishPlan,
+  PublishScope,
+  PublishValue,
+  RichTextSnapshot,
+  RichTextTextSnapshot,
+} from "./merge.js";
+export { applyPublish, PUBLISH_ORIGIN, planPublish } from "./merge.js";
+export type {
   PortableCard,
   PortableNode,
   PortableProperty,

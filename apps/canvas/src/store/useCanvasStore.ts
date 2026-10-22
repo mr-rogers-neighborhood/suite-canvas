@@ -41,8 +41,15 @@ const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 const persistence =
   ROOM_ID && typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(ROOM_ID, doc) : null;
 
-/** A share token is the only credential a projection room accepts. */
-const auth = SESSION.share ? new TextEncoder().encode(SESSION.share.token) : undefined;
+/**
+ * A share token is the only credential a share room accepts; a normal editor
+ * session uses its owner key. Both are sent to the document and ephemeral rooms.
+ */
+const auth = SESSION.share
+  ? new TextEncoder().encode(SESSION.share.token)
+  : SESSION.ownerKey
+    ? new TextEncoder().encode(SESSION.ownerKey)
+    : undefined;
 
 /** How long to wait for the first server sync before treating the doc as local. */
 const SYNC_WAIT_MS = 5000;
@@ -58,7 +65,11 @@ interface CanvasState {
   /** True once the first server sync landed (or the wait ran out). */
   synced: boolean;
   connect: () => void;
-  /** Write the current document snapshot to IndexedDB before leaving. */
+  /**
+   * Persist locally and wait until the room has the latest local version.
+   * Publishes call this so the server never reads a draft the transport has
+   * not received yet.
+   */
   flush: () => Promise<void>;
 }
 
@@ -76,7 +87,6 @@ export const useCanvasStore = create<CanvasState>((set) => {
           presence,
           cursors,
           ...(auth ? { auth } : {}),
-          readOnly: SESSION.readOnly,
           onStatus: (status) => set({ status }),
           onSynced: () => set({ synced: true }),
         });
@@ -116,7 +126,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
       void provider?.connect();
     },
     flush: async () => {
-      await persistence?.flush();
+      await Promise.all([persistence?.flush(), provider?.flush()]);
     },
   };
 });

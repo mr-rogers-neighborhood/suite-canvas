@@ -199,24 +199,66 @@ test("card viewer opens its inspector and keeps out-of-share links inert", async
   await viewer.context().close();
 });
 
-test("workspace viewer links are explicitly coming next", async ({ page }) => {
-  await page.goto(workspaceUrl("workspace-deferred"));
+test("workspace viewer reads every board and cannot manage", async ({ page, browser }) => {
+  await page.goto(workspaceUrl("workspace"));
   await expect(cards(page)).toHaveCount(2);
+  await createNote(page, "First board note");
 
+  // A second board: the viewer must reach it through the tabs.
+  await page.getByTestId("board-create").click();
+  await expect(boardTabs(page)).toHaveCount(2);
+  await createNote(page, "Second board note");
+  await expect(cards(page)).toHaveCount(1);
+
+  const link = await createViewerLink(page, "workspace");
+  await page.getByTestId("share-close").click();
+
+  const viewer = await openViewer(browser, link);
+  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+
+  // The viewer joins the real workspace room: every board is reachable.
+  await expect(boardTabs(viewer)).toHaveCount(2);
+  await expect(cards(viewer)).toHaveCount(3, { timeout: 15_000 });
+  await expect(viewer.getByText("First board note")).toBeVisible();
+  await expect(viewer.getByText("Second board note")).toHaveCount(0);
+
+  await boardTabs(viewer).nth(1).click();
+  await expect(cards(viewer)).toHaveCount(1, { timeout: 15_000 });
+  await expect(viewer.getByText("Second board note")).toBeVisible();
+
+  // Presence works for a viewer: the owner is another peer in the room.
+  await expect(viewer.getByTestId("sync-status")).toContainText("here", { timeout: 15_000 });
+
+  // No management or editing chrome.
+  await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);
+  await expect(viewer.getByTestId("workspace-share")).toHaveCount(0);
+  await expect(viewer.getByTestId("board-create")).toHaveCount(0);
+  await expect(viewer.getByTestId("card-menu")).toHaveCount(0);
+  await expect(viewer.getByTestId("dock-library")).toHaveCount(0);
+
+  // Board tabs cannot be renamed or deleted, and the body stays read-only.
+  await boardTabs(viewer).nth(0).dblclick();
+  await expect(viewer.getByLabel(/Rename /)).toHaveCount(0);
+  const body = cards(viewer).first().getByTestId("card-body");
+  await body.dblclick();
+  await expect(body.locator(".node-card-editor")).toHaveAttribute("contenteditable", "false");
+  await body.click();
+  await viewer.keyboard.type("hacked");
+  await expect(body).not.toContainText("hacked");
+
+  // No management dialog is reachable from the viewer, and the API agrees.
+  await expect(viewer.getByTestId("share-dialog")).toHaveCount(0);
+
+  await viewer.context().close();
+
+  // The owner editor path still works from the same dialog.
   await page.getByTestId("workspace-share").click();
-  await page.getByTestId("share-role-viewer").click();
-
-  await expect(page.getByTestId("share-create")).toBeDisabled();
-  await expect(page.getByTestId("share-coming-next")).toContainText(
-    "Workspace viewer links are coming next",
-  );
-
-  // The editor link is still one click away.
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
   const editorLink = new URL(await page.getByLabel("Share link").inputValue());
   expect(editorLink.searchParams.get("workspace")).toBeTruthy();
   expect(editorLink.searchParams.has("share")).toBe(false);
+  expect(editorLink.hash).toContain("owner=");
 });
 
 test("revoking a link makes the viewer unavailable", async ({ page, browser }) => {

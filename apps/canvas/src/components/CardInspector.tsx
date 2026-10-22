@@ -48,6 +48,10 @@ export interface CardInspectorProps {
   onFocusLink: (cardId: string, boardId: string | null) => void;
   /** A share viewer: the drawer keeps reading and navigation, nothing else. */
   readOnly?: boolean;
+  canEditContent?: boolean;
+  canEditLayout?: boolean;
+  canManage?: boolean;
+  restrictLinks?: boolean;
 }
 
 /**
@@ -90,7 +94,12 @@ export function CardInspector({
   focusedField = null,
   bodyEmpty = false,
   readOnly = false,
+  canEditContent,
+  canEditLayout,
+  canManage,
+  restrictLinks,
 }: CardInspectorProps) {
+  const editContent = canEditContent ?? !readOnly;
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
@@ -114,7 +123,7 @@ export function CardInspector({
             ) : null}
           </p>
         </div>
-        {readOnly ? null : (
+        {editContent ? (
           <button
             type="button"
             aria-label="Edit card text"
@@ -124,7 +133,7 @@ export function CardInspector({
           >
             Edit
           </button>
-        )}
+        ) : null}
         <button
           type="button"
           aria-label="Close card info"
@@ -171,6 +180,10 @@ export function CardInspector({
           onRemoveFromBoard={onRemoveFromBoard}
           onFocusLink={onFocusLink}
           readOnly={readOnly}
+          canEditContent={editContent}
+          canEditLayout={canEditLayout ?? !readOnly}
+          canManage={canManage ?? !readOnly}
+          restrictLinks={restrictLinks ?? readOnly}
         />
       </div>
     </aside>

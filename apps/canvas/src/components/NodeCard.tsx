@@ -1,7 +1,7 @@
 import type { Card, CardType, Connector as ConnectorModel } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
@@ -73,10 +73,13 @@ export interface NodeCardProps {
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
   onTrash?: () => void;
-  /**
-   * Read-only share surface: the card keeps its chips and inspector entry
-   * points but loses the menu and both editing gestures.
-   */
+  /** Title and body editing; the card editor role owns this. */
+  canEditContent?: boolean;
+  /** Placement-level actions such as removing the card from the board. */
+  canEditLayout?: boolean;
+  /** Destructive or schema actions such as trashing the card. */
+  canManage?: boolean;
+  /** Shorthand for a viewer: no menu and no editing gesture at all. */
   readOnly?: boolean;
 }
 
@@ -116,8 +119,15 @@ export function NodeCard({
   linkCount = 0,
   onOpenInfo,
   onTrash,
+  canEditContent,
+  canEditLayout,
+  canManage,
   readOnly = false,
 }: NodeCardProps) {
+  const editContent = canEditContent ?? !readOnly;
+  const editLayout = canEditLayout ?? !readOnly;
+  const manage = canManage ?? !readOnly;
+  const hasMenu = editContent || editLayout || manage;
   countRender("card");
 
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
@@ -125,6 +135,8 @@ export function NodeCard({
   const blurTimeout = useRef<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
+  // Stable so the menu's Escape listener is not torn down by every presence tick.
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   useEffect(
     () => () => {
@@ -188,10 +200,14 @@ export function NodeCard({
           },
         ]
       : []),
-    { label: "Edit title", onSelect: () => onStartEditing?.("title") },
-    { label: "Edit body", onSelect: () => onStartEditing?.("body") },
-    { label: "Remove from board", onSelect: () => onRemoveFromBoard?.() },
-    { label: "Delete card", danger: true, onSelect: () => onTrash?.() },
+    ...(editContent
+      ? [
+          { label: "Edit title", onSelect: () => onStartEditing?.("title") },
+          { label: "Edit body", onSelect: () => onStartEditing?.("body") },
+        ]
+      : []),
+    ...(editLayout ? [{ label: "Remove from board", onSelect: () => onRemoveFromBoard?.() }] : []),
+    ...(manage ? [{ label: "Delete card", danger: true, onSelect: () => onTrash?.() }] : []),
   ];
 
   return (
@@ -258,7 +274,7 @@ export function NodeCard({
         </button>
 
         <div className="card-title relative min-w-0 flex-1">
-          {editing === "title" || readOnly ? null : (
+          {editing === "title" || !editContent ? null : (
             <button
               type="button"
               aria-label="Edit card title"
@@ -317,7 +333,7 @@ export function NodeCard({
           <PeerNameTag user={activePeer} />
         ) : null}
 
-        {readOnly ? null : (
+        {hasMenu ? (
           <button
             type="button"
             aria-label="Card actions"
@@ -331,7 +347,7 @@ export function NodeCard({
           >
             {"\u22ef"}
           </button>
-        )}
+        ) : null}
       </div>
 
       {hasMeta && metaExpanded ? (
@@ -370,7 +386,7 @@ export function NodeCard({
         }`}
         data-testid="card-body"
         onDoubleClick={(event) => {
-          if (readOnly || editing === "body") return;
+          if (!editContent || editing === "body") return;
           event.stopPropagation();
           onStartEditing?.("body");
         }}
@@ -381,8 +397,8 @@ export function NodeCard({
           contentId={contentId}
           cursorStore={cursorStore}
           localUser={localUser}
-          editable={!readOnly && editing === "body"}
-          readOnly={readOnly}
+          editable={editContent && editing === "body"}
+          readOnly={!editContent}
           onFocus={keepFocusAlive}
           onBlur={releaseFocusSoon}
           onOpenCardPanel={() => onOpenInfo?.()}
@@ -408,9 +424,7 @@ export function NodeCard({
         />
       ))}
 
-      {menu ? (
-        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
-      ) : null}
+      {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} /> : null}
     </div>
   );
 }

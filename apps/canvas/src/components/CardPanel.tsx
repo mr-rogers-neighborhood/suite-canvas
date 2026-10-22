@@ -292,6 +292,14 @@ export interface CardPanelProps {
   onFocusLink: (cardId: string, boardId: string | null) => void;
   /** A share viewer reads the card; nothing on this surface writes. */
   readOnly?: boolean;
+  /** Title/body/properties/tags: true for an editor share. */
+  canEditContent?: boolean;
+  /** Board placement actions such as "Remove from board". */
+  canEditLayout?: boolean;
+  /** Schema and destructive actions; owner-only. */
+  canManage?: boolean;
+  /** A projection may not contain every linked card; those rows read inert. */
+  restrictLinks?: boolean;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -498,7 +506,15 @@ export function CardPanel({
   onRemoveFromBoard,
   onFocusLink,
   readOnly = false,
+  canEditContent,
+  canEditLayout,
+  canManage,
+  restrictLinks,
 }: CardPanelProps) {
+  const editContent = canEditContent ?? !readOnly;
+  const editLayout = canEditLayout ?? !readOnly;
+  const manage = canManage ?? !readOnly;
+  const inertLinks = restrictLinks ?? readOnly;
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
@@ -610,7 +626,7 @@ export function CardPanel({
   const cardIds = useMemo(() => new Set(cards.map((entry) => entry.id)), [cards]);
   const hasLinks = links.incoming.length + links.outgoing.length > 0;
   const startEditing = (field: CardPanelEditingField) => {
-    if (readOnly) return;
+    if (!editContent) return;
     onStartEditing(field);
   };
 
@@ -625,7 +641,7 @@ export function CardPanel({
       data-editing={editing === "body" ? "true" : undefined}
       style={bodyPeerStyle}
       onClick={(event) => {
-        if (readOnly || editing === "body") return;
+        if (!editContent || editing === "body") return;
         event.stopPropagation();
         startEditing("body");
       }}
@@ -644,8 +660,8 @@ export function CardPanel({
           // twin must not clear the shared local cursor on its own updates.
           cursorStore={editing === "body" ? cursorStore : null}
           localUser={localUser}
-          editable={!readOnly && editing === "body"}
-          readOnly={readOnly}
+          editable={editContent && editing === "body"}
+          readOnly={!editContent}
           onFocus={keepFocusAlive}
           onBlur={releaseFocusSoon}
           onOpenCardPanel={onOpenCardPanel}
@@ -667,7 +683,7 @@ export function CardPanel({
         data-testid="card-panel-title"
         style={titlePeerStyle}
         onClick={(event) => {
-          if (readOnly || editing === "title") return;
+          if (!editContent || editing === "title") return;
           event.stopPropagation();
           startEditing("title");
         }}
@@ -686,7 +702,7 @@ export function CardPanel({
           />
         ) : (
           <>
-            {readOnly ? null : (
+            {editContent ? (
               <button
                 type="button"
                 aria-label="Edit card title"
@@ -696,7 +712,7 @@ export function CardPanel({
                   startEditing("title");
                 }}
               />
-            )}
+            ) : null}
             <p className="truncate text-[13px] font-semibold text-[var(--ink)]">
               {title || "Untitled"}
             </p>
@@ -747,7 +763,7 @@ export function CardPanel({
           aria-labelledby={inspector ? detailsTabId : undefined}
         >
           <Section title="Type">
-            {readOnly ? (
+            {!manage ? (
               <div className="flex flex-wrap gap-1" data-testid="type-picker" data-readonly="true">
                 {card.typeIds.map((typeId) => {
                   const type = typesById.get(typeId);
@@ -785,20 +801,22 @@ export function CardPanel({
                     </button>
                   );
                 })}
-                <button
-                  type="button"
-                  data-testid="manage-types"
-                  className="rounded-full px-2 py-0.5 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:underline"
-                  onClick={onManageTypes}
-                >
-                  Manage
-                </button>
+                {manage ? (
+                  <button
+                    type="button"
+                    data-testid="manage-types"
+                    className="rounded-full px-2 py-0.5 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:underline"
+                    onClick={onManageTypes}
+                  >
+                    Manage
+                  </button>
+                ) : null}
               </div>
             )}
           </Section>
 
           <Section title="Tags">
-            {readOnly ? (
+            {!editContent ? (
               <div className="flex flex-wrap gap-1" data-testid="tag-list" data-readonly="true">
                 {tags
                   .filter((tag) => card.tags.includes(tag.id))
@@ -818,6 +836,7 @@ export function CardPanel({
                 onAdd={onAddTag}
                 onRemove={onRemoveTag}
                 onCreate={onCreateTag}
+                canCreate={manage}
               />
             )}
           </Section>
@@ -826,7 +845,7 @@ export function CardPanel({
             {fields.length === 0 ? (
               <p className="text-[12px] text-[var(--ink-muted)]">
                 This type has no fields yet.
-                {readOnly ? null : (
+                {manage ? (
                   <>
                     {" "}
                     <button
@@ -837,7 +856,7 @@ export function CardPanel({
                       Add one
                     </button>
                   </>
-                )}
+                ) : null}
               </p>
             ) : (
               <div className="space-y-3" data-testid="property-list">
@@ -854,7 +873,7 @@ export function CardPanel({
                       {group.map(({ field }) => {
                         const value = card.properties[field.id];
                         const missing = field.required && isPropertyEmpty(value, field, cardIds);
-                        if (readOnly) {
+                        if (!editContent) {
                           return (
                             <div
                               key={field.id}
@@ -924,14 +943,14 @@ export function CardPanel({
                     direction="in"
                     rows={links.incoming}
                     onFocus={onFocusLink}
-                    {...(readOnly ? { availableCardIds: cardIds } : {})}
+                    {...(inertLinks ? { availableCardIds: cardIds } : {})}
                   />
                   <LinkGroup
                     title="Outgoing"
                     direction="out"
                     rows={links.outgoing}
                     onFocus={onFocusLink}
-                    {...(readOnly ? { availableCardIds: cardIds } : {})}
+                    {...(inertLinks ? { availableCardIds: cardIds } : {})}
                   />
                 </>
               ) : (
@@ -1011,7 +1030,7 @@ export function CardPanel({
                       </span>
                     )}
                   </span>
-                  {readOnly ? null : (
+                  {editLayout ? (
                     <button
                       type="button"
                       className="rounded px-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
@@ -1019,7 +1038,7 @@ export function CardPanel({
                     >
                       Remove
                     </button>
-                  )}
+                  ) : null}
                 </li>
                 {others.map((entry) => (
                   <li

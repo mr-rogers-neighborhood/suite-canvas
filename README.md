@@ -79,12 +79,17 @@ document. All writes go through `WorkspaceDocument`, which validates with Zod. S
 ## Workspace files
 
 `Share` opens one dialog for the workspace, the active board or the selected card. A workspace
-editor link is the ordinary `?workspace=` URL; a board or card viewer link is a capability token
-opened through `?share=`. Board and card links read a live projection of that scope, never the
-workspace index. Links are capabilities, not accounts or an ACL. A workspace viewer link is
-deliberately deferred: the workspace room id is also the share-management key, so that link would
-let a viewer mint an editor link; it needs a separate management credential or a full-workspace
-projection first.
+editor link is the ordinary `?workspace=` URL plus the owner-key fragment; viewer links (workspace,
+board or card) are capability tokens opened through `?share=`. Board and card links read a live
+projection of that scope, never the workspace index; a workspace viewer reads the real workspace
+room and can switch boards. Board and card editor links write a draft: owner saves pause while the
+draft is dirty, `POST /api/shares/:token/publish` applies one conflict-checked commit to the
+workspace, and `POST /api/shares/:token/reload` discards the draft. A publish may carry the
+share document's version vector, so it waits for the editor's own edits to reach the share room
+before it plans. Links are capabilities, not accounts or an ACL. Room writes require the credential
+that matches the room: an owner key for a workspace, a share token for its share. Creating, listing
+and revoking links additionally needs the workspace owner key, so a share token can never mint or
+revoke another link.
 
 `File → Export backup…` writes a versioned `.suite` file containing the exact Loro snapshot. Import
 it from the launcher; it always opens as a **new** workspace and never merges into the open

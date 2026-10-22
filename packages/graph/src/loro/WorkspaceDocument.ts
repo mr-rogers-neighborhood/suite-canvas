@@ -589,6 +589,8 @@ export class WorkspaceDocument {
   private readonly referenceCache = new Map<string, string[]>();
   private readonly pendingReferences = new Set<string>();
   private referencesScheduled = false;
+  /** Set while `batch()` is open; setter-level commits are skipped. */
+  private batchOrigin: string | null = null;
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
@@ -701,7 +703,24 @@ export class WorkspaceDocument {
     });
   }
 
+  /**
+   * Runs `fn` as one Loro commit with `origin`, deferring every setter's own
+   * commit to the end. A publish writes many fields at once and must land as a
+   * single event and a single undo step; nested calls join the outer batch.
+   */
+  batch<T>(origin: string, fn: () => T): T {
+    if (this.batchOrigin !== null) return fn();
+    this.batchOrigin = origin;
+    try {
+      return fn();
+    } finally {
+      this.batchOrigin = null;
+      this.doc.commit({ origin });
+    }
+  }
+
   private commit(origin = `${STRUCT_ORIGIN}write`): void {
+    if (this.batchOrigin !== null) return;
     this.doc.commit({ origin });
   }
 

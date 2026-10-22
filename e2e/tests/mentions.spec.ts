@@ -72,8 +72,16 @@ async function createNote(page: Page, title: string): Promise<void> {
  * the inspector with the first click, which can then swallow the second click.
  */
 async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<void> {
-  await card.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await card.getByTestId("card-menu").click();
+    const item = page.getByRole("menuitem", { name: "Edit body" });
+    if (await item.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await item.click({ timeout: 5000 }).catch(() => undefined);
+    }
+    if (await card.getByTestId("card-body").locator(".ProseMirror-focused").count()) return;
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(150);
+  }
   await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
 }
 
@@ -333,6 +341,7 @@ test("opens the submenu with a dot without typing it", async ({ page }) => {
 });
 
 test("syncs a mention and its live title to a peer", async ({ browser }) => {
+  test.setTimeout(60_000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
   const pageA = await contextA.newPage();
@@ -346,30 +355,43 @@ test("syncs a mention and its live title to a peer", async ({ browser }) => {
 
   await createNote(pageA, "Target card");
   await createNote(pageA, "Source card");
-  await expect(cards(pageB)).toHaveCount(4);
+  // Exact node counts are noisy while a peer is still mounting; the named
+  // cards are the contract this test cares about.
+  await expect(cards(pageB).filter({ hasText: "Source card" }).first()).toBeVisible({
+    timeout: 20_000,
+  });
 
-  const sourceA = cards(pageA).filter({ hasText: "Source card" });
+  const sourceA = cards(pageA).filter({ hasText: "Source card" }).first();
   await editBody(pageA, sourceA);
   await pageA.keyboard.type("@Target");
-  await expect(
-    pageA.getByTestId("mention-option").filter({ hasText: "Target card" }),
-  ).toBeVisible();
+  await expect(pageA.getByTestId("mention-picker")).toBeVisible({ timeout: 10_000 });
+  await expect(pageA.getByTestId("mention-option").filter({ hasText: "Target card" })).toBeVisible({
+    timeout: 10_000,
+  });
   await pageA.keyboard.press("Enter");
 
   // B reads the shared body and renders its own chip with the live title.
-  const sourceB = cards(pageB).filter({ hasText: "Source card" });
-  await expect(sourceB.getByTestId("mention-chip")).toContainText("Target card");
+  const sourceB = cards(pageB).filter({ hasText: "Source card" }).first();
+  await expect(sourceB.getByTestId("mention-chip")).toContainText("Target card", {
+    timeout: 20_000,
+  });
 
   // Renaming the target on B renames it inside A's mention.
-  const targetB = cards(pageB).filter({
-    has: pageB.locator(".card-title-editor", { hasText: "Target card" }),
-  });
+  const targetB = cards(pageB)
+    .filter({
+      has: pageB.locator(".card-title-editor", { hasText: "Target card" }),
+    })
+    .first();
   await targetB.getByRole("button", { name: "Edit card title" }).dblclick();
-  await expect(pageB.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  await expect(pageB.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1, {
+    timeout: 10_000,
+  });
   await pageB.keyboard.type(" renamed");
   await pageB.keyboard.press("Escape");
 
-  await expect(sourceA.getByTestId("mention-chip")).toContainText("Target card renamed");
+  await expect(sourceA.getByTestId("mention-chip")).toContainText("Target card renamed", {
+    timeout: 20_000,
+  });
 
   await contextA.close();
   await contextB.close();

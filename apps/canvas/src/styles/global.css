@@ -1038,6 +1038,21 @@ body {
   outline-offset: 1px;
 }
 
+.mention-chip-field-name {
+  margin-left: 2px;
+  color: var(--ink-muted);
+  font-size: 0.92em;
+}
+
+.mention-chip-field-value {
+  margin-left: 4px;
+  overflow: hidden;
+  max-width: 10rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
 .mention-chip-at {
   opacity: 0.7;
 }
@@ -1165,6 +1180,36 @@ body {
   color: var(--ink);
   font: inherit;
   outline: none;
+}
+
+/* The row a `@card.field` link landed on: a soft ring, not a second border. */
+.property-row[data-focused="true"] {
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: var(--segmented-bg);
+}
+
+/* Quiet until hovered: the block is a value first, a control second. */
+.property-block-remove {
+  padding: 0 1px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.property-block:hover .property-block-remove,
+.property-block-remove:focus-visible {
+  opacity: 0.7;
+}
+
+.property-block-remove:hover {
+  color: var(--ink);
+  opacity: 1;
 }
 
 .property-block-missing {

@@ -151,8 +151,9 @@ export function CardBodyEditor({
       extensions: [
         // Collaboration ships its own undo history, so StarterKit's is disabled.
         StarterKit.configure({ undoRedo: false }),
-        // Both editors share the extension's one `@` suggestion config.
-        Mention,
+        // Both editors share the extension's one `@` suggestion config; the
+        // owner id is what adds this card's fields to the picker.
+        Mention.configure({ cardId }),
         SlashCommands,
         PropertyBlock.configure({
           cardId,

@@ -67,6 +67,8 @@ export interface PropertyBlockChipProps {
   onCommit: (value: PropertyValue | null) => void;
   /** Read-only kinds are edited in the panel. */
   onOpenPanel: () => void;
+  /** Removes the block from the body; the value stays on the card. */
+  onRemove?: () => void;
 }
 
 /**
@@ -79,6 +81,7 @@ export function PropertyBlockChip({
   cardLabel = "",
   onCommit,
   onOpenPanel,
+  onRemove,
 }: PropertyBlockChipProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -282,6 +285,24 @@ export function PropertyBlockChip({
         {"\u00b7"}
       </span>
       {control}
+      {onRemove ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Remove property block from the body"
+          title={`Remove ${field.name} from the body; the value stays on the card`}
+          data-testid="property-block-remove"
+          className="property-block-remove"
+          onPointerDown={stopPointer}
+          onMouseDown={stopPointer}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+        >
+          {"\u00d7"}
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -291,7 +312,7 @@ export function PropertyBlockChip({
  * in the block immediately, and writes through the same workspace calls the
  * panel uses — the block never holds a copy of the value.
  */
-export function PropertyBlockNodeView({ node, extension }: NodeViewProps) {
+export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeViewProps) {
   const options = extension.options as PropertyBlockOptions;
   const cardId = options.cardId;
   const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : "";
@@ -321,6 +342,17 @@ export function PropertyBlockNodeView({ node, extension }: NodeViewProps) {
         cardLabel={cardLabel}
         onCommit={commit}
         onOpenPanel={() => options.openPanel(cardId)}
+        onRemove={() => {
+          // Deleting the atom writes through the editor's own CRDT binding, so
+          // peers see the same removal as any other body edit.
+          const from = getPos();
+          if (from === undefined) return;
+          editor
+            .chain()
+            .focus()
+            .deleteRange({ from, to: from + node.nodeSize })
+            .run();
+        }}
       />
     </NodeViewWrapper>
   );

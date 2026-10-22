@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../store/workspaceStore", () => ({
   useCard: (cardId: string) => mocks.card(cardId),
+  // Only a `@card.field` chip reads types; a plain mention never subscribes.
+  // One stable object: a fresh snapshot per call would re-render forever.
+  useWorkspaceStore: () => {
+    const snapshot = { types: [] };
+    return { getSnapshot: () => snapshot, subscribe: () => () => undefined };
+  },
 }));
 
 vi.mock("../hooks/useCardContainers", () => ({
@@ -59,7 +65,7 @@ describe("MentionChipNodeView", () => {
     render(<MentionChipNodeView {...nodeViewProps("card-1")} />);
     fireEvent.click(screen.getByTestId("mention-chip"));
 
-    expect(openInspector).toHaveBeenCalledWith("card-1");
+    expect(openInspector).toHaveBeenCalledWith("card-1", null);
     expect(useUiStore.getState().inspectorNodeId).toBe("card-1");
   });
 
@@ -87,6 +93,27 @@ describe("MentionChipNodeView", () => {
 });
 
 describe("MentionChip", () => {
+  it("should read as a field and open that field", () => {
+    const onOpen = vi.fn();
+    render(
+      <MentionChip
+        cardId="card-1"
+        title="Beta"
+        field={{ id: "owner", name: "Owner", display: "Ada" }}
+        onOpen={onOpen}
+      />,
+    );
+
+    const chip = screen.getByTestId("mention-chip");
+    expect(chip).toHaveTextContent("Beta");
+    expect(chip).toHaveTextContent("Owner");
+    expect(chip).toHaveTextContent("Ada");
+    expect(chip).toHaveAttribute("data-field-id", "owner");
+
+    fireEvent.click(chip);
+    expect(onOpen).toHaveBeenCalledWith("card-1", "owner");
+  });
+
   it("should not take the caret when pressed", () => {
     const onOpen = vi.fn();
     render(<MentionChip cardId="card-1" title="Target" onOpen={onOpen} />);

@@ -16,17 +16,8 @@ import {
 } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import {
-  type CSSProperties,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
-import { useCanvasStore } from "../store/useCanvasStore";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
 import { PeerNameTag } from "./PeerNameTag";
@@ -241,38 +232,6 @@ export function cardLinks(input: CardLinkInput): CardLinks {
   };
 }
 
-const NO_BODY_FIELDS: readonly string[] = [];
-
-/**
- * Field ids that already have a property block in the body. Body text changes
- * notify `observeTitle`, so the toggles stay in step with the canvas editor
- * without a second subscription type. Contents are compared, so an unchanged
- * set keeps its identity and does not re-render the panel.
- */
-export function useBodyPropertyBlocks(cardId: string): readonly string[] {
-  const workspace = useCanvasStore((state) => state.workspace);
-  const last = useRef<readonly string[]>(NO_BODY_FIELDS);
-
-  const subscribe = useCallback(
-    (listener: () => void) => (cardId ? workspace.observeTitle(cardId, listener) : () => undefined),
-    [workspace, cardId],
-  );
-  const get = useCallback(() => {
-    const next = cardId ? workspace.bodyPropertyBlocks(cardId) : NO_BODY_FIELDS;
-    const previous = last.current;
-    if (
-      previous.length === next.length &&
-      previous.every((fieldId, index) => fieldId === next[index])
-    ) {
-      return previous;
-    }
-    last.current = next;
-    return next;
-  }, [workspace, cardId]);
-
-  return useSyncExternalStore(subscribe, get, get);
-}
-
 export interface CardPanelProps {
   card: Card;
   title: string;
@@ -284,6 +243,8 @@ export interface CardPanelProps {
   cards: readonly CardPickerOption[];
   /** Every link this card has, grouped and derived by the host. */
   links: CardLinks;
+  /** Field the panel was asked to reveal; it scrolls into view and takes focus. */
+  focusedField?: string | null;
   /** Inspector drawer or an embedded surface such as an expanded library row. */
   variant?: "inspector" | "embedded";
   /** Which field the panel currently owns; null keeps both read-only. */
@@ -303,12 +264,6 @@ export interface CardPanelProps {
   onCreateTag: (name: string) => void;
   onSetProperty: (fieldId: string, value: PropertyValue) => void;
   onClearProperty: (fieldId: string) => void;
-  /** Field ids that already have a block in the body. */
-  bodyFields: readonly string[];
-  /** Appends a property block for this field; an explicit user action. */
-  onShowInBody: (fieldId: string) => void;
-  /** Removes the block; the value itself stays on the card. */
-  onHideFromBody: (fieldId: string) => void;
   /** Opens the card panel from a read-only property block. */
   onOpenCardPanel: (cardId: string) => void;
   onManageTypes: () => void;
@@ -471,6 +426,7 @@ export function CardPanel({
   where,
   cards,
   links,
+  focusedField = null,
   variant = "inspector",
   editing,
   cardDoc,
@@ -487,9 +443,6 @@ export function CardPanel({
   onCreateTag,
   onSetProperty,
   onClearProperty,
-  bodyFields,
-  onShowInBody,
-  onHideFromBody,
   onOpenCardPanel,
   onManageTypes,
   onFocusCard,
@@ -500,6 +453,20 @@ export function CardPanel({
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
+  const focusedRow = useRef<HTMLDivElement | null>(null);
+
+  // A `@card.field` chip in any body opens this panel at that field, so the
+  // value is one click from where it was read. Keyed by card too: the same
+  // field id on a different card is a different target.
+  const revealKey = focusedField ? `${card.id}:${focusedField}` : "";
+  useEffect(() => {
+    if (!revealKey) return;
+    const row = focusedRow.current;
+    if (!row) return;
+    // jsdom has no layout, and no scrolling to do there either.
+    row.scrollIntoView?.({ block: "nearest" });
+    row.querySelector<HTMLElement>("input, select, button")?.focus();
+  }, [revealKey]);
 
   useEffect(
     () => () => {
@@ -671,11 +638,12 @@ export function CardPanel({
                   {group.map(({ field }) => {
                     const value = card.properties[field.id];
                     const missing = field.required && isPropertyEmpty(value);
-                    const inBody = bodyFields.includes(field.id);
                     return (
                       <div
                         key={field.id}
-                        className="block space-y-1"
+                        ref={field.id === focusedField ? focusedRow : undefined}
+                        className="property-row block space-y-1"
+                        data-focused={field.id === focusedField ? "true" : undefined}
                         data-testid={`property-${field.id}`}
                       >
                         <span className="flex w-full items-center gap-1 text-[11px] text-[var(--ink-muted)]">
@@ -686,22 +654,6 @@ export function CardPanel({
                               className="h-1.5 w-1.5 rounded-full bg-[var(--ink-muted)]"
                             />
                           ) : null}
-                          <button
-                            type="button"
-                            data-testid={`body-toggle-${field.id}`}
-                            aria-pressed={inBody}
-                            title={
-                              inBody
-                                ? "Remove this field's block from the body; the value stays"
-                                : "Show this field in the body as a compact block"
-                            }
-                            className="ml-auto rounded px-1 text-[11px] text-[var(--ink-muted)] underline-offset-2 hover:bg-black/5 hover:underline dark:hover:bg-white/10"
-                            onClick={() =>
-                              inBody ? onHideFromBody(field.id) : onShowInBody(field.id)
-                            }
-                          >
-                            {inBody ? "Remove from body" : "Show in body"}
-                          </button>
                         </span>
                         <PropertyField
                           field={field}

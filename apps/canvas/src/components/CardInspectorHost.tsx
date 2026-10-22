@@ -8,7 +8,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { CardInspector } from "./CardInspector";
-import { cardLinks, EMPTY_CARD_LINKS, snippetAround, useBodyPropertyBlocks } from "./CardPanel";
+import { cardLinks, EMPTY_CARD_LINKS, snippetAround } from "./CardPanel";
 import { cardWhere } from "./cardWhere";
 
 /**
@@ -21,6 +21,7 @@ export function CardInspectorHost() {
   const snapshot = useWorkspaceSnapshot();
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
+  const inspectorFieldId = useUiStore((state) => state.inspectorFieldId);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const editingSurface = useUiStore((state) => state.editingSurface);
@@ -41,7 +42,6 @@ export function CardInspectorHost() {
     ? snapshot.cards.find((entry) => entry.id === inspectorNodeId)
     : undefined;
   // Field ids whose block is in the body, for the Show/Remove toggle.
-  const bodyFields = useBodyPropertyBlocks(card?.id ?? "");
   const title = useCardTitle(card?.id ?? "");
   const containers = useCardContainers(card?.id ?? "");
 
@@ -153,6 +153,7 @@ export function CardInspectorHost() {
       where={where}
       cards={cards}
       links={links}
+      focusedField={inspectorFieldId}
       linkCount={countOf(card.id)}
       editing={panelEditing}
       cardDoc={workspace.doc}
@@ -182,9 +183,6 @@ export function CardInspectorHost() {
       }}
       onSetProperty={(fieldId, value) => workspace.setProperty(card.id, fieldId, value)}
       onClearProperty={(fieldId) => workspace.clearProperty(card.id, fieldId)}
-      bodyFields={bodyFields}
-      onShowInBody={(fieldId) => workspace.appendPropertyBlock(card.id, fieldId)}
-      onHideFromBody={(fieldId) => workspace.removePropertyBlock(card.id, fieldId)}
       onOpenCardPanel={openInspector}
       onManageTypes={openTypeSettings}
       onFocusCard={(boardId) => focusCard(card.id, boardId)}

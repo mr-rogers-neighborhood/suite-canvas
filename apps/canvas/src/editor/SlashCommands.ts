@@ -91,6 +91,15 @@ export const SLASH_ITEMS: SlashItem[] = [
     keywords: ["mention", "@", "link", "card", "reference"],
     run: (editor, range) => consumeQuery(editor, range).insertContent("@").run(),
   },
+  {
+    id: "property",
+    title: "Property",
+    hint: "Show one of this card's fields",
+    glyph: "\u25a4",
+    // Fields live in the same picker as cards, so the block is one `@` away.
+    keywords: ["property", "field", "value", "block", "metadata"],
+    run: (editor, range) => consumeQuery(editor, range).insertContent("@").run(),
+  },
 ];
 
 /** Title and keyword matches, in menu order; an empty query shows everything. */

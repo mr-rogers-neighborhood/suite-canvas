@@ -52,6 +52,12 @@ describe("filterSlashItems", () => {
     ]);
   });
 
+  it("should find the property block by field or metadata", () => {
+    expect(filterSlashItems("property").map((entry) => entry.id)).toEqual(["property"]);
+    expect(filterSlashItems("field").map((entry) => entry.id)).toEqual(["property"]);
+    expect(filterSlashItems("metadata").map((entry) => entry.id)).toEqual(["property"]);
+  });
+
   it("should return nothing when no block matches", () => {
     expect(filterSlashItems("zzz")).toEqual([]);
   });
@@ -94,6 +100,13 @@ describe("slash commands", () => {
   it("should hand the mention item over to the `@` picker", () => {
     const current = createEditor("/men");
     item("mention").run(current, { from: 1, to: 5 });
+
+    expect(current.state.doc.textContent).toBe("@");
+  });
+
+  it("should hand the property item over to the same picker", () => {
+    const current = createEditor("/property");
+    item("property").run(current, { from: 1, to: 10 });
 
     expect(current.state.doc.textContent).toBe("@");
   });

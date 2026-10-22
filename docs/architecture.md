@@ -57,7 +57,7 @@ now; the target index/card-doc split is described in
 | --- | --- |
 | `boards` | `{ id, name, createdAt, updatedAt }` |
 | `cards` | `LoroMap`, one key per field: `createdAt`, `updatedAt`, `deletedAt`, `connectors`, `primaryTypeId`, plus the nested `types`, `tags` and `properties` maps |
-| `types` | `LoroMap`, one key per type: `id`, `name`, `glyph`, `color?`, `createdAt`, `updatedAt`, `fields` (a map of field definitions) |
+| `types` | `LoroMap`, one key per type: `id`, `name`, `pluralName?`, `glyph`, `color?`, `createdAt`, `updatedAt`, `fields` (a map of field definitions) |
 | `tags` | `LoroMap`, one key per tag: `id`, `name`, `color?`, `createdAt` |
 | `sections` | `LoroMap`, one key per field: `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?`, `createdAt`, `updatedAt` |
 | `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
@@ -390,25 +390,36 @@ step. Every client maintains it, so it converges without coordination; `ensureRe
 drift after the first sync and `rebuildReferences()` reconstructs everything from content. The index
 is never authoritative and never mirrored onto a card.
 
-**Backlinks are read at render time** from four sources, so nothing is stored twice:
-`incomingReferences` / `outgoingReferences` (mentions), `propertySources` (cards whose `card`
-property points here, naming the field), `arrowSources` (edges touching the card, with their
-description and board), and the card's placements (`Where`). `PropertyField` renders a `CardPicker`
-for the `card` kind; a value may dangle and shows "Unavailable card" rather than being rewritten.
+**Links are read at render time** from three sources, so nothing is stored twice:
+`incomingReferences` / `outgoingReferences` (mentions), `propertySources` and
+`outgoingPropertyLinks` (cards whose `card` property points here or there, naming the field), and
+`arrowSources` (edges touching the card, with their description, board and which end the card sits
+on). `cardLinks` folds all of it into **Incoming** and **Outgoing** rows keyed by the *other card*:
+one row per pair, provenance as markers (`✎` mention, `▤` property, `↗` arrow, `↔` both ways), and
+an expander when a pair is joined more than once. Placement stays in `Where`, and the header count
+(`referenceCount`) counts distinct partner cards, so both ends of a link report the same number.
+`PropertyField` renders a `CardPicker` for the `card` kind; a value may dangle and shows "Unavailable
+card" rather than being rewritten.
 
 Mention chips subscribe to their target's title, so renames propagate and a trashed target degrades
 to an unavailable chip. Snippets for backlink rows come from `mentionContext`, which walks the
 source card's tree on demand — snippets are never indexed.
 
-**The body can carry views of index data.** `/` opens an insert menu over the existing nodes plus a
-mention; a property row in the panel can also be pinned into the body. A `propertyBlock` is an
-inline atom holding only a `fieldId`: it renders `card.properties[fieldId]` from the snapshot and
-writes through `setProperty`/`clearProperty`, so deleting the block deletes a view and never the
-value. `WorkspaceDocument.appendPropertyBlock`/`removePropertyBlock` edit the body container
-directly (origin `text:body`), so pinning works even when the card is not mounted. Scalar kinds edit
-in place through a node view with `contenteditable={false}` and `stopEvent`, which keeps ProseMirror
-from stealing keystrokes; `card` and `multiSelect` values are read-only chips that open the panel.
-Field definitions are never created from the editor — that keeps the two undo scopes honest.
+**The body can carry views of index data.** `/` opens an insert menu over the existing nodes plus
+`Mention` and `Property`, both of which hand over to the one `@` picker; the picker lists this
+card's fields first (they insert a block), then cards (they insert a mention), and then a
+`@card.field` reference once the query names one. A `propertyBlock` is an inline atom holding only a
+`fieldId`: it renders `card.properties[fieldId]` from the snapshot and writes through
+`setProperty`/`clearProperty`, so deleting the block deletes a view and never the value. Scalar
+kinds edit in place through a node view with `contenteditable={false}` and `stopEvent`, which keeps
+ProseMirror from stealing keystrokes; `card` and `multiSelect` values are read-only chips that open
+the panel, and the block's hover `×` deletes the node through the editor so peers see the same
+removal as any other body edit. A `@card.field` chip is the same idea pointed the other way: it
+stores `cardId` + `fieldId`, renders the live value, and opens that card's panel with the field
+revealed and focused (`inspectorFieldId`), which is what makes a read-only chip as useful as an
+inline editor. `WorkspaceDocument.appendPropertyBlock`/`removePropertyBlock` remain for callers
+that are not the editor. Field definitions are never created from the editor — that keeps the two
+undo scopes honest.
 
 ## Card chrome
 

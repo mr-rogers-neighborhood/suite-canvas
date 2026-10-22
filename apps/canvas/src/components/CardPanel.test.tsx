@@ -99,9 +99,6 @@ const base: CardPanelProps = {
   onCreateTag: () => {},
   onSetProperty: () => {},
   onClearProperty: () => {},
-  bodyFields: [],
-  onShowInBody: () => {},
-  onHideFromBody: () => {},
   onOpenCardPanel: () => {},
   onManageTypes: () => {},
   onFocusCard: () => {},
@@ -382,32 +379,18 @@ describe("CardPanel links", () => {
     expect(screen.queryByTestId("links-out")).not.toBeInTheDocument();
   });
 
-  it("offers Show in body for a field without a block", () => {
-    const onShowInBody = vi.fn();
-    const onHideFromBody = vi.fn();
-    renderPanel({ onShowInBody, onHideFromBody });
+  it("reveals and focuses the field a link asked for", () => {
+    renderPanel({ focusedField: "owner" });
 
-    const toggle = screen.getByTestId("body-toggle-owner");
-    expect(toggle).toHaveTextContent("Show in body");
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
-
-    fireEvent.click(toggle);
-    expect(onShowInBody).toHaveBeenCalledWith("owner");
-    expect(onHideFromBody).not.toHaveBeenCalled();
+    const row = screen.getByTestId("property-owner");
+    expect(row).toHaveAttribute("data-focused", "true");
+    expect(screen.getByLabelText("Owner")).toHaveFocus();
   });
 
-  it("offers Remove from body once the field has a block", () => {
-    const onShowInBody = vi.fn();
-    const onHideFromBody = vi.fn();
-    renderPanel({ bodyFields: ["owner"], onShowInBody, onHideFromBody });
+  it("marks no row when no field was asked for", () => {
+    renderPanel();
 
-    const toggle = screen.getByTestId("body-toggle-owner");
-    expect(toggle).toHaveTextContent("Remove from body");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(toggle);
-    expect(onHideFromBody).toHaveBeenCalledWith("owner");
-    expect(onShowInBody).not.toHaveBeenCalled();
+    expect(screen.getByTestId("property-owner")).not.toHaveAttribute("data-focused");
   });
 
   it("includes the card picker options for a card field", () => {

@@ -3,12 +3,25 @@ import { type CSSProperties, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { workspaceSnapshotStore } from "../store/workspaceSnapshotStore";
+import type { MentionStorage } from "./Mention";
 
-/** One row of the `@` picker: a card that can be mentioned. */
+/**
+ * One row of the `@` picker: a card to mention, or one of this card's own
+ * fields, which inserts an editable property block instead.
+ */
 export interface MentionSuggestionItem {
   id: string;
   title: string;
   glyph: string;
+  /**
+   * `field` is one of this card's own fields, which inserts an editable block;
+   * `reference` is a field of another card, which inserts a `@card.field` chip.
+   */
+  kind: "card" | "field" | "reference";
+  /** Set for `field` and `reference`. */
+  fieldId?: string;
+  /** Set for `reference`: the card the field belongs to. */
+  cardId?: string;
 }
 
 /** Everything the picker needs to draw itself; owned by the renderer below. */
@@ -85,6 +98,7 @@ export function SuggestionList({
             role="option"
             aria-selected={index === activeIndex}
             data-testid="mention-option"
+            data-kind={item.kind}
             data-card-id={item.id}
             className={optionClass(index === activeIndex)}
             onMouseEnter={() => onHover(index)}
@@ -95,11 +109,16 @@ export function SuggestionList({
               {item.glyph}
             </span>
             <span className="truncate">{item.title}</span>
+            {item.kind === "card" ? null : (
+              <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
+                Field
+              </span>
+            )}
           </button>
         ))
       ) : (
         <p className="px-2 py-1 text-[12px] text-[var(--ink-muted)]" data-testid="mention-empty">
-          {loading ? "Searching cards…" : query.trim() ? "No cards match" : "No cards yet"}
+          {loading ? "Searching…" : query.trim() ? "Nothing matches" : "No cards yet"}
         </p>
       )}
     </div>
@@ -120,23 +139,101 @@ export function titleForCardId(cardId: string): string {
   return useCanvasStore.getState().workspace.displayTitle(cardId);
 }
 
-/** Prefix matches rank above substring matches; ties are alphabetical. */
-function rankCards(query: string): MentionSuggestionItem[] {
+/** Field name for a `@card.field` mention's plain-text form. */
+export function fieldNameForId(cardId: string, fieldId: string): string {
+  if (!cardId || !fieldId) return "";
+  const workspace = useCanvasStore.getState().workspace;
+  const card = workspace.getCard(cardId);
+  if (!card) return "";
+  return workspace.viewCardFields(card).find((view) => view.field.id === fieldId)?.field.name ?? "";
+}
+
+/** The card's own fields, as rows that insert a property block. */
+function fieldItems(cardId: string, needle: string): MentionSuggestionItem[] {
+  const workspace = useCanvasStore.getState().workspace;
+  const card = cardId ? workspace.getCard(cardId) : undefined;
+  if (!card) return [];
+  return workspace
+    .viewCardFields(card)
+    .filter((view) => !needle || view.field.name.toLocaleLowerCase().includes(needle))
+    .map((view) => ({
+      id: `field:${view.field.id}`,
+      title: view.field.name,
+      glyph: "\u25a4",
+      kind: "field" as const,
+      fieldId: view.field.id,
+    }));
+}
+
+/**
+ * `@card.field` rows: a typed dot after a card name picks one of its fields.
+ * The row is a link to the value rather than a copy of it.
+ */
+function referenceItems(query: string, ownCardId: string): MentionSuggestionItem[] {
+  const dot = query.indexOf(".");
+  if (dot <= 0) return [];
+  const cardPart = query.slice(0, dot).trim().toLocaleLowerCase();
+  const fieldPart = query
+    .slice(dot + 1)
+    .trim()
+    .toLocaleLowerCase();
+  if (!cardPart) return [];
+
+  const snapshot = currentSnapshot();
+  const workspace = useCanvasStore.getState().workspace;
+  const glyphs = new Map(snapshot.types.map((type) => [type.id, type.glyph]));
+  const items: MentionSuggestionItem[] = [];
+  for (const card of snapshot.cards) {
+    if (card.deletedAt || card.id === ownCardId) continue;
+    const title = workspace.displayTitle(card.id);
+    if (!title.toLocaleLowerCase().includes(cardPart)) continue;
+    for (const view of workspace.viewCardFields(card)) {
+      const name = view.field.name;
+      if (fieldPart && !name.toLocaleLowerCase().includes(fieldPart)) continue;
+      items.push({
+        id: `reference:${card.id}:${view.field.id}`,
+        title: `${title} \u00b7 ${name}`,
+        glyph: glyphs.get(card.primaryTypeId) ?? "\u25c7",
+        kind: "reference",
+        cardId: card.id,
+        fieldId: view.field.id,
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * This card's fields first — they insert a block rather than a link — then
+ * cards, then a `card.field` reference once the query names one. Prefix
+ * matches rank above substring matches; ties are alphabetical.
+ */
+export function rankItems(query: string, cardId = ""): MentionSuggestionItem[] {
   const snapshot = currentSnapshot();
   const workspace = useCanvasStore.getState().workspace;
   const glyphs = new Map(snapshot.types.map((type) => [type.id, type.glyph]));
   const needle = query.trim().toLocaleLowerCase();
 
   const matches: { item: MentionSuggestionItem; rank: number }[] = [];
+  for (const item of fieldItems(cardId, needle)) {
+    matches.push({
+      item,
+      rank: needle && item.title.toLocaleLowerCase().startsWith(needle) ? 0 : 1,
+    });
+  }
   for (const card of snapshot.cards) {
     if (card.deletedAt) continue;
     const title = workspace.displayTitle(card.id);
     const haystack = title.toLocaleLowerCase();
-    if (needle && !haystack.includes(needle)) continue;
+    // A dotted query is asking for a field, so cards themselves step aside.
+    if (needle.includes(".") || (needle && !haystack.includes(needle))) continue;
     matches.push({
-      item: { id: card.id, title, glyph: glyphs.get(card.primaryTypeId) ?? "\u25c7" },
+      item: { id: card.id, title, glyph: glyphs.get(card.primaryTypeId) ?? "\u25c7", kind: "card" },
       rank: needle && haystack.startsWith(needle) ? 0 : needle ? 1 : 2,
     });
+  }
+  for (const item of referenceItems(needle, cardId)) {
+    matches.push({ item, rank: 0 });
   }
 
   matches.sort(
@@ -264,14 +361,16 @@ export const mentionSuggestion: Omit<
   allowSpaces: false,
   startOfLine: false,
   allow: ({ editor }) => editor.isEditable,
-  items: ({ query }) => rankCards(query),
+  items: ({ query, editor }) =>
+    rankItems(query, (editor.storage as { mention?: MentionStorage }).mention?.cardId ?? ""),
   command: ({ editor, range, props }) => {
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(range, { type: "mention", attrs: { cardId: props.id } })
-      .insertContent(" ")
-      .run();
+    const node =
+      props.kind === "field"
+        ? { type: "propertyBlock", attrs: { fieldId: props.fieldId } }
+        : props.kind === "reference"
+          ? { type: "mention", attrs: { cardId: props.cardId, fieldId: props.fieldId } }
+          : { type: "mention", attrs: { cardId: props.id } };
+    editor.chain().focus().insertContentAt(range, node).insertContent(" ").run();
   },
   render: createPickerRenderer,
 };

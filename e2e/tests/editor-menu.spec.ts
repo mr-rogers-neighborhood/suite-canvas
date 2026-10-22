@@ -111,7 +111,7 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
 
   // `/` lists every block; two downs land on the bulleted list.
   await page.keyboard.type("/");
-  await expect(page.getByTestId("slash-option")).toHaveCount(8);
+  await expect(page.getByTestId("slash-option")).toHaveCount(9);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("slash-option").nth(2)).toHaveAttribute("aria-selected", "true");
@@ -202,9 +202,21 @@ test("shows a field in the body, edits it inline, and removes the block", async 
   await panel.getByLabel("Owner").fill("Ada");
   await panel.getByLabel("Owner").blur();
 
-  // Nothing is inserted automatically; Show in body is the explicit action.
+  // A block is inserted from the body: `/property` hands over to the same
+  // picker as `@`, which lists this card's fields above its cards.
   await expect(panel.getByTestId("property-block")).toHaveCount(0);
-  await panel.getByRole("button", { name: "Show in body" }).click();
+  await panel.getByTestId("card-panel-body").click();
+  await expect(panel.locator(".card-panel-body .node-card-editor")).toHaveClass(
+    /ProseMirror-focused/,
+  );
+
+  await page.keyboard.type("/property");
+  await expect(page.getByTestId("slash-menu")).toBeVisible();
+  await page.getByTestId("slash-option").filter({ hasText: "Property" }).click();
+
+  const fieldOption = page.getByTestId("mention-option").filter({ hasText: "Owner" });
+  await expect(fieldOption).toHaveAttribute("data-kind", "field");
+  await fieldOption.click();
 
   const panelBlock = panel.getByTestId("property-block");
   await expect(panelBlock).toHaveCount(1);
@@ -224,7 +236,8 @@ test("shows a field in the body, edits it inline, and removes the block", async 
   await expect(panel.getByLabel("Owner")).toHaveValue("Grace Hopper");
 
   // Removing the block removes the view only: the property value stays.
-  await panel.getByRole("button", { name: "Remove from body" }).click();
+  await panelBlock.hover();
+  await panelBlock.getByTestId("property-block-remove").click();
   await expect(panel.getByTestId("property-block")).toHaveCount(0);
   await expect(card.getByTestId("property-block")).toHaveCount(0);
   await expect(panel.getByLabel("Owner")).toHaveValue("Grace Hopper");

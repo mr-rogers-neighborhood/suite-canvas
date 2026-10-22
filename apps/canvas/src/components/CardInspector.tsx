@@ -16,6 +16,8 @@ export interface CardInspectorProps {
   cards: readonly CardPickerOption[];
   /** Links from mentions, `card` values and arrows, grouped by card. */
   links: CardLinks;
+  /** Field to reveal, when a link asked for one. */
+  focusedField?: string | null;
   /** Mentions, property links and arrows touching this card. */
   linkCount: number;
   editing: CardPanelEditingField | null;
@@ -36,10 +38,6 @@ export interface CardInspectorProps {
   onCreateTag: (name: string) => void;
   onSetProperty: (fieldId: string, value: PropertyValue) => void;
   onClearProperty: (fieldId: string) => void;
-  /** Field ids that already have a block in the body. */
-  bodyFields: readonly string[];
-  onShowInBody: (fieldId: string) => void;
-  onHideFromBody: (fieldId: string) => void;
   onOpenCardPanel: (cardId: string) => void;
   onManageTypes: () => void;
   onFocusCard: (boardId: string) => void;
@@ -79,15 +77,13 @@ export function CardInspector({
   onCreateTag,
   onSetProperty,
   onClearProperty,
-  bodyFields,
-  onShowInBody,
-  onHideFromBody,
   onOpenCardPanel,
   onManageTypes,
   onFocusCard,
   onFocusSection,
   onRemoveFromBoard,
   onFocusLink,
+  focusedField = null,
 }: CardInspectorProps) {
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
@@ -142,6 +138,7 @@ export function CardInspector({
           where={where}
           cards={cards}
           links={links}
+          focusedField={focusedField}
           variant="inspector"
           editing={editing}
           cardDoc={cardDoc}
@@ -158,9 +155,6 @@ export function CardInspector({
           onCreateTag={onCreateTag}
           onSetProperty={onSetProperty}
           onClearProperty={onClearProperty}
-          bodyFields={bodyFields}
-          onShowInBody={onShowInBody}
-          onHideFromBody={onHideFromBody}
           onOpenCardPanel={onOpenCardPanel}
           onManageTypes={onManageTypes}
           onFocusCard={onFocusCard}

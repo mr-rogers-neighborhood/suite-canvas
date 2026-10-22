@@ -165,12 +165,60 @@ test("shows no-match feedback without inserting anything", async ({ page }) => {
   await editBody(page, target);
 
   await page.keyboard.type("@zzzz");
-  await expect(page.getByTestId("mention-empty")).toContainText("No cards match");
+  await expect(page.getByTestId("mention-empty")).toContainText("Nothing matches");
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("mention-picker")).toHaveCount(0);
   // Escape dismissed the picker; the typed text stays, and no chip was added.
   await expect(target.getByTestId("mention-chip")).toHaveCount(0);
+});
+
+test("links to one field of another card and lands on it", async ({ page }) => {
+  await page.goto(workspaceUrl("field-ref"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Target card");
+  await createNote(page, "Source card");
+
+  // A field on the shared note type, so both cards carry Owner.
+  const target = cards(page).filter({ hasText: "Target card" });
+  await target.getByTestId("card-menu").click();
+  await page.getByRole("menuitem", { name: "Card info" }).click();
+  const inspector = page.getByTestId("card-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByTestId("manage-types").click();
+  const settings = page.getByTestId("type-settings");
+  await settings.getByTestId("settings-type-note").click();
+  await settings.getByLabel("New field name").fill("Owner");
+  await settings.getByTestId("create-field").click();
+  await expect(settings.getByLabel("Field name Owner")).toBeVisible();
+  await settings.getByRole("button", { name: "Done" }).click();
+  await inspector.getByLabel("Owner").fill("Ada");
+  await inspector.getByLabel("Owner").blur();
+  await inspector.getByTestId("inspector-close").click();
+
+  const source = cards(page).filter({ hasText: "Source card" });
+  await editBody(page, source);
+  await page.keyboard.type("@Target.own");
+
+  const option = page.getByTestId("mention-option").filter({ hasText: "Owner" });
+  await expect(option).toHaveAttribute("data-kind", "reference");
+  await page.keyboard.press("Enter");
+
+  const chip = source.getByTestId("mention-chip");
+  // Field ids are generated, so the chip is identified by what it shows.
+  await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/);
+  await expect(chip).toContainText("Target card");
+  await expect(chip).toContainText("Owner");
+  // The chip reads the value live; it is a link, not a copy.
+  await expect(chip.getByTestId("mention-chip-value")).toHaveText("Ada");
+
+  // One click on the chip is one step from reading the value to editing it.
+  await chip.click();
+  await expect(page.getByTestId("card-inspector")).toContainText("Target card");
+  const row = page.locator('.property-row[data-focused="true"]');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Owner");
+  await expect(row.getByLabel("Owner")).toBeFocused();
 });
 
 test("syncs a mention and its live title to a peer", async ({ browser }) => {

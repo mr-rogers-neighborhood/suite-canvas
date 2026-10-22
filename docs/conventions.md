@@ -91,6 +91,12 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - **A property block in a body is a view, never a store.** It carries a `fieldId` and writes through
   `setProperty`/`clearProperty`. Property values live in the card index so facets, queries and
   dashboards never parse rich text.
+- **Blocks are inserted from the body, not from the panel.** `/property` (and `@`) hand over to the
+  one picker, which lists this card's fields above every card; `/` never writes a property value and
+  the panel never inserts a block. Removing a block removes the view only.
+- **A `@card.field` chip is a link, not a copy.** It stores `cardId` + `fieldId` and renders the
+  value live; clicking it opens that card's panel with the field focused, which is why the chip
+  never needs an inline editor of its own.
 - **References are derived and rebuildable.** `references.<cardId>` is maintained from mention
   nodes; never hand-write it, never store a backlink on a card, and never treat the index as
   authority when content disagrees — fix the index (or let `ensureReferences` do it).
@@ -120,6 +126,10 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Type membership, tag membership and properties are collection writes: use
   `setCardTypes`/`addCardType`/`removeCardType`, `addCardTag`/`removeCardTag`, and
   `setProperty`/`clearProperty`. Never replace a whole `types`, `tags` or `properties` map.
+- **A type name is singular; a collection label is not.** Read `typePluralName(type)` wherever a
+  type labels a set (facets, group headings) and the bare `type.name` wherever it labels one card.
+  The plural is optional and derived (`-s`, `-es` after a sibilant), so only irregular names need
+  one stored.
 - **Types add schema, never behaviour.** The primary type may change presentation (glyph, colour,
   template); no code may branch on a *combination* of types.
 - Removing a field, switching a type or removing a tag leaves stored values dormant on purpose.

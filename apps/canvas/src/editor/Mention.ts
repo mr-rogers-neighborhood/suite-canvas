@@ -1,20 +1,36 @@
 import { mergeAttributes, Node, ReactNodeViewRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
 import { MentionChipNodeView } from "../components/MentionChip";
-import { type MentionSuggestionItem, mentionSuggestion, titleForCardId } from "./SuggestionList";
+import {
+  fieldNameForId,
+  type MentionSuggestionItem,
+  mentionSuggestion,
+  titleForCardId,
+} from "./SuggestionList";
 
 export interface MentionOptions {
   HTMLAttributes: Record<string, unknown>;
+  /**
+   * Card that owns this editor. Its fields join the `@` picker, where picking
+   * one inserts a property block; an empty id leaves the picker to cards only.
+   */
+  cardId: string;
   /** Shared by the title and body editors so both open the same picker. */
   suggestion: Omit<SuggestionOptions<MentionSuggestionItem, MentionSuggestionItem>, "editor">;
 }
 
 /**
- * An inline atom pointing at a card. It stores only the target id: the title is
- * read live from the document, so renaming the target updates every mention and
+ * An inline atom pointing at a card, or at one field of it. It stores only the
+ * target id (and the field id when there is one): the title, the field name and
+ * the value are read live, so a rename or an edit shows up in every mention and
  * a missing target renders as *Unavailable card* instead of failing.
  */
-export const Mention = Node.create<MentionOptions>({
+export interface MentionStorage {
+  /** Card that owns the editor; read by the shared picker config. */
+  cardId: string;
+}
+
+export const Mention = Node.create<MentionOptions, MentionStorage>({
   name: "mention",
   group: "inline",
   inline: true,
@@ -25,8 +41,15 @@ export const Mention = Node.create<MentionOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
+      cardId: "",
       suggestion: mentionSuggestion,
     };
+  },
+
+  // The suggestion config is shared, so the owner is read from storage at
+  // query time instead of being baked into the module-level picker.
+  addStorage() {
+    return { cardId: this.options.cardId };
   },
 
   addAttributes() {
@@ -39,6 +62,15 @@ export const Mention = Node.create<MentionOptions>({
             ? { "data-card-id": attributes.cardId }
             : {},
       },
+      /** Set when the mention points at one field: the `@card.field` form. */
+      fieldId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-field-id"),
+        renderHTML: (attributes) =>
+          typeof attributes.fieldId === "string" && attributes.fieldId.length > 0
+            ? { "data-field-id": attributes.fieldId }
+            : {},
+      },
     };
   },
 
@@ -46,14 +78,21 @@ export const Mention = Node.create<MentionOptions>({
     return [{ tag: "span[data-card-id]" }];
   },
 
-  // Export and clipboard copy keep the id and read as `@title` in plain text.
+  // Export and clipboard copy keep the ids and read as `@title` or
+  // `@title.field` in plain text.
   renderHTML({ node, HTMLAttributes }) {
     const cardId = typeof node.attrs.cardId === "string" ? node.attrs.cardId : "";
+    const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : "";
     const title = titleForCardId(cardId) || cardId;
+    const field = fieldId ? fieldNameForId(cardId, fieldId) : "";
     return [
       "span",
-      mergeAttributes({ "data-card-id": cardId }, this.options.HTMLAttributes, HTMLAttributes),
-      `@${title}`,
+      mergeAttributes(
+        { "data-card-id": cardId, "data-field-id": fieldId },
+        this.options.HTMLAttributes,
+        HTMLAttributes,
+      ),
+      field ? `@${title}.${field}` : `@${title}`,
     ];
   },
 

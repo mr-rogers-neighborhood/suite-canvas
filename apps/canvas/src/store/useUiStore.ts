@@ -70,6 +70,8 @@ interface UiState {
   focusTarget: FocusTarget | null;
   /** Card whose inspector panel is open, if any. */
   inspectorNodeId: string | null;
+  /** Field the panel was asked to reveal, so a link can land on it. */
+  inspectorFieldId: string | null;
   /** Cards whose frontmatter is expanded on the canvas. Local UI state only. */
   expandedCardMeta: Record<string, boolean>;
   /** Type registry editor, opened from the dock or the inspector. */
@@ -103,7 +105,7 @@ interface UiState {
   clearFocusTarget: () => void;
   /** Replaces the selection with every card on the board; the inspector is untouched. */
   selectAllOnBoard: (ids: string[]) => void;
-  openInspector: (id: string) => void;
+  openInspector: (id: string, fieldId?: string | null) => void;
   closeInspector: () => void;
   toggleCardMeta: (id: string) => void;
   openTypeSettings: () => void;
@@ -133,6 +135,7 @@ export const useUiStore = create<UiState>((set) => ({
   panelOwner: null,
   focusTarget: null,
   inspectorNodeId: null,
+  inspectorFieldId: null,
   expandedCardMeta: {},
   typeSettingsOpen: false,
   libraryTypeFilter: [],
@@ -157,6 +160,7 @@ export const useUiStore = create<UiState>((set) => ({
             selectedEdgeIds: [],
             selectedConnector: null,
             inspectorNodeId: null,
+            inspectorFieldId: null,
             editingNodeId: null,
           }
         : {}),
@@ -189,9 +193,10 @@ export const useUiStore = create<UiState>((set) => ({
       selectedEdgeIds: [],
       selectedConnector: null,
     }),
-  openInspector: (inspectorNodeId) =>
+  openInspector: (inspectorNodeId, fieldId = null) =>
     set((state) => ({
       inspectorNodeId,
+      inspectorFieldId: fieldId,
       panelOwner: "inspector",
       // A library row that was editable a moment ago must not keep a session.
       ...(state.panelOwner === "library" && state.editingSurface === "panel"
@@ -204,6 +209,7 @@ export const useUiStore = create<UiState>((set) => ({
   closeInspector: () =>
     set((state) => ({
       inspectorNodeId: null,
+      inspectorFieldId: null,
       panelOwner: null,
       ...(state.editingSurface === "panel"
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }

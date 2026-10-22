@@ -211,7 +211,8 @@ export function EdgeWithDescription({
               data-testid="edge-description-chip"
               data-dragging={live === null ? undefined : "true"}
               data-peer-name={dragger?.name}
-              {...(dragger ? { style: { borderColor: dragger.color, color: dragger.color } } : {})}
+              // The border carries the peer's colour; the text stays legible.
+              {...(dragger ? { style: { borderColor: dragger.color } } : {})}
               title={`${label} — drag to move along the link`}
               onKeyDown={(event) => {
                 // The keyboard path to the same editor a double click opens.

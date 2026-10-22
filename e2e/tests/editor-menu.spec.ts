@@ -100,6 +100,14 @@ test("turns `/h1` into a heading", async ({ page }) => {
   await expect(body.locator("h1")).toHaveCount(1);
   // The typed query is consumed, not left in the heading.
   await expect(body).not.toContainText("/h1");
+
+  // Preflight resets headings; the editor must restore real heading type.
+  const heading = await body.locator("h1").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontSize: style.fontSize, fontWeight: style.fontWeight };
+  });
+  expect(heading.fontSize).toBe("20px");
+  expect(Number(heading.fontWeight)).toBeGreaterThanOrEqual(600);
 });
 
 test("navigates the menu with the arrow keys", async ({ page }) => {
@@ -118,6 +126,16 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
   await page.keyboard.press("Enter");
 
   await expect(card.getByTestId("card-body").locator("ul li")).toHaveCount(1);
+
+  const list = await card
+    .getByTestId("card-body")
+    .locator("ul")
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { listStyleType: style.listStyleType, paddingLeft: style.paddingLeft };
+    });
+  expect(list.listStyleType).toBe("disc");
+  expect(Number.parseFloat(list.paddingLeft)).toBeGreaterThan(0);
 });
 
 test("inserts a divider", async ({ page }) => {
@@ -133,6 +151,46 @@ test("inserts a divider", async ({ page }) => {
 
   await expect(card.getByTestId("card-body").locator("hr")).toHaveCount(1);
   await expect(card.getByTestId("card-body")).not.toContainText("/divider");
+
+  const rule = await card
+    .getByTestId("card-body")
+    .locator("hr")
+    .evaluate((element) => getComputedStyle(element).borderTopWidth);
+  expect(Number.parseFloat(rule)).toBeGreaterThan(0);
+});
+
+test("styles quotes and code blocks", async ({ page }) => {
+  await page.goto(workspaceUrl("blocks"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createNote(page, "Block host");
+  const card = cards(page).filter({ hasText: "Block host" });
+  await editBody(page, card);
+
+  await page.keyboard.type("/quote");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("A quoted line");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/code");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("const x = 1;");
+
+  const body = card.getByTestId("card-body");
+  await expect(body.locator("blockquote")).toContainText("A quoted line");
+  await expect(body.locator("pre")).toContainText("const x = 1;");
+
+  const quote = await body.locator("blockquote").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { borderLeftWidth: style.borderLeftWidth, paddingLeft: style.paddingLeft };
+  });
+  expect(Number.parseFloat(quote.borderLeftWidth)).toBeGreaterThan(0);
+  expect(Number.parseFloat(quote.paddingLeft)).toBeGreaterThan(0);
+
+  const code = await body.locator("pre").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontFamily: style.fontFamily, background: style.backgroundColor };
+  });
+  expect(code.fontFamily.toLowerCase()).toContain("mono");
+  expect(code.background).not.toBe("rgba(0, 0, 0, 0)");
 });
 
 test("hands `/mention` over to the mention picker", async ({ page }) => {

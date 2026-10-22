@@ -61,7 +61,8 @@ now; the target index/card-doc split is described in
 | `tags` | `LoroMap`, one key per tag: `id`, `name`, `color?`, `createdAt` |
 | `sections` | `LoroMap`, one key per field: `id`, `boardId`, `title`, `x`, `y`, `width`, `height`, `z`, `color?`, `createdAt`, `updatedAt` |
 | `placements` | key `${boardId}/${cardId}` → `LoroMap`: `boardId`, `cardId`, `x`, `y`, `z`, `createdAt`, `width?`, `height?` |
-| `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` |
+| `edges` | `LoroMap`, one key per field: `boardId`, `source`, `target`, `sourceConnector?`, `targetConnector?`, `kind`, `path`, `bidirectional`, `label?` (the free-text description) |
+| `references` | derived `LoroMap` per card: `targetCardId -> true`, rebuilt from mention nodes in the title and body |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
@@ -368,6 +369,36 @@ Three read-only surfaces answer "where is this?", all derived and all free of do
   focuses it. The rail renders nothing on a board without sections.
 - **Where block.** The shared card panel shows `Board › Section › Subsection` for the active board
   (via `sectionForCard` + `sectionLineage`) plus the other boards the card is placed on.
+
+## References and backlinks
+
+Links have two independent halves, and the app never conflates them
+([ADR-0019](./decisions/0019-references-not-typed-links.md)):
+
+- **A reference is workspace truth.** An `@` mention (an inline atom named `mention` with a
+  `cardId` attribute) or a `card`-valued property. It exists with no board involved and never
+  places anything.
+- **An arrow is a drawing.** Board-scoped, untyped, with a free-text description (`edges.label`).
+  Drawing one does not create a reference, and referencing does not draw.
+
+**The reference index is derived.** `references.<fromCardId>` is maintained by `WorkspaceDocument`
+from document changes: when a card's title or body container changes, the card is queued, and a
+microtask re-parses its Loro tree for `mention` nodes and writes the target set in one commit with
+origin `struct:index-refs`. The subscriber skips that origin (no recursion), writes only when the
+set actually changed, and the workspace `UndoManager` excludes it, so the index never forms an undo
+step. Every client maintains it, so it converges without coordination; `ensureReferences()` repairs
+drift after the first sync and `rebuildReferences()` reconstructs everything from content. The index
+is never authoritative and never mirrored onto a card.
+
+**Backlinks are read at render time** from four sources, so nothing is stored twice:
+`incomingReferences` / `outgoingReferences` (mentions), `propertySources` (cards whose `card`
+property points here, naming the field), `arrowSources` (edges touching the card, with their
+description and board), and the card's placements (`Where`). `PropertyField` renders a `CardPicker`
+for the `card` kind; a value may dangle and shows "Unavailable card" rather than being rewritten.
+
+Mention chips subscribe to their target's title, so renames propagate and a trashed target degrades
+to an unavailable chip. Snippets for backlink rows come from `mentionContext`, which walks the
+source card's tree on demand — snippets are never indexed.
 
 ## Card chrome
 

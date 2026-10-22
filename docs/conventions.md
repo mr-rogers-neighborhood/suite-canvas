@@ -86,6 +86,22 @@ Biome's `organizeImports` enforces this; run `pnpm lint:fix`.
 - Do not publish a pointer position while a local text editor or canvas gesture is active. Peers
   render the name on the interacted element instead, and restore the pointer on the next move.
 
+## References and rich text
+
+- **A property block in a body is a view, never a store.** It carries a `fieldId` and writes through
+  `setProperty`/`clearProperty`. Property values live in the card index so facets, queries and
+  dashboards never parse rich text.
+- **References are derived and rebuildable.** `references.<cardId>` is maintained from mention
+  nodes; never hand-write it, never store a backlink on a card, and never treat the index as
+  authority when content disagrees — fix the index (or let `ensureReferences` do it).
+- **A semantic link never creates a placement.** Mentions, property values and backlinks are
+  references. Only an explicit place action puts a card on a board.
+- **No schema writes from the editor.** Field creation stays in type settings, because the body
+  editor's undo stack excludes structural origins; allowing it there produces edits that `Cmd-Z`
+  cannot reach.
+- **Arrow descriptions are free text.** Arrows stay untyped; meaning belongs to a property name or a
+  description, not to a link-type registry.
+
 ## Data layer
 
 - Never mutate `WorkspaceDocument` internals from the UI. Add typed methods to

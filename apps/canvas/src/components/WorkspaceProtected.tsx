@@ -7,14 +7,12 @@
 
 import { useRef, useState } from "react";
 import { claimWorkspace, reloadWithOwnerKey, writeOwnerKey } from "../session/ownerKey";
-import { assertOwnerKitWorkspace, parseOwnerKit } from "../session/ownerKit";
+import { OWNER_KIT_MISMATCH, readOwnerKit } from "../session/ownerKit";
 
 export interface WorkspaceProtectedProps {
   /** Workspace the page is trying to open; an imported key must belong to it. */
   workspaceId?: string | null;
 }
-
-const MISMATCH = "That recovery key does not own this workspace.";
 
 export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedProps) {
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +28,7 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
     }
     let parsed: { workspaceId: string; ownerKey: string };
     try {
-      parsed = parseOwnerKit(text);
-      assertOwnerKitWorkspace(parsed, workspaceId);
+      parsed = readOwnerKit(text, workspaceId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : `Could not read ${name ?? "that file"}.`);
       return;
@@ -43,7 +40,7 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
       // of after a reload that would land back on this screen.
       const claim = await claimWorkspace(workspaceId, parsed.ownerKey);
       if (claim === "conflict") {
-        setError(MISMATCH);
+        setError(OWNER_KIT_MISMATCH);
         return;
       }
       writeOwnerKey(workspaceId, parsed.ownerKey);

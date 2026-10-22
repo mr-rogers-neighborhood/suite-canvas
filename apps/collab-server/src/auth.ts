@@ -4,32 +4,42 @@ import { SHARE_ROOM_PREFIX, type ShareStore } from "./shares.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
 
 export interface AuthorizeDeps {
-  shares: Pick<ShareStore, "resolve">;
+  shares: Pick<ShareStore, "resolve" | "hasEditorShare">;
   /**
-   * Owner key registry. `claimOrVerify` doubles as the first-use claim, so an
-   * existing workspace can be claimed by the key the browser already holds.
+   * Owner key registry. Joins verify only: claiming is an explicit HTTP call
+   * before the app boots, so an unknown credential cannot create registry rows.
    */
-  workspaces: Pick<WorkspaceRegistry, "claimOrVerify" | "verify">;
-  /** Shared secret the projection worker presents. See `resolveInternalToken`. */
-  internalToken: string;
+  workspaces: Pick<WorkspaceRegistry, "verify">;
+  /** Worker token that may write projection rooms only. */
+  projectionToken: string;
+  /** Worker token that may write a workspace room only when an editor share exists. */
+  sourceToken: string;
+}
+
+export interface WorkerTokens {
+  projectionToken: string;
+  sourceToken: string;
 }
 
 const decoder = new TextDecoder();
 const EPHEMERAL_SUFFIXES = [":presence", ":cursors"] as const;
 
 /**
- * Returns the process-wide internal token, generating and exporting one through
- * `SUITE_INTERNAL_TOKEN` when the environment does not provide it.
+ * Returns the two scoped worker tokens. They are deliberately separate: the
+ * projection token can only touch projection rooms, and the source token can
+ * only touch a workspace that currently has an editor share. `SUITE_INTERNAL_TOKEN`
+ * is accepted as the projection token for upgrades, never as both.
  */
-export function resolveInternalToken(
-  configured: string | undefined = process.env.SUITE_INTERNAL_TOKEN,
-): string {
-  const existing = configured?.trim();
-  if (existing) return existing;
+export function resolveWorkerTokens(env: NodeJS.ProcessEnv = process.env): WorkerTokens {
+  const projectionToken =
+    env.SUITE_PROJECTION_TOKEN?.trim() || env.SUITE_INTERNAL_TOKEN?.trim() || "";
+  const sourceToken = env.SUITE_SOURCE_TOKEN?.trim() || "";
 
-  const token = randomBytes(32).toString("base64url");
-  process.env.SUITE_INTERNAL_TOKEN = token;
-  return token;
+  const projection = projectionToken || randomBytes(32).toString("base64url");
+  const source = sourceToken || randomBytes(32).toString("base64url");
+  env.SUITE_PROJECTION_TOKEN = projection;
+  env.SUITE_SOURCE_TOKEN = source;
+  return { projectionToken: projection, sourceToken: source };
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
@@ -51,13 +61,15 @@ function baseRoomOf(roomId: string): string {
 /**
  * Maps the join payload of a sync connection to a room permission.
  *
- * - The internal token may write any room, for the projection worker.
+ * - The projection token may write projection (`share-`) rooms only.
+ * - The source token may write a workspace room only when that workspace has an
+ *   active editor share; it exists solely for the publish worker.
  * - A share token opens exactly one room: the workspace it shares, or the
  *   `share-<token>` projection room for board and card links. Its derived
  *   presence and cursor rooms need `write` even for a viewer, because they are
  *   ephemeral and scoped to the same share.
- * - An owner key writes the workspace it owns and that workspace's derived
- *   rooms. The first use of a key claims an unclaimed workspace.
+ * - An owner key verifies against the workspace it owns and that workspace's
+ *   derived rooms. An unknown key never claims a room implicitly.
  * - Empty auth is a mismatched credential: a room id alone is not a secret.
  */
 export async function authorize(
@@ -68,8 +80,20 @@ export async function authorize(
   const token = decoder.decode(auth ?? new Uint8Array());
   if (token.length === 0) return null;
 
-  if (deps.internalToken.length > 0 && constantTimeEqual(token, deps.internalToken)) {
+  if (
+    deps.projectionToken.length > 0 &&
+    constantTimeEqual(token, deps.projectionToken) &&
+    baseRoomOf(roomId).startsWith(SHARE_ROOM_PREFIX)
+  ) {
     return "write";
+  }
+
+  if (deps.sourceToken.length > 0 && constantTimeEqual(token, deps.sourceToken)) {
+    const workspaceRoom = baseRoomOf(roomId);
+    if (!workspaceRoom.startsWith(SHARE_ROOM_PREFIX) && deps.shares.hasEditorShare(workspaceRoom)) {
+      return "write";
+    }
+    return null;
   }
 
   const share = deps.shares.resolve(token);
@@ -84,7 +108,7 @@ export async function authorize(
   if (baseRoom.startsWith(SHARE_ROOM_PREFIX)) return null;
 
   try {
-    return deps.workspaces.claimOrVerify(baseRoom, token) === "owner" ? "write" : null;
+    return deps.workspaces.verify(baseRoom, token) ? "write" : null;
   } catch {
     // The registry rejects malformed ids and keys; a rejected join is not a match.
     return null;

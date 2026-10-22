@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
+import { collabWsUrl } from "../session/endpoints";
 import { getSession } from "../session/session";
 
 export type ConnectionStatus = LoroConnectionStatus;
@@ -71,6 +72,11 @@ interface CanvasState {
    * not received yet.
    */
   flush: () => Promise<void>;
+  /**
+   * Stops writing this document to this browser. Used by “Forget this browser”:
+   * without it, the pagehide flush would recreate the copy just deleted.
+   */
+  forgetLocal: () => void;
 }
 
 /** Unit tests mount components without a sync server; a socket there only adds noise. */
@@ -81,7 +87,7 @@ export const useCanvasStore = create<CanvasState>((set) => {
     !ROOM_ID || typeof window === "undefined" || TEST_MODE
       ? null
       : new LoroProvider({
-          url: import.meta.env.VITE_COLLAB_URL ?? "ws://localhost:1234",
+          url: collabWsUrl(),
           workspaceId: ROOM_ID,
           doc,
           presence,
@@ -127,6 +133,9 @@ export const useCanvasStore = create<CanvasState>((set) => {
     },
     flush: async () => {
       await Promise.all([persistence?.flush(), provider?.flush()]);
+    },
+    forgetLocal: () => {
+      persistence?.destroy();
     },
   };
 });

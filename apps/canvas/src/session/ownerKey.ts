@@ -4,13 +4,13 @@
  * fragment so it is never sent in a request or a referrer.
  */
 
+import { collabHttpBase } from "./endpoints";
+
 export const OWNER_KEY_PREFIX = "suite.owner.";
 export const WORKSPACE_API_PATH = "/api/workspaces";
 /** The claim call must never delay a local-first boot for long. */
 export const CLAIM_TIMEOUT_MS = 2500;
 
-/** Matches the collab HTTP server's default port. */
-const DEFAULT_HTTP_URL = "http://localhost:1235";
 const OWNER_KEY_BYTES = 32;
 
 export type ClaimStatus = "claimed" | "conflict" | "offline";
@@ -22,11 +22,6 @@ export interface OwnerSession {
 
 function hasStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
-}
-
-function httpBase(): string {
-  const configured = import.meta.env.VITE_COLLAB_HTTP_URL as string | undefined;
-  return (configured ?? DEFAULT_HTTP_URL).replace(/\/+$/, "");
 }
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -58,6 +53,19 @@ export function writeOwnerKey(workspaceId: string, ownerKey: string): void {
     window.localStorage.setItem(`${OWNER_KEY_PREFIX}${workspaceId}`, ownerKey);
   } catch {
     // A full or disabled localStorage must not block opening a workspace.
+  }
+}
+
+/**
+ * Drops the key this browser holds. The relay still has the workspace and its
+ * hashed key, so a recovery file or owner link can reclaim access later.
+ */
+export function forgetOwnerKey(workspaceId: string): void {
+  if (!hasStorage() || workspaceId.trim().length === 0) return;
+  try {
+    window.localStorage.removeItem(`${OWNER_KEY_PREFIX}${workspaceId}`);
+  } catch {
+    // Ignore: a browser that cannot write cannot hold a key either.
   }
 }
 
@@ -99,7 +107,7 @@ function timeoutSignal(): AbortSignal | undefined {
  * workspace keeps working locally and the claim is retried on a later open.
  */
 export async function claimWorkspace(workspaceId: string, ownerKey: string): Promise<ClaimStatus> {
-  const url = `${httpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/claim`;
+  const url = `${collabHttpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/claim`;
   let response: Response;
   try {
     const signal = timeoutSignal();
@@ -160,7 +168,7 @@ export async function rotateOwnerKey(
   currentOwnerKey: string,
   newOwnerKey: string,
 ): Promise<void> {
-  const url = `${httpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/rotate`;
+  const url = `${collabHttpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/rotate`;
   let response: Response;
   try {
     response = await fetch(url, {

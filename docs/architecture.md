@@ -189,30 +189,38 @@ A `.suite` backup is a versioned JSON envelope around `doc.export({ mode: "snaps
 small manifest. Import validates the envelope, refuses a newer file/schema by name, creates a new
 workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
 the open document. Portable JSON and Markdown exports are read-only projections of the same
-document; only the exact backup is an import format. Sharing is link-based: a workspace editor link
-is the ordinary workspace URL plus its owner-key fragment, while `?share=<token>` opens the real
-workspace for a workspace viewer or a board/card projection — read-only for a viewer, and a
-publishable draft for an editor ([ADR-0022](./decisions/0022-share-projection-links.md)).
+document; only the exact backup is an import format. Sharing is link-based: a workspace editor
+token opens the workspace through `?share=<token>`, the owner link is the ordinary workspace URL
+plus its owner-key fragment, and `?share=<token>` also opens the real workspace for a workspace
+viewer or a board/card projection — read-only for a viewer, and a publishable draft for an editor
+([ADR-0022](./decisions/0022-share-projection-links.md)).
+The capability boundaries, what the relay can read, and the operator reset/delete commands are
+summarized in [security-model.md](./security-model.md).
 
 ### Owner key
 
 A workspace has a 32-byte base64url owner key, generated in the browser, kept in local storage and
 the URL fragment (`#owner=<key>`), and stored on the server only as a SHA-256 hash
 (`SUITE_WORKSPACES_DB`, default `suite.workspaces.sqlite`). `POST /api/workspaces/:id/claim`
-registers the first key and reports a conflict for a different one; an online open claims the key,
-while an offline open keeps working locally and claims on the next sync. Empty auth never writes a
-workspace room after a claim.
+registers the first key and reports a conflict for a different one. An online open claims the key
+before the app boots; an offline open keeps working locally, and the next online open (not a
+socket reconnect) claims it. Empty auth never writes a workspace room.
 
 Recovery is a separate `.suitekey` JSON file — `{ kind: "suite.owner", version: 1, workspaceId,
 ownerKey, exportedAt }` — saved from `File → Recovery key…`. It is never embedded in a `.suite`
 backup, because that file is routinely copied, attached or shared. The protected screen accepts the
 file (or its pasted contents), refuses a key from another workspace, and reloads with `#owner=` so
-the app boots with it. The editor link stays the second recovery path: it carries the fragment, so
+the app boots with it. The owner link stays the second recovery path: it carries the fragment, so
 copying it is also copying the owner capability. `POST /api/workspaces/:id/rotate` takes
 `{ newOwnerKey }` with the current key in `Authorization` and atomically replaces the stored hash;
-old editor links and old `.suitekey` files then stop working while share tokens keep working.
-Exporting a backup offers the recovery file once, in a small prompt: the two files are deliberately
-never bundled. Share management requires
+old owner links and old `.suitekey` files then stop working. Rotation also offers to revoke every
+share link, checked by default; share tokens work only if the owner unchecks it. Exporting a backup
+offers the recovery file once, in a small prompt: the two files are deliberately
+never bundled. Both backup paths — `File → Export backup…` and the launcher row's **Export**
+— use the same offer, and only when this browser has an owner key it has never saved. The saved
+flag records a download time, so the dialog says “Saved on this device” rather than implying the
+file still exists. The launcher also accepts a `.suitekey` (**Open recovery key…**): it validates
+the file, writes the key for the workspace it names and opens that workspace, never creating one. Share management requires
 `Authorization: Bearer <ownerKey>`; a share token cannot list, create or revoke links.
 
 ## Session start
@@ -590,13 +598,15 @@ holder, so a board or card link cannot be exchanged for a workspace link.
 Every sync join carries an `auth` payload that `authorize(roomId, auth, deps)` maps to a
 permission, in this order:
 
-1. the internal token writes any room (the projection worker);
-2. a share token opens exactly its share room, `read` for a viewer and `write` for an editor, and
+1. the projection worker token writes only `share-` projection rooms;
+2. the source worker token writes only a workspace room that currently has an active editor share;
+3. a share token opens exactly its share room, `read` for a viewer and `write` for an editor, and
    writes the derived `<room>:presence` / `<room>:cursors` rooms, which are ephemeral and scoped to
    the same share;
-3. an owner key writes its workspace and that workspace's derived presence/cursor rooms; the first
-   use claims an unclaimed workspace, and a different key is refused;
-4. an empty or mismatched credential is rejected. The workspace id alone is not a secret, and an
+4. an owner key verifies its workspace and that workspace's derived presence/cursor rooms. A join
+   never claims an unclaimed workspace; the explicit HTTP claim does that before the app boots, and
+   a different key is refused;
+5. an empty or mismatched credential is rejected. The workspace id alone is not a secret, and an
    owner key can never claim a `share-` projection room.
 
 Share management (`GET/POST/DELETE /api/shares`) requires `Authorization: Bearer <ownerKey>` and

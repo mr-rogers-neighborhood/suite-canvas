@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleShareRequest } from "./http.js";
 import type { SharePublishResult } from "./projectionWorker.js";
+import { resetRateLimits } from "./rateLimit.js";
 import { createShareStore, type Share, type ShareStore } from "./shares.js";
 import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
 
@@ -18,6 +19,7 @@ let workspaces: WorkspaceRegistry;
 let server: Server;
 let baseUrl: string;
 let changes: string[];
+let removed: Share[];
 let hookError: boolean;
 let publishResult: SharePublishResult;
 let reloadResult: SharePublishResult;
@@ -29,11 +31,13 @@ let statusResult: { dirty: boolean; hasBaseline: boolean };
 let reloaded: Share[];
 
 beforeEach(async () => {
+  resetRateLimits();
   directory = mkdtempSync(join(tmpdir(), "suite-share-api-"));
   store = createShareStore(join(directory, "shares.sqlite"));
   workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
   for (const workspaceId of MANAGED_WORKSPACES) workspaces.claimOrVerify(workspaceId, OWNER_KEY);
   changes = [];
+  removed = [];
   hookError = false;
   publishResult = { ok: true, applied: 1 };
   reloadResult = { ok: true, applied: 0 };
@@ -49,6 +53,9 @@ beforeEach(async () => {
       onSharesChanged: (workspaceId) => {
         changes.push(workspaceId);
         if (hookError) throw new Error("projection hook failed");
+      },
+      onShareRemoved: (share) => {
+        removed.push(share);
       },
       publish: (share, version, overwrite) => {
         published.push(share);
@@ -395,7 +402,7 @@ describe("share API", () => {
   it("rejects unsupported methods", async () => {
     const put = await fetch(`${baseUrl}/api/shares`, { method: "PUT" });
     expect(put.status).toBe(405);
-    expect(put.headers.get("allow")).toBe("GET, POST, OPTIONS");
+    expect(put.headers.get("allow")).toBe("GET, POST, DELETE, OPTIONS");
 
     const patch = await fetch(`${baseUrl}/api/shares/some-id`, { method: "PATCH" });
     expect(patch.status).toBe(405);
@@ -749,5 +756,97 @@ describe("publish and reload API", () => {
     });
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-methods")).toContain("POST");
+  });
+});
+
+describe("share API limits", () => {
+  it("rate-limits share creation per workspace", async () => {
+    for (let index = 0; index < 30; index += 1) {
+      const response = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+      expect(response.status).toBe(201);
+    }
+    const limited = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("refuses to create more than 100 active links", async () => {
+    for (let index = 0; index < 100; index += 1) {
+      store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    }
+    const response = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining("100") });
+  });
+});
+
+describe("CORS allowlist", () => {
+  it("echoes a configured origin and omits an unknown one", async () => {
+    const previous = process.env.SUITE_ALLOWED_ORIGINS;
+    process.env.SUITE_ALLOWED_ORIGINS = "https://app.example.com";
+    try {
+      const allowed = await fetch(`${baseUrl}/api/shares/missing`, {
+        headers: { origin: "https://app.example.com" },
+      });
+      expect(allowed.headers.get("access-control-allow-origin")).toBe("https://app.example.com");
+
+      const blocked = await fetch(`${baseUrl}/api/shares/missing`, {
+        headers: { origin: "https://evil.example.com" },
+      });
+      expect(blocked.headers.get("access-control-allow-origin")).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.SUITE_ALLOWED_ORIGINS;
+      else process.env.SUITE_ALLOWED_ORIGINS = previous;
+    }
+  });
+});
+
+describe("bulk revoke", () => {
+  it("revokes every active link in a workspace", async () => {
+    await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    await post({ workspaceId: "ws-1", scope: "board", role: "editor", boardId: "b-1" });
+
+    const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
+      method: "DELETE",
+      headers: owner,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { shares: { revokedAt: number | null }[] };
+    expect(body.shares).toHaveLength(2);
+    expect(body.shares.every((share) => share.revokedAt !== null)).toBe(true);
+    expect(removed).toHaveLength(2);
+    const listed = await list("ws-1");
+    await expect(listed.json()).resolves.toEqual({ shares: [] });
+  });
+
+  it("requires the owner key for a bulk revoke", async () => {
+    const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${OTHER_KEY}` },
+    });
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("share expiry", () => {
+  it("stores a future expiry and rejects a past one", async () => {
+    const expiresAt = Date.now() + 60_000;
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "viewer",
+      expiresAt,
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { share: { expiresAt: number | null } };
+    expect(body.share.expiresAt).toBe(expiresAt);
+
+    const past = await post({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "viewer",
+      expiresAt: Date.now() - 1,
+    });
+    expect(past.status).toBe(400);
   });
 });

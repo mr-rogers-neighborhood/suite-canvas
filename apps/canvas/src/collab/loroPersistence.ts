@@ -37,6 +37,46 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const open = indexedDB.open(DB_NAME, DB_VERSION);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains(SNAPSHOTS)) {
+        db.createObjectStore(SNAPSHOTS, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(UPDATES)) {
+        const updates = db.createObjectStore(UPDATES, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        updates.createIndex("workspaceId", "workspaceId");
+      }
+    };
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error ?? new Error("could not open IndexedDB"));
+  });
+}
+
+/**
+ * Removes every cached byte for one workspace. Used by “Forget this browser”:
+ * the relay copy is untouched, so the workspace can be reopened later.
+ */
+export async function deleteWorkspaceDocument(workspaceId: string): Promise<void> {
+  if (typeof indexedDB === "undefined" || workspaceId.trim().length === 0) return;
+  const db = await openDatabase();
+  try {
+    const transaction = db.transaction([SNAPSHOTS, UPDATES], "readwrite");
+    transaction.objectStore(SNAPSHOTS).delete(workspaceId);
+    const index = transaction.objectStore(UPDATES).index("workspaceId");
+    const keys = await request<IDBValidKey[]>(index.getAllKeys(IDBKeyRange.only(workspaceId)));
+    for (const key of keys) transaction.objectStore(UPDATES).delete(key);
+    await transactionDone(transaction);
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Offline persistence for one Loro document. The snapshot is the fast load path;
  * updates are appended immediately so a crash between compactions loses nothing.
@@ -54,24 +94,7 @@ export class LoroIndexeddbPersistence {
   ) {}
 
   async open(): Promise<void> {
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const open = indexedDB.open(DB_NAME, DB_VERSION);
-      open.onupgradeneeded = () => {
-        const db = open.result;
-        if (!db.objectStoreNames.contains(SNAPSHOTS)) {
-          db.createObjectStore(SNAPSHOTS, { keyPath: "id" });
-        }
-        if (!db.objectStoreNames.contains(UPDATES)) {
-          const updates = db.createObjectStore(UPDATES, {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-          updates.createIndex("workspaceId", "workspaceId");
-        }
-      };
-      open.onsuccess = () => resolve(open.result);
-      open.onerror = () => reject(open.error ?? new Error("could not open IndexedDB"));
-    });
+    this.db = await openDatabase();
   }
 
   /** Loads the snapshot and every update appended since it was written. */

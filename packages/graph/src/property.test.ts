@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatPropertyValue, isPropertyValueEmpty } from "./property.js";
+import {
+  formatPropertyValue,
+  isCalendarDate,
+  isPropertyValueEmpty,
+  isPropertyValueValid,
+  propertyValueError,
+} from "./property.js";
 import type { FieldDefinition } from "./schema.js";
 
 function field(overrides: Partial<FieldDefinition>): FieldDefinition {
@@ -121,5 +127,70 @@ describe("card self-reference", () => {
     workspace.createCard({ id: "c2" });
     workspace.setProperty("c1", related.id, "c2");
     expect(workspace.getCard("c1")?.properties[related.id]).toBe("c2");
+  });
+});
+
+describe("isPropertyValueValid", () => {
+  it("should accept a clear and the primitive each kind stores", () => {
+    expect(isPropertyValueValid(field({ kind: "text" }), null)).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "text" }), undefined)).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "text" }), "value")).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "number" }), 0)).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "checkbox" }), false)).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "date" }), "2024-02-29")).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "select", options }), "a")).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "multiSelect", options }), ["a", "b"])).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "card" }), "c2", { cardId: "c1" })).toBe(true);
+  });
+
+  it("should reject the wrong primitive for every kind", () => {
+    expect(isPropertyValueValid(field({ kind: "text" }), 42)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "number" }), "12")).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "number" }), Number.NaN)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "number" }), Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "checkbox" }), "yes")).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "date" }), 20240101)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "select", options }), 1)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "multiSelect", options }), "a")).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "card" }), 1)).toBe(false);
+  });
+
+  it("should reject a deleted option and an unknown multi-select id", () => {
+    const select = field({ kind: "select", options });
+    const multi = field({ kind: "multiSelect", options });
+    expect(isPropertyValueValid(select, "gone")).toBe(false);
+    expect(propertyValueError(select, "gone")).toMatch(/no longer exists/);
+    expect(isPropertyValueValid(multi, ["a", "gone"])).toBe(false);
+    expect(propertyValueError(multi, ["a", "gone"])).toMatch(/no longer exists/);
+    // Repeated ids are harmless: storage only keeps the set.
+    expect(isPropertyValueValid(multi, ["a", "a"])).toBe(true);
+  });
+
+  it("should reject a date that is not a real calendar day", () => {
+    const due = field({ kind: "date" });
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    expect(isCalendarDate("2025-02-29")).toBe(false);
+    expect(isCalendarDate("2024-13-01")).toBe(false);
+    expect(isCalendarDate("01-02-2024")).toBe(false);
+    expect(isPropertyValueValid(due, "2025-02-29")).toBe(false);
+  });
+
+  it("should reject a self-reference and, when resolvable, a dangling card", () => {
+    const related = field({ kind: "card" });
+    expect(isPropertyValueValid(related, "c1", { cardId: "c1" })).toBe(false);
+    expect(propertyValueError(related, "c1", { cardId: "c1" })).toMatch(/own card/);
+    expect(isPropertyValueValid(related, "missing", { cardId: "c1" })).toBe(true);
+    expect(
+      isPropertyValueValid(related, "missing", {
+        cardId: "c1",
+        cardExists: (id) => id === "c2",
+      }),
+    ).toBe(false);
+    expect(
+      isPropertyValueValid(related, "c2", {
+        cardId: "c1",
+        cardExists: (id) => id === "c2",
+      }),
+    ).toBe(true);
   });
 });

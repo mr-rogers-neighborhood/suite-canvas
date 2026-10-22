@@ -5,10 +5,9 @@
  * and revoking are owner operations and present the workspace owner key.
  */
 
-export const SHARE_API_PATH = "/api/shares";
+import { collabHttpBase } from "./endpoints";
 
-/** Matches the collab HTTP server's default port. */
-const DEFAULT_HTTP_URL = "http://localhost:1235";
+export const SHARE_API_PATH = "/api/shares";
 
 export type ShareScope = "workspace" | "board" | "card";
 export type ShareRole = "viewer" | "editor";
@@ -25,6 +24,8 @@ export interface Share {
   cardId: string | null;
   createdAt: number;
   revokedAt: number | null;
+  /** Epoch milliseconds; null means the link does not expire. */
+  expiresAt: number | null;
   /**
    * Sync room this share opens. Workspace shares open the workspace room;
    * board and card shares open `share-<token>`. The server keeps only the token
@@ -39,6 +40,8 @@ export interface CreateShareInput {
   role: ShareRole;
   boardId?: string | null;
   cardId?: string | null;
+  /** Epoch milliseconds; omit or null for a link that does not expire. */
+  expiresAt?: number | null;
 }
 
 export interface CreatedShare {
@@ -56,11 +59,6 @@ export class ShareApiError extends Error {
     this.name = "ShareApiError";
     this.status = status;
   }
-}
-
-function httpBase(): string {
-  const configured = import.meta.env.VITE_COLLAB_HTTP_URL as string | undefined;
-  return (configured ?? DEFAULT_HTTP_URL).replace(/\/+$/, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -95,7 +93,7 @@ function ownerHeaders(ownerKey: string | null | undefined): Record<string, strin
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${httpBase()}${path}`, init);
+    response = await fetch(`${collabHttpBase()}${path}`, init);
   } catch {
     throw new ShareApiError("Could not reach the share server.");
   }
@@ -163,6 +161,22 @@ export async function revokeShare(id: string, ownerKey: string | null | undefine
     headers: ownerHeaders(ownerKey),
   });
   return shareRecord(body);
+}
+
+/** Revokes every active link in a workspace. Owner only. */
+export async function revokeAllShares(
+  workspaceId: string,
+  ownerKey: string | null | undefined,
+): Promise<Share[]> {
+  const query = new URLSearchParams({ workspaceId });
+  const body = await request<unknown>(`${SHARE_API_PATH}?${query.toString()}`, {
+    method: "DELETE",
+    headers: ownerHeaders(ownerKey),
+  });
+  if (!isRecord(body) || !Array.isArray(body.shares)) {
+    throw new ShareApiError("The share server sent an unexpected response.");
+  }
+  return body.shares as unknown as Share[];
 }
 
 /**
@@ -281,7 +295,7 @@ async function postShareAction(
   let response: Response;
   try {
     response = await fetch(
-      `${httpBase()}${SHARE_API_PATH}/${encodeURIComponent(token)}/${action}`,
+      `${collabHttpBase()}${SHARE_API_PATH}/${encodeURIComponent(token)}/${action}`,
       {
         method: "POST",
         headers: payload

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 let sequence = 0;
@@ -66,7 +66,7 @@ test("saves a recovery key and restores ownership from it", async ({ page, brows
   expect(kit.json.workspaceId).toBe(id);
   expect(kit.json.ownerKey).toBeTruthy();
   expect(kit.json.document).toBeUndefined();
-  await expect(page.getByTestId("recovery-saved")).toHaveText("Saved");
+  await expect(page.getByTestId("recovery-saved")).toHaveText(/^Saved on this device/);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("recovery-dialog")).toHaveCount(0);
 
@@ -116,7 +116,7 @@ test("offers a separate recovery key right after a backup export", async ({ page
   expect(kit.json.kind).toBe("suite.owner");
   expect(kit.json.document).toBeUndefined();
   expect(kit.json.workspaceId).toBeTruthy();
-  await expect(page.getByTestId("recovery-saved")).toHaveText("Saved");
+  await expect(page.getByTestId("recovery-saved")).toHaveText(/^Saved on this device/);
 });
 
 test("replacing the recovery key retires the old fragment and old file", async ({
@@ -131,7 +131,7 @@ test("replacing the recovery key retires the old fragment and old file", async (
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-replace").click();
   await expect(page.getByTestId("recovery-warning")).toContainText(
-    "Existing editor links and old recovery files will stop working. Shared viewer/editor links keep working.",
+    "Existing editor links and old recovery files will stop working.",
   );
 
   const kit = await downloadText(page, () => page.getByTestId("recovery-confirm").click());
@@ -161,4 +161,101 @@ test("replacing the recovery key retires the old fragment and old file", async (
   } finally {
     await context.close();
   }
+});
+
+test("offers a recovery key after a launcher export and opens one from the launcher", async ({
+  page,
+  browser,
+}) => {
+  const id = workspaceId("launcher");
+  await page.goto(`/?workspace=${id}`);
+  await expect(cards(page)).toHaveCount(2);
+
+  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-home").click();
+  await expect(page.getByTestId("workspace-launcher")).toBeVisible();
+
+  // The launcher's per-row export is the second backup path, so it gets the
+  // same one-question follow-up as File → Export backup.
+  await page.getByTestId(`launcher-recent-${id}`).hover();
+  const backup = await downloadText(page, () => page.getByTestId(`launcher-export-${id}`).click());
+  expect(backup.filename).toMatch(/\.suite$/);
+
+  await expect(page.getByTestId("recovery-prompt")).toBeVisible();
+  await expect(page.getByTestId("recovery-prompt")).toContainText(
+    "Backup saved. Save a separate recovery key too?",
+  );
+  const kit = await downloadText(page, () => page.getByTestId("recovery-prompt-save").click());
+  expect(kit.filename).toMatch(/-recovery\.suitekey$/);
+  expect(kit.json.workspaceId).toBe(id);
+  await expect(page.getByTestId("recovery-saved")).toHaveText(/^Saved on this device/);
+
+  // A fresh browser can start from the key file alone: the launcher writes the
+  // key and opens that workspace instead of importing a new one.
+  const context = await browser.newContext();
+  try {
+    const fresh = await context.newPage();
+    await fresh.goto("/");
+    await expect(fresh.getByTestId("workspace-launcher")).toBeVisible();
+    await fresh.getByTestId("launcher-recovery-file").setInputFiles(kit.path);
+
+    await expect(fresh.locator('.app-canvas[data-ready="true"]')).toBeVisible({
+      timeout: 15_000,
+    });
+    const opened = new URL(fresh.url());
+    expect(opened.searchParams.get("workspace")).toBe(id);
+    expect(decodeURIComponent(opened.hash)).toBe(`#owner=${String(kit.json.ownerKey)}`);
+    await expect(cards(fresh)).toHaveCount(2);
+    await expect(fresh.getByTestId("workspace-launcher")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("shows one inline error for a file that is not a recovery key", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("backup.suitekey");
+  await writeFile(
+    path,
+    JSON.stringify({
+      kind: "suite.workspace",
+      version: 1,
+      schemaVersion: 4,
+      exportedAt: new Date().toISOString(),
+      workspaceId: "not-a-key",
+      document: "eA==",
+      manifest: { boards: 0, cards: 0, types: 0, tags: 0 },
+    }),
+  );
+
+  await page.goto("/");
+  await page.getByTestId("launcher-recovery-file").setInputFiles(path);
+  await expect(page.getByTestId("launcher-error")).toContainText("workspace backup");
+  await expect(page.getByTestId("workspace-launcher")).toBeVisible();
+  await expect(page.getByTestId("launcher-error")).toHaveCount(1);
+});
+
+test("forget this browser removes the key and cached copy, and the workspace reopens protected", async ({
+  page,
+}) => {
+  const id = workspaceId("forget");
+  await page.goto(`/?workspace=${id}`);
+  await expect(cards(page)).toHaveCount(2);
+
+  await openRecoveryDialog(page);
+  await page.getByTestId("recovery-forget").click();
+  await expect(page.getByTestId("recovery-forget-confirm")).toContainText(
+    "The owner key and cached copy will be removed from this browser.",
+  );
+  await expect(page.getByTestId("recovery-forget-confirm")).toContainText(
+    "The workspace stays on the server",
+  );
+  await page.getByTestId("recovery-forget-confirm-button").click();
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("workspace-launcher")).toBeVisible();
+  await expect(page.getByTestId(`launcher-recent-${id}`)).toHaveCount(0);
+
+  // No key, no fragment and no cached document: the relay still owns it.
+  await page.goto(`/?workspace=${id}`);
+  await expect(page.getByTestId("workspace-protected")).toBeVisible();
 });

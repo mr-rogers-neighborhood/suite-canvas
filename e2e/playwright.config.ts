@@ -22,6 +22,14 @@ export default defineConfig({
       url: "http://localhost:1235/health",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
+      env: {
+        // The suite creates hundreds of workspaces from one address.
+        SUITE_CLAIM_RATE_LIMIT: "10000",
+        SUITE_ROTATE_RATE_LIMIT: "10000",
+        SUITE_SHARE_RESOLVE_RATE_LIMIT: "10000",
+        SUITE_SHARE_CREATE_RATE_LIMIT: "10000",
+        SUITE_PUBLISH_RATE_LIMIT: "10000",
+      },
     },
   ],
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

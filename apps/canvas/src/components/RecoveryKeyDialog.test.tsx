@@ -1,23 +1,37 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
-import { downloadOwnerKit } from "../session/ownerKit";
+import { downloadOwnerKit, forgetBrowserWorkspace } from "../session/ownerKit";
 import { RecoveryKeyDialog } from "./RecoveryKeyDialog";
+
+const { forgetLocal } = vi.hoisted(() => ({ forgetLocal: vi.fn() }));
+
+vi.mock("../store/useCanvasStore", () => ({
+  useCanvasStore: { getState: () => ({ forgetLocal }) },
+}));
 
 vi.mock("../session/ownerKit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/ownerKit")>();
-  return { ...actual, downloadOwnerKit: vi.fn(() => "research-recovery.suitekey") };
+  return {
+    ...actual,
+    downloadOwnerKit: vi.fn(() => "research-recovery.suitekey"),
+    forgetBrowserWorkspace: vi.fn(async () => {}),
+  };
 });
 
 const download = vi.mocked(downloadOwnerKit);
+const forgetBrowser = vi.mocked(forgetBrowserWorkspace);
 
 beforeEach(() => {
   window.localStorage.clear();
   download.mockClear();
+  forgetBrowser.mockClear();
+  forgetLocal.mockClear();
 });
 
 afterEach(() => {
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 describe("RecoveryKeyDialog", () => {
@@ -44,26 +58,30 @@ describe("RecoveryKeyDialog", () => {
   it("warns before replacing, then rotates and saves the new key", async () => {
     writeOwnerKey("ws-1", "old-key");
     const rotate = vi.fn(async (_workspaceId: string, _currentKey: string, _nextKey: string) => {});
+    const revokeShares = vi.fn(async () => []);
     render(
       <RecoveryKeyDialog
         workspaceId="ws-1"
         ownerKey="old-key"
         title="Research"
         rotate={rotate}
+        revokeShares={revokeShares}
         onClose={() => {}}
       />,
     );
 
     fireEvent.click(screen.getByTestId("recovery-replace"));
     expect(screen.getByTestId("recovery-warning")).toHaveTextContent(
-      "Existing editor links and old recovery files will stop working. Shared viewer/editor links keep working.",
+      "Existing editor links and old recovery files will stop working.",
     );
+    expect(screen.getByTestId("recovery-revoke-links")).toBeChecked();
     expect(rotate).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId("recovery-confirm"));
 
     await waitFor(() => expect(screen.getByTestId("recovery-reload")).toBeInTheDocument());
     expect(rotate).toHaveBeenCalledTimes(1);
+    expect(revokeShares).toHaveBeenCalledWith("ws-1", expect.any(String));
     const [workspaceId, current, next] = rotate.mock.calls[0] ?? [];
     expect(workspaceId).toBe("ws-1");
     expect(current).toBe("old-key");
@@ -126,5 +144,107 @@ describe("RecoveryKeyDialog", () => {
 
     fireEvent.click(screen.getByTestId("recovery-prompt-dismiss"));
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("owner link and forgetting", () => {
+  const ownerLink = async (boardId: string | null = null) => {
+    const writeText = vi.fn(async (_text: string) => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey="owner-key"
+        boardId={boardId}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("recovery-copy-owner-link"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    return String(writeText.mock.calls[0]?.[0] ?? "");
+  };
+
+  it("copies the owner link as a fragment with a full-ownership warning", async () => {
+    const copied = await ownerLink("board-1");
+    const url = new URL(copied);
+    expect(url.searchParams.get("workspace")).toBe("ws-1");
+    expect(url.searchParams.get("board")).toBe("board-1");
+    expect(url.hash).toBe("#owner=owner-key");
+    expect(url.searchParams.get("owner")).toBeNull();
+    expect(screen.getByTestId("recovery-owner-link-warning")).toHaveTextContent(
+      "Owner link copied. This is owner access. Anyone with it can manage links and rotate the key.",
+    );
+    expect(screen.getByTestId("recovery-dialog")).toHaveTextContent(
+      "This is owner access. Anyone with it can manage links and rotate the key.",
+    );
+  });
+
+  it("forgets only after the confirmation, then leaves the workspace", async () => {
+    const onClose = vi.fn();
+    const leave = vi.fn();
+    render(
+      <RecoveryKeyDialog workspaceId="ws-1" ownerKey="owner-key" onClose={onClose} leave={leave} />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-forget"));
+    expect(screen.getByTestId("recovery-forget-confirm")).toHaveTextContent(
+      "The owner key and cached copy will be removed from this browser. The workspace stays on the server and can be reopened with your recovery key or owner link.",
+    );
+    expect(forgetBrowser).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("recovery-forget-cancel"));
+    expect(screen.queryByTestId("recovery-forget-confirm")).toBeNull();
+    expect(forgetBrowser).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("recovery-forget"));
+    fireEvent.click(screen.getByTestId("recovery-forget-confirm-button"));
+
+    await waitFor(() => expect(forgetBrowser).toHaveBeenCalledWith("ws-1"));
+    // The editor stops writing before the cached document is deleted.
+    expect(forgetLocal).toHaveBeenCalledTimes(1);
+    expect(forgetLocal.mock.invocationCallOrder[0]).toBeLessThan(
+      forgetBrowser.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(onClose).toHaveBeenCalled();
+    expect(leave).toHaveBeenCalled();
+  });
+
+  it("shows a saved state on this device rather than a claim about the file", () => {
+    window.localStorage.setItem("suite.recoverySaved.ws-1", JSON.stringify({ savedAt: 1 }));
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey="owner-key"
+        title="Research"
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("recovery-saved")).toHaveTextContent("Saved on this device");
+  });
+});
+
+describe("RecoveryKeyDialog rotation links", () => {
+  it("does not revoke links when the checkbox is cleared", async () => {
+    writeOwnerKey("ws-1", "old-key");
+    const rotate = vi.fn(async () => {});
+    const revokeShares = vi.fn(async () => []);
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey="old-key"
+        rotate={rotate}
+        revokeShares={revokeShares}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-replace"));
+    fireEvent.click(screen.getByTestId("recovery-revoke-links"));
+    fireEvent.click(screen.getByTestId("recovery-confirm"));
+
+    await waitFor(() => expect(screen.getByTestId("recovery-reload")).toBeInTheDocument());
+    expect(rotate).toHaveBeenCalledTimes(1);
+    expect(revokeShares).not.toHaveBeenCalled();
   });
 });

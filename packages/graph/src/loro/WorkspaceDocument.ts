@@ -15,6 +15,7 @@ import {
   nextFreeAnchor,
   snapToAnchor,
 } from "../connectors.js";
+import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
   type Board,
@@ -464,13 +465,6 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
   });
 }
 
-/** `YYYY-MM-DD` and a real calendar day, not just a string that looks close. */
-function isIsoDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-
 /** Writers validate against the type's own field definition. */
 function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void {
   function fail(expected: string): never {
@@ -481,7 +475,7 @@ function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void
       if (typeof value !== "string") fail("a string");
       return;
     case "date":
-      if (typeof value !== "string" || !isIsoDate(value)) fail("a date (YYYY-MM-DD)");
+      if (typeof value !== "string" || !isCalendarDate(value)) fail("a date (YYYY-MM-DD)");
       return;
     case "card":
       // Soft validation: the target may be trashed or purged already.

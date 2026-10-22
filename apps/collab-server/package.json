@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "admin": "tsx src/admin.ts"
   },
   "dependencies": {
     "@loro-dev/flock": "^4.5.2",

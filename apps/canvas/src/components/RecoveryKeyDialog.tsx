@@ -6,13 +6,24 @@ import {
   rotateOwnerKey,
   writeOwnerKey,
 } from "../session/ownerKey";
-import { clearSavedRecoveryKey, downloadOwnerKit } from "../session/ownerKit";
+import {
+  clearSavedRecoveryKey,
+  downloadOwnerKit,
+  forgetBrowserWorkspace,
+  readSavedRecoveryKey,
+  type SavedRecoveryKey,
+} from "../session/ownerKit";
+import { revokeAllShares } from "../session/shares";
+import { workspaceUrl } from "../session/workspaceTransfer";
+import { useCanvasStore } from "../store/useCanvasStore";
 
 export type RecoveryKeyMode = "manage" | "backup-prompt";
 
 export interface RecoveryKeyDialogProps {
   workspaceId: string;
   ownerKey: string;
+  /** Included in the owner link so it opens the board that is in view. */
+  boardId?: string | null;
   /** Used for the downloaded file name, like the backup exports. */
   title?: string;
   /**
@@ -23,16 +34,33 @@ export interface RecoveryKeyDialogProps {
   onClose: () => void;
   /** Tests replace the network call. */
   rotate?: typeof rotateOwnerKey;
+  /** Tests replace the link revocation call. */
+  revokeShares?: typeof revokeAllShares;
+  /** Tests replace the navigation after a forget. */
+  leave?: () => void;
 }
 
-type Stage = "idle" | "confirm" | "rotating" | "rotated";
+type Stage = "idle" | "confirm" | "rotating" | "rotated" | "forget" | "forgetting";
 
 const MANAGE_COPY =
   "This file restores owner access if this browser is lost. Keep it separate from document backups.";
 const PROMPT_COPY =
   "Backup saved. Save a separate recovery key too? It restores owner access if this browser is lost. Keep it separate from the backup.";
 const ROTATE_WARNING =
-  "Existing editor links and old recovery files will stop working. Shared viewer/editor links keep working.";
+  "Existing editor links and old recovery files will stop working. You can also revoke every share link.";
+const OWNER_LINK_WARNING =
+  "This is owner access. Anyone with it can manage links and rotate the key.";
+const FORGET_WARNING =
+  "The owner key and cached copy will be removed from this browser. The workspace stays on the server and can be reopened with your recovery key or owner link.";
+
+function savedLabel(saved: SavedRecoveryKey): string {
+  if (saved.savedAt === null) return "Saved on this device";
+  const date = new Date(saved.savedAt);
+  return `Saved on this device · ${date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })}`;
+}
 
 /**
  * One small dialog for the recovery key: save it, or replace it. It is only
@@ -42,15 +70,22 @@ const ROTATE_WARNING =
 export function RecoveryKeyDialog({
   workspaceId,
   ownerKey,
+  boardId = null,
   title = "workspace",
   mode = "manage",
   onClose,
   rotate = rotateOwnerKey,
+  revokeShares = revokeAllShares,
+  leave = () => window.location.assign("/"),
 }: RecoveryKeyDialogProps) {
   const [stage, setStage] = useState<Stage>("idle");
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<SavedRecoveryKey | null>(() =>
+    readSavedRecoveryKey(workspaceId),
+  );
   const [newKey, setNewKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [revokeLinks, setRevokeLinks] = useState(true);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -68,7 +103,7 @@ export function RecoveryKeyDialog({
     setError(null);
     try {
       downloadOwnerKit(workspaceId, ownerKey, title);
-      setSaved(true);
+      setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The recovery key could not be saved.");
     }
@@ -79,7 +114,7 @@ export function RecoveryKeyDialog({
     setError(null);
     try {
       downloadOwnerKit(workspaceId, newKey, title);
-      setSaved(true);
+      setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The new recovery key could not be saved.");
     }
@@ -97,20 +132,62 @@ export function RecoveryKeyDialog({
       setStage("idle");
       return;
     }
+    let linksError: string | null = null;
+    if (revokeLinks && revokeShares) {
+      try {
+        await revokeShares(workspaceId, next);
+      } catch (cause) {
+        linksError =
+          cause instanceof Error
+            ? `The key was replaced, but links were not revoked: ${cause.message}`
+            : "The key was replaced, but links were not revoked.";
+      }
+    }
     writeOwnerKey(workspaceId, next);
     // The old file no longer matches; the next backup export should prompt again.
     clearSavedRecoveryKey(workspaceId);
     setNewKey(next);
-    setSaved(false);
+    setSaved(null);
     setStage("rotated");
+    if (linksError) setError(linksError);
     try {
       // The download is attempted in the same async chain as the click; if the
       // browser drops it, the dialog keeps a button to try again.
       downloadOwnerKit(workspaceId, next, title);
-      setSaved(true);
+      setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch {
       setError("The key was replaced, but the recovery file could not be saved. Save it now.");
     }
+  };
+
+  const copyOwnerLink = async () => {
+    setError(null);
+    const url = workspaceUrl(workspaceId, boardId, newKey ?? ownerKey);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setError("The owner link could not be copied. Your browser blocked the clipboard.");
+    }
+  };
+
+  const forget = async () => {
+    setStage("forgetting");
+    setError(null);
+    // Stop the open editor first: its pagehide flush would otherwise write the
+    // cached document back after it was deleted.
+    useCanvasStore.getState().forgetLocal();
+    try {
+      await forgetBrowserWorkspace(workspaceId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "This browser could not be cleared.");
+      setStage("forget");
+      return;
+    }
+    onClose();
+    // The open document still holds the key in memory, so leaving is part of
+    // forgetting: the next open starts from a browser that has no key.
+    leave();
   };
 
   const reload = () => {
@@ -162,7 +239,7 @@ export function RecoveryKeyDialog({
           </p>
         ) : saved ? (
           <p className="mt-2 text-[11px] text-[var(--ink)]" data-testid="recovery-saved">
-            Saved
+            {savedLabel(saved)}
           </p>
         ) : null}
 
@@ -174,6 +251,16 @@ export function RecoveryKeyDialog({
             >
               {ROTATE_WARNING}
             </p>
+            <label className="mt-2 flex items-start gap-1.5 text-[11px] text-[var(--ink)]">
+              <input
+                type="checkbox"
+                data-testid="recovery-revoke-links"
+                checked={revokeLinks}
+                onChange={(event) => setRevokeLinks(event.target.checked)}
+                className="mt-0.5"
+              />
+              <span>Also revoke all share links (recommended if the key may have leaked)</span>
+            </label>
             <div className="mt-2 flex items-center justify-end gap-1.5">
               <button
                 type="button"
@@ -190,6 +277,36 @@ export function RecoveryKeyDialog({
                 onClick={() => void replace()}
               >
                 Replace key
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {stage === "forget" || stage === "forgetting" ? (
+          <div
+            className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-2"
+            data-testid="recovery-forget-confirm"
+          >
+            <p className="text-[11px] font-medium text-[var(--ink)]">Forget this browser?</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--ink)]">{FORGET_WARNING}</p>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                data-testid="recovery-forget-cancel"
+                disabled={stage === "forgetting"}
+                className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:opacity-40 dark:hover:bg-white/10"
+                onClick={() => setStage("idle")}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="recovery-forget-confirm-button"
+                disabled={stage === "forgetting"}
+                className="rounded-md bg-red-600 px-2.5 py-1 text-[11px] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                onClick={() => void forget()}
+              >
+                {stage === "forgetting" ? "Forgetting\u2026" : "Forget this browser"}
               </button>
             </div>
           </div>
@@ -240,7 +357,7 @@ export function RecoveryKeyDialog({
                 <button
                   type="button"
                   data-testid="recovery-replace"
-                  disabled={stage === "rotating"}
+                  disabled={stage === "rotating" || stage === "forgetting"}
                   className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
                   onClick={() => setStage("confirm")}
                 >
@@ -250,7 +367,7 @@ export function RecoveryKeyDialog({
               <button
                 type="button"
                 data-testid={closing ? "recovery-prompt-save" : "recovery-save"}
-                disabled={stage === "rotating"}
+                disabled={stage === "rotating" || stage === "forgetting"}
                 className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-[11px] text-[var(--surface)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={save}
               >
@@ -263,6 +380,37 @@ export function RecoveryKeyDialog({
             </>
           )}
         </div>
+
+        {closing ? null : (
+          <div className="mt-3 border-t border-[var(--hairline)] pt-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                data-testid="recovery-copy-owner-link"
+                className="rounded-md px-1 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+                onClick={() => void copyOwnerLink()}
+              >
+                Copy owner link
+              </button>
+              <button
+                type="button"
+                data-testid="recovery-forget"
+                disabled={stage === "forgetting"}
+                className="rounded-md px-1 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:opacity-40 dark:hover:bg-white/10"
+                onClick={() => setStage("forget")}
+              >
+                Forget this browser…
+              </button>
+            </div>
+            <p
+              className="mt-1 text-[10px] leading-relaxed text-[var(--ink-muted)]"
+              data-testid="recovery-owner-link-warning"
+            >
+              {copied ? "Owner link copied. " : null}
+              {OWNER_LINK_WARNING}
+            </p>
+          </div>
+        )}
       </div>
     </div>,
     document.body,

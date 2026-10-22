@@ -1,8 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { HttpError, methodNotAllowed, readJsonBody, sendEmpty, sendJson } from "./http.js";
+import {
+  applyCors,
+  HttpError,
+  methodNotAllowed,
+  readJsonBody,
+  sendEmpty,
+  sendJson,
+} from "./http.js";
+import { claimLimiter, clientAddress, rotateLimiter } from "./rateLimit.js";
 import { validateClaimInput, validateRotateInput, type WorkspaceRegistry } from "./workspaces.js";
 
 export const WORKSPACE_API_PATH = "/api/workspaces";
+
+export interface WorkspaceRequestHooks {
+  /** Called after a successful rotation so live owner sessions can be closed. */
+  onRotated?: (workspaceId: string) => void;
+}
 
 const CONFLICT_MESSAGE = "This workspace is protected by a different owner key.";
 const ROTATE_FORBIDDEN_MESSAGE = "The current owner key does not match this workspace.";
@@ -33,6 +46,12 @@ async function claim(
   registry: WorkspaceRegistry,
   workspaceId: string,
 ): Promise<void> {
+  const claim = claimLimiter.take(clientAddress(request));
+  if (!claim.ok) {
+    response.setHeader("retry-after", String(claim.retryAfter));
+    throw new HttpError(429, "Too many ownership claims. Wait a moment and try again.");
+  }
+
   const ownerKey = parseOwnerKey(await readJsonBody(request));
   const problem = validateClaimInput(workspaceId, ownerKey);
   if (problem) throw new HttpError(400, problem);
@@ -60,7 +79,14 @@ async function rotate(
   response: ServerResponse,
   registry: WorkspaceRegistry,
   workspaceId: string,
+  hooks?: WorkspaceRequestHooks,
 ): Promise<void> {
+  const rotation = rotateLimiter.take(clientAddress(request));
+  if (!rotation.ok) {
+    response.setHeader("retry-after", String(rotation.retryAfter));
+    throw new HttpError(429, "Too many key rotations. Wait a moment and try again.");
+  }
+
   const currentOwnerKey = bearerKey(request);
   const currentProblem = validateClaimInput(workspaceId, currentOwnerKey);
   if (currentProblem) throw new HttpError(400, currentProblem);
@@ -80,6 +106,11 @@ async function rotate(
     return;
   }
   sendJson(response, 200, { workspaceId: workspaceId.trim(), rotated: true });
+  try {
+    hooks?.onRotated?.(workspaceId.trim());
+  } catch (error) {
+    console.error("[workspaces] rotation hook failed", error);
+  }
 }
 
 /**
@@ -90,7 +121,9 @@ export async function handleWorkspaceRequest(
   request: IncomingMessage,
   response: ServerResponse,
   registry: WorkspaceRegistry,
+  hooks?: WorkspaceRequestHooks,
 ): Promise<boolean> {
+  applyCors(request, response);
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname !== WORKSPACE_API_PATH && !url.pathname.startsWith(`${WORKSPACE_API_PATH}/`)) {
     return false;
@@ -120,7 +153,7 @@ export async function handleWorkspaceRequest(
       methodNotAllowed(response, "POST, OPTIONS");
       return true;
     }
-    if (action === "rotate") await rotate(request, response, registry, workspaceId);
+    if (action === "rotate") await rotate(request, response, registry, workspaceId, hooks);
     else await claim(request, response, registry, workspaceId);
   } catch (error) {
     if (response.headersSent) return true;

@@ -1,0 +1,61 @@
+# One deployment for a hosted instance and for self-hosting. `app` owns the
+# three SQLite files in the `suite-data` volume; `caddy` terminates TLS, serves
+# the built canvas and proxies the API and WebSocket to `app`.
+#
+# Run with: cp .env.example .env && docker compose up -d --build
+name: suite
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "1234"
+      HEALTH_PORT: "1235"
+      SUITE_DB: /data/documents.sqlite
+      SUITE_SHARES_DB: /data/shares.sqlite
+      SUITE_WORKSPACES_DB: /data/workspaces.sqlite
+      SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}
+      SUITE_SOURCE_TOKEN: ${SUITE_SOURCE_TOKEN:-}
+      SUITE_ALLOWED_ORIGINS: ${SUITE_ALLOWED_ORIGINS:-}
+    expose:
+      - "1234"
+      - "1235"
+    volumes:
+      - suite-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.HEALTH_PORT||1235)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  caddy:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SUITE_DOMAIN: ${SUITE_DOMAIN:-localhost}
+      SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    # Caddy keeps certificates in the container. A single instance re-issues
+    # them on recreate; add a caddy-data volume if that rate limit matters.
+
+volumes:
+  suite-data:

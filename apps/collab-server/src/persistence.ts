@@ -4,6 +4,8 @@ export interface DocumentStore {
   /** Latest stored state for a document, or null when it was never saved. */
   load: (name: string) => Uint8Array | null;
   save: (name: string, state: Uint8Array) => void;
+  /** Removes a document, used when a share is revoked. */
+  delete: (name: string) => void;
   close: () => void;
 }
 
@@ -27,6 +29,7 @@ export function createDocumentStore(path: string): DocumentStore {
     `INSERT INTO documents (name, state, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(name) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at`,
   );
+  const remove = db.prepare("DELETE FROM documents WHERE name = ?");
 
   return {
     load: (name) => {
@@ -35,6 +38,9 @@ export function createDocumentStore(path: string): DocumentStore {
     },
     save: (name, state) => {
       upsert.run(name, state, Date.now());
+    },
+    delete: (name) => {
+      remove.run(name);
     },
     close: () => db.close(),
   };

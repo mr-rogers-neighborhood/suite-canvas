@@ -251,14 +251,13 @@ test("workspace viewer reads every board and cannot manage", async ({ page, brow
 
   await viewer.context().close();
 
-  // The owner editor path still works from the same dialog.
+  // A workspace editor link is an edit-only token from the same dialog.
   await page.getByTestId("workspace-share").click();
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
   const editorLink = new URL(await page.getByLabel("Share link").inputValue());
-  expect(editorLink.searchParams.get("workspace")).toBeTruthy();
-  expect(editorLink.searchParams.has("share")).toBe(false);
-  expect(editorLink.hash).toContain("owner=");
+  expect(editorLink.searchParams.get("share")).toBeTruthy();
+  expect(editorLink.hash).toBe("");
 });
 
 test("revoking a link makes the viewer unavailable", async ({ page, browser }) => {
@@ -273,7 +272,8 @@ test("revoking a link makes the viewer unavailable", async ({ page, browser }) =
 
   await page.getByTestId("share-close").click();
   await page.getByTestId("workspace-share").click();
-  await page.locator('[data-testid^="share-revoke-"]').first().click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByTestId("share-revoke-all").click();
   await expect(page.getByTestId("share-empty")).toBeVisible();
 
   await viewer.reload();

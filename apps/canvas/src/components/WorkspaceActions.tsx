@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCardTitle } from "../hooks/useCardContainers";
-import { hasSavedRecoveryKey } from "../session/ownerKit";
+import { hasSavedRecoveryKey, readSavedRecoveryKey } from "../session/ownerKit";
 import { getSession } from "../session/session";
 import {
   downloadWorkspaceBackup,
@@ -32,6 +32,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const [shareOpen, setShareOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [backupPrompt, setBackupPrompt] = useState(false);
+  const [savedOnDevice, setSavedOnDevice] = useState(() => readSavedRecoveryKey(workspaceId));
   const [error, setError] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const ownerKey = getSession().ownerKey ?? "";
@@ -95,7 +96,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           aria-expanded={menuOpen}
           data-testid="workspace-file"
           className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-          onClick={() => setMenuOpen((open) => !open)}
+          onClick={() => {
+            setSavedOnDevice(readSavedRecoveryKey(workspaceId));
+            setMenuOpen((open) => !open);
+          }}
         >
           File
         </button>
@@ -103,7 +107,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           <div
             role="menu"
             data-testid="workspace-file-menu"
-            className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+            className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
           >
             <button
               type="button"
@@ -152,6 +156,14 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
               }}
             >
               Recovery key…
+              {savedOnDevice ? (
+                <span
+                  className="ml-auto pl-2 text-[10px] text-[var(--ink-muted)]"
+                  data-testid="workspace-recovery-saved"
+                >
+                  Saved on this device
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -188,8 +200,12 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
         <RecoveryKeyDialog
           workspaceId={workspaceId}
           ownerKey={ownerKey}
+          boardId={boardId}
           title={title}
-          onClose={() => setRecoveryOpen(false)}
+          onClose={() => {
+            setRecoveryOpen(false);
+            setSavedOnDevice(readSavedRecoveryKey(workspaceId));
+          }}
         />
       ) : null}
       {ownerKey && backupPrompt ? (
@@ -198,7 +214,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           workspaceId={workspaceId}
           ownerKey={ownerKey}
           title={title}
-          onClose={() => setBackupPrompt(false)}
+          onClose={() => {
+            setBackupPrompt(false);
+            setSavedOnDevice(readSavedRecoveryKey(workspaceId));
+          }}
         />
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configureSession, getSession } from "../session/session";
-import type { Share } from "../session/shares";
+import type { CreateShareInput, Share } from "../session/shares";
 import { type ShareClient, ShareDialog } from "./ShareDialog";
 
 const OWNER_KEY = "owner-key-1";
@@ -16,6 +16,7 @@ function shareAt(overrides: Partial<Share> = {}): Share {
     cardId: null,
     createdAt: Date.UTC(2026, 0, 15),
     revokedAt: null,
+    expiresAt: null,
     roomId: "ws-1",
     ...overrides,
   };
@@ -23,9 +24,13 @@ function shareAt(overrides: Partial<Share> = {}): Share {
 
 function fakeClient(shares: Share[] = []) {
   return {
-    createShare: vi.fn(async () => ({ token: "tok-9", share: shareAt({ id: "share-9" }) })),
+    createShare: vi.fn(async (_input: CreateShareInput, _ownerKey: string | null) => ({
+      token: "tok-9",
+      share: shareAt({ id: "share-9" }),
+    })),
     listShares: vi.fn(async () => shares),
     revokeShare: vi.fn(async (id: string) => shareAt({ id, revokedAt: Date.now() })),
+    revokeAllShares: vi.fn(async () => [shareAt({ revokedAt: Date.now() })]),
   };
 }
 
@@ -86,18 +91,28 @@ describe("ShareDialog", () => {
     await screen.findByTestId("share-empty");
   });
 
-  it("copies the current editor URL for a workspace editor link", async () => {
+  it("mints a workspace editor token instead of copying the owner link", async () => {
     const client = fakeClient();
     renderDialog(client);
 
     fireEvent.click(screen.getByTestId("share-role-editor"));
     fireEvent.click(screen.getByTestId("share-create"));
 
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "workspace",
+        role: "editor",
+        boardId: null,
+        cardId: null,
+        expiresAt: null,
+      },
+      OWNER_KEY,
+    );
     const input = await screen.findByLabelText("Share link");
     const url = new URL((input as HTMLInputElement).value);
-    expect(url.searchParams.get("workspace")).toBe("ws-1");
-    expect(url.searchParams.get("board")).toBe("board-1");
-    expect(client.createShare).not.toHaveBeenCalled();
+    expect(url.searchParams.get("share")).toBe("tok-9");
+    expect(url.hash).toBe("");
   });
 
   it("creates a token link for a board viewer", async () => {
@@ -116,6 +131,7 @@ describe("ShareDialog", () => {
         role: "viewer",
         boardId: "board-1",
         cardId: null,
+        expiresAt: null,
       },
       OWNER_KEY,
     );
@@ -139,6 +155,7 @@ describe("ShareDialog", () => {
         role: "viewer",
         boardId: null,
         cardId: "card-1",
+        expiresAt: null,
       },
       OWNER_KEY,
     );
@@ -165,6 +182,7 @@ describe("ShareDialog", () => {
         role: "viewer",
         boardId: null,
         cardId: null,
+        expiresAt: null,
       },
       OWNER_KEY,
     );
@@ -195,6 +213,7 @@ describe("ShareDialog", () => {
         role: "editor",
         boardId: "board-1",
         cardId: null,
+        expiresAt: null,
       },
       OWNER_KEY,
     );
@@ -220,6 +239,7 @@ describe("ShareDialog", () => {
         role: "editor",
         boardId: null,
         cardId: "card-1",
+        expiresAt: null,
       },
       OWNER_KEY,
     );
@@ -264,5 +284,29 @@ describe("ShareDialog", () => {
       "This workspace is protected.",
     );
     expect(screen.queryByTestId("share-link")).not.toBeInTheDocument();
+  });
+});
+
+describe("ShareDialog limits", () => {
+  it("passes a selected expiry to the server", async () => {
+    const client = fakeClient();
+    renderDialog(client);
+
+    fireEvent.change(screen.getByTestId("share-expiry"), { target: { value: "7" } });
+    fireEvent.click(screen.getByTestId("share-create"));
+    await screen.findByLabelText("Share link");
+
+    const input = client.createShare.mock.calls[0]?.[0] as { expiresAt?: number | null };
+    expect(input.expiresAt).toBeGreaterThan(Date.now());
+    expect(input.expiresAt).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000 + 1000);
+  });
+
+  it("revokes every link after confirmation", async () => {
+    const client = fakeClient([shareAt({ id: "share-1" })]);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderDialog(client);
+
+    fireEvent.click(await screen.findByTestId("share-revoke-all"));
+    await waitFor(() => expect(client.revokeAllShares).toHaveBeenCalledWith("ws-1", OWNER_KEY));
   });
 });

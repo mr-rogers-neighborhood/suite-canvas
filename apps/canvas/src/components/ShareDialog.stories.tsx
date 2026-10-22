@@ -14,6 +14,7 @@ const links: Share[] = [
     cardId: null,
     createdAt: created,
     revokedAt: null,
+    expiresAt: null,
     roomId: "ws-demo",
   },
   {
@@ -25,6 +26,7 @@ const links: Share[] = [
     cardId: null,
     createdAt: created - 60_000,
     revokedAt: null,
+    expiresAt: null,
     roomId: "ws-demo",
   },
   {
@@ -36,6 +38,7 @@ const links: Share[] = [
     cardId: null,
     createdAt: created - 90_000,
     revokedAt: null,
+    expiresAt: null,
     roomId: null,
   },
 ];
@@ -53,10 +56,12 @@ function demoClient(shares: Share[]): ShareClient {
         cardId: input.cardId ?? null,
         createdAt: created,
         revokedAt: null,
+        expiresAt: null,
         roomId: "share-demo-token",
       },
     }),
     listShares: async (_workspaceId, _ownerKey) => shares,
+    revokeAllShares: async () => shares.map((entry) => ({ ...entry, revokedAt: created })),
     revokeShare: async (id, _ownerKey) => {
       const base: Share = shares.find((entry) => entry.id === id) ?? {
         id,
@@ -67,6 +72,7 @@ function demoClient(shares: Share[]): ShareClient {
         cardId: null,
         createdAt: created,
         revokedAt: null,
+        expiresAt: null,
         roomId: "ws-demo",
       };
       return { ...base, id, revokedAt: created };

@@ -10,19 +10,20 @@ import type {
 } from "../session/shares";
 import * as sharesApi from "../session/shares";
 import { shareErrorMessage } from "../session/shares";
-import { workspaceUrl } from "../session/workspaceTransfer";
 
 /** The slice of the share API the dialog needs; stories and tests may replace it. */
 export interface ShareClient {
   createShare: (input: CreateShareInput, ownerKey: string | null) => Promise<CreatedShare>;
   listShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
   revokeShare: (id: string, ownerKey: string | null) => Promise<Share>;
+  revokeAllShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
 }
 
 const defaultClient: ShareClient = {
   createShare: sharesApi.createShare,
   listShares: sharesApi.listShares,
   revokeShare: sharesApi.revokeShare,
+  revokeAllShares: sharesApi.revokeAllShares,
 };
 
 export interface ShareDialogProps {
@@ -52,6 +53,8 @@ const SCOPES: readonly ShareScope[] = ["workspace", "board", "card"];
 const ROLES: readonly ShareRole[] = ["viewer", "editor"];
 
 const COPIED_MS = 1600;
+const EXPIRY_DAYS = [0, 7, 30] as const;
+type ExpiryDays = (typeof EXPIRY_DAYS)[number];
 
 interface ShownLink {
   url: string;
@@ -86,6 +89,7 @@ export function ShareDialog({
   const ownerKey = getSession().ownerKey;
   const [scope, setScope] = useState<ShareScope>("workspace");
   const [role, setRole] = useState<ShareRole>("editor");
+  const [expiryDays, setExpiryDays] = useState<ExpiryDays>(0);
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(true);
   const [link, setLink] = useState<ShownLink | null>(null);
@@ -183,12 +187,6 @@ export function ShareDialog({
     setCopied(null);
     setBusy(true);
     try {
-      if (scope === "workspace" && role === "editor") {
-        // The editor link is the recovery path for a lost browser profile, so it
-        // carries the owner key in the fragment.
-        setLink({ url: workspaceUrl(workspaceId, boardId, getSession().ownerKey), shareId: null });
-        return;
-      }
       const created = await api.createShare(
         {
           workspaceId,
@@ -196,6 +194,7 @@ export function ShareDialog({
           role,
           boardId: scope === "board" ? boardId : null,
           cardId: scope === "card" ? cardId : null,
+          expiresAt: expiryDays === 0 ? null : Date.now() + expiryDays * 24 * 60 * 60 * 1000,
         },
         ownerKey,
       );
@@ -223,20 +222,30 @@ export function ShareDialog({
     }
   };
 
+  const revokeAll = async () => {
+    if (!window.confirm("Revoke every active link? Anyone using one will lose access.")) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.revokeAllShares(workspaceId, ownerKey);
+      setLink(null);
+      void load();
+    } catch (cause) {
+      setError(shareErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const urlFor = (share: Share): string | null => {
     const token = tokens.current.get(share.id);
-    if (token) return sharesApi.shareLink(token);
-    // Workspace editor links are the plain editor URL and need no token.
-    if (share.scope === "workspace" && share.role === "editor") {
-      return workspaceUrl(workspaceId, null, getSession().ownerKey);
-    }
-    return null;
+    return token ? sharesApi.shareLink(token) : null;
   };
 
   const hint =
     scope === "workspace"
       ? role === "editor"
-        ? "This is the editor link: anyone with it can change the workspace."
+        ? "Editors can change every board but cannot manage links or transfer ownership."
         : "Viewers can read every board, but cannot change anything or manage links."
       : role === "editor"
         ? `Editors can change this ${scope} and publish. No new cards or type changes.`
@@ -244,12 +253,7 @@ export function ShareDialog({
           ? `Viewers see only ${boardName ?? "this board"}.`
           : `Viewers see only ${cardTitle ?? "this card"}.`;
 
-  const createLabel =
-    scope === "workspace" && role === "editor"
-      ? "Get editor link"
-      : role === "editor"
-        ? "Create editor link"
-        : "Create viewer link";
+  const createLabel = role === "editor" ? "Create editor link" : "Create viewer link";
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
@@ -348,6 +352,28 @@ export function ShareDialog({
           ))}
         </fieldset>
 
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-[11px] text-[var(--ink-muted)]" htmlFor="share-expiry">
+            Expires
+          </label>
+          <select
+            id="share-expiry"
+            data-testid="share-expiry"
+            className="rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)]"
+            value={expiryDays}
+            onChange={(event) => {
+              setExpiryDays(Number(event.target.value) as ExpiryDays);
+              resetOutput();
+            }}
+          >
+            {EXPIRY_DAYS.map((days) => (
+              <option key={days} value={days}>
+                {days === 0 ? "Never" : `${days} days`}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <p className="mt-2 text-[11px] text-[var(--ink-muted)]" data-testid="share-hint">
           {hint}
         </p>
@@ -399,9 +425,22 @@ export function ShareDialog({
             <h3 className="text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
               Active links
             </h3>
-            {loading ? (
-              <span className="text-[10px] text-[var(--ink-muted)]">{"Loading\u2026"}</span>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {loading ? (
+                <span className="text-[10px] text-[var(--ink-muted)]">{"Loading\u2026"}</span>
+              ) : null}
+              {shares.length > 0 ? (
+                <button
+                  type="button"
+                  data-testid="share-revoke-all"
+                  disabled={busy}
+                  className="rounded-md px-1 py-0.5 text-[10px] text-[var(--ink-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/15 dark:hover:text-red-300"
+                  onClick={() => void revokeAll()}
+                >
+                  Revoke all
+                </button>
+              ) : null}
+            </div>
           </div>
           {!loading && shares.length === 0 ? (
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="share-empty">
@@ -424,6 +463,9 @@ export function ShareDialog({
                       </p>
                       <p className="text-[10px] text-[var(--ink-muted)]">
                         Created {createdLabel(share.createdAt)}
+                        {share.expiresAt !== null
+                          ? ` · Expires ${createdLabel(share.expiresAt)}`
+                          : ""}
                       </p>
                     </div>
                     <button

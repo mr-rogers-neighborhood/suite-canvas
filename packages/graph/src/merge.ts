@@ -1,6 +1,24 @@
 import { getType, isContainer, LoroList, LoroMap, LoroText } from "loro-crdt";
 import { placementKey, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
-import type { Card, GraphEdge, Placement, PropertyValue, Section } from "./schema.js";
+import { propertyValueError } from "./property.js";
+import {
+  edgeIssue,
+  type PublishLimits,
+  placementIssue,
+  resolvePublishLimits,
+  richTextBytes,
+  sectionIssue,
+  utf8ByteLength,
+  validateRichTextTree,
+} from "./publishValidation.js";
+import type {
+  Card,
+  FieldDefinition,
+  GraphEdge,
+  Placement,
+  PropertyValue,
+  Section,
+} from "./schema.js";
 
 /**
  * Origin of the single commit a publish writes. It is deliberately its own
@@ -91,6 +109,11 @@ export type PublishValue =
  */
 export interface PublishPlanOptions {
   overwrite?: ReadonlySet<string>;
+  /**
+   * Overrides the byte and geometry caps a publish enforces. Unset limits fall
+   * back to the environment overrides and `DEFAULT_PUBLISH_LIMITS`.
+   */
+  limits?: Partial<PublishLimits>;
 }
 
 export interface PublishPlan {
@@ -243,6 +266,53 @@ function edgeFields(edge: GraphEdge | undefined): EdgeFields | undefined {
   };
 }
 
+/** The field definition a card's type owns; the writer's own resolution rule. */
+function fieldForCard(
+  workspace: WorkspaceDocument,
+  card: Card,
+  fieldId: string,
+): FieldDefinition | undefined {
+  for (const typeId of card.typeIds) {
+    const field = workspace.getType(typeId)?.fields.find((entry) => entry.id === fieldId);
+    if (field) return field;
+  }
+  return undefined;
+}
+
+function snapshotBytes(value: unknown): number {
+  return utf8ByteLength(canonical(value));
+}
+
+/**
+ * Approximate size of the draft a publish would project. It walks only the
+ * scope being published, so an unrelated card cannot block an edit.
+ */
+function draftBytes(
+  draft: WorkspaceDocument,
+  cardIds: readonly string[],
+  boardId: string | null,
+): number {
+  let bytes = 0;
+  for (const cardId of cardIds) bytes += snapshotBytes(snapshotCard(draft, cardId));
+  if (!boardId) return bytes;
+  bytes += snapshotBytes(draft.listBoardPlacements(boardId).map(placementSnapshot));
+  bytes += snapshotBytes(draft.listSections(boardId).map(sectionFields));
+  bytes += snapshotBytes(
+    draft
+      .listEdges()
+      .filter((edge) => edge.boardId === boardId)
+      .map(edgeFields),
+  );
+  return bytes;
+}
+
+function cardExistsIn(source: WorkspaceDocument): (cardId: string) => boolean {
+  return (cardId) => {
+    const card = source.getCard(cardId);
+    return card !== undefined && !card.deletedAt;
+  };
+}
+
 // -------------------------------------------------------------------- planning
 
 function addUnsupported(plan: PublishPlan, key: string, message: string): void {
@@ -373,6 +443,7 @@ function planCard(
   source: WorkspaceDocument,
   cardId: string,
   options: PublishPlanOptions | undefined,
+  limits: PublishLimits,
 ): void {
   const draftCard = draft.getCard(cardId);
   const baselineCard = baseline.getCard(cardId);
@@ -414,11 +485,19 @@ function planCard(
   const sourceSnapshot = snapshotCard(source, cardId);
   if (!draftSnapshot || !baselineSnapshot) return;
 
+  let textChanged = false;
   for (const kind of ["title", "body"] as const) {
     const key = `card:${cardId}:${kind}`;
     const draftValue = draftSnapshot[kind];
     const baselineValue = baselineSnapshot[kind];
     if (same(draftValue, baselineValue)) continue;
+    // A draft can be written past the editor schema; a publish may not replay it.
+    const issue = validateRichTextTree(draftValue, limits);
+    if (issue) {
+      addUnsupported(plan, key, `The ${kind} of card ${cardId} cannot be published: ${issue}.`);
+      continue;
+    }
+    textChanged = true;
     if (sourceSnapshot && same(sourceSnapshot[kind], baselineValue)) {
       record(plan, { key, kind, cardId }, { kind: "text", tree: draftValue });
       continue;
@@ -430,6 +509,16 @@ function planCard(
       { kind: "text", tree: draftValue },
       `The ${kind} of card ${cardId} changed in the workspace after this draft was taken.`,
     );
+  }
+  if (textChanged) {
+    const bytes = richTextBytes(draftSnapshot.title) + richTextBytes(draftSnapshot.body);
+    if (bytes > limits.maxCardTextBytes) {
+      addUnsupported(
+        plan,
+        `card:${cardId}:text`,
+        `Card ${cardId} holds ${bytes} bytes of text; the publish limit is ${limits.maxCardTextBytes} bytes.`,
+      );
+    }
   }
 
   const propertyIds = new Set([
@@ -443,6 +532,19 @@ function planCard(
     const baselineValue = baselineSnapshot.properties[fieldId] ?? null;
     if (same(draftValue, baselineValue)) continue;
     const key = `card:${cardId}:field:${fieldId}`;
+    // The draft may hold a value no writer would accept; report it instead of
+    // replaying it, because apply reads only what the plan captured.
+    const field = fieldForCard(baseline, baselineCard, fieldId);
+    const issue = field
+      ? propertyValueError(field, draftValue, {
+          cardId,
+          cardExists: cardExistsIn(source),
+        })
+      : `Field ${fieldId} is missing from the shared schema`;
+    if (issue) {
+      addUnsupported(plan, key, `${issue}; the draft value cannot be published.`);
+      continue;
+    }
     const sourceValue = sourceSnapshot?.properties[fieldId] ?? null;
     if (!sourceSnapshot || !same(sourceValue, baselineValue)) {
       resolveConflict(
@@ -490,6 +592,7 @@ function planPlacements(
   boardId: string,
   cardIds: readonly string[],
   options: PublishPlanOptions | undefined,
+  limits: PublishLimits,
 ): void {
   for (const cardId of cardIds) {
     const key = `board:${boardId}:card:${cardId}`;
@@ -525,6 +628,11 @@ function planPlacements(
     }
     if (!baselineSnapshot) continue;
     if (same(draftSnapshot, baselineSnapshot)) continue;
+    const issue = placementIssue(draftSnapshot, limits);
+    if (issue) {
+      addUnsupported(plan, key, issue);
+      continue;
+    }
     if (!sourceSnapshot || !same(sourceSnapshot, baselineSnapshot)) {
       resolveConflict(
         plan,
@@ -550,6 +658,7 @@ function planSections(
   source: WorkspaceDocument,
   boardId: string,
   options: PublishPlanOptions | undefined,
+  limits: PublishLimits,
 ): void {
   const draftSections = new Map(
     draft.listSections(boardId).map((section) => [section.id, section]),
@@ -585,6 +694,11 @@ function planSections(
     if (!baselineSection) continue;
     const draftValue = sectionFields(draftSection);
     if (same(draftValue, sectionFields(baselineSection))) continue;
+    const issue = sectionIssue(draftSection, limits);
+    if (issue) {
+      addUnsupported(plan, key, issue);
+      continue;
+    }
     const sourceSection = sourceSections.get(sectionId);
     if (!sourceSection || !same(sectionFields(sourceSection), sectionFields(baselineSection))) {
       resolveConflict(
@@ -611,6 +725,7 @@ function planEdges(
   source: WorkspaceDocument,
   boardId: string,
   options: PublishPlanOptions | undefined,
+  limits: PublishLimits,
 ): void {
   // Raw edges, not `listBoardEdges`: that view drops an arrow when an endpoint
   // is unplaced, and unplacing a card must not read as deleting its arrows.
@@ -672,6 +787,13 @@ function planEdges(
       continue;
     }
     if (same(edgeFields(draftEdge), edgeFields(baselineEdge))) continue;
+    const issue = edgeIssue(draftEdge, limits, {
+      isCardLive: cardExistsIn(source),
+    });
+    if (issue) {
+      addUnsupported(plan, key, issue);
+      continue;
+    }
     const sourceEdge = sourceEdges.get(edgeId);
     if (!same(edgeFields(sourceEdge), edgeFields(baselineEdge))) {
       resolveConflict(
@@ -687,6 +809,72 @@ function planEdges(
   }
 }
 
+function planPublishInto(
+  plan: PublishPlan,
+  draft: WorkspaceDocument,
+  baseline: WorkspaceDocument,
+  source: WorkspaceDocument,
+  scope: PublishScope,
+  options: PublishPlanOptions | undefined,
+  limits: PublishLimits,
+): void {
+  if (!checkStructure(plan, draft, baseline)) return;
+
+  if (scope.scope === "card") {
+    const cardId = scope.cardId;
+    const draftCard = draft.getCard(cardId);
+    const baselineCard = baseline.getCard(cardId);
+    if (!draftCard || draftCard.deletedAt) {
+      addUnsupported(plan, `card:${cardId}`, `Card ${cardId} is missing or trashed in the draft.`);
+      return;
+    }
+    if (!baselineCard || baselineCard.deletedAt) {
+      addUnsupported(
+        plan,
+        `card:${cardId}`,
+        `Card ${cardId} is missing or trashed in the baseline.`,
+      );
+      return;
+    }
+    const bytes = draftBytes(draft, [cardId], null);
+    if (bytes > limits.maxDraftBytes) {
+      addUnsupported(
+        plan,
+        "publish:size",
+        `The draft holds ${bytes} bytes; publishing is limited to ${limits.maxDraftBytes} bytes.`,
+      );
+      return;
+    }
+    planCard(plan, draft, baseline, source, cardId, options, limits);
+    return;
+  }
+
+  const boardId = scope.boardId;
+  const draftPlacements = draft.listBoardPlacements(boardId);
+  const baselinePlacements = baseline.listBoardPlacements(boardId);
+  const cardIds = [
+    ...new Set([
+      ...draftPlacements.map((placement) => placement.cardId),
+      ...baselinePlacements.map((placement) => placement.cardId),
+    ]),
+  ].sort();
+
+  const bytes = draftBytes(draft, cardIds, boardId);
+  if (bytes > limits.maxDraftBytes) {
+    addUnsupported(
+      plan,
+      "publish:size",
+      `The draft holds ${bytes} bytes; publishing is limited to ${limits.maxDraftBytes} bytes.`,
+    );
+    return;
+  }
+
+  for (const cardId of cardIds) planCard(plan, draft, baseline, source, cardId, options, limits);
+  planPlacements(plan, draft, baseline, source, boardId, cardIds, options, limits);
+  planSections(plan, draft, baseline, source, boardId, options, limits);
+  planEdges(plan, draft, baseline, source, boardId, options, limits);
+}
+
 /**
  * Computes what a publish would do. Pure: it only reads the three documents.
  *
@@ -697,6 +885,11 @@ function planEdges(
  * `options.overwrite` resolves those conflicts: a selected key publishes the
  * draft value, an unselected one keeps the source value. Unsupported changes
  * reject the publish either way.
+ *
+ * Every drafted value is validated against the field schema, the editor's rich
+ * text schema and the geometry caps before it can be captured. A value the
+ * reader cannot even parse is reported as unsupported, so a malformed draft
+ * fails closed instead of throwing or partially applying.
  */
 export function planPublish(
   draft: WorkspaceDocument,
@@ -712,44 +905,19 @@ export function planPublish(
     unsupported: [],
     values: {},
   };
-
-  if (!checkStructure(plan, draft, baseline)) return plan;
-
-  if (scope.scope === "card") {
-    const cardId = scope.cardId;
-    const draftCard = draft.getCard(cardId);
-    const baselineCard = baseline.getCard(cardId);
-    if (!draftCard || draftCard.deletedAt) {
-      addUnsupported(plan, `card:${cardId}`, `Card ${cardId} is missing or trashed in the draft.`);
-      return plan;
-    }
-    if (!baselineCard || baselineCard.deletedAt) {
-      addUnsupported(
-        plan,
-        `card:${cardId}`,
-        `Card ${cardId} is missing or trashed in the baseline.`,
-      );
-      return plan;
-    }
-    planCard(plan, draft, baseline, source, cardId, options);
-    return plan;
+  const limits = resolvePublishLimits(options?.limits);
+  try {
+    planPublishInto(plan, draft, baseline, source, scope, options, limits);
+  } catch (error) {
+    plan.changes = [];
+    plan.conflicts = [];
+    plan.values = {};
+    addUnsupported(
+      plan,
+      "publish:malformed",
+      `The draft contains a malformed value and cannot be published (${error instanceof Error ? error.message : String(error)}).`,
+    );
   }
-
-  const boardId = scope.boardId;
-  const draftPlacements = draft.listBoardPlacements(boardId);
-  const baselinePlacements = baseline.listBoardPlacements(boardId);
-  const cardIds = [
-    ...new Set([
-      ...draftPlacements.map((placement) => placement.cardId),
-      ...baselinePlacements.map((placement) => placement.cardId),
-    ]),
-  ].sort();
-
-  for (const cardId of cardIds) planCard(plan, draft, baseline, source, cardId, options);
-  planPlacements(plan, draft, baseline, source, boardId, cardIds, options);
-  planSections(plan, draft, baseline, source, boardId, options);
-  planEdges(plan, draft, baseline, source, boardId, options);
-
   return plan;
 }
 

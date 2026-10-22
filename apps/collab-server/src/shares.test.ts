@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createShareStore, type ShareRole, type ShareScope, type ShareStore } from "./shares.js";
 
 let directory: string;
@@ -329,5 +329,47 @@ describe("share baselines", () => {
     store.setBaseline(shareId, new Uint8Array([7]));
 
     expect(store.getBaseline(shareId)).toEqual(new Uint8Array([7]));
+  });
+});
+
+describe("share expiry and bulk revoke", () => {
+  it("resolves a share until it expires and hides it from the worker list", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const { token } = store.create({
+        workspaceId: "ws-1",
+        scope: "workspace",
+        role: "viewer",
+        expiresAt: Date.now() + 60_000,
+      });
+      expect(store.resolve(token)?.expiresAt).toBe(Date.now() + 60_000);
+
+      vi.setSystemTime(new Date("2026-01-01T00:02:00.000Z"));
+      expect(store.resolve(token)).toBeNull();
+      expect(store.listAllActive()).toEqual([]);
+      expect(store.countActive("ws-1")).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("revokes every active share of a workspace", () => {
+    const first = store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    const second = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "b-1",
+    });
+    store.create({ workspaceId: "ws-2", scope: "workspace", role: "viewer" });
+
+    const revoked = store.revokeAll("ws-1");
+    expect(revoked.map((share) => share.id).sort()).toEqual(
+      [first.share.id, second.share.id].sort(),
+    );
+    expect(store.list("ws-1")).toEqual([]);
+    expect(store.resolve(first.token)).toBeNull();
+    expect(store.resolve(second.token)).toBeNull();
   });
 });

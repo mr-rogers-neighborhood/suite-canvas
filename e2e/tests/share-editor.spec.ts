@@ -330,3 +330,37 @@ test("board editor has no create, manage or library chrome and Delete unplaces",
 
   await editor.context().close();
 });
+
+test("workspace editor token edits the workspace without owner chrome", async ({
+  page,
+  browser,
+}) => {
+  await page.goto(workspaceUrl("workspace-token"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await page.getByTestId("workspace-share").click();
+  await expect(page.getByTestId("share-dialog")).toBeVisible();
+  await page.getByTestId("share-role-editor").click();
+  await page.getByTestId("share-create").click();
+  const link = await page.getByLabel("Share link").inputValue();
+  expect(new URL(link).searchParams.get("share")).toBeTruthy();
+  expect(new URL(link).hash).toBe("");
+  await page.getByTestId("share-close").click();
+
+  const context = await browser.newContext();
+  try {
+    const editor = await context.newPage();
+    await editor.goto(link);
+    await expect(cards(editor)).toHaveCount(2, { timeout: 15_000 });
+    await expect(editor.getByTestId("sync-status")).toHaveText(/Editor/, { timeout: 15_000 });
+    await expect(editor.getByTestId("workspace-share")).toHaveCount(0);
+    await expect(editor.getByTestId("workspace-file")).toHaveCount(0);
+
+    await typeBody(editor, cards(editor).first(), "Workspace editor note");
+    await expect(page.getByTestId("card-body").first()).toContainText("Workspace editor note", {
+      timeout: 15_000,
+    });
+  } finally {
+    await context.close();
+  }
+});

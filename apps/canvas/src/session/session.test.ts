@@ -17,6 +17,7 @@ const share = (overrides: Partial<Share> = {}): Share => ({
   cardId: null,
   createdAt: 0,
   revokedAt: null,
+  expiresAt: null,
   roomId: "workspace-1",
   ...overrides,
 });
@@ -177,9 +178,14 @@ describe("session capabilities", () => {
     });
   });
 
-  it("gives a workspace editor link the owner's capabilities", () => {
+  it("gives a workspace editor token edit rights but not ownership", () => {
     const config = sessionForShare("tok", share({ scope: "workspace", role: "editor" }));
-    expect(sessionCapabilities(config).canCreate).toBe(true);
-    expect(sessionCapabilities(config).canManage).toBe(true);
+    expect(sessionCapabilities(config)).toEqual({
+      canEditContent: true,
+      canEditLayout: true,
+      canPublish: false,
+      canCreate: true,
+      canManage: false,
+    });
   });
 });

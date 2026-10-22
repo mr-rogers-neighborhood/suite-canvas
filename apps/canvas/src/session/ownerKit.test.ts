@@ -1,14 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deleteWorkspaceDocument } from "../collab/loroPersistence";
+import { readOwnerKey, writeOwnerKey } from "./ownerKey";
 import {
   assertOwnerKitWorkspace,
   clearSavedRecoveryKey,
   createOwnerKit,
   downloadOwnerKit,
+  forgetBrowserWorkspace,
   hasSavedRecoveryKey,
   OWNER_KIT_KIND,
+  OWNER_KIT_MISMATCH,
   ownerKitFilename,
   parseOwnerKit,
+  readOwnerKit,
+  readOwnerKitFile,
+  readSavedRecoveryKey,
 } from "./ownerKit";
+import { readRecentWorkspaces } from "./workspaceTransfer";
+
+vi.mock("../collab/loroPersistence", () => ({
+  deleteWorkspaceDocument: vi.fn(async () => {}),
+}));
 
 const WORKSPACE = "ws-1";
 const KEY = "owner-key-1";
@@ -154,5 +166,90 @@ describe("downloadOwnerKit", () => {
   it("uses a stable stem for an untitled workspace", () => {
     expect(ownerKitFilename("")).toBe("workspace-recovery.suitekey");
     expect(ownerKitFilename("A/B — C")).toBe("a-b-c-recovery.suitekey");
+  });
+});
+
+describe("recovery-saved flag", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("records when the key was downloaded and reads it back", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-03T04:05:06.000Z"));
+    const saved = await import("./ownerKit");
+    const filename = saved.downloadOwnerKit(WORKSPACE, KEY);
+    expect(filename).toBe("workspace-recovery.suitekey");
+    expect(saved.hasSavedRecoveryKey(WORKSPACE)).toBe(true);
+    expect(saved.readSavedRecoveryKey(WORKSPACE)).toEqual({
+      savedAt: new Date("2026-02-03T04:05:06.000Z").getTime(),
+    });
+    vi.useRealTimers();
+  });
+
+  it("keeps reading the old boolean flag", () => {
+    window.localStorage.setItem(`suite.recoverySaved.${WORKSPACE}`, "1");
+    expect(hasSavedRecoveryKey(WORKSPACE)).toBe(true);
+    expect(readSavedRecoveryKey(WORKSPACE)).toEqual({ savedAt: null });
+  });
+
+  it("treats an unreadable value as unsaved", () => {
+    window.localStorage.setItem(`suite.recoverySaved.${WORKSPACE}`, "{nope");
+    expect(hasSavedRecoveryKey(WORKSPACE)).toBe(false);
+  });
+});
+
+describe("readOwnerKit", () => {
+  it("accepts the named workspace and refuses another one", () => {
+    const text = createOwnerKit(WORKSPACE, KEY);
+    expect(readOwnerKit(text, WORKSPACE)).toEqual({ workspaceId: WORKSPACE, ownerKey: KEY });
+    expect(readOwnerKit(text)).toEqual({ workspaceId: WORKSPACE, ownerKey: KEY });
+    expect(() => readOwnerKit(text, "ws-2")).toThrow(OWNER_KIT_MISMATCH);
+  });
+
+  it("validates a chosen file without trusting its name", async () => {
+    const file = new File([createOwnerKit(WORKSPACE, KEY)], "notes.suitekey", {
+      type: "application/json",
+    });
+    await expect(readOwnerKitFile(file)).resolves.toEqual({
+      workspaceId: WORKSPACE,
+      ownerKey: KEY,
+    });
+
+    const backup = new File(["{}"], "notes.suitekey");
+    await expect(readOwnerKitFile(backup)).rejects.toThrow("not a Suite recovery key");
+  });
+});
+
+describe("forgetBrowserWorkspace", () => {
+  const deleted = vi.mocked(deleteWorkspaceDocument);
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    deleted.mockClear();
+  });
+
+  it("removes the owner key, saved flag, recents entry and cached document", async () => {
+    writeOwnerKey(WORKSPACE, "owner-key-1");
+    window.localStorage.setItem(`suite.recoverySaved.${WORKSPACE}`, JSON.stringify({ savedAt: 1 }));
+    window.localStorage.setItem(
+      "suite.recentWorkspaces.v1",
+      JSON.stringify([{ id: WORKSPACE, title: "Research", lastOpenedAt: 1 }]),
+    );
+
+    await forgetBrowserWorkspace(WORKSPACE);
+
+    expect(readOwnerKey(WORKSPACE)).toBeNull();
+    expect(hasSavedRecoveryKey(WORKSPACE)).toBe(false);
+    expect(readRecentWorkspaces()).toEqual([]);
+    expect(deleted).toHaveBeenCalledWith(WORKSPACE);
+  });
+
+  it("still forgets the key when the cached document cannot be deleted", async () => {
+    writeOwnerKey(WORKSPACE, "owner-key-1");
+    deleted.mockRejectedValueOnce(new Error("IndexedDB is locked"));
+
+    await expect(forgetBrowserWorkspace(WORKSPACE)).resolves.toBeUndefined();
+    expect(readOwnerKey(WORKSPACE)).toBeNull();
   });
 });

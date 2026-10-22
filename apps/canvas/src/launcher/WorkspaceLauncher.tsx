@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { RecoveryKeyDialog } from "../components/RecoveryKeyDialog";
+import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
+import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
 import {
   downloadWorkspaceById,
   forgetWorkspace,
   importWorkspaceFile,
+  navigateTo,
   openNewWorkspace,
   openWorkspace,
   type RecentWorkspace,
   readRecentWorkspaces,
+  workspaceUrl,
 } from "../session/workspaceTransfer";
+
+/** The prompt only ever names one workspace at a time. */
+interface RecoveryPrompt {
+  workspaceId: string;
+  ownerKey: string;
+  title: string;
+}
 
 function openedAt(timestamp: number): string {
   const date = new Date(timestamp);
@@ -27,7 +39,9 @@ export function WorkspaceLauncher() {
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const recoveryInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setRecents(readRecentWorkspaces());
@@ -51,9 +65,36 @@ export function WorkspaceLauncher() {
     setError(null);
     try {
       await downloadWorkspaceById(entry.id, entry.title);
+      // Same offer as the workspace's own backup export: only when this browser
+      // still holds an owner key it has never saved.
+      const ownerKey = readOwnerKey(entry.id);
+      if (ownerKey && !hasSavedRecoveryKey(entry.id)) {
+        setPrompt({ workspaceId: entry.id, ownerKey, title: entry.title });
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not export that workspace.");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * A recovery file names its own workspace, so it opens that workspace instead
+   * of importing a document. Nothing is written unless the file validates, and
+   * nothing is added to recents: the file is the way in.
+   */
+  const openRecoveryKey = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const kit = await readOwnerKitFile(file);
+      // The key file is the authority for this browser from now on; the
+      // workspace itself is only created when the editor loads it.
+      writeOwnerKey(kit.workspaceId, kit.ownerKey);
+      navigateTo(workspaceUrl(kit.workspaceId, null, kit.ownerKey));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not read that recovery key file.");
       setBusy(false);
     }
   };
@@ -111,6 +152,27 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
+            <button
+              type="button"
+              data-testid="launcher-open-recovery"
+              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => recoveryInput.current?.click()}
+              disabled={busy}
+              title="Open a .suitekey recovery file for a workspace you already own."
+            >
+              Open recovery key…
+            </button>
+            <input
+              ref={recoveryInput}
+              type="file"
+              accept=".suitekey,.json,application/json"
+              className="hidden"
+              data-testid="launcher-recovery-file"
+              onChange={(event) => {
+                void openRecoveryKey(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+            />
           </div>
           {error ? (
             <p
@@ -165,7 +227,8 @@ export function WorkspaceLauncher() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Remove ${entry.title} from recents`}
+                    aria-label="Remove from this list (does not delete the workspace)"
+                    title="Remove from this list (does not delete the workspace)"
                     className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
                     onClick={() => {
                       forgetWorkspace(entry.id);
@@ -185,6 +248,15 @@ export function WorkspaceLauncher() {
           the file is the only import path.
         </footer>
       </div>
+      {prompt ? (
+        <RecoveryKeyDialog
+          mode="backup-prompt"
+          workspaceId={prompt.workspaceId}
+          ownerKey={prompt.ownerKey}
+          title={prompt.title}
+          onClose={() => setPrompt(null)}
+        />
+      ) : null}
     </main>
   );
 }

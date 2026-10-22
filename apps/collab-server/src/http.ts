@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SharePublishResult, ShareStatus } from "./projectionWorker.js";
 import {
+  clientAddress,
+  publishLimiter,
+  shareCreateLimiter,
+  shareResolveLimiter,
+} from "./rateLimit.js";
+import {
   type CreateShareInput,
   type Share,
   type ShareRole,
@@ -18,6 +24,8 @@ export interface ShareRequestHooks {
    * follow. Optional: the share API works without a projection worker.
    */
   onSharesChanged?: (workspaceId: string) => void;
+  /** A share was revoked; close its live rooms and delete its projection. */
+  onShareRemoved?: (share: Share) => void;
   /**
    * Publishes an editor's draft. `version` is the share document's version
    * vector as the editor saw it, so the worker can wait for the draft to arrive.
@@ -42,14 +50,59 @@ function notify(hooks: ShareRequestHooks | undefined, workspaceId: string): void
   }
 }
 
+function notifyRemoved(hooks: ShareRequestHooks | undefined, share: Share): void {
+  try {
+    hooks?.onShareRemoved?.(share);
+  } catch (error) {
+    console.error("[shares] removal hook failed", error);
+  }
+}
+
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_ACTIVE_SHARES = (() => {
+  const parsed = Number(process.env.SUITE_MAX_SHARES_PER_WORKSPACE ?? 100);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 100;
+})();
+
+function enforceRateLimit(
+  limiter: { take: (key: string) => { ok: boolean; retryAfter: number } },
+  key: string,
+  message: string,
+  response: ServerResponse,
+): void {
+  const result = limiter.take(key);
+  if (result.ok) return;
+  response.setHeader("retry-after", String(result.retryAfter));
+  throw new HttpError(429, message);
+}
 
 export const CORS_HEADERS: Record<string, string> = {
-  "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
   "access-control-allow-headers": "content-type, authorization, x-suite-owner",
   "access-control-max-age": "86400",
 };
+
+/**
+ * Applies CORS before the route writes its response. The default is `*` for
+ * local development; a deployment sets `SUITE_ALLOWED_ORIGINS` to its app
+ * origin(s). Same-origin deployments need no CORS at all.
+ */
+export function applyCors(request: IncomingMessage, response: ServerResponse): void {
+  const origin = request.headers.origin;
+  const configured = (process.env.SUITE_ALLOWED_ORIGINS ?? "*")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const wildcard = configured.includes("*");
+
+  if (typeof origin !== "string" || origin.length === 0) {
+    if (wildcard) response.setHeader("access-control-allow-origin", "*");
+    return;
+  }
+  if (!wildcard && !configured.includes(origin)) return;
+  response.setHeader("access-control-allow-origin", wildcard ? "*" : origin);
+  response.setHeader("vary", "origin");
+}
 
 export class HttpError extends Error {
   constructor(
@@ -229,6 +282,7 @@ function parseCreateInput(body: unknown): CreateShareInput {
     role: record.role as ShareRole,
     boardId: (record.boardId as string | null | undefined) ?? null,
     cardId: (record.cardId as string | null | undefined) ?? null,
+    expiresAt: (record.expiresAt as number | null | undefined) ?? null,
   };
 }
 
@@ -242,6 +296,18 @@ function createShare(
 ): void {
   const input = parseCreateInput(body);
   requireOwner(request, workspaces, input.workspaceId);
+  enforceRateLimit(
+    shareCreateLimiter,
+    input.workspaceId,
+    "Too many new share links. Wait a moment and try again.",
+    response,
+  );
+  if (store.countActive(input.workspaceId) >= MAX_ACTIVE_SHARES) {
+    throw new HttpError(
+      409,
+      `This workspace already has ${MAX_ACTIVE_SHARES} active links. Revoke one before creating another.`,
+    );
+  }
 
   const { token, share } = store.create(input);
   sendJson(response, 201, { token, share });
@@ -263,7 +329,18 @@ function listShares(
   sendJson(response, 200, { shares: store.list(workspaceId) });
 }
 
-function resolveShare(store: ShareStore, response: ServerResponse, token: string): void {
+function resolveShare(
+  request: IncomingMessage,
+  store: ShareStore,
+  response: ServerResponse,
+  token: string,
+): void {
+  enforceRateLimit(
+    shareResolveLimiter,
+    clientAddress(request),
+    "Too many link lookups. Wait a moment and try again.",
+    response,
+  );
   const share = store.resolve(token);
   if (!share) throw new HttpError(404, "Share not found.");
   sendJson(response, 200, { share: publicShare(share) });
@@ -286,7 +363,30 @@ function revokeShare(
   const share = store.revoke(id);
   if (!share) throw new HttpError(404, "Share not found.");
   sendJson(response, 200, { share: publicShare(share) });
-  if (share.revokedAt !== null) notify(hooks, share.workspaceId);
+  if (share.revokedAt !== null) {
+    notifyRemoved(hooks, share);
+    notify(hooks, share.workspaceId);
+  }
+}
+
+/** Revokes every active link in a workspace, for incident response. */
+function revokeAllShares(
+  request: IncomingMessage,
+  store: ShareStore,
+  workspaces: Pick<WorkspaceRegistry, "verify">,
+  response: ServerResponse,
+  url: URL,
+  hooks: ShareRequestHooks | undefined,
+): void {
+  const workspaceId = url.searchParams.get("workspaceId")?.trim() ?? "";
+  if (workspaceId.length === 0) {
+    throw new HttpError(400, "A workspace id is required.");
+  }
+  requireOwner(request, workspaces, workspaceId);
+  const shares = store.revokeAll(workspaceId);
+  sendJson(response, 200, { shares: shares.map(publicShare) });
+  for (const share of shares) notifyRemoved(hooks, share);
+  notify(hooks, workspaceId);
 }
 
 /**
@@ -324,6 +424,15 @@ async function draftAction(
   }
   if (share.role !== "editor") {
     throw new HttpError(403, "Only an editor link may publish.");
+  }
+
+  if (action === "publish") {
+    enforceRateLimit(
+      publishLimiter,
+      share.id,
+      "Too many publishes. Wait a moment and try again.",
+      response,
+    );
   }
 
   let result: SharePublishResult;
@@ -415,6 +524,7 @@ export async function handleShareRequest(
   workspaces: Pick<WorkspaceRegistry, "verify">,
   hooks?: ShareRequestHooks,
 ): Promise<boolean> {
+  applyCors(request, response);
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname !== SHARE_API_PATH && !url.pathname.startsWith(`${SHARE_API_PATH}/`)) {
     return false;
@@ -435,8 +545,10 @@ export async function handleShareRequest(
         createShare(request, store, workspaces, response, await readJsonBody(request), hooks);
       } else if (method === "GET") {
         listShares(request, store, workspaces, response, url);
+      } else if (method === "DELETE") {
+        revokeAllShares(request, store, workspaces, response, url, hooks);
       } else {
-        methodNotAllowed(response, "GET, POST, OPTIONS");
+        methodNotAllowed(response, "GET, POST, DELETE, OPTIONS");
       }
       return true;
     }
@@ -458,7 +570,7 @@ export async function handleShareRequest(
     const identifier = decodeSegment(segment);
 
     if (method === "GET") {
-      resolveShare(store, response, identifier);
+      resolveShare(request, store, response, identifier);
     } else if (method === "DELETE") {
       revokeShare(request, store, workspaces, response, identifier, hooks);
     } else {

@@ -109,6 +109,11 @@ export function newWorkspaceId(): string {
   return crypto.randomUUID();
 }
 
+/** One navigation seam so a screen can be tested without a real reload. */
+export function navigateTo(url: string): void {
+  window.location.assign(url);
+}
+
 /** A new workspace starts empty; the flag keeps the starter demo cards out. */
 export function openNewWorkspace(): void {
   const id = newWorkspaceId();
@@ -117,12 +122,12 @@ export function openNewWorkspace(): void {
   rememberWorkspace({ id, title: "Untitled workspace" });
   const url = new URL(workspaceUrl(id, null, ownerKey));
   url.searchParams.set("fresh", "1");
-  window.location.assign(url.toString());
+  navigateTo(url.toString());
 }
 
 export function openWorkspace(id: string, boardId?: string | null): void {
   rememberWorkspace({ id, ...(boardId ? { boardId } : {}) });
-  window.location.assign(workspaceUrl(id, boardId, readOwnerKey(id)));
+  navigateTo(workspaceUrl(id, boardId, readOwnerKey(id)));
 }
 
 /** Downloads text as a file; the browser's download UI is the confirmation. */

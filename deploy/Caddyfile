@@ -1,0 +1,46 @@
+# Serves the built canvas from /srv and proxies the collab API and socket on
+# the same origin. Set SUITE_DOMAIN to the public hostname (e.g. via .env);
+# Caddy obtains a certificate for it automatically. A real domain needs ports
+# 80/443 reachable and a DNS A/AAAA record. `localhost` uses Caddy's local CA.
+{
+	# Uncomment to register the ACME account with an email from the environment.
+	# email {$SUITE_ACME_EMAIL}
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$SUITE_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+		-Server
+	}
+
+	# The HTTP API (shares, workspaces) and the health probe share port 1235.
+	handle /api/* {
+		reverse_proxy app:1235
+	}
+
+	handle /health {
+		reverse_proxy app:1235
+	}
+
+	# Loro sync. reverse_proxy forwards the Upgrade handshake for WebSockets.
+	handle /ws* {
+		reverse_proxy app:1234
+	}
+
+	# Static app with the SPA fallback: every unknown path is a client route.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

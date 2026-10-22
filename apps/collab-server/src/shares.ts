@@ -19,6 +19,8 @@ export interface Share {
   cardId: string | null;
   createdAt: number;
   revokedAt: number | null;
+  /** Epoch milliseconds; null means the link does not expire. */
+  expiresAt: number | null;
   /**
    * Sync room this share opens. Workspace shares open the workspace room. Board
    * and card shares open `share-<token>`; because only the token hash is stored,
@@ -35,6 +37,7 @@ export interface CreateShareInput {
   role: ShareRole;
   boardId?: string | null;
   cardId?: string | null;
+  expiresAt?: number | null;
 }
 
 export interface CreatedShare {
@@ -53,8 +56,16 @@ export interface ShareStore {
   list: (workspaceId: string) => Share[];
   /** Active shares of every workspace, newest first, for the projection worker. */
   listAllActive: () => Share[];
+  /** True when a workspace has an active board or card editor share. */
+  hasEditorShare: (workspaceId: string) => boolean;
+  /** Number of active shares in a workspace, for the creation cap. */
+  countActive: (workspaceId: string) => number;
+  /** Non-revoked shares whose expiry has passed, for the server sweep. */
+  listExpired: () => Share[];
   /** Revokes a share; returns the updated record, or null when it does not exist. */
   revoke: (id: string) => Share | null;
+  /** Revokes every active share of a workspace and returns the revoked records. */
+  revokeAll: (workspaceId: string) => Share[];
   /** Last projection snapshot a share room was rebuilt from, or null when none was stored. */
   getBaseline: (shareId: string) => Uint8Array | null;
   /** Replaces the baseline snapshot of a share; the draft lifecycle reads it on reopen. */
@@ -75,6 +86,7 @@ interface ShareRow {
   card_id: string | null;
   created_at: number;
   revoked_at: number | null;
+  expires_at: number | null;
   /** Null on rows created before the column existed; `create` always fills it. */
   room_id: string | null;
 }
@@ -102,6 +114,7 @@ export function validateShareInput(input: {
   role?: unknown;
   boardId?: unknown;
   cardId?: unknown;
+  expiresAt?: unknown;
 }): string | null {
   if (!isId(input.workspaceId)) return "A workspace id is required.";
   if (!shareScopes.includes(input.scope as ShareScope)) {
@@ -116,6 +129,15 @@ export function validateShareInput(input: {
   const cardId = normalizeId(input.cardId);
   if (input.boardId != null && !boardId) return "The board id must be a non-empty string.";
   if (input.cardId != null && !cardId) return "The card id must be a non-empty string.";
+  if (input.expiresAt != null) {
+    if (
+      typeof input.expiresAt !== "number" ||
+      !Number.isSafeInteger(input.expiresAt) ||
+      input.expiresAt <= Date.now()
+    ) {
+      return "The expiry must be a future timestamp.";
+    }
+  }
 
   switch (scope) {
     case "workspace":
@@ -146,6 +168,7 @@ function toShare(row: ShareRow, token: string | null): Share {
     cardId: row.card_id ?? null,
     createdAt: row.created_at,
     revokedAt: row.revoked_at ?? null,
+    expiresAt: row.expires_at ?? null,
     roomId,
   };
 }
@@ -155,11 +178,17 @@ function toShare(row: ShareRow, token: string | null): Share {
  * card rows keep a null room id, which only affects projections that were never
  * rebuilt; `resolve` still derives the room from the token.
  */
-function migrateRoomIdColumn(db: DatabaseSync): void {
+function migrateShareColumns(db: DatabaseSync): void {
   const columns = db.prepare("PRAGMA table_info(shares)").all() as { name?: string }[];
-  if (columns.some((column) => column.name === "room_id")) return;
-  db.exec("ALTER TABLE shares ADD COLUMN room_id TEXT");
-  db.exec("UPDATE shares SET room_id = workspace_id WHERE scope = 'workspace' AND room_id IS NULL");
+  if (!columns.some((column) => column.name === "room_id")) {
+    db.exec("ALTER TABLE shares ADD COLUMN room_id TEXT");
+    db.exec(
+      "UPDATE shares SET room_id = workspace_id WHERE scope = 'workspace' AND room_id IS NULL",
+    );
+  }
+  if (!columns.some((column) => column.name === "expires_at")) {
+    db.exec("ALTER TABLE shares ADD COLUMN expires_at INTEGER");
+  }
 }
 
 export function createShareStore(path: string): ShareStore {
@@ -175,6 +204,7 @@ export function createShareStore(path: string): ShareStore {
        card_id TEXT,
        created_at INTEGER NOT NULL,
        revoked_at INTEGER,
+       expires_at INTEGER,
        room_id TEXT
      );
      CREATE INDEX IF NOT EXISTS shares_by_workspace ON shares (workspace_id, created_at);
@@ -184,11 +214,11 @@ export function createShareStore(path: string): ShareStore {
        updated_at INTEGER NOT NULL
      );`,
   );
-  migrateRoomIdColumn(db);
+  migrateShareColumns(db);
 
   const insert = db.prepare(
-    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, room_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
   );
   const selectByHash = db.prepare("SELECT * FROM shares WHERE token_hash = ?");
   const selectById = db.prepare("SELECT * FROM shares WHERE id = ?");
@@ -196,7 +226,25 @@ export function createShareStore(path: string): ShareStore {
     "SELECT * FROM shares WHERE workspace_id = ? AND revoked_at IS NULL ORDER BY created_at DESC, rowid DESC",
   );
   const selectAllActive = db.prepare(
-    "SELECT * FROM shares WHERE revoked_at IS NULL ORDER BY created_at DESC, rowid DESC",
+    `SELECT * FROM shares WHERE revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > ?)
+     ORDER BY created_at DESC, rowid DESC`,
+  );
+  const selectEditor = db.prepare(
+    `SELECT 1 FROM shares
+     WHERE workspace_id = ? AND role = 'editor' AND scope != 'workspace'
+       AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)
+     LIMIT 1`,
+  );
+  const countActiveByWorkspace = db.prepare(
+    `SELECT COUNT(*) AS count FROM shares
+     WHERE workspace_id = ? AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > ?)`,
+  );
+  const selectExpired = db.prepare(
+    `SELECT * FROM shares
+     WHERE revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= ?
+     ORDER BY expires_at ASC`,
   );
   const revokeById = db.prepare(
     "UPDATE shares SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
@@ -231,6 +279,7 @@ export function createShareStore(path: string): ShareStore {
         normalizeId(input.boardId),
         normalizeId(input.cardId),
         Date.now(),
+        input.expiresAt ?? null,
         roomId,
       );
       const share = get(id);
@@ -242,6 +291,7 @@ export function createShareStore(path: string): ShareStore {
       if (token.length === 0) return null;
       const row = selectByHash.get(hashShareToken(token)) as ShareRow | undefined;
       if (!row || row.revoked_at != null) return null;
+      if (row.expires_at != null && row.expires_at <= Date.now()) return null;
       return toShare(row, token);
     },
 
@@ -251,7 +301,19 @@ export function createShareStore(path: string): ShareStore {
       (selectActive.all(workspaceId) as unknown as ShareRow[]).map((row) => toShare(row, null)),
 
     listAllActive: () =>
-      (selectAllActive.all() as unknown as ShareRow[]).map((row) => toShare(row, null)),
+      (selectAllActive.all(Date.now()) as unknown as ShareRow[]).map((row) => toShare(row, null)),
+
+    hasEditorShare: (workspaceId) => selectEditor.get(workspaceId, Date.now()) !== undefined,
+
+    countActive: (workspaceId) => {
+      const row = countActiveByWorkspace.get(workspaceId, Date.now()) as
+        | { count?: number }
+        | undefined;
+      return typeof row?.count === "number" ? row.count : 0;
+    },
+
+    listExpired: () =>
+      (selectExpired.all(Date.now()) as unknown as ShareRow[]).map((row) => toShare(row, null)),
 
     revoke: (id) => {
       revokeById.run(Date.now(), id);
@@ -259,6 +321,19 @@ export function createShareStore(path: string): ShareStore {
       // reader. Dropping it keeps the table to active shares only.
       deleteBaselineById.run(id);
       return get(id);
+    },
+
+    revokeAll: (workspaceId) => {
+      const rows = selectActive.all(workspaceId) as unknown as ShareRow[];
+      const revoked: Share[] = [];
+      const now = Date.now();
+      for (const row of rows) {
+        revokeById.run(now, row.id);
+        deleteBaselineById.run(row.id);
+        const share = get(row.id);
+        if (share) revoked.push(share);
+      }
+      return revoked;
     },
 
     getBaseline: (shareId) => {

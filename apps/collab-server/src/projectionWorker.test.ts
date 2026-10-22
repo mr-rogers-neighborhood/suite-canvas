@@ -9,6 +9,14 @@ import { LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { LoroWebsocketClient } from "loro-websocket";
 import { SimpleServer } from "loro-websocket/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+// loro-websocket 0.6.2 rejects its internal connection promise from close()/
+// destroy() without attaching a handler. These are teardown-only rejections.
+process.on("unhandledRejection", (reason) => {
+  if (reason instanceof Error && /^(Destroyed|Disconnected)$/u.test(reason.message)) return;
+  throw reason;
+});
+
 import type { DocumentStore } from "./persistence.js";
 import {
   loadLoroDocument,
@@ -18,7 +26,8 @@ import {
 } from "./projectionWorker.js";
 import { createShareStore, type Share, type ShareStore } from "./shares.js";
 
-const INTERNAL_TOKEN = "test-internal-token";
+const PROJECTION_TOKEN = "test-projection-token";
+const SOURCE_TOKEN = "test-source-token";
 const WORKSPACE_ID = "ws-1";
 const BOARD_ID = "board-1";
 
@@ -41,6 +50,9 @@ function memoryDocuments(): DocumentStore {
     load: (name) => saved.get(name) ?? null,
     save: (name, state) => {
       saved.set(name, state);
+    },
+    delete: (name) => {
+      saved.delete(name);
     },
     close: () => undefined,
   };
@@ -107,7 +119,10 @@ async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> 
     },
     authenticate: async (roomId, _crdtType, auth) => {
       const token = Buffer.from(auth).toString("utf8");
-      if (token === INTERNAL_TOKEN) return "write";
+      if (token === PROJECTION_TOKEN && roomId.startsWith("share-")) return "write";
+      if (token === SOURCE_TOKEN && !roomId.startsWith("share-") && shares.hasEditorShare(roomId)) {
+        return "write";
+      }
       const share = shares.resolve(token);
       if (!share || share.roomId !== roomId) return null;
       return share.role === "editor" ? "write" : "read";
@@ -123,7 +138,8 @@ async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> 
     source,
     worker: new ProjectionWorker({
       url: `ws://127.0.0.1:${port}`,
-      internalToken: INTERNAL_TOKEN,
+      projectionToken: PROJECTION_TOKEN,
+      sourceToken: SOURCE_TOKEN,
       documents,
       shares,
       debounceMs: 60,
@@ -245,7 +261,7 @@ describe("projection worker", () => {
       expect(viewer.workspace().getPlacement(BOARD_ID, "b")).toBeUndefined();
     } finally {
       await viewer.room.leave().catch(() => undefined);
-      viewer.client.destroy();
+      viewer.client.close();
     }
   });
 
@@ -268,7 +284,7 @@ describe("projection worker", () => {
         expect(boardCards(viewer)).toEqual(["a", "b"]);
       } finally {
         await viewer.room.leave().catch(() => undefined);
-        viewer.client.destroy();
+        viewer.client.close();
       }
     },
   );
@@ -293,7 +309,7 @@ describe("projection worker", () => {
       expect(projected.getBoard(BOARD_ID)).toBeUndefined();
     } finally {
       await viewer.room.leave().catch(() => undefined);
-      viewer.client.destroy();
+      viewer.client.close();
     }
   });
 
@@ -325,7 +341,7 @@ describe("projection worker", () => {
       expect(boardCards(viewer)).toEqual(["a", "b", "d"]);
     } finally {
       await viewer.room.leave().catch(() => undefined);
-      viewer.client.destroy();
+      viewer.client.close();
     }
   });
 
@@ -352,7 +368,7 @@ describe("projection worker", () => {
       await waitFor(() => state.worker.roomIds().length === 1, "the room to stay open");
     } finally {
       await viewer.room.leave().catch(() => undefined);
-      viewer.client.destroy();
+      viewer.client.close();
     }
   });
 
@@ -372,6 +388,7 @@ describe("projection worker", () => {
     await state.worker.schedule(WORKSPACE_ID, { immediate: true });
 
     expect(state.worker.roomIds()).toEqual([]);
+    expect(loadLoroDocument(state.documents, share.roomId as string)).toBeNull();
   });
 
   it("ignores workspace shares and a missing document store", async () => {
@@ -390,7 +407,8 @@ function createWorker(
 ): ProjectionWorker {
   return new ProjectionWorker({
     url: state.url,
-    internalToken: INTERNAL_TOKEN,
+    projectionToken: PROJECTION_TOKEN,
+    sourceToken: SOURCE_TOKEN,
     documents: state.documents,
     shares: state.shares,
     debounceMs: 60,
@@ -477,7 +495,7 @@ describe("editor shares", () => {
       boardId: BOARD_ID,
     });
     const roomId = share.roomId as string;
-    const owner = await openViewer(state.url, WORKSPACE_ID, INTERNAL_TOKEN);
+    const owner = await openViewer(state.url, WORKSPACE_ID, SOURCE_TOKEN);
     const editor = await openEditor(state, roomId, token);
     await state.worker.start();
     await waitFor(() => boardCards(editor).length === 2, "the editor projection");
@@ -489,7 +507,7 @@ describe("editor shares", () => {
     for (const viewer of [owner, editor]) {
       await viewer.room.leave().catch(() => undefined);
       try {
-        viewer.client.destroy();
+        viewer.client.close();
       } catch {
         // The client already closed itself; nothing left to release.
       }
@@ -833,7 +851,7 @@ describe("editor shares", () => {
       // Someone rewrites the room with the same projection: every value matches
       // the baseline, but the room version advances past it.
       const historyBefore = savedVersion(state.documents, roomId);
-      const rewriter = await openViewer(state.url, roomId, INTERNAL_TOKEN);
+      const rewriter = await openViewer(state.url, roomId, PROJECTION_TOKEN);
       try {
         applyProjection(
           rewriter.workspace(),
@@ -846,7 +864,7 @@ describe("editor shares", () => {
         );
       } finally {
         await rewriter.room.leave().catch(() => undefined);
-        rewriter.client.destroy();
+        rewriter.client.close();
       }
 
       state.worker = createWorker(state);
@@ -914,13 +932,13 @@ describe("editor shares", () => {
       const writerRoom = await writer.join({
         roomId,
         crdtAdaptor: new LoroAdaptor(next),
-        auth: () => new TextEncoder().encode(INTERNAL_TOKEN),
+        auth: () => new TextEncoder().encode(PROJECTION_TOKEN),
       });
       try {
         expect(await pending).toEqual({ ok: true, applied: 1 });
       } finally {
         await writerRoom.leave().catch(() => undefined);
-        writer.destroy();
+        writer.close();
       }
 
       await waitFor(

@@ -65,6 +65,15 @@ const VIEWER_CAPABILITIES: SessionCapabilities = {
   canManage: false,
 };
 
+/** A workspace editor token edits the whole workspace but cannot manage links or ownership. */
+const WORKSPACE_EDITOR_CAPABILITIES: SessionCapabilities = {
+  canEditContent: true,
+  canEditLayout: true,
+  canPublish: false,
+  canCreate: true,
+  canManage: false,
+};
+
 /** A board editor may change what the board already contains, never grow it. */
 const BOARD_EDITOR_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
@@ -85,8 +94,9 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
 
 /**
  * Capability matrix:
- * - no share (owner) or a workspace editor link: everything;
+ * - no share (owner): everything;
  * - any viewer: nothing;
+ * - workspace editor token: content + layout + creation, no management or publish;
  * - board editor: content + layout + publish;
  * - card editor: content + publish.
  */
@@ -94,7 +104,7 @@ export function sessionCapabilities(session: SessionConfig): SessionCapabilities
   const { share } = session;
   if (!share) return OWNER_CAPABILITIES;
   if (share.role === "viewer") return VIEWER_CAPABILITIES;
-  if (share.scope === "workspace") return OWNER_CAPABILITIES;
+  if (share.scope === "workspace") return WORKSPACE_EDITOR_CAPABILITIES;
   return share.scope === "board" ? BOARD_EDITOR_CAPABILITIES : CARD_EDITOR_CAPABILITIES;
 }
 

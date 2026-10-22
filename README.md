@@ -13,8 +13,8 @@ pnpm install
 pnpm dev          # canvas app (http://localhost:5173) + collab server (:1234)
 ```
 
-The app opens on the **workspace launcher**: start a blank workspace, open a `.suite` backup, or
-pick a recent workspace. Recent workspaces are local metadata only.
+The app opens on the **workspace launcher**: start a blank workspace, open a `.suite` backup, open a
+`.suitekey` recovery key, or pick a recent workspace. Recent workspaces are local metadata only.
 
 Open two browser windows at the same URL — including `?workspace=<any-id>` to work in a separate
 workspace (`?doc=` still works as an alias) — and edits, carets, titles, and presence appear in
@@ -46,6 +46,9 @@ apps/collab-server   Loro WebSocket sync server
 packages/graph       @suite/graph — Zod schema + typed Loro document layer
 e2e                  Playwright tests
 docs/                Architecture, conventions, ADRs
+Dockerfile           Collab-server runtime and Caddy static-host targets
+compose.yaml         Hosted and self-hosted deployment (app + caddy + volume)
+deploy/              Caddyfile with TLS, proxying and security headers
 ```
 
 ## How it works
@@ -70,8 +73,9 @@ is a reference, while only an explicit place action puts a card on a board.
 SQLite (`SUITE_DB`, default `apps/collab-server/suite.documents.sqlite`) so a workspace survives a
 server restart. Share links are capability tokens kept in `SUITE_SHARES_DB` (default
 `apps/collab-server/suite.shares.sqlite`) as SHA-256 hashes only; a join is authorized per room as
-`read` or `write`. The projection worker presents `SUITE_INTERNAL_TOKEN` (generated at startup when
-unset) to write any room. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus editor
+`read` or `write`. The projection worker presents `SUITE_PROJECTION_TOKEN` for projection rooms and
+`SUITE_SOURCE_TOKEN` only for workspaces with an active editor share; both are generated at startup
+when unset. Presence (`user`, `pointer`, `board`, `focus`, `dragging`, plus editor
 carets) and the canvas gesture channel ride Loro `EphemeralStore`s; they are not persisted in the
 document. All writes go through `WorkspaceDocument`, which validates with Zod. See
 [docs/architecture.md](docs/architecture.md).
@@ -79,10 +83,10 @@ document. All writes go through `WorkspaceDocument`, which validates with Zod. S
 ## Workspace files
 
 `Share` opens one dialog for the workspace, the active board or the selected card. A workspace
-editor link is the ordinary `?workspace=` URL plus the owner-key fragment; viewer links (workspace,
-board or card) are capability tokens opened through `?share=`. Board and card links read a live
-projection of that scope, never the workspace index; a workspace viewer reads the real workspace
-room and can switch boards. Board and card editor links write a draft: owner saves pause while the
+editor token and every viewer or board/card link are capability tokens opened through `?share=`;
+the owner link is the ordinary `?workspace=` URL plus the owner-key fragment, kept behind
+`File → Recovery key…`. Board and card links read a live projection of that scope, never the
+workspace index; a workspace viewer reads the real workspace room and can switch boards. Board and card editor links write a draft: owner saves pause while the
 draft is dirty, `POST /api/shares/:token/publish` applies one conflict-checked commit to the
 workspace, and `POST /api/shares/:token/reload` discards the draft. A publish may carry the
 share document's version vector, so it waits for the editor's own edits to reach the share room
@@ -106,12 +110,71 @@ they are export-only, not import formats.
 (`development` export condition) and from `dist` in production, so a clean checkout always
 builds via `pnpm build` (Turbo builds the dependency first).
 
-Deploy `apps/canvas/dist` to any static host and point `VITE_COLLAB_URL` at your Loro sync
-server:
+Deploy `apps/canvas/dist` to any static host. A production build derives its endpoints from the
+page, so it needs no collab variables at all: HTTP calls go to `/api` on the page's origin and the
+socket to `ws(s)://<page host>/ws`. Set `VITE_COLLAB_HTTP_URL` / `VITE_COLLAB_URL` only when the
+API and socket live on another origin:
 
 ```sh
-VITE_COLLAB_URL=wss://collab.example.com pnpm build
+VITE_COLLAB_HTTP_URL=https://api.example.com VITE_COLLAB_URL=wss://collab.example.com pnpm build
 ```
+
+## Deployment
+
+The hosted instance and a self-hosted instance are the same artifact: one `Dockerfile`, one
+`compose.yaml`, one domain. `docker compose up` runs the collab server in `app` and Caddy in
+`caddy`; Caddy terminates TLS, serves the canvas, and proxies `/api/*` and `/ws` to the server, so
+the browser only ever talks to one origin.
+
+```sh
+cp .env.example .env        # set SUITE_DOMAIN, optionally tokens
+docker compose up -d --build
+```
+
+- **TLS is required.** Caddy obtains and renews a certificate for `SUITE_DOMAIN` and redirects
+  HTTP to HTTPS. Collaboration needs `wss://`; a plain-HTTP deployment cannot sync.
+- **Development vs production endpoints.** `pnpm dev` keeps the fixed ports
+  (`http://localhost:1235` for the API, `ws://localhost:1234` for sync). A production build
+  uses `/api` and `ws(s)://<host>/ws` on the page's origin unless `VITE_COLLAB_*` overrides it.
+- **One instance only.** Documents live in SQLite (`SUITE_DB`, `SUITE_SHARES_DB`,
+  `SUITE_WORKSPACES_DB`, all under `/data` in the container) and live rooms are in server
+  memory. Do not scale `app` to multiple replicas; there is no shared room state.
+- **Backups.** Stop `app` (or pause writes) and copy all three SQLite files **together** — share
+  rows, owner hashes and documents reference each other, and restoring one without the others
+  leaves links or owner keys orphaned. The files sit in the `suite-data` volume:
+
+  ```sh
+  docker compose stop app
+  docker run --rm -v suite_suite-data:/data -v "$PWD/backups:/backup" alpine \
+    tar czf /backup/suite-$(date +%F).tar.gz -C /data .
+  docker compose start app
+  ```
+
+  Restore is the reverse: stop `app`, extract the archive into the volume, start `app`.
+- **Health.** `GET /health` (proxied by Caddy, served by the API port) returns `ok`; the compose
+  healthcheck uses the same endpoint.
+
+**AWS path.** One EC2 or Lightsail instance with Docker installed, an EBS volume for `/data`,
+ports 80/443 open, and a DNS record pointing at the instance. Attach the EBS volume and point a
+bind mount or a Docker volume at it so documents survive instance replacement. A load-balanced or
+multi-AZ setup needs external state; it is deliberately out of scope.
+
+**Self-host path.** The same compose file on any Docker host: copy the repository, set
+`SUITE_DOMAIN`, and run `docker compose up -d --build`. Nothing else changes.
+
+
+## Security
+
+Suite has no accounts: access travels as bearer links. The relay stores documents in plaintext and
+stores owner and share credentials only as SHA-256 hashes; there is no end-to-end encryption, no
+attribution and no per-user ACL. TLS, disk encryption and coordinated backups are deployment
+requirements, and the relay is a single SQLite-backed instance.
+
+- [docs/security-model.md](docs/security-model.md) — capabilities, what the server can see,
+  rotation/revocation, recovery and device hygiene, and deployment limits.
+- Owner reset and workspace deletion are operator commands. Stop the server first, then use
+  `pnpm --filter @suite/collab-server admin reset-owner <workspaceId> [--revoke-shares] --force`
+  or `pnpm --filter @suite/collab-server admin delete <workspaceId> --force`.
 
 ## Docs
 

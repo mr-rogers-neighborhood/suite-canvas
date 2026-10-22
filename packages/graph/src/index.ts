@@ -72,8 +72,28 @@ export {
   SHARE_BOARD_ID,
   SHARE_BOARD_NAME,
 } from "./projection.js";
-export type { FormatPropertyOptions } from "./property.js";
-export { formatPropertyValue, isPropertyValueEmpty } from "./property.js";
+export type { FormatPropertyOptions, PropertyValidationContext } from "./property.js";
+export {
+  formatPropertyValue,
+  isCalendarDate,
+  isPropertyValueEmpty,
+  isPropertyValueValid,
+  propertyValueError,
+} from "./property.js";
+export type { EdgeValidationContext, PublishLimits } from "./publishValidation.js";
+export {
+  DEFAULT_PUBLISH_LIMITS,
+  edgeIssue,
+  MAX_PUBLISH_COORDINATE,
+  placementIssue,
+  RICH_TEXT_MARK_NAMES,
+  RICH_TEXT_NODE_NAMES,
+  resolvePublishLimits,
+  richTextBytes,
+  sectionIssue,
+  utf8ByteLength,
+  validateRichTextTree,
+} from "./publishValidation.js";
 export type {
   ArrowSource,
   MentionContext,

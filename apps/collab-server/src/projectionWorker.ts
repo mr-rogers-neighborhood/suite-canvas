@@ -74,9 +74,11 @@ export interface ShareStatus {
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
   url: string;
-  /** Internal token, which may write any room. */
-  internalToken: string;
-  documents: Pick<DocumentStore, "load">;
+  /** Worker token that may write projection rooms only. */
+  projectionToken: string;
+  /** Worker token that may write a workspace room with an active editor share. */
+  sourceToken: string;
+  documents: Pick<DocumentStore, "load" | "delete">;
   shares: ProjectionWorkerShares;
   /** Quiet period before a saved workspace is rebuilt. */
   debounceMs?: number;
@@ -122,6 +124,8 @@ interface PendingRebuild {
 const DEFAULT_DEBOUNCE_MS = 200;
 /** A brand-new room never reaches a server version, so cap the wait. */
 const JOIN_SETTLE_MS = 1000;
+const SOURCE_JOIN_WAIT_MS = 2000;
+const SOURCE_JOIN_POLL_MS = 50;
 /** Cap the post-publish wait for the source room; the write is already local. */
 const SOURCE_FLUSH_MS = 200;
 /** How long a publish waits for the editor's draft to reach the share room. */
@@ -132,6 +136,20 @@ const encoder = new TextEncoder();
 function isProjectionShare(share: Share): boolean {
   if (share.scope === "workspace" || share.roomId === null) return false;
   return share.scope === "board" ? share.boardId !== null : share.cardId !== null;
+}
+
+function isLiveShare(share: Share): boolean {
+  return share.revokedAt === null && (share.expiresAt === null || share.expiresAt > Date.now());
+}
+
+function deleteRoomDocuments(documents: Pick<DocumentStore, "delete">, roomId: string): void {
+  for (const key of loroDocumentKeys(roomId)) {
+    try {
+      documents.delete(key);
+    } catch {
+      // A missing/legacy key is already gone; deletion is best-effort cleanup.
+    }
+  }
 }
 
 function targetOf(share: Share): ProjectionTarget | null {
@@ -293,7 +311,7 @@ export class ProjectionWorker {
     const sources = [...this.sources.keys()];
     for (const workspaceId of sources) await this.closeSource(workspaceId);
 
-    this.client?.destroy();
+    this.client?.close();
     this.client = null;
   }
 
@@ -400,7 +418,9 @@ export class ProjectionWorker {
   private async syncRooms(workspaceId: string): Promise<void> {
     const wanted = new Map<string, Share>();
     for (const share of this.options.shares.list(workspaceId)) {
-      if (isProjectionShare(share) && share.roomId) wanted.set(share.roomId, share);
+      if (isProjectionShare(share) && share.roomId && isLiveShare(share)) {
+        wanted.set(share.roomId, share);
+      }
     }
 
     for (const [roomId, room] of [...this.rooms]) {
@@ -408,7 +428,9 @@ export class ProjectionWorker {
       if (wanted.has(roomId)) continue;
       this.rooms.delete(roomId);
       await this.closeRoom(room);
-      // The share was revoked or lost its target; a draft baseline has no reader.
+      // The share was revoked or expired; its projected copy and draft baseline
+      // have no reader, so do not leave them on disk.
+      deleteRoomDocuments(this.options.documents, roomId);
       try {
         this.options.shares.deleteBaseline(room.shareId);
       } catch (error) {
@@ -442,7 +464,7 @@ export class ProjectionWorker {
       const room = await client.join({
         roomId,
         crdtAdaptor: adaptor,
-        auth: () => encoder.encode(this.options.internalToken),
+        auth: () => encoder.encode(this.options.projectionToken),
       });
       // Wait for the room's stored state, but never for a room that has none.
       await settleWithin(room.waitForReachingServerVersion(), JOIN_SETTLE_MS);
@@ -625,7 +647,7 @@ export class ProjectionWorker {
       const room = await client.join({
         roomId: workspaceId,
         crdtAdaptor: adaptor,
-        auth: () => encoder.encode(this.options.internalToken),
+        auth: () => encoder.encode(this.options.sourceToken),
         onStatusChange: (next) => {
           status = next;
         },
@@ -704,7 +726,8 @@ export class ProjectionWorker {
     // A publish must see the owner's live state; saved bytes are not good enough.
     const source = await this.ensureSource(share.workspaceId);
     if (!source) return failure("The workspace is not reachable right now; try again.");
-    if (source.status() !== RoomJoinStatus.Joined) {
+    if (source.status() !== RoomJoinStatus.Joined && !(await this.waitForSource(source))) {
+      this.warn(`source ${share.workspaceId} is ${source.status()} for share ${share.id}`);
       return failure("The workspace connection is not available right now; try again.");
     }
     return { room, source };
@@ -816,6 +839,16 @@ export class ProjectionWorker {
   }
 
   /** Polls the share room until its version includes `target`, or gives up. */
+  /** A source room may still be joining when a publish arrives; give it a beat. */
+  private async waitForSource(source: SourceRoom): Promise<boolean> {
+    const deadline = Date.now() + SOURCE_JOIN_WAIT_MS;
+    while (Date.now() < deadline) {
+      if (source.status() === RoomJoinStatus.Joined) return true;
+      await delay(SOURCE_JOIN_POLL_MS);
+    }
+    return source.status() === RoomJoinStatus.Joined;
+  }
+
   private async waitForVersion(room: RoomState, target: VersionVector): Promise<boolean> {
     const deadline = Date.now() + VERSION_GATE_MS;
     for (;;) {

@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetRateLimits } from "./rateLimit.js";
 import { handleWorkspaceRequest } from "./workspaceHttp.js";
 import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
 
@@ -12,6 +13,7 @@ let server: Server;
 let baseUrl: string;
 
 beforeEach(async () => {
+  resetRateLimits();
   directory = mkdtempSync(join(tmpdir(), "suite-workspace-api-"));
   registry = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
 
@@ -201,5 +203,17 @@ describe("workspace rotate API", () => {
     const wrongMethod = await fetch(`${baseUrl}/api/workspaces/ws-1/rotate`);
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get("allow")).toBe("POST, OPTIONS");
+  });
+});
+
+describe("workspace API limits", () => {
+  it("rate-limits ownership claims per address", async () => {
+    for (let index = 0; index < 600; index += 1) {
+      const response = await claim(`ws-limit-${index}`, { ownerKey: `key-${index}` });
+      expect(response.status).toBe(200);
+    }
+    const limited = await claim("ws-limit-final", { ownerKey: "key-final" });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBeTruthy();
   });
 });

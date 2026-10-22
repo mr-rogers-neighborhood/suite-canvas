@@ -1,0 +1,9 @@
+# Security headers for a static host that does not use deploy/Caddyfile.
+# Replace canvas.example.com with the public hostname. The CSP deliberately
+# allows inline styles because React Flow and Tiptap set style attributes.
+Referrer-Policy: no-referrer
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Strict-Transport-Security: max-age=31536000
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://canvas.example.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'

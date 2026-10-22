@@ -18,12 +18,13 @@ test("creates and revokes links from the Share dialog", async ({ page, request }
   // Nothing is selected, so a card link is not offered yet.
   await expect(page.getByTestId("share-tab-card")).toBeDisabled();
 
-  // Workspace + editor is the plain editor URL, with no token.
+  // Workspace + editor is an edit-only token, not the owner link.
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
   const editorLink = new URL(await page.getByLabel("Share link").inputValue());
-  expect(editorLink.searchParams.get("workspace")).toBeTruthy();
-  expect(editorLink.searchParams.has("share")).toBe(false);
+  expect(editorLink.searchParams.get("share")).toBeTruthy();
+  expect(editorLink.hash).toBe("");
+  expect(editorLink.searchParams.has("workspace")).toBe(false);
 
   // Board + viewer is a capability link the server resolves.
   await page.getByTestId("share-tab-board").click();
@@ -38,7 +39,8 @@ test("creates and revokes links from the Share dialog", async ({ page, request }
   const resolved = await request.get(`${shareApi}/api/shares/${token}`);
   expect(resolved.status()).toBe(200);
 
-  await page.locator('[data-testid^="share-revoke-"]').first().click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByTestId("share-revoke-all").click();
   await expect(page.getByTestId("share-empty")).toBeVisible();
   await expect
     .poll(async () => (await request.get(`${shareApi}/api/shares/${token}`)).status())

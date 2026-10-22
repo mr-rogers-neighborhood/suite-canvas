@@ -2,12 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type AuthorizeDeps, authorize, resolveInternalToken } from "./auth.js";
+import { type AuthorizeDeps, authorize, resolveWorkerTokens } from "./auth.js";
 import { createShareStore, type ShareStore } from "./shares.js";
 import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
 
 const encoder = new TextEncoder();
-const INTERNAL_TOKEN = "internal-test-token";
+const PROJECTION_TOKEN = "projection-test-token";
+const SOURCE_TOKEN = "source-test-token";
 const OWNER_KEY = "owner-key-1";
 
 let directory: string;
@@ -19,7 +20,12 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "suite-auth-"));
   store = createShareStore(join(directory, "shares.sqlite"));
   workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
-  deps = { shares: store, workspaces, internalToken: INTERNAL_TOKEN };
+  deps = {
+    shares: store,
+    workspaces,
+    projectionToken: PROJECTION_TOKEN,
+    sourceToken: SOURCE_TOKEN,
+  };
 });
 
 afterEach(() => {
@@ -41,29 +47,30 @@ describe("authorize", () => {
   });
 
   it("gives an owner key the workspace and its ephemeral rooms", async () => {
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+
     await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBe("write");
     await expect(authorize("ws-1:presence", encode(OWNER_KEY), deps)).resolves.toBe("write");
     await expect(authorize("ws-1:cursors", encode(OWNER_KEY), deps)).resolves.toBe("write");
   });
 
-  it("claims an unclaimed workspace on the first owner join", async () => {
+  it("never claims an unclaimed workspace on a join", async () => {
     expect(workspaces.has("ws-1")).toBe(false);
 
-    await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBe("write");
+    await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBeNull();
 
-    expect(workspaces.has("ws-1")).toBe(true);
-    expect(workspaces.verify("ws-1", OWNER_KEY)).toBe(true);
+    expect(workspaces.has("ws-1")).toBe(false);
   });
 
   it("rejects a different key for an owned workspace", async () => {
-    await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBe("write");
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
 
     await expect(authorize("ws-1", encode("other-key"), deps)).resolves.toBeNull();
     await expect(authorize("ws-1:presence", encode("other-key"), deps)).resolves.toBeNull();
   });
 
   it("keeps an owner key out of other workspaces and projection rooms", async () => {
-    await authorize("ws-1", encode(OWNER_KEY), deps);
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
     workspaces.claimOrVerify("ws-2", "someone-else");
 
     await expect(authorize("ws-2", encode(OWNER_KEY), deps)).resolves.toBeNull();
@@ -71,6 +78,8 @@ describe("authorize", () => {
   });
 
   it("does not let an owner key claim a projection room", async () => {
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+
     await expect(authorize("share-abc", encode(OWNER_KEY), deps)).resolves.toBeNull();
     await expect(authorize("share-abc:presence", encode(OWNER_KEY), deps)).resolves.toBeNull();
 
@@ -149,14 +158,29 @@ describe("authorize", () => {
     await expect(authorize("ws-1", encode(token), deps)).resolves.toBeNull();
   });
 
-  it("lets the internal token write any room", async () => {
-    await expect(authorize("ws-1", encode(INTERNAL_TOKEN), deps)).resolves.toBe("write");
-    await expect(authorize("share-abc", encode(INTERNAL_TOKEN), deps)).resolves.toBe("write");
-    await expect(authorize("ws-1:presence", encode(INTERNAL_TOKEN), deps)).resolves.toBe("write");
+  it("limits the projection token to projection rooms", async () => {
+    await expect(authorize("share-abc", encode(PROJECTION_TOKEN), deps)).resolves.toBe("write");
+    await expect(authorize("share-abc:presence", encode(PROJECTION_TOKEN), deps)).resolves.toBe(
+      "write",
+    );
+    await expect(authorize("ws-1", encode(PROJECTION_TOKEN), deps)).resolves.toBeNull();
   });
 
-  it("does not treat an empty internal token as a match", async () => {
-    const empty: AuthorizeDeps = { shares: store, workspaces, internalToken: "" };
+  it("limits the source token to workspaces with an active editor share", async () => {
+    await expect(authorize("ws-1", encode(SOURCE_TOKEN), deps)).resolves.toBeNull();
+
+    store.create({ workspaceId: "ws-1", scope: "board", role: "editor", boardId: "b-1" });
+    await expect(authorize("ws-1", encode(SOURCE_TOKEN), deps)).resolves.toBe("write");
+    await expect(authorize("share-abc", encode(SOURCE_TOKEN), deps)).resolves.toBeNull();
+  });
+
+  it("does not treat empty worker tokens as a match", async () => {
+    const empty: AuthorizeDeps = {
+      shares: store,
+      workspaces,
+      projectionToken: "",
+      sourceToken: "",
+    };
 
     await expect(authorize("share-abc", new Uint8Array(), empty)).resolves.toBeNull();
     await expect(authorize("ws-1", new Uint8Array(), empty)).resolves.toBeNull();
@@ -174,19 +198,31 @@ describe("authorize", () => {
   });
 });
 
-describe("resolveInternalToken", () => {
-  it("reuses a configured token", () => {
-    expect(resolveInternalToken("configured")).toBe("configured");
+describe("resolveWorkerTokens", () => {
+  it("reuses configured tokens and keeps them separate", () => {
+    const tokens = resolveWorkerTokens({
+      SUITE_PROJECTION_TOKEN: "projection",
+      SUITE_SOURCE_TOKEN: "source",
+    } as NodeJS.ProcessEnv);
+
+    expect(tokens).toEqual({ projectionToken: "projection", sourceToken: "source" });
   });
 
-  it("generates and exports a token when unset", () => {
-    const previous = process.env.SUITE_INTERNAL_TOKEN;
-    const token = resolveInternalToken("");
+  it("generates two different tokens when unset", () => {
+    const env = {} as NodeJS.ProcessEnv;
+    const tokens = resolveWorkerTokens(env);
 
-    expect(token.length).toBeGreaterThanOrEqual(32);
-    expect(process.env.SUITE_INTERNAL_TOKEN).toBe(token);
+    expect(tokens.projectionToken.length).toBeGreaterThanOrEqual(32);
+    expect(tokens.sourceToken.length).toBeGreaterThanOrEqual(32);
+    expect(tokens.projectionToken).not.toBe(tokens.sourceToken);
+    expect(env.SUITE_PROJECTION_TOKEN).toBe(tokens.projectionToken);
+    expect(env.SUITE_SOURCE_TOKEN).toBe(tokens.sourceToken);
+  });
 
-    if (previous === undefined) delete process.env.SUITE_INTERNAL_TOKEN;
-    else process.env.SUITE_INTERNAL_TOKEN = previous;
+  it("accepts the legacy internal token only as the projection token", () => {
+    const tokens = resolveWorkerTokens({ SUITE_INTERNAL_TOKEN: "legacy" } as NodeJS.ProcessEnv);
+
+    expect(tokens.projectionToken).toBe("legacy");
+    expect(tokens.sourceToken).not.toBe("legacy");
   });
 });

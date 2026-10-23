@@ -152,6 +152,7 @@ body {
 /* React Flow chrome, themed through its CSS variables. */
 .react-flow__controls {
   overflow: hidden;
+  background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 10px;
   box-shadow: var(--card-shadow);
@@ -173,6 +174,37 @@ body {
 
 .react-flow__controls-button:last-child {
   border-bottom: none;
+}
+
+/*
+ * React Flow ships a light control panel. The base rules above lose to its
+ * stylesheet when both have the same specificity, so the dark overrides are
+ * scoped to `.dark` and repeat the container, button, icon and hover rules.
+ */
+.dark .react-flow__controls,
+.dark .react-flow__controls-button {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+.dark .react-flow__controls-button svg {
+  fill: var(--ink);
+}
+
+.dark .react-flow__controls-button:hover {
+  background: var(--segmented-bg);
+}
+
+/*
+ * Native selects keep the OS palette for the closed control and the popup.
+ * Components use `bg-transparent` deliberately; in dark mode that leaves the
+ * control and its options white. Set both explicitly for the dark variant.
+ */
+.dark select,
+.dark select option {
+  background-color: var(--surface);
+  color: var(--ink);
 }
 
 .react-flow__attribution {

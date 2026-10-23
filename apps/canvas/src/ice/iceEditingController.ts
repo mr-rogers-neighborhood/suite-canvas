@@ -71,6 +71,10 @@ export interface IceEditingOptions extends IceEditingAdapters {
    * selected card, so a null pick with one selected card is that card's resize.
    */
   readonly selection?: () => readonly string[];
+  /** Marker entity → pin id, so a dragged pin writes one `movePin`. */
+  readonly pinSlots?: ReadonlyMap<number, string>;
+  /** Writes the pin's new point; one call per gesture. */
+  readonly movePin?: (pinId: string, point: { x: number; y: number }) => void;
 }
 
 /** A container-relative screen point, CSS px. */
@@ -157,12 +161,21 @@ interface Pending {
   readonly instance: IceCardInstance;
 }
 
+interface PendingPin {
+  readonly pointerId: number;
+  readonly entity: number;
+  readonly pinId: string;
+  readonly start: Rect;
+  travelled: boolean;
+}
+
 /**
  * Build the controller. All I/O is injected, so tests drive it with plain
  * functions and the surface drives it with ICE adapters.
  */
 export function createIceEditingController(options: IceEditingOptions): IceEditingController {
   let pending: Pending | null = null;
+  let pendingPin: PendingPin | null = null;
   const capabilities = toCapabilities(options.role);
 
   const clear = (): void => {
@@ -190,6 +203,14 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       const camera = options.camera();
       if (camera === null) return false;
       const picked = options.pick(screen);
+      if (picked !== null) {
+        const pinId = options.pinSlots?.get(picked);
+        const pinRect = options.rectOf(picked);
+        if (pinId !== undefined && pinRect !== null) {
+          pendingPin = { pointerId, entity: picked, pinId, start: pinRect, travelled: false };
+          return true;
+        }
+      }
       const entity = picked ?? selectedEntity(options);
       if (entity === null) return false;
       const slot = options.slots.get(entity);
@@ -219,6 +240,21 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
     },
 
     pointerUp(pointerId, screen) {
+      const pin = pendingPin;
+      if (pin !== null && pin.pointerId === pointerId) {
+        pendingPin = null;
+        if (!finitePoint(screen)) return false;
+        const finalRect = options.rectOf(pin.entity);
+        if (finalRect === null) return false;
+        const moved =
+          Math.abs(finalRect.x - pin.start.x) > 0.5 || Math.abs(finalRect.y - pin.start.y) > 0.5;
+        if (!moved) return false;
+        options.movePin?.(pin.pinId, {
+          x: finalRect.x + finalRect.width / 2,
+          y: finalRect.y + finalRect.height / 2,
+        });
+        return true;
+      }
       const current = pending;
       if (current === null || current.pointerId !== pointerId) return false;
       pending = null;
@@ -256,6 +292,10 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
     },
 
     pointerCancel(pointerId) {
+      if (pendingPin !== null && pendingPin.pointerId === pointerId) {
+        pendingPin = null;
+        return;
+      }
       if (pending === null || pending.pointerId !== pointerId) return;
       clear();
     },

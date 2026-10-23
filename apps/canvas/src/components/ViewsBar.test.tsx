@@ -214,7 +214,7 @@ describe("ViewsBar", () => {
         <LibraryDrawer
           open
           tab="cards"
-          counts={{ inbox: 0, cards: 1, trash: 0 }}
+          counts={{ inbox: 0, cards: 1, pins: 0, trash: 0 }}
           inbox={[]}
           cards={[item]}
           trash={[]}

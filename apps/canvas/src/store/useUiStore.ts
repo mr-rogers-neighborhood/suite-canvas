@@ -19,7 +19,7 @@ export interface SelectedConnector {
   connectorId: string;
 }
 
-export type LibraryTab = "inbox" | "cards" | "trash";
+export type LibraryTab = "inbox" | "cards" | "pins" | "trash";
 
 /**
  * Which editor of one card holds the keystrokes; only one may be editable at a
@@ -176,6 +176,15 @@ interface UiState extends SessionCapabilities {
   applyView: (viewId: string, query: ViewQuery) => void;
   /** Drops the saved view and everything it filled in. */
   exitView: () => void;
+  /**
+   * A camera request from the shell: the canvas pans to this board point and
+   * clears it. Navigation only — never a document write.
+   */
+  pendingPinFocus: { x: number; y: number } | null;
+  focusPinAt: (point: { x: number; y: number } | null) => void;
+  /** Bumped by the pins list to ask the canvas to drop a pin; the canvas owns the point. */
+  dropPinRequest: number;
+  requestDropPin: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
   contextMenu: ContextMenuState | null;
@@ -253,6 +262,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setCapabilities: (capabilities) => set(capabilities),
   libraryOpen: false,
   libraryTab: "inbox",
+  pendingPinFocus: null,
+  dropPinRequest: 0,
   selectedNodeIds: [],
   selectedEdgeIds: [],
   selectedSectionId: null,
@@ -380,6 +391,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     })),
   setLibraryOpen: (libraryOpen) => set({ libraryOpen }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
+  focusPinAt: (pendingPinFocus) => set({ pendingPinFocus }),
+  requestDropPin: () => set((state) => ({ dropPinRequest: state.dropPinRequest + 1 })),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
   selectSection: (selectedSectionId) =>

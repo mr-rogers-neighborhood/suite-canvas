@@ -690,7 +690,12 @@ function WorkspaceShell({
         <LibraryDrawer
           open={libraryOpen}
           tab={libraryTab}
-          counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
+          counts={{
+            inbox: unplaced.length,
+            cards: allCards.length,
+            pins: workspace.listPins(activeBoardId ?? undefined).length,
+            trash: trashed.length,
+          }}
           inbox={inboxItems}
           cards={cardItems}
           trash={trashItems}

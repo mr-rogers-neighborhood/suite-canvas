@@ -21,6 +21,7 @@ import {
   type SectionOrderEntry,
   UNSORTED_SECTION,
 } from "./libraryFilters";
+import { PinsPanel } from "./PinsPanel";
 import { useSavedViews } from "./ViewsBar";
 
 export interface LibraryItem {
@@ -83,6 +84,7 @@ export interface LibraryDrawerProps {
 const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "cards", label: "Cards" },
+  { id: "pins", label: "Pins" },
   { id: "trash", label: "Trash" },
 ];
 
@@ -169,8 +171,10 @@ export function LibraryDrawer({
     dragging: boolean;
   } | null>(null);
 
+  const requestDropPin = useUiStore((state) => state.requestDropPin);
+  const focusPinAt = useUiStore((state) => state.focusPinAt);
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
-  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
+  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : tab === "trash" ? trash : [];
   const scopedItems = boardScope
     ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
     : items;
@@ -591,6 +595,16 @@ export function LibraryDrawer({
               New
             </button>
           ) : null}
+          {tab === "pins" ? (
+            <button
+              type="button"
+              data-testid="library-drop-pin"
+              className="library-action"
+              onClick={() => requestDropPin()}
+            >
+              Drop pin
+            </button>
+          ) : null}
           {tab === "trash" && canManageTrash && trash.length > 0 ? (
             <button
               type="button"
@@ -748,7 +762,13 @@ export function LibraryDrawer({
       </div>
 
       <div className="library-list overflow-y-auto p-1.5">
-        {ordered.length === 0 ? (
+        {tab === "pins" ? (
+          <PinsPanel
+            workspace={workspace ?? null}
+            activeBoardId={activeBoardId}
+            onFocusPin={(pin) => focusPinAt({ x: pin.x, y: pin.y })}
+          />
+        ) : ordered.length === 0 ? (
           <p
             className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]"
             {...(searching ? { "data-testid": "library-search-empty" } : {})}

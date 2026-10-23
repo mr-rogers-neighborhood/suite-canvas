@@ -75,7 +75,7 @@ const meta = {
   args: {
     open: true,
     tab: "inbox",
-    counts: { inbox: 2, cards: 6, trash: 1 },
+    counts: { inbox: 2, cards: 6, pins: 0, trash: 1 },
     inbox: items,
     cards: items,
     trash: [
@@ -132,7 +132,7 @@ export const Cards: Story = {
   args: {
     tab: "cards",
     workspace: searchWorkspace,
-    counts: { inbox: 2, cards: 2, trash: 1 },
+    counts: { inbox: 2, cards: 2, pins: 0, trash: 1 },
   },
   // The drawer indexes note bodies, not just titles: the query only matches the
   // second card through the word "grading" in its paragraph.
@@ -159,7 +159,7 @@ export const SearchQuery: Story = {
     tab: "cards",
     workspace: searchWorkspace,
     initialQuery: "timeline",
-    counts: { inbox: 2, cards: 2, trash: 1 },
+    counts: { inbox: 2, cards: 2, pins: 0, trash: 1 },
   },
 };
 
@@ -168,5 +168,5 @@ export const SearchEmpty: Story = {
 };
 
 export const Empty: Story = {
-  args: { tab: "inbox", inbox: [], counts: { inbox: 0, cards: 6, trash: 0 }, trash: [] },
+  args: { tab: "inbox", inbox: [], counts: { inbox: 0, cards: 6, pins: 0, trash: 0 }, trash: [] },
 };

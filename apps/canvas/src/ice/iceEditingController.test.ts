@@ -239,6 +239,52 @@ describe("iceEditingController", () => {
     expect(afterCommit).not.toHaveBeenCalled();
   });
 
+  it("should write one movePin when a marker is dragged", () => {
+    const boxes = new Map([[9, { x: 300, y: 300, width: 20, height: 20 }]]);
+    const movePin = vi.fn();
+    const controller = createIceEditingController({
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      pick: () => 9,
+      rectOf: (entity) => boxes.get(entity) ?? null,
+      writer: null,
+      role: "editor",
+      removeCards: vi.fn(),
+      slots: new Map(),
+      rootBoardId: ROOT,
+      pinSlots: new Map([[9, "pin-1"]]),
+      movePin,
+    });
+
+    expect(controller.pointerDown(1, { x: 310, y: 310 })).toBe(true);
+    boxes.set(9, { x: 340, y: 320, width: 20, height: 20 });
+    expect(controller.pointerUp(1, { x: 350, y: 330 })).toBe(true);
+
+    expect(movePin).toHaveBeenCalledTimes(1);
+    expect(movePin).toHaveBeenCalledWith("pin-1", { x: 350, y: 330 });
+  });
+
+  it("should not write a pin that did not move", () => {
+    const boxes = new Map([[9, { x: 300, y: 300, width: 20, height: 20 }]]);
+    const movePin = vi.fn();
+    const controller = createIceEditingController({
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      pick: () => 9,
+      rectOf: (entity) => boxes.get(entity) ?? null,
+      writer: null,
+      role: "editor",
+      removeCards: vi.fn(),
+      slots: new Map(),
+      rootBoardId: ROOT,
+      pinSlots: new Map([[9, "pin-1"]]),
+      movePin,
+    });
+
+    controller.pointerDown(1, { x: 310, y: 310 });
+    controller.pointerUp(1, { x: 310, y: 310 });
+
+    expect(movePin).not.toHaveBeenCalled();
+  });
+
   it("should build an identity instance for the root board", () => {
     const instance = instanceFor({ cardId: "c", boardId: ROOT }, ROOT, {
       x: 5,

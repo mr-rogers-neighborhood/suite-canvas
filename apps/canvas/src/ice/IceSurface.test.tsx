@@ -102,6 +102,10 @@ vi.mock("./suiteCardKind", () => ({
 vi.mock("./suiteCardWorkspace", () => ({
   createWorkspaceCardSlotRenderer: vi.fn(() => ({ mount: vi.fn() })),
 }));
+vi.mock("./suitePinKind", () => ({
+  SuitePin: { type: "suite.pin" },
+  SUITE_PIN_TYPE: "suite.pin",
+}));
 
 const ADAPTER = {
   info: {

@@ -68,6 +68,12 @@ import {
 } from "./suiteProjection";
 import "./iceSurface.css";
 
+/**
+ * The pin kind's type name. Duplicated by design: importing `suitePinKind`
+ * here would pull the ICE runtime into this module's static graph, and the
+ * kind itself is loaded in the dynamic block beside the card kind.
+ */
+const SUITE_PIN_KIND = "suite.pin";
 const NOTE_TYPE = "desk.note";
 const MINIMAT_TYPE = "desk.minimat";
 const BOARD_TYPE = "desk.board";
@@ -149,6 +155,8 @@ interface SeedReport {
   readonly portalMats: Map<Entity, PortalMat>;
   /** Cycle/depth/missing portal stubs drawn as labelled markers. */
   readonly stubs: number;
+  /** Pin id → its marker entity on the root board. */
+  readonly pinEntities: Map<string, Entity>;
   /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
   readonly boards: number;
   /** Things the seed deliberately did not map (cycles, depth caps, sections). */
@@ -484,6 +492,7 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
     entitySlots: new Map(),
     portalMats: new Map(),
     stubs: 0,
+    pinEntities: new Map(),
     boards: 0,
     skipped: [],
   };
@@ -510,6 +519,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
       entitySlots: new Map(),
       portalMats: new Map(),
       stubs: 0,
+      pinEntities: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -548,6 +558,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     entitySlots,
     portalMats,
     stubs: 0,
+    pinEntities: new Map(),
     // Boards are counted by identity: the same board can open in several mats.
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
@@ -578,6 +589,7 @@ function seedWorkspaceDocument(
       entitySlots: new Map(),
       portalMats: new Map(),
       stubs: 0,
+      pinEntities: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -646,9 +658,42 @@ function seedWorkspaceDocument(
     entitySlots,
     portalMats,
     stubs,
+    pinEntities: spawnPins(engine, workspace, rootBoardId, stubFailures),
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
   };
+}
+
+/**
+ * Spawns one marker per pin on the root board. A pin is navigation metadata,
+ * not content: the marker is presentational and the document keeps the record.
+ */
+function spawnPins(
+  engine: CanvasEngine,
+  workspace: WorkspaceDocument,
+  rootBoardId: string,
+  failures: string[],
+): Map<string, Entity> {
+  const entities = new Map<string, Entity>();
+  for (const pin of workspace.listPins(rootBoardId)) {
+    try {
+      const entity = engine.ops.spawnWidget(SUITE_PIN_KIND, {
+        x: pin.x,
+        y: pin.y,
+        undoable: false,
+        props: {
+          pinId: pin.id,
+          boardId: pin.boardId,
+          label: pin.label,
+          color: pin.color,
+        },
+      });
+      entities.set(pin.id, entity);
+    } catch (error) {
+      failures.push(`pin ${pin.id}: ${describeError(error)}`);
+    }
+  }
+  return entities;
 }
 
 export interface IceSurfaceFallbackProps {
@@ -712,6 +757,9 @@ export function IceSurface({
   const [fps, setFps] = useState<number | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
   const canWriteLayout = useUiStore((state) => state.canEditLayout && !state.readOnly);
+  const pendingPinFocus = useUiStore((state) => state.pendingPinFocus);
+  const dropPinRequest = useUiStore((state) => state.dropPinRequest);
+  const actorId = useRef(`local-${Math.random().toString(36).slice(2, 10)}`);
   const [runId, setRunId] = useState(0);
   const sceneHref = useMemo(() => sceneHrefProp ?? sceneSurfaceHref(), [sceneHrefProp]);
   const owned = useRef<{
@@ -809,11 +857,15 @@ export function IceSurface({
 
         const live = liveWorkspace !== null && rootBoardId !== null;
         const suiteCardModules = live
-          ? await Promise.all([import("./suiteCardKind"), import("./suiteCardWorkspace")])
+          ? await Promise.all([
+              import("./suiteCardKind"),
+              import("./suiteCardWorkspace"),
+              import("./suitePinKind"),
+            ])
           : null;
         if (cancelled) return;
         const widgets = suiteCardModules
-          ? [...objects.DESK_OBJECTS, suiteCardModules[0].SuiteCard]
+          ? [...objects.DESK_OBJECTS, suiteCardModules[0].SuiteCard, suiteCardModules[2].SuitePin]
           : [...objects.DESK_OBJECTS];
 
         // ONE device per engine (D7): the desk adopts this one instead of
@@ -1177,6 +1229,10 @@ export function IceSurface({
       slots,
       rootBoardId,
       selection: () => useUiStore.getState().selectedNodeIds,
+      pinSlots: new Map([...seed.pinEntities].map(([pinId, entity]) => [entity, pinId])),
+      movePin: (pinId, point) => {
+        liveWorkspace.movePin(pinId, point);
+      },
     });
 
     commandsRef.current = {
@@ -1243,6 +1299,62 @@ export function IceSurface({
       setPortalPath([]);
     };
   }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, canWriteLayout]);
+
+  // A pin click is navigation: centre the camera on the marked point.
+  useEffect(() => {
+    if (phase.kind !== "ready" || pendingPinFocus === null) return;
+    const viewport = phase.engine.world.getResource(phase.core.Viewport);
+    const camera = phase.engine.world.getResource(phase.core.Camera);
+    if (viewport === undefined || camera === undefined) return;
+    const zoom = Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    phase.core.writeRuntimeResource(phase.engine.world, phase.core.Camera, {
+      x: pendingPinFocus.x - viewport.w / (2 * zoom),
+      y: pendingPinFocus.y - viewport.h / (2 * zoom),
+      zoom,
+      gesturing: false,
+    });
+    useUiStore.getState().focusPinAt(null);
+  }, [phase, pendingPinFocus]);
+
+  // "Drop pin" from the shell: the canvas owns the point (the camera centre) and
+  // the marker; the document owns the record.
+  useEffect(() => {
+    if (dropPinRequest === 0) return;
+    if (phase.kind !== "ready" || !workspaceMode) return;
+    if (liveWorkspace === null || rootBoardId === null) return;
+    const viewport = phase.engine.world.getResource(phase.core.Viewport);
+    const camera = phase.engine.world.getResource(phase.core.Camera);
+    if (viewport === undefined || camera === undefined) return;
+    const zoom = Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    const point = {
+      x: camera.x + viewport.w / (2 * zoom),
+      y: camera.y + viewport.h / (2 * zoom),
+    };
+    const count = liveWorkspace.listPins(rootBoardId).length + 1;
+    try {
+      const pin = liveWorkspace.createPin({
+        boardId: rootBoardId,
+        x: point.x,
+        y: point.y,
+        label: `Pin ${count}`,
+        createdBy: actorId.current,
+      });
+      const entity = phase.engine.ops.spawnWidget(SUITE_PIN_KIND, {
+        x: pin.x,
+        y: pin.y,
+        undoable: false,
+        props: {
+          pinId: pin.id,
+          boardId: pin.boardId,
+          label: pin.label,
+          color: pin.color,
+        },
+      });
+      if (seed !== null) seed.pinEntities.set(pin.id, entity);
+    } catch (error) {
+      console.warn("[ice] could not drop a pin", error);
+    }
+  }, [dropPinRequest, phase, workspaceMode, liveWorkspace, rootBoardId, seed]);
 
   const keymapOverrides = useMemo(() => {
     if (!workspaceMode) return undefined;

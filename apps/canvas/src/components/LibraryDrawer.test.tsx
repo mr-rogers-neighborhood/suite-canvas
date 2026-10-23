@@ -69,7 +69,7 @@ function renderDrawer(
   const props: LibraryDrawerProps = {
     open: true,
     tab: "cards",
-    counts: { inbox: 0, cards: items.length, trash: 0 },
+    counts: { inbox: 0, cards: items.length, pins: 0, trash: 0 },
     inbox: [],
     cards: items,
     trash: [],
@@ -302,7 +302,7 @@ describe("Library shortcut", () => {
           <LibraryDrawer
             open={open}
             tab={tab}
-            counts={{ inbox: 0, cards: items.length, trash: 0 }}
+            counts={{ inbox: 0, cards: items.length, pins: 0, trash: 0 }}
             inbox={[]}
             cards={items}
             trash={[]}

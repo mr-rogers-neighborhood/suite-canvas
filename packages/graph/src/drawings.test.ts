@@ -158,6 +158,57 @@ describe("drawings", () => {
     expect(raw).toContain('"x":90');
   });
 
+  it("should apply a full scene as one diff commit and honour its order", () => {
+    const workspace = seeded();
+    const commits = countCommits(workspace);
+
+    const drawing = workspace.applyDrawing(
+      "card-1",
+      [element("a", { x: 30 }), element("b", { x: 120 }), element("c")],
+      ["c", "b", "a"],
+    );
+
+    expect(drawing?.order).toEqual(["c", "b", "a"]);
+    expect(drawing?.elements.map((entry) => entry.id)).toEqual(["c", "b", "a"]);
+    expect(commits()).toBe(1);
+  });
+
+  it("should tombstone elements a snapshot no longer contains and revive them later", () => {
+    const workspace = seeded();
+
+    const withoutB = workspace.applyDrawing("card-1", [element("a")]);
+    expect(withoutB?.order).toEqual(["a"]);
+    expect(withoutB?.elements.map((entry) => entry.id)).toEqual(["a"]);
+    expect(JSON.stringify(workspace.toJSON().drawings)).toContain('"deletedAt"');
+
+    const revived = workspace.applyDrawing("card-1", [element("a"), element("b", { x: 120 })]);
+    expect(revived?.order).toEqual(["a", "b"]);
+    expect(revived?.elements.find((entry) => entry.id === "b")?.x).toBe(120);
+    expect(JSON.stringify(workspace.toJSON().drawings)).not.toContain('"deletedAt"');
+  });
+
+  it("should not create a commit when an applied snapshot changes nothing", () => {
+    const workspace = seeded();
+    const commits = countCommits(workspace);
+    const before = workspace.drawing("card-1");
+
+    workspace.applyDrawing("card-1", before?.elements ?? [], before?.order ?? []);
+    expect(commits()).toBe(0);
+
+    workspace.applyDrawing("card-1", [element("a", { x: 1 }), element("b", { x: 120 })]);
+    expect(commits()).toBe(1);
+  });
+
+  it("should reject duplicate ids and tombstones when applying a scene", () => {
+    const workspace = new WorkspaceDocument();
+    expect(() => workspace.applyDrawing("card-1", [element("a"), element("a")])).toThrow(
+      /Duplicate drawing element/,
+    );
+    expect(() => workspace.applyDrawing("card-1", [element("a", { deletedAt: 1 })])).toThrow(
+      /tombstone/,
+    );
+  });
+
   it("should revive a tombstoned element through an upsert", () => {
     const workspace = seeded();
     workspace.removeDrawingElement("card-1", "a");

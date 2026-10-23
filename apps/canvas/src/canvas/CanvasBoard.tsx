@@ -23,6 +23,7 @@ import {
   useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { DEFAULT_FRACTAL_RECIPE, LAYOUT_PATTERNS, type LayoutPattern } from "@suite/scene";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
@@ -34,6 +35,7 @@ import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
+import { applyBoardFractal } from "../scene/layoutCommand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -1156,6 +1158,22 @@ export function CanvasBoard() {
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
   );
 
+  const arrangeFractal = useCallback(
+    (pattern: LayoutPattern) => {
+      if (!canEditLayout || !activeBoardId) return;
+      try {
+        applyBoardFractal(workspace, {
+          snapshot,
+          rootBoardId: activeBoardId,
+          recipe: { ...DEFAULT_FRACTAL_RECIPE, pattern },
+        });
+      } catch (error) {
+        console.warn("[layout] could not apply fractal layout", error);
+      }
+    },
+    [workspace, snapshot, activeBoardId, canEditLayout],
+  );
+
   const createWhiteboardAt = useCallback(
     (position: { x: number; y: number }) => {
       if (!canCreateContent || !activeBoardId) return;
@@ -1790,6 +1808,17 @@ export function CanvasBoard() {
           label: "New section",
           onSelect: () => createSectionAt(flowPosition),
         },
+        ...(canEditLayout
+          ? [
+              {
+                label: "Arrange fractally",
+                items: LAYOUT_PATTERNS.map((pattern) => ({
+                  label: pattern.charAt(0).toUpperCase() + pattern.slice(1),
+                  onSelect: () => arrangeFractal(pattern),
+                })),
+              },
+            ]
+          : []),
         ...(portalItems.length > 0
           ? [
               {
@@ -2108,6 +2137,7 @@ export function CanvasBoard() {
     activeBoardId,
     createNoteAt,
     createWhiteboardAt,
+    arrangeFractal,
     createSectionAt,
     duplicateCards,
     moveCardToBoard,

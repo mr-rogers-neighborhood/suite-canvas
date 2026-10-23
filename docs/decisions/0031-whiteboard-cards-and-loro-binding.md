@@ -30,9 +30,9 @@ belongs to the board scene, not to an embedded editor.
    existing focus surface rather than a new page.
 
 2. **Drawings live in a `drawings` root map.** The map mirrors `content`/`titles`: one key per
-   whiteboard card, holding `elements`, `order`, `tombstones`, `version` and `updatedAt`. A drawing
-   is workspace document state inside the single `LoroDoc`, not an attachment and not a sidecar
-   file.
+   whiteboard card, holding `elements`, `order`, `version` and `updatedAt`; tombstones live on the
+   element itself as `deletedAt`. A drawing is workspace document state inside the single
+   `LoroDoc`, not an attachment and not a sidecar file.
 
 3. **Elements are field maps, not values.** `elements` is a `LoroMap` keyed by element id, whose
    value is another `LoroMap` of Excalidraw field → value. Each element id is stable; each field is
@@ -53,9 +53,10 @@ belongs to the board scene, not to an embedded editor.
    whiteboard walk the same canonical stack; there is no second undo model.
 
 7. **Binding is diffed, not streamed.** `initialData`/`updateScene` project the Loro drawing into
-   Excalidraw; `onChange` diffs by element id and writes only changed fields; echo suppression uses
-   the Loro subscription origin so a remote update calls `updateScene` without writing back. There
-   are no per-frame document writes.
+   Excalidraw; `onChange` debounces one `WorkspaceDocument.applyDrawing` call, which writes only
+   changed fields, tombstones elements missing from the snapshot and lands the whole diff in one
+   commit. Echo suppression uses the Loro subscription origin so a remote update calls
+   `updateScene` without writing back. There are no per-frame document writes.
 
 8. **Text elements use `LoroText` where feasible.** Character-wise merging is the default for text
    content. If a field cannot be represented as `LoroText`, it is documented as whole-value LWW as a

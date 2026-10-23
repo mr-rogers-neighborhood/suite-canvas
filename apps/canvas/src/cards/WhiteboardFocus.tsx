@@ -18,9 +18,7 @@ export function WhiteboardFocus({
   const commit = useCallback(
     ({ elements, order }: WhiteboardCommit) => {
       try {
-        // Whole-scene replacement is one commit; the element-level path lands
-        // with the batch drawing API.
-        workspace.setDrawing(cardId, elements, order);
+        workspace.applyDrawing(cardId, elements, order);
       } catch (error) {
         console.warn("[whiteboard] could not save scene", error);
       }

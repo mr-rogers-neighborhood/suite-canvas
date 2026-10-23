@@ -25,6 +25,18 @@ import {
   normalizeDrawingOrder,
   sameDrawingValue,
 } from "../drawings.js";
+import {
+  type ApplyLayoutPlanOptions,
+  clampLayoutCoordinate,
+  LAYOUT_APPLY_ORIGIN,
+  type LayoutPlan,
+  LayoutPlanError,
+  type LayoutPlanSummary,
+  layoutPlanIssues,
+  MIN_LAYOUT_SECTION_HEIGHT,
+  MIN_LAYOUT_SECTION_WIDTH,
+  parseLayoutPlan,
+} from "../layoutPlan.js";
 import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
@@ -2694,6 +2706,189 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}resize-card`);
   }
 
+  /**
+   * Applies a one-shot layout plan: positions, sizes and section geometry, all
+   * in one batch so the whole command is a single undo step. The plan is
+   * validated up front; nothing is written when it has issues or would not
+   * change anything, and only changed fields are set.
+   */
+  applyLayoutPlan(plan: LayoutPlan, options: ApplyLayoutPlanOptions = {}): LayoutPlanSummary {
+    const parsed = parseLayoutPlan(plan);
+    const issues = layoutPlanIssues(parsed, {
+      hasBoard: (id) => this.boards.get(id) !== undefined,
+      hasCard: (id) => this.cards.get(id) !== undefined,
+      hasSection: (id) => this.sections.get(id) !== undefined,
+      placedBoards: (cardId) => this.listCardPlacements(cardId).map((entry) => entry.boardId),
+    });
+    if (issues.length > 0) throw new LayoutPlanError(issues);
+
+    interface StagedPlacement {
+      boardId: string;
+      cardId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+    }
+
+    const staged = new Map<string, StagedPlacement>();
+    const stage = (boardId: string, cardId: string): StagedPlacement => {
+      const key = placementKey(boardId, cardId);
+      const existing = staged.get(key);
+      if (existing) return existing;
+      const created: StagedPlacement = { boardId, cardId };
+      staged.set(key, created);
+      return created;
+    };
+
+    for (const placement of parsed.placements) {
+      const next = stage(placement.boardId, placement.cardId);
+      next.x = clampLayoutCoordinate(placement.x);
+      next.y = clampLayoutCoordinate(placement.y);
+      if (placement.width !== undefined) next.width = placement.width;
+      if (placement.height !== undefined) next.height = placement.height;
+    }
+    // A portal size is a placement size too; explicit placement geometry wins.
+    for (const [cardId, size] of Object.entries(parsed.portalSizes ?? {})) {
+      const boardIds = new Set<string>();
+      for (const placement of parsed.placements) {
+        if (placement.cardId === cardId) boardIds.add(placement.boardId);
+      }
+      if (boardIds.size === 0) {
+        for (const placement of this.listCardPlacements(cardId)) boardIds.add(placement.boardId);
+      }
+      for (const boardId of boardIds) {
+        const next = stage(boardId, cardId);
+        next.width ??= size.width;
+        next.height ??= size.height;
+      }
+    }
+
+    interface PlacementChange {
+      boardId: string;
+      cardId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      create: boolean;
+    }
+
+    const placementChanges: PlacementChange[] = [];
+    const boards = new Set<string>();
+    for (const next of staged.values()) {
+      const current = this.getPlacement(next.boardId, next.cardId);
+      if (!current) {
+        if (next.x === undefined || next.y === undefined) continue;
+        const created: PlacementChange = {
+          boardId: next.boardId,
+          cardId: next.cardId,
+          x: next.x,
+          y: next.y,
+          create: true,
+        };
+        if (next.width !== undefined) created.width = next.width;
+        if (next.height !== undefined) created.height = next.height;
+        placementChanges.push(created);
+        boards.add(next.boardId);
+        continue;
+      }
+      const change: PlacementChange = {
+        boardId: next.boardId,
+        cardId: next.cardId,
+        create: false,
+      };
+      let changed = false;
+      if (next.x !== undefined && next.x !== current.x) {
+        change.x = next.x;
+        changed = true;
+      }
+      if (next.y !== undefined && next.y !== current.y) {
+        change.y = next.y;
+        changed = true;
+      }
+      if (next.width !== undefined && next.width !== current.width) {
+        change.width = next.width;
+        changed = true;
+      }
+      if (next.height !== undefined && next.height !== current.height) {
+        change.height = next.height;
+        changed = true;
+      }
+      if (!changed) continue;
+      placementChanges.push(change);
+      boards.add(next.boardId);
+    }
+
+    interface SectionChange {
+      id: string;
+      boardId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }
+
+    const sectionChanges: SectionChange[] = [];
+    for (const section of parsed.sections ?? []) {
+      const current = this.getSection(section.sectionId);
+      if (!current) continue;
+      const x = clampLayoutCoordinate(section.x);
+      const y = clampLayoutCoordinate(section.y);
+      const width = Math.max(MIN_LAYOUT_SECTION_WIDTH, section.width);
+      const height = Math.max(MIN_LAYOUT_SECTION_HEIGHT, section.height);
+      if (
+        current.x === x &&
+        current.y === y &&
+        current.width === width &&
+        current.height === height
+      ) {
+        continue;
+      }
+      sectionChanges.push({ id: current.id, boardId: current.boardId, x, y, width, height });
+      boards.add(current.boardId);
+    }
+
+    if (placementChanges.length === 0 && sectionChanges.length === 0) {
+      return { placements: 0, sections: 0, boards: 0 };
+    }
+
+    this.batch(options.origin ?? LAYOUT_APPLY_ORIGIN, () => {
+      for (const change of placementChanges) {
+        if (change.create) {
+          this.placeCardInternal(change.boardId, change.cardId, {
+            x: change.x ?? 0,
+            y: change.y ?? 0,
+          });
+        }
+        const fields = this.placements.get(placementKey(change.boardId, change.cardId));
+        if (!isMap(fields)) continue;
+        if (!change.create) {
+          if (change.x !== undefined) fields.set("x", change.x);
+          if (change.y !== undefined) fields.set("y", change.y);
+        }
+        if (change.width !== undefined) fields.set("width", change.width);
+        if (change.height !== undefined) fields.set("height", change.height);
+      }
+      const now = Date.now();
+      for (const change of sectionChanges) {
+        const fields = this.sections.get(change.id);
+        if (!isMap(fields)) continue;
+        fields.set("x", change.x);
+        fields.set("y", change.y);
+        fields.set("width", change.width);
+        fields.set("height", change.height);
+        fields.set("updatedAt", now);
+      }
+    });
+
+    return {
+      placements: placementChanges.length,
+      sections: sectionChanges.length,
+      boards: boards.size,
+    };
+  }
+
   moveLayer(boardId: string, cardId: string, action: LayerAction): void {
     const ordered = this.listBoardPlacements(boardId);
     const index = ordered.findIndex((placement) => placement.cardId === cardId);
@@ -3078,6 +3273,103 @@ export class WorkspaceDocument {
     const drawing = this.drawing(id);
     if (!drawing) throw new Error(`Drawing was not written: ${id}`);
     return drawing;
+  }
+
+  /**
+   * Applies a full scene snapshot as a field-level diff in one commit. Elements
+   * missing from `elements` are tombstoned (not purged), so a peer's concurrent
+   * field edit survives and the delete stays reversible. Use this for editor
+   * commits; `setDrawing` is the seed/import escape hatch.
+   */
+  applyDrawing(
+    cardId: string,
+    elements: readonly DrawingElement[],
+    order?: readonly string[],
+  ): Drawing | null {
+    const id = entityIdSchema.parse(cardId);
+    const parsed = elements.map((element) => drawingElementSchema.parse(element));
+    const seen = new Set<string>();
+    for (const element of parsed) {
+      if (element.deletedAt !== undefined) {
+        throw new Error(`An applied drawing cannot contain a tombstone: ${element.id}`);
+      }
+      if (seen.has(element.id)) throw new Error(`Duplicate drawing element: ${element.id}`);
+      seen.add(element.id);
+    }
+
+    const fields = this.drawingEntryForWrite(id);
+    const targetElements = fields.ensureMergeableMap("elements");
+    let changed = false;
+    const now = Date.now();
+    const desiredIds = new Set(parsed.map((element) => element.id));
+
+    for (const element of parsed) {
+      const before = targetElements.get(element.id);
+      const target = isMap(before) ? before : targetElements.ensureMergeableMap(element.id);
+      let elementChanged = !isMap(before);
+      const desired = new Map<string, unknown>();
+      for (const [key, value] of Object.entries(element)) {
+        if (key === "id" || value === undefined) continue;
+        desired.set(key, value);
+      }
+      for (const [key, value] of desired) {
+        const current = target.get(key);
+        if (current === value || sameDrawingValue(current, value)) continue;
+        target.set(key, value as Value);
+        elementChanged = true;
+      }
+      for (const key of [...target.keys()]) {
+        if (desired.has(key)) continue;
+        target.delete(key);
+        elementChanged = true;
+      }
+      if (elementChanged) changed = true;
+    }
+
+    for (const elementId of [...targetElements.keys()]) {
+      if (desiredIds.has(elementId)) continue;
+      const target = targetElements.get(elementId);
+      if (!isMap(target) || target.get("deletedAt") !== undefined) continue;
+      target.set("deletedAt", now);
+      changed = true;
+    }
+
+    const live = new Set<string>();
+    for (const elementId of targetElements.keys()) {
+      const target = targetElements.get(elementId);
+      if (isMap(target) && target.get("deletedAt") === undefined) live.add(elementId);
+    }
+    const liveIds = [...live];
+    const rawOrder = fields.get("order");
+    const targetOrder = isMovableList(rawOrder)
+      ? rawOrder
+      : fields.ensureMergeableMovableList("order");
+    const currentOrder = drawingOrderIds(targetOrder);
+    for (let index = currentOrder.length - 1; index >= 0; index -= 1) {
+      const elementId = currentOrder[index];
+      if (elementId !== undefined && live.has(elementId)) continue;
+      targetOrder.delete(index, 1);
+      changed = true;
+    }
+    const desiredOrder = normalizeDrawingOrder(
+      order ?? parsed.map((element) => element.id),
+      liveIds,
+    );
+    desiredOrder.forEach((elementId, index) => {
+      const at = drawingOrderIds(targetOrder).indexOf(elementId);
+      if (at === -1) {
+        targetOrder.insert(index, elementId);
+        changed = true;
+      } else if (at !== index) {
+        targetOrder.move(at, index);
+        changed = true;
+      }
+    });
+
+    if (!changed) return this.drawing(id);
+    this.touchDrawing(fields, now);
+    this.commit(`${STRUCT_ORIGIN}apply-drawing`);
+    return this.drawing(id);
   }
 
   /**

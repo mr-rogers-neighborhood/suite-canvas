@@ -233,15 +233,15 @@ export function WorkspaceLauncher() {
     >
       <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
         <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-muted)]">
-            Local-first canvas
-          </p>
-          <div className="mt-2 flex items-end justify-between gap-6">
+          <div className="flex items-end justify-between gap-6">
             <div>
               <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
               <p className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                Pick up a workspace, open a project file, or start a blank one. Everything stays in
-                this browser until you export it.
+                <i>An infinite, local-first, collaborative canvas.</i>
+                <br />
+                <br />
+                You can open a workspace file, pick from a list of recent workspaces, or create a
+                new one.
               </p>
             </div>
             <span aria-hidden="true" className="hidden sm:block">
@@ -468,8 +468,7 @@ export function WorkspaceLauncher() {
         </section>
 
         <footer className="border-t border-[var(--hairline)] px-8 py-3 text-[11px] text-[var(--ink-muted)]">
-          A workspace is a Loro document. Export a <code>.suite</code> backup to keep your own copy;
-          the file is the only import path.
+          Fully open-source and MIT Licensed (c) {new Date().getFullYear()} Suite
         </footer>
       </div>
       {choice ? (

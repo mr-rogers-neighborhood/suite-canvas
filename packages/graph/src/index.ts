@@ -16,6 +16,29 @@ export {
   sameDrawingValue,
 } from "./drawings.js";
 export type {
+  ApplyLayoutPlanOptions,
+  LayoutPlan,
+  LayoutPlanPlacement,
+  LayoutPlanSection,
+  LayoutPlanSize,
+  LayoutPlanSummary,
+  LayoutPlanTargets,
+} from "./layoutPlan.js";
+export {
+  clampLayoutCoordinate,
+  LAYOUT_APPLY_ORIGIN,
+  LayoutPlanError,
+  layoutPlanIssues,
+  layoutPlanPlacementSchema,
+  layoutPlanSchema,
+  layoutPlanSectionSchema,
+  layoutPlanSizeSchema,
+  MAX_LAYOUT_COORDINATE,
+  MIN_LAYOUT_SECTION_HEIGHT,
+  MIN_LAYOUT_SECTION_WIDTH,
+  parseLayoutPlan,
+} from "./layoutPlan.js";
+export type {
   CardContainers,
   CardFieldView,
   CreateCardInput,

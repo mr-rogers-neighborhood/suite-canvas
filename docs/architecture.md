@@ -538,7 +538,8 @@ root board.
 asks for `flow` or `ice`, so a normal workspace and a share both open on the scene. The scene badge
 shows board/card/portal counts, the focused path and a link back to `?canvas=flow`.
 `?canvas=ice` mounts the lazy spike of [ADR-0032](./decisions/0032-ice-engine-deferral.md) or its
-WebGPU fallback.
+WebGPU fallback; the headed launch, adapter HUD and the gated check are in
+[docs/ice-spike.md](./ice-spike.md).
 
 A workspace created from the launcher carries `?fresh=1` and is seeded once with
 `seedExampleWorkspace`: three boards (Atlas, Research, Sources), fourteen cards, four portals

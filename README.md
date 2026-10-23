@@ -243,6 +243,7 @@ requirements, and the relay is a single SQLite-backed instance.
 - [docs/conventions.md](docs/conventions.md) — coding standards
 - [docs/limits.md](docs/limits.md) — every quota, its variable and where it is enforced (generated)
 - [docs/testing.md](docs/testing.md) — test layers, counts, and how to watch a run
+- [docs/ice-spike.md](docs/ice-spike.md) — the experimental ICE demo: headed Chrome launch, HUD, and what it cannot do
 - [docs/operations.md](docs/operations.md) — runbook: boot, watch, back up, restore, tune
 - [docs/release.md](docs/release.md) — tag, image digest, smoke test and rollback
 - [docs/billing.md](docs/billing.md) — licence format and the self-host path (hosted billing is closed)

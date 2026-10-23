@@ -96,3 +96,61 @@ status above or answer any of the gates.
 - **What this does not prove.** Gates 1–7 remain open: this is a rendering spike with no Suite
   cards, portal projection, canonical writes, presence or text. Nothing here should be read as
   evidence that ICE fits Suite.
+
+## Amendment (2026-10-23): the headed launch and the hardware probe
+
+The spike is now reachable through a repeatable launch and has been measured on a
+real adapter. The status stays **accepted**: this is still a rendering spike, and
+no gate below is answered.
+
+- **The machine was never the problem; the launch mode was.** On the reference
+  machine (Arch Linux, Intel UHD + NVIDIA RTX 3080 Laptop, Vulkan 1.4, Chrome
+  155.0.8059.79) `navigator.gpu` exists on `http://localhost`, but Chrome with its
+  default flags returns no adapter, so the desk showed `engine: no adapter`. A
+  headed Chrome with `--enable-unsafe-webgpu --enable-features=Vulkan` returns the
+  NVIDIA adapter; `--use-angle=vulkan` also puts compositing and WebGL on it.
+  The VS Code integrated browser exposes no adapter, and headless Chrome reports
+  software, so both keep rendering the fallback card by design.
+- **Probe result.** `scripts/ice-chrome.mjs --probe` ran ten flag/config
+  combinations against this Chrome. `--enable-unsafe-webgpu` alone reported
+  `google / swiftshader` (software, 1024 MiB max buffer). Adding
+  `--enable-features=Vulkan` reported `nvidia / ampere` (hardware, 4096 MiB max
+  buffer), as did `--use-angle=vulkan`, `--use-vulkan=native`,
+  `--disable-gpu-driver-bug-workarounds`, `VK_ICD_FILENAMES`, and a direct Chrome launch.
+  `--ignore-gpu-blocklist`, `VK_ICD_FILENAMES`, `--disable-gpu-sandbox` and
+  `--ozone-platform=x11` were not required; Wayland with Vulkan is incompatible in
+  this build. Every combination acquired a device; the adapter identity, not
+  correctness, is what changed.
+- **Launch entry point.** `pnpm dev:ice` runs `scripts/ice-chrome.mjs`, which
+  reuses or starts the canvas dev server, opens a headed Chrome with a dedicated
+  `.ice-chrome-profile/`, and loads a fresh
+  `?workspace=suite-ice-<timestamp>&fresh=1&canvas=ice#owner=<uuid>`. The desk
+  seeds ten objects: six notes, two mini mats (one note inside each, so depth two
+  and the far-LOD chip are visible), a whiteboard and a notebook, on the dark desk
+  theme.
+- **HUD evidence.** The badge reports phase, engine state, the adapter
+  (`hardware`/`software` plus vendor, architecture and device), the seeded count,
+  a once-per-second FPS sample, seed failures, and `Reset demo` and
+  `Copy diagnostics` actions. Software is labelled as such, so no SwiftShader
+  frame time can be mistaken for a hardware measurement. The device-lost path is
+  a known failure mode under some software and virtual-display configurations;
+  the fallback card says so and points at the reset and diagnostics.
+- **Gated end-to-end evidence.** `e2e/tests/ice.spec.ts` launches the system
+  Chrome headed with the flags above, waits for `engine: ready` and
+  `10/10 objects seeded`, and asserts the desk canvas exists. It is skipped unless
+  `SUITE_ICE_E2E` is set, so the default e2e run still needs no GPU, and it writes
+  a screenshot only on failure instead of committing a baseline.
+- **Bundle evidence.** The default load path still carries no ICE code. In a
+  production build, `rg -n 'vibecook|desk.note|ice-surface' apps/canvas/dist`
+  matches only the lazily imported chunk graph: `IceSurface-*.js`,
+  `IceSurface-*.css`, `chunk-Y7K6CHSF-*.js`, `chunk-REJTEK3V-*.js`,
+  `desk-*.js`, `desk-objects-*.js`, `react-*.js` and `dist-*.js` (about 1.32 MB
+  minified in total). The assets on the boot path — `main-*.js`,
+  `endpoints-*.js`, `App-*.js`, `main-*.css` — contain none of those strings, and
+  `App-*.js` reaches the ICE chunk only through `lazy(() => import(...))`. So
+  "no ICE code is ever fetched" holds; the earlier "no ICE chunk is emitted"
+  claim does not hold once the route is wired, and this amendment corrects it.
+- **What this does not prove.** The adapter, the seed and the interaction set are
+  visible, but Suite cards, portal projection, canonical writes, presence and
+  text remain absent. Gates 1–7 are still the bar for treating ICE as an engine
+  candidate. The operator guide is [docs/ice-spike.md](../ice-spike.md).

@@ -35,3 +35,6 @@ stryker.log
 
 # Isolated checkouts for parallel workstreams.
 .worktrees/
+
+# Chrome profile the ICE launcher (`pnpm dev:ice`) owns.
+.ice-chrome-profile/

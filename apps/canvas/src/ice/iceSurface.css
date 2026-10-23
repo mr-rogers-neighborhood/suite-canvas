@@ -79,7 +79,7 @@
   top: 12px;
   left: 12px;
   display: flex;
-  max-width: min(280px, calc(100vw - 24px));
+  max-width: min(320px, calc(100vw - 24px));
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
@@ -112,6 +112,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ice-surface__badge-meta {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ice-surface__badge-failure {
+  overflow: hidden;
+  color: var(--section-rose);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .ice-surface__badge-seed,
 .ice-surface__badge-hint {
   overflow: hidden;
@@ -119,6 +142,41 @@
   font-size: 11px;
   line-height: 16px;
   text-overflow: ellipsis;
+}
+
+.ice-surface__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ice-surface__button {
+  padding: 3px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.ice-surface__button:hover {
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+}
+
+.ice-surface__button:focus-visible {
+  outline: 2px solid var(--mention-ink);
+  outline-offset: 1px;
+}
+
+.ice-surface__copy-status {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 15px;
 }
 
 .ice-surface__link {

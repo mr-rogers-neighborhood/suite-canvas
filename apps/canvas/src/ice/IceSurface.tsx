@@ -1,10 +1,11 @@
 /**
- * The ICE spike surface — `?canvas=ice` (ADR-0032 amendment, 2026-10-23).
+ * The ICE demo surface — `?canvas=ice` (ADR-0032 amendment, 2026-10-23).
  *
  * EXPERIMENTAL, NOT DOCUMENT TRUTH. This surface mounts a private, in-memory
- * `@vibecook/ice` desk: it seeds two notes and a mini mat to demonstrate
- * containers and far-LOD chips, and it never reads or writes Suite's graph.
- * The default canvas and `?canvas=scene` remain the only real surfaces.
+ * `@vibecook/ice` desk seeded with ten objects: six notes (four loose, one
+ * inside each mini mat), two mini mats, a whiteboard and a notebook. It never
+ * reads or writes Suite's graph. The default canvas and `?canvas=scene` remain
+ * the only real surfaces.
  *
  * Route contract: `App` mounts this only when `currentCanvasSurface()` returns
  * `"ice"`, behind `lazy(() => import("./ice/IceSurface"))`, so the default
@@ -13,14 +14,25 @@
  * Everything below the HUD is loaded on demand — a WebGPU browser is detected
  * first, and only then are `@vibecook/ice`, `/desk`, `/desk/objects` and
  * `/react` imported together. No ICE code, shader or WGSL text is reachable
- * from the app's static entry, so the default path pays nothing for the spike.
+ * from the app's static entry, so the default path pays nothing for the demo.
+ *
+ * The whiteboard (`desk.board`) ships in `DESK_OBJECTS`, but ICE 0.16.0 has no
+ * public seeded-surface API: a board's ink is the `StrokePrefab` data its
+ * mounted pen writes through a GuardedTx. The demo therefore spawns a blank
+ * board (blue marker, bullet tip) and leaves drawing to the pointer, rather
+ * than reaching into engine internals to fabricate strokes.
+ *
+ * The desk wears the shipped dark theme and palette (ICE's moonlit skin), and
+ * frames its seeded content on the first mount so the demo never opens on an
+ * empty patch of mat.
  *
  * Handwriting is deliberately off: `deskLayer` gets no `text` raster because
  * that needs the Caveat/Kalam face files, which this app does not host, and the
- * spike must not fetch a third-party font. The seeded notes show their paper,
- * the mini mat and its chip LOD; they do not show glyphs.
+ * demo must not fetch a third-party font. The seeded notes carry real text for
+ * the note bodies and diagnostics; the GPU shows their paper, the mini mats and
+ * their chip LOD.
  */
-import type { CanvasEngine, DocSession, SpawnWidgetOpts } from "@vibecook/ice";
+import type { CanvasEngine, DocSession, EngineGpu, Entity, SpawnWidgetOpts } from "@vibecook/ice";
 import type { DeskLayerFactory, DeskLayerHandle, DeskLayerStatus } from "@vibecook/ice/desk";
 import type {
   DeskHandle,
@@ -32,10 +44,57 @@ import "./iceSurface.css";
 
 const NOTE_TYPE = "desk.note";
 const MINIMAT_TYPE = "desk.minimat";
-const SEED_OBJECT_COUNT = 3;
+const BOARD_TYPE = "desk.board";
+const NOTEBOOK_TYPE = "desk.notebook";
+const DEMO_SEED_COUNT = 10;
+/**
+ * A discarded StrictMode mount tears its own device down and reports it lost.
+ * A real loss is not undone by a fresh mount, so the report waits long enough
+ * for the retained mount to say it is healthy first.
+ */
+const FAILED_SETTLE_MS = 300;
+/** Let the desk's boot framing settle before showing the whole seeded demo. */
+const FIT_SETTLE_MS = 400;
+
+/** The slice of `GPUAdapterInfo` this surface reads. */
+interface GpuAdapterInfo {
+  readonly vendor?: string;
+  readonly architecture?: string;
+  readonly device?: string;
+  readonly description?: string;
+  readonly isFallback?: boolean;
+}
+
+/** The slice of `GPUAdapter` the preflight needs, without ambient WebGPU types. */
+interface GpuAdapter {
+  readonly info?: GpuAdapterInfo;
+  requestAdapterInfo?: () => Promise<GpuAdapterInfo>;
+}
 
 interface WebGpuApi {
-  requestAdapter(): Promise<unknown>;
+  requestAdapter(): Promise<GpuAdapter | null>;
+}
+
+/**
+ * What the preflight learned about the adapter. Kept plain (strings and a
+ * boolean) so a lost device cannot invalidate it later.
+ */
+interface AdapterSummary {
+  readonly kind: "hardware" | "software";
+  readonly vendor: string;
+  readonly architecture: string;
+  readonly device: string;
+  readonly description: string;
+  readonly fallback: boolean;
+}
+
+interface SeedReport {
+  readonly seeded: number;
+  readonly total: number;
+  readonly kinds: readonly string[];
+  readonly failures: readonly string[];
+  /** The entities that did spawn — what the camera frames on the first mount. */
+  readonly entities: readonly Entity[];
 }
 
 interface LoadedIce {
@@ -43,18 +102,27 @@ interface LoadedIce {
   readonly layer: DeskLayerFactory;
   readonly Desk: typeof IceDesk;
   readonly EngineProvider: typeof IceEngineProvider;
-  /** What the in-memory document was seeded with, for the HUD. */
-  readonly seed: string;
 }
 
 type Phase =
   | { readonly kind: "checking" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "unavailable"; readonly reason: "api" | "adapter"; readonly detail: string }
-  | { readonly kind: "failed"; readonly detail: string }
-  | ({ readonly kind: "ready" } & LoadedIce);
+  | { readonly kind: "loading"; readonly adapter?: AdapterSummary }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: "api" | "adapter";
+      readonly detail: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly reason: "engine" | "device-lost";
+      readonly detail: string;
+      readonly adapter?: AdapterSummary | undefined;
+    }
+  | ({ readonly kind: "ready"; readonly adapter: AdapterSummary } & LoadedIce);
 
 type EngineState = DeskLayerStatus["state"];
+
+const UNREPORTED = "unreported";
 
 /** `navigator.gpu` without depending on `@webgpu/types` being ambient. */
 function webGpuApi(): WebGpuApi | undefined {
@@ -85,19 +153,126 @@ function quietly(run: () => void): void {
   }
 }
 
-/**
- * Seeds the demo document. A container (mini mat) holding a note is the point:
- * it exercises ICE's nested canvas, the chip far-LOD and the zoom-through
- * without involving any Suite data. Each spawn is independent so one refusing
- * kind still leaves the rest of the desk usable.
- */
-function seedSpikeDocument(engine: CanvasEngine): string {
-  let seeded = 0;
-  const failures: string[] = [];
+function textOf(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : UNREPORTED;
+}
 
-  // The projection is what registers a new document's root frame and, after a
-  // spawn, the container frame a child needs. Seeding runs before the desk's
-  // host exists, so it drives the two steps the host would otherwise drive.
+/**
+ * Normalizes `GPUAdapterInfo` into the HUD's row. A fallback adapter, or one
+ * whose identifiers name a software rasterizer, is labelled `software`; every
+ * other adapter is `hardware`.
+ */
+function summarizeAdapter(info: GpuAdapterInfo | undefined): AdapterSummary {
+  const vendor = textOf(info?.vendor);
+  const architecture = textOf(info?.architecture);
+  const device = textOf(info?.device);
+  const description = textOf(info?.description);
+  const fallback = info?.isFallback === true;
+  const named = `${vendor} ${architecture} ${device} ${description}`.toLowerCase();
+  const software = fallback || /swiftshader|llvmpipe|software|basic render/.test(named);
+  return {
+    kind: software ? "software" : "hardware",
+    vendor,
+    architecture,
+    device,
+    description,
+    fallback,
+  };
+}
+
+/** Chrome exposes `adapter.info`; older engines expose `requestAdapterInfo()`. */
+async function adapterInfoOf(adapter: GpuAdapter): Promise<GpuAdapterInfo | undefined> {
+  try {
+    if (adapter.info !== undefined) return adapter.info;
+  } catch {
+    // Some engines make `info` throw until the device exists; fall through.
+  }
+  if (typeof adapter.requestAdapterInfo !== "function") return undefined;
+  try {
+    return await adapter.requestAdapterInfo();
+  } catch {
+    return undefined;
+  }
+}
+
+function adapterOf(phase: Phase): AdapterSummary | undefined {
+  if (phase.kind === "ready" || phase.kind === "loading") return phase.adapter;
+  if (phase.kind === "failed") return phase.adapter;
+  return undefined;
+}
+
+function adapterLine(phase: Phase): string {
+  const adapter = adapterOf(phase);
+  if (adapter === undefined) return "adapter: not acquired";
+  return `adapter: ${adapter.kind} · ${adapter.vendor} / ${adapter.architecture} / ${adapter.device}`;
+}
+
+function engineLine(phase: Phase, engineState: EngineState | null): string {
+  if (phase.kind === "ready") return `engine: ${engineState ?? "starting"}`;
+  if (phase.kind === "unavailable") {
+    return phase.reason === "api" ? "engine: no WebGPU" : "engine: no adapter";
+  }
+  if (phase.kind === "failed") {
+    return phase.reason === "device-lost" ? "engine: device lost" : "engine: failed";
+  }
+  return `engine: ${phase.kind}`;
+}
+
+function countKinds(kinds: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  return [...counts].map(([kind, count]) => `${kind} ×${count}`).join(", ");
+}
+
+function diagnosticsText(input: {
+  readonly phase: Phase;
+  readonly engineState: EngineState | null;
+  readonly seed: SeedReport | null;
+  readonly fps: number | null;
+}): string {
+  const { phase, engineState, seed, fps } = input;
+  const adapter = adapterOf(phase);
+  const lines = [
+    "ICE demo diagnostics (experimental — not document truth)",
+    `phase: ${phase.kind}`,
+    engineLine(phase, engineState),
+    adapterLine(phase),
+    seed === null
+      ? "seeded: none"
+      : `seeded: ${seed.seeded}/${seed.total} — ${countKinds(seed.kinds) || "no kinds"}`,
+    `fps: ${fps === null ? "not sampled" : fps}`,
+  ];
+  if (adapter !== undefined) {
+    lines.push(
+      `adapter detail: vendor=${adapter.vendor} architecture=${adapter.architecture} ` +
+        `device=${adapter.device} description=${adapter.description} fallback=${adapter.fallback}`,
+    );
+  }
+  if (phase.kind === "unavailable" || phase.kind === "failed") {
+    lines.push(`detail: ${phase.detail}`);
+  }
+  if (seed !== null && seed.failures.length > 0) {
+    lines.push("seed failures:", ...seed.failures.map((failure) => `- ${failure}`));
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Seeds the demo desk. Each spawn is independent so one refusing kind still
+ * leaves the rest usable, and every failure is reported to the HUD. Child
+ * coordinates are frame-local: a note placed with `parent` sits inside that
+ * mini mat and moves with it.
+ */
+function seedDemoDocument(engine: CanvasEngine): SeedReport {
+  let seeded = 0;
+  const kinds: string[] = [];
+  const failures: string[] = [];
+  const entities: Entity[] = [];
+
+  // The projection registers a new document's root frame and, after a spawn,
+  // the container frame a child needs. Seeding runs before the desk's host
+  // exists, so it drives the steps the host would otherwise drive.
   const project = (): void => {
     try {
       engine.step(performance.now());
@@ -106,52 +281,111 @@ function seedSpikeDocument(engine: CanvasEngine): string {
     }
   };
 
-  const spawn = (type: string, opts: SpawnWidgetOpts): void => {
+  const spawn = (label: string, type: string, opts: SpawnWidgetOpts): Entity | undefined => {
     try {
-      engine.ops.spawnWidget(type, opts);
+      const entity = engine.ops.spawnWidget(type, { ...opts, undoable: false });
       seeded += 1;
+      kinds.push(type);
+      entities.push(entity);
+      return entity;
     } catch (error) {
-      failures.push(`${type}: ${describeError(error)}`);
+      failures.push(`${label} (${type}): ${describeError(error)}`);
+      return undefined;
     }
   };
 
   project();
 
-  spawn(NOTE_TYPE, {
-    x: 120,
-    y: 120,
-    props: { text: "ICE spike — this note lives in a throwaway document.", seed: 7 },
+  const research = spawn("Research mini mat", MINIMAT_TYPE, {
+    x: -470,
+    y: -140,
+    props: { name: "Research", vinyl: "charcoal" },
+  });
+  const reference = spawn("Reference mini mat", MINIMAT_TYPE, {
+    x: 240,
+    y: -140,
+    props: { name: "Reference", vinyl: "slate" },
   });
 
-  const mat = (() => {
-    try {
-      const entity = engine.ops.spawnWidget(MINIMAT_TYPE, {
-        x: 520,
-        y: 100,
-        props: { name: "Spike container", vinyl: "slate" },
-      });
-      seeded += 1;
-      return entity;
-    } catch (error) {
-      failures.push(`${MINIMAT_TYPE}: ${describeError(error)}`);
-      return undefined;
+  spawn("Intro note", NOTE_TYPE, {
+    x: -470,
+    y: -400,
+    props: {
+      text: "ICE demo — a throwaway document. Nothing here touches your workspace.",
+      pen: "felt",
+      seed: 11,
+    },
+  });
+  spawn("Pan and zoom note", NOTE_TYPE, {
+    x: -180,
+    y: -430,
+    props: {
+      text: "Drag a note to move it. Drag the bare mat to pan. The wheel zooms about the pointer.",
+      pen: "ball",
+      seed: 12,
+    },
+  });
+  spawn("Selection note", NOTE_TYPE, {
+    x: 110,
+    y: -390,
+    props: {
+      text: "Marquee-select across the mat. Shift-click adds to the selection.",
+      pen: "fountain",
+      seed: 13,
+    },
+  });
+  spawn("Mini-mat note", NOTE_TYPE, {
+    x: 400,
+    y: -420,
+    props: {
+      text: "Zoom into a mini mat to fly inside. Zoom out for its chip LOD.",
+      pen: "red",
+      seed: 14,
+    },
+  });
+  spawn("Whiteboard", BOARD_TYPE, { x: -470, y: 420, props: { cap: "blue", tip: "bullet" } });
+  spawn("Notebook", NOTEBOOK_TYPE, {
+    x: 200,
+    y: 460,
+    props: { title: "ICE demo notes", cover: "linen", ruling: "rules", seed: 15 },
+  });
+
+  // The projection above compiles both mini mats' inside frames before a child
+  // is placed in them.
+  project();
+
+  const putInside = (
+    label: string,
+    mat: Entity | undefined,
+    x: number,
+    y: number,
+    text: string,
+  ): void => {
+    if (mat === undefined) {
+      failures.push(`${label} (${NOTE_TYPE}): skipped — its mini mat did not spawn.`);
+      return;
     }
-  })();
+    spawn(label, NOTE_TYPE, { x, y, parent: mat, props: { text, pen: "ball", seed: 16 } });
+  };
 
-  if (mat !== undefined) {
-    project();
-    spawn(NOTE_TYPE, {
-      x: 560,
-      y: 140,
-      w: 160,
-      h: 160,
-      parent: mat,
-      props: { text: "A note inside the mini mat. Zoom out for the chip LOD." },
-    });
-  }
+  putInside(
+    "Research note",
+    research,
+    80,
+    90,
+    "Inside the Research mat — depth two. Everything in here moves with the mat.",
+  );
+  putInside(
+    "Reference note",
+    reference,
+    120,
+    70,
+    "Reset demo rebuilds this desk. Copy diagnostics reports the adapter and seed failures.",
+  );
 
-  const shape = `${seeded}/${SEED_OBJECT_COUNT} objects seeded`;
-  return failures.length === 0 ? shape : `${shape} — ${failures.join("; ")}`;
+  project();
+
+  return { seeded, total: DEMO_SEED_COUNT, kinds, failures, entities };
 }
 
 export interface IceSurfaceFallbackProps {
@@ -169,7 +403,9 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
         <p className="ice-surface__card-title" data-testid="ice-fallback-title">
           {title}
         </p>
-        <p className="ice-surface__card-copy">{message}</p>
+        <p className="ice-surface__card-copy" data-testid="ice-fallback-copy">
+          {message}
+        </p>
         {detail === undefined ? null : (
           <p className="ice-surface__card-detail" data-testid="ice-fallback-detail">
             {detail}
@@ -183,20 +419,41 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
   );
 }
 
-/** The ICE spike mount. The routing agent renders this only for `?canvas=ice`. */
+/** The ICE demo mount. The routing agent renders this only for `?canvas=ice`. */
 export function IceSurface() {
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
   const [engineState, setEngineState] = useState<EngineState | null>(null);
+  const [seed, setSeed] = useState<SeedReport | null>(null);
+  const [fps, setFps] = useState<number | null>(null);
+  const [copyState, setCopyState] = useState<string | null>(null);
+  const [runId, setRunId] = useState(0);
   const sceneHref = useMemo(sceneSurfaceHref, []);
-  const owned = useRef<{ engine?: CanvasEngine; doc?: DocSession }>({});
-  // One teardown for both exits: unmount, or a desk that reported `failed`
-  // and was replaced by the fallback. Emptying the ref makes it idempotent.
+  const owned = useRef<{ engine?: CanvasEngine; doc?: DocSession; gpu?: EngineGpu }>({});
+  const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const seededEntities = useRef<readonly Entity[]>([]);
+  const clearPendingFailure = useCallback(() => {
+    if (pendingFailure.current === undefined) return;
+    clearTimeout(pendingFailure.current);
+    pendingFailure.current = undefined;
+  }, []);
+  const clearPendingFit = useCallback(() => {
+    if (pendingFit.current === undefined) return;
+    clearTimeout(pendingFit.current);
+    pendingFit.current = undefined;
+  }, []);
+  // One teardown for every exit: unmount, a reset, or a desk that reported
+  // `failed` and was replaced by the fallback. Emptying the ref makes it
+  // idempotent.
   const teardown = useCallback(() => {
-    const { engine, doc } = owned.current;
+    clearPendingFailure();
+    clearPendingFit();
+    const { engine, doc, gpu } = owned.current;
     owned.current = {};
     if (doc !== undefined) quietly(() => doc.close());
     if (engine !== undefined) quietly(() => engine.dispose());
-  }, []);
+    if (gpu !== undefined) quietly(() => gpu.destroy());
+  }, [clearPendingFailure, clearPendingFit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,9 +471,9 @@ export function IceSurface() {
 
       setPhase({ kind: "loading" });
 
-      let adapter: unknown;
+      let raw: GpuAdapter | null;
       try {
-        adapter = await gpu.requestAdapter();
+        raw = await gpu.requestAdapter();
       } catch (error) {
         if (!cancelled) {
           setPhase({
@@ -228,7 +485,7 @@ export function IceSurface() {
         return;
       }
       if (cancelled) return;
-      if (adapter === null || adapter === undefined) {
+      if (raw === null) {
         setPhase({
           kind: "unavailable",
           reason: "adapter",
@@ -237,6 +494,11 @@ export function IceSurface() {
         return;
       }
 
+      const adapter = summarizeAdapter(await adapterInfoOf(raw));
+      if (cancelled) return;
+      setPhase({ kind: "loading", adapter });
+
+      let deviceAdapter: AdapterSummary | undefined;
       try {
         const [core, desk, objects, react] = await Promise.all([
           import("@vibecook/ice"),
@@ -246,29 +508,68 @@ export function IceSurface() {
         ]);
         if (cancelled) return;
 
-        const engine = core.createCanvasEngine(objects.DESK_ENGINE);
+        // ONE device per engine (D7): the desk adopts this one instead of
+        // acquiring its own, so a discarded StrictMode mount cannot destroy
+        // the device the retained mount is drawing with. The app owns its end
+        // of life — `teardown` releases it after the engine is disposed.
+        let gpu: EngineGpu;
+        try {
+          gpu = await core.acquireCompositorDevice();
+        } catch (error) {
+          if (!cancelled) {
+            setPhase({
+              kind: "unavailable",
+              reason: "adapter",
+              detail: `Could not create a WebGPU device: ${describeError(error)}`,
+            });
+          }
+          return;
+        }
+        if (cancelled) {
+          quietly(() => gpu.destroy());
+          return;
+        }
+        owned.current = { gpu };
+
+        deviceAdapter = summarizeAdapter(await adapterInfoOf(gpu.adapter));
+        if (cancelled) return;
+        setPhase({ kind: "loading", adapter: deviceAdapter });
+
+        const engine = core.createCanvasEngine({
+          ...objects.DESK_ENGINE,
+          compositorDevice: gpu,
+        });
         const doc = engine.docs.create();
-        owned.current = { engine, doc };
-        const seed = seedSpikeDocument(engine);
+        owned.current = { engine, doc, gpu };
+
+        const report = seedDemoDocument(engine);
+        seededEntities.current = report.entities;
         const layer = desk.deskLayer({
-          theme: objects.deskTheme("light"),
-          palette: objects.deskPalette("light"),
+          theme: objects.deskTheme("dark"),
+          palette: objects.deskPalette("dark"),
           objects: [...objects.DESK_OBJECTS],
           docs: engine.docs,
-          name: "ice-spike",
+          name: `ice-demo-${runId + 1}`,
         });
 
-        if (cancelled) return;
+        setSeed(report);
         setPhase({
           kind: "ready",
+          adapter: deviceAdapter ?? adapter,
           engine,
           layer,
           Desk: react.Desk,
           EngineProvider: react.EngineProvider,
-          seed,
         });
       } catch (error) {
-        if (!cancelled) setPhase({ kind: "failed", detail: describeError(error) });
+        if (!cancelled) {
+          setPhase({
+            kind: "failed",
+            reason: "engine",
+            detail: describeError(error),
+            adapter: deviceAdapter ?? adapter,
+          });
+        }
       }
     };
 
@@ -278,7 +579,7 @@ export function IceSurface() {
       cancelled = true;
       teardown();
     };
-  }, [teardown]);
+  }, [runId, teardown]);
 
   // A desk that reported `failed` is replaced by the fallback, so its engine
   // is released here rather than held until the route changes.
@@ -286,27 +587,98 @@ export function IceSurface() {
     if (phase.kind === "failed") teardown();
   }, [phase.kind, teardown]);
 
+  // FPS is sampled in a rAF counter and published once per second, never per
+  // frame: the HUD must not make React the desk's frame loop.
+  useEffect(() => {
+    if (phase.kind !== "ready" || typeof requestAnimationFrame !== "function") return;
+    let handle = 0;
+    let frames = 0;
+    let since = performance.now();
+    const tick = (now: number): void => {
+      frames += 1;
+      const elapsed = now - since;
+      if (elapsed >= 1000) {
+        setFps(Math.round((frames * 1000) / elapsed));
+        frames = 0;
+        since = now;
+      }
+      handle = requestAnimationFrame(tick);
+    };
+    handle = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(handle);
+  }, [phase.kind]);
+
   /**
    * The desk reports its own boot and device loss. A `failed` desk is replaced
    * by the fallback (the engine is disposed with it); `degraded` keeps drawing
    * and says so in the HUD.
    */
-  const handleReady = useCallback((handle: DeskHandle) => {
-    const layer = handle.layer as Partial<DeskLayerHandle>;
-    const apply = (status: DeskLayerStatus): void => {
-      setEngineState(status.state);
-      if (status.state === "failed") {
-        setPhase({
-          kind: "failed",
-          detail: status.message ?? "The desk reported a failed device.",
-        });
-      }
-    };
+  const handleReady = useCallback(
+    (handle: DeskHandle) => {
+      const layer = handle.layer as Partial<DeskLayerHandle>;
+      let active = true;
+      let framing = false;
+      const frameDemo = (): void => {
+        if (framing) return;
+        framing = true;
+        pendingFit.current = setTimeout(() => {
+          pendingFit.current = undefined;
+          if (!active || seededEntities.current.length === 0) return;
+          quietly(() => handle.engine.ops.zoomToFit(seededEntities.current));
+        }, FIT_SETTLE_MS);
+      };
+      const apply = (status: DeskLayerStatus): void => {
+        if (!active) return;
+        setEngineState(status.state);
+        clearPendingFailure();
+        if (status.state === "ready") frameDemo();
+        if (status.state !== "failed") return;
+        pendingFailure.current = setTimeout(() => {
+          pendingFailure.current = undefined;
+          if (!active) return;
+          setPhase((current) => ({
+            kind: "failed",
+            reason: "device-lost",
+            detail: status.message ?? "The desk lost its graphics device.",
+            adapter: current.kind === "ready" ? current.adapter : undefined,
+          }));
+        }, FAILED_SETTLE_MS);
+      };
 
-    if (typeof layer.status === "function") apply(layer.status());
-    if (typeof layer.onStatus !== "function") return;
-    return layer.onStatus(apply);
-  }, []);
+      if (typeof layer.status === "function") apply(layer.status());
+      const stop = typeof layer.onStatus === "function" ? layer.onStatus(apply) : undefined;
+      return () => {
+        active = false;
+        clearPendingFailure();
+        clearPendingFit();
+        stop?.();
+      };
+    },
+    [clearPendingFailure, clearPendingFit],
+  );
+
+  const resetDemo = useCallback(() => {
+    setPhase({ kind: "checking" });
+    setEngineState(null);
+    setSeed(null);
+    setFps(null);
+    setCopyState(null);
+    seededEntities.current = [];
+    clearPendingFit();
+    setRunId((id) => id + 1);
+  }, [clearPendingFit]);
+
+  const copyDiagnostics = useCallback(async (): Promise<void> => {
+    const text = diagnosticsText({ phase, engineState, seed, fps });
+    try {
+      const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+      if (clipboard === undefined) throw new Error("clipboard is unavailable in this browser");
+      await clipboard.writeText(text);
+      setCopyState("Diagnostics copied");
+    } catch (error) {
+      setCopyState(`Copy failed: ${describeError(error)}`);
+    }
+  }, [phase, engineState, seed, fps]);
 
   const ready = phase.kind === "ready" ? phase : null;
 
@@ -352,7 +724,7 @@ export function IceSurface() {
           title={
             phase.reason === "api" ? "This browser has no WebGPU" : "WebGPU has no graphics adapter"
           }
-          message="ICE is an experimental WebGPU engine, so the desk cannot start here. The default canvas and the scene projection are unaffected."
+          message="ICE is an experimental WebGPU engine, so the desk cannot start here. Run `pnpm dev:ice` and open the printed URL in a headed Chrome started with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs` does both for you). The integrated browser and headless Chrome will not work. The default canvas and the scene projection are unaffected."
           detail={
             phase.reason === "api"
               ? `${phase.detail} Try Chrome 113+, Edge 113+, or Safari 26+ with hardware acceleration on.`
@@ -364,26 +736,81 @@ export function IceSurface() {
 
       {phase.kind === "failed" ? (
         <IceSurfaceFallback
-          title="ICE could not start"
-          message="The desk failed before it could draw. Nothing was written to your workspace."
+          title={
+            phase.reason === "device-lost" ? "The graphics device was lost" : "ICE could not start"
+          }
+          message={
+            phase.reason === "device-lost"
+              ? "ICE stopped drawing because the graphics device went away. Nothing was written to your workspace. Reset demo rebuilds the desk."
+              : "The desk failed before it could draw. Nothing was written to your workspace. Reset demo retries; if it keeps failing, run `pnpm dev:ice` in a headed Chrome with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs`)."
+          }
           detail={phase.detail}
           sceneHref={sceneHref}
         />
       ) : null}
 
       <div className="ice-surface__badge" data-testid="ice-hud">
-        <span className="ice-surface__badge-title">ICE spike</span>
+        <span className="ice-surface__badge-title">ICE demo</span>
         <span className="ice-surface__badge-note">Experimental — not document truth</span>
         <span className="ice-surface__badge-status" data-testid="ice-status" aria-live="polite">
-          engine: {phase.kind === "ready" ? (engineState ?? "starting") : phase.kind}
+          {engineLine(phase, engineState)}
         </span>
-        {ready === null ? null : (
-          <span className="ice-surface__badge-seed" data-testid="ice-seed">
-            {ready.seed}
+        <span className="ice-surface__badge-meta" data-testid="ice-phase">
+          phase: {phase.kind}
+        </span>
+        <span className="ice-surface__badge-seed" data-testid="ice-seed">
+          {seed === null ? "seeded: —" : `${seed.seeded}/${seed.total} objects seeded`}
+        </span>
+        <span
+          className="ice-surface__badge-meta"
+          data-testid="ice-adapter"
+          title={adapterLine(phase)}
+        >
+          {adapterLine(phase)}
+        </span>
+        <span className="ice-surface__badge-meta" data-testid="ice-fps">
+          fps: {fps === null ? "—" : fps}
+        </span>
+        {seed !== null && seed.failures.length > 0 ? (
+          <span
+            className="ice-surface__badge-failure"
+            data-testid="ice-seed-failures"
+            title={seed.failures.join("\n")}
+          >
+            {seed.failures.join("; ")}
+          </span>
+        ) : null}
+        <div className="ice-surface__actions">
+          <button
+            type="button"
+            className="ice-surface__button"
+            data-testid="ice-reset"
+            onClick={resetDemo}
+          >
+            Reset demo
+          </button>
+          <button
+            type="button"
+            className="ice-surface__button"
+            data-testid="ice-copy-diagnostics"
+            onClick={() => {
+              void copyDiagnostics();
+            }}
+          >
+            Copy diagnostics
+          </button>
+        </div>
+        {copyState === null ? null : (
+          <span
+            className="ice-surface__copy-status"
+            data-testid="ice-copy-status"
+            aria-live="polite"
+          >
+            {copyState}
           </span>
         )}
         <span className="ice-surface__badge-hint">
-          Pan the mat · wheel to zoom · click a note to select
+          Pan the mat · wheel to zoom · drag a note to move it
         </span>
         <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>
           Back to the scene surface

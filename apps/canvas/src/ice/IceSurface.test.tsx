@@ -1,14 +1,16 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IceSurface } from "./IceSurface";
 
 /**
- * The ICE modules are mocked so the wiring (detection, seeding, teardown) is
- * covered in jsdom, where WebGPU does not exist. The real modules are never
- * imported by these tests.
+ * The ICE modules are mocked so the wiring (detection, adapter reporting,
+ * seeding, reset and teardown) is covered in jsdom, where WebGPU does not
+ * exist. The real modules are never imported by these tests.
  */
 const ice = vi.hoisted(() => {
-  const layerStatus: { current: { state: "ready" | "degraded" | "failed"; message?: string } } = {
+  const layerStatus: {
+    current: { state: "ready" | "degraded" | "failed"; message?: string };
+  } = {
     current: { state: "ready" },
   };
   const unsubscribe = vi.fn();
@@ -18,35 +20,68 @@ const ice = vi.hoisted(() => {
   };
   const deskLayer = vi.fn(() => () => layer);
   const close = vi.fn();
+  const destroyDevice = vi.fn();
   const dispose = vi.fn();
-  const spawnWidget = vi.fn((_type: string, _opts: unknown) => ({ entity: 1 }));
+  const acquireCompositorDevice = vi.fn(async () => {
+    const api = (navigator as Navigator & { gpu?: { requestAdapter: () => Promise<unknown> } }).gpu;
+    const adapter = await api?.requestAdapter();
+    if (adapter === null || adapter === undefined) {
+      throw new Error("WebGPU: requestAdapter() returned null");
+    }
+    return {
+      adapter,
+      device: {},
+      enabled: [],
+      hasTimestampQuery: false,
+      errors: () => [],
+      destroy: destroyDevice,
+    };
+  });
+  let entity = 0;
+  const spawn = (_type: string, _opts: unknown) => {
+    entity += 1;
+    return { entity };
+  };
+  const spawnWidget = vi.fn(spawn);
   const step = vi.fn();
   const createCanvasEngine = vi.fn(() => ({
     docs: { create: () => ({ close }) },
-    ops: { spawnWidget },
+    ops: { spawnWidget, zoomToFit: vi.fn() },
     step,
     dispose,
   }));
   return {
+    acquireCompositorDevice,
     close,
     createCanvasEngine,
     deskLayer,
+    deskPalette: vi.fn(() => ({})),
+    deskTheme: vi.fn(() => ({})),
+    destroyDevice,
     dispose,
     layer,
     layerStatus,
+    resetSpawn: () => {
+      entity = 0;
+      spawnWidget.mockReset();
+      spawnWidget.mockImplementation(spawn);
+    },
     spawnWidget,
     step,
     unsubscribe,
   };
 });
 
-vi.mock("@vibecook/ice", () => ({ createCanvasEngine: ice.createCanvasEngine }));
+vi.mock("@vibecook/ice", () => ({
+  acquireCompositorDevice: ice.acquireCompositorDevice,
+  createCanvasEngine: ice.createCanvasEngine,
+}));
 vi.mock("@vibecook/ice/desk", () => ({ deskLayer: ice.deskLayer }));
 vi.mock("@vibecook/ice/desk/objects", () => ({
   DESK_ENGINE: { widgets: [] },
   DESK_OBJECTS: [],
-  deskPalette: () => ({}),
-  deskTheme: () => ({}),
+  deskPalette: ice.deskPalette,
+  deskTheme: ice.deskTheme,
 }));
 vi.mock("@vibecook/ice/react", async () => {
   const { createElement, useEffect } = await import("react");
@@ -59,14 +94,30 @@ vi.mock("@vibecook/ice/react", async () => {
   };
 });
 
+const ADAPTER = {
+  info: {
+    vendor: "Acme",
+    architecture: "gen-1",
+    device: "fake-gpu",
+    description: "the test adapter",
+    isFallback: false,
+  },
+};
+
 function stubGpu(value: unknown): void {
   Object.defineProperty(navigator, "gpu", { configurable: true, value });
+}
+
+function stubClipboard(writeText: (text: string) => Promise<void>): void {
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
 }
 
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(navigator, "gpu");
+  Reflect.deleteProperty(navigator, "clipboard");
   ice.layerStatus.current = { state: "ready" };
+  ice.resetSpawn();
   vi.clearAllMocks();
 });
 
@@ -79,10 +130,15 @@ describe("IceSurface", () => {
       "This browser has no WebGPU",
     );
     expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent("navigator.gpu");
+    expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("pnpm dev:ice");
+    expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("--enable-unsafe-webgpu");
+    expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("integrated browser");
     expect(screen.getByTestId("ice-scene-link")).toHaveAttribute(
       "href",
       expect.stringContaining("canvas=scene"),
     );
+    expect(screen.getByTestId("ice-status")).toHaveTextContent("engine: no WebGPU");
+    expect(screen.getByTestId("ice-phase")).toHaveTextContent("phase: unavailable");
     // The dynamic import is the whole point: an unsupported browser pays nothing.
     expect(ice.createCanvasEngine).not.toHaveBeenCalled();
     expect(ice.deskLayer).not.toHaveBeenCalled();
@@ -95,39 +151,103 @@ describe("IceSurface", () => {
 
     expect(await screen.findByText("WebGPU has no graphics adapter")).toBeInTheDocument();
     expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent("no adapter");
+    expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("pnpm dev:ice");
+    expect(screen.getByTestId("ice-adapter")).toHaveTextContent("adapter: not acquired");
+    expect(ice.acquireCompositorDevice).not.toHaveBeenCalled();
     expect(ice.createCanvasEngine).not.toHaveBeenCalled();
   });
 
-  it("should seed a note and a mini mat, then dispose the desk on unmount", async () => {
-    stubGpu({ requestAdapter: async () => ({}) });
+  it("should seed the rich desk on a dark palette and report the adapter", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
 
-    const view = render(<IceSurface />);
+    render(<IceSurface />);
 
     expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(ice.acquireCompositorDevice).toHaveBeenCalledTimes(1);
     expect(ice.createCanvasEngine).toHaveBeenCalledTimes(1);
+    expect(ice.createCanvasEngine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compositorDevice: expect.objectContaining({ adapter: ADAPTER }),
+      }),
+    );
 
     const spawned = ice.spawnWidget.mock.calls.map(([type]) => type);
-    expect(spawned).toEqual(["desk.note", "desk.minimat", "desk.note"]);
-    expect(ice.spawnWidget.mock.calls[2]?.[1]).toMatchObject({ parent: { entity: 1 } });
-    expect(ice.deskLayer).toHaveBeenCalledWith(expect.objectContaining({ name: "ice-spike" }));
-    // One projection for the document root, one that compiles the mini mat's
-    // container frame before a child is placed inside it.
-    expect(ice.step).toHaveBeenCalledTimes(2);
+    expect(spawned).toEqual([
+      "desk.minimat",
+      "desk.minimat",
+      "desk.note",
+      "desk.note",
+      "desk.note",
+      "desk.note",
+      "desk.board",
+      "desk.notebook",
+      "desk.note",
+      "desk.note",
+    ]);
+    // Both contained notes are frame-local children of the two mini mats.
+    expect(ice.spawnWidget.mock.calls[8]?.[1]).toMatchObject({ parent: { entity: 1 } });
+    expect(ice.spawnWidget.mock.calls[9]?.[1]).toMatchObject({ parent: { entity: 2 } });
+    // Every seed is a batch write, never an undo step.
+    expect(ice.spawnWidget.mock.calls.every(([, opts]) => opts !== undefined)).toBe(true);
+    expect(
+      ice.spawnWidget.mock.calls.every(
+        ([, opts]) => (opts as { undoable?: boolean }).undoable === false,
+      ),
+    ).toBe(true);
+
+    expect(ice.deskTheme).toHaveBeenCalledWith("dark");
+    expect(ice.deskPalette).toHaveBeenCalledWith("dark");
+    expect(ice.deskLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ice-demo-1", theme: {}, palette: {} }),
+    );
+    // One projection for the root, one that compiles the mini mats' frames,
+    // and one that settles the children.
+    expect(ice.step).toHaveBeenCalledTimes(3);
 
     expect(await screen.findByText("engine: ready")).toBeInTheDocument();
-    expect(screen.getByTestId("ice-seed")).toHaveTextContent("3/3 objects seeded");
+    expect(screen.getByTestId("ice-phase")).toHaveTextContent("phase: ready");
+    expect(screen.getByTestId("ice-seed")).toHaveTextContent("10/10 objects seeded");
+    expect(screen.getByTestId("ice-adapter")).toHaveTextContent(
+      "hardware · Acme / gen-1 / fake-gpu",
+    );
     expect(screen.getByTestId("ice-hud")).toHaveTextContent("not document truth");
+    expect(screen.getByTestId("ice-fps")).toHaveTextContent("fps:");
+  });
 
-    view.unmount();
+  it("should label a fallback adapter as software", async () => {
+    stubGpu({
+      requestAdapter: async () => ({
+        info: { vendor: "Google", architecture: "swiftshader", isFallback: true },
+      }),
+    });
 
-    expect(ice.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(ice.close).toHaveBeenCalledTimes(1);
-    expect(ice.dispose).toHaveBeenCalledTimes(1);
+    render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-adapter")).toHaveTextContent(
+      "software · Google / swiftshader",
+    );
+  });
+
+  it("should keep seeding after a refused kind and report the failure", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    let next = 0;
+    ice.spawnWidget.mockImplementation((type: string) => {
+      if (type === "desk.board") throw new Error("no board today");
+      next += 1;
+      return { entity: next };
+    });
+
+    render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-seed-failures")).toHaveTextContent("desk.board");
+    expect(screen.getByTestId("ice-seed-failures")).toHaveTextContent("no board today");
+    expect(screen.getByTestId("ice-seed")).toHaveTextContent("9/10 objects seeded");
+    expect(screen.getByText("engine: ready")).toBeInTheDocument();
   });
 
   it("should keep a degraded desk mounted and say so in the HUD", async () => {
     ice.layerStatus.current = { state: "degraded", message: "a frame was lost" };
-    stubGpu({ requestAdapter: async () => ({}) });
+    stubGpu({ requestAdapter: async () => ADAPTER });
 
     render(<IceSurface />);
 
@@ -136,14 +256,127 @@ describe("IceSurface", () => {
     expect(screen.queryByTestId("ice-fallback")).not.toBeInTheDocument();
   });
 
-  it("should replace a failed desk with a calm fallback and still tear down", async () => {
+  it("should replace a lost device with a calm fallback and still tear down", async () => {
     ice.layerStatus.current = { state: "failed", message: "device lost" };
-    stubGpu({ requestAdapter: async () => ({}) });
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    render(<IceSurface />);
+
+    expect(await screen.findByText("The graphics device was lost")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent("device lost");
+    expect(screen.getByTestId("ice-status")).toHaveTextContent("engine: device lost");
+    expect(ice.dispose).toHaveBeenCalledTimes(1);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("should distinguish an engine failure from a lost device", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    ice.createCanvasEngine.mockImplementationOnce(() => {
+      throw new Error("the engine refused to boot");
+    });
 
     render(<IceSurface />);
 
     expect(await screen.findByText("ICE could not start")).toBeInTheDocument();
-    expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent("device lost");
+    expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent(
+      "the engine refused to boot",
+    );
+    expect(screen.getByTestId("ice-status")).toHaveTextContent("engine: failed");
+    expect(ice.dispose).not.toHaveBeenCalled();
+    // The device was acquired before the engine refused it, so it is released.
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("should tear down and reseed when Reset demo is pressed", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    const view = render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(ice.createCanvasEngine).toHaveBeenCalledTimes(1);
+    expect(ice.spawnWidget).toHaveBeenCalledTimes(10);
+
+    fireEvent.click(screen.getByTestId("ice-reset"));
+
+    await waitFor(() => expect(ice.createCanvasEngine).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(20));
+    expect(ice.close).toHaveBeenCalledTimes(1);
     expect(ice.dispose).toHaveBeenCalledTimes(1);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-seed")).toHaveTextContent("10/10 objects seeded");
+
+    view.unmount();
+
+    expect(ice.close).toHaveBeenCalledTimes(2);
+    expect(ice.dispose).toHaveBeenCalledTimes(2);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(2);
+    expect(ice.unsubscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it("should copy adapter details and seed failures to the clipboard", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    let next = 0;
+    ice.spawnWidget.mockImplementation((type: string) => {
+      if (type === "desk.notebook") throw new Error("the notebook was refused");
+      next += 1;
+      return { entity: next };
+    });
+    const writeText = vi.fn((_text: string) => Promise.resolve());
+    stubClipboard(writeText);
+
+    render(<IceSurface />);
+
+    await screen.findByTestId("ice-seed-failures");
+    fireEvent.click(screen.getByTestId("ice-copy-diagnostics"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const copied = writeText.mock.calls[0]?.[0] ?? "";
+    expect(copied).toContain("vendor=Acme architecture=gen-1 device=fake-gpu");
+    expect(copied).toContain("seeded: 9/10");
+    expect(copied).toContain("desk.notebook");
+    expect(copied).toContain("the notebook was refused");
+    expect(await screen.findByTestId("ice-copy-status")).toHaveTextContent("Diagnostics copied");
+  });
+
+  it("should say so when the clipboard is unavailable", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    render(<IceSurface />);
+
+    await screen.findByTestId("ice-desk-mock");
+    fireEvent.click(screen.getByTestId("ice-copy-diagnostics"));
+
+    expect(await screen.findByTestId("ice-copy-status")).toHaveTextContent(
+      "Copy failed: clipboard is unavailable",
+    );
+  });
+
+  it("should dispose the desk and unsubscribe on unmount", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    const view = render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    view.unmount();
+
+    expect(ice.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(ice.close).toHaveBeenCalledTimes(1);
+    expect(ice.dispose).toHaveBeenCalledTimes(1);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("should report a device that cannot be acquired without loading the desk", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    ice.acquireCompositorDevice.mockRejectedValueOnce(new Error("no device for you"));
+
+    render(<IceSurface />);
+
+    expect(await screen.findByText("WebGPU has no graphics adapter")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-fallback-detail")).toHaveTextContent(
+      "Could not create a WebGPU device: no device for you",
+    );
+    expect(ice.createCanvasEngine).not.toHaveBeenCalled();
+    expect(ice.destroyDevice).not.toHaveBeenCalled();
   });
 });

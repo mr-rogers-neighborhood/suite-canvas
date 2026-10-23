@@ -59,7 +59,9 @@ them):
 
 - Unit and integration: 108 test files — 1,392 Vitest tests across `graph`, `server` and `canvas`,
   plus 64 `node --test` tests in `services/billing`.
-- End-to-end: 28 Playwright specs containing 159 tests, all in the single `chromium` project.
+- End-to-end: 32 Playwright specs containing 179 tests, all in the single `chromium` project.
+  One of them, `e2e/tests/ice.spec.ts`, skips unless `SUITE_ICE_E2E=1` (see the environment
+  table below) because it needs a real WebGPU adapter.
 
 Recount them with:
 
@@ -67,7 +69,7 @@ Recount them with:
 pnpm exec vitest list | wc -l                                        # Vitest tests
 pnpm exec vitest list | sed 's/ >.*//' | sort -u | wc -l             # Vitest test files
 cd services/billing && node --test "*.test.ts" | tail -20           # 64 tests
-pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 159 tests in 28 files
+pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 179 tests in 32 files
 ```
 
 ## Watching a run
@@ -132,6 +134,12 @@ SUITE_TRACE=on pnpm e2e && pnpm e2e:trace   # record every test, then open the n
 | --- | --- | --- |
 | `CI` | unset | Selects the `github` reporter and stops server reuse. UI mode is exempt: it always reuses a server that is already listening. |
 | `SUITE_TRACE` | unset | `on` records a trace for every test. Anything else keeps `retain-on-failure`. |
+| `SUITE_ICE_E2E` | unset | `1` enables `e2e/tests/ice.spec.ts`. It launches the system Chrome headed with WebGPU flags, so it is skipped by default and never part of the CI gate. |
+
+The ICE spec is the exception to the table above: it needs a real WebGPU adapter, so it launches
+its own headed Chrome instead of the project's headless browser. Run it with
+`SUITE_ICE_E2E=1 pnpm --filter @suite/e2e e2e ice.spec.ts`; see
+[docs/ice-spike.md](./ice-spike.md). Without the variable it reports a skip.
 
 `trace: "on"` is opt-in because it is the one setting that turns a fast run into a slow, disk-filling
 one. Measured on this suite, a trace is about 100 KB for the 1.2 s boot test and 1.3 MB for a

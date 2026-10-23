@@ -126,6 +126,11 @@ describe("validateConfig", () => {
     ["a malformed hosted switch", { SUITE_HOSTED: "yes" }, "SUITE_HOSTED"],
     ["a malformed trust-proxy switch", { SUITE_TRUST_PROXY: "true" }, "SUITE_TRUST_PROXY"],
     [
+      "a malformed durable-stores switch",
+      { SUITE_REQUIRE_DURABLE_STORES: "yes" },
+      "SUITE_REQUIRE_DURABLE_STORES",
+    ],
+    [
       "an origin with a path",
       { SUITE_ALLOWED_ORIGINS: "https://example.com/app" },
       "SUITE_ALLOWED_ORIGINS",
@@ -198,6 +203,173 @@ describe("validateConfig", () => {
     expect(result.ok).toBe(true);
     expect(result.config.tokens.admin).toBeNull();
     expect(result.config.allowedOrigins).toEqual(["*"]);
+  });
+});
+
+describe("SUITE_REQUIRE_DURABLE_STORES", () => {
+  const durable = {
+    SUITE_DB: "/data/documents.sqlite",
+    SUITE_SHARES_DB: "/data/shares.sqlite",
+    SUITE_WORKSPACES_DB: "/data/workspaces.sqlite",
+    SUITE_SETTINGS_DB: "/data/settings.sqlite",
+    SUITE_LICENCE_DB: "/data/licences.sqlite",
+    SUITE_ATTACHMENTS_DB: "/data/attachments.sqlite",
+  } as const;
+
+  const storeVariables = Object.keys(durable);
+
+  function without(env: Readonly<Record<string, string>>, variable: string): ConfigEnv {
+    const copy: Record<string, string> = { ...env };
+    delete copy[variable];
+    return copy;
+  }
+
+  it("stays off by default and when explicitly disabled", () => {
+    const disposable = {
+      SUITE_SETTINGS_DB: ":memory:",
+      SUITE_LICENCE_DB: ":memory:",
+      SUITE_ATTACHMENTS_DB: "attachments.sqlite",
+    };
+    for (const env of [disposable, { ...disposable, SUITE_REQUIRE_DURABLE_STORES: "0" }]) {
+      const result = validateConfig(env);
+      expect(result.problems).toEqual([]);
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("accepts six absolute stores in one directory", () => {
+    const result = validateConfig({ ...durable, SUITE_REQUIRE_DURABLE_STORES: "1" });
+
+    expect(result.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.config.paths).toEqual({
+      documents: durable.SUITE_DB,
+      shares: durable.SUITE_SHARES_DB,
+      workspaces: durable.SUITE_WORKSPACES_DB,
+      settings: durable.SUITE_SETTINGS_DB,
+      licences: durable.SUITE_LICENCE_DB,
+      attachments: durable.SUITE_ATTACHMENTS_DB,
+    });
+  });
+
+  it("refuses an in-memory store, naming the variable", () => {
+    const result = validateConfig({
+      ...durable,
+      SUITE_SETTINGS_DB: ":memory:",
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable)).toEqual(["SUITE_SETTINGS_DB"]);
+    const message = result.problems[0]?.message ?? "";
+    expect(message).toContain("SUITE_SETTINGS_DB");
+    expect(message).toContain(":memory:");
+    expect(message).toContain("/data/settings.sqlite");
+  });
+
+  it("reports an empty store once, not twice", () => {
+    const result = validateConfig({
+      ...durable,
+      SUITE_SETTINGS_DB: "",
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable)).toEqual(["SUITE_SETTINGS_DB"]);
+    expect(result.problems[0]?.message).toContain("empty");
+  });
+
+  it("refuses a relative attachments path, naming the variable", () => {
+    const result = validateConfig({
+      ...durable,
+      SUITE_ATTACHMENTS_DB: "data/attachments.sqlite",
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable)).toEqual(["SUITE_ATTACHMENTS_DB"]);
+    const message = result.problems[0]?.message ?? "";
+    expect(message).toContain("SUITE_ATTACHMENTS_DB");
+    expect(message).toContain("relative");
+    expect(message).toContain("absolute");
+    expect(message).toContain("/data/attachments.sqlite");
+  });
+
+  it("refuses a missing store, naming the variable", () => {
+    const result = validateConfig({
+      ...without(durable, "SUITE_LICENCE_DB"),
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable)).toEqual(["SUITE_LICENCE_DB"]);
+    const message = result.problems[0]?.message ?? "";
+    expect(message).toContain("SUITE_LICENCE_DB");
+    expect(message).toContain("not set");
+    expect(message).toContain("/data/licences.sqlite");
+  });
+
+  it("refuses the default relative and in-memory layout", () => {
+    const result = validateConfig({ SUITE_REQUIRE_DURABLE_STORES: "1" });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable).sort()).toEqual(
+      [...storeVariables].sort(),
+    );
+  });
+
+  it("refuses stores split across two directories, naming the outlier", () => {
+    const result = validateConfig({
+      ...durable,
+      SUITE_ATTACHMENTS_DB: "/srv/attachments.sqlite",
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable)).toEqual(["SUITE_ATTACHMENTS_DB"]);
+    const message = result.problems[0]?.message ?? "";
+    expect(message).toContain("SUITE_ATTACHMENTS_DB");
+    expect(message).toContain("/srv");
+    expect(message).toContain("/data");
+    expect(message).toContain("/data/attachments.sqlite");
+  });
+
+  it("refuses every offending variable in one pass", () => {
+    const result = validateConfig({
+      ...without(durable, "SUITE_LICENCE_DB"),
+      SUITE_SETTINGS_DB: ":memory:",
+      SUITE_ATTACHMENTS_DB: "attachments.sqlite",
+      SUITE_REQUIRE_DURABLE_STORES: "1",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.map((problem) => problem.variable).sort()).toEqual([
+      "SUITE_ATTACHMENTS_DB",
+      "SUITE_LICENCE_DB",
+      "SUITE_SETTINGS_DB",
+    ]);
+    for (const problem of result.problems) expect(problem.message).toContain(problem.variable);
+  });
+});
+
+describe("compose.yaml", () => {
+  const compose = readFileSync(new URL("../../../compose.yaml", import.meta.url), "utf8");
+
+  it("sets SUITE_REQUIRE_DURABLE_STORES=1", () => {
+    expect(compose).toMatch(/^\s*SUITE_REQUIRE_DURABLE_STORES:\s*"?1"?\s*$/m);
+  });
+
+  it.each([
+    "SUITE_DB",
+    "SUITE_SHARES_DB",
+    "SUITE_WORKSPACES_DB",
+    "SUITE_SETTINGS_DB",
+    "SUITE_LICENCE_DB",
+    "SUITE_ATTACHMENTS_DB",
+  ])("keeps %s on the /data volume", (variable) => {
+    const line = compose.split("\n").find((entry) => entry.trim().startsWith(`${variable}:`));
+    expect(line).toBeDefined();
+    expect(line).toContain("/data/");
   });
 });
 

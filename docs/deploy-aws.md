@@ -274,6 +274,11 @@ If you want limit overrides made in the admin panel to survive a restart, set
 `SUITE_SETTINGS_DB=/data/settings.sqlite`. It is not in `deploy/backup.sh`'s snapshot, so a restore
 reverts the overrides (see [Backups](#8-backups)).
 
+`compose.yaml` sets `SUITE_REQUIRE_DURABLE_STORES=1`. With it on, the container refuses to start if
+any of the six store variables is `:memory:`, a relative path, or a file outside the single directory
+the rest use, and names every offending variable. A disposable store is therefore a failed boot
+instead of a silent loss at the next recreate; leave the flag unset for a local run.
+
 Start everything. The first run pulls the pinned app image and builds the Caddy image from the
 checkout:
 

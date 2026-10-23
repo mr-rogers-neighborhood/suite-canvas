@@ -37,14 +37,15 @@ services:
       # directory and settings/licences to `:memory:`, so a container recreate
       # lost images, quota overrides and licence claims. Do not point any of
       # these at a path outside /data: the volume is what a backup and a restore
-      # swap out. Setting one to `:memory:` is accepted by the server but makes
-      # that store disposable.
+      # swap out. `SUITE_REQUIRE_DURABLE_STORES=1` below turns a `:memory:` or
+      # CWD-relative store into a boot error instead of a disposable one.
       SUITE_DB: ${SUITE_DB:-/data/documents.sqlite}
       SUITE_SHARES_DB: ${SUITE_SHARES_DB:-/data/shares.sqlite}
       SUITE_WORKSPACES_DB: ${SUITE_WORKSPACES_DB:-/data/workspaces.sqlite}
       SUITE_SETTINGS_DB: ${SUITE_SETTINGS_DB:-/data/settings.sqlite}
       SUITE_LICENCE_DB: ${SUITE_LICENCE_DB:-/data/licences.sqlite}
       SUITE_ATTACHMENTS_DB: ${SUITE_ATTACHMENTS_DB:-/data/attachments.sqlite}
+      SUITE_REQUIRE_DURABLE_STORES: "1"
       # Credentials and switches. Empty tokens are the documented defaults:
       # admin API off, worker tokens generated per start, self-host mode.
       SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}

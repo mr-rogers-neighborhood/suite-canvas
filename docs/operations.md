@@ -84,6 +84,7 @@ Release flow, in order:
 | `SUITE_SETTINGS_DB` | `/data/settings.sqlite` in compose; in memory otherwise | SQLite file holding runtime limit overrides; compose puts it on the volume so an override survives a restart. |
 | `SUITE_LICENCE_DB` | `/data/licences.sqlite` in compose; in memory otherwise | SQLite file recording hosted licence claims. |
 | `SUITE_ATTACHMENTS_DB` | `/data/attachments.sqlite` in compose; the working directory otherwise | SQLite file holding every uploaded image's bytes. A document stores only the id, so a lost store means permanent broken images. |
+| `SUITE_REQUIRE_DURABLE_STORES` | unset (off); `1` in compose | `1` makes boot refuse when any of the six store variables is unset, `:memory:`, a relative path, or outside the one directory the others share. It exists for a composed deployment; off keeps a local run's disposable defaults. |
 | `SUITE_CLAIM_RATE_LIMIT` | `600` | Claims per minute per client address. |
 | `SUITE_ROTATE_RATE_LIMIT` | `10` | Owner-key rotations per minute. |
 | `SUITE_SHARE_RESOLVE_RATE_LIMIT` | `300` | Share-token resolutions per minute. |
@@ -95,6 +96,10 @@ Six stores exist in code (`documents`, `shares`, `workspaces`, `settings`, `lice
 `attachments`) and `compose.yaml` configures all six on the `suite-data` volume. Standalone paths are
 relative to the working directory; an unset `SUITE_SETTINGS_DB` or `SUITE_LICENCE_DB` is `:memory:`,
 which is disposable by design for a local run and is why compose always names a file.
+
+`compose.yaml` also sets `SUITE_REQUIRE_DURABLE_STORES=1`, which turns that layout into a boot error
+instead of a warning: a `:memory:`, relative or out-of-volume store is refused with one problem per
+offending variable, so a composed deployment cannot start on a store that a restart would discard.
 
 ### Secrets
 
@@ -135,7 +140,11 @@ What is checked:
 - **Ports** — `PORT` and `HEALTH_PORT` must be whole numbers in 1–65535 and must differ.
 - **Database paths** — `SUITE_DB`, `SUITE_SHARES_DB`, `SUITE_WORKSPACES_DB` must be non-empty, must
   be distinct files (each store needs its own), and must be a regular file when they already exist.
-  `SUITE_SETTINGS_DB`, `SUITE_LICENCE_DB` and `SUITE_ATTACHMENTS_DB` accept `:memory:`.
+  `SUITE_SETTINGS_DB`, `SUITE_LICENCE_DB` and `SUITE_ATTACHMENTS_DB` accept `:memory:` unless the
+  durable-store guard below is on.
+- **Store durability** — with `SUITE_REQUIRE_DURABLE_STORES=1` (compose sets it), all six store paths
+  must be absolute, must not be `:memory:`, and must name files in one directory (the volume root).
+  Each offending variable gets its own problem naming the fix; the flag stays off for a local run.
 - **Tokens** — `SUITE_ADMIN_TOKEN`, `SUITE_PROJECTION_TOKEN`, `SUITE_SOURCE_TOKEN` may be unset; when
   set they need at least 16 characters and no whitespace or control characters. The refusal never
   repeats the value.

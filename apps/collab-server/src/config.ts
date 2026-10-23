@@ -1,4 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
 import { parseLicencePublicKey } from "./licence.js";
 import { LIMIT_ENV, LIMIT_KEYS, type Limits, limitsProblem, resolveLimits } from "./limits.js";
 import { type LogLevel, logLevels } from "./logging.js";
@@ -231,6 +232,83 @@ function databasePath(
   return { value, problems: [] };
 }
 
+/** The file a composed deployment suggests for a store, used only in a refusal. */
+function durableExample(name: DatabaseName, root: string | null): string {
+  return `${root ?? "/data"}/${name}.sqlite`;
+}
+
+/**
+ * `SUITE_REQUIRE_DURABLE_STORES=1` is for a composed deployment, where a
+ * `:memory:` store or a path relative to the container's working directory is
+ * silently disposable. Each of the six stores must then be an absolute path to
+ * a file directly in one directory: the volume root. That root is the directory
+ * most stores already share, so a split names the minority, and a tie falls back
+ * to the first store's directory. One problem per offending variable, never a
+ * value that could be a secret.
+ */
+function durableStoreProblems(
+  env: ConfigEnv,
+  paths: Record<DatabaseName, string | null>,
+): ConfigProblem[] {
+  const names = Object.keys(DATABASE_ENV) as DatabaseName[];
+  const directories = names
+    .map((name) => paths[name])
+    .filter((path): path is string => path !== null && path !== MEMORY_PATH)
+    .map((path) => (isAbsolute(path) ? dirname(path) : null));
+  const counts = new Map<string, number>();
+  for (const directory of directories) {
+    if (directory !== null) counts.set(directory, (counts.get(directory) ?? 0) + 1);
+  }
+  let root: string | null = null;
+  let best = 0;
+  for (const directory of directories) {
+    if (directory === null) continue;
+    const count = counts.get(directory) ?? 0;
+    if (count > best) {
+      root = directory;
+      best = count;
+    }
+  }
+
+  const problems: ConfigProblem[] = [];
+  for (const name of names) {
+    const variable = DATABASE_ENV[name];
+    const path = paths[name];
+    // An empty value already has its own problem; one problem per variable.
+    if (env[variable]?.trim().length === 0) continue;
+    const fix = `Set ${variable} to ${durableExample(name, root)}.`;
+    if (path === null) {
+      problems.push({
+        variable,
+        message: `${variable} is not set; SUITE_REQUIRE_DURABLE_STORES=1 requires all six stores to name a file. ${fix}`,
+      });
+      continue;
+    }
+    if (path === MEMORY_PATH) {
+      problems.push({
+        variable,
+        message: `${variable} is ":memory:", so the store is lost on restart; SUITE_REQUIRE_DURABLE_STORES=1 requires a file on the data volume. ${fix}`,
+      });
+      continue;
+    }
+    if (!isAbsolute(path)) {
+      problems.push({
+        variable,
+        message: `${variable} is "${path}", a relative path resolved against the working directory; SUITE_REQUIRE_DURABLE_STORES=1 requires an absolute path on the data volume. ${fix}`,
+      });
+      continue;
+    }
+    const directory = dirname(path);
+    if (root !== null && directory !== root) {
+      problems.push({
+        variable,
+        message: `${variable} is in "${directory}" while the other stores are in "${root}"; SUITE_REQUIRE_DURABLE_STORES=1 requires all six files in one directory (the data volume). ${fix}`,
+      });
+    }
+  }
+  return problems;
+}
+
 function token(
   env: ConfigEnv,
   variable: string,
@@ -454,6 +532,10 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
     }
     seen.set(path, name);
   }
+
+  const requireDurable = switchValue(env, "SUITE_REQUIRE_DURABLE_STORES");
+  fail(requireDurable.problem);
+  if (requireDurable.value) problems.push(...durableStoreProblems(env, readPaths));
 
   const admin = token(env, "SUITE_ADMIN_TOKEN");
   const projection = token(env, "SUITE_PROJECTION_TOKEN");

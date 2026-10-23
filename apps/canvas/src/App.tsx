@@ -3,12 +3,14 @@ import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
+import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
+import { BootSkeleton } from "./components/BootSkeleton";
 import { CardFocusHost } from "./components/CardFocusHost";
 import { CardInspectorHost } from "./components/CardInspectorHost";
 import { sectionPath } from "./components/cardWhere";
@@ -21,8 +23,10 @@ import { StoragePanel } from "./components/StoragePanel";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { ViewsBar } from "./components/ViewsBar";
+import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
+import { useBootGate } from "./hooks/useBootGate";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
@@ -88,6 +92,8 @@ function WorkspaceShell({
   const status = useCanvasStore((state) => state.status);
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
+  const boot = useBootGate(ready);
+  const [leaving, setLeaving] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
 
@@ -223,6 +229,22 @@ function WorkspaceShell({
   useEffect(() => {
     document.title = `${workspaceName} — Suite`;
   }, [workspaceName]);
+
+  const goHome = useCallback(() => {
+    if (leaving) return;
+    if (prefersReducedMotion()) {
+      window.location.assign("/");
+      return;
+    }
+    setLeaving(true);
+    window.setTimeout(() => window.location.assign("/"), 180);
+  }, [leaving]);
+
+  useEffect(() => {
+    if (!ready) return;
+    markBoot("shell:ready");
+    measureBoot("to-ready", "store:created", "shell:ready");
+  }, [ready]);
 
   // The launcher may have named this workspace before its document existed.
   // Adopt that mirror once, and only when the document has no name of its own.
@@ -470,9 +492,18 @@ function WorkspaceShell({
   // owner's creation prompt, which they cannot act on anyway.
   const sharedEmpty = boardEmpty && !!share && !canCreateContent;
 
+  // Local hydration is the only thing the first paint waits for. Remote sync
+  // continues underneath; the skeleton must never become a server spinner.
+  if (boot.show) return <BootSkeleton exiting={boot.exiting} />;
+
   return (
-    <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
+    <div
+      className="app-canvas flex h-screen w-screen flex-col"
+      data-ready={ready && synced}
+      data-leaving={leaving ? "true" : undefined}
+    >
       <TitleBar
+        onNavigateHome={goHome}
         // A standalone build never opens a socket, so "Syncing" would be a lie;
         // the status slot reports the connection it has (none) beside the note.
         status={standalone ? "disconnected" : status}

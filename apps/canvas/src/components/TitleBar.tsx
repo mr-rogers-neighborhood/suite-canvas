@@ -21,6 +21,8 @@ export interface TitleBarProps {
   children?: React.ReactNode;
   /** Workspace-level actions (share, export), rendered before the theme. */
   actions?: React.ReactNode;
+  /** Intercepts the brand link so the shell can animate before leaving. */
+  onNavigateHome?: () => void;
 }
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -48,6 +50,7 @@ export function TitleBar({
   onRenameWorkspace,
   children,
   actions,
+  onNavigateHome,
 }: TitleBarProps) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workspaceName ?? "");
@@ -65,6 +68,21 @@ export function TitleBar({
         href="/"
         aria-label="Back to workspace launcher"
         className="flex shrink-0 items-center hover:opacity-70"
+        onClick={(event) => {
+          if (!onNavigateHome) return;
+          if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
+          event.preventDefault();
+          onNavigateHome();
+        }}
       >
         <img src="/suite-logo-black.svg" alt="" className="h-6 w-auto dark:hidden" />
         <img src="/suite-logo-white.svg" alt="" className="hidden h-6 w-auto dark:block" />

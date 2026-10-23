@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { TitleBar } from "./TitleBar";
 
 // `role` is this component's own prop (who is reading the share), not an ARIA
@@ -33,5 +33,25 @@ describe("TitleBar", () => {
   it("still says Live outside a share", () => {
     bar({ status: "connected" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Live");
+  });
+});
+
+describe("TitleBar home gesture", () => {
+  it("should route a plain brand click through the exit animation", () => {
+    const onNavigateHome = vi.fn();
+    bar({ status: "connected", onNavigateHome });
+
+    fireEvent.click(screen.getByRole("link", { name: "Back to workspace launcher" }));
+    expect(onNavigateHome).toHaveBeenCalledTimes(1);
+  });
+
+  it("should leave modified clicks to the browser", () => {
+    const onNavigateHome = vi.fn();
+    bar({ status: "connected", onNavigateHome });
+
+    fireEvent.click(screen.getByRole("link", { name: "Back to workspace launcher" }), {
+      ctrlKey: true,
+    });
+    expect(onNavigateHome).not.toHaveBeenCalled();
   });
 });

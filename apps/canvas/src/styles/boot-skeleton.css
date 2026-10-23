@@ -1,0 +1,97 @@
+.boot-skeleton {
+  position: relative;
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--rf-dot) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 20px 20px;
+  color: var(--ink-muted);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.boot-skeleton[data-exiting="true"] {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.995);
+}
+
+.boot-skeleton__panel {
+  display: flex;
+  width: min(320px, calc(100vw - 48px));
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 24px 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.boot-skeleton__logo {
+  width: 48px;
+  height: 48px;
+}
+
+.boot-skeleton__wordmark {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.boot-skeleton__progress {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--segmented-bg);
+}
+
+.boot-skeleton__progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--ink);
+  animation: boot-skeleton-progress 1.25s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+
+.boot-skeleton__label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.boot-skeleton[data-exiting="true"] .boot-skeleton__progress-fill {
+  width: 100%;
+  animation: none;
+  transform: none;
+  transition: width 160ms ease;
+}
+
+@keyframes boot-skeleton-progress {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-skeleton__progress-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.35;
+  }
+}

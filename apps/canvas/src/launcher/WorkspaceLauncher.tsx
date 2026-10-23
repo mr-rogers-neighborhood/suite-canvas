@@ -229,7 +229,7 @@ export function WorkspaceLauncher() {
   return (
     <main
       data-testid="workspace-launcher"
-      className="flex min-h-screen items-center justify-center bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
+      className="workspace-launcher flex min-h-screen items-center justify-center bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
     >
       <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
         <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">

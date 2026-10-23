@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
+import { markBoot, measureBoot } from "../dev/bootTiming";
 import { collabWsUrl } from "../session/endpoints";
 import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
@@ -42,6 +43,8 @@ const cursors = new CursorEphemeralStore(TAB_ID, 30_000);
 // whatever this browser cached for the owner's workspace.
 const persistence =
   ROOM_ID && typeof indexedDB !== "undefined" ? new LoroIndexeddbPersistence(ROOM_ID, doc) : null;
+
+markBoot("store:created");
 
 /**
  * A share token is the only credential a share room accepts; a normal editor
@@ -107,19 +110,34 @@ export const useCanvasStore = create<CanvasState>((set) => {
           cursors,
           ...(auth ? { auth } : {}),
           onStatus: (status) => set({ status }),
-          onSynced: () => set({ synced: true }),
+          onSynced: () => {
+            markBoot("sync:end");
+            measureBoot("to-synced", "store:created", "sync:end");
+            set({ synced: true });
+          },
         });
 
   if (persistence) {
+    markBoot("hydrate:start");
     void persistence
       .load()
       .catch((error) => console.warn("[loro] local hydration failed", error))
-      .finally(() => set({ ready: true }));
+      .finally(() => {
+        markBoot("hydrate:end");
+        measureBoot("hydrate", "hydrate:start", "hydrate:end");
+        set({ ready: true });
+      });
+  } else {
+    markBoot("hydrate:end");
   }
 
   if (provider) {
     setTimeout(() => {
-      if (!useCanvasStore.getState().synced) set({ synced: true });
+      if (!useCanvasStore.getState().synced) {
+        markBoot("sync:end");
+        measureBoot("to-synced", "store:created", "sync:end");
+        set({ synced: true });
+      }
     }, SYNC_WAIT_MS);
   }
 

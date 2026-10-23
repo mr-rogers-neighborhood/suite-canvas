@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { readBootTimings } from "./bootTiming";
 import { type DocStats, readDocStats } from "./docStats";
 import { countRender, perfEnabled, readRenderRates } from "./perf";
 
@@ -19,6 +20,7 @@ export function PerfOverlay() {
   const workspace = useCanvasStore((state) => state.workspace);
   const [rates, setRates] = useState(() => readRenderRates());
   const [stats, setStats] = useState<DocStats | null>(null);
+  const [boot, setBoot] = useState(() => readBootTimings());
 
   useEffect(() => {
     if (!perfEnabled) return;
@@ -37,6 +39,12 @@ export function PerfOverlay() {
     return () => clearInterval(timer);
   }, [workspace]);
 
+  useEffect(() => {
+    if (!perfEnabled) return;
+    const timer = setInterval(() => setBoot(readBootTimings()), STATS_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   if (!perfEnabled) return null;
   countRender("overlay");
 
@@ -54,6 +62,17 @@ export function PerfOverlay() {
           <span data-testid="perf-value">{rate.perSecond}</span>
         </div>
       ))}
+      {boot.length > 0 ? (
+        <div className="mt-2 border-t border-white/20 pt-1" data-testid="perf-boot">
+          <div className="mb-1 opacity-60">boot</div>
+          {boot.map((timing) => (
+            <div key={timing.name} className="flex justify-between gap-2">
+              <span>{timing.name}</span>
+              <span data-testid="perf-boot-value">{`${timing.durationMs.toFixed(0)} ms`}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {stats ? (
         <div className="mt-2 border-t border-white/20 pt-1" data-testid="perf-doc-stats">
           <div className="mb-1 flex justify-between opacity-60">

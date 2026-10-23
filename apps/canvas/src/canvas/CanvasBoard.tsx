@@ -30,6 +30,7 @@ import { isPortalCard, portalTargetId } from "../cards/portal";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -184,6 +185,11 @@ function toFlowEdge(
 
 export function CanvasBoard() {
   countRender("canvas");
+
+  useEffect(() => {
+    markBoot("canvas:mounted");
+    measureBoot("to-canvas", "store:created", "canvas:mounted");
+  }, []);
 
   const snapshot = useWorkspaceSnapshot();
   const workspace = useCanvasStore((state) => state.workspace);

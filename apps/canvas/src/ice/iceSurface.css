@@ -219,9 +219,112 @@
   text-decoration: underline;
 }
 
+/* The membrane's cue. The ceiling is never crossed silently: from the first
+   frame of pull there is a ring that fills and a label that says what the
+   gesture is for. It disappears at rest. */
+
+.ice-surface__cue {
+  position: absolute;
+  z-index: 25;
+  bottom: 84px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.ice-surface__cue-ring {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  /* A ring, not a disc: the conic fill is the progress. */
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
+}
+
+.ice-surface__cue-label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* The zoom cluster: the canvas's own controls, not the shell's dock. */
+
+.ice-surface__zoom {
+  position: absolute;
+  z-index: 20;
+  right: 12px;
+  bottom: 24px;
+}
+
+/* The band's breadcrumb: the way back is always visible while the graph is. */
+
+.ice-surface__crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.ice-surface__crumb:hover {
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+}
+
+.ice-surface__crumb:focus-visible {
+  outline: 2px solid var(--mention-ink);
+  outline-offset: 1px;
+}
+
+.ice-surface__crumb-hint {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+/* *Types in view* at the ceiling: the table the graph band offers, read from
+   the same snapshot the graph was built from. */
+
+.ice-surface__types {
+  position: absolute;
+  z-index: 20;
+  top: 12px;
+  right: 12px;
+  width: min(240px, calc(100vw - 24px));
+  max-height: calc(100% - 120px);
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(1.2);
+  pointer-events: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ice-surface__badge,
-  .ice-surface__card {
+  .ice-surface__card,
+  .ice-surface__types {
     backdrop-filter: none;
   }
 }

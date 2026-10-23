@@ -7,7 +7,6 @@ import {
   PULL_PER_PX,
   RELEASE_AFTER_MS,
   RESTING_MEMBRANE,
-  RETURN,
   settleMembrane,
   stepMembrane,
 } from "./iceMembrane";

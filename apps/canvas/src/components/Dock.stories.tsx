@@ -13,7 +13,6 @@ const meta = {
       { id: "concept", name: "Concept", glyph: "\u25c6", createdAt: 1, updatedAt: 1, fields: [] },
     ],
     onToggleLibrary: () => {},
-    onGraphView: () => {},
     onCreateCard: () => {},
     onManageTypes: () => {},
   },

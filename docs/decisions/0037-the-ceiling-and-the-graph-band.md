@@ -87,8 +87,15 @@ threshold: the cue is what distinguishes an intentional push from a stuck wheel.
 - **Return** by the same gesture: pushing the other way at the top of the graph band, `Escape`, or
   the same control. Exit at `pull ≤ 0.35`.
 - **Hysteresis both ways**, plus a ~220 ms settle, so wheel wobble at either boundary never flaps.
-- **The Dock's Graph view control is the same transition** as a camera action — a flight to the
+- **The canvas zoom cluster's Graph control is the same transition** as a camera action — a flight to the
   ceiling that commits — never a state toggle.
+- **The graph is an overlay in time, not in space.** Entering stores the camera the user came from;
+  leaving flies back to exactly that camera, even if they panned or zoomed inside the graph. The
+  stored camera is overwritten only by a fresh entry, so a return is always to where they were, never
+  to "roughly the ceiling".
+- **The exit is a descent, not a cut.** The return flight is planned longer and gentler than the way
+  in, and the cue holds a "Returning" state until it lands: the same geometry that makes the ceiling
+  feel like a place makes leaving it feel like coming down.
 
 This is not a mode switch. Representation still follows scale ([ADR-0036](./0036-fractal-lod-and-icon-graph.md)):
 the band is a function of zoom. The gesture decides only *whether you commit* to the top band, the

@@ -101,32 +101,3 @@ describe("Dock portal creation", () => {
     expect(screen.queryByTestId("dock-new-portal")).toBeNull();
   });
 });
-
-describe("Dock graph view", () => {
-  it("should fly to the ceiling from the graph view control", () => {
-    const onGraphView = vi.fn();
-    mount({ onGraphView });
-
-    fireEvent.click(screen.getByTestId("dock-graph-view"));
-
-    expect(onGraphView).toHaveBeenCalledTimes(1);
-  });
-
-  it("should hide the graph view control when the surface has no camera action", () => {
-    mount();
-
-    expect(screen.queryByTestId("dock-graph-view")).toBeNull();
-    // The controls it sits beside are untouched.
-    expect(screen.getByTestId("dock-library")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-new-card")).toBeInTheDocument();
-  });
-
-  it("should keep the library toggle working beside it", () => {
-    const onToggleLibrary = vi.fn();
-    mount({ onGraphView: () => {}, onToggleLibrary });
-
-    fireEvent.click(screen.getByTestId("dock-library"));
-
-    expect(onToggleLibrary).toHaveBeenCalledTimes(1);
-  });
-});

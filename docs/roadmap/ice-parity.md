@@ -276,7 +276,7 @@ Goal: the far end of the zoom range has a top with a behaviour, not an empty fie
   inside its container, one unfiled bucket, deterministic grid positions derived from member bounds,
   counts and glyphs only, containment edges only. The projection writes nothing.
 - Add the membrane: rubber-band `pull` at `z_ceiling`, a cue from the first frame, commit past a
-  sustained threshold, return by the same gesture, `Escape` or the Dock control, with hysteresis and
+  sustained threshold, return by the same gesture, `Escape` or the canvas zoom cluster, with hysteresis and
   a settle so wheel wobble never flaps.
 - Route every navigation through the camera flight helper — duration grows with pan distance and
   log zoom ratio, clamped at both ends. No teleporting camera ops; the one exception is clicking a
@@ -291,14 +291,14 @@ Goal: the far end of the zoom range has a top with a behaviour, not an empty fie
 | A | Pure projection: aggregate into (container, type) nodes, deterministic layout, containment edges | `packages/scene/src/typeGraph.ts` + tests |
 | B | Two ICE kinds for the band: `suite.typeNode` (glyph + count) and `suite.containerNode` (frame + label) | `apps/canvas/src/ice/suiteTypeNodeKind.ts`, `suiteContainerNodeKind.ts` + tests |
 | C | Surface integration: membrane, camera flights, band spawn/despawn, keymap, HUD, reconcile — single owner of `IceSurface.tsx` | `apps/canvas/src/ice/iceMembrane.ts`, `iceCameraFlight.ts` + `IceSurface.tsx` |
-| D | Dock control, Types table, library scoping, frame-instances action | `apps/canvas/src/components/Dock.tsx`, `TypeTable.tsx`, `ice/useTypeTable.ts` |
+| D | Canvas zoom cluster (traditional zoom in/out/fit + graph), Types table, library scoping, frame-instances action | `apps/canvas/src/components/CanvasZoomControls.tsx`, `TypeTable.tsx`, `ice/useTypeTable.ts` |
 | E | ADR-0037, this phase, the architecture paragraph, the research note | `docs/` |
 | F | Verification: unit coverage, headed e2e (membrane commit returns, graph labels render, table scopes the library), `?perf=1` sample at the ceiling | `e2e/tests/ice-graph.spec.ts` |
 
 **Exit evidence:** pushing past the ceiling with the wheel shows a cue, commits at the threshold, and
 the same gesture (or `Escape`) returns; wheel wobble at either boundary does not flap. The graph band
 shows one node per (container, type) with a count at stable positions across renders and clients, and
-nested containers read as a stack through derived depth. The Dock's Graph view control and the
+nested containers read as a stack through derived depth. The canvas zoom cluster's Graph control and the
 gesture produce the identical camera result, and both are flights. Selecting a type in the table
 scopes the library and frames its instances without writing. Nothing in the graph band writes to
 Loro, references never appear as edges, and a viewer sees the same graph read-only.

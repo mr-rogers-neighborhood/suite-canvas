@@ -185,6 +185,13 @@ interface UiState extends SessionCapabilities {
   /** Bumped by the pins list to ask the canvas to drop a pin; the canvas owns the point. */
   dropPinRequest: number;
   requestDropPin: () => void;
+  /**
+   * Bumped by the Dock's Graph view control. The ceiling is a camera, not a
+   * mode, so this is a request for a flight: the ICE surface owns the motion
+   * and owns the band that follows it (ADR-0037).
+   */
+  graphViewRequest: number;
+  requestGraphView: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
   contextMenu: ContextMenuState | null;
@@ -264,6 +271,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryTab: "inbox",
   pendingPinFocus: null,
   dropPinRequest: 0,
+  graphViewRequest: 0,
   selectedNodeIds: [],
   selectedEdgeIds: [],
   selectedSectionId: null,
@@ -393,6 +401,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   focusPinAt: (pendingPinFocus) => set({ pendingPinFocus }),
   requestDropPin: () => set((state) => ({ dropPinRequest: state.dropPinRequest + 1 })),
+  requestGraphView: () => set((state) => ({ graphViewRequest: state.graphViewRequest + 1 })),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
   selectSection: (selectedSectionId) =>

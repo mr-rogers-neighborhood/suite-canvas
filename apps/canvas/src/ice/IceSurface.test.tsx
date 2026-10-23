@@ -106,6 +106,11 @@ vi.mock("@vibecook/ice/react", async () => {
 });
 vi.mock("./suiteCardKind", () => ({
   SuiteCard: { type: "suite.card" },
+  // The type ladder: the base rung plus the 2x rung, as the desk registers them.
+  SUITE_CARD_RUNGS: [
+    { scale: 1, type: "suite.card", object: { type: "suite.card" } },
+    { scale: 2, type: "suite.card@2", object: { type: "suite.card@2" } },
+  ],
   setSuiteCardSlotRenderer: vi.fn(),
 }));
 vi.mock("./suiteCardWorkspace", () => ({

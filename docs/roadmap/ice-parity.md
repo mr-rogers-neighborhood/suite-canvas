@@ -97,6 +97,13 @@ surface; a reload restores content and camera; a 5k-card fixture opens without a
 
 Goal: the real card, not a note impostor.
 
+> **Superseded in part (2026-10-23).** The card's face is now drawn by the desk — the paper pass
+> with a card hand, a card palette and a power-of-two type ladder — so a card is part of the canvas
+> at every zoom instead of a DOM panel over it (ADR-0036, "the sheet is the card" and "type scales in
+> powers of two"). The DOM renderer survives as the comparison path (`SUITE_CARD_DOM_FACE`), which
+> is why the bullets below are kept: they are the contract anything that mounts a second face must
+> still honour.
+
 - Move the lab renderer into the app path. Pass the real `Card`, `CardType`, `CardMeta`, the
   workspace `LoroDoc`, `contentId`/`titleId`, `cursorStore`, `localUser`, `boardId` and presence.
 - **Phase-2 invariant:** the renderer reads the same semantic model and the same canonical placement

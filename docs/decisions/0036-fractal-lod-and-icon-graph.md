@@ -300,3 +300,35 @@ crosses a band, which is the same ladder a note rides; that is why nothing pops.
 - **Editing is not on the card.** Text is read in the inspector (decision 6, and the
   inspector-first amendment); the sheet carries no caret, and copy/paste on the canvas is out of
   scope for this surface.
+
+## Amendment (2026-10-23): type scales in powers of two, driven by the card's own extent
+
+A card's type size is **not** a per-card number in this engine. ICE lays a note's writing out at
+the *kind's* em (`layoutText` reads `law.size`), so the size of a card's type is a property of the
+object kind. That is not a limitation to work around quietly — it decides the model:
+
+- **Camera zoom** scales type with the view. It is the only scale that changes the projection and
+  never writes.
+- **Resize** reflows: the box changes, the type keeps its world size, so a bigger card is a bigger
+  page. Left alone, this is what makes a grown card look empty.
+- **Type scale** is a *rung*: a card whose box reaches twice the base extent is drawn by a sibling
+  kind whose hand is twice the size (`suite.card@2`), so growing a card grows the page *and* its
+  type, the way a reader expects a zoomable page to behave.
+
+The ladder is powers of two because the engine's ink already is: a note's raster bands are powers of
+two between `BAND_MIN` and `BAND_MAX`, so a rung that doubles lines up with the band that would
+raster it — one layout per rung, never a re-layout per pixel. The rung is **derived from the card's
+own extent** and snaps down, so resizing is the control: no extra gesture, no extra document field,
+and no way for the type to outgrow its box.
+
+Two consequences worth stating:
+
+- **A rung change replaces the entity.** A card cannot change kind in place, so the projection's
+  render key is `(text, rung)`: reconcile respawns on either. The selection is re-derived from card
+  ids afterwards, so a resize across a rung does not drop the selection.
+- **Crossing down is deliberately not automatic.** Half-size cards keep the base hand; the type never
+  shrinks below it, because sub-base type stops being readable before it stops being useful. A
+  smaller rung would be a new decision, not a default.
+
+Rungs are data (`SUITE_TYPE_LADDER`), so adding one is a line — at the cost of one more GPU paper
+pass, which is the real budget this decision spends.

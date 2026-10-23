@@ -32,9 +32,9 @@ export interface HandLaw {
 }
 
 /**
- * A card's type: 13 world units (CSS px at zoom 1, the shell's body size), 1.45
- * line pitch, 14 units of padding, and no jitter or wander at all — a document
- * reads straight, and the note's hand is what makes text look drawn.
+ * A card's type at rung 1: 13 world units (CSS px at zoom 1, the shell's body
+ * size), 1.45 line pitch, 14 units of padding, and no jitter or wander at all —
+ * a document reads straight, and the note's hand is what makes text look drawn.
  */
 export const SUITE_CARD_HAND: HandLaw = {
   size: 13,
@@ -44,6 +44,20 @@ export const SUITE_CARD_HAND: HandLaw = {
   wander: { amp: 0, period: 1 },
   wipeMs: 110,
 };
+
+/**
+ * The hand for a rung: the type and its padding scale with the card, so a
+ * bigger card is the same page at a bigger size rather than a bigger page with
+ * the same small type. Everything else about the hand is unchanged.
+ */
+export function handForScale(scale: number): HandLaw {
+  const factor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return {
+    ...SUITE_CARD_HAND,
+    size: SUITE_CARD_HAND.size * factor,
+    pad: SUITE_CARD_HAND.pad * factor,
+  };
+}
 
 /**
  * Whether a card also mounts the DOM face on top of its sheet.

@@ -62,13 +62,9 @@ import { workspaceWriter } from "./iceBridge";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
+import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
 import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
-import {
-  buildSuiteSeed,
-  projectWorkspaceToIce,
-  SUITE_CARD_TYPE,
-  spawnIceSuite,
-} from "./suiteProjection";
+import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
 
 /**
@@ -867,8 +863,14 @@ export function IceSurface({
             ])
           : null;
         if (cancelled) return;
+        // Every rung of the card's type ladder is its own kind (ICE fixes a
+        // note's type size per kind), so all of them are registered.
         const widgets = suiteCardModules
-          ? [...objects.DESK_OBJECTS, suiteCardModules[0].SuiteCard, suiteCardModules[2].SuitePin]
+          ? [
+              ...objects.DESK_OBJECTS,
+              ...suiteCardModules[0].SUITE_CARD_RUNGS.map((rung) => rung.object),
+              suiteCardModules[2].SuitePin,
+            ]
           : [...objects.DESK_OBJECTS];
 
         // ONE device per engine (D7): the desk adopts this one instead of
@@ -1180,7 +1182,8 @@ export function IceSurface({
 
     const projection = new CardProjection<Entity>({
       spawn: (placement: CanonicalPlacement) => {
-        const entity = engine.ops.spawnWidget(SUITE_CARD_TYPE, {
+        // The rung follows the card's own extent, so resizing is the control.
+        const entity = engine.ops.spawnWidget(cardTypeForScale(scaleForExtent(placement)), {
           x: placement.x,
           y: placement.y,
           ...(placement.width !== undefined && placement.height !== undefined
@@ -1209,6 +1212,10 @@ export function IceSurface({
         slots.delete(entity);
       },
       boxOf: (entity) => rectOf(entity),
+      // Text and the type rung both need a replace rather than a move: a
+      // resize that crosses a rung changes the *kind*, and a card cannot change
+      // kind in place.
+      keyOf: (placement) => `${placement.text ?? ""}\u001f${scaleForExtent(placement)}`,
     });
     for (const [entity, slot] of seed.entitySlots) {
       projection.register(entity, slot.cardId, slot.boardId, faceText(slot.cardId));
@@ -1238,6 +1245,20 @@ export function IceSurface({
       ) {
         console.warn("[ice] projection reconcile", report.failures);
       }
+      // A replace makes a new entity, so a selection held across one would be
+      // dropped. Re-derive it from the card ids: the projection is the only
+      // place that knows which entity now stands for which card.
+      if (report.spawned.length > 0 || report.moved.length > 0 || report.removed.length > 0) {
+        const selected = useUiStore
+          .getState()
+          .selectedNodeIds.map((cardId) => projection.entityOf(cardId))
+          .filter((entity): entity is Entity => entity !== undefined);
+        try {
+          if (selected.length > 0) engine.ops.setSelection(selected);
+        } catch {
+          // A refused selection is cosmetic; the next click repairs it.
+        }
+      }
     };
 
     const controller = createIceEditingController({
@@ -1258,6 +1279,10 @@ export function IceSurface({
       slots,
       rootBoardId,
       selection: () => useUiStore.getState().selectedNodeIds,
+      // A gesture commits into Loro, then reconcile brings the projection to
+      // the new truth: a moved card is already where it was left (a no-op), and
+      // a resize that crossed a type rung respawns on the new kind.
+      afterCommit: reconcile,
       pinSlots: new Map([...seed.pinEntities].map(([pinId, entity]) => [entity, pinId])),
       movePin: (pinId, point) => {
         liveWorkspace.movePin(pinId, point);

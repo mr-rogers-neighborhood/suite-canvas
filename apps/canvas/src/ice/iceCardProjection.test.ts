@@ -115,6 +115,42 @@ describe("CardProjection", () => {
     expect(projection.entityOf("card-1")?.box.width).toBe(500);
   });
 
+  it("should re-spawn when the render key changes (text, or the type rung)", () => {
+    const keyOf = vi.fn(
+      (candidate: CanonicalPlacement) =>
+        `${candidate.text ?? ""}|${(candidate.width ?? NATURAL.width) >= 576 ? 2 : 1}`,
+    );
+    const spawns: string[] = [];
+    let next = 0;
+    const projection = new CardProjection<{ id: number }>({
+      spawn: () => {
+        next += 1;
+        spawns.push(`e${next}`);
+        return { id: next };
+      },
+      remove: vi.fn(),
+      boxOf: () => ({ x: 10, y: 20, width: 288, height: 240 }),
+      keyOf,
+    });
+    projection.reconcile([placement({ text: "A" })], NATURAL);
+    expect(spawns).toHaveLength(1);
+
+    // Same box, same text: nothing happens.
+    projection.reconcile([placement({ text: "A" })], NATURAL);
+    expect(spawns).toHaveLength(1);
+
+    // Same box, new text: the face is replaced, because the sheet is the card.
+    projection.reconcile([placement({ text: "B" })], NATURAL);
+    expect(spawns).toHaveLength(2);
+
+    // A wider card crosses to the 2x rung: a card cannot change kind in place,
+    // so it is replaced even though its box already matches the document.
+    const wide = placement({ text: "B", width: 576, height: 480 });
+    projection.reconcile([wide], NATURAL);
+    expect(spawns).toHaveLength(3);
+    expect(projection.renderKeyOf("card-1")).toBe("B|2");
+  });
+
   it("should remove an entity whose placement disappeared", () => {
     const { projection, remove } = harness();
     const entity = projection.spawn(placement());

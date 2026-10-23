@@ -46,6 +46,12 @@ export interface CardProjectionOps<TEntity> {
 export interface CardProjectionHost<TEntity> {
   /** Spawn one card at a canonical placement; returns the new entity. */
   spawn(placement: CanonicalPlacement): TEntity;
+  /**
+   * Everything that needs a replace (rather than an in-place move) when it
+   * changes: the card's text, and the kind its size puts it on. Absent, only
+   * the text is compared.
+   */
+  keyOf?(placement: CanonicalPlacement): string;
   /** Remove one entity through the engine's own delete path. */
   remove(entity: TEntity): void;
   /** The entity's current box in board units, or `null` when it has no geometry. */
@@ -92,17 +98,22 @@ export function placementBox(
 export class CardProjection<TEntity> {
   private readonly host: CardProjectionHost<TEntity>;
   private readonly byCard = new Map<string, TEntity>();
-  private readonly textOf = new Map<string, string>();
+  private readonly keyOf = new Map<string, string>();
   private readonly byEntity = new Map<TEntity, { cardId: string; boardId: string }>();
 
   constructor(host: CardProjectionHost<TEntity>) {
     this.host = host;
   }
 
-  register(entity: TEntity, cardId: string, boardId: string, text = ""): void {
+  register(entity: TEntity, cardId: string, boardId: string, key = ""): void {
     this.byCard.set(cardId, entity);
     this.byEntity.set(entity, { cardId, boardId });
-    this.textOf.set(cardId, text);
+    this.keyOf.set(cardId, key);
+  }
+
+  /** The render key this card was spawned with (text, rung) — for diagnostics. */
+  renderKeyOf(cardId: string): string | undefined {
+    return this.keyOf.get(cardId);
   }
 
   entityOf(cardId: string): TEntity | undefined {
@@ -121,8 +132,12 @@ export class CardProjection<TEntity> {
   /** Spawn one canonical placement and register it. */
   spawn(placement: CanonicalPlacement): TEntity {
     const entity = this.host.spawn(placement);
-    this.register(entity, placement.cardId, placement.boardId, placement.text);
+    this.register(entity, placement.cardId, placement.boardId, this.keyFor(placement));
     return entity;
+  }
+
+  private keyFor(placement: CanonicalPlacement): string {
+    return this.host.keyOf?.(placement) ?? placement.text ?? "";
   }
 
   /** Remove one card's entity; a no-op for a card with no entity. */
@@ -131,7 +146,7 @@ export class CardProjection<TEntity> {
     if (entity === undefined) return false;
     this.byCard.delete(cardId);
     this.byEntity.delete(entity);
-    this.textOf.delete(cardId);
+    this.keyOf.delete(cardId);
     this.host.remove(entity);
     return true;
   }
@@ -164,7 +179,7 @@ export class CardProjection<TEntity> {
       if (wanted.has(cardId)) continue;
       this.byCard.delete(cardId);
       this.byEntity.delete(entity);
-      this.textOf.delete(cardId);
+      this.keyOf.delete(cardId);
       try {
         this.host.remove(entity);
         removed.push(entity);
@@ -185,8 +200,8 @@ export class CardProjection<TEntity> {
       }
       if (options.force !== true) {
         const current = this.host.boxOf(existing);
-        const sameText = (this.textOf.get(cardId) ?? "") === (placement.text ?? "");
-        if (sameText && current !== null && sameBox(current, placementBox(placement, natural))) {
+        const sameFace = (this.keyOf.get(cardId) ?? "") === this.keyFor(placement);
+        if (sameFace && current !== null && sameBox(current, placementBox(placement, natural))) {
           continue;
         }
       }
@@ -194,7 +209,7 @@ export class CardProjection<TEntity> {
       // disposable, and a replacement lands with the new face already written.
       this.byCard.delete(cardId);
       this.byEntity.delete(existing);
-      this.textOf.delete(cardId);
+      this.keyOf.delete(cardId);
       try {
         this.host.remove(existing);
       } catch (error) {

@@ -124,8 +124,10 @@ describe("SceneOutline", () => {
   });
 
   it("should name an unavailable target without hiding the row", () => {
+    const target = items[2];
+    if (!target) throw new Error("fixture row missing");
     mount({
-      items: [{ ...items[2], unavailable: true }],
+      items: [{ ...target, unavailable: true }],
     });
     const label = screen.getByTestId("scene-outline-label");
     expect(label).toHaveAccessibleName(/Board B.*unavailable/);

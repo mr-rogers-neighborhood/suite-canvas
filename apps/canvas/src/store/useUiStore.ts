@@ -239,7 +239,7 @@ interface UiState extends SessionCapabilities {
   closeContextMenu: () => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   ...sessionCapabilities(getSession()),
   activeBoardId: null,
   boardViewports: {},
@@ -314,10 +314,10 @@ export const useUiStore = create<UiState>((set) => ({
       };
     }),
   goBackBoard: () => {
-    const state = useUiStore.getState();
+    const state = get();
     const previous = state.boardHistory.at(-1);
     if (!previous) return false;
-    useUiStore.setState({
+    set({
       activeBoardId: previous.boardId,
       boardHistory: state.boardHistory.slice(0, -1),
       viewportRequest: {
@@ -341,10 +341,10 @@ export const useUiStore = create<UiState>((set) => ({
       sceneFocusPath: [...state.sceneFocusPath, { ...entry, nonce: nextNavigationNonce() }],
     })),
   popSceneFocus: () => {
-    const state = useUiStore.getState();
+    const state = get();
     const entry = state.sceneFocusPath.at(-1);
     if (!entry) return null;
-    useUiStore.setState({ sceneFocusPath: state.sceneFocusPath.slice(0, -1) });
+    set({ sceneFocusPath: state.sceneFocusPath.slice(0, -1) });
     return entry;
   },
   clearSceneFocus: () => set({ sceneFocusPath: [] }),

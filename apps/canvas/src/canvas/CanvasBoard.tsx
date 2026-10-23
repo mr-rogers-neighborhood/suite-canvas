@@ -35,6 +35,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
+import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
   DEFAULT_CARD_HEIGHT,
   DEFAULT_CARD_WIDTH,
@@ -363,6 +364,13 @@ export function CanvasBoard() {
    * re-selecting a card that is still inside the box.
    */
   const marqueeActive = useRef(false);
+  /**
+   * The rendered (eased) positions of this client's drag. React Flow paints the
+   * pointer sample; this eases it, so the board does not step on a dropped
+   * frame. `null` outside a drag and when reduced motion is requested.
+   */
+  const localEase = useRef<LocalDragEase | null>(null);
+  const localEaseFrame = useRef<number | null>(null);
 
   useEffect(() => {
     boardCardIds.current = boardOrder;
@@ -383,15 +391,54 @@ export function CanvasBoard() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
+      const ease = localEase.current;
+      const applied: NodeChange<Node>[] = [];
       for (const change of changes) {
-        if (change.type !== "dimensions") continue;
-        if (change.resizing) locallyResizing.current.add(change.id);
-        else locallyResizing.current.delete(change.id);
+        if (change.type === "dimensions") {
+          if (change.resizing) locallyResizing.current.add(change.id);
+          else locallyResizing.current.delete(change.id);
+          applied.push(change);
+          continue;
+        }
+        // A local drag is eased by the frame loop, not by the pointer sample:
+        // the sample only updates the target, so a burst of events cannot make
+        // the card step and the CRDT is still written once, at drop.
+        if (change.type === "position" && change.position && ease?.tracks(change.id)) {
+          ease.target(change.id, change.position);
+          continue;
+        }
+        applied.push(change);
       }
-      applyNodeChanges(changes);
+      if (applied.length > 0) applyNodeChanges(applied);
     },
     [applyNodeChanges],
   );
+
+  const stopLocalEase = useCallback(() => {
+    if (localEaseFrame.current !== null) cancelAnimationFrame(localEaseFrame.current);
+    localEaseFrame.current = null;
+    localEase.current = null;
+  }, []);
+
+  const runLocalEase = useCallback(() => {
+    if (localEaseFrame.current !== null) return;
+    const tick = () => {
+      localEaseFrame.current = null;
+      const ease = localEase.current;
+      if (!ease) return;
+      const moved = ease.step(performance.now());
+      if (moved.size > 0) {
+        setNodes((current) =>
+          current.map((node) => {
+            const position = moved.get(node.id);
+            return position ? { ...node, position, dragging: true } : node;
+          }),
+        );
+      }
+      if (ease.moving) localEaseFrame.current = requestAnimationFrame(tick);
+    };
+    localEaseFrame.current = requestAnimationFrame(tick);
+  }, [setNodes]);
 
   // Remote drags are eased toward their latest reported position so motion on a
   // collaborator's screen reads as continuous instead of stepping.
@@ -527,19 +574,20 @@ export function CanvasBoard() {
    * instead of on every pointer frame the box reports.
    */
   const endMarquee = useCallback(() => {
-    if (!marqueeActive.current) return;
-    marqueeActive.current = false;
     // React Flow clears its own selection state in the pane's pointerup handler,
     // which never runs when the pointer is released outside the pane or over a
     // panel. Left set, `userSelectionActive` keeps the pane in selection mode and
     // every later marquee neither paints nor selects, which is the "the page
     // broke" half of the report. This mirrors that handler for the paths it
-    // cannot see.
+    // cannot see, on every termination path and whether or not the guard below
+    // is still up.
     store.setState((state) =>
       state.userSelectionRect || state.userSelectionActive
         ? { userSelectionRect: null, userSelectionActive: false }
         : state,
     );
+    if (!marqueeActive.current) return;
+    marqueeActive.current = false;
     const ids = [...liveSelectedIds()];
     // Set before the store write, so the repaint it causes sees an unchanged key
     // and keeps the selection this pass painted.
@@ -548,10 +596,21 @@ export function CanvasBoard() {
     applyBoardNodes(ids);
   }, [applyBoardNodes, liveSelectedIds, setSelectedNodeIds, store]);
 
+  // The listener effect must not re-subscribe when `endMarquee` changes: its
+  // cleanup used to drop `marqueeActive`, so the first rebuild during a gesture
+  // (a peer's presence tick, or the store echo of the first selection frame)
+  // released the guard mid-drag. With the guard down, the store echo repainted
+  // `selected` from a stale set and React Flow's own selection was overwritten.
+  const endMarqueeRef = useRef(endMarquee);
+
   useEffect(() => {
-    const onPointerEnd = () => endMarquee();
+    endMarqueeRef.current = endMarquee;
+  }, [endMarquee]);
+
+  useEffect(() => {
+    const onPointerEnd = () => endMarqueeRef.current();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") endMarquee();
+      if (event.key === "Escape") endMarqueeRef.current();
     };
     // Bubble phase, so React Flow has finalised its selection on the same event.
     window.addEventListener("pointerup", onPointerEnd);
@@ -561,9 +620,8 @@ export function CanvasBoard() {
       window.removeEventListener("pointerup", onPointerEnd);
       window.removeEventListener("pointercancel", onPointerEnd);
       window.removeEventListener("keydown", onKeyDown);
-      marqueeActive.current = false;
     };
-  }, [endMarquee]);
+  }, []);
 
   useEffect(() => {
     const next = new Map<string, { x: number; y: number }>();
@@ -623,6 +681,7 @@ export function CanvasBoard() {
   useEffect(
     () => () => {
       if (smoothingFrame.current !== null) cancelAnimationFrame(smoothingFrame.current);
+      if (localEaseFrame.current !== null) cancelAnimationFrame(localEaseFrame.current);
     },
     [],
   );
@@ -1873,10 +1932,26 @@ export function CanvasBoard() {
           const ids = dragged.length > 0 ? dragged.map((entry) => entry.id) : [node.id];
           draggedNodeIds.current = ids;
           locallyDraggingIds.current = new Set(ids);
+          // The rendered delta is eased from here to drop. Reduced motion keeps
+          // the pre-A10 behaviour: paint the pointer sample directly.
+          if (prefersReducedMotion()) stopLocalEase();
+          else {
+            const ease = new LocalDragEase();
+            ease.begin(
+              (dragged.length > 0 ? dragged : [node]).map((entry) => ({
+                id: entry.id,
+                position: entry.position,
+              })),
+              performance.now(),
+            );
+            localEase.current = ease;
+          }
           setDragging({ nodeId: node.id, position: node.position, nodeIds: ids });
         }}
         onNodeDrag={(_, node) => {
           if (!canEditLayout) return;
+          localEase.current?.target(node.id, node.position);
+          if (localEase.current) runLocalEase();
           const now = performance.now();
           if (now - lastDragSent.current < DRAG_THROTTLE_MS) return;
           lastDragSent.current = now;
@@ -1889,6 +1964,18 @@ export function CanvasBoard() {
         onNodeDragStop={(_, node, dragged) => {
           if (!canEditLayout) return;
           const dropped = dragged.length > 0 ? dragged : [node];
+          // The pointer position is the truth: land the render on it and paint
+          // it before the one commit, so the drop never lingers a frame behind.
+          const droppedAt = localEase.current?.finish();
+          stopLocalEase();
+          if (droppedAt && droppedAt.size > 0) {
+            setNodes((current) =>
+              current.map((entry) => {
+                const position = droppedAt.get(entry.id);
+                return position ? { ...entry, position, dragging: false } : entry;
+              }),
+            );
+          }
           draggedNodeIds.current = [];
           locallyDraggingIds.current = new Set();
           setDragging(null);

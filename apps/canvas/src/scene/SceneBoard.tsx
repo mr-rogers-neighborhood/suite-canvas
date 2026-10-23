@@ -1,4 +1,4 @@
-import type { Card, CardType, Tag, WorkspaceDocument } from "@suite/graph";
+import type { Card, CardType, Drawing, Tag, WorkspaceDocument } from "@suite/graph";
 import {
   buildScene,
   type Camera,
@@ -32,6 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
 import { type BoardMiniatureModel, boardMiniature } from "../canvas/portalMiniature";
 import { typesById } from "../cards/cardTypes";
+import { isWhiteboardCard } from "../cards/whiteboard";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -56,6 +57,7 @@ interface PreparedScene {
   readonly typesById: Map<string, CardType>;
   readonly tagsById: Map<string, Tag>;
   readonly miniatures: ReadonlyMap<string, BoardMiniatureModel>;
+  readonly drawings: ReadonlyMap<string, Drawing>;
 }
 
 function groupByBoard<T extends { boardId: string }>(items: readonly T[]): Map<string, T[]> {
@@ -73,11 +75,17 @@ function prepareScene(snapshot: WorkspaceSnapshot, workspace: WorkspaceDocument)
   const placementsByBoard = groupByBoard(snapshot.placements);
 
   const miniatures = new Map<string, BoardMiniatureModel>();
+  const drawings = new Map<string, Drawing>();
   for (const board of snapshot.boards) {
     miniatures.set(
       board.id,
       boardMiniature(sectionsByBoard.get(board.id) ?? [], placementsByBoard.get(board.id) ?? []),
     );
+  }
+  for (const card of snapshot.cards) {
+    if (!isWhiteboardCard(card)) continue;
+    const drawing = workspace.drawing(card.id);
+    if (drawing) drawings.set(card.id, drawing);
   }
 
   return {
@@ -126,6 +134,7 @@ function prepareScene(snapshot: WorkspaceSnapshot, workspace: WorkspaceDocument)
     typesById: typesById(snapshot.types),
     tagsById: new Map(snapshot.tags.map((tag) => [tag.id, tag] as const)),
     miniatures,
+    drawings,
   };
 }
 
@@ -403,6 +412,7 @@ function SceneViewport({
           types={prepared.typesById}
           tags={prepared.tagsById}
           miniatures={prepared.miniatures}
+          drawings={prepared.drawings}
         />
       </ViewportPortal>
       <SceneBadge counts={scene.counts} boardName={boardName} />

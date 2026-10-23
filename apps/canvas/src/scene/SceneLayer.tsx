@@ -1,4 +1,4 @@
-import type { Card, CardType, EdgePath, Tag } from "@suite/graph";
+import type { Card, CardType, Drawing, EdgePath, Tag } from "@suite/graph";
 import {
   type BoardInstance,
   boardInstanceKey,
@@ -16,6 +16,8 @@ import { BoardMiniature } from "../canvas/BoardMiniature";
 import type { BoardMiniatureModel } from "../canvas/portalMiniature";
 import { cardMeta } from "../cards/cardMeta";
 import { FALLBACK_CARD_TYPE, resolveCardType } from "../cards/cardTypes";
+import { WhiteboardPreview } from "../cards/WhiteboardPreview";
+import { isWhiteboardCard } from "../cards/whiteboard";
 import "./sceneLayer.css";
 
 export interface SceneLayerProps {
@@ -28,6 +30,8 @@ export interface SceneLayerProps {
   tags?: Map<string, Tag>;
   /** Target-board miniatures for collapsed portals, keyed by board id. */
   miniatures?: ReadonlyMap<string, BoardMiniatureModel>;
+  /** Whiteboard scenes, keyed by card id. */
+  drawings?: ReadonlyMap<string, Drawing>;
 }
 
 interface BoardContent {
@@ -45,6 +49,7 @@ interface SceneLayerContext {
   types: Map<string, CardType> | undefined;
   tags: Map<string, Tag> | undefined;
   miniatures: ReadonlyMap<string, BoardMiniatureModel> | undefined;
+  drawings: ReadonlyMap<string, Drawing> | undefined;
   viewport: Rect;
   culling: boolean;
 }
@@ -196,6 +201,7 @@ function CardFace({
       ? cardMeta(model, context.types, context.tags, 3)
       : EMPTY_META;
   const title = card.title ?? "Untitled";
+  const drawing = context.drawings?.get(card.cardId);
 
   if (card.lod === "full") {
     return (
@@ -226,11 +232,21 @@ function CardFace({
             ))}
           </div>
         ) : null}
-        <div className="scene-card__body" aria-hidden="true">
-          <span className="scene-card__line" />
-          <span className="scene-card__line scene-card__line--short" />
-          <span className="scene-card__line" />
-        </div>
+        {isWhiteboardCard(model) ? (
+          <div className="scene-card__body scene-card__body--drawing">
+            <WhiteboardPreview
+              elements={drawing?.elements ?? []}
+              label={`${title} preview`}
+              className="scene-card__drawing"
+            />
+          </div>
+        ) : (
+          <div className="scene-card__body" aria-hidden="true">
+            <span className="scene-card__line" />
+            <span className="scene-card__line scene-card__line--short" />
+            <span className="scene-card__line" />
+          </div>
+        )}
       </div>
     );
   }
@@ -424,7 +440,15 @@ function BoardView({
  * coordinates, so the layer can live inside React Flow's `ViewportPortal` and
  * pan/zoom with the camera; portals clip a recursive child board in place.
  */
-export function SceneLayer({ scene, viewport, cards, types, tags, miniatures }: SceneLayerProps) {
+export function SceneLayer({
+  scene,
+  viewport,
+  cards,
+  types,
+  tags,
+  miniatures,
+  drawings,
+}: SceneLayerProps) {
   const content = useMemo(() => indexScene(scene), [scene]);
   const boards = useMemo(() => new Map(scene.boards.map((board) => [board.key, board])), [scene]);
   const culling = viewport.width > 0 && viewport.height > 0;
@@ -435,6 +459,7 @@ export function SceneLayer({ scene, viewport, cards, types, tags, miniatures }: 
     types,
     tags,
     miniatures,
+    drawings,
     viewport,
     culling,
   };

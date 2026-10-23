@@ -1,4 +1,4 @@
-import { PORTAL_BOARD_FIELD_ID, PORTAL_TYPE_ID } from "@suite/graph";
+import { type Card, PORTAL_BOARD_FIELD_ID, PORTAL_TYPE_ID } from "@suite/graph";
 import { buildScene, DEFAULT_PORTAL_CONFIG, type Scene } from "@suite/scene";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -99,6 +99,41 @@ describe("SceneLayer", () => {
     expect(within(missing as HTMLElement).getAllByText("Unavailable board").length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("should render a whiteboard preview instead of placeholder lines", () => {
+    const scene = buildScene({
+      boards: [{ id: "root", name: "Root" }],
+      cards: [{ id: "wb", primaryTypeId: "whiteboard", properties: {} }],
+      placements: [{ boardId: "root", cardId: "wb", x: 0, y: 0, z: 0 }],
+      rootBoardId: "root",
+      camera: { x: 0, y: 0, zoom: 1 },
+      titles: { wb: "Sketch" },
+    });
+    const card: Card = {
+      id: "wb",
+      createdAt: 0,
+      updatedAt: 0,
+      connectors: [],
+      typeIds: ["whiteboard"],
+      primaryTypeId: "whiteboard",
+      tags: [],
+      properties: {},
+    };
+
+    render(
+      <SceneLayer
+        scene={scene}
+        viewport={VIEWPORT}
+        cards={new Map([["wb", card]])}
+        drawings={
+          new Map([["wb", { cardId: "wb", elements: [], order: [], version: 1, updatedAt: 0 }]])
+        }
+      />,
+    );
+
+    expect(screen.getByTestId("whiteboard-preview")).toBeInTheDocument();
+    expect(screen.queryByText("Sketch")).toBeInTheDocument();
   });
 
   it("should cull instances outside the page-space viewport", () => {

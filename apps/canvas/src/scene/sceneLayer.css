@@ -98,6 +98,15 @@
   width: 62%;
 }
 
+.scene-card__body--drawing {
+  padding: 0.4em;
+}
+
+.scene-card__drawing {
+  width: 100%;
+  height: 100%;
+}
+
 .scene-card--compact {
   align-items: center;
   gap: 0.4em;

@@ -1,6 +1,8 @@
 import { useReactFlow, type Viewport } from "@xyflow/react";
 import { useCallback, useEffect, useRef } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
+import { WhiteboardFocus } from "../cards/WhiteboardFocus";
+import { isWhiteboardCard } from "../cards/whiteboard";
 import { isShareSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { CardFocusSurface } from "./CardFocusSurface";
@@ -29,6 +31,7 @@ export function CardFocusHost() {
   const canManageSchema = useUiStore((state) => state.canManageSchema);
 
   const model = useCardPanelModel(cardFocusId, "focus");
+  const whiteboard = model ? isWhiteboardCard(model.card) : false;
   const { getViewport, setViewport } = useReactFlow();
   const savedViewport = useRef<Viewport | null>(null);
   const cardId = model?.card.id ?? null;
@@ -48,7 +51,7 @@ export function CardFocusHost() {
   // Focus is an editing gesture: the body editor takes the caret as soon as the
   // panel has mounted it, and the title/body stay the panel's editors.
   useEffect(() => {
-    if (!cardId) return;
+    if (!cardId || whiteboard) return;
     startEditing(cardId, "body", "focus");
     let frame = 0;
     let tries = 0;
@@ -64,7 +67,7 @@ export function CardFocusHost() {
     };
     frame = requestAnimationFrame(focusBody);
     return () => cancelAnimationFrame(frame);
-  }, [cardId, startEditing]);
+  }, [cardId, startEditing, whiteboard]);
 
   // The zoom trick: the sheet grows out of the card's own rectangle, the same
   // way a portal grows its target board. The card is still mounted under the
@@ -98,6 +101,14 @@ export function CardFocusHost() {
 
   const focusEditing =
     editingNodeId === model.card.id && editingSurface === "focus" ? editingField : null;
+
+  if (whiteboard) {
+    return (
+      <CardFocusSurface title={model.title} onClose={close}>
+        <WhiteboardFocus cardId={model.card.id} readOnly={readOnly} />
+      </CardFocusSurface>
+    );
+  }
 
   return (
     <CardFocusSurface title={model.title} onClose={close}>

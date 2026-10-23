@@ -1,3 +1,7 @@
+.whiteboard-node {
+  display: block;
+}
+
 .whiteboard-card {
   display: flex;
   width: 100%;

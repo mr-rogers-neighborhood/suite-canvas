@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
 import { isPortalCard, portalTargetId } from "../cards/portal";
+import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -57,6 +58,7 @@ import { PresenceLayer } from "./PresenceLayer";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
+import { WhiteboardNode } from "./WhiteboardNode";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
 const SMOOTHING = 0.22;
@@ -79,7 +81,7 @@ const PORTAL_ZOOM_COVERAGE = 0.82;
 const PORTAL_ZOOM_BACK_RATIO = 0.5;
 
 /** React Flow node types; a portal card paints its target instead of a note. */
-const canvasNodeTypes = { ...nodeTypes, portal: PortalNode };
+const canvasNodeTypes = { ...nodeTypes, portal: PortalNode, whiteboard: WhiteboardNode };
 
 const EMPTY_META: CardMeta = { properties: [], tags: [] };
 
@@ -571,7 +573,7 @@ export function CanvasBoard() {
           return [
             {
               id: card.id,
-              type: isPortalCard(card) ? "portal" : "note",
+              type: isWhiteboardCard(card) ? "whiteboard" : isPortalCard(card) ? "portal" : "note",
               position: { x: position.x, y: position.y },
               selected,
               zIndex: layer,
@@ -1152,6 +1154,17 @@ export function CanvasBoard() {
       startEditing(card.id, "title");
     },
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
+  );
+
+  const createWhiteboardAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !activeBoardId) return;
+      const type = ensureWhiteboardType(workspace);
+      const card = workspace.createCard({ typeId: type.id, boardId: activeBoardId, position });
+      setSelectedNodeIds([card.id]);
+      openCardFocus(card.id);
+    },
+    [workspace, activeBoardId, setSelectedNodeIds, canCreateContent, openCardFocus],
   );
 
   /**
@@ -1770,6 +1783,10 @@ export function CanvasBoard() {
           },
         },
         {
+          label: "New whiteboard",
+          onSelect: () => createWhiteboardAt(flowPosition),
+        },
+        {
           label: "New section",
           onSelect: () => createSectionAt(flowPosition),
         },
@@ -2090,6 +2107,7 @@ export function CanvasBoard() {
     workspace,
     activeBoardId,
     createNoteAt,
+    createWhiteboardAt,
     createSectionAt,
     duplicateCards,
     moveCardToBoard,

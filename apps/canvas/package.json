@@ -14,9 +14,11 @@
     "test:stories": "vitest run --config vitest.stories.config.ts"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "@loro-dev/flock": "^4.5.2",
     "@sentry/react": "^11.8.0",
     "@suite/graph": "workspace:*",
+    "@suite/scene": "workspace:*",
     "@tiptap/extensions": "^3.32.0",
     "@tiptap/pm": "^3.32.0",
     "@tiptap/react": "^3.32.0",

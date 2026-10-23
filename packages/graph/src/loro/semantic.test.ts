@@ -28,7 +28,7 @@ describe("types", () => {
       .sort();
     workspace.ensureDefaultTypes();
 
-    expect(first).toEqual(["concept", "note", "source"]);
+    expect(first).toEqual(["concept", "note", "portal", "source"]);
     expect(
       workspace
         .listTypes()

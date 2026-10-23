@@ -125,16 +125,26 @@ function formatValue(
   value: PropertyValue | undefined,
   context: MarkdownContext,
 ): string {
+  const boardName = typeof value === "string" ? context.boards.get(value) : undefined;
   return formatPropertyValue(field, value, {
     cardTitle: typeof value === "string" ? context.titles.get(value) : undefined,
     empty: "",
     unavailable: "Unavailable",
     formatCard: (title) => `[[${title}]]`,
+    // A board value is an id, never a card reference; an id the export cannot
+    // resolve is a board deleted since the card was written.
+    ...(field.kind === "board"
+      ? {
+          boardName,
+          boardPresence: boardName === undefined ? ("missing" as const) : ("board" as const),
+        }
+      : {}),
   });
 }
 
 interface MarkdownContext {
   titles: Map<string, string>;
+  boards: Map<string, string>;
   fields: Map<string, FieldDefinition>;
   values: Record<string, PropertyValue>;
 }
@@ -296,6 +306,7 @@ export function exportPortable(
     });
 
   const titles = new Map(cards.map((card) => [card.id, card.title]));
+  const boardNames = new Map(boards.map((board) => [board.id, board.name]));
   const fields = new Map(
     types.flatMap((type) => type.fields.map((field) => [field.id, field] as const)),
   );
@@ -318,6 +329,7 @@ export function exportPortable(
       markdown.push(
         cardMarkdown(card, {
           titles,
+          boards: boardNames,
           fields,
           values: Object.fromEntries(
             source.properties.map((property) => [property.fieldId, property.value]),
@@ -337,6 +349,7 @@ export function exportPortable(
       markdown.push(
         cardMarkdown(card, {
           titles,
+          boards: boardNames,
           fields,
           values: Object.fromEntries(
             source.properties.map((property) => [property.fieldId, property.value]),

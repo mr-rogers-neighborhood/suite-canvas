@@ -81,6 +81,20 @@ export interface CreateCardInput {
   connectors?: Connector[];
 }
 
+/**
+ * What `WorkspaceDocument.createPortalCard` needs: the board the portal sits on
+ * and the board it opens.
+ */
+export interface CreatePortalCardInput {
+  /** Board that holds the portal card. */
+  boardId: string;
+  /** Board the portal points at; the `board` value stores this id. */
+  targetBoardId: string;
+  /** Placement on `boardId`; defaults to the top-left corner. */
+  position?: { x: number; y: number };
+  id?: string;
+}
+
 export interface DuplicateCardOptions {
   /** Board for the copy's placement; omit to create the copy in the inbox. */
   boardId?: string;
@@ -151,6 +165,10 @@ export interface CreateViewInput {
 
 /** Deterministic id so every client seeds the same default board. */
 export const DEFAULT_BOARD_ID = "board-1";
+/** The built-in type of a card that stands for another board. */
+export const PORTAL_TYPE_ID = "portal";
+/** Stable field id for the portal's board value; the UI and seeds rely on it. */
+export const PORTAL_BOARD_FIELD_ID = "portal-board";
 /** Spatial sections start at version 4. */
 export const SCHEMA_VERSION = 4;
 /** Shown for a workspace that has never been named and has no board to borrow from. */
@@ -592,6 +610,11 @@ function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void
     case "card":
       // Soft validation: the target may be trashed or purged already.
       if (typeof value !== "string" || value.trim().length === 0) fail("a card id");
+      return;
+    case "board":
+      // Soft validation too: a deleted board must not make the card unwritable
+      // or unreadable, so only the shape of the id is checked here.
+      if (typeof value !== "string" || value.trim().length === 0) fail("a board id");
       return;
     case "number":
       if (typeof value !== "number" || !Number.isFinite(value)) fail("a finite number");
@@ -1274,11 +1297,16 @@ export class WorkspaceDocument {
 
   /**
    * Deletes a type and reassigns the cards that used it. One commit, so the
-   * whole command is one undo step. The built-in note type cannot be deleted.
+   * whole command is one undo step. The built-in note and portal types cannot
+   * be deleted: the portal's board field is the only handle a portal has on its
+   * target board.
    */
   deleteType(id: string, options: { reassignTo?: string } = {}): number {
     if (id === DEFAULT_TYPE_ID) {
       throw new Error("The note type cannot be deleted");
+    }
+    if (id === PORTAL_TYPE_ID) {
+      throw new Error("The portal type cannot be deleted");
     }
     const type = this.getType(id);
     if (!type) return 0;
@@ -1310,7 +1338,7 @@ export class WorkspaceDocument {
     return reassigned;
   }
 
-  /** Idempotent: the three starter types exist in every workspace. */
+  /** Idempotent: the starter types, including the built-in portal, exist in every workspace. */
   ensureDefaultTypes(): void {
     const defaults: CreateTypeInput[] = [
       { id: DEFAULT_TYPE_ID, name: "Note", glyph: "\u25a1" },
@@ -1323,11 +1351,43 @@ export class WorkspaceDocument {
       this.createTypeInternal(definition, false);
       changed = true;
     }
+    if (this.seedPortalType()) changed = true;
     if (this.meta.get("schemaVersion") !== SCHEMA_VERSION) {
       this.meta.set("schemaVersion", SCHEMA_VERSION);
       changed = true;
     }
     if (changed) this.commit(`${STRUCT_ORIGIN}seed`);
+  }
+
+  /**
+   * Seeds the built-in portal type with its single board field. Idempotent and
+   * deliberately shallow: an existing portal type is left exactly as it is,
+   * renames included, so a user's edit is never clobbered on load. Writes no
+   * commit of its own; the caller commits once for the whole seed.
+   */
+  private seedPortalType(): boolean {
+    if (this.getType(PORTAL_TYPE_ID)) return false;
+    this.createTypeInternal(
+      {
+        id: PORTAL_TYPE_ID,
+        name: "Portal",
+        pluralName: "Portals",
+        glyph: "\u25c9",
+      },
+      false,
+    );
+    const fields = this.typeFields(PORTAL_TYPE_ID);
+    if (fields) {
+      const board = fields.ensureMergeableMap(PORTAL_BOARD_FIELD_ID);
+      board.set("name", "Board");
+      board.set("kind", "board");
+      board.set("required", true);
+      board.set("order", 0);
+    }
+    // `createTypeInternal` cached an empty field list; the new field is already
+    // in the document, but the cached type would keep lying until a commit.
+    this.typeCache.delete(PORTAL_TYPE_ID);
+    return true;
   }
 
   private typeFields(typeId: string): LoroMap | undefined {
@@ -1385,8 +1445,15 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}field`);
   }
 
-  /** Removes the definition only; card values stay dormant and can be revived. */
+  /**
+   * Removes the definition only; card values stay dormant and can be revived.
+   * The portal's board field is refused: without it a portal has nothing to
+   * point at, and the built-in type is a single-field type by design.
+   */
   removeField(typeId: string, fieldId: string): void {
+    if (typeId === PORTAL_TYPE_ID && fieldId === PORTAL_BOARD_FIELD_ID) {
+      throw new Error("The portal board field cannot be removed");
+    }
     const fields = this.typeFields(typeId);
     if (!fields || fields.get(fieldId) === undefined) return;
     fields.delete(fieldId);
@@ -1796,6 +1863,38 @@ export class WorkspaceDocument {
       this.placeCardInternal(input.boardId, card.id, input.position ?? { x: 0, y: 0 });
     }
     this.commit(`${STRUCT_ORIGIN}create-card`);
+    return card;
+  }
+
+  /**
+   * Creates a portal: a card of the built-in portal type whose board field
+   * points at `targetBoardId`, placed on `boardId`.
+   *
+   * `createCard` and `setProperty` each commit on their own, so the two writes
+   * are wrapped in one batch: the portal lands as a single commit and is never
+   * observable without its target board.
+   */
+  createPortalCard(input: CreatePortalCardInput): Card {
+    if (!this.getBoard(input.targetBoardId)) {
+      throw new Error(`Unknown board: ${input.targetBoardId}`);
+    }
+    if (!this.getBoard(input.boardId)) {
+      throw new Error(`Unknown board: ${input.boardId}`);
+    }
+    const id = input.id ?? crypto.randomUUID();
+    this.batch(`${STRUCT_ORIGIN}create-portal`, () => {
+      // A document that has not been seeded yet still gets a usable portal.
+      this.seedPortalType();
+      this.createCard({
+        id,
+        typeId: PORTAL_TYPE_ID,
+        boardId: input.boardId,
+        position: input.position ?? { x: 0, y: 0 },
+      });
+      this.setProperty(id, PORTAL_BOARD_FIELD_ID, input.targetBoardId);
+    });
+    const card = this.getCard(id);
+    if (!card) throw new Error(`Unknown card: ${id}`);
     return card;
   }
 

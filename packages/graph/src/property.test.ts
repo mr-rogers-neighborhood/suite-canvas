@@ -97,6 +97,32 @@ describe("formatPropertyValue", () => {
     });
     expect(formatPropertyValue(card, "c1", { cardPresence: "stub" })).toBe("Not shared");
   });
+
+  it("should read a board value as its name, a neutral label or unavailable", () => {
+    const board = field({ kind: "board" });
+    expect(formatPropertyValue(board, "b1", { boardName: "Research" })).toBe("Research");
+    // No resolved name but the board still exists: a neutral label, not a lie.
+    expect(formatPropertyValue(board, "b1")).toBe("Board");
+    expect(formatPropertyValue(board, "b1", { boardName: "   " })).toBe("Board");
+    expect(formatPropertyValue(board, "gone", { boardPresence: "missing" })).toBe(
+      "Unavailable board",
+    );
+    expect(
+      formatPropertyValue(board, "gone", { boardPresence: "missing", unavailable: "Deleted" }),
+    ).toBe("Deleted");
+    expect(formatPropertyValue(board, "")).toBe("\u2014");
+  });
+
+  it("should never read a board value through the card options", () => {
+    const board = field({ kind: "board" });
+    expect(
+      formatPropertyValue(board, "b1", { cardTitle: "Ada", formatCard: (title) => `[[${title}]]` }),
+    ).toBe("Board");
+    expect(readPropertyValue(board, "b1", { cardTitle: "Ada" })).toEqual({
+      text: "Board",
+      notShared: false,
+    });
+  });
 });
 
 describe("isPropertyValueEmpty", () => {
@@ -122,6 +148,16 @@ describe("isPropertyValueEmpty", () => {
     const card = field({ kind: "card" });
     expect(isPropertyValueEmpty(card, "c1")).toBe(true);
     expect(isPropertyValueEmpty(card, "c1", { cardTitle: "Ada" })).toBe(false);
+  });
+
+  it("should count a board value as empty until its target resolves", () => {
+    const board = field({ kind: "board" });
+    expect(isPropertyValueEmpty(board, "b1")).toBe(true);
+    expect(isPropertyValueEmpty(board, "b1", { boardName: "Research" })).toBe(false);
+    expect(
+      isPropertyValueEmpty(board, "b1", { boardName: "Research", boardPresence: "missing" }),
+    ).toBe(true);
+    expect(isPropertyValueEmpty(board, "   ", { boardName: "Research" })).toBe(true);
   });
 });
 
@@ -165,6 +201,7 @@ describe("isPropertyValueValid", () => {
     expect(isPropertyValueValid(field({ kind: "select", options }), "a")).toBe(true);
     expect(isPropertyValueValid(field({ kind: "multiSelect", options }), ["a", "b"])).toBe(true);
     expect(isPropertyValueValid(field({ kind: "card" }), "c2", { cardId: "c1" })).toBe(true);
+    expect(isPropertyValueValid(field({ kind: "board" }), "b1")).toBe(true);
   });
 
   it("should reject the wrong primitive for every kind", () => {
@@ -177,6 +214,9 @@ describe("isPropertyValueValid", () => {
     expect(isPropertyValueValid(field({ kind: "select", options }), 1)).toBe(false);
     expect(isPropertyValueValid(field({ kind: "multiSelect", options }), "a")).toBe(false);
     expect(isPropertyValueValid(field({ kind: "card" }), 1)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "board" }), 1)).toBe(false);
+    expect(isPropertyValueValid(field({ kind: "board" }), "   ")).toBe(false);
+    expect(propertyValueError(field({ kind: "board" }), 1)).toMatch(/board id/);
   });
 
   it("should reject a deleted option and an unknown multi-select id", () => {
@@ -216,5 +256,17 @@ describe("isPropertyValueValid", () => {
         cardExists: (id) => id === "c2",
       }),
     ).toBe(true);
+  });
+
+  it("should check a board target only when one is supplied, and never self-check", () => {
+    const board = field({ kind: "board" });
+    expect(isPropertyValueValid(board, "gone")).toBe(true);
+    expect(isPropertyValueValid(board, "gone", { boardExists: () => false })).toBe(false);
+    expect(propertyValueError(board, "gone", { boardExists: (id) => id === "b1" })).toMatch(
+      /board that does not exist/,
+    );
+    expect(isPropertyValueValid(board, "b1", { boardExists: (id) => id === "b1" })).toBe(true);
+    // A board id is not a card id, so the card self-check cannot apply.
+    expect(isPropertyValueValid(board, "c1", { cardId: "c1" })).toBe(true);
   });
 });

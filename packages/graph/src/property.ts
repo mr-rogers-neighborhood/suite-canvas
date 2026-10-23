@@ -6,6 +6,8 @@ export interface PropertyValidationContext {
   cardId?: string | undefined;
   /** Whether a card a `card` value points at exists in the publish target. */
   cardExists?: ((cardId: string) => boolean) | undefined;
+  /** Whether a board a `board` value points at still exists in the workspace. */
+  boardExists?: ((boardId: string) => boolean) | undefined;
 }
 
 /** `YYYY-MM-DD` and a real calendar day, not just a string that looks close. */
@@ -17,9 +19,9 @@ export function isCalendarDate(value: string): boolean {
 
 /**
  * Why a stored value cannot be published, or `null` when it can. A `null` or
- * `undefined` value is a clear and always allowed; `card` targets are only
- * checked when the caller can resolve them, because the target may live
- * outside a shared projection.
+ * `undefined` value is a clear and always allowed; `card` and `board` targets
+ * are only checked when the caller can resolve them, because the target may
+ * live outside a shared projection.
  */
 export function propertyValueError(
   field: FieldDefinition,
@@ -66,6 +68,17 @@ export function propertyValueError(
       }
       return null;
     }
+    case "board": {
+      // A board value is a board id, so there is no self-reference to check:
+      // boards do not contain the card that points at them.
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return `Field "${field.name}" expects a board id`;
+      }
+      if (context.boardExists && !context.boardExists(value)) {
+        return `Field "${field.name}" points at a board that does not exist: "${value}"`;
+      }
+      return null;
+    }
     default:
       return `Field "${field.name}" has an unknown kind`;
   }
@@ -89,6 +102,12 @@ export function isPropertyValueValid(
  */
 export type CardPresence = "card" | "stub" | "missing";
 
+/**
+ * Whether the board a `board` value points at is still in the workspace
+ * (`board`), or has been deleted (`missing`).
+ */
+export type BoardPresence = "board" | "missing";
+
 /** The one place a stored value becomes the text a surface shows. */
 export interface FormatPropertyOptions {
   /** Live title of the card a `card` value points at, when it still exists. */
@@ -99,11 +118,21 @@ export interface FormatPropertyOptions {
    * but did not copy the record: the value reads as *not shared*, not deleted.
    */
   cardPresence?: CardPresence | undefined;
+  /** Live name of the board a `board` value points at, when it still exists. */
+  boardName?: string | undefined;
+  /**
+   * Presence of the board a `board` value points at; defaults to `board` so a
+   * caller that does not resolve boards gets the neutral label "Board" instead
+   * of falsely reporting the target as deleted. Pass `missing` when the id no
+   * longer resolves, and the value reads as *Unavailable board*.
+   */
+  boardPresence?: BoardPresence | undefined;
   /** Text for "no value"; defaults to an em dash. */
   empty?: string;
   /**
    * Text for a deleted option or a missing target; defaults to "Unavailable",
-   * or "Unavailable card" for a `card` field whose target is gone.
+   * or "Unavailable card" / "Unavailable board" for a `card` / `board` field
+   * whose target is gone.
    */
   unavailable?: string;
   /** Label for a referenced card whose stub carries no title; defaults to "Not shared". */
@@ -125,6 +154,9 @@ export interface PropertyValueReading {
 
 const EM_DASH = "\u2014";
 const UNAVAILABLE_CARD = "Unavailable card";
+const UNAVAILABLE_BOARD = "Unavailable board";
+/** Neutral label for a live board whose name the caller did not resolve. */
+const BOARD = "Board";
 const NOT_SHARED = "Not shared";
 /** `displayTitle`'s fallback, never a title a share should call its own. */
 const UNTITLED = "Untitled";
@@ -152,6 +184,9 @@ export function referencedCardLabel(title: string | undefined): string {
  * For a `card` value the three states are distinct: a live target shows its
  * title, a projection stub shows the title it was allowed to keep and is flagged
  * `notShared`, and a target with no title at all shows *Unavailable card*.
+ *
+ * A `board` value reads as the board's name, the neutral *Board* when the caller
+ * did not resolve one, or *Unavailable board* when the board is gone.
  */
 export function readPropertyValue(
   field: FieldDefinition,
@@ -199,6 +234,13 @@ export function readPropertyValue(
       if (!title) return shown(options.unavailable ?? UNAVAILABLE_CARD);
       return shown(options.formatCard ? options.formatCard(title) : title);
     }
+    case "board": {
+      if (typeof value !== "string" || value.trim().length === 0) return shown(empty);
+      if (options.boardPresence === "missing") {
+        return shown(options.unavailable ?? UNAVAILABLE_BOARD);
+      }
+      return shown(options.boardName?.trim() || BOARD);
+    }
   }
 }
 
@@ -242,6 +284,15 @@ export function isPropertyValueEmpty(
         typeof value !== "string" ||
         value.trim().length === 0 ||
         (options.cardTitle?.trim().length ?? 0) === 0
+      );
+    case "board":
+      // A deleted board leaves the stored value dormant and the field unanswered,
+      // the same way a dangling card does.
+      return (
+        typeof value !== "string" ||
+        value.trim().length === 0 ||
+        options.boardPresence === "missing" ||
+        (options.boardName?.trim().length ?? 0) === 0
       );
     case "text":
     case "date":

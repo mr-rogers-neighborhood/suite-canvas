@@ -10,6 +10,7 @@ export const fieldKinds = [
   "multiSelect",
   "checkbox",
   "card",
+  "board",
 ] as const;
 export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
 
@@ -102,10 +103,11 @@ export const tagSchema = z.object({
 
 /**
  * A property value. The field definition decides how to read it: text/date/
- * select/card are strings, number is a number, checkbox is a boolean, and
+ * select/card/board are strings, number is a number, checkbox is a boolean, and
  * multi-select is the list of selected option ids. A `card` value is a card id
  * that may point at a card that no longer exists; it renders as unavailable
- * rather than failing validation.
+ * rather than failing validation. A `board` value is likewise a board id: the
+ * same soft rule applies, so a deleted board leaves the card readable.
  */
 export const propertyValueSchema = z.union([
   z.string(),

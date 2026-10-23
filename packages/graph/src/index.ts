@@ -13,6 +13,7 @@ export type {
   CreateCardInput,
   CreateEdgeInput,
   CreateFieldInput,
+  CreatePortalCardInput,
   CreateSectionInput,
   CreateTypeInput,
   CreateViewInput,
@@ -32,6 +33,8 @@ export {
   fieldFromMap,
   INDEX_ORIGIN,
   normalizeCard,
+  PORTAL_BOARD_FIELD_ID,
+  PORTAL_TYPE_ID,
   PROPERTY_BLOCK_NODE_NAME,
   placementKey,
   SCHEMA_VERSION,
@@ -81,6 +84,7 @@ export {
   SHARE_BOARD_NAME,
 } from "./projection.js";
 export type {
+  BoardPresence,
   CardPresence,
   FormatPropertyOptions,
   PropertyValidationContext,

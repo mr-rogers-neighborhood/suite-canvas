@@ -1,7 +1,7 @@
 # Beta — strangers can use it with known limits
 
 - **Status:** living document. It records the Beta contract and the evidence required to claim it.
-- **Stage:** entry requires Alpha gates A1–A11; exit requires Beta gates B1–B11.
+- **Stage:** entry requires Alpha gates A1–A11b; exit requires Beta gates B1–B11.
 - **Provenance:** the 2,544-line audit and design discussion, re-checked against the tree containing
   [ADR-0019](../decisions/0019-references-not-typed-links.md) through
   [ADR-0023](../decisions/0023-selection-projections.md). ✅ claims were checked against this tree;
@@ -1137,7 +1137,7 @@ title bar, the board tabs, and the two menus that change what they see.
 | **One theme control** | Replace the three-segment control with one icon button and a menu (Light, Dark, Auto). The icon morphs sun↔moon on change, and the morph is skipped under `prefers-reduced-motion`. |
 | **Views beside the name** | Views sits between the workspace name and the board tabs as a text menu with a divider, so it reads as a scope switch rather than a button crowded against the first tab. |
 | **One control height** | Share, File, Live, Views and the theme control share a single 24 px row height and baseline. Report any surface that cannot meet it. |
-| **No orphan navigation** | The only back affordance is the one out of a portal entry. Tab clicks leave every board one click away, so a second single-direction chevron next to Views is removed; see §4.13 for the replacement. |
+| **No orphan navigation** | Board tabs are root-board navigation, so a tab click leaves every board one click away. The way back out of a portal is the scene outline/breadcrumb plus camera checkpoints ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)), not a one-way chevron; the second single-direction chevron next to Views stays removed. See §4.13. |
 | **Menus follow the keyboard** | Arrow navigation scrolls the active row into view in `/`, `@`, and every menu with a scrollport. A selection never disappears past the end of the list. |
 
 **Why it belongs in Beta.** These are the surfaces a stranger touches before they understand the
@@ -1161,8 +1161,9 @@ implementing as a UI shortcut:
 1. **Navigation becomes reversible.** Close is a filing gesture, so a mis-click costs a reopen, not
    a board.
 2. **Views becomes a container, not just a filter.** Today a saved view is a stored query. If boards
-   can be filed into it, Views is a place with contents — boards, saved queries, and (later) scenes.
-   That is a real model change and needs its own answer for ordering, nesting, and projection.
+   can be filed into it, Views is a place with contents — boards, saved queries, and (later) other
+   saved shapes. That is a real model change and needs its own answer for ordering, nesting, and
+   projection.
 3. **It raises the board/view question.** If a board is a view, then a saved view that selects cards
    and a board that places them are two presentations of the same idea. That is exactly the §5.1
    `D7` decision in [V2](./v2.md) (does a saved view store its presentation?) arriving early.
@@ -1171,7 +1172,7 @@ implementing as a UI shortcut:
 - Is "closed" a per-user UI state or a workspace fact? A board another client is viewing must not
   vanish because one person closed their tab.
 - Does a closed board keep its portal cards live? A portal to a filed board must still read as
-  available, not *Unavailable board*.
+  available, not *Unavailable board*, and the live scene must say whether it expands.
 - Where do closed boards sort, and can they be grouped with saved views in one list?
 - Does the Views dropdown show contents (boards, views) or only queries?
 - What is the difference, in the UI, between *close*, *delete*, and *unplace the cards*?
@@ -1182,7 +1183,11 @@ Alpha tab behaviour is not mistaken for a commitment.
 ### 4.13 Navigation menu and integrated command bar (pinned)
 
 Raised after the portal back control turned up beside Views: the bar has no single place for "where
-can I go" and "do a thing", and what it has is a chevron that only moves one direction.
+can I go" and "do a thing", and what it had was a chevron that only moved one direction. The scene
+layer ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)) retires that chevron:
+entering a portal pushes a camera checkpoint and the way back is the focus path, surfaced in the
+scene outline/breadcrumb. Board tabs remain root-board navigation, so the shell still needs one
+navigation home.
 
 **The idea.** One **navigation control** in the app bar, replacing ad-hoc navigation buttons:
 
@@ -1207,10 +1212,12 @@ chrome.
 - What happens to the dock's `⌘K` if the command bar claims it? One shortcut must own it.
 - Is Home the launcher, or the workspace's first board?
 - Does the nav menu replace the tab strip at narrow widths, or scroll with it?
+- Does a portal to a filed or closed board expand in the live scene, and should a board share render
+  a live target whose board is filed? Open, and tied to §4.12.
 
 **Not in Beta scope until decided.** The interim change is smaller and honest: remove the
-single-direction chevron, keep the portal back control, and leave the tab strip as the only board
-navigation.
+single-direction chevron; the scene outline/breadcrumb and camera checkpoints own the way back out of
+a portal, and the tab strip stays the only root-board navigation.
 
 ---
 ## 5. Free backup options

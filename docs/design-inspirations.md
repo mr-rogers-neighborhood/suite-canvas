@@ -354,8 +354,13 @@ rather than surrounding it with chrome.
 - **Board outline** *(current)*: a collapsible left rail listing the active board's section tree in
   reading order with member counts and peer presence dots. Clicking a row selects the section and
   moves the viewport. It is the board's table of contents — Heptabase's precedent — not a filter.
-- **Sub-boards** *(later)*: a card can open into a nested board. This is navigation, not ownership:
-  the nested board is another board in the same workspace and its contents remain ordinary cards.
+  The **scene outline** extends the same idea to the derived scene (portal instances, LOD bands,
+  the focus path) once A11a lands; it stays a projection, never a second document.
+- **Sub-boards / portals** *(Alpha A11a)*: a card can show a nested board as a live, scaled
+  **portal instance** once effective zoom crosses a band, and as a miniature outline below it.
+  Entering moves the camera and pushes a focus path checkpoint; it does not swap the board. This is
+  navigation and rendering, not ownership: the nested board is another board in the same workspace
+  and its contents remain ordinary cards.
 - **Inspector / card info** *(current)*: a floating right panel built on the shared card panel:
   title, type, tags, field values, a **Where** block (`Board › Section › Subsection`, plus the other
   boards it is placed on) and the body editor. A click opens it; clicking the body or title edits it

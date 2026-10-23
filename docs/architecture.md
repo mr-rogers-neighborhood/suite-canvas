@@ -65,6 +65,7 @@ now; the target index/card-doc split is described in
 | `references` | derived `LoroMap` per card: `targetCardId -> true`, rebuilt from mention nodes in the title and body |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
+| `drawings` | whiteboard scenes (planned, [ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)), one key per whiteboard card: `elements` (a map of element id → element field map), `order` (a movable list of element ids for z-order), `tombstones` (deleted element ids kept until purge), `version`, `updatedAt` |
 | `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
 | `views` | `LoroMap`, one key per saved view: `id`, `name`, `position`, plus a `query` sub-map: `text?`, `scope`, `groupBySection`, `order` and the `types`/`tags`/`sections` facet maps (`id -> true`). No card id is ever stored |
 
@@ -96,6 +97,13 @@ member placement; nothing is written while the gesture runs. Dropping a card who
 a section but whose measured rectangle hangs outside expands that section and its ancestors, again
 as geometry writes. Membership is recomputed on read, so no drag ever rewrites card state.
 
+**Whiteboard scenes will be element maps.** A planned `whiteboard` card keeps its Excalidraw scene
+under `drawings.<cardId>`: one field map per element, a movable `order` list for z-order, and
+tombstones for deleted elements so a concurrent delete and an undo converge. One Loro transaction
+covers a gesture, Loro's undo is canonical, and Excalidraw's own history is scoped to the open
+whiteboard. The card face is a cached SVG preview — a derived projection, not a second copy of the
+scene ([ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)).
+
 **Dormant values are intentional.** Removing a field from a type, switching a card's type or
 removing a tag hides the stored value without deleting it; restoring the definition revives it.
 Queries (`listCardsOfType`, `listCardsWithTag`) filter by existing records, so a deleted type or tag
@@ -122,12 +130,14 @@ the card's types, primary first) and `listCardsOfType`/`listCardsWithTag` for re
 increasing per client, so creating two placements in the same millisecond cannot flip the home
 board. Unplacing the home card promotes the next placement; with none left the card is in the Inbox.
 
-**Sections always paint behind cards.** The canvas renders sections through two React Flow
-`ViewportPortal`s: a background portal with a negative z-index for the fill and border, and a header
-portal above the nodes for the title chip, member count and resize handles. Headers and handles
-counter-scale with zoom so titles stay usable. This keeps sections out of React Flow's node
-selection, layer elevation and `onlyRenderVisibleElements` machinery, which is card-specific.
-Deleting a section removes only the region; deleting its board removes its sections with it.
+**Sections always paint behind cards.** Each section is painted from a `SectionInstance`: a
+background layer for the fill and border, and a header layer above the cards for the title chip,
+member count and resize handles. Headers and handles counter-scale with zoom so titles stay usable.
+In the current React Flow surface those layers are `ViewportPortal`s
+([ADR-0017](./decisions/0017-spatial-sections.md)); a scene surface supplies them as instances, so a
+section never becomes a selectable node with card selection, layer elevation or delete/trash
+semantics. Deleting a section removes only the region; deleting its board removes its sections with
+it.
 
 **Trash is a tombstone.** `trashCard` sets `deletedAt` and keeps the placements, so a restore puts
 the card back on every board it was on; `purgeCard` (and `emptyTrash`) destroy the card, its
@@ -292,6 +302,110 @@ matters because acting on an empty document is indistinguishable from acting on 
 `data-ready` on the app root reports the combined state, which is what the startup work keys off.
 
 ## Rendering
+
+The canvas target is a **derived scene over the graph**, not a canvas whose document is the
+renderer's own node list ([ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)):
+
+```text
+Loro graph (@suite/graph)
+  cards · placements · sections · edges · drawings
+        │
+        ▼
+Scene projection (pure, engine-agnostic)
+  board instances · transforms · effective zoom · LOD · portal gates · edges
+        │
+        ▼
+SceneSurface adapter (planned seam)
+  ReactFlowSceneSurface (parity baseline) │ IceSceneSurface (spike) │ later surfaces
+        │
+        ▼
+DOM card layer (NodeCard/Tiptap) + proxy layers (miniatures, icons, edges, sections)
+```
+
+The projection is the target, not today's default: the canvas still ships the React Flow flow
+surface. The pure layer is `packages/scene` (`@suite/scene`); a `?canvas=scene` flag exists for the
+scene surface while it reaches parity, and neither new surface is the default.
+
+### Graph truth, derived scene
+
+`@suite/graph` remains the only document truth. The scene is recomputed from a graph snapshot plus
+the camera; it is never edited, persisted or synced. That keeps one document and one undo stack, and
+it lets any engine host the same scene. The scene layer consumes graph types and plain values only —
+no React, DOM, engine or Loro imports — so projection, camera math and layout are testable without a
+renderer.
+
+### Board instances
+
+- The active board is the **root instance**. A portal adds a child `BoardInstance` rendered at
+  `{ x, y, scale }` inside its frame, and the same board may appear in several instances at once.
+- Canonical records project to instance types: `CardInstance`, `SectionInstance`, `EdgeInstance`,
+  `PortalInstance`. `path: BoardId[]` identifies an instance and detects cycles.
+- `effectiveScale = camera.zoom × product(ancestor scales)` drives LOD and expansion.
+  `screenToBoard(instance, point)` and `boardToScreen(instance, point)` are the only coordinate
+  conversions; a write inside an instance is inverse-transformed to canonical board coordinates.
+- Instances are disposable identity. Two instances of one card are two renderings of one canonical
+  card and placement: selection resolves by canonical id, and moving an instance moves the canonical
+  placement, so every other instance updates.
+
+### Real portals
+
+- A portal card is a `PortalInstance` whose child board is fitted into the frame
+  (`scale = min(frameW / boardBounds.w, frameH / boardBounds.h) × padding`).
+- Below the expansion gate the portal renders its **impostor** — the existing `BoardMiniature` SVG —
+  and instantiates nothing. Above the gate the target's cards, sections and edges are instantiated at
+  the projected scale and become interactive.
+- Creating a card inside a portal writes the canonical placement at the inverse-transformed
+  position. Writes stay one CRDT commit per gesture; live drag positions remain presence.
+
+### Effective zoom, LOD bands and hysteresis
+
+| Band | Effective scale | Card | Portal | Section | Edge |
+| --- | --- | --- | --- | --- | --- |
+| `full` | ≥ 0.75 | `NodeCard` + Tiptap | live child board | fill + header + handles | full path + label |
+| `compact` | 0.35–0.75 | static title + glyph + chips | live miniature | title chip | simplified path |
+| `icon` | 0.12–0.35 | glyph + layout badge | layout-encoded icon | colour band | hidden |
+| `hidden` | < 0.12 | none | aggregate proxy | none | none |
+
+Downgrade immediately; upgrade only after the higher threshold is crossed and the state has held for
+a dwell time (default 80 ms). The resolved band is stored per instance and is never a continuous
+function recomputed per frame. DOM editors mount only at `full` (and for the focused card in reader
+mode); budgets cap mounted editors, expanded boards, live portal faces and visible nodes.
+
+### Lazy expansion, cycles and depth
+
+- Expansion is lazy: only subtrees the spatial index can show are considered, and only visible
+  instances above the gate instantiate children. Expansion state is per instance and ephemeral.
+- A cycle (`A → B → A`) stops at the repeated board path and renders a stub with a focus link; a hard
+  depth cap (default 6) protects pathological graphs. Both are scene guards, not document
+  constraints — the graph may contain the cycle ([ADR-0029](./decisions/0029-portal-board-field.md)).
+- Icon collapse preserves position and footprint, and a portal icon encodes its child's layout mode,
+  so the recursive arrangement stays legible at distance.
+
+### Focus path and navigation
+
+- The root board stays `activeBoardId`; board tabs keep their meaning and clear the focus path.
+- Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
+  the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
+- Escape or back pops the focus path and restores the exact camera checkpoint.
+- Keyboard focus and search auto-expand ancestors and move the camera to the target.
+  `prefers-reduced-motion` skips camera flights and LOD transitions.
+
+### Scene outline
+
+The **scene outline** is a first-class derived tree: workspace → root board → portal instances →
+target boards → nested portals, carrying the focus path, the per-instance LOD band and
+expanded/collapsed state, peer presence by board, and actions to reveal, expand, enter, go back or
+open in focus. It is a projection of the same graph and scene, never a second document, and it is
+the accessibility path when the spatial canvas is not legible.
+
+### SceneSurface adapter
+
+`SceneSurface` is the seam: it receives a scene frame, reports camera and gesture intent, and paints
+instances. `ReactFlowSceneSurface` is the parity baseline and fallback; an ICE surface is a spike.
+LOD proxies and the DOM card layer are shared across surfaces, so the engine choice stays reversible
+and a failed spike costs an adapter rather than a document.
+
+### The card layer
 
 A CRDT change should repaint the card it touched, not the board.
 
@@ -602,7 +716,7 @@ and links follow when the footer expands.
 
 | Layer | Package | Responsibility |
 | --- | --- | --- |
-| UI | `apps/canvas` | React Flow board, Tiptap editor, panels |
+| UI | `apps/canvas` | Canvas shell and scene surfaces, Tiptap editors, panels |
 | UI state | `apps/canvas` (Zustand) | Selection, tools, panels, connection status |
 | Domain | `packages/graph` | Schema, types, typed CRDT access |
 | Persistence | `LoroIndexeddbPersistence` | Offline-first local snapshot + update log |
@@ -651,6 +765,12 @@ token hash is stored, so the worker can name a projection room without ever seei
 Creating a share rebuilds immediately and revoking one closes its room. Resolving a board or card
 token reports the projection room as its `workspaceId`; the owner workspace id never reaches that
 holder, so a board or card link cannot be exchanged for a workspace link.
+
+A projection must carry whiteboard `drawings` for the cards in scope, and a portal must render a
+live target only when that target board is part of the projection; anything else reads as
+*Unavailable board* ([ADR-0022](./decisions/0022-share-projection-links.md),
+[ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)). Redaction runs before the
+scene is built, so a share never fetches owner-workspace content through a portal.
 
 A reference row is emitted for every link that crosses the projection boundary, so the same card is
 reported once even when several kinds point the same way. Building those rows walks the workspace

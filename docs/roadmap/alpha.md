@@ -18,8 +18,8 @@ This is a stage contract with evidence. It answers three questions:
 1. Where is the product? Late Alpha.
 2. Why is it not Beta? Two live data-loss paths, no executed CI, no release identity, no durable
    billing, and no client durability work.
-3. What must be true before Beta? Gates A1–A10, plus A11 (Portals) once its
-   planning phase lands.
+3. What must be true before Beta? Gates A1–A10, plus A11a and A11b (real portals in a derived
+   scene, and fractal layout presets).
 
 It does not answer "when". Sequencing is by dependency and evidence. No dates, durations, or effort
 estimates are used.
@@ -644,7 +644,10 @@ outsider could inspect. A gate without an artifact is not closed. The Beta and V
 [beta.md §1.3](./beta.md#gate-crosswalk).
 
 A11 (Portals) is pinned as an alpha gate for the next planning phase. It is not claimed open; its
-scope, data model, and acceptance are sketched in §7.4.
+scope, data model, and acceptance are sketched in §7.4. It is split into **A11a** (real portals in
+a derived scene) and **A11b** (fractal layout presets) after
+[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md) superseded the camera
+transition as the target.
 
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
@@ -658,7 +661,8 @@ scope, data model, and acceptance are sketched in §7.4.
 | **A8** | The docs tell the truth | §9 ledger emptied; `pnpm docs:check` (links + code fences) in CI; `AGENTS.md` names real types | — |
 | **A9** | The limits are published | A single limits page: workspace bytes, card count, attachment bytes/workspace, shares/workspace, selection cards, open rooms, peers/room, restore targets. Values sourced from `limits.ts` and `compose.yaml`, not prose | A1 |
 | **A10** | Both reported UX bugs are closed | Marquee e2e checklist (1, 2, many, across sections, with a peer); local-vs-remote smoothing acceptance at 60/120 Hz; one CRDT commit per gesture | A6 |
-| **A11** | Portals vertical slice | Portal card type, mini-map outline, enter/exit camera transition, cross-board presence, and card focus mode; e2e covers enter/exit, presence, and one commit per gesture | A10 |
+| **A11a** | Real portals in a derived scene (ADR-0030) | Portal data model retained (ADR-0029); a portal renders a live, scaled target board at readable zoom and its miniature only as the far-LOD impostor; entering moves the camera and the root board stays active; nested portals expand lazily with cycle/depth guards; scene outline and camera checkpoints replace the overlay transition; a share expands only in-scope targets; e2e covers zoom-through without a board switch, depth ≥ 2, a cycle, back to the exact camera, and one CRDT commit per gesture | A10 |
+| **A11b** | Fractal layout presets (ADR-0030) | One-shot recursive layout commands with per-depth overrides, a preview, one undoable batch and deterministic output; no live reflow; unit/e2e coverage of recipes, cycles and pinned cards | A11a |
 
 ### 7.1 Gate notes
 
@@ -755,7 +759,8 @@ owner is the maintainer/operator; no separate review board is implied.
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
-| A11 | `open` | `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029; portal card + miniature + camera transition + back stack + cross-board presence + card focus. Evidence: `apps/canvas/src/canvas/Portal*.tsx`, `BoardMiniature.tsx`, `portalMiniature.ts`, `components/CardFocus*.tsx`; `useUiStore.ts`; `e2e/tests/portals.spec.ts` (enter, back, cycle, focus, missing target). |
+| A11a | `measuring` | Retention: `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029 (`packages/graph`; `portal.test.ts`). Primitives in flight: pure projection in `packages/scene` (`scene.ts`, `geometry.ts`, `lod.ts`, `outline.ts`, `layout.ts`), scene outline at `apps/canvas/src/scene/SceneOutline.tsx`, scene focus levels in `useUiStore.ts`, surface flag in `scene/surfaceFlag.ts`. Not wired into the canvas and not the default, so the gate is not open. The landed first slice (`apps/canvas/src/canvas/Portal*.tsx`, `BoardMiniature.tsx`, `portalMiniature.ts`, `components/CardFocus*.tsx`, `e2e/tests/portals.spec.ts`) is the superseded camera-transition precedent — its miniature survives as the impostor (ADR-0030). |
+| A11b | `unopened` | No artifact. The recipe contract (patterns, per-depth overrides, one-shot plan, one undo) is fixed in ADR-0030 §8 and §7.4. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -763,15 +768,18 @@ owner is the maintainer/operator; no separate review board is implied.
 object is a doorway, not a container. Alternatives if it ever needs renaming: *Vistas*, *Doorways*,
 *Looking Glass*.
 
-**Definition.** A portal is a card on a board that represents another board. It renders a high-level
-outline of that board, and activating it replaces the active board with the target board through a
-camera transition. The transition is a camera trick: the target outline is drawn into the portal's
-screen rectangle, animated to fill the viewport, then the board switches underneath the overlay. The
-result should feel like zooming into a nested canvas, not navigating to a different page.
+**Amendment (2026-10-23).** The data model below was accepted in ADR-0029 and stands. The rendering
+and acceptance were superseded by
+[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md): the static miniature plus
+camera transition that swaps `activeBoardId`, and the one-level nesting limit, are no longer the
+target. A11 is now **A11a** (real portals in a derived scene) and **A11b** (fractal layout
+presets).
 
-The same trick applies to a single card. The inspector's **Edit** action and a double-click/zoom
-gesture open a full-canvas card editor; Escape or zoom-out returns to the previous board and
-viewport.
+**Definition.** A portal is a card on a board that represents another board. In the target it is a
+**live, scaled instance** of its target inside one continuous scene: the root board stays active,
+and entering a portal moves the camera rather than replacing the board. Far away, the card shows a
+miniature impostor; close enough, the target's cards, sections, edges and nested portals are part
+of the same plane.
 
 **Data model (accepted, ADR-0029).**
 - A built-in `portal` card type with a `board` field kind. A board reference participates in views,
@@ -783,53 +791,88 @@ viewport.
   portal readable as *Unavailable board*. `deleteType("portal")` and removal of the board field are
   refused.
 
-**Rendering.**
-- `PortalNode` draws a static miniature of the target board: section bands, card rectangles, and
-  presence dots. Do not mount a second React Flow instance per portal; that would multiply the
-  editor and gesture cost.
-- The miniature is derived from the same snapshot and increments with the target board's version
-  vector. It is not stored.
-- Cross-board presence uses the existing `AWARENESS_FIELDS.board` value; no new transport. Render
-  peer avatars on the portal card and a dot/badge on the board tab.
+**Scene rendering (A11a target).**
+- `@suite/graph` is the only document truth. A pure projection derives the scene from the graph
+  snapshot and the camera; it is never written back. The scene is painted through a `SceneSurface`
+  adapter, with the real `NodeCard`/Tiptap as the DOM layer at readable zoom.
+- A portal card owns a child `BoardInstance` fitted into its frame. Below the expansion gate the
+  portal draws its **impostor** — the existing `BoardMiniature` — and instantiates nothing. Above
+  the gate the target's cards, sections and edges are instantiated at the projected scale and become
+  interactive.
+- LOD bands are discrete (`full` ≥ 0.75, `compact` 0.35–0.75, `icon` 0.12–0.35, `hidden` < 0.12).
+  Downgrade is immediate; upgrade waits for the higher threshold plus a dwell time. DOM editors
+  mount only at `full`, within a budget.
+- Expansion is lazy and bounded: only visible subtrees instantiate children, a repeated board path
+  (`A → B → A`) stops at a stub with a focus action, and a hard depth cap (default 6) protects
+  pathological graphs. Cycles stay legal in the document.
+- The same card can appear in several instances; every instance resolves to one canonical card and
+  placement, so selection, drags and edits agree everywhere, and each gesture is still one CRDT
+  commit.
+- Cross-board presence keeps the existing `AWARENESS_FIELDS.board` transport. Peer positions and
+  drags map into every visible instance of that board, and a portal card still shows target-board
+  presence.
 
-**Transition.**
-1. Measure the portal node's screen rectangle.
-2. Render the target board's outline into an overlay at that rectangle.
-3. Animate the overlay to the full canvas viewport and fade the old board.
-4. Switch `activeBoardId`, set the target viewport so the target's content maps to the screen, and
-   remove the overlay.
-5. Keep a back stack: Escape, breadcrumb, or the reverse zoom returns to the exact previous
-   board/viewport.
-
-**Card focus.** Reuse the same overlay. The inspector Edit action sets a `focusTarget` that expands
-the card to the canvas, focuses the title/body editor, and restores the previous viewport on exit.
-The card remains the same object; no second editor model.
+**Navigation (A11a target).**
+- The root board remains `activeBoardId`; board tabs keep their meaning and clear the focus path.
+- Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
+  the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
+- Escape or back pops the focus path and restores the exact camera checkpoint. Keyboard focus and
+  search auto-expand ancestors and move the camera to the target.
+- The **scene outline** — workspace → root board → portal instances → target boards → nested
+  portals — is the non-spatial navigation and accessibility surface. It lists the focus path, LOD and
+  expanded state, and peer presence, and it is a projection of the same scene, not a second model.
+- Card focus keeps the inspector's **Edit** action and the zoom gesture, now as a camera move onto
+  the card's readable surface with the previous checkpoint restored on exit. The card stays the same
+  object; there is no second editor model.
 
 **Resolved decisions.**
 - A portal references the target; it never creates or deletes it (ADR-0029).
-- Cycles are a navigation problem: A→B→A is legal, and the back stack returns to the exact previous
-  board and viewport.
-- In a share, a portal is an ordinary card with an inert board value. Portal-aware publish/export is
-  a non-goal for this slice.
-- The first slice is one level of nesting plus a back stack, not arbitrary depth.
-- Tab grouping and cross-board edges are follow-ons, not part of the first slice.
+- Cycles are a navigation and rendering problem: A→B→A is legal, the focus path returns to the exact
+  previous camera, and the scene stops expanding at the repeated board path.
+- Nesting is recursive and lazy, bounded by the depth cap — not one level.
+- In a share, a portal expands only when its target board is inside the projection; otherwise it
+  reads as *Unavailable board*. Drawing content travels with the projection
+  ([ADR-0022](../decisions/0022-share-projection-links.md),
+  [ADR-0031](../decisions/0031-whiteboard-cards-and-loro-binding.md)). Whether a portal to a filed
+  or closed board expands is an open question (Beta §4.12).
+- The landed first slice (portal card, miniature, camera transition, back stack, card focus) is kept
+  as precedent, not as acceptance: the miniature becomes the impostor and the transition is
+  retired.
+- Tab grouping and cross-board edges are follow-ons, not part of A11a.
 
-**Status:** `open` (first slice). Portal retargeting in the inspector and arbitrary nesting are
-follow-ons.
+**Status:** A11a `measuring` (data model landed; scene primitives exist behind a surface flag but are
+not wired into the canvas; live portals not built). A11b `unopened`.
 
-**Acceptance for the first slice.**
-- A portal can be created from the right-click menu and the Add card/type menu.
-- Double-click or zooming past a threshold enters the target board with no full-page reload and no
-  white flash.
-- Escape or zoom-out returns to the exact previous board and viewport.
-- A peer on the target board appears on the portal card and the board tab.
-- The inspector Edit action opens the card in the canvas; Escape restores the previous viewport.
-- One CRDT commit per gesture; no per-frame document writes.
-- Keyboard activation and `prefers-reduced-motion` paths work.
-- E2E: enter/exit, back stack, presence on portal/tab, card focus, and a portal cycle.
+**Acceptance for A11a.**
+- A portal can be created from the right-click menu and the Add card/type menu (retained).
+- Above the expansion gate the portal renders the target board live; below it, the miniature
+  impostor. No board swap, no overlay, no white flash on entry.
+- Zooming through a portal moves the camera and keeps the root board active; two levels of nested
+  portals render live at readable zoom.
+- A cycle stops with a visible stub and a working focus action; the depth cap holds.
+- Back/Escape restores the exact camera checkpoint; board tabs still switch the root board.
+- The scene outline lists root and portal instances, follows the focus path, and supports keyboard
+  navigation.
+- LOD bands and hysteresis match ADR-0030; DOM editors exist only at `full`; one CRDT commit per
+  gesture.
+- A portal target outside a share's scope reads as *Unavailable board*; drawing content is present
+  when in scope.
+- A peer on the target board appears on the portal card, the tab and every live instance.
+- `prefers-reduced-motion` skips camera flights and LOD transitions.
+- E2E: zoom-through without a board switch, depth ≥ 2, cycle, back to the exact camera, share scope,
+  card focus, and presence in a portal instance.
 
-**Non-goals for the first slice:** tab grouping, cross-board edges, portal-aware publish/export,
-mobile, and more than one level of nesting.
+**Acceptance for A11b.**
+- Layout is a command: preview a plan, apply in one field-granular batch and one undo step. No live
+  reflow and no per-frame writes.
+- Recipes cover grid, columns, rows, radial, spiral, phyllotaxis, rings and treemap, recursively
+  through portals, with per-depth overrides (scale, gap, rotate, pattern) and deterministic output.
+- Pinned/excluded cards keep their positions; sections expand to contain members; cycles stop at the
+  repeated board path; an invalid plan writes nothing and says why.
+- Unit tests cover recipes and guards; an e2e covers preview → apply → undo on a nested fixture.
+
+**Non-goals for A11a/A11b:** tab grouping, cross-board edges, mobile, live reflow, and portal-aware
+workspace merge-back.
 
 ---
 

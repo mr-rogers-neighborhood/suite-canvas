@@ -6,6 +6,37 @@ runs on Node's built-in test runner.
 
 Everything below runs from the repo root unless a command says otherwise.
 
+## The local gate
+
+**Until GitHub Actions executes on this repository, the gate is local:
+`pnpm verify` plus `pnpm e2e`.** Run both on the commit you intend to merge or
+tag, and paste the result into the change.
+
+Actions is enabled and `.github/workflows/ci.yml` passes `actionlint`, but every
+workflow — including a one-line smoke job on a throwaway branch — ends in
+`startup_failure` with zero jobs and zero check runs. That is account or
+repository state, not workflow content, and a token cannot fix it. Branch
+protection and rulesets are unavailable for the same reason: `gh api
+repos/…/branches/main/protection` answers `403` with "Upgrade to GitHub Pro or
+make this repository public to enable this feature."
+
+So `.github/workflows/ci.yml` stays correct and ready (`quality` and `e2e` are
+the intended required checks), and the evidence for a change is a green local
+run until a `quality` and `e2e` run exists on `main`. Nothing in this repository
+should claim CI gated a commit while that is true.
+
+Two checks run beside the tests and are cheap enough to run every time:
+
+```sh
+node scripts/docs-check.mjs                  # links, fences, retired terms, version
+node scripts/generate-limits.mjs --check     # docs/limits.md matches the code
+```
+
+Both also run in the `quality` job, so they will start gating the moment Actions
+starts. What they protect, and what the numbers mean, is in
+[limits.md](limits.md) (every quota, generated) and
+[release.md](release.md) (tag, digest, rollback).
+
 ## Layers and projects
 
 | Project | Runner | Scope | Command |
@@ -23,18 +54,20 @@ reuses them when they are already running outside CI.
 
 ## Current numbers
 
-Snapshot on 2026-10-22 (counts grow as lanes land tests — recount before quoting them):
+Snapshot on 2026-10-23 at `0.2.0-alpha.1` (counts grow as lanes land tests — recount before quoting
+them):
 
-- Unit and integration: 104 test files — 1,278 Vitest tests across `graph`, `server` and `canvas`,
-  plus 61 `node --test` tests in `services/billing`.
-- End-to-end: 21 Playwright specs containing 132 tests, all in the single `chromium` project.
+- Unit and integration: 108 test files — 1,392 Vitest tests across `graph`, `server` and `canvas`,
+  plus 64 `node --test` tests in `services/billing`.
+- End-to-end: 28 Playwright specs containing 159 tests, all in the single `chromium` project.
 
 Recount them with:
 
 ```sh
 pnpm exec vitest list | wc -l                                        # Vitest tests
-cd services/billing && node --test "*.test.ts" | tail -20           # 61 tests
-pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 132 tests in 21 files
+pnpm exec vitest list | sed 's/ >.*//' | sort -u | wc -l             # Vitest test files
+cd services/billing && node --test "*.test.ts" | tail -20           # 64 tests
+pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 159 tests in 28 files
 ```
 
 ## Watching a run

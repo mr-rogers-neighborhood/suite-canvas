@@ -1,8 +1,32 @@
 # Billing and licences
 
-How a Stripe payment becomes a hosted-sync licence. One Lambda, one endpoint, no server: Stripe
-collects the money, `services/billing` turns the paid event into the same Ed25519 token the relay
-already verifies, and SES delivers it.
+**Hosted billing is not open for the alpha.** There is no checkout, no price and no account, and
+the Stripe webhook is not deployed. `SUITE_BILLING_ENABLED` defaults to `0` and the handler refuses
+every delivery while it is off, so a function deployed by mistake cannot mint a licence. What stays
+documented is the part that is real today: the licence token format, the self-host path, and the
+design of the service that will take money when billing opens. The payment path is V1 work; the
+alpha closes A5 by being explicitly closed rather than by being durable.
+
+Nothing in the app asks for payment. A licence key is a signed token you paste into the workspace
+when you run a hosted relay; local editing never consults it. Self-hosting needs no key at all.
+
+How the service works, for when it opens: one Lambda, one endpoint, no server. Stripe collects the
+money, `services/billing` turns the paid event into the same Ed25519 token the relay already
+verifies, and SES delivers it.
+
+## Switched off
+
+The webhook checks one variable before it reads anything:
+
+| `SUITE_BILLING_ENABLED` | Behaviour |
+| --- | --- |
+| unset, `0`, `false`, empty or anything else | `503 {"ok":false,"error":"billing-disabled"}`; no signature check, no claim, no licence, no email |
+| `1` or `true` | The flow below |
+
+`503` rather than `200` is deliberate: a disabled deployment reports the delivery as unhandled, so
+a mistaken deploy is visible in the Stripe dashboard instead of silently swallowing a paid event.
+There is no code path that mints a licence while the switch is off, and the guard runs before the
+email transport is loaded.
 
 The token format lives in `apps/collab-server/src/licence.ts` (`signLicence` and the payload:
 `v, id, tier, workspaces, documentBytes, attachmentBytes, issuedAt, expiresAt, email`). This service
@@ -43,6 +67,7 @@ Request lifecycle:
 | `400` | not a trustworthy Stripe request (bad signature, bad body) | stops |
 | `200` | issued, renewed, ignored, or a duplicate delivery | stops |
 | `500` | a failure an operator can fix: unknown price, SES outage, missing key | retries for up to 3 days |
+| `503` | hosted billing is switched off (`SUITE_BILLING_ENABLED` is not `1`); nothing was read, claimed or sent | retries while the deployment is wrong |
 
 ## Idempotency
 
@@ -67,6 +92,7 @@ records claims per licence id — cannot grant one subscription two workspace qu
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
+| `SUITE_BILLING_ENABLED` | no | `1` or `true` opens the endpoint. Unset is `0`: every delivery answers `503` and nothing is minted. |
 | `STRIPE_WEBHOOK_SECRET` | yes | Endpoint secret (`whsec_…`) from the Stripe webhook. Never logged. |
 | `SUITE_LICENCE_PRIVATE_KEY` | yes | Ed25519 private key, PEM (PKCS#8) or single line with `\n` escapes. |
 | `STRIPE_PRICE_TIERS` | yes | JSON map of price id → plan. See below. |
@@ -171,6 +197,10 @@ always continues.**
 
 ## AWS shape
 
+**Not deployed for the alpha.** None of the pieces below exist on any account; this is the shape the
+service is written for. Deploying them is V1 work, and `SUITE_BILLING_ENABLED=0` is the default that
+keeps a premature deploy from issuing a token.
+
 There is no server to patch:
 
 | Piece | Configuration |
@@ -181,8 +211,9 @@ There is no server to patch:
 | DynamoDB | `pk` key on one table: `EVENT#<event id>` rows for claims (TTL 30 days), `CUSTOMER#<customer id>` rows for `LicenceRecord`. The in-process store in `store.ts` only survives a warm container and **must** be replaced before the endpoint takes real money. |
 | CloudWatch | The handler logs `{ts, level, msg, component:"billing", eventId, licenceId, tier, expiresAt}`. It never logs the token, the private key or the webhook secret. |
 
-Deploy steps: create the SES identity first (verification takes time), then the Lambda with its env,
-then the API Gateway route, then point a Stripe webhook at
+Deploy steps, when billing opens: create the SES identity first (verification takes time), then the
+Lambda with its env and `SUITE_BILLING_ENABLED=1`, then the API Gateway route, then point a Stripe
+webhook at
 `https://<api-id>.execute-api.<region>.amazonaws.com/stripe/webhook` for
 `checkout.session.completed` and `invoice.paid`, and paste the signing secret into the Lambda
 environment.

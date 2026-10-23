@@ -30,12 +30,23 @@ import {
  *        (unknown price, SES outage, missing key). Stripe retries, and the
  *        idempotency claim is released so the retry is not mistaken for a
  *        duplicate.
+ *   503  hosted billing is switched off (`SUITE_BILLING_ENABLED` is not `1`),
+ *        which is the alpha default. Nothing is verified, claimed, signed or
+ *        sent; Stripe keeps retrying in case the function was deployed by
+ *        mistake.
  *
  * Nothing in this file ever writes the token to the log.
  */
 
 /** Everything the webhook reads from the environment, once per invocation. */
 export interface BillingEnvironment {
+  /**
+   * `1` (or `true`) allows the endpoint to mint a licence. Anything else —
+   * including unset — refuses, which is the alpha default: hosted billing is
+   * not open, so a deployed function must not be able to issue a token by
+   * accident.
+   */
+  SUITE_BILLING_ENABLED: string | undefined;
   STRIPE_WEBHOOK_SECRET: string | undefined;
   SUITE_LICENCE_PRIVATE_KEY: string | undefined;
   STRIPE_PRICE_TIERS: string | undefined;
@@ -51,6 +62,9 @@ export function environment(
   source: Record<string, string | undefined> = process.env,
 ): BillingEnvironment {
   return {
+    // Defaulted here rather than at the call site, so every deployment path
+    // starts closed and opening it is one explicit variable.
+    SUITE_BILLING_ENABLED: source.SUITE_BILLING_ENABLED ?? "0",
     STRIPE_WEBHOOK_SECRET: source.STRIPE_WEBHOOK_SECRET,
     SUITE_LICENCE_PRIVATE_KEY: source.SUITE_LICENCE_PRIVATE_KEY,
     STRIPE_PRICE_TIERS: source.STRIPE_PRICE_TIERS,
@@ -58,6 +72,15 @@ export function environment(
     SES_FROM_ADDRESS: source.SES_FROM_ADDRESS,
     SUITE_SES_REGION: source.SUITE_SES_REGION,
   };
+}
+
+/**
+ * The closed-by-default switch. Only the two spellings an operator types on
+ * purpose open the door; `0`, `false`, empty and unset all refuse.
+ */
+export function billingEnabled(env: BillingEnvironment): boolean {
+  const raw = env.SUITE_BILLING_ENABLED?.trim().toLowerCase();
+  return raw === "1" || raw === "true";
 }
 
 /** API Gateway (REST or HTTP API) proxy event, narrowed to what we read. */
@@ -179,6 +202,15 @@ export function createHandler(deps: HandlerDeps): BillingHandler {
   const now = deps.now ?? Date.now;
 
   return async function billingHandler(event) {
+    // First, before the signature is even read: a disabled deployment cannot
+    // mint a licence no matter what arrives. 503 rather than 200 tells Stripe
+    // the delivery was not handled, so a misconfigured function is visible in
+    // the dashboard instead of silently swallowing a paid event.
+    if (!billingEnabled(deps.env)) {
+      log("warn", "webhook refused", { code: "billing-disabled" });
+      return json(503, { ok: false, error: "billing-disabled" });
+    }
+
     const rawBody = rawBodyOf(event);
     if (rawBody === null) {
       log("warn", "webhook rejected", { code: "missing-body" });
@@ -283,6 +315,13 @@ function sharedEmailer(env: BillingEnvironment): Promise<Emailer> {
 
 export async function handler(event: LambdaHttpEvent): Promise<LambdaHttpResponse> {
   const env = environment();
+
+  // Closed before any transport is warmed: a disabled deployment must not load
+  // SES, read a key or touch the store.
+  if (!billingEnabled(env)) {
+    jsonLogger("warn", "webhook refused", { code: "billing-disabled" });
+    return json(503, { ok: false, error: "billing-disabled" });
+  }
 
   let emailer: Emailer;
   try {

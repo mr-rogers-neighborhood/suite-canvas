@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   type BillingEnvironment,
+  billingEnabled,
   createHandler,
+  environment,
   type LambdaHttpEvent,
   type LambdaHttpResponse,
 } from "./handler.ts";
@@ -28,6 +30,9 @@ const SELF_HOST = "https://example.com/self-host";
 
 function testEnv(overrides: Partial<BillingEnvironment> = {}): BillingEnvironment {
   return {
+    // The endpoint is closed unless an operator opens it; every test that
+    // expects a licence opts in here, and the closed path has its own tests.
+    SUITE_BILLING_ENABLED: "1",
     STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
     SUITE_LICENCE_PRIVATE_KEY: privatePem,
     STRIPE_PRICE_TIERS: TIERS_JSON,
@@ -316,5 +321,41 @@ describe("billing webhook", () => {
 
     assert.equal(messages.length, 1, "the same month is bought twice on paper, not in fact");
     assert.equal(store.puts.length, 1);
+  });
+});
+
+describe("billing switch", () => {
+  it("refuses a well-formed delivery when the switch is off", async () => {
+    const { handler, store, messages } = harness({ env: { SUITE_BILLING_ENABLED: "0" } });
+    const response = await handler(signed(checkoutBody()));
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(bodyOf(response), { ok: false, error: "billing-disabled" });
+    assert.equal(store.claims.length, 0, "a refused delivery must not claim the event");
+    assert.equal(store.puts.length, 0, "a refused delivery must not record a licence");
+    assert.equal(messages.length, 0, "a refused delivery must not send a token");
+  });
+
+  it("refuses before the signature is checked, and says why in the log", async () => {
+    const { handler, store, lines } = harness({ env: { SUITE_BILLING_ENABLED: "0" } });
+    const response = await handler({ body: checkoutBody(), headers: {} });
+
+    assert.equal(response.statusCode, 503);
+    assert.equal(store.claims.length, 0);
+    assert.ok(
+      lines.some((line) => line.includes("billing-disabled")),
+      "the refusal is logged with its reason",
+    );
+  });
+
+  it("defaults to off, and only `1` or `true` opens it", () => {
+    assert.equal(environment({}).SUITE_BILLING_ENABLED, "0");
+    assert.equal(billingEnabled(environment({})), false);
+    for (const value of ["1", "true", " TRUE "]) {
+      assert.equal(billingEnabled(environment({ SUITE_BILLING_ENABLED: value })), true, value);
+    }
+    for (const value of ["0", "false", "", "  ", "yes", "on"]) {
+      assert.equal(billingEnabled(environment({ SUITE_BILLING_ENABLED: value })), false, value);
+    }
   });
 });

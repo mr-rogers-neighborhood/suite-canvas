@@ -80,8 +80,8 @@ editor; formatting uses Tiptap's built-in `BubbleMenu`, and presence (`user`, `p
 ## Adding a feature (typical path)
 
 1. Model it in `packages/graph/src/schema.ts` (node/edge kinds) + tests.
-2. Expose typed accessors/mutations on `GraphDocument`.
-3. Consume it in `apps/canvas` via `useGraphSnapshot` / the Zustand store.
+2. Expose typed accessors/mutations on `WorkspaceDocument`.
+3. Consume it in `apps/canvas` via `useWorkspaceSnapshot` / the Zustand store.
 4. Add a Storybook story + tests.
 5. Run the full verification set above.
 

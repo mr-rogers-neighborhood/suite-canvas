@@ -1,7 +1,7 @@
 import { type Card, PORTAL_BOARD_FIELD_ID, PORTAL_TYPE_ID } from "@suite/graph";
 import { buildScene, DEFAULT_PORTAL_CONFIG, type Scene } from "@suite/scene";
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayer } from "./SceneLayer";
 
 const VIEWPORT = { x: -100, y: -100, width: 2400, height: 1600 };
@@ -99,6 +99,38 @@ describe("SceneLayer", () => {
     expect(within(missing as HTMLElement).getAllByText("Unavailable board").length).toBeGreaterThan(
       0,
     );
+  });
+
+  it("should focus a portal without swapping the rendered scene", () => {
+    const onFocusPortal = vi.fn();
+    render(
+      <SceneLayer scene={sceneFixture(0.4)} viewport={VIEWPORT} onFocusPortal={onFocusPortal} />,
+    );
+
+    const portal = document.querySelector<HTMLElement>(
+      '[data-testid="scene-portal"][data-card-id="root-portal"]',
+    );
+    expect(portal).not.toBeNull();
+    fireEvent.click(within(portal as HTMLElement).getByRole("button", { name: "Focus Target" }));
+
+    expect(onFocusPortal).toHaveBeenCalledTimes(1);
+    expect(onFocusPortal.mock.calls[0]?.[0]).toMatchObject({
+      cardId: "root-portal",
+      targetBoardId: "target",
+    });
+  });
+
+  it("should not focus a portal whose target board is missing", () => {
+    const onFocusPortal = vi.fn();
+    render(
+      <SceneLayer scene={sceneFixture(0.4)} viewport={VIEWPORT} onFocusPortal={onFocusPortal} />,
+    );
+
+    const missing = document.querySelector<HTMLElement>(
+      '[data-testid="scene-portal"][data-card-id="missing-portal"]',
+    );
+    expect(missing).not.toBeNull();
+    expect(within(missing as HTMLElement).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("should render a whiteboard preview instead of placeholder lines", () => {

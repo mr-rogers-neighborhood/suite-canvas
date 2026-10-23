@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -76,6 +76,36 @@ describe("SceneBoard", () => {
 
     expect(screen.getByTestId("scene-board-empty")).toBeInTheDocument();
     expect(screen.getByText("Nothing on this board yet")).toBeInTheDocument();
+  });
+
+  it("should focus a portal into the focus path and restore the camera on Escape", () => {
+    const workspace = useCanvasStore.getState().workspace;
+    const root = workspace.createBoard({ name: "Scene root" });
+    const target = workspace.createBoard({ name: "Scene sources" });
+    workspace.createPortalCard({
+      id: "scene-portal",
+      boardId: root.id,
+      position: { x: 0, y: 0 },
+      targetBoardId: target.id,
+      size: { width: 400, height: 320 },
+    });
+    useUiStore.setState({ activeBoardId: root.id });
+
+    render(
+      <ReactFlowProvider>
+        <SceneBoard />
+      </ReactFlowProvider>,
+    );
+
+    const portal = document.querySelector<HTMLElement>('[data-testid="scene-portal"]');
+    expect(portal).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Focus Scene sources/ }));
+    expect(screen.getByTestId("scene-preview-root")).toHaveTextContent(
+      "Scene root / Scene sources",
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("scene-preview-root")).not.toHaveTextContent("/ Scene sources");
   });
 
   it("should mount the React Flow camera and project a real board", () => {

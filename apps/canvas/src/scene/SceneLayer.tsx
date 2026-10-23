@@ -32,6 +32,8 @@ export interface SceneLayerProps {
   miniatures?: ReadonlyMap<string, BoardMiniatureModel>;
   /** Whiteboard scenes, keyed by card id. */
   drawings?: ReadonlyMap<string, Drawing>;
+  /** Enter a portal by focusing its child board, never by switching boards. */
+  onFocusPortal?: ((portal: PortalInstance) => void) | undefined;
 }
 
 interface BoardContent {
@@ -50,6 +52,7 @@ interface SceneLayerContext {
   tags: Map<string, Tag> | undefined;
   miniatures: ReadonlyMap<string, BoardMiniatureModel> | undefined;
   drawings: ReadonlyMap<string, Drawing> | undefined;
+  onFocusPortal: ((portal: PortalInstance) => void) | undefined;
   viewport: Rect;
   culling: boolean;
 }
@@ -337,7 +340,13 @@ function PortalView({
   origin: Point;
 }) {
   const scale = portal.transform.scale;
+  const focus = context.onFocusPortal;
+  const canFocus = focus !== undefined && !portal.targetMissing;
+  const focusPortal = () => {
+    if (canFocus) focus(portal);
+  };
   const board = portal.childKey ? context.boards.get(portal.childKey) : undefined;
+  const name = portal.targetBoardName ?? board?.name ?? "board";
   const cardZ = Math.round(
     context.content.get(boardInstanceKey(portal.path))?.portalZ.get(portal.key) ?? 0,
   );
@@ -363,13 +372,19 @@ function PortalView({
         <div className="scene-portal__clip" data-testid="scene-portal-child">
           <BoardView context={context} board={board} origin={portal.frame} />
         </div>
-        <div className="scene-portal__header scene-portal__header--live">
+        <button
+          type="button"
+          className="scene-portal__header scene-portal__header--live"
+          disabled={!canFocus}
+          onClick={focusPortal}
+          aria-label={`Focus ${portal.targetBoardName ?? board.name}`}
+        >
           <span className="scene-portal__glyph" aria-hidden="true">
             {"\u25c9"}
           </span>
           <span className="scene-portal__title">{portal.title ?? board.name}</span>
           <span className="scene-portal__status">Live</span>
-        </div>
+        </button>
       </div>
     );
   }
@@ -378,8 +393,17 @@ function PortalView({
     <div
       {...common}
       className="scene-portal scene-portal--impostor"
+      data-interactive={canFocus ? "true" : undefined}
       style={{ ...translated(portal.frame, origin, 12 * scale), zIndex: 2000 + cardZ }}
     >
+      {canFocus ? (
+        <button
+          type="button"
+          className="scene-portal__focus-target"
+          aria-label={`Focus ${name}`}
+          onClick={focusPortal}
+        />
+      ) : null}
       <PortalFace portal={portal} context={context} />
     </div>
   );
@@ -448,6 +472,7 @@ export function SceneLayer({
   tags,
   miniatures,
   drawings,
+  onFocusPortal,
 }: SceneLayerProps) {
   const content = useMemo(() => indexScene(scene), [scene]);
   const boards = useMemo(() => new Map(scene.boards.map((board) => [board.key, board])), [scene]);
@@ -460,6 +485,7 @@ export function SceneLayer({
     tags,
     miniatures,
     drawings,
+    onFocusPortal,
     viewport,
     culling,
   };

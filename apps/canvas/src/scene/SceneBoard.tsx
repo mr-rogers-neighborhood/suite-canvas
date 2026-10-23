@@ -6,6 +6,7 @@ import {
   type LodKind,
   type LodState,
   type PortalGateState,
+  type PortalInstance,
   type Rect,
   rectFromPoints,
   resolveLod,
@@ -45,6 +46,13 @@ const EMPTY_NODES = [] as never[];
 const EMPTY_EDGES = [] as never[];
 const FIT_PADDING = 0.12;
 const FOCUS_DURATION_MS = 220;
+
+interface FocusEntry {
+  readonly boardKey: string;
+  readonly label: string;
+  readonly parentKey: string;
+  readonly checkpoint: Camera;
+}
 
 interface PreparedScene {
   readonly boards: readonly SceneBoardInput[];
@@ -149,7 +157,15 @@ function countLabel(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
-function SceneBadge({ counts, boardName }: { counts?: SceneCounts; boardName?: string }) {
+function SceneBadge({
+  counts,
+  boardName,
+  path,
+}: {
+  counts?: SceneCounts;
+  boardName?: string;
+  path?: readonly string[];
+}) {
   const href = useMemo(flowSurfaceHref, []);
   const summary = counts
     ? [
@@ -168,6 +184,7 @@ function SceneBadge({ counts, boardName }: { counts?: SceneCounts; boardName?: s
       {boardName ? (
         <span className="scene-board__root" data-testid="scene-preview-root">
           {boardName}
+          {path && path.length > 0 ? ` / ${path.join(" / ")}` : ""}
           {counts && counts.expandedPortals > 0
             ? ` \u00b7 ${countLabel(counts.expandedPortals, "live portal")}`
             : ""}
@@ -262,8 +279,9 @@ function SceneViewport({
   const viewport = useViewport();
   const paneWidth = useStore((state) => state.width);
   const paneHeight = useStore((state) => state.height);
-  const { fitBounds } = useReactFlow();
+  const { fitBounds, setViewport } = useReactFlow();
   const [tick, setTick] = useState(() => Date.now());
+  const [focusPath, setFocusPath] = useState<FocusEntry[]>([]);
   const lodStates = useRef<Record<string, LodState>>({});
   const gateStates = useRef<Record<string, PortalGateState>>({});
   const [outlineOpen, setOutlineOpen] = useState(true);
@@ -386,27 +404,89 @@ function SceneViewport({
     });
   }, []);
 
-  const focusOutlineItem = useCallback(
-    (item: SceneOutlineItem) => {
-      setActiveOutlineId(item.id);
-      const portal = portalsByKey.get(item.id);
-      const boardKey = portal?.childKey ?? (item.kind === "board" ? item.id : null);
-      const board = boardKey ? boardsByKey.get(boardKey) : undefined;
-      const target = board?.frame ?? portal?.frame;
-      if (!target) return;
+  const enterPortal = useCallback(
+    (portal: PortalInstance) => {
+      const board = portal.childKey ? boardsByKey.get(portal.childKey) : undefined;
+      const target = board?.frame ?? portal.frame;
+      const parentKey = activeOutlineId ?? scene.root.key;
+      setFocusPath((previous) => [
+        ...previous,
+        {
+          boardKey: board?.key ?? portal.childKey ?? portal.targetBoardId,
+          label: board?.name ?? portal.targetBoardName ?? "Portal",
+          parentKey,
+          checkpoint: camera,
+        },
+      ]);
+      setActiveOutlineId(portal.key);
       void fitBounds(target, {
         padding: 0.18,
         duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
       });
     },
-    [boardsByKey, portalsByKey, fitBounds],
+    [activeOutlineId, boardsByKey, camera, fitBounds, scene.root.key],
   );
+
+  const goBack = useCallback(() => {
+    const entry = focusPath[focusPath.length - 1];
+    if (!entry) return;
+    setFocusPath(focusPath.slice(0, -1));
+    setActiveOutlineId(entry.parentKey);
+    void setViewport(entry.checkpoint, {
+      duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+    });
+  }, [focusPath, setViewport]);
+
+  const focusOutlineItem = useCallback(
+    (item: SceneOutlineItem) => {
+      if (item.id === scene.root.key) {
+        setFocusPath([]);
+        setActiveOutlineId(scene.root.key);
+        void fitBounds(scene.root.frame, {
+          padding: FIT_PADDING,
+          duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+        });
+        return;
+      }
+      const portal = portalsByKey.get(item.id);
+      if (portal) {
+        enterPortal(portal);
+        return;
+      }
+      setActiveOutlineId(item.id);
+      const boardKey = item.kind === "board" ? item.id : null;
+      const board = boardKey ? boardsByKey.get(boardKey) : undefined;
+      if (!board) return;
+      void fitBounds(board.frame, {
+        padding: 0.18,
+        duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+      });
+    },
+    [boardsByKey, enterPortal, fitBounds, portalsByKey, scene.root.frame, scene.root.key],
+  );
+
+  useEffect(() => {
+    setFocusPath([]);
+    setActiveOutlineId(rootBoardId);
+  }, [rootBoardId]);
+
+  useEffect(() => {
+    if (focusPath.length === 0) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      goBack();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusPath.length, goBack]);
 
   return (
     <>
       <ViewportPortal>
         <SceneLayer
           scene={scene}
+          onFocusPortal={enterPortal}
           viewport={pageViewport}
           cards={prepared.cardsById}
           types={prepared.typesById}
@@ -415,7 +495,11 @@ function SceneViewport({
           drawings={prepared.drawings}
         />
       </ViewportPortal>
-      <SceneBadge counts={scene.counts} boardName={boardName} />
+      <SceneBadge
+        counts={scene.counts}
+        boardName={boardName}
+        path={focusPath.map((entry) => entry.label)}
+      />
       {scene.counts.cards === 0 ? (
         <div className="scene-board__empty" data-testid="scene-board-empty">
           <div className="scene-board__empty-card">
@@ -434,6 +518,7 @@ function SceneViewport({
           onToggleOpen={() => setOutlineOpen((open) => !open)}
           onSelect={focusOutlineItem}
           onToggleExpand={toggleOutlineItem}
+          {...(focusPath.length > 0 ? { onBack: goBack } : {})}
         />
       </div>
     </>

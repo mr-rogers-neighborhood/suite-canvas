@@ -177,6 +177,25 @@
   flex-direction: column;
 }
 
+.scene-portal[data-interactive="true"] {
+  pointer-events: auto;
+}
+
+.scene-portal__focus-target {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.scene-portal__focus-target:focus-visible {
+  outline: 2px solid var(--mention-ink);
+  outline-offset: 2px;
+}
+
 .scene-portal__header {
   display: flex;
   flex-shrink: 0;
@@ -191,8 +210,18 @@
   position: absolute;
   z-index: 5;
   inset: 0 0 auto;
+  width: 100%;
+  border: 0;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: inherit;
+  cursor: zoom-in;
+  font: inherit;
+  text-align: left;
   backdrop-filter: blur(5px);
+}
+
+.scene-portal__header--live:disabled {
+  cursor: default;
 }
 
 .scene-portal__glyph {

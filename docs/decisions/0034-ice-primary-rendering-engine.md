@@ -56,13 +56,22 @@ implementation and a temporary development escape hatch, not the product target.
    - a mode switch that gives the overlay pointer input for text editing while ICE keeps pan,
      zoom, selection and drag outside the editor.
 
-   No second card renderer is designed. The existing `NodeCard` is the card.
+   No second card renderer is designed. The existing `NodeCard` is the card. The overlay reads the
+   same semantic model and the same canonical placement as the canvas; it does not introduce a
+   second layout, a second position source or a second selection authority. ICE geometry is a view
+   of the placement, never a replacement for it.
 
 5. **One interaction bridge, one undo stack.** ICE's native history is disabled for document
    gestures. Selection, drag, resize, create, delete, edge and section changes report intent to a
    Suite bridge; live motion stays ephemeral; pointer-up performs one `WorkspaceDocument` commit per
    gesture. Undo and redo call Loro's `UndoManager` only. A gesture that has no bridge yet is not
    silently written into ICE's document.
+
+   The write path is a **one-way funnel into Loro**. The projection is always downstream of the
+   document: `WorkspaceDocument → projection → ICE`. No ICE ECS record, gesture or undo entry
+   becomes document truth, and the projection never writes back. The “not document truth” HUD stays
+   true after writes land because writes enter through the same plan of record
+   ([ADR-0020](./0020-main-and-loro-plan-of-record.md)), not through the renderer.
 
 6. **Excalidraw is a card, never the canvas engine.** The whiteboard keeps the existing Excalidraw
    card and Loro drawing binding. Its card face is a cached preview; at full LOD it may mount the
@@ -104,6 +113,10 @@ polish and a minimap. These are specified in
 
 - **The product gains a true topology.** Nesting, portals, zoom and pan are one world; no camera
   trick is needed to make a board look infinite.
+- **Version skew is recorded.** The installed `@vibecook/ice@0.16.0` does not expose
+  `renderSubtreeTo` or a virtual-child-source API. Upstream ICE documentation describes those
+  features in a different line, so do not assume upstream docs apply to this pin. The port uses
+  nested containers, the spatial index and culling; it does not depend on those primitives.
 - **WebGPU becomes a support boundary.** The alpha must publish requirements, detect failure
   honestly and treat unsupported browsers as unsupported rather than degraded. This is a smaller
   promise than a second renderer that cannot reach parity.

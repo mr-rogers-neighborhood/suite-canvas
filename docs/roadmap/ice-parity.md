@@ -91,6 +91,9 @@ Goal: the real card, not a note impostor.
 
 - Move the lab renderer into the app path. Pass the real `Card`, `CardType`, `CardMeta`, the
   workspace `LoroDoc`, `contentId`/`titleId`, `cursorStore`, `localUser`, `boardId` and presence.
+- **Phase-2 invariant:** the renderer reads the same semantic model and the same canonical placement
+  as the canvas. It is a renderer of one position, not a second layout. If it needs its own
+  coordinates, selection or identity map, stop and fix the projection instead.
 - Render read-only first: title/body, type glyph, tags, property chips, menu affordances disabled.
 - Wire the property inspector to the same canonical card.
 - Keep one DOM root per visible card; release it on LOD unmount; free the local doc only when it is
@@ -100,12 +103,14 @@ Goal: the real card, not a note impostor.
 
 **Exit evidence:** a real card's title and body render and scroll; the inspector edits the same card;
 opening the card in the panel and on the canvas does not create a second editor; no local document
-is minted for a workspace card.
+is minted for a workspace card; the card's position is unchanged by mounting the overlay.
 
 ### Phase 3 — Interaction bridge and undo
 
 Goal: gestures are canonical and undoable once.
 
+- **Write funnel:** every write goes `ICE intent → bridge → WorkspaceDocument → Loro → projection`.
+  The projection is downstream and never writes back; no ICE ECS record becomes document truth.
 - Define `SuiteIceBridge` interfaces: `instanceOf`, `placementOf`, `cardOf`, `selection`,
   `moveIntent`, `resizeIntent`, `createIntent`, `deleteIntent`.
 - Map ICE screen/world coordinates through the instance transform to canonical board coordinates.

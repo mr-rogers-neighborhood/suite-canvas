@@ -1,9 +1,10 @@
-# The ICE spike: operator guide
+# The ICE spike and port: operator guide
 
-`/ice.html` (also reachable as `?canvas=ice`) mounts an experimental, in-memory `@vibecook/ice` desk. It is a rendering spike,
-not a Suite surface: it reads and writes no workspace, share or presence data, and the React Flow
-scene remains the default surface and the only document truth. The decision record is
-[ADR-0032](./decisions/0032-ice-engine-deferral.md); the scene contract it is measured against is
+`/ice.html` (also reachable as `?canvas=ice`) mounts an experimental `@vibecook/ice` desk. ICE is
+the accepted primary rendering engine ([ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)),
+but this surface is still under the P0 parity gate: the React Flow scene remains the default and the
+only document truth until that gate passes. The port plan is
+[`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md); the reference interaction contract is
 [ADR-0033](./decisions/0033-interactive-scene-surface.md).
 
 The desk seeds one of two demos, chosen in the HUD or with `?demo=suite`:
@@ -13,6 +14,11 @@ The desk seeds one of two demos, chosen in the HUD or with `?demo=suite`:
 - **Suite demo**: a one-way, read-only projection of the example workspace's graph into the same
   native `desk.note` and `desk.minimat` kinds. It changes no Suite document; the projection builds
   a throwaway in-memory graph and translates it, and nothing is written back.
+
+When the surface is mounted inside the app (`?canvas=ice` in a real workspace), it does **not** use
+a demo: it waits for the workspace to hydrate, then projects the live graph read-only. The HUD says
+`ICE workspace` and `Read-only projection — not document truth`. Cards are still native notes in
+this phase; the real `NodeCard` overlay is the next phase in the parity roadmap.
 
 ## Diagnosis: the machine is capable, the launch mode is the blocker
 
@@ -117,7 +123,9 @@ a whiteboard and a notebook.
 - Pan by dragging the bare mat, wheel zoom about the pointer, and zoom-through into a mini mat.
 - Selection: click, marquee, and shift-click to add. Drag a note to move it.
 - Undo and redo through ICE's own history (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`). This history is the
-  ICE document's, not Suite's.
+  ICE document's, not Suite's. **It is a spike behaviour and is disabled when the document bridge
+  lands**; Loro's undo is the only user-visible history from that point
+  ([ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)).
 - Whiteboard ink (the demo seeds an empty board, so draw on it), notebook cover/ruling, light desk
   theme, and the fallback cards for every adapter state.
 - Per-object isolation: one object type that refuses to spawn is reported in the seed failures and
@@ -144,20 +152,20 @@ The **Suite demo** is the first parity step, and it is deliberately one-way
 ## What is intentionally absent
 
 - **Suite data writes.** The Suite demo projects the example graph one way. It never writes to a
-  workspace, never opens a share or presence session and never touches an owner key. ICE's undo
-  history belongs to the in-memory ICE document.
+  workspace, never opens a share or presence session and never touches an owner key. The spike's
+  ICE undo history belongs to the in-memory ICE document and is retired when the bridge lands.
 - **Loro writes.** The desk is a private in-memory ICE document. Nothing is persisted; leaving the
   route disposes the document, the engine and the device.
 - **Fonts.** The app does not host Caveat/Kalam and the spike must not fetch a third-party font, so
   notes show their paper, ink strokes and layout, not lettered glyphs.
 - **Custom kinds and DOM in the projection.** The Suite demo uses only `desk.note` and
   `desk.minimat`. A separate lab (`/src/ice/suite-card-lab.html`) proves a custom `suite.card`
-  kind can mount the real `NodeCard` in a screen-space overlay; it is not wired into `/ice.html`.
-  Typed fields, tags, edges, permissions, mention chips and editing are still absent, and the
+  kind can mount the real `NodeCard` in a screen-space overlay; it is not wired into `/ice.html`
+  yet. Typed fields, tags, edges, permissions, mention chips and editing are still absent, and the
   React Flow scene is untouched.
 
-The open questions that would make ICE an engine candidate are gates 1–7 in ADR-0032; this guide
-does not claim any of them.
+The P0 parity gate is in [ADR-0034](./decisions/0034-ice-primary-rendering-engine.md); this guide
+does not claim any of it.
 
 ## Known failure modes
 

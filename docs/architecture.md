@@ -338,29 +338,36 @@ Loro graph remains the truth, and an aborted expansion leaves the portal usable 
 
 ## Rendering
 
-The canvas target is a **derived scene over the graph**, not a canvas whose document is the
-renderer's own node list ([ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)):
+The canvas target is a **derived scene over the graph**, rendered by a true infinite-canvas engine,
+not a canvas whose document is the renderer's own node list
+([ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md),
+[ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)):
 
 ```text
 Loro graph (@suite/graph)
-  cards · placements · sections · edges · drawings
+  boards · cards · placements · sections · edges · drawings · views · pins
         │
         ▼
 Scene projection (pure, engine-agnostic)
   board instances · transforms · effective zoom · LOD · portal gates · edges
         │
         ▼
-Scene surface (React Flow camera + DOM projection, the default)
-  SceneBoard (camera, LOD state, focus path, pointer gestures) │ SceneLayer (cards, edges, portals)
+ICE surface (WebGPU world, the target default)
+  nested containers · spatial index · camera · input · GPU object faces
         │
+        ├── suite.card: GPU paper + screen-space NodeCard overlay
+        ├── suite.section / suite.edge / suite.pin: GPU face + DOM chrome
         ▼
 Live `NodeCard` at full LOD + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
 ```
 
-The scene is the default surface; the React Flow flow surface stays reachable as `?canvas=flow`, and
-`?canvas=ice` is the experimental spike. The pure layer is `packages/scene` (`@suite/scene`).
-Interaction is described in
-[ADR-0033](./decisions/0033-interactive-scene-surface.md); the sections below record what is
+[ADR-0034](./decisions/0034-ice-primary-rendering-engine.md) makes ICE the primary engine. In the
+current tree the React Flow scene is still the default surface while the P0 parity gate is open:
+`?canvas=ice` mounts the ICE port, `?canvas=scene` mounts the reference scene, and `?canvas=flow`
+keeps the older single-board surface reachable for development. The pure layer is `packages/scene`
+(`@suite/scene`). Interaction is described in
+[ADR-0033](./decisions/0033-interactive-scene-surface.md); the ICE port is tracked in
+[`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md) and the sections below record what is
 implemented and where the parity gaps still are.
 
 ### Graph truth, derived scene
@@ -370,6 +377,27 @@ the camera; it is never edited, persisted or synced. That keeps one document and
 it lets any engine host the same scene. The scene layer consumes graph types and plain values only —
 no React, DOM, engine or Loro imports — so projection, camera math and layout are testable without a
 renderer.
+
+### The ICE host
+
+ICE owns the world, spatial index, camera and pointer input. It does not own document truth.
+
+- A board becomes a container; a portal becomes a nested board view of its target; a card becomes a
+  placement inside that container. Multiple portals to one board are multiple instances of one
+  canonical board ([ADR-0035](./decisions/0035-views-pins-and-portals.md)).
+- A custom `suite.card` kind draws its paper body on the GPU and mounts the real `NodeCard` in a
+  full-screen DOM overlay at `geometryOf(entity)`. The overlay is `pointer-events:none` until an
+  explicit editor mode gives the card text focus; ICE keeps pan, zoom, selection and drag.
+- Selection, drag, resize, create, delete, section and edge gestures report intent through one
+  bridge. Live motion is ephemeral; pointer-up calls one `WorkspaceDocument` method per gesture.
+  ICE's native history is disabled for document objects; Loro undo is the only user-visible history.
+- The DOM overlay is budgeted. It mounts full cards only at readable width (24 by default), hides
+  and unmounts below the band, and no card has two mounted editors even when several portal
+  instances show it.
+- WebGPU is required. A browser without `navigator.gpu`, an adapter or a usable device gets a
+  dedicated unsupported screen with diagnostics, not the React Flow canvas. Device loss stops
+  drawing and offers recovery; it never writes partial state.
+
 
 ### Board instances
 
@@ -435,20 +463,37 @@ layer, positioned in page space from the projection; none of them is a React Flo
 
 ### Effective zoom, LOD bands and hysteresis
 
-| Band | Effective scale | Card | Portal | Section | Edge |
+The target bands are discrete and screen-aware, because a card inside a scaled portal can have a
+high effective scale but an unreadable footprint
+([ADR-0036](./decisions/0036-fractal-lod-and-icon-graph.md)):
+
+| Band | Condition | Card | Portal | Section | Edge |
 | --- | --- | --- | --- | --- | --- |
-| `full` | ≥ 0.75 | live `NodeCard` (Tiptap title/body) + whiteboard preview | live child board | fill + header (+ handles when selected) | full path + label |
-| `compact` | 0.35–0.75 | static title + glyph + chips | live miniature | title chip | simplified path |
-| `icon` | 0.12–0.35 | glyph + layout badge | layout-encoded icon | colour band | hidden |
+| `full` | scale ≥ 0.75 **and** screen width ≥ 180 px | live `NodeCard` (Tiptap title/body) + whiteboard preview | live child board | fill + header (+ handles when selected) | full path + label |
+| `compact` | scale 0.35–0.75, or full scale with a narrow footprint | static title + glyph + chips | live miniature | title chip | simplified path |
+| `icon` | scale 0.12–0.35 | type glyph + layout badge | layout-encoded icon | colour band | hidden |
 | `hidden` | < 0.12 | none | aggregate proxy | none | none |
 
 Downgrade immediately; upgrade only after the higher threshold is crossed and the state has held for
-a dwell time (default 80 ms). The resolved band is stored per instance and is never a continuous
-function recomputed per frame. DOM editors mount only at `full` (and for the focused card in reader
-mode). There is no separate numeric editor budget: culling to the page-space viewport plus the LOD
-hysteresis are what bound mounted editors, live portal faces and visible nodes. `?perf=1` render
-counters and a `buildScene` perf smoke exist, but no frame-time, GPU or mounted-editor measurement
-has been recorded.
+a dwell time (100 ms target). A card cannot change band again for 250 ms unless it leaves the
+viewport. The resolved band is stored per instance and is never a continuous function recomputed per
+frame. The selected/focused card and the card with the active editor are pinned one band higher until
+the gesture ends.
+
+- **Scene surface (reference):** DOM editors mount only at `full`; culling to the page-space viewport
+  plus hysteresis bound mounted editors, live portal faces and visible nodes.
+- **ICE surface (target):** the GPU face and the DOM card crossfade in place over 140 ms on upgrade
+  and 120 ms on downgrade; only band-crossing cards animate. Camera motion paints GPU proxies only;
+  after 80–120 ms of idle, one incremental mount pass resolves editors centre-out under a ~6 ms
+  deadline and ~6-per-frame cap. The overlays are capped at 24 by default, prioritising the focused
+  card, selection, viewport centre and z-order. A card with no budget keeps its static GPU face,
+  never disappears.
+- **Far zoom:** a spatial icon field — type glyphs at exact positions and footprints, container
+  glyphs encoding layout mode — with no invented reference edges. Pins and selection chrome remain
+  counter-scaled.
+- **Evidence:** `?perf=1` render counters and a `buildScene` perf smoke exist. ICE frame time, GPU
+  memory and mounted-editor count are not measured yet and are P0 gate evidence.
+
 
 ### The live card layer
 
@@ -503,7 +548,8 @@ identity — so the same samples mean the same thing on the flow surface.
 
 ### Focus path and navigation
 
-- The root board stays `activeBoardId`; board tabs keep their meaning and clear the focus path.
+- The root View stays active; switching a View clears the focus path. “Board” is an internal data
+  term, not product copy ([ADR-0035](./decisions/0035-views-pins-and-portals.md)).
 - Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
   the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
 - Escape or back pops the focus path and restores the exact camera checkpoint.
@@ -511,6 +557,21 @@ identity — so the same samples mean the same thing on the flow surface.
   focused path. A *reveal* request from the inspector or the board outline (`focusTarget`) is still
   consumed only by `CanvasBoard`, so "show on board" does not yet move the scene camera.
 - `prefers-reduced-motion` skips camera flights and LOD transitions.
+
+### Views, Pins and retrieval
+
+- A **View** is a framing of a board: its content plus a camera and optional filter. Boards remain
+  the internal containers; the top-bar switcher and library use “View”. Existing saved queries are
+  surfaced as saved filters under the View they scope.
+- A **Pin** is a spatial bookmark in the document: a board point, a label, an optional target and a
+  creator. It is visible at every LOD, clips to its board instance, and never creates a card,
+  reference or container. Pins are workspace-shared in v1.
+- A **Portal** is a shared board view: one canonical board, many placements. Selection is canonical
+  across every instance; a drag through one instance writes the canonical placement once.
+- A **Section** is spatial grouping, not navigation. It may be a Pin target.
+- Unplacing a card sends it to the Inbox and is non-destructive; deleting it is a Trash action. The
+  old immediate unplace/delete prompt is retired once the library exposes both paths.
+
 
 ### Scene outline
 
@@ -535,11 +596,16 @@ root board.
 ### Surface routing, demo seed and cache reset
 
 `canvasSurfaceFromSearch` (`apps/canvas/src/scene/surfaceFlag.ts`) returns `scene` unless the URL
-asks for `flow` or `ice`, so a normal workspace and a share both open on the scene. The scene badge
-shows board/card/portal counts, the focused path and a link back to `?canvas=flow`.
-`?canvas=ice` mounts the lazy spike of [ADR-0032](./decisions/0032-ice-engine-deferral.md) or its
-WebGPU fallback; the headed launch, adapter HUD and the gated check are in
-[docs/ice-spike.md](./ice-spike.md).
+asks for `flow` or `ice`, so a normal workspace and a share still open on the React Flow scene while
+the ICE port is under the P0 gate. The scene badge shows board/card/portal counts, the focused path
+and a link back to `?canvas=flow`.
+
+`?canvas=ice` mounts the ICE port tracked by
+[`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md). The intended end state is ICE for every
+normal workspace and share, with no user-facing React Flow fallback; a browser without WebGPU gets a
+dedicated unsupported screen ([ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)). The
+headed launch, adapter HUD and gated check are in [docs/ice-spike.md](./ice-spike.md).
+
 
 A workspace created from the launcher carries `?fresh=1` and is seeded once with
 `seedExampleWorkspace`: three boards (Atlas, Research, Sources), fourteen cards, four portals
@@ -553,11 +619,13 @@ deletes it. Server rooms are untouched and re-sync on open.
 
 The seam is the pure `Scene` value plus the gesture contract: `SceneBoard` owns the camera,
 LOD/gate state, focus path and pointer gestures; `SceneLayer` paints the frame from the scene,
-`SceneCardView` mounts the real card at `full`. The React Flow scene is the default and the parity
-baseline; `?canvas=flow` keeps the pre-scene surface usable; an ICE surface remains a deferred spike
-([ADR-0032](./decisions/0032-ice-engine-deferral.md)). LOD proxies, card faces and interaction math
-are shared, so the engine choice stays reversible and a failed spike costs an adapter rather than a
-document ([ADR-0033](./decisions/0033-interactive-scene-surface.md)).
+`SceneCardView` mounts the real card at `full`. This is the reference implementation while ICE
+reaches parity. The target adapter is an ICE host that consumes the same projection, owns the
+camera/spatial index/input, and mounts the same `NodeCard` through the `suite.card` overlay
+([ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)). LOD proxies, card faces and
+interaction math are shared, so the engine change remains an adapter rather than a document
+([ADR-0033](./decisions/0033-interactive-scene-surface.md)).
+
 
 ### The card layer
 
@@ -865,6 +933,11 @@ and links follow when the footer expands.
   deleting: a view is workspace configuration, not content, so a board or card share editor — who
   holds `canEditContent` but must not publish configuration into the owner's workspace — never sees
   those actions, while still being able to open a view.
+
+  **Target (ADR-0035):** the top-bar board switcher becomes the **Views** switcher; these saved
+  queries are surfaced as **saved filters** under the View they scope. The data records do not
+  change in the rename. Pins join Views in the library as spatial bookmarks.
+
 
 ## Layers
 

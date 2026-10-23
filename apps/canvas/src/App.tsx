@@ -620,7 +620,10 @@ function WorkspaceShell({
           <SceneBoard />
         ) : canvasSurface === "ice" ? (
           <Suspense fallback={null}>
-            <IceSurface />
+            <IceSurface
+              workspace={ready && synced ? workspace : null}
+              rootBoardId={activeBoardId}
+            />
           </Suspense>
         ) : (
           <CanvasBoard />

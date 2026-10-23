@@ -645,9 +645,10 @@ outsider could inspect. A gate without an artifact is not closed. The Beta and V
 
 A11 (Portals) is pinned as an alpha gate for the next planning phase. It is not claimed open; its
 scope, data model, and acceptance are sketched in §7.4. It is split into **A11a** (real portals in
-a derived scene) and **A11b** (fractal layout presets) after
-[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md) superseded the camera
-transition as the target.
+a derived scene), **A11b** (fractal layout presets) and **A11c** (ICE as the primary surface) after
+[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md) and
+[ADR-0034](../decisions/0034-ice-primary-rendering-engine.md) superseded the camera transition as
+the target.
 
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
@@ -663,6 +664,7 @@ transition as the target.
 | **A10** | Both reported UX bugs are closed | Marquee e2e checklist (1, 2, many, across sections, with a peer); local-vs-remote smoothing acceptance at 60/120 Hz; one CRDT commit per gesture | A6 |
 | **A11a** | Real portals in a derived scene (ADR-0030) | Portal data model retained (ADR-0029); a portal renders a live, scaled target board at readable zoom and its miniature only as the far-LOD impostor; entering moves the camera and the root board stays active; nested portals expand lazily with cycle/depth guards; scene outline and camera checkpoints replace the overlay transition; a share expands only in-scope targets; e2e covers zoom-through without a board switch, depth ≥ 2, a cycle, back to the exact camera, and one CRDT commit per gesture | A10 |
 | **A11b** | Fractal layout presets (ADR-0030) | One-shot recursive layout commands with per-depth overrides, a preview, one undoable batch and deterministic output; no live reflow; unit/e2e coverage of recipes, cycles and pinned cards | A11a |
+| **A11c** | ICE is the primary surface (ADR-0034) | Every P0 row in [ADR-0034](../decisions/0034-ice-primary-rendering-engine.md) has an artifact: real workspace hydrate, real `NodeCard`/inspector, whiteboard, one-commit gestures with Loro-only undo, sections/edges, shared-board portals, presence/shares, failure screens, accessibility and 1k/5k perf. No user-facing React Flow fallback; unsupported WebGPU gets the published screen | A11a, A11b |
 
 ### 7.1 Gate notes
 
@@ -761,6 +763,7 @@ owner is the maintainer/operator; no separate review board is implied.
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
 | A11a | `measuring` | Data model retained: `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029. The scene is the **default** surface and interactive ([ADR-0033](../decisions/0033-interactive-scene-surface.md)): pure projection (`packages/scene/src/scene.ts`, `geometry.ts`, `lod.ts`, `outline.ts`, `spatial.ts`, `interaction.ts`), recursive live/impostor portals (`apps/canvas/src/scene/SceneLayer.tsx`), camera-only focus path with checkpoints (`SceneBoard.tsx`), scene outline (`SceneOutline.tsx`, `outlineAdapter.ts`), custom pointer gestures with one commit per board per gesture including section drag/resize and connector drag-to-connect (`useSceneInteraction.ts`, `sceneSelection.ts`), live `NodeCard` at full LOD (`SceneCardView.tsx`), peer presence projected into every visible instance plus outbound samples (`scenePresence.ts`, `useBoardPeers` in `SceneBoard.tsx`), shared canvas menu (`apps/canvas/src/canvas/useCanvasMenuItems.ts`), demo seed (`demo/seedExample.ts`) and default routing (`scene/surfaceFlag.ts`). Component tests cover expanded portals, cycles, missing targets, culling, selected-edge highlight, section selection, connector handles and Escape restore; interaction tests cover click/shift/marquee, a drag inside a scaled portal, one-commit card and section gestures, viewer gating, portal focus, card-over-section hit order, edge selection and a connector-created edge; presence tests cover publishing pointer/drag/resize/section/marquee, clearing on unmount, a viewer publishing selection but no drag, and projecting rings, ghosts, portal-clipped pointers and out-of-scope peers. `e2e/tests/scene.spec.ts` (5 specs, passing locally on 2026-10-23) covers a seeded scene, portal focus with Escape restore, note creation from the shared menu, a `?perf=1` counter/badge smoke and the legacy flow route; `e2e/tests/visual.spec.ts` has a recursive-portal scene baseline, and `packages/scene/src/scene.perf.test.ts` times `buildScene` at 1k/5k objects against a fixed ceiling (no frame-time claim). Still open: e2e for depth ≥ 2, cycles, drag/resize commit counts, presence and share scope; connectors are drawn only for a single selected card, so they are not discoverable before selection and their reposition/delete menu is still flow-only, and `focusTarget` reveal is not wired ([ADR-0033](../decisions/0033-interactive-scene-surface.md) §What is wired). The surface not being the default is no longer a gap. The superseded camera-transition precedent (`Portal*.tsx`, `BoardMiniature.tsx`, `portalMiniature.ts`, `CardFocus*.tsx`) survives only as the impostor. |
 | A11b | `measuring` | All eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; pure planner in `apps/canvas/src/scene/layoutCommand.ts`; one batched, one-undo `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts`; **Arrange fractally** in the shared canvas menu (`apps/canvas/src/canvas/useCanvasMenuItems.ts`), so both surfaces offer it. Still open: preview surface and e2e; output is applied immediately from the menu. |
+| A11c | `in progress` | ICE is accepted as the primary engine ([ADR-0034](../decisions/0034-ice-primary-rendering-engine.md)). Proven: headed Vulkan adapter, native desk, one-way Suite projection, live read-only workspace projection in `?canvas=ice`, and a custom `suite.card` kind mounting the real `NodeCard` in a screen-space overlay (`apps/canvas/src/ice/`). Port plan: [`ice-parity.md`](./ice-parity.md). Not yet met: real cards/inspector in the app path, canonical writes/Loro undo, whiteboard, sections/edges, shared-board portals, presence/shares, Views/Pins, editor budget, accessibility, 1k/5k perf, unsupported screen and default rollout. The React Flow scene remains the default until the P0 gate. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -772,8 +775,8 @@ object is a doorway, not a container. Alternatives if it ever needs renaming: *V
 and acceptance were superseded by
 [ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md): the static miniature plus
 camera transition that swaps `activeBoardId`, and the one-level nesting limit, are no longer the
-target. A11 is now **A11a** (real portals in a derived scene) and **A11b** (fractal layout
-presets).
+target. A11 is now **A11a** (real portals in a derived scene), **A11b** (fractal layout presets) and
+**A11c** (ICE as the primary surface).
 
 **Definition.** A portal is a card on a board that represents another board. In the target it is a
 **live, scaled instance** of its target inside one continuous scene: the root board stays active,
@@ -813,7 +816,8 @@ of the same plane.
   presence.
 
 **Navigation (A11a target).**
-- The root board remains `activeBoardId`; board tabs keep their meaning and clear the focus path.
+- The root View remains `activeBoardId`; switching a View clears the focus path. “Board” is an
+  internal data term, not product copy ([ADR-0035](../decisions/0035-views-pins-and-portals.md)).
 - Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
   the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
 - Escape or back pops the focus path and restores the exact camera checkpoint. Keyboard focus and
@@ -840,11 +844,15 @@ of the same plane.
   retired.
 - Tab grouping and cross-board edges are follow-ons, not part of A11a.
 
-**Status:** A11a `measuring` — the scene is the default surface, interactive, and mirroring peer
-presence ([ADR-0033](../decisions/0033-interactive-scene-surface.md)); the gaps that keep the gate
-open are e2e for depth ≥ 2, cycles, per-gesture commits, presence and share scope, plus connector
-discoverability and `focusTarget` reveal. A11b `measuring` — the one-shot command, the planner and
-the menu land on both surfaces; the preview does not exist yet.
+**Status:** A11a `measuring` — the React Flow scene is the reference surface, interactive, and
+mirroring peer presence ([ADR-0033](../decisions/0033-interactive-scene-surface.md)); the gaps that
+keep the gate open are e2e for depth ≥ 2, cycles, per-gesture commits, presence and share scope, plus
+connector discoverability and `focusTarget` reveal. A11b `measuring` — the one-shot command, the
+planner and the menu land on both surfaces; the preview does not exist yet. A11c `in progress` —
+ICE is accepted as the primary engine ([ADR-0034](../decisions/0034-ice-primary-rendering-engine.md)),
+the hardware path, read-only Suite projection and live read-only workspace projection are proven,
+and the port plan is [`ice-parity.md`](./ice-parity.md); the P0 gate is not met and the React Flow
+scene is still the default.
 
 **Acceptance for A11a.**
 - A portal can be created from the right-click menu and the Add card/type menu (retained).
@@ -853,7 +861,7 @@ the menu land on both surfaces; the preview does not exist yet.
 - Zooming through a portal moves the camera and keeps the root board active; two levels of nested
   portals render live at readable zoom.
 - A cycle stops with a visible stub and a working focus action; the depth cap holds.
-- Back/Escape restores the exact camera checkpoint; board tabs still switch the root board.
+- Back/Escape restores the exact camera checkpoint; the View switcher still switches the root View.
 - The scene outline lists root and portal instances, follows the focus path, and supports keyboard
   navigation.
 - LOD bands and hysteresis match ADR-0030; DOM editors exist only at `full`; one CRDT commit per
@@ -873,6 +881,32 @@ the menu land on both surfaces; the preview does not exist yet.
 - Pinned/excluded cards keep their positions; sections expand to contain members; cycles stop at the
   repeated board path; an invalid plan writes nothing and says why.
 - Unit tests cover recipes and guards; an e2e covers preview → apply → undo on a nested fixture.
+
+**Acceptance for A11c.**
+- A real workspace hydrates into ICE with no demo seed; cards, portals, sections, edges and
+  whiteboards render from the graph.
+- The real `NodeCard`/Tiptap and property inspector edit the canonical card; one card has one
+  editor even through several portal instances.
+- Drag, resize, create, delete, section, edge and connector gestures each make one
+  `WorkspaceDocument` commit; undo/redo is Loro only; ICE history is disabled.
+- Whiteboard preview and focus/inline editing round-trip through the existing drawing API.
+- Portals are shared board views: one canonical board, multiple placements, canonical selection,
+  depth ≥ 2, cycle stubs, camera checkpoints and no board swap.
+- Presence and shares match the scene surface; viewers cannot write; out-of-scope content and pins
+  never appear.
+- Views, Pins, the outline, breadcrumb and camera history provide retrieval; “Board” is gone from
+  product copy; unplace is non-destructive and the immediate prompt is retired.
+- LOD bands, crossfade/hysteresis, the spatial icon field and the 24-card editor cap meet
+  [ADR-0036](../decisions/0036-fractal-lod-and-icon-graph.md); the four experiments are recorded.
+- No WebGPU, no adapter, import failure and device loss each show the right screen; nothing is
+  written on a failed path.
+- 1k/5k object fixtures record frame time, TTI, GPU memory and mounted editors; accessibility checks
+  pass; the unsupported-browser requirements are published.
+- ICE is the default for a normal workspace and a share; React Flow remains reachable only behind a
+  development-only flag until it is deleted.
+
+**Non-goals for A11c:** mobile/touch-first layout, per-user private pins, a reference-edge graph at
+far zoom, a second interactive renderer as a permanent fallback, and server-room migration.
 
 **Non-goals for A11a/A11b:** tab grouping, cross-board edges, mobile, live reflow, and portal-aware
 workspace merge-back.

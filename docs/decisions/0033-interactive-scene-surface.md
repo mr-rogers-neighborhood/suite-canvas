@@ -1,8 +1,8 @@
 # ADR-0033: The interactive scene surface
 
-- **Status:** accepted
+- **Status:** accepted; amended by [ADR-0034](./0034-ice-primary-rendering-engine.md) — this surface becomes the reference implementation, not the product target
 - **Date:** 2026-10-23
-- **Related:** [ADR-0029](./0029-portal-board-field.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), [ADR-0032](./0032-ice-engine-deferral.md), [`docs/architecture.md`](../architecture.md) §Rendering, [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.3
+- **Related:** [ADR-0029](./0029-portal-board-field.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), [ADR-0032](./0032-ice-engine-deferral.md), [ADR-0034](./0034-ice-primary-rendering-engine.md), [`docs/architecture.md`](../architecture.md) §Rendering, [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.3
 
 ## Context
 

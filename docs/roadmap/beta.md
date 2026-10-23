@@ -1,7 +1,7 @@
 # Beta — strangers can use it with known limits
 
 - **Status:** living document. It records the Beta contract and the evidence required to claim it.
-- **Stage:** entry requires Alpha gates A1–A11b; exit requires Beta gates B1–B11.
+- **Stage:** entry requires Alpha gates A1–A11c; exit requires Beta gates B1–B11.
 - **Provenance:** the 2,544-line audit and design discussion, re-checked against the tree containing
   [ADR-0019](../decisions/0019-references-not-typed-links.md) through
   [ADR-0023](../decisions/0023-selection-projections.md). ✅ claims were checked against this tree;

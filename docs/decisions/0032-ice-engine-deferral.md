@@ -1,8 +1,8 @@
 # ADR-0032: Defer the ICE engine spike until the scene surface is the default
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0034](./0034-ice-primary-rendering-engine.md); the gate list below is retained as the evidence standard the port must meet
 - **Date:** 2026-10-23
-- **Related:** [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0029](./0029-portal-board-field.md), `apps/canvas/src/scene/`, `packages/scene/`
+- **Related:** [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0029](./0029-portal-board-field.md), [ADR-0034](./0034-ice-primary-rendering-engine.md), `apps/canvas/src/scene/`, `packages/scene/`
 
 ## Context
 

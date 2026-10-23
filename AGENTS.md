@@ -8,11 +8,13 @@ Claude Code, …). Read it first; keep it high-signal.
 
 - **Monorepo:** pnpm workspaces + Turborepo (task caching)
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
-  Zustand (UI state), Tiptap 3 (every node is an editor). The surface is a derived scene — Loro graph →
-  `@suite/scene` projection → React Flow camera + DOM `SceneLayer` → live `NodeCard` at full LOD
-  ([ADR-0030](docs/decisions/0030-scene-projection-lod-and-real-portals.md),
-  [ADR-0033](docs/decisions/0033-interactive-scene-surface.md)); `?canvas=flow` keeps the older
-  React Flow single-board canvas reachable.
+  Zustand (UI state), Tiptap 3 (every node is an editor). The target surface is ICE
+  (`@vibecook/ice`, WebGPU) hosting the pure `@suite/scene` projection and the real `NodeCard` in a
+  screen-space DOM overlay ([ADR-0034](docs/decisions/0034-ice-primary-rendering-engine.md)). The
+  React Flow scene is the reference implementation until the P0 parity gate; `?canvas=ice` mounts
+  the port, `?canvas=scene` the reference, and `?canvas=flow` the older single-board surface for
+  development only. There is no user-facing React Flow fallback.
+
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +
@@ -48,14 +50,17 @@ pnpm storybook        # storybook dev server
 ## Architecture in one paragraph
 
 A single `LoroDoc` per workspace is the source of truth. `boards`, `cards`, `placements`,
-`sections`, `types`, `tags`, `edges`, the derived `references` index, and per-card rich text
-(`content`/`titles`) live in the same doc; `@suite/graph` validates every write with Zod before it
-reaches the CRDT. The doc is persisted offline as a Loro
+`sections`, `types`, `tags`, `edges`, the derived `references` index, `views`, and per-card rich
+text (`content`/`titles`) live in the same doc; the planned `pins` map joins them under
+[ADR-0035](docs/decisions/0035-views-pins-and-portals.md). `@suite/graph` validates every write with
+Zod before it reaches the CRDT. The doc is persisted offline as a Loro
 snapshot plus an update log in IndexedDB and synced by the `loro-websocket` provider when online.
 The workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias). Zustand holds **UI
-state only** (selection, active node, context menu) — never document data. Every node is a Tiptap
-editor; formatting uses Tiptap's built-in `BubbleMenu`, and presence (`user`, `pointer`, `focus`,
-`dragging`, carets) rides Loro `EphemeralStore` channels.
+state only** (selection, active node, context menu) — never document data. ICE owns the camera,
+spatial index and GPU faces; it never owns document truth, and its native undo is disabled for
+document gestures. Every node is a Tiptap editor; formatting uses Tiptap's built-in `BubbleMenu`,
+and presence (`user`, `pointer`, `focus`, `dragging`, carets) rides Loro `EphemeralStore` channels.
+
 
 ## Rules (non-negotiable)
 

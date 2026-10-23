@@ -1,3 +1,4 @@
+import { WorkspaceDocument } from "@suite/graph";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { demoModeFromSearch, IceSurface } from "./IceSurface";
@@ -213,6 +214,35 @@ describe("IceSurface", () => {
     );
     expect(screen.getByTestId("ice-hud")).toHaveTextContent("not document truth");
     expect(screen.getByTestId("ice-fps")).toHaveTextContent("fps:");
+  });
+
+  it("should project the live workspace read-only", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureBoard();
+    workspace.createCard({ boardId: board.id, position: { x: 12, y: 34 } });
+
+    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
+
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(ice.spawnWidget).toHaveBeenCalledTimes(1);
+    expect(ice.spawnWidget.mock.calls[0]?.[0]).toBe("desk.note");
+    expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
+      "Workspace: 1 objects / 1 boards",
+    );
+    expect(screen.queryByTestId("ice-demo-modes")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ice-hud")).toHaveTextContent("Read-only projection");
+  });
+
+  it("should wait for a live workspace instead of showing a demo", () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    render(<IceSurface workspace={null} rootBoardId={null} />);
+
+    expect(screen.getByTestId("ice-phase")).toHaveTextContent("phase: checking");
+    expect(ice.createCanvasEngine).not.toHaveBeenCalled();
+    expect(ice.spawnWidget).not.toHaveBeenCalled();
   });
 
   it("should label a fallback adapter as software", async () => {

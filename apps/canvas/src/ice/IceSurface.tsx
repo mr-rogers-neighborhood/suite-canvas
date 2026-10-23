@@ -1,20 +1,23 @@
 /**
- * The ICE demo surface — `?canvas=ice` (ADR-0032 amendment, 2026-10-23).
+ * The ICE surface — `?canvas=ice`.
  *
  * EXPERIMENTAL, NOT DOCUMENT TRUTH. This surface mounts a private, in-memory
- * `@vibecook/ice` desk and seeds it from one of two demos:
+ * `@vibecook/ice` desk. It has three seed sources:
  *
- * - **Native demo** (default): ten ICE-native objects — six notes (four loose,
- *   one inside each mini mat), two mini mats, a whiteboard and a notebook.
- * - **Suite demo** (`?demo=suite`): a one-way, read-only projection of the
- *   example workspace's graph into the same native note and mini-mat kinds, so
- *   the counts line up with the scene surface. `suiteProjection.ts` owns the
- *   mapping; this file only spawns it.
+ * - **Live workspace** (app only): a one-way, read-only projection of the real
+ *   Suite graph. It waits for hydration, projects every board/card/portal into
+ *   native notes and mini mats, and never writes. The HUD says
+ *   `Read-only projection`.
+ * - **Native demo** (standalone `/ice.html`): ten ICE-native objects — six notes
+ *   (four loose, one inside each mini mat), two mini mats, a whiteboard and a
+ *   notebook.
+ * - **Suite demo** (`/ice.html?demo=suite`): the same read-only projection over
+ *   the example workspace built in a throwaway in-memory document.
  *
- * Neither demo reads or writes Suite's graph: the projection builds a
- * throwaway in-memory document, and no workspace write, provider or owner key
- * is involved. The default canvas and `?canvas=scene` remain the only real
- * surfaces.
+ * The live workspace projection reads the graph and never writes it. The demo
+ * projections build a throwaway document; no workspace write, provider or owner
+ * key is involved. The React Flow scene and `?canvas=scene` remain the reference
+ * surface until the P0 parity gate in ADR-0034.
  *
  * Route contract: `App` mounts this only when `currentCanvasSurface()` returns
  * `"ice"`, behind `lazy(() => import("./ice/IceSurface"))`, so the default
@@ -41,7 +44,9 @@
  * the note bodies and diagnostics; the GPU shows their paper, the mini mats and
  * their chip LOD.
  */
+import type { WorkspaceDocument } from "@suite/graph";
 import type { CanvasEngine, DocSession, EngineGpu, Entity, SpawnWidgetOpts } from "@vibecook/ice";
+
 import type { DeskLayerFactory, DeskLayerHandle, DeskLayerStatus } from "@vibecook/ice/desk";
 import type {
   DeskHandle,
@@ -49,7 +54,7 @@ import type {
   EngineProvider as IceEngineProvider,
 } from "@vibecook/ice/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildSuiteSeed, spawnIceSuite } from "./suiteProjection";
+import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
 
 const NOTE_TYPE = "desk.note";
@@ -59,6 +64,8 @@ const NOTEBOOK_TYPE = "desk.notebook";
 const DEMO_SEED_COUNT = 10;
 /** Which demo the desk seeds. Selected by `?demo=suite`; Native is the default. */
 type DemoMode = "native" | "suite";
+/** A workspace projection is not a demo; the mode names where the seed came from. */
+type SeedMode = DemoMode | "workspace";
 const DEMO_PARAM = "demo";
 
 /**
@@ -114,7 +121,7 @@ interface AdapterSummary {
 }
 
 interface SeedReport {
-  readonly mode: DemoMode;
+  readonly mode: SeedMode;
   readonly label: string;
   readonly seeded: number;
   readonly total: number;
@@ -492,6 +499,50 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
   };
 }
 
+/**
+ * Projects the live workspace read-only. The graph is never mutated: the
+ * projection only lists and reads, and the ICE document is still throwaway.
+ */
+function seedWorkspaceDocument(
+  engine: CanvasEngine,
+  workspace: WorkspaceDocument,
+  rootBoardId: string,
+): SeedReport {
+  let seed: ReturnType<typeof projectWorkspaceToIce>;
+  try {
+    seed = projectWorkspaceToIce(workspace, rootBoardId);
+  } catch (error) {
+    return {
+      mode: "workspace",
+      label: "Workspace",
+      seeded: 0,
+      total: 0,
+      kinds: [],
+      failures: [`workspace projection: ${describeError(error)}`],
+      entities: [],
+      boards: 0,
+      skipped: [],
+    };
+  }
+
+  const report = spawnIceSuite<Entity>(seed, {
+    spawn: (type, opts) => engine.ops.spawnWidget(type, { ...opts, undoable: false }),
+    project: () => engine.step(performance.now()),
+  });
+
+  return {
+    mode: "workspace",
+    label: "Workspace",
+    seeded: report.seeded,
+    total: seed.objects.length,
+    kinds: report.kinds,
+    failures: report.failures,
+    entities: [...report.objects.values()],
+    boards: new Set(seed.boards.map((board) => board.id)).size,
+    skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
+  };
+}
+
 export interface IceSurfaceFallbackProps {
   readonly title: string;
   readonly message: string;
@@ -523,13 +574,27 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
   );
 }
 
-/** The ICE demo mount. The routing agent renders this only for `?canvas=ice`. */
+/** The ICE mount. In the app it projects the live workspace read-only. */
 export interface IceSurfaceProps {
   /** Where the fallback/HUD returns; the standalone demo overrides it to `/`. */
   readonly sceneHref?: string;
+  /**
+   * The live workspace to project. Omit for the standalone demo; `null` means
+   * the app has the workspace but it is not hydrated yet, so the surface waits
+   * instead of falling back to a demo.
+   */
+  readonly workspace?: WorkspaceDocument | null;
+  /** Root board/View to frame. The surface waits while this is null. */
+  readonly rootBoardId?: string | null;
 }
 
-export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
+export function IceSurface({
+  sceneHref: sceneHrefProp,
+  workspace,
+  rootBoardId = null,
+}: IceSurfaceProps = {}) {
+  const workspaceMode = workspace !== undefined;
+  const liveWorkspace = workspace ?? null;
   const [mode, setMode] = useState<DemoMode>(() =>
     demoModeFromSearch(typeof window === "undefined" ? "" : window.location.search),
   );
@@ -578,6 +643,13 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
           reason: "api",
           detail: "navigator.gpu is not exposed by this browser.",
         });
+        return;
+      }
+
+      // In the app, a workspace that has not hydrated yet is not a reason to
+      // show a demo. Wait for the real graph; the boot skeleton stays up.
+      if (workspaceMode && (liveWorkspace === null || rootBoardId === null)) {
+        setPhase({ kind: "checking" });
         return;
       }
 
@@ -654,7 +726,12 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
         const doc = engine.docs.create();
         owned.current = { engine, doc, gpu };
 
-        const report = mode === "suite" ? seedSuiteDocument(engine) : seedDemoDocument(engine);
+        const report =
+          liveWorkspace !== null && rootBoardId !== null
+            ? seedWorkspaceDocument(engine, liveWorkspace, rootBoardId)
+            : mode === "suite"
+              ? seedSuiteDocument(engine)
+              : seedDemoDocument(engine);
         seededEntities.current = report.entities;
         const layer = desk.deskLayer({
           theme: objects.deskTheme("light"),
@@ -691,7 +768,7 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
       cancelled = true;
       teardown();
     };
-  }, [mode, runId, teardown]);
+  }, [liveWorkspace, mode, rootBoardId, runId, teardown, workspaceMode]);
 
   // A desk that reported `failed` is replaced by the fallback, so its engine
   // is released here rather than held until the route changes.
@@ -872,41 +949,53 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
       ) : null}
 
       <div className="ice-surface__badge" data-testid="ice-hud">
-        <span className="ice-surface__badge-title">ICE demo</span>
-        <span className="ice-surface__badge-note">Experimental — not document truth</span>
+        <span className="ice-surface__badge-title">
+          {workspaceMode ? "ICE workspace" : "ICE demo"}
+        </span>
+        <span className="ice-surface__badge-note">
+          {workspaceMode
+            ? "Read-only projection — not document truth"
+            : "Experimental — not document truth"}
+        </span>
         <span className="ice-surface__badge-status" data-testid="ice-status" aria-live="polite">
           {engineLine(phase, engineState)}
         </span>
         <span className="ice-surface__badge-meta" data-testid="ice-phase">
           phase: {phase.kind}
         </span>
-        <fieldset className="ice-surface__modes" data-testid="ice-demo-modes">
-          <legend>Demo seed</legend>
-          <button
-            type="button"
-            className="ice-surface__button"
-            data-testid="ice-demo-native"
-            aria-pressed={mode === "native"}
-            onClick={() => chooseDemo("native")}
-          >
-            Native demo
-          </button>
-          <button
-            type="button"
-            className="ice-surface__button"
-            data-testid="ice-demo-suite"
-            aria-pressed={mode === "suite"}
-            onClick={() => chooseDemo("suite")}
-          >
-            Suite demo
-          </button>
-        </fieldset>
+        {workspaceMode ? null : (
+          <fieldset className="ice-surface__modes" data-testid="ice-demo-modes">
+            <legend>Demo seed</legend>
+            <button
+              type="button"
+              className="ice-surface__button"
+              data-testid="ice-demo-native"
+              aria-pressed={mode === "native"}
+              onClick={() => chooseDemo("native")}
+            >
+              Native demo
+            </button>
+            <button
+              type="button"
+              className="ice-surface__button"
+              data-testid="ice-demo-suite"
+              aria-pressed={mode === "suite"}
+              onClick={() => chooseDemo("suite")}
+            >
+              Suite demo
+            </button>
+          </fieldset>
+        )}
         <span className="ice-surface__badge-seed" data-testid="ice-demo-summary" aria-live="polite">
           {seed === null
-            ? `${demoLabel(mode)}: not seeded`
-            : seed.mode === "suite"
-              ? `Suite demo: ${seed.seeded} objects / ${seed.boards} boards`
-              : `Native demo: ${seed.seeded} objects`}
+            ? workspaceMode
+              ? "Workspace: not seeded"
+              : `${demoLabel(mode)}: not seeded`
+            : seed.mode === "workspace"
+              ? `Workspace: ${seed.seeded} objects / ${seed.boards} boards`
+              : seed.mode === "suite"
+                ? `Suite demo: ${seed.seeded} objects / ${seed.boards} boards`
+                : `Native demo: ${seed.seeded} objects`}
         </span>
         <span className="ice-surface__badge-seed" data-testid="ice-seed">
           {seed === null ? "seeded: —" : `${seed.seeded}/${seed.total} objects seeded`}
@@ -946,7 +1035,7 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
             data-testid="ice-reset"
             onClick={resetDemo}
           >
-            Reset demo
+            {workspaceMode ? "Reload workspace" : "Reset demo"}
           </button>
           <button
             type="button"
@@ -969,7 +1058,9 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
           </span>
         )}
         <span className="ice-surface__badge-hint">
-          Pan the mat · wheel to zoom · drag a note to move it
+          {workspaceMode
+            ? "Read-only projection · pan the mat · wheel to zoom · drag a note (not saved yet)"
+            : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
         <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>
           Back to the scene surface

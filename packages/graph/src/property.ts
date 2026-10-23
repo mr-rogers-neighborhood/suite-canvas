@@ -83,14 +83,31 @@ export function isPropertyValueValid(
   return propertyValueError(field, value, context) === null;
 }
 
+/**
+ * Whether the card a `card` value points at is in this workspace (`card`), only
+ * a title stub written by a projection (`stub`), or gone entirely (`missing`).
+ */
+export type CardPresence = "card" | "stub" | "missing";
+
 /** The one place a stored value becomes the text a surface shows. */
 export interface FormatPropertyOptions {
   /** Live title of the card a `card` value points at, when it still exists. */
   cardTitle?: string | undefined;
+  /**
+   * Presence of the card a `card` value points at; defaults to `card` so a
+   * title reads as a live target. A `stub` means a projection knows the title
+   * but did not copy the record: the value reads as *not shared*, not deleted.
+   */
+  cardPresence?: CardPresence | undefined;
   /** Text for "no value"; defaults to an em dash. */
   empty?: string;
-  /** Text for a deleted option or a missing target; defaults to "Unavailable". */
+  /**
+   * Text for a deleted option or a missing target; defaults to "Unavailable",
+   * or "Unavailable card" for a `card` field whose target is gone.
+   */
   unavailable?: string;
+  /** Label for a referenced card whose stub carries no title; defaults to "Not shared". */
+  notShared?: string;
   /** Text for a checked box; defaults to a check mark. */
   checked?: string;
   /** Omit `card` values entirely (the compact card face does this). */
@@ -99,51 +116,99 @@ export interface FormatPropertyOptions {
   formatCard?: ((title: string) => string) | undefined;
 }
 
+/** The text for one value, plus whether it names an unshared card. */
+export interface PropertyValueReading {
+  text: string;
+  /** True when the text names a card that is referenced but not shared here. */
+  notShared: boolean;
+}
+
 const EM_DASH = "\u2014";
+const UNAVAILABLE_CARD = "Unavailable card";
+const NOT_SHARED = "Not shared";
+/** `displayTitle`'s fallback, never a title a share should call its own. */
+const UNTITLED = "Untitled";
+
+function shown(text: string): PropertyValueReading {
+  return { text, notShared: false };
+}
 
 /**
- * Formats one property value for display. Never mutates the stored value: a
+ * What to call a card a share only references: the title the projection kept,
+ * or a neutral label when it kept none. The display fallback ("Untitled") is not
+ * a kept title, so it never becomes the not-shared label.
+ */
+export function referencedCardLabel(title: string | undefined): string {
+  const trimmed = title?.trim();
+  return trimmed && trimmed !== UNTITLED ? trimmed : NOT_SHARED;
+}
+
+/**
+ * Reads one property value for display. Never mutates the stored value: a
  * deleted option is still stored, but it reads as unavailable and counts as
  * empty. Every surface (panel, card face, property block, mention chip, export)
  * calls this so their readings cannot drift apart.
+ *
+ * For a `card` value the three states are distinct: a live target shows its
+ * title, a projection stub shows the title it was allowed to keep and is flagged
+ * `notShared`, and a target with no title at all shows *Unavailable card*.
  */
-export function formatPropertyValue(
+export function readPropertyValue(
   field: FieldDefinition,
   value: PropertyValue | undefined,
   options: FormatPropertyOptions = {},
-): string {
+): PropertyValueReading {
   const empty = options.empty ?? EM_DASH;
   const unavailable = options.unavailable ?? "Unavailable";
 
   switch (field.kind) {
     case "text":
     case "date":
-      return typeof value === "string" && value.trim().length > 0 ? value : empty;
+      return shown(typeof value === "string" && value.trim().length > 0 ? value : empty);
     case "number":
-      return typeof value === "number" && Number.isFinite(value) ? String(value) : empty;
+      return shown(typeof value === "number" && Number.isFinite(value) ? String(value) : empty);
     case "checkbox":
-      return value === true ? (options.checked ?? "\u2713") : empty;
+      return shown(value === true ? (options.checked ?? "\u2713") : empty);
     case "select": {
-      if (typeof value !== "string" || value.trim().length === 0) return empty;
+      if (typeof value !== "string" || value.trim().length === 0) return shown(empty);
       const option = field.options.find((candidate) => candidate.id === value);
-      return option ? option.label : unavailable;
+      return shown(option ? option.label : unavailable);
     }
     case "multiSelect": {
-      if (!Array.isArray(value) || value.length === 0) return empty;
+      if (!Array.isArray(value) || value.length === 0) return shown(empty);
       const selected = new Set(value);
       const labels = field.options
         .filter((option) => selected.has(option.id))
         .map((option) => option.label);
-      return labels.length > 0 ? labels.join(", ") : unavailable;
+      return shown(labels.length > 0 ? labels.join(", ") : unavailable);
     }
     case "card": {
-      if (options.includeCard === false) return empty;
-      if (typeof value !== "string" || value.trim().length === 0) return empty;
+      if (options.includeCard === false) return shown(empty);
+      if (typeof value !== "string" || value.trim().length === 0) return shown(empty);
       const title = options.cardTitle?.trim();
-      if (!title) return unavailable;
-      return options.formatCard ? options.formatCard(title) : title;
+      if (options.cardPresence === "stub") {
+        // Not copied, but referenced: show whatever title the projection kept
+        // and let the surface style it as inert. "Untitled" would read as an
+        // empty card rather than a target the reader cannot open.
+        const label = title && title !== UNTITLED ? title : options.notShared?.trim() || NOT_SHARED;
+        return {
+          text: options.formatCard ? options.formatCard(label) : label,
+          notShared: true,
+        };
+      }
+      if (!title) return shown(options.unavailable ?? UNAVAILABLE_CARD);
+      return shown(options.formatCard ? options.formatCard(title) : title);
     }
   }
+}
+
+/** The text half of `readPropertyValue`; surfaces that only style text use this. */
+export function formatPropertyValue(
+  field: FieldDefinition,
+  value: PropertyValue | undefined,
+  options: FormatPropertyOptions = {},
+): string {
+  return readPropertyValue(field, value, options).text;
 }
 
 /**

@@ -66,6 +66,11 @@ returned `"write"` for every unauthenticated non-share room.
    management, so the workspace id is no longer write access. Workspace viewer links are enabled;
    they open the real workspace room read-only and join presence with the share token.
 
+*Revised in S8:* the projection seam also carries a **selection** scope, a board projection
+filtered to a fixed set of card ids, so part of a board can be shared without duplicating the
+workspace. `projectWorkspace` accepts it beside `board` and `card`; see
+[ADR-0023](./0023-selection-projections.md).
+
 ## Consequences
 
 - A board or card link cannot be exchanged for workspace access: the owner id is not in the

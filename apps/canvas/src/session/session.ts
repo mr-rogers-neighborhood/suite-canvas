@@ -1,16 +1,27 @@
 import type { Share, ShareRole, ShareScope } from "./shares";
+import {
+  activeShareCredential,
+  isShareSessionResume,
+  SHARE_SESSION_FRAGMENT,
+  SHARE_SESSION_RESUME,
+} from "./shares";
 
 /**
- * One capability link, resolved before the app boots. Board and card shares are
- * projections that live in their own room, so `workspaceId` is the room the
- * session reads — never the owner's workspace id, which the server redacts for
- * those scopes.
+ * One capability link, resolved before the app boots. Board, card and selection
+ * shares are projections that live in their own room, so `workspaceId` is the
+ * room the session reads — never the owner's workspace id, which the server
+ * redacts for those scopes.
  */
 export interface ShareSession {
+  /**
+   * Capability this page presents: the exchanged session while the exchange is
+   * live, otherwise the raw link token (an older server, or a rejected
+   * exchange). The server accepts either for the room join.
+   */
   token: string;
   scope: ShareScope;
   role: ShareRole;
-  /** Document the shell shows and persists under; the projection room for board/card. */
+  /** Document the shell shows and persists under; the projection room for board/card/selection. */
   workspaceId: string;
   boardId: string | null;
   cardId: string | null;
@@ -125,6 +136,7 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
 /**
  * Capability matrix:
  * - no share (owner): everything, including links and ownership;
+ * - a selection: nothing — the server only ever issues viewer links for it;
  * - any viewer: nothing;
  * - workspace editor token: the live workspace minus links and ownership, and no publish;
  * - board editor: content, layout, creation and publish on one board's draft;
@@ -133,6 +145,9 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
 export function sessionCapabilities(session: SessionConfig): SessionCapabilities {
   const { share } = session;
   if (!share) return OWNER_CAPABILITIES;
+  // A selection is viewer-only server-side: never grant write access, even if a
+  // role field disagrees.
+  if (share.scope === "selection") return VIEWER_CAPABILITIES;
   if (share.role === "viewer") return VIEWER_CAPABILITIES;
   if (share.scope === "workspace") return WORKSPACE_EDITOR_CAPABILITIES;
   return share.scope === "board" ? BOARD_EDITOR_CAPABILITIES : CARD_EDITOR_CAPABILITIES;
@@ -143,10 +158,25 @@ function searchParam(key: string): string | null {
   return new URLSearchParams(window.location.search).get(key);
 }
 
-/** Share token the page was opened with, if any. */
+/**
+ * True when the page was opened with a link but the exchange has already run:
+ * the token is gone from the URL and only the session cookie remains, so boot
+ * must resume from `GET /api/shares/session` instead of a token.
+ */
+function hasShareSessionMarker(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.location.hash === SHARE_SESSION_FRAGMENT;
+}
+
+/**
+ * Share credential the page was opened with, if any. Once the exchange has run
+ * this is `SHARE_SESSION_RESUME`, a sentinel rather than a credential: the
+ * cookie is the credential.
+ */
 export function resolveShareToken(): string | null {
   const token = searchParam("share");
-  return token && token.length > 0 ? token : null;
+  if (token && token.length > 0) return token;
+  return hasShareSessionMarker() ? SHARE_SESSION_RESUME : null;
 }
 
 /** A normal editor session from `?workspace=` (or the legacy `?doc=`). */
@@ -163,8 +193,8 @@ function defaultSession(): SessionConfig {
 }
 
 /**
- * The projection room for a board or card share. The API returns it, but a
- * resolver that only knows the token still lands on the same room.
+ * The projection room for a board, card or selection share. The API returns it,
+ * but a resolver that only knows the token still lands on the same room.
  */
 export function projectionRoomId(token: string, share: Share): string {
   if (share.scope === "workspace") return share.roomId ?? share.workspaceId;
@@ -174,15 +204,22 @@ export function projectionRoomId(token: string, share: Share): string {
 /** Session for a resolved share. Synchronous and safe to run before `App` loads. */
 export function sessionForShare(token: string, share: Share): SessionConfig {
   const roomId = projectionRoomId(token, share);
-  const projected = share.scope === "board" || share.scope === "card";
+  const projected =
+    share.scope === "board" || share.scope === "card" || share.scope === "selection";
   // A projected share must not carry the owner's id anywhere: the room is the
   // only document this viewer may read.
   const workspaceId = projected ? roomId : share.workspaceId || roomId;
+  // A selection link is viewer-only, so its session is read-only whatever the
+  // role field says.
+  const readOnly = share.role === "viewer" || share.scope === "selection";
   return {
     workspaceId,
     roomId,
     share: {
-      token,
+      // The exchange's session outranks the link token: it is the credential the
+      // room join and the draft API present, and it dies with the share. Without
+      // an exchange (an older server) the token is still the credential.
+      token: activeShareCredential() ?? (isShareSessionResume(token) ? "" : token),
       scope: share.scope,
       role: share.role,
       workspaceId,
@@ -191,7 +228,7 @@ export function sessionForShare(token: string, share: Share): SessionConfig {
       roomId,
     },
     role: share.role,
-    readOnly: share.role === "viewer",
+    readOnly,
     ownerKey: null,
   };
 }

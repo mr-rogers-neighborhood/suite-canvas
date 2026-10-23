@@ -3,16 +3,32 @@
  * token is the whole credential for reading, so it is only ever returned by
  * `createShare` and can never be read back from the listing. Creating, listing
  * and revoking are owner operations and present the workspace owner key.
+ *
+ * Opening a link trades the token for a short-lived session (`suite_share`
+ * cookie) and removes the token from the URL; see `resolveShare`.
  */
 
 import { collabHttpBase } from "./endpoints";
 
 export const SHARE_API_PATH = "/api/shares";
 
-export type ShareScope = "workspace" | "board" | "card";
+/** Trades a link token for the short-lived session cookie. */
+export const SHARE_SESSION_PATH = `${SHARE_API_PATH}/session`;
+
+/**
+ * Sentinel `resolveShareToken` returns when the address bar no longer carries a
+ * token but this tab may still hold a share session cookie. It is never a
+ * credential: the cookie is the credential, and it is unreadable from script.
+ */
+export const SHARE_SESSION_RESUME = "session-cookie";
+
+/** Fragment marker left behind after the token leaves the URL, so a reload can resume. */
+export const SHARE_SESSION_FRAGMENT = "#share-session";
+
+export type ShareScope = "workspace" | "board" | "card" | "selection";
 export type ShareRole = "viewer" | "editor";
 
-export const shareScopes: readonly ShareScope[] = ["workspace", "board", "card"];
+export const shareScopes: readonly ShareScope[] = ["workspace", "board", "card", "selection"];
 export const shareRoles: readonly ShareRole[] = ["viewer", "editor"];
 
 export interface Share {
@@ -28,10 +44,18 @@ export interface Share {
   expiresAt: number | null;
   /**
    * Sync room this share opens. Workspace shares open the workspace room;
-   * board and card shares open `share-<token>`. The server keeps only the token
-   * hash, so this is null when a share is read back by id.
+   * board, card and selection shares open `share-<token>`. The server keeps only
+   * the token hash, so this is null when a share is read back by id.
    */
   roomId: string | null;
+  /**
+   * Cards of a selection share, in the owner's order. Empty for every other
+   * scope, and always empty for a link holder: the server only sends the ids to
+   * the workspace owner.
+   */
+  cardIds: string[];
+  /** How many cards the link projects: the selection size, 1 for a card share. */
+  cardCount: number;
 }
 
 export interface CreateShareInput {
@@ -40,6 +64,8 @@ export interface CreateShareInput {
   role: ShareRole;
   boardId?: string | null;
   cardId?: string | null;
+  /** Cards of a selection share; ignored by every other scope. */
+  cardIds?: readonly string[];
   /** Epoch milliseconds; omit or null for a link that does not expire. */
   expiresAt?: number | null;
 }
@@ -48,6 +74,17 @@ export interface CreatedShare {
   /** Raw capability token. Only returned once, at creation. */
   token: string;
   share: Share;
+}
+
+/** The result of exchanging a link token for a session. */
+export interface OpenedShareSession {
+  /** The resolved public share, so the caller boots without a second call. */
+  share: Share;
+  /**
+   * Short-lived session id. It is what this page presents to the sync server
+   * instead of the link token; the cookie only serves the HTTP resolve.
+   */
+  session: string;
 }
 
 /** A share request the server rejected, with its message made readable. */
@@ -118,6 +155,38 @@ function shareRecord(body: unknown): Share {
   return body.share as unknown as Share;
 }
 
+function openedSession(body: unknown): OpenedShareSession {
+  if (!isRecord(body) || !isRecord(body.share) || typeof body.session !== "string") {
+    throw new ShareApiError("The share server sent an unexpected response.");
+  }
+  const session = body.session.trim();
+  if (session.length === 0)
+    throw new ShareApiError("The share server sent an unexpected response.");
+  return { share: body.share as unknown as Share, session };
+}
+
+/**
+ * The session credential this page exchanged, if any. `sessionForShare` turns it
+ * into the session's `token`, so the WebSocket join and the draft API present a
+ * short-lived session rather than the permanent link token.
+ */
+let activeSession: string | null = null;
+
+/** The credential this page should present for a share, or null when it has none. */
+export function activeShareCredential(): string | null {
+  return activeSession;
+}
+
+/** Drops the in-memory credential. Used on sign-out and between tests. */
+export function forgetShareSession(): void {
+  activeSession = null;
+}
+
+/** True for the sentinel `resolveShareToken` returns once the URL is token-free. */
+export function isShareSessionResume(value: string | null | undefined): boolean {
+  return value === SHARE_SESSION_RESUME;
+}
+
 /** Creates a share and returns its one-time capability token. Owner only. */
 export async function createShare(
   input: CreateShareInput,
@@ -146,12 +215,92 @@ export async function listShares(
 }
 
 /**
- * Resolves a capability token to its share, or throws when revoked or unknown.
- * Public: the token the recipient holds is the whole credential.
+ * Resolves a capability token to its share exactly as links always have, or
+ * throws when revoked or unknown. Public: the token the recipient holds is the
+ * whole credential. This is the legacy path, kept for older servers and for a
+ * token the exchange rejected.
  */
-export async function resolveShare(token: string): Promise<Share> {
+async function resolveLegacyShare(token: string): Promise<Share> {
   const body = await request<unknown>(`${SHARE_API_PATH}/${encodeURIComponent(token)}`);
   return shareRecord(body);
+}
+
+/**
+ * Boot resolver for `?share=<token>`.
+ *
+ * The link token is a permanent capability, so it is traded for a short-lived
+ * session as the first thing the page does: the exchange posts the token in a
+ * body, the server answers with a `HttpOnly` cookie and the public share, and
+ * the address bar is rewritten so the token is gone from history, proxy logs and
+ * screenshots. Reloads resume from the cookie through the fragment marker.
+ *
+ * If the exchange is unavailable — an older server without the route, or a
+ * network hiccup — the page falls back to today's `?share=<token>` resolve and
+ * keeps the token as its credential, so a link in the wild never breaks.
+ */
+export async function resolveShare(token: string): Promise<Share> {
+  if (isShareSessionResume(token)) {
+    const { share, session } = await resolveShareSession();
+    activeSession = session;
+    return share;
+  }
+
+  try {
+    const { share, session } = await openShareSession(token);
+    activeSession = session;
+    rewriteShareUrl();
+    return share;
+  } catch {
+    activeSession = null;
+    return resolveLegacyShare(token);
+  }
+}
+
+/** Replaces the address bar URL with a token-free one, keeping the resume marker. */
+function rewriteShareUrl(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("share")) return;
+  url.searchParams.delete("share");
+  url.hash = SHARE_SESSION_FRAGMENT;
+  window.history.replaceState(null, "", url.toString());
+}
+
+/**
+ * Exchanges a link token for a session. The token travels in the body only, so
+ * it never becomes part of a URL the browser or a proxy records.
+ */
+export async function openShareSession(token: string): Promise<OpenedShareSession> {
+  const body = await request<unknown>(SHARE_SESSION_PATH, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+    credentials: "include",
+  });
+  return openedSession(body);
+}
+
+/** Resolves the share behind the session cookie, for a reload with no token in the URL. */
+export async function resolveShareSession(): Promise<OpenedShareSession> {
+  const body = await request<unknown>(SHARE_SESSION_PATH, { credentials: "include" });
+  return openedSession(body);
+}
+
+/**
+ * Signs this page out of its share: the server drops the session row and clears
+ * the cookie. Best effort — the credential is already dead server-side when the
+ * share was revoked, so a failure here only leaves a stale cookie behind.
+ */
+export async function closeShareSession(): Promise<void> {
+  activeSession = null;
+  try {
+    await fetch(`${collabHttpBase()}${SHARE_SESSION_PATH}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+    // Nothing to report: the page is leaving the share either way.
+  }
 }
 
 /** Revokes a share by id and returns the updated record. Owner only. */

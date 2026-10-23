@@ -1,9 +1,14 @@
-import type { Card, CardType, FieldDefinition } from "@suite/graph";
-import { displayTemplate, MENTION_DISPLAY_TEMPLATE, type TemplateContext } from "@suite/graph";
+import type { Card, CardPresence, CardType, FieldDefinition } from "@suite/graph";
+import {
+  displayTemplate,
+  MENTION_DISPLAY_TEMPLATE,
+  referencedCardLabel,
+  type TemplateContext,
+} from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { useState, useSyncExternalStore } from "react";
 import { propertyBlockDisplayValue } from "../editor/PropertyBlockChip";
-import { useCardTitle } from "../hooks/useCardContainers";
+import { useCardPresence, useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useCard, useWorkspaceStore } from "../store/workspaceStore";
@@ -49,7 +54,12 @@ export interface MentionChipProps {
   cardId: string;
   /** Live display title, including the body-first-line fallback. */
   title: string;
-  /** The target is missing or trashed; the chip stops being a link. */
+  /**
+   * How this workspace knows the target: a live card, a projection stub (the
+   * reference is real but the card is not shared), or nothing at all.
+   */
+  presence?: CardPresence;
+  /** Legacy alias for a missing target; trashed cards arrive this way. */
   unavailable?: boolean;
   /**
    * `@card.field`: the field's live label and value, rendered through the
@@ -67,6 +77,20 @@ export interface MentionChipProps {
   /** Only a session with schema capability may restyle every use of the field. */
   allowFieldScope?: boolean;
 }
+
+/**
+ * Inert styling for an unshared reference. Inline so it applies without a
+ * stylesheet rule, and so the base chip's hover accent cannot make an
+ * unopenable chip look clickable.
+ */
+const NOT_SHARED_CHIP = {
+  background: "var(--segmented-bg)",
+  color: "var(--ink-muted)",
+  cursor: "default",
+  fontWeight: 400,
+} as const;
+
+const NOT_SHARED_NOTE = { opacity: 0.8, marginLeft: 3 } as const;
 
 /** The chip's own menu: this is a mention, so actions stay in place. */
 function chipMenuItems(
@@ -89,6 +113,7 @@ function chipMenuItems(
 export function MentionChip({
   cardId,
   title,
+  presence,
   unavailable = false,
   field,
   onOpen,
@@ -99,8 +124,37 @@ export function MentionChip({
 }: MentionChipProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingDisplay, setEditingDisplay] = useState(false);
+  const state: CardPresence = unavailable ? "missing" : (presence ?? "card");
 
-  if (unavailable) {
+  if (state === "stub") {
+    // The share knows this card exists but did not copy it: keep the reader's
+    // sense of the reference without pretending it can be opened. Muted, not
+    // an error: the card is not gone, it is simply not part of this share.
+    const label = referencedCardLabel(title);
+    return (
+      <span
+        data-testid="mention-chip"
+        data-card-id={cardId}
+        data-not-shared="true"
+        role="note"
+        contentEditable={false}
+        className="mention-chip mention-chip-not-shared"
+        style={NOT_SHARED_CHIP}
+        title={`${label} \u2014 not shared`}
+        aria-label={`${label} \u2014 not shared`}
+      >
+        <span aria-hidden="true" className="mention-chip-at">
+          @
+        </span>
+        <span className="mention-chip-title">{label}</span>
+        <span className="mention-chip-note" style={NOT_SHARED_NOTE}>
+          {"\u00b7 not shared"}
+        </span>
+      </span>
+    );
+  }
+
+  if (state === "missing") {
     return (
       <span
         data-testid="mention-chip"
@@ -230,6 +284,7 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
   const ownDisplay = typeof node.attrs.display === "string" ? node.attrs.display : "";
   const card = useCard(cardId);
   const title = useCardTitle(cardId);
+  const presence = useCardPresence(cardId);
   const types = useTypes();
   const workspace = useCanvasStore((state) => state.workspace);
   const openInspector = useUiStore((state) => state.openInspector);
@@ -238,9 +293,9 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
 
   const definition = card && fieldId ? fieldFor(card, fieldId, types) : undefined;
   const value = fieldId ? card?.properties[fieldId] : undefined;
-  const cardLabel = useCardTitle(
-    definition?.kind === "card" && typeof value === "string" ? value : "",
-  );
+  const linkedCardId = definition?.kind === "card" && typeof value === "string" ? value : "";
+  const cardLabel = useCardTitle(linkedCardId);
+  const linkedPresence = useCardPresence(linkedCardId);
   const typeName =
     types.find((type) => type.id === (card?.primaryTypeId ?? card?.typeIds[0]))?.name ?? "";
 
@@ -250,7 +305,7 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
           id: definition.id,
           name: definition.name,
           // The same formatter the body block uses, so both read identically.
-          value: propertyBlockDisplayValue(definition, value, cardLabel),
+          value: propertyBlockDisplayValue(definition, value, cardLabel, linkedPresence),
           fieldTemplate: displayTemplate(definition, MENTION_DISPLAY_TEMPLATE),
           template: ownDisplay || displayTemplate(definition, MENTION_DISPLAY_TEMPLATE),
           typeName,
@@ -275,7 +330,8 @@ export function MentionChipNodeView({ node, editor, getPos }: NodeViewProps) {
       <MentionChip
         cardId={cardId}
         title={title}
-        unavailable={!card || Boolean(card.deletedAt)}
+        presence={presence}
+        unavailable={Boolean(card?.deletedAt)}
         field={field}
         onOpen={(id, openFieldId) => openInspector(id, openFieldId ?? null)}
         allowDisplay={!readOnly}

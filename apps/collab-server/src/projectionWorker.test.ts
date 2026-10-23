@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { applyProjection, projectWorkspace, WorkspaceDocument } from "@suite/graph";
 import { LoroAdaptor } from "loro-adaptors/loro";
@@ -36,6 +37,8 @@ interface Harness {
   url: string;
   documents: DocumentStore;
   shares: ShareStore;
+  /** Path of the share database, so a test can write a row the API refuses. */
+  database: string;
   source: WorkspaceDocument;
   worker: ProjectionWorker;
   warnings: string[];
@@ -105,7 +108,8 @@ function saveSource(state: Harness): void {
 async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> {
   const port = await freePort();
   const documents = memoryDocuments();
-  const shares = createShareStore(join(directory, "shares.sqlite"));
+  const database = join(directory, "shares.sqlite");
+  const shares = createShareStore(database);
   const source = seedSource();
   const warnings: string[] = [];
 
@@ -135,6 +139,7 @@ async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> 
     url: `ws://127.0.0.1:${port}`,
     documents,
     shares,
+    database,
     source,
     worker: new ProjectionWorker({
       url: `ws://127.0.0.1:${port}`,
@@ -399,6 +404,198 @@ describe("projection worker", () => {
 
     expect(state.worker.roomIds()).toEqual([]);
     await expect(state.worker.schedule(WORKSPACE_ID, { immediate: true })).resolves.toBeUndefined();
+  });
+});
+
+describe("selection shares", () => {
+  async function openSelection(
+    cardIds: readonly string[],
+  ): Promise<{ state: Harness; share: Share; viewer: Viewer }> {
+    const state = await startHarness();
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "selection",
+      role: "viewer",
+      boardId: BOARD_ID,
+      cardIds,
+    });
+    expect(share.roomId).toBe(`share-${token}`);
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    return { state, share, viewer };
+  }
+
+  it("projects only the selected cards, their placements and the edges between them", async () => {
+    const state = await startHarness();
+    // A third placed card proves the projection is a subset of the board.
+    state.source.placeCard(BOARD_ID, "c", { x: 50, y: 60 });
+    state.source.addEdge({ boardId: BOARD_ID, source: "a", target: "b" });
+    saveSource(state);
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "selection",
+      role: "viewer",
+      boardId: BOARD_ID,
+      cardIds: ["a", "b"],
+    });
+
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    try {
+      await state.worker.start();
+      await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
+
+      const projected = viewer.workspace();
+      expect(boardCards(viewer)).toEqual(["a", "b"]);
+      expect(
+        projected
+          .listCards()
+          .map((card) => card.id)
+          .sort(),
+      ).toEqual(["a", "b"]);
+      expect(projected.getCard("c")).toBeUndefined();
+      // The selection keeps the real board, not a stand-in like a card share.
+      expect(projected.getBoard(BOARD_ID)?.name).toBe("Research");
+      expect(projected.displayTitle("a")).toBe("Alpha");
+      expect(projected.cardText("a")).toBe("Body of A");
+      expect(projected.getPlacement(BOARD_ID, "a")).toMatchObject({ x: 10, y: 20 });
+      expect(projected.getPlacement(BOARD_ID, "b")).toMatchObject({ x: 30, y: 40 });
+      expect(projected.getPlacement(BOARD_ID, "c")).toBeUndefined();
+      expect(
+        projected.listBoardEdges(BOARD_ID).map((edge) => `${edge.source}->${edge.target}`),
+      ).toEqual(["a->b"]);
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("follows an owner edit to a selected card", async () => {
+    const { state, viewer } = await openSelection(["a", "b"]);
+    try {
+      await state.worker.start();
+      await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
+
+      appendText(state.source.getContent("a"), "Selection update");
+      state.source.doc.commit({ origin: "owner:edit" });
+      saveSource(state);
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      await waitFor(
+        () => textOf(viewer.workspace(), "a").includes("Selection update"),
+        "the owner edit in the selection",
+      );
+      // The rest of the selection still follows the source.
+      expect(boardCards(viewer)).toEqual(["a", "b"]);
+      expect(viewer.workspace().displayTitle("b")).toBe("Beta");
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("drops a selected card that leaves the board and keeps the rest", async () => {
+    const { state, viewer } = await openSelection(["a", "b"]);
+    try {
+      await state.worker.start();
+      await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
+
+      state.source.trashCard("a");
+      saveSource(state);
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      await waitFor(() => boardCards(viewer).length === 1, "the trashed card to leave");
+      expect(boardCards(viewer)).toEqual(["b"]);
+      expect(viewer.workspace().getCard("a")).toBeUndefined();
+      expect(viewer.workspace().displayTitle("b")).toBe("Beta");
+
+      state.source.unplaceCard(BOARD_ID, "b");
+      saveSource(state);
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      await waitFor(() => boardCards(viewer).length === 0, "the moved card to leave");
+      expect(viewer.workspace().listCards()).toEqual([]);
+      expect(viewer.workspace().getPlacement(BOARD_ID, "b")).toBeUndefined();
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("refuses a hand-written editor selection link without touching the source", async () => {
+    const state = await startHarness();
+    // The API only creates viewer selection links, so write the row it refuses.
+    const database = new DatabaseSync(state.database);
+    try {
+      database
+        .prepare(
+          `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids)
+           VALUES (?, ?, 'selection', 'editor', ?, ?, NULL, ?, NULL, NULL, ?, ?)`,
+        )
+        .run(
+          "manual-editor",
+          "manual-editor-hash",
+          WORKSPACE_ID,
+          BOARD_ID,
+          Date.now(),
+          "share-manual",
+          JSON.stringify(["a", "b"]),
+        );
+    } finally {
+      database.close();
+    }
+    const share = state.shares.get("manual-editor");
+    if (!share) throw new Error("expected the hand-written selection share");
+
+    await state.worker.start();
+    expect(state.worker.roomIds()).toContain("share-manual");
+    const before = savedVersion(state.documents, WORKSPACE_ID);
+
+    expect(await state.worker.publish(share)).toEqual({
+      ok: false,
+      conflicts: [],
+      unsupported: [],
+      reason: "Selection links are read-only.",
+    });
+
+    await delay(100);
+    expect(savedVersion(state.documents, WORKSPACE_ID)).toBe(before);
+    expect(
+      state.source
+        .listCards()
+        .map((card) => card.id)
+        .sort(),
+    ).toEqual(["a", "b", "c"]);
+    expect(textOf(state.source, "a")).toBe("Body of A");
+  });
+
+  it("reports no draft for a selection viewer", async () => {
+    const { state, share } = await openSelection(["a", "b"]);
+    await state.worker.start();
+    await waitFor(
+      () => state.worker.roomIds().includes(share.roomId as string),
+      "the selection room",
+    );
+
+    expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: false });
+  });
+
+  it("closes the room and drops the projection when a selection share is revoked", async () => {
+    const state = await startHarness();
+    const { share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "selection",
+      role: "viewer",
+      boardId: BOARD_ID,
+      cardIds: ["a", "b"],
+    });
+
+    await state.worker.start();
+    expect(state.worker.roomIds()).toEqual([share.roomId]);
+
+    state.shares.revoke(share.id);
+    await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+    expect(state.worker.roomIds()).toEqual([]);
+    expect(loadLoroDocument(state.documents, share.roomId as string)).toBeNull();
   });
 });
 

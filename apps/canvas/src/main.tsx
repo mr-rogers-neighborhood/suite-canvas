@@ -10,7 +10,7 @@ import {
   resolveShareToken,
   sessionForShare,
 } from "./session/session";
-import { resolveShare, shareErrorMessage } from "./session/shares";
+import { closeShareSession, resolveShare, shareErrorMessage } from "./session/shares";
 import { initTheme } from "./theme/useThemeStore";
 import "./styles/global.css";
 
@@ -45,6 +45,8 @@ async function boot() {
     try {
       configureSession(sessionForShare(token, await resolveShare(token)));
     } catch (error) {
+      // A dead cookie (revoked, expired) must not be retried on the next boot.
+      await closeShareSession();
       render(<ShareUnavailable message={shareErrorMessage(error)} />);
       return;
     }

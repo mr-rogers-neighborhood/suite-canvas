@@ -71,6 +71,9 @@ describe("disconnectProjectionViewers", () => {
 describe("disconnectWorkspaceShares", () => {
   const revoked = "revoked-share-token";
   const active = "active-share-token";
+  const liveSession = "live-session";
+  const deadSession = "dead-session";
+  const otherWorkspaceSession = "other-workspace-session";
 
   function deps(overrides: { verifyThrows?: boolean } = {}) {
     return {
@@ -84,6 +87,15 @@ describe("disconnectWorkspaceShares", () => {
       shares: {
         isShareToken: (token: string) => token === revoked || token === active,
         resolve: (token: string) => (token === active ? ({ id: "share-1" } as Share) : null),
+        resolveSession: (session: string) => {
+          if (session === liveSession) {
+            return { id: "share-1", workspaceId: WORKSPACE_ID, revokedAt: null } as Share;
+          }
+          if (session === otherWorkspaceSession) {
+            return { id: "share-2", workspaceId: "ws-2", revokedAt: null } as Share;
+          }
+          return null;
+        },
       },
     };
   }
@@ -106,10 +118,30 @@ describe("disconnectWorkspaceShares", () => {
     expect(predicate("", WORKSPACE_ID)).toBe(false);
   });
 
-  it("treats a malformed credential as neither owner nor share", () => {
+  // A browser normally joins with the session id it traded the link token for.
+  // Revoking the share deletes its sessions, so the socket must close even
+  // though the credential is not the raw token.
+  it("closes a session whose share was revoked", () => {
+    const { server, roomCalls } = recordingServer();
+    disconnectWorkspaceShares(server, WORKSPACE_ID, deps());
+    const predicate = roomCalls[0]?.predicate ?? (() => true);
+    expect(predicate(deadSession, WORKSPACE_ID)).toBe(true);
+  });
+
+  it("keeps a live session of the same workspace and ignores another workspace's", () => {
+    const { server, roomCalls } = recordingServer();
+    disconnectWorkspaceShares(server, WORKSPACE_ID, deps());
+    const predicate = roomCalls[0]?.predicate ?? (() => true);
+    expect(predicate(liveSession, WORKSPACE_ID)).toBe(false);
+    expect(predicate(otherWorkspaceSession, WORKSPACE_ID)).toBe(true);
+  });
+
+  // A credential that throws inside owner verification is not an owner, and it
+  // resolves to no share and no session: it authenticates nothing, so it closes.
+  it("closes a malformed credential that authenticates nothing", () => {
     const { server, roomCalls } = recordingServer();
     disconnectWorkspaceShares(server, WORKSPACE_ID, deps({ verifyThrows: true }));
-    expect(roomCalls[0]?.predicate("malformed", WORKSPACE_ID)).toBe(false);
+    expect(roomCalls[0]?.predicate("malformed", WORKSPACE_ID)).toBe(true);
   });
 });
 

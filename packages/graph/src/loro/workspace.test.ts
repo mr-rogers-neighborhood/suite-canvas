@@ -228,6 +228,18 @@ describe("WorkspaceDocument cards and placements", () => {
     writeParagraph(workspace, workspace.getTitle(card.id), "Typed title");
     expect(workspace.displayTitle(card.id)).toBe("Typed title");
   });
+
+  it("knows whether a title container exists without creating one", () => {
+    const workspace = new WorkspaceDocument();
+
+    expect(workspace.hasTitle("unknown-card")).toBe(false);
+    const card = workspace.createCard();
+    writeParagraph(workspace, workspace.getTitle(card.id), "Typed title");
+
+    expect(workspace.hasTitle(card.id)).toBe(true);
+    // Asking must not publish shared state for an id nobody wrote.
+    expect(workspace.peekTitle("unknown-card")).toBeNull();
+  });
 });
 
 describe("WorkspaceDocument fragments and sizes", () => {

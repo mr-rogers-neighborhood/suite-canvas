@@ -1,18 +1,12 @@
 import { getType, isContainer, LoroDoc, LoroList, LoroMap, LoroText } from "loro-crdt";
 import { placementKey, SCHEMA_VERSION, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import type { ReferenceIndex } from "./references.js";
-import {
-  arrowSources,
-  incomingReferences,
-  mentionTargets,
-  outgoingPropertyLinks,
-  outgoingReferences,
-  propertySources,
-} from "./references.js";
-import type { Card } from "./schema.js";
+import { mentionTargets, outgoingReferences } from "./references.js";
+import type { Card, Placement, Section } from "./schema.js";
+import { cardAnchor, sectionsAt } from "./sections.js";
 
-/** What a share link exposes: one board with its cards, or one card alone. */
-export type ShareScope = "board" | "card";
+/** What a share link exposes: one board, a selection of its cards, or one card. */
+export type ShareScope = "board" | "selection" | "card";
 
 /** The board a single-card projection lives on. */
 export const SHARE_BOARD_ID = "share-board";
@@ -39,7 +33,8 @@ export const PRIVATE_REFERENCE_TITLE = "Private card";
 
 export type ProjectionOptions =
   | { scope: "board"; boardId: string }
-  | { scope: "card"; cardId: string };
+  | { scope: "card"; cardId: string }
+  | { scope: "selection"; boardId: string; cardIds: readonly string[] };
 
 function isMap(value: unknown): value is LoroMap {
   return isContainer(value) && getType(value) === "Map";
@@ -210,16 +205,57 @@ function collectReferences(
     });
   };
 
+  // One pass builds the adjacency this loop reads. Asking the per-card helpers
+  // for every copied card re-scans the whole workspace each time, which made a
+  // 5 000-card board cost ~19 s per rebuild instead of well under a second:
+  // `incomingReferences`, `propertySources` and `arrowSources` were O(cards),
+  // O(cards) and O(edges) per card.
+  const mentionIn = new Map<string, string[]>();
+  for (const [originId, targets] of Object.entries(mentions)) {
+    for (const targetId of targets) {
+      const list = mentionIn.get(targetId);
+      if (list) list.push(originId);
+      else mentionIn.set(targetId, [originId]);
+    }
+  }
+
+  const fieldKinds = new Map<string, string>();
+  for (const type of types) {
+    for (const field of type.fields) fieldKinds.set(field.id, field.kind);
+  }
+  const propertyOut = new Map<string, string[]>();
+  const propertyIn = new Map<string, string[]>();
+  const push = (map: Map<string, string[]>, key: string, value: string): void => {
+    const list = map.get(key);
+    if (list) list.push(value);
+    else map.set(key, [value]);
+  };
+  for (const card of cards) {
+    for (const [fieldId, value] of Object.entries(card.properties)) {
+      if (typeof value !== "string" || value.length === 0) continue;
+      // An unknown field is kept, so a missing type definition never hides a link.
+      const kind = fieldKinds.get(fieldId);
+      if (kind !== undefined && kind !== "card") continue;
+      // `outgoingPropertyLinks` excludes a self-link; `propertySources` does not.
+      if (value !== card.id) push(propertyOut, card.id, value);
+      push(propertyIn, value, card.id);
+    }
+  }
+
+  const arrowOut = new Map<string, string[]>();
+  const arrowIn = new Map<string, string[]>();
+  for (const edge of edges) {
+    push(arrowOut, edge.source, edge.target);
+    push(arrowIn, edge.target, edge.source);
+  }
+
   for (const cardId of [...copied].sort()) {
     for (const targetId of outgoingReferences(cardId, mentions)) add(targetId, "out", "mention");
-    for (const originId of incomingReferences(cardId, mentions)) add(originId, "in", "mention");
-    for (const link of outgoingPropertyLinks(cardId, cards, types)) {
-      add(link.cardId, "out", "property");
-    }
-    for (const origin of propertySources(cardId, cards, types))
-      add(origin.cardId, "in", "property");
-    for (const arrow of arrowSources(cardId, edges))
-      add(arrow.otherCardId, arrow.direction, "arrow");
+    for (const originId of mentionIn.get(cardId) ?? []) add(originId, "in", "mention");
+    for (const targetId of propertyOut.get(cardId) ?? []) add(targetId, "out", "property");
+    for (const originId of propertyIn.get(cardId) ?? []) add(originId, "in", "property");
+    for (const otherId of arrowOut.get(cardId) ?? []) add(otherId, "out", "arrow");
+    for (const otherId of arrowIn.get(cardId) ?? []) add(otherId, "in", "arrow");
   }
 
   return rows.sort(
@@ -263,28 +299,55 @@ function writeReferenceTitleStubs(
 }
 
 /**
+ * Sections a selection share keeps: every section whose rectangle holds a
+ * copied card's anchor. `sectionsAt` returns every containing section, so a
+ * nested card's ancestors travel with it. Geometry is copied untouched, so the
+ * viewer derives the same membership from the same coordinates.
+ */
+function selectionSections(placements: readonly Placement[], sections: Section[]): Section[] {
+  const kept = new Set<string>();
+  for (const placement of placements) {
+    for (const section of sectionsAt(cardAnchor(placement), sections)) kept.add(section.id);
+  }
+  return sections.filter((section) => kept.has(section.id));
+}
+
+/**
  * Builds a self-contained workspace for a share link. The projection owns a
  * fresh document, so nothing the source holds outside the selected scope can
  * leak into it; references to cards left out are reported with `private: true`
- * instead of being copied. A board share redacts those titles; a card share
- * keeps them, because the viewer shows them as inert context.
+ * instead of being copied. A board share redacts those titles; a card or
+ * selection share keeps them, because the viewer shows them as inert context.
  *
  * A card share is rejected when the card is missing or in the trash: there is
  * nothing to publish, and an empty `share-board` would look like a real, empty
- * board to the viewer.
+ * board to the viewer. A selection share with no ids is rejected as invalid
+ * input, but one whose cards all left the board projects an empty board.
  */
 export function projectWorkspace(
   source: WorkspaceDocument,
-  options: { scope: "board"; boardId: string } | { scope: "card"; cardId: string },
+  options: ProjectionOptions,
 ): ProjectionResult {
+  if (options.scope === "selection" && options.cardIds.length === 0) {
+    throw new Error("A selection share needs at least one card");
+  }
+
   const doc = new LoroDoc();
   const workspace = new WorkspaceDocument(doc);
   copyMeta(source.doc, doc);
 
   const copied = new Set<string>();
   let boardId: string;
+  let placements: readonly Placement[] = [];
 
-  if (options.scope === "board") {
+  if (options.scope === "card") {
+    const card = source.getCard(options.cardId);
+    if (!card) throw new Error(`Unknown card: ${options.cardId}`);
+    if (card.deletedAt) throw new Error(`Card is in the trash: ${options.cardId}`);
+    boardId = SHARE_BOARD_ID;
+    workspace.createBoard({ id: SHARE_BOARD_ID, name: SHARE_BOARD_NAME });
+    copied.add(card.id);
+  } else {
     const board = source.getBoard(options.boardId);
     if (!board) throw new Error(`Unknown board: ${options.boardId}`);
     boardId = board.id;
@@ -293,29 +356,33 @@ export function projectWorkspace(
       doc.getMap(WorkspaceDocument.BOARDS_KEY),
       board.id,
     );
-    for (const section of source.listSections(board.id)) {
+    const selected = options.scope === "selection" ? new Set(options.cardIds) : undefined;
+    for (const card of source.listBoardCards(board.id)) {
+      if (selected && !selected.has(card.id)) continue;
+      copied.add(card.id);
+    }
+    placements = source
+      .listBoardPlacements(board.id)
+      .filter((placement) => copied.has(placement.cardId));
+    const sections = source.listSections(board.id);
+    const keptSections = selected ? selectionSections(placements, sections) : sections;
+    for (const section of keptSections) {
       copyEntry(
         source.doc.getMap(WorkspaceDocument.SECTIONS_KEY),
         doc.getMap(WorkspaceDocument.SECTIONS_KEY),
         section.id,
       );
     }
-    for (const card of source.listBoardCards(board.id)) copied.add(card.id);
-  } else {
-    const card = source.getCard(options.cardId);
-    if (!card) throw new Error(`Unknown card: ${options.cardId}`);
-    if (card.deletedAt) throw new Error(`Card is in the trash: ${options.cardId}`);
-    boardId = SHARE_BOARD_ID;
-    workspace.createBoard({ id: SHARE_BOARD_ID, name: SHARE_BOARD_NAME });
-    copied.add(card.id);
   }
 
   copyCards(source, doc, copied);
 
-  if (options.scope === "board") {
+  if (options.scope === "card") {
+    for (const cardId of copied) workspace.placeCard(boardId, cardId, { x: 0, y: 0 });
+  } else {
     const sourcePlacements = source.doc.getMap(WorkspaceDocument.PLACEMENTS_KEY);
     const targetPlacements = doc.getMap(WorkspaceDocument.PLACEMENTS_KEY);
-    for (const placement of source.listBoardPlacements(boardId)) {
+    for (const placement of placements) {
       if (!copied.has(placement.cardId)) continue;
       copyEntry(
         sourcePlacements,
@@ -329,8 +396,6 @@ export function projectWorkspace(
       if (!copied.has(edge.source) || !copied.has(edge.target)) continue;
       copyEntry(sourceEdges, targetEdges, edge.id);
     }
-  } else {
-    for (const cardId of copied) workspace.placeCard(boardId, cardId, { x: 0, y: 0 });
   }
 
   workspace.ensureReferences();

@@ -1581,6 +1581,15 @@ export class WorkspaceDocument {
   }
 
   /**
+   * True when a title container exists for this id, even if it only holds a
+   * reference stub. Inside a projection that means "referenced but not shared",
+   * as opposed to `peekTitle` returning null for a card that is truly gone.
+   */
+  hasTitle(cardId: string): boolean {
+    return this.peekTitle(cardId) !== null;
+  }
+
+  /**
    * Both text container ids for a card, in one identity-stable object. Editors
    * need this to adopt containers created by a peer after they mounted.
    */

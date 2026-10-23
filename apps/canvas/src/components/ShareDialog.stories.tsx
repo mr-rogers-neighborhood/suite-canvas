@@ -16,6 +16,8 @@ const links: Share[] = [
     revokedAt: null,
     expiresAt: null,
     roomId: "ws-demo",
+    cardIds: [],
+    cardCount: 0,
   },
   {
     id: "share-workspace-viewer",
@@ -28,6 +30,8 @@ const links: Share[] = [
     revokedAt: null,
     expiresAt: null,
     roomId: "ws-demo",
+    cardIds: [],
+    cardCount: 0,
   },
   {
     id: "share-board",
@@ -40,6 +44,8 @@ const links: Share[] = [
     revokedAt: null,
     expiresAt: null,
     roomId: null,
+    cardIds: [],
+    cardCount: 0,
   },
 ];
 
@@ -58,6 +64,13 @@ function demoClient(shares: Share[]): ShareClient {
         revokedAt: null,
         expiresAt: null,
         roomId: "share-demo-token",
+        cardIds: input.cardIds ? [...input.cardIds] : [],
+        cardCount:
+          input.scope === "selection"
+            ? (input.cardIds?.length ?? 0)
+            : input.scope === "card"
+              ? 1
+              : 0,
       },
     }),
     listShares: async (_workspaceId, _ownerKey) => shares,
@@ -74,6 +87,8 @@ function demoClient(shares: Share[]): ShareClient {
         revokedAt: null,
         expiresAt: null,
         roomId: "ws-demo",
+        cardIds: [],
+        cardCount: 0,
       };
       return { ...base, id, revokedAt: created };
     },
@@ -107,4 +122,17 @@ export const Empty: Story = {
 
 export const WithoutCard: Story = {
   args: { cardId: null, cardTitle: null },
+};
+
+export const Selection: Story = {
+  args: {
+    initialScope: "selection",
+    selectedCardIds: ["card-1", "card-2", "card-3"],
+  },
+};
+
+export const SelectionNeedsTwoCards: Story = {
+  args: {
+    selectedCardIds: ["card-1"],
+  },
 };

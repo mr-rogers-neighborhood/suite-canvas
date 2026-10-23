@@ -201,6 +201,8 @@ export function CanvasBoard() {
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
+  const canManageLinks = useUiStore((state) => state.canManageLinks);
+  const requestShare = useUiStore((state) => state.requestShare);
   // Sections and connectors are workspace structure, not draft objects, so
   // removing one follows the trash row of the matrix: owner and workspace
   // editor tokens only, never a board or card draft.
@@ -1506,6 +1508,16 @@ export function CanvasBoard() {
               },
             ]
           : []),
+        // Sharing is a link owner's right, and only a subset with two or more
+        // cards is worth a link; the dialog opens on the selection scope.
+        ...(canManageLinks
+          ? [
+              {
+                label: `Share ${selection.noun}\u2026`,
+                onSelect: () => requestShare("selection"),
+              },
+            ]
+          : []),
       ];
     }
 
@@ -1593,6 +1605,8 @@ export function CanvasBoard() {
     canEditLayout,
     canManageTrash,
     canManageStructure,
+    canManageLinks,
+    requestShare,
   ]);
 
   return (

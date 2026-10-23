@@ -259,3 +259,64 @@ test("forget this browser removes the key and cached copy, and the workspace reo
   await page.goto(`/?workspace=${id}`);
   await expect(page.getByTestId("workspace-protected")).toBeVisible();
 });
+
+test("keeps the local edit while claims fail, then claims without losing it", async ({
+  page,
+  browser,
+}) => {
+  const id = workspaceId("offline");
+
+  // Establish the workspace and a local edit while the relay is healthy.
+  await page.goto(`/?workspace=${id}`);
+  await expect(cards(page)).toHaveCount(2);
+  await createNote(page, "Offline note");
+  const ownerKey = decodeURIComponent(new URL(page.url()).hash.replace(/^#owner=/, ""));
+  expect(ownerKey.length).toBeGreaterThan(0);
+
+  // Now only the claim fails: the page still loads, which is the "reopened while
+  // offline" case. The local document, not the relay, is what renders.
+  let blocked = true;
+  await page.route(`**/api/workspaces/${id}/claim`, (route) =>
+    blocked ? route.abort("internetdisconnected") : route.continue(),
+  );
+  await page.reload();
+  await expect(cardByTitle(page, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByTestId("workspace-protected")).toHaveCount(0);
+
+  // A reconnect retries immediately instead of waiting for the backoff.
+  const claimed = page.waitForResponse(
+    (response) => response.url().endsWith(`/workspaces/${id}/claim`) && response.status() === 200,
+    { timeout: 20_000 },
+  );
+  blocked = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await claimed;
+
+  // The claim belongs to this browser's key now: a browser without it is
+  // refused, and is not told a local copy exists here.
+  const stranger = await browser.newContext();
+  try {
+    const strangerPage = await stranger.newPage();
+    await strangerPage.goto(`/?workspace=${id}`);
+    await expect(strangerPage.getByTestId("workspace-protected")).toBeVisible();
+    await expect(strangerPage.getByTestId("workspace-protected-detail")).toHaveAttribute(
+      "data-conflict",
+      "unknown",
+    );
+  } finally {
+    await stranger.close();
+  }
+
+  // The edit survived the offline window: the owner sees it after a reload.
+  await page.reload();
+  await expect(cardByTitle(page, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+
+  const owner = await browser.newContext();
+  try {
+    const ownerPage = await owner.newPage();
+    await ownerPage.goto(`/?workspace=${id}#owner=${ownerKey}`);
+    await expect(cardByTitle(ownerPage, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+  } finally {
+    await owner.close();
+  }
+});

@@ -5,6 +5,7 @@ import {
   isPropertyValueEmpty,
   isPropertyValueValid,
   propertyValueError,
+  readPropertyValue,
 } from "./property.js";
 import type { FieldDefinition } from "./schema.js";
 
@@ -68,10 +69,33 @@ describe("formatPropertyValue", () => {
     expect(
       formatPropertyValue(card, "c1", { cardTitle: "Ada", formatCard: (title) => `[[${title}]]` }),
     ).toBe("[[Ada]]");
-    expect(formatPropertyValue(card, "missing")).toBe("Unavailable");
+    expect(formatPropertyValue(card, "missing")).toBe("Unavailable card");
     expect(formatPropertyValue(card, "c1", { cardTitle: "Ada", includeCard: false })).toBe(
       "\u2014",
     );
+  });
+
+  it("should tell a referenced-but-unshared card from a missing one", () => {
+    const card = field({ kind: "card" });
+
+    // A projection stub: the record is absent, but the share kept a title.
+    expect(
+      readPropertyValue(card, "c1", { cardPresence: "stub", cardTitle: "Private card" }),
+    ).toEqual({ text: "Private card", notShared: true });
+    expect(
+      readPropertyValue(card, "c1", {
+        cardPresence: "stub",
+        cardTitle: "Beta",
+        formatCard: (title) => `[[${title}]]`,
+      }),
+    ).toEqual({ text: "[[Beta]]", notShared: true });
+
+    // Nothing at all is known: an error-free but plainly unavailable target.
+    expect(readPropertyValue(card, "c1", { cardPresence: "missing" })).toEqual({
+      text: "Unavailable card",
+      notShared: false,
+    });
+    expect(formatPropertyValue(card, "c1", { cardPresence: "stub" })).toBe("Not shared");
   });
 });
 

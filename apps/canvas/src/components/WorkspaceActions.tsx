@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { hasSavedRecoveryKey, readSavedRecoveryKey } from "../session/ownerKit";
 import { getSession } from "../session/session";
+import type { ShareScope } from "../session/shares";
 import {
   downloadWorkspaceBackup,
   downloadWorkspaceJson,
@@ -28,8 +29,11 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const flush = useCanvasStore((state) => state.flush);
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
+  const shareRequest = useUiStore((state) => state.shareRequest);
+  const clearShareRequest = useUiStore((state) => state.clearShareRequest);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareScope, setShareScope] = useState<ShareScope>("workspace");
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [backupPrompt, setBackupPrompt] = useState(false);
   const [savedOnDevice, setSavedOnDevice] = useState(() => readSavedRecoveryKey(workspaceId));
@@ -54,9 +58,18 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
     };
   }, [menuOpen]);
 
+  // A canvas gesture asks for the dialog without lifting selection state.
+  useEffect(() => {
+    if (!shareRequest) return;
+    setShareScope(shareRequest);
+    setShareOpen(true);
+    clearShareRequest();
+  }, [shareRequest, clearShareRequest]);
+
   // The dialog shares one card: the inspected one, or a lone selection.
   const soleSelection = selectedNodeIds.length === 1 ? (selectedNodeIds[0] ?? null) : null;
   const selectedCardId = inspectorNodeId ?? soleSelection;
+  const selectedCardIds = [...new Set(selectedNodeIds)];
   const selectedCardTitle = useCardTitle(selectedCardId ?? "");
 
   const goHome = async () => {
@@ -89,7 +102,10 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
         type="button"
         data-testid="workspace-share"
         className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-        onClick={() => setShareOpen(true)}
+        onClick={() => {
+          setShareScope("workspace");
+          setShareOpen(true);
+        }}
         title="Share this workspace, a board or a card."
       >
         Share
@@ -198,7 +214,12 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           boardName={boardId ? title : null}
           cardId={selectedCardId}
           cardTitle={selectedCardId ? selectedCardTitle : null}
-          onClose={() => setShareOpen(false)}
+          selectedCardIds={selectedCardIds}
+          initialScope={shareScope}
+          onClose={() => {
+            setShareOpen(false);
+            setShareScope("workspace");
+          }}
         />
       ) : null}
       {ownerKey && recoveryOpen ? (

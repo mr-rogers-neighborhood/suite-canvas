@@ -4,7 +4,7 @@ import { SHARE_ROOM_PREFIX, type ShareStore } from "./shares.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
 
 export interface AuthorizeDeps {
-  shares: Pick<ShareStore, "resolve" | "hasEditorShare">;
+  shares: Pick<ShareStore, "resolve" | "resolveSession" | "hasEditorShare">;
   /**
    * Owner key registry. Joins verify only: claiming is an explicit HTTP call
    * before the app boots, so an unknown credential cannot create registry rows.
@@ -68,6 +68,10 @@ function baseRoomOf(roomId: string): string {
  *   `share-<token>` projection room for board and card links. Its derived
  *   presence and cursor rooms need `write` even for a viewer, because they are
  *   ephemeral and scoped to the same share.
+ * - An exchanged share session opens exactly the same room with the same role.
+ *   The browser presents it instead of the link token, so the permanent
+ *   capability never leaves the boot request. Both credentials resolve to the
+ *   same `Share`, so a session can never reach a room its share cannot.
  * - An owner key verifies against the workspace it owns and that workspace's
  *   derived rooms. An unknown key never claims a room implicitly.
  * - Empty auth is a mismatched credential: a room id alone is not a secret.
@@ -96,7 +100,7 @@ export async function authorize(
     return null;
   }
 
-  const share = deps.shares.resolve(token);
+  const share = deps.shares.resolve(token) ?? deps.shares.resolveSession(token);
   if (share) {
     if (roomId === share.roomId) return share.role === "editor" ? "write" : "read";
     return baseRoomOf(roomId) === share.roomId ? "write" : null;

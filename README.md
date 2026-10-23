@@ -151,8 +151,13 @@ docker compose up -d --build
   ```
 
   Restore is the reverse: stop `app`, extract the archive into the volume, start `app`.
-- **Health.** `GET /health` (proxied by Caddy, served by the API port) returns `ok`; the compose
-  healthcheck uses the same endpoint.
+- **Health.** `GET /health` (proxied by Caddy, served by the API port) returns `{"ok":true}` and
+  nothing else — counts, room state and database sizes live behind the admin API, not here. The
+  compose healthcheck uses the same endpoint.
+- **Backups.** `deploy/backup.sh` snapshots the three SQLite files with `.backup` (which drains an
+  uncheckpointed WAL) and records integrity checks and counts. WAL is enabled, so never copy a live
+  `*.sqlite` without its `-wal`/`-shm`; use the script or stop the app first. See
+  [docs/operations.md](./docs/operations.md) for the restore procedure.
 
 **AWS path.** One EC2 or Lightsail instance with Docker installed, an EBS volume for `/data`,
 ports 80/443 open, and a DNS record pointing at the instance. Attach the EBS volume and point a

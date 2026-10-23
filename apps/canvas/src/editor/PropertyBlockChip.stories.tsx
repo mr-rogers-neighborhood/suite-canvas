@@ -67,6 +67,21 @@ export const LinkedCard: Story = {
   },
 };
 
+/** The same three states a share boundary puts a linked card in. */
+export const LinkedCardStates: Story = {
+  args: {
+    field: text({ id: "related", name: "Related", kind: "card" }),
+    value: "card-2",
+  },
+  render: (args) => (
+    <span className="flex flex-col items-start gap-1">
+      <PropertyBlockChip {...args} cardLabel="Onboarding friction" cardPresence="card" />
+      <PropertyBlockChip {...args} cardLabel="Private card" cardPresence="stub" />
+      <PropertyBlockChip {...args} cardLabel="" cardPresence="missing" />
+    </span>
+  ),
+};
+
 export const MissingField: Story = {
   args: { field: undefined },
 };

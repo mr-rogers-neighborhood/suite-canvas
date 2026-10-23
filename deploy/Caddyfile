@@ -37,6 +37,16 @@
 		reverse_proxy app:1234
 	}
 
+	# Operator panel: a separate Vite entry point, never linked from the app.
+	# Restrict this route to an allowlist where possible, for example:
+	#   @admin_allowed remote_ip 203.0.113.4/32
+	#   respond @admin_not_allowed 403
+	handle /admin {
+		rewrite * /admin.html
+		root * /srv
+		file_server
+	}
+
 	# Static app with the SPA fallback: every unknown path is a client route.
 	handle {
 		root * /srv

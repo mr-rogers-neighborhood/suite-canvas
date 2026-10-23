@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
+import type { ShareScope } from "../session/shares";
 
 export interface ContextMenuState {
   x: number;
@@ -90,6 +91,10 @@ interface UiState extends SessionCapabilities {
   outlineOpen: boolean;
   contextMenu: ContextMenuState | null;
   selectedConnector: SelectedConnector | null;
+  /** Scope a canvas gesture asked the app-bar dialog to open on; consumed once. */
+  shareRequest: ShareScope | null;
+  requestShare: (scope: ShareScope) => void;
+  clearShareRequest: () => void;
   setActiveBoardId: (id: string | null) => void;
   setLibraryOpen: (open: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
@@ -151,6 +156,9 @@ export const useUiStore = create<UiState>((set) => ({
   outlineOpen: true,
   contextMenu: null,
   selectedConnector: null,
+  shareRequest: null,
+  requestShare: (shareRequest) => set({ shareRequest }),
+  clearShareRequest: () => set({ shareRequest: null }),
   setActiveBoardId: (activeBoardId) => set({ activeBoardId }),
   setLibraryOpen: (libraryOpen) => set({ libraryOpen }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),

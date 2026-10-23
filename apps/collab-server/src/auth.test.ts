@@ -198,6 +198,106 @@ describe("authorize", () => {
   });
 });
 
+describe("authorize with an exchanged share session", () => {
+  it("opens the same room as its token with the same role", () => {
+    const { share } = store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    const { session } = store.createSession(share);
+
+    return Promise.all([
+      expect(authorize("ws-1", encode(session), deps)).resolves.toBe("read"),
+      expect(authorize("ws-1:presence", encode(session), deps)).resolves.toBe("write"),
+      expect(authorize("ws-1:cursors", encode(session), deps)).resolves.toBe("write"),
+    ]);
+  });
+
+  it("gives an editor session write access to its projection room", () => {
+    const { share } = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    const { session } = store.createSession(share);
+    const roomId = share.roomId ?? "";
+
+    return Promise.all([
+      expect(authorize(roomId, encode(session), deps)).resolves.toBe("write"),
+      expect(authorize(`${roomId}:presence`, encode(session), deps)).resolves.toBe("write"),
+      expect(authorize(roomId, encode("not-a-session"), deps)).resolves.toBeNull(),
+    ]);
+  });
+
+  it("keeps the raw token path working beside the session", () => {
+    const { token, share } = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    const { session } = store.createSession(share);
+
+    return Promise.all([
+      expect(authorize(share.roomId ?? "", encode(token), deps)).resolves.toBe("read"),
+      expect(authorize(share.roomId ?? "", encode(session), deps)).resolves.toBe("read"),
+    ]);
+  });
+
+  it("rejects an expired session", () => {
+    const { share } = store.create({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    const { session } = store.createSession(share, -1);
+
+    return expect(authorize("ws-1", encode(session), deps)).resolves.toBeNull();
+  });
+
+  it("rejects the session of a revoked share", () => {
+    const { share } = store.create({ workspaceId: "ws-1", scope: "workspace", role: "editor" });
+    const { session } = store.createSession(share);
+
+    store.revoke(share.id);
+
+    return expect(authorize("ws-1", encode(session), deps)).resolves.toBeNull();
+  });
+
+  it("does not transfer a session to another share's room", () => {
+    const first = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    const second = store.create({
+      workspaceId: "ws-2",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    const { session } = store.createSession(first.share);
+
+    return Promise.all([
+      expect(authorize(first.share.roomId ?? "", encode(session), deps)).resolves.toBe("read"),
+      expect(authorize(second.share.roomId ?? "", encode(session), deps)).resolves.toBeNull(),
+      expect(
+        authorize(second.share.roomId ?? ":presence", encode(session), deps),
+      ).resolves.toBeNull(),
+      expect(authorize("ws-2", encode(session), deps)).resolves.toBeNull(),
+    ]);
+  });
+
+  it("never lets a session claim an owner's workspace implicitly", () => {
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+    const { share } = store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "b",
+    });
+    const { session } = store.createSession(share);
+
+    // The session is scoped to the projection room, not the owner's workspace.
+    return expect(authorize("ws-1", encode(session), deps)).resolves.toBeNull();
+  });
+});
+
 describe("resolveWorkerTokens", () => {
   it("reuses configured tokens and keeps them separate", () => {
     const tokens = resolveWorkerTokens({

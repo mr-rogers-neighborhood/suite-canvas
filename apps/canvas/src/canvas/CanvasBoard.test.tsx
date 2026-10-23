@@ -53,6 +53,7 @@ afterAll(() => {
     readOnly: false,
     activeBoardId: null,
     selectedNodeIds: [],
+    shareRequest: null,
     ...FULL_CAPABILITIES,
   });
   cleanup();
@@ -206,5 +207,59 @@ describe("CanvasBoard board editor", () => {
     expect(screen.getByRole("menuitem", { name: "Remove from board" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Delete card" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Add connector" })).not.toBeInTheDocument();
+  });
+});
+
+describe("CanvasBoard share intent", () => {
+  function mountSelection(selectedNodeIds: string[], canManageLinks: boolean) {
+    useUiStore.setState({
+      readOnly: false,
+      activeBoardId: boardId,
+      selectedNodeIds,
+      selectedEdgeIds: [],
+      selectedSectionId: null,
+      shareRequest: null,
+      ...FULL_CAPABILITIES,
+      canManageLinks,
+    });
+    return render(
+      <ReactFlowProvider>
+        <CanvasBoard />
+      </ReactFlowProvider>,
+    );
+  }
+
+  it("offers a share item for a multi-selection and records the request", async () => {
+    const { container } = mountSelection([cardId, "card-2"], true);
+    await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
+
+    fireEvent.contextMenu(container.querySelector(".react-flow__node") as HTMLElement, {
+      clientX: 12,
+      clientY: 12,
+    });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Share 2 cards\u2026" }));
+    expect(useUiStore.getState().shareRequest).toBe("selection");
+    useUiStore.setState({ shareRequest: null });
+  });
+
+  it("hides the share item without link management or a lone card", async () => {
+    const { container, unmount } = mountSelection([cardId, "card-2"], false);
+    await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
+
+    fireEvent.contextMenu(container.querySelector(".react-flow__node") as HTMLElement, {
+      clientX: 12,
+      clientY: 12,
+    });
+    expect(screen.queryByRole("menuitem", { name: /^Share / })).not.toBeInTheDocument();
+    unmount();
+
+    const single = mountSelection([cardId], true);
+    await waitFor(() => expect(single.container.querySelector(".react-flow__node")).not.toBeNull());
+    fireEvent.contextMenu(single.container.querySelector(".react-flow__node") as HTMLElement, {
+      clientX: 12,
+      clientY: 12,
+    });
+    expect(screen.queryByRole("menuitem", { name: /^Share / })).not.toBeInTheDocument();
   });
 });

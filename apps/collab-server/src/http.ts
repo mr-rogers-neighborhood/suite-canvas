@@ -8,6 +8,7 @@ import {
 } from "./rateLimit.js";
 import {
   type CreateShareInput,
+  SHARE_SESSION_TTL_MS,
   type Share,
   type ShareRole,
   type ShareScope,
@@ -17,6 +18,19 @@ import {
 import type { WorkspaceRegistry } from "./workspaces.js";
 
 export const SHARE_API_PATH = "/api/shares";
+
+/** Last segment of `SHARE_SESSION_PATH`; reserved so no token can shadow it. */
+const SESSION_SEGMENT = "session";
+
+/** Route that trades a link token for a short-lived session. Never takes the token in the URL. */
+export const SHARE_SESSION_PATH = `${SHARE_API_PATH}/session`;
+
+/**
+ * Cookie that carries the exchanged share session. HttpOnly keeps it out of
+ * script, Secure keeps it off plain HTTP, SameSite=Lax keeps a cross-site page
+ * from driving the resolve, and Path=/ scopes it to the whole app.
+ */
+export const SHARE_SESSION_COOKIE = "suite_share";
 
 export interface ShareRequestHooks {
   /**
@@ -86,6 +100,12 @@ export const CORS_HEADERS: Record<string, string> = {
  * Applies CORS before the route writes its response. The default is `*` for
  * local development; a deployment sets `SUITE_ALLOWED_ORIGINS` to its app
  * origin(s). Same-origin deployments need no CORS at all.
+ *
+ * The share session cookie makes the resolve a credentialed request. A browser
+ * refuses `credentials: "include"` against `Access-Control-Allow-Origin: *`, so
+ * a request that carries an `Origin` is answered with that origin echoed back
+ * and `allow-credentials` set. Requests without an `Origin` (curl, tests, the
+ * server's own calls) keep the plain wildcard.
  */
 export function applyCors(request: IncomingMessage, response: ServerResponse): void {
   const origin = request.headers.origin;
@@ -100,7 +120,8 @@ export function applyCors(request: IncomingMessage, response: ServerResponse): v
     return;
   }
   if (!wildcard && !configured.includes(origin)) return;
-  response.setHeader("access-control-allow-origin", wildcard ? "*" : origin);
+  response.setHeader("access-control-allow-origin", origin);
+  response.setHeader("access-control-allow-credentials", "true");
   response.setHeader("vary", "origin");
 }
 
@@ -276,7 +297,7 @@ function parseCreateInput(body: unknown): CreateShareInput {
   if (problem) throw new HttpError(400, problem);
 
   // Every field was narrowed by `validateShareInput`.
-  return {
+  const input: CreateShareInput = {
     workspaceId: (record.workspaceId as string).trim(),
     scope: record.scope as ShareScope,
     role: record.role as ShareRole,
@@ -284,6 +305,8 @@ function parseCreateInput(body: unknown): CreateShareInput {
     cardId: (record.cardId as string | null | undefined) ?? null,
     expiresAt: (record.expiresAt as number | null | undefined) ?? null,
   };
+  if (Array.isArray(record.cardIds)) input.cardIds = record.cardIds as readonly string[];
+  return input;
 }
 
 function createShare(
@@ -310,7 +333,7 @@ function createShare(
   }
 
   const { token, share } = store.create(input);
-  sendJson(response, 201, { token, share });
+  sendJson(response, 201, { token, share: publicShare(share) });
   notify(hooks, share.workspaceId);
 }
 
@@ -362,11 +385,133 @@ function revokeShare(
 
   const share = store.revoke(id);
   if (!share) throw new HttpError(404, "Share not found.");
+  // The store dropped every session of this share; tell this browser to forget
+  // its cookie too, so a reload does not present a credential that is gone.
+  clearSessionCookie(response);
   sendJson(response, 200, { share: publicShare(share) });
   if (share.revokedAt !== null) {
     notifyRemoved(hooks, share);
     notify(hooks, share.workspaceId);
   }
+}
+
+/** Reads one cookie without pulling in a parser dependency. */
+function readCookie(request: IncomingMessage, name: string): string | null {
+  const header = request.headers.cookie;
+  const value = Array.isArray(header) ? header[0] : header;
+  if (typeof value !== "string" || value.length === 0) return null;
+
+  for (const part of value.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    const raw = part.slice(separator + 1).trim();
+    if (raw.length === 0) return null;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function cookieHeader(maxAgeSeconds: number): string {
+  return `Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
+}
+
+/**
+ * Writes the session cookie. The value is a random session id; the store keeps
+ * only its hash, so the cookie is the single copy of the credential.
+ */
+function setSessionCookie(response: ServerResponse, session: string, expiresAt: number): void {
+  const maxAge = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+  response.setHeader("set-cookie", `${SHARE_SESSION_COOKIE}=${session}; ${cookieHeader(maxAge)}`);
+}
+
+function clearSessionCookie(response: ServerResponse): void {
+  response.setHeader("set-cookie", `${SHARE_SESSION_COOKIE}=; ${cookieHeader(0)}`);
+}
+
+/** The session credential the browser presented, if any. */
+function sessionFrom(request: IncomingMessage): string | null {
+  return readCookie(request, SHARE_SESSION_COOKIE);
+}
+
+/**
+ * `POST /api/shares/session`: trades the link token for a session cookie.
+ *
+ * The token arrives in the body, never in the URL, so this exchange is the one
+ * request whose token could still reach a log — and it is the last one. The
+ * response carries the public share so the caller boots without a second call,
+ * and the session id so a WebSocket join can present it (the cookie is HttpOnly
+ * and unreadable from script). The token is never returned as a value of its
+ * own; the only copy left in the body is the one embedded in a projection room
+ * id, which the caller already holds.
+ */
+async function exchangeSession(
+  request: IncomingMessage,
+  store: ShareStore,
+  response: ServerResponse,
+): Promise<void> {
+  enforceRateLimit(
+    shareResolveLimiter,
+    clientAddress(request),
+    "Too many link lookups. Wait a moment and try again.",
+    response,
+  );
+
+  const body = await readJsonBody(request);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new HttpError(400, "The request body must be a JSON object.");
+  }
+  const presented = (body as Record<string, unknown>).token;
+  if (typeof presented !== "string" || presented.trim().length === 0) {
+    throw new HttpError(400, "A share token is required.");
+  }
+
+  const share = store.resolve(presented.trim());
+  if (!share) throw new HttpError(404, "Share not found.");
+
+  const { session, expiresAt } = store.createSession(share);
+  setSessionCookie(response, session, expiresAt);
+  sendJson(response, 200, { share: publicShare(share), session });
+}
+
+/**
+ * `GET /api/shares/session`: resolves the share behind the cookie. This is what
+ * a reload uses once the URL no longer carries the token, and it renews the
+ * cookie to the slid expiry the store just wrote.
+ */
+function readSessionShare(
+  request: IncomingMessage,
+  store: ShareStore,
+  response: ServerResponse,
+): void {
+  enforceRateLimit(
+    shareResolveLimiter,
+    clientAddress(request),
+    "Too many link lookups. Wait a moment and try again.",
+    response,
+  );
+
+  const session = sessionFrom(request);
+  const share = session ? store.resolveSession(session) : null;
+  if (!session || !share) {
+    if (session) clearSessionCookie(response);
+    throw new HttpError(404, "Share not found.");
+  }
+
+  setSessionCookie(response, session, Date.now() + SHARE_SESSION_TTL_MS);
+  sendJson(response, 200, { share: publicShare(share), session });
+}
+
+/** `DELETE /api/shares/session`: drops the session and clears the cookie. */
+function endSession(request: IncomingMessage, store: ShareStore, response: ServerResponse): void {
+  const session = sessionFrom(request);
+  if (session) store.deleteSession(session);
+  clearSessionCookie(response);
+  sendEmpty(response, 204);
 }
 
 /** Revokes every active link in a workspace, for incident response. */
@@ -384,6 +529,7 @@ function revokeAllShares(
   }
   requireOwner(request, workspaces, workspaceId);
   const shares = store.revokeAll(workspaceId);
+  clearSessionCookie(response);
   sendJson(response, 200, { shares: shares.map(publicShare) });
   for (const share of shares) notifyRemoved(hooks, share);
   notify(hooks, workspaceId);
@@ -392,13 +538,17 @@ function revokeAllShares(
 /**
  * The share a request authenticates. The path token must be the presented
  * bearer token, so one token can never address another share's draft.
+ *
+ * The bearer may be the raw link token or the session the browser exchanged for
+ * it (a session is scoped to one share and dies with it, so it carries exactly
+ * the same permission the token had).
  */
 function authenticatedShare(request: IncomingMessage, store: ShareStore, token: string): Share {
   const presented = bearerToken(request);
   if (!presented) throw new HttpError(401, "A share token is required.");
 
   // Resolving the presented token (not the path token) is what authenticates.
-  const share = store.resolve(presented);
+  const share = store.resolve(presented) ?? store.resolveSession(presented);
   if (!share || share.roomId === null || token !== presented) {
     throw new HttpError(404, "Share not found.");
   }
@@ -486,15 +636,18 @@ async function statusAction(
 }
 
 /**
- * Shapes a share for the holder of its link. A board or card viewer must not
- * learn the owner workspace id: with it they could mint a workspace share and
- * escape the projection. The room they can actually open is the projection room,
- * so it stands in; a legacy record without one exposes no id at all. Workspace
- * shares keep the real id because it is already the room the viewer joins.
+ * Shapes a share for the holder of its link. A board, card or selection viewer
+ * must not learn the owner workspace id: with it they could mint a workspace
+ * share and escape the projection. The room they can actually open is the
+ * projection room, so it stands in; a legacy record without one exposes no id at
+ * all. Workspace shares keep the real id because it is already the room the
+ * viewer joins. Card ids are dropped for every projection share: the link holder
+ * only ever sees what the projection serves, so the id list would leak cards
+ * outside the selection. The count stays, because it describes their own link.
  */
 function publicShare(share: Share): Share {
   if (share.scope === "workspace") return share;
-  return { ...share, workspaceId: share.roomId ?? "" };
+  return { ...share, workspaceId: share.roomId ?? "", cardIds: [] };
 }
 
 export function methodNotAllowed(response: ServerResponse, allow: string): void {
@@ -515,7 +668,9 @@ function decodeSegment(segment: string): string {
  * API route so the caller can keep serving its own routes.
  *
  * Creating, listing and revoking require the workspace owner key. Resolving a
- * token stays public: the token is the credential the recipient holds.
+ * token stays public: the token is the credential the recipient holds. The
+ * session route is the one place a token is accepted from a body rather than
+ * the URL, because it exists to get the token out of the URL.
  */
 export async function handleShareRequest(
   request: IncomingMessage,
@@ -539,6 +694,21 @@ export async function handleShareRequest(
   try {
     const segment = url.pathname.slice(SHARE_API_PATH.length).replace(/^\//, "");
     const parts = segment.split("/");
+
+    // The exchange route, before the token routes: "session" is a reserved word
+    // here, because a link token is a long random value, never this word.
+    if (segment === SESSION_SEGMENT) {
+      if (method === "POST") {
+        await exchangeSession(request, store, response);
+      } else if (method === "GET") {
+        readSessionShare(request, store, response);
+      } else if (method === "DELETE") {
+        endSession(request, store, response);
+      } else {
+        methodNotAllowed(response, "GET, POST, DELETE, OPTIONS");
+      }
+      return true;
+    }
 
     if (segment.length === 0) {
       if (method === "POST") {

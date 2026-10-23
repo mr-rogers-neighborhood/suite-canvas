@@ -29,13 +29,18 @@ export interface WorkspaceShareKickDeps {
   /** Token the publish worker joins workspace rooms with; it stays connected. */
   sourceToken: string;
   workspaces: Pick<WorkspaceRegistry, "verify">;
-  shares: Pick<ShareStore, "resolve" | "isShareToken">;
+  shares: Pick<ShareStore, "resolve" | "resolveSession" | "isShareToken">;
 }
 
 /**
  * Closes the share viewers of a workspace room. The owner key and the source
  * worker stay connected, and so does a viewer of another link that is still
  * active: only credentials that no longer authenticate are kicked.
+ *
+ * A browser presents either the raw share token (legacy links, and the first
+ * join before the exchange) or, normally, the short-lived session id it traded
+ * the token for. Revoking a share deletes its sessions, so both credential kinds
+ * must be checked here or a revoked viewer keeps its socket.
  */
 export function disconnectWorkspaceShares(
   server: KickServer,
@@ -49,7 +54,11 @@ export function disconnectWorkspaceShares(
     } catch {
       // A malformed credential never owns a workspace.
     }
-    return deps.shares.isShareToken(auth) && deps.shares.resolve(auth) === null;
+    if (deps.shares.isShareToken(auth)) return deps.shares.resolve(auth) === null;
+    // `resolveSession` touches a live session's expiry and deletes a dead row,
+    // so asking twice is safe and self-cleaning.
+    const session = deps.shares.resolveSession(auth);
+    return session === null || session.workspaceId !== workspaceId || session.revokedAt !== null;
   });
 }
 

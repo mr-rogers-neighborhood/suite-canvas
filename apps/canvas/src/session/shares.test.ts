@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  activeShareCredential,
+  closeShareSession,
   createShare,
+  forgetShareSession,
   listShares,
   publishShare,
   reloadShare,
   resolveShare,
   revokeShare,
+  SHARE_SESSION_RESUME,
   ShareApiError,
   SharePublishConflictError,
   shareErrorMessage,
@@ -45,6 +49,9 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // The boot resolver rewrites the URL and keeps a module-level credential.
+  forgetShareSession();
+  window.history.replaceState(null, "", "/");
 });
 
 describe("createShare", () => {
@@ -137,19 +144,101 @@ describe("listShares", () => {
 });
 
 describe("resolveShare", () => {
-  it("resolves a token", async () => {
-    const fetchMock = stubFetch(() => reply({ share: { ...share, roomId: "share-tok-1" } }));
+  /** Routes the exchange and the legacy resolve separately, as the server would. */
+  function stubBootRoutes(init?: {
+    exchange?: () => Response | Promise<Response>;
+    legacy?: () => Response | Promise<Response>;
+  }) {
+    return stubFetch((url) => {
+      if (url === `${API}/session`) {
+        return init?.exchange?.() ?? reply({ error: "Not found." }, 404);
+      }
+      return init?.legacy?.() ?? reply({ error: "Share not found." }, 404);
+    });
+  }
+
+  it("exchanges the token for a session, then drops it from the URL", async () => {
+    window.history.replaceState(null, "", "/?share=tok-1");
+    const fetchMock = stubBootRoutes({
+      exchange: () => reply({ share: { ...share, roomId: "share-tok-1" }, session: "sess-1" }),
+    });
 
     await expect(resolveShare("tok-1")).resolves.toMatchObject({ roomId: "share-tok-1" });
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${API}/tok-1`);
-    // Resolving stays public: no credential is sent with it.
-    expect(fetchMock.mock.calls[0]?.[1]).toBeUndefined();
+
+    // One call: the exchange answers with the share, so there is no second resolve.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe(`${API}/session`);
+    expect(requestInit?.method).toBe("POST");
+    expect(requestInit?.credentials).toBe("include");
+    expect(JSON.parse(String(requestInit?.body))).toEqual({ token: "tok-1" });
+
+    // The permanent token is gone from the address bar and from history.
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("#share-session");
+    expect(window.location.href).not.toContain("tok-1");
+    expect(activeShareCredential()).toBe("sess-1");
+
+    window.history.replaceState(null, "", "/");
+    forgetShareSession();
+  });
+
+  it("falls back to the legacy resolve when the exchange is unavailable", async () => {
+    window.history.replaceState(null, "", "/?share=tok-1");
+    const fetchMock = stubBootRoutes({
+      exchange: () => reply({ error: "Not found." }, 404),
+      legacy: () => reply({ share: { ...share, roomId: "share-tok-1" } }),
+    });
+
+    await expect(resolveShare("tok-1")).resolves.toMatchObject({ roomId: "share-tok-1" });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([`${API}/session`, `${API}/tok-1`]);
+    // The old behaviour is intact: the URL keeps its token and it stays the credential.
+    expect(window.location.search).toBe("?share=tok-1");
+    expect(activeShareCredential()).toBeNull();
+
+    window.history.replaceState(null, "", "/");
+    forgetShareSession();
+  });
+
+  it("resumes from the cookie when the URL no longer carries a token", async () => {
+    const fetchMock = stubBootRoutes({
+      exchange: () => reply({ share, session: "sess-2" }),
+    });
+
+    await expect(resolveShare(SHARE_SESSION_RESUME)).resolves.toMatchObject({ roomId: "ws-1" });
+
+    const [url, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe(`${API}/session`);
+    expect(requestInit?.method).toBeUndefined();
+    expect(requestInit?.credentials).toBe("include");
+    expect(activeShareCredential()).toBe("sess-2");
+
+    forgetShareSession();
   });
 
   it("surfaces a revoked token as an error", async () => {
-    stubFetch(() => reply({ error: "Share not found." }, 404));
-
+    stubBootRoutes();
     await expect(resolveShare("gone")).rejects.toThrow("Share not found.");
+  });
+});
+
+describe("closeShareSession", () => {
+  it("deletes the session and forgets the credential", async () => {
+    const fetchMock = stubFetch((_url, requestInit) =>
+      requestInit?.method === "DELETE"
+        ? ({ ok: true, status: 204, json: async () => null } as Response)
+        : reply({ share, session: "sess-3" }),
+    );
+    await resolveShare("tok-1");
+    expect(activeShareCredential()).toBe("sess-3");
+
+    await closeShareSession();
+
+    expect(activeShareCredential()).toBeNull();
+    const deleteCall = fetchMock.mock.calls.find((call) => call[1]?.method === "DELETE");
+    expect(deleteCall?.[0]).toBe(`${API}/session`);
+    expect(deleteCall?.[1]?.credentials).toBe("include");
   });
 });
 

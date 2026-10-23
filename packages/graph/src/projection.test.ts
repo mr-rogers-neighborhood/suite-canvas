@@ -9,6 +9,7 @@ import {
   projectWorkspace,
   SHARE_BOARD_ID,
 } from "./projection.js";
+import { sectionMembership } from "./sections.js";
 
 function appendText(workspace: WorkspaceDocument, container: LoroMap, text: string): void {
   const children = container.ensureMergeableList("children");
@@ -198,6 +199,101 @@ function markedSource() {
   source.doc.commit({ origin: "text:body" });
 
   return { source, board, field, option };
+}
+
+/**
+ * A board whose every reference stays inside it, so the board and selection
+ * copy paths can be compared with their reference rows intact.
+ */
+function equivalenceSource() {
+  const source = new WorkspaceDocument();
+  source.ensureDefaultTypes();
+  const board = source.ensureBoard();
+  const summary = source.addField("note", { name: "Summary", kind: "text" });
+  const link = source.addField("note", { name: "Link", kind: "card" });
+  const tag = source.createTag({ name: "reading", color: "#0f0" });
+
+  source.createCard({ id: "a", typeId: "note", boardId: board.id, position: { x: 40, y: 40 } });
+  source.createCard({ id: "b", typeId: "note", boardId: board.id, position: { x: 600, y: 40 } });
+  source.createCard({ id: "c", typeId: "note", boardId: board.id, position: { x: 1200, y: 600 } });
+  source.createCard({
+    id: "gone",
+    typeId: "note",
+    boardId: board.id,
+    position: { x: 1400, y: 900 },
+  });
+  source.trashCard("gone");
+  source.addCardTag("b", tag.id);
+  source.setProperty("a", summary.id, "Alpha summary");
+  source.setProperty("a", link.id, "b");
+
+  appendText(source, source.getTitle("a"), "Alpha");
+  appendText(source, source.getContent("a"), "Body of A");
+  appendMention(source, source.getContent("a"), "b");
+  appendText(source, source.getTitle("b"), "Beta");
+  appendMention(source, source.getContent("b"), "c");
+  appendText(source, source.getTitle("c"), "Gamma");
+  appendMention(source, source.getContent("c"), "a");
+
+  const frame = source.createSection({
+    boardId: board.id,
+    title: "Frame",
+    x: 0,
+    y: 0,
+    width: 1600,
+    height: 1000,
+  });
+  const group = source.createSection({
+    boardId: board.id,
+    title: "Group",
+    x: 20,
+    y: 20,
+    width: 400,
+    height: 400,
+  });
+
+  const ab = source.addEdge({ boardId: board.id, source: "a", target: "b" });
+  const bc = source.addEdge({ boardId: board.id, source: "b", target: "c" });
+  if (!ab || !bc) throw new Error("missing edge");
+
+  return { source, board, frame, group, tag, summary, link, ab, bc };
+}
+
+/** A board with nested sections and a card that sits outside every section. */
+function sectionedSource() {
+  const source = new WorkspaceDocument();
+  source.ensureDefaultTypes();
+  const board = source.ensureBoard();
+  const outer = source.createSection({
+    boardId: board.id,
+    title: "Outer",
+    x: 0,
+    y: 0,
+    width: 1000,
+    height: 1000,
+  });
+  const inner = source.createSection({
+    boardId: board.id,
+    title: "Inner",
+    x: 20,
+    y: 20,
+    width: 300,
+    height: 300,
+  });
+  const empty = source.createSection({
+    boardId: board.id,
+    title: "Empty",
+    x: 2000,
+    y: 2000,
+    width: 200,
+    height: 200,
+  });
+
+  source.createCard({ id: "a", typeId: "note", boardId: board.id, position: { x: 40, y: 40 } });
+  source.createCard({ id: "b", typeId: "note", boardId: board.id, position: { x: 700, y: 700 } });
+  source.createCard({ id: "c", typeId: "note", boardId: board.id, position: { x: 1500, y: 1500 } });
+
+  return { source, board, outer, inner, empty };
 }
 
 describe("projectWorkspace", () => {
@@ -452,6 +548,172 @@ describe("projectWorkspace", () => {
       expect(() => projectWorkspace(source, { scope: "card", cardId: "missing" })).toThrow(
         /Unknown card/,
       );
+    });
+  });
+
+  describe("selection scope", () => {
+    it("should copy only the selected cards, their placements and internal edges", () => {
+      const { source, board, ab } = equivalenceSource();
+      const { workspace } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["a", "b"],
+      });
+
+      expect(
+        workspace
+          .listCards()
+          .map((card) => card.id)
+          .sort(),
+      ).toEqual(["a", "b"]);
+      expect(
+        workspace
+          .listBoardPlacements(board.id)
+          .map((placement) => placement.cardId)
+          .sort(),
+      ).toEqual(["a", "b"]);
+      expect(workspace.getPlacement(board.id, "a")).toMatchObject({ x: 40, y: 40 });
+      expect(workspace.getPlacement(board.id, "b")).toMatchObject({ x: 600, y: 40 });
+      expect(workspace.getPlacement(board.id, "c")).toBeUndefined();
+
+      // The b -> c edge leaves the selection, so only a -> b survives.
+      expect(workspace.listEdges().map((edge) => edge.id)).toEqual([ab.id]);
+    });
+
+    it("should match the board projection when every board card is selected", () => {
+      const { source, board } = equivalenceSource();
+      const cardIds = source.listBoardCards(board.id).map((card) => card.id);
+      const boardShare = projectWorkspace(source, { scope: "board", boardId: board.id });
+      const selectionShare = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds,
+      });
+
+      const boardJson = boardShare.workspace.doc.toJSON();
+      const selectionJson = selectionShare.workspace.doc.toJSON();
+      expect(Object.keys(selectionJson).sort()).toEqual(Object.keys(boardJson).sort());
+      expect(selectionJson).toEqual(boardJson);
+      expect(rootJson(selectionShare.workspace)).toEqual(rootJson(boardShare.workspace));
+
+      expect(selectionShare.workspace.listCards()).toEqual(boardShare.workspace.listCards());
+      expect(selectionShare.workspace.listSections(board.id)).toEqual(
+        boardShare.workspace.listSections(board.id),
+      );
+      expect(selectionShare.workspace.listPlacements()).toEqual(
+        boardShare.workspace.listPlacements(),
+      );
+      expect(selectionShare.workspace.listEdges()).toEqual(boardShare.workspace.listEdges());
+      expect(selectionShare.references).toEqual(boardShare.references);
+    });
+
+    it("should copy the sections around a selected card and its ancestors", () => {
+      const { source, board, outer, inner } = sectionedSource();
+      const { workspace } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["a"],
+      });
+
+      expect(workspace.listSections(board.id).map((section) => section.id)).toEqual([
+        outer.id,
+        inner.id,
+      ]);
+      expect(workspace.getSection(outer.id)).toEqual(source.getSection(outer.id));
+      expect(workspace.getSection(inner.id)).toEqual(source.getSection(inner.id));
+      expect(sectionMembership(workspace.listPlacements(), workspace.listSections())).toEqual(
+        new Map([["a", inner.id]]),
+      );
+    });
+
+    it("should skip sections that hold none of the selected cards", () => {
+      const { source, board, outer, inner, empty } = sectionedSource();
+      const { workspace } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["b"],
+      });
+
+      expect(workspace.listSections(board.id).map((section) => section.id)).toEqual([outer.id]);
+      expect(workspace.getSection(inner.id)).toBeUndefined();
+      expect(workspace.getSection(empty.id)).toBeUndefined();
+      expect(sectionMembership(workspace.listPlacements(), workspace.listSections())).toEqual(
+        new Map([["b", outer.id]]),
+      );
+
+      // A card outside every section projects no section at all.
+      const outside = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["c"],
+      });
+      expect(outside.workspace.listSections()).toEqual([]);
+    });
+
+    it("should keep the real title of a card outside the selection", () => {
+      const { source, board } = fixture();
+      const { workspace, references } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["a"],
+      });
+
+      expect(references).toContainEqual({
+        cardId: "b",
+        title: "Beta",
+        direction: "out",
+        kind: "mention",
+        private: true,
+      });
+      const stub = workspace.peekTitle("b");
+      expect(stub).not.toBeNull();
+      expect(workspace.displayTitle("b")).toBe("Beta");
+      expect(JSON.stringify(stub?.toJSON())).toContain("Beta");
+
+      // The stub stays non-navigable, exactly like a card share's.
+      expect(workspace.getCard("b")).toBeUndefined();
+      expect(workspace.peekContent("b")).toBeNull();
+      expect(workspace.listCardPlacements("b")).toEqual([]);
+      expect(workspace.referencesFor("b")).toEqual([]);
+    });
+
+    it("should ignore ids that are not on the board", () => {
+      const { source, board } = fixture();
+      const { workspace } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["a", "c", "missing"],
+      });
+
+      expect(workspace.listCards().map((card) => card.id)).toEqual(["a"]);
+      expect(workspace.listPlacements()).toEqual([
+        expect.objectContaining({ boardId: board.id, cardId: "a" }),
+      ]);
+    });
+
+    it("should project an empty board when every selected card left the board", () => {
+      const { source, board } = fixture();
+      source.trashCard("a");
+      source.unplaceCard(board.id, "b");
+
+      const { workspace } = projectWorkspace(source, {
+        scope: "selection",
+        boardId: board.id,
+        cardIds: ["a", "b"],
+      });
+
+      expect(workspace.getBoard(board.id)).toBeDefined();
+      expect(workspace.listCards()).toEqual([]);
+      expect(workspace.listPlacements()).toEqual([]);
+      expect(workspace.listEdges()).toEqual([]);
+      expect(workspace.listSections()).toEqual([]);
+    });
+
+    it("should reject an empty selection", () => {
+      const { source, board } = fixture();
+      expect(() =>
+        projectWorkspace(source, { scope: "selection", boardId: board.id, cardIds: [] }),
+      ).toThrow(/at least one card/);
     });
   });
 

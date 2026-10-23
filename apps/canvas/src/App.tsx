@@ -35,6 +35,7 @@ const CARD_HALF_HEIGHT = 40;
 function documentLabel(share: ShareSession, workspaceId: string): string {
   if (share.scope === "board") return "Board share";
   if (share.scope === "card") return "Card share";
+  if (share.scope === "selection") return "Selection share";
   return workspaceId;
 }
 
@@ -346,6 +347,12 @@ function WorkspaceShell({
   const cardItems = allCards.map(toItem);
   const trashItems = trashed.map(toItem);
 
+  const boardEmpty = !!activeBoardId && workspace.listBoardCards(activeBoardId).length === 0;
+  // A projection can arrive empty when the owner's cards left the board — the
+  // link still works, so the viewer gets one honest line instead of the
+  // owner's creation prompt, which they cannot act on anyway.
+  const sharedEmpty = boardEmpty && !!share && !canCreateContent;
+
   return (
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
       <TitleBar
@@ -391,10 +398,7 @@ function WorkspaceShell({
 
       <main className="relative z-10 min-h-0 flex-1">
         <CanvasBoard />
-        {workspaceSurface &&
-        canCreateContent &&
-        activeBoardId &&
-        workspace.listBoardCards(activeBoardId).length === 0 ? (
+        {workspaceSurface && canCreateContent && boardEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -411,6 +415,19 @@ function WorkspaceShell({
               >
                 New note
               </button>
+            </div>
+          </div>
+        ) : null}
+        {sharedEmpty ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
+            data-testid="empty-board"
+            data-empty-reason="shared-cards-gone"
+          >
+            <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
+              <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
+                Nothing to show — these shared cards were moved or deleted.
+              </p>
             </div>
           </div>
         ) : null}

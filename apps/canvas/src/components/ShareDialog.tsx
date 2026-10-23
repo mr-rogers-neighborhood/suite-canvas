@@ -34,6 +34,10 @@ export interface ShareDialogProps {
   /** Selected or inspected card, when there is exactly one. */
   cardId?: string | null;
   cardTitle?: string | null;
+  /** Cards in the canvas selection; a selection link projects these. */
+  selectedCardIds?: readonly string[];
+  /** Scope to open on, for gestures that already know what they want to share. */
+  initialScope?: ShareScope;
   onClose: () => void;
   client?: ShareClient;
 }
@@ -42,6 +46,7 @@ const SCOPE_LABELS: Record<ShareScope, string> = {
   workspace: "Workspace",
   board: "Board",
   card: "Card",
+  selection: "Selection",
 };
 
 const ROLE_LABELS: Record<ShareRole, string> = {
@@ -49,7 +54,7 @@ const ROLE_LABELS: Record<ShareRole, string> = {
   editor: "Editor",
 };
 
-const SCOPES: readonly ShareScope[] = ["workspace", "board", "card"];
+const SCOPES: readonly ShareScope[] = ["workspace", "board", "card", "selection"];
 const ROLES: readonly ShareRole[] = ["viewer", "editor"];
 
 const COPIED_MS = 1600;
@@ -82,13 +87,15 @@ export function ShareDialog({
   boardName = null,
   cardId = null,
   cardTitle = null,
+  selectedCardIds = [],
+  initialScope = "workspace",
   onClose,
   client,
 }: ShareDialogProps) {
   const api = useMemo(() => client ?? defaultClient, [client]);
   const ownerKey = getSession().ownerKey;
-  const [scope, setScope] = useState<ShareScope>("workspace");
-  const [role, setRole] = useState<ShareRole>("editor");
+  const [scope, setScope] = useState<ShareScope>(initialScope);
+  const [role, setRole] = useState<ShareRole>(initialScope === "workspace" ? "editor" : "viewer");
   const [expiryDays, setExpiryDays] = useState<ExpiryDays>(0);
   const [shares, setShares] = useState<Share[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,8 +112,12 @@ export function ShareDialog({
 
   const boardAvailable = Boolean(boardId);
   const cardAvailable = Boolean(cardId);
+  const selectionCardIds = useMemo(() => [...new Set(selectedCardIds)], [selectedCardIds]);
+  // A link projects a subset, so two cards is the smallest meaningful selection.
+  const selectionAvailable = selectionCardIds.length >= 2;
   // Every role and scope is served by the API: viewers read a projection and
-  // editors change it, then publish back to the workspace.
+  // editors change it, then publish back to the workspace. Selection links are
+  // the exception for now: they are always read-only.
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -149,12 +160,21 @@ export function ShareDialog({
 
   // A scope that lost its target cannot stay selected.
   useEffect(() => {
-    if ((scope === "board" && !boardAvailable) || (scope === "card" && !cardAvailable)) {
+    const lost =
+      (scope === "board" && !boardAvailable) ||
+      (scope === "card" && !cardAvailable) ||
+      (scope === "selection" && !selectionAvailable);
+    if (lost) {
       setScope("workspace");
       setRole("editor");
       setLink(null);
     }
-  }, [scope, boardAvailable, cardAvailable]);
+  }, [scope, boardAvailable, cardAvailable, selectionAvailable]);
+
+  // Selection links are viewer-only until the editor projection ships.
+  useEffect(() => {
+    if (scope === "selection" && role !== "viewer") setRole("viewer");
+  }, [scope, role]);
 
   // A link belongs to one scope and role, so switching either clears it.
   const resetOutput = () => {
@@ -192,8 +212,9 @@ export function ShareDialog({
           workspaceId,
           scope,
           role,
-          boardId: scope === "board" ? boardId : null,
+          boardId: scope === "board" || scope === "selection" ? boardId : null,
           cardId: scope === "card" ? cardId : null,
+          ...(scope === "selection" ? { cardIds: selectionCardIds } : {}),
           expiresAt: expiryDays === 0 ? null : Date.now() + expiryDays * 24 * 60 * 60 * 1000,
         },
         ownerKey,
@@ -247,11 +268,13 @@ export function ShareDialog({
       ? role === "editor"
         ? "Editors can change every board but cannot manage links or transfer ownership."
         : "Viewers can read every board, but cannot change anything or manage links."
-      : role === "editor"
-        ? `Editors can change this ${scope} and publish. No new cards or type changes.`
-        : scope === "board"
-          ? `Viewers see only ${boardName ?? "this board"}.`
-          : `Viewers see only ${cardTitle ?? "this card"}.`;
+      : scope === "selection"
+        ? `Viewers see these ${selectionCardIds.length} cards and the sections around them. Everything else stays private.`
+        : role === "editor"
+          ? `Editors can change this ${scope} and publish. No new cards or type changes.`
+          : scope === "board"
+            ? `Viewers see only ${boardName ?? "this board"}.`
+            : `Viewers see only ${cardTitle ?? "this card"}.`;
 
   const createLabel = role === "editor" ? "Create editor link" : "Create viewer link";
 
@@ -293,7 +316,14 @@ export function ShareDialog({
           className="m-0 mt-3 flex flex-wrap gap-1 rounded-lg border-0 bg-[var(--segmented-bg)] p-0.5"
         >
           {SCOPES.map((id) => {
-            const unavailable = id === "board" ? !boardAvailable : id === "card" && !cardAvailable;
+            const unavailable =
+              id === "board"
+                ? !boardAvailable
+                : id === "card"
+                  ? !cardAvailable
+                  : id === "selection"
+                    ? !selectionAvailable
+                    : false;
             return (
               <button
                 key={id}
@@ -305,7 +335,9 @@ export function ShareDialog({
                   unavailable
                     ? id === "card"
                       ? "Select a card first."
-                      : "This workspace has no board yet."
+                      : id === "selection"
+                        ? "Select two or more cards to share a subset."
+                        : "This workspace has no board yet."
                     : undefined
                 }
                 className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -331,25 +363,30 @@ export function ShareDialog({
           className="m-0 mt-2 flex flex-wrap gap-1 border-0 p-0"
           data-testid="share-roles"
         >
-          {ROLES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              data-testid={`share-role-${id}`}
-              aria-pressed={role === id}
-              className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
-                role === id
-                  ? "border-[var(--ink-muted)] bg-[var(--segmented-bg)] text-[var(--ink)]"
-                  : "border-[var(--hairline)] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-              }`}
-              onClick={() => {
-                setRole(id);
-                resetOutput();
-              }}
-            >
-              {ROLE_LABELS[id]}
-            </button>
-          ))}
+          {ROLES.map((id) => {
+            const disabled = id === "editor" && scope === "selection";
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`share-role-${id}`}
+                aria-pressed={role === id}
+                disabled={disabled}
+                title={disabled ? "Editor \u2014 next phase" : undefined}
+                className={`rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  role === id
+                    ? "border-[var(--ink-muted)] bg-[var(--segmented-bg)] text-[var(--ink)]"
+                    : "border-[var(--hairline)] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                }`}
+                onClick={() => {
+                  setRole(id);
+                  resetOutput();
+                }}
+              >
+                {ROLE_LABELS[id]}
+              </button>
+            );
+          })}
         </fieldset>
 
         <div className="mt-2 flex items-center gap-2">
@@ -459,7 +496,9 @@ export function ShareDialog({
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] text-[var(--ink)]">
-                        {SCOPE_LABELS[share.scope]} {"\u00b7"} {ROLE_LABELS[share.role]}
+                        {share.scope === "selection"
+                          ? `Selection \u00b7 ${share.cardCount} card${share.cardCount === 1 ? "" : "s"}`
+                          : `${SCOPE_LABELS[share.scope]} \u00b7 ${ROLE_LABELS[share.role]}`}
                       </p>
                       <p className="text-[10px] text-[var(--ink-muted)]">
                         Created {createdLabel(share.createdAt)}

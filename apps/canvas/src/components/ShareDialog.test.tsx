@@ -18,6 +18,8 @@ function shareAt(overrides: Partial<Share> = {}): Share {
     revokedAt: null,
     expiresAt: null,
     roomId: "ws-1",
+    cardIds: [],
+    cardCount: 0,
     ...overrides,
   };
 }
@@ -284,6 +286,100 @@ describe("ShareDialog", () => {
       "This workspace is protected.",
     );
     expect(screen.queryByTestId("share-link")).not.toBeInTheDocument();
+  });
+});
+
+describe("ShareDialog selection scope", () => {
+  it("disables the selection tab below two cards", async () => {
+    const client = fakeClient();
+    const { unmount } = renderDialog(client);
+
+    expect(screen.getByTestId("share-tab-selection")).toBeDisabled();
+    expect(screen.getByTestId("share-tab-selection")).toHaveAttribute(
+      "title",
+      "Select two or more cards to share a subset.",
+    );
+    await screen.findByTestId("share-empty");
+    unmount();
+
+    renderDialog(fakeClient(), { selectedCardIds: ["card-1"] });
+    expect(screen.getByTestId("share-tab-selection")).toBeDisabled();
+    await screen.findByTestId("share-empty");
+  });
+
+  it("enables the selection tab with two cards and preselects the viewer", async () => {
+    renderDialog(fakeClient(), { selectedCardIds: ["card-1", "card-2"] });
+
+    expect(screen.getByTestId("share-tab-selection")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("share-tab-selection"));
+
+    expect(screen.getByTestId("share-tab-selection")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("share-role-viewer")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("share-role-editor")).toBeDisabled();
+    expect(screen.getByTestId("share-role-editor")).toHaveAttribute(
+      "title",
+      "Editor \u2014 next phase",
+    );
+    expect(screen.getByTestId("share-hint")).toHaveTextContent(
+      "Viewers see these 2 cards and the sections around them. Everything else stays private.",
+    );
+    await screen.findByTestId("share-empty");
+  });
+
+  it("creates a selection link with the board and the exact card ids", async () => {
+    const client = fakeClient();
+    renderDialog(client, { selectedCardIds: ["card-1", "card-2", "card-3"] });
+
+    fireEvent.click(screen.getByTestId("share-tab-selection"));
+    fireEvent.click(screen.getByTestId("share-create"));
+
+    await screen.findByLabelText("Share link");
+    expect(client.createShare).toHaveBeenCalledWith(
+      {
+        workspaceId: "ws-1",
+        scope: "selection",
+        role: "viewer",
+        boardId: "board-1",
+        cardId: null,
+        cardIds: ["card-1", "card-2", "card-3"],
+        expiresAt: null,
+      },
+      OWNER_KEY,
+    );
+  });
+
+  it("opens on the requested scope and falls back when it loses its target", async () => {
+    const { unmount } = renderDialog(fakeClient(), {
+      initialScope: "selection",
+      selectedCardIds: ["card-1", "card-2"],
+    });
+
+    expect(screen.getByTestId("share-tab-selection")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("share-role-viewer")).toHaveAttribute("aria-pressed", "true");
+    await screen.findByTestId("share-empty");
+    unmount();
+
+    renderDialog(fakeClient(), { initialScope: "selection", selectedCardIds: ["card-1"] });
+    expect(screen.getByTestId("share-tab-workspace")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("share-role-editor")).toHaveAttribute("aria-pressed", "true");
+    await screen.findByTestId("share-empty");
+  });
+
+  it("labels an active selection link by its card count", async () => {
+    const client = fakeClient([
+      shareAt({
+        id: "share-selection",
+        scope: "selection",
+        role: "viewer",
+        boardId: "board-1",
+        cardIds: ["card-1", "card-2"],
+        cardCount: 2,
+      }),
+    ]);
+    renderDialog(client);
+
+    const row = await screen.findByTestId("share-row-share-selection");
+    expect(row).toHaveTextContent("Selection \u00b7 2 cards");
   });
 });
 

@@ -185,6 +185,63 @@ describe("PropertyBlockChip", () => {
     expect(onOpenPanel).toHaveBeenCalledTimes(2);
   });
 
+  it("should render an unshared linked card inert instead of unavailable", () => {
+    const onOpenPanel = vi.fn();
+    render(
+      <PropertyBlockChip
+        field={field({ id: "related", name: "Related", kind: "card" })}
+        value="card-2"
+        cardLabel="Private card"
+        cardPresence="stub"
+        onCommit={() => {}}
+        onOpenPanel={onOpenPanel}
+      />,
+    );
+
+    const value = screen.getByTestId("property-block-value");
+    expect(value).toHaveTextContent("Private card");
+    expect(value).toHaveTextContent("not shared");
+    expect(value).toHaveAttribute("data-not-shared", "true");
+    expect(value).toHaveAttribute("aria-label", "Private card \u2014 not shared");
+    expect(value.tagName).toBe("SPAN");
+
+    fireEvent.click(value);
+    expect(onOpenPanel).not.toHaveBeenCalled();
+  });
+
+  it("should still call a card with no known title unavailable", () => {
+    render(
+      <PropertyBlockChip
+        field={field({ id: "related", name: "Related", kind: "card" })}
+        value="card-9"
+        cardPresence="missing"
+        onCommit={() => {}}
+        onOpenPanel={() => {}}
+      />,
+    );
+
+    const value = screen.getByTestId("property-block-value");
+    expect(value).toHaveTextContent("Unavailable card");
+    expect(value).not.toHaveAttribute("data-not-shared");
+  });
+
+  it("should not call an untitled stub Untitled", () => {
+    render(
+      <PropertyBlockChip
+        field={field({ id: "related", name: "Related", kind: "card" })}
+        value="card-2"
+        cardLabel="Untitled"
+        cardPresence="stub"
+        onCommit={() => {}}
+        onOpenPanel={() => {}}
+      />,
+    );
+
+    const value = screen.getByTestId("property-block-value");
+    expect(value).toHaveTextContent("Not shared");
+    expect(value).not.toHaveTextContent("Untitled");
+  });
+
   it("should render a muted placeholder when the field is gone", () => {
     render(
       <PropertyBlockChip

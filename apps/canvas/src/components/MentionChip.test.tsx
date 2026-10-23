@@ -6,6 +6,7 @@ import { MentionChip, MentionChipNodeView } from "./MentionChip";
 const mocks = vi.hoisted(() => ({
   card: vi.fn(),
   title: vi.fn(),
+  presence: vi.fn(),
 }));
 
 vi.mock("../store/workspaceStore", () => ({
@@ -20,6 +21,7 @@ vi.mock("../store/workspaceStore", () => ({
 
 vi.mock("../hooks/useCardContainers", () => ({
   useCardTitle: (cardId: string) => mocks.title(cardId),
+  useCardPresence: (cardId: string) => mocks.presence(cardId) ?? "card",
 }));
 
 const card = {
@@ -42,6 +44,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   mocks.card.mockReset();
   mocks.title.mockReset();
+  mocks.presence.mockReset();
   useUiStore.setState({ inspectorNodeId: null });
 });
 
@@ -72,6 +75,7 @@ describe("MentionChipNodeView", () => {
   it("should render unavailable for a missing card", () => {
     mocks.card.mockReturnValue(undefined);
     mocks.title.mockReturnValue("");
+    mocks.presence.mockReturnValue("missing");
     const openInspector = vi.spyOn(useUiStore.getState(), "openInspector");
 
     render(<MentionChipNodeView {...nodeViewProps("gone")} />);
@@ -85,10 +89,29 @@ describe("MentionChipNodeView", () => {
   it("should render unavailable for a trashed card", () => {
     mocks.card.mockReturnValue({ ...card, deletedAt: 1700000000000 });
     mocks.title.mockReturnValue("Onboarding friction");
+    mocks.presence.mockReturnValue("card");
 
     render(<MentionChipNodeView {...nodeViewProps("card-1")} />);
 
     expect(screen.getByTestId("mention-chip")).toHaveTextContent("Unavailable card");
+  });
+
+  it("should render a referenced-but-unshared stub as inert, not deleted", () => {
+    mocks.card.mockReturnValue(undefined);
+    mocks.title.mockReturnValue("Private card");
+    mocks.presence.mockReturnValue("stub");
+    const openInspector = vi.spyOn(useUiStore.getState(), "openInspector");
+
+    render(<MentionChipNodeView {...nodeViewProps("private-1")} />);
+    const chip = screen.getByTestId("mention-chip");
+    fireEvent.click(chip);
+
+    expect(chip).toHaveTextContent("Private card");
+    expect(chip).toHaveTextContent("not shared");
+    expect(chip).toHaveAttribute("data-not-shared", "true");
+    expect(chip).not.toHaveAttribute("data-unavailable");
+    expect(chip).toHaveAttribute("aria-label", "Private card \u2014 not shared");
+    expect(openInspector).not.toHaveBeenCalled();
   });
 });
 
@@ -165,6 +188,40 @@ describe("MentionChip", () => {
     fireEvent.click(chip);
     fireEvent.click(screen.getByRole("menuitem", { name: "Open card" }));
     expect(onOpen).toHaveBeenCalledWith("card-1", "owner");
+  });
+
+  it("should render three distinct states", () => {
+    const { rerender } = render(<MentionChip cardId="card-1" title="Onboarding" />);
+
+    let chip = screen.getByTestId("mention-chip");
+    expect(chip.tagName).toBe("BUTTON");
+    expect(chip).not.toHaveAttribute("data-not-shared");
+    expect(chip).not.toHaveAttribute("data-unavailable");
+
+    rerender(<MentionChip cardId="card-1" title="Private card" presence="stub" />);
+    chip = screen.getByTestId("mention-chip");
+    expect(chip.tagName).toBe("SPAN");
+    expect(chip).toHaveAttribute("data-not-shared", "true");
+    expect(chip).not.toHaveAttribute("data-unavailable");
+
+    rerender(<MentionChip cardId="card-1" title="Onboarding" presence="missing" />);
+    chip = screen.getByTestId("mention-chip");
+    expect(chip).toHaveAttribute("data-unavailable", "true");
+    expect(chip).not.toHaveAttribute("data-not-shared");
+    expect(chip).toHaveTextContent("Unavailable card");
+  });
+
+  it("should not open an unshared card", () => {
+    const onOpen = vi.fn();
+    render(<MentionChip cardId="card-1" title="Private card" presence="stub" onOpen={onOpen} />);
+
+    const chip = screen.getByTestId("mention-chip");
+    fireEvent.click(chip);
+    fireEvent.contextMenu(chip);
+    fireEvent.pointerDown(chip);
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
   });
 
   it("should not take the caret when pressed", () => {

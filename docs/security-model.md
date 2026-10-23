@@ -16,6 +16,7 @@ encryption.
 | **Workspace editor token** | `?share=<token>` | Read/write access to the workspace document and its presence. | Managing links, rotating the owner key, or claiming the workspace. |
 | **Workspace viewer token** | `?share=<token>` | Read-only access to the workspace document. | Any write, link management, or learning the owner key. |
 | **Board or card viewer link** | `?share=<token>` | Read-only access to a live projection of that board or card. | The workspace index or workspace id; any write. |
+| **Selection viewer link** | `?share=<token>` | Read-only access to a live projection of the selected cards on one board, the geometry of the sections those cards occupy, and the titles of cards they reference (marked "not shared"). | The unselected cards, the workspace index or id, the ids of the selected cards, or any write. |
 | **Board or card editor link** | `?share=<token>` | Editing a draft in its own `share-<token>` room, then publishing that draft. | Writing the workspace directly or managing links. The server validates and conflict-checks the publish. |
 | **Internal worker tokens** | `SUITE_PROJECTION_TOKEN` (legacy `SUITE_INTERNAL_TOKEN`) / `SUITE_SOURCE_TOKEN` | Server-to-server access used by the projection worker. The projection token writes only projection rooms; the source token writes only a workspace with an active editor share. | Nothing user-facing. They must never be given to a browser or logged. When unset, each server start generates random tokens. |
 
@@ -42,9 +43,16 @@ boards, schema, trash or links.
   end-to-end encryption.
 - **Credentials are hashed.** Owner keys and share tokens are stored as SHA-256 hashes, never in
   plaintext. A stolen database does not directly hand out working credentials.
-- **Links are still the weak point.** A share token travels in a URL query string; an owner key
-  travels in the URL fragment and in the `Authorization` header for owner API calls. Browser
-  history, clipboard managers, chat backups and proxy logs can capture them.
+- **Links are still the weak point.** An owner key travels in the URL fragment and in the
+  `Authorization` header for owner API calls. A share link's token is now exchanged, on first open,
+  for a short-lived `HttpOnly` session cookie; the browser then replaces the URL so the token is no
+  longer in the address bar or in forward history, and every later request carries the session id
+  (15-minute TTL, hashed at rest, deleted when the share is revoked). Browser history, clipboard
+  managers, chat backups and proxy logs can still capture the link itself the moment it is shared,
+  and a session id captured in transit is a credential for up to its TTL — which is why the TTL is
+  short and revocation ends live sessions rather than only blocking new joins.
+- **Sessions are scoped and disposable.** A share session authenticates exactly one share's room;
+  it cannot join another room, cannot outlive its share, and is deleted with it on revoke or expiry.
 - **No accounts means no attribution.** The relay cannot say who created or edited a card. Presence
   (names, pointers, carets) is ephemeral and is not written to the document. Every editor using a
   link shares that link's identity.

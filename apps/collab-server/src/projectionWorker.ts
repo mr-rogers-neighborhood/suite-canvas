@@ -50,7 +50,13 @@ export function loadLoroDocument(
 }
 
 /** Scopes a projection worker keeps alive; workspace shares open the real room. */
-type ProjectionTarget = { scope: "board"; boardId: string } | { scope: "card"; cardId: string };
+type ProjectionTarget =
+  | { scope: "board"; boardId: string }
+  | { scope: "card"; cardId: string }
+  | { scope: "selection"; boardId: string; cardIds: readonly string[] };
+
+/** A target an editor draft may publish into; a selection share has none. */
+type PublishTarget = { scope: "board"; boardId: string } | { scope: "card"; cardId: string };
 
 export type ProjectionWorkerShares = Pick<
   ShareStore,
@@ -69,6 +75,18 @@ export type SharePublishResult =
 export interface ShareStatus {
   dirty: boolean;
   hasBaseline: boolean;
+}
+
+/** One room the worker holds, for the read-only operator inventory. */
+export interface ProjectionRoomInfo {
+  roomId: string;
+  shareId: string;
+  workspaceId: string;
+  role: ShareRole;
+  /** Whether the room has a projection baseline to diff its draft against. */
+  hasBaseline: boolean;
+  /** Whether an editor changed the draft since the last projection. */
+  dirty: boolean;
 }
 
 export interface ProjectionWorkerOptions {
@@ -135,6 +153,7 @@ const encoder = new TextEncoder();
 
 function isProjectionShare(share: Share): boolean {
   if (share.scope === "workspace" || share.roomId === null) return false;
+  if (share.scope === "selection") return share.boardId !== null && share.cardIds.length > 0;
   return share.scope === "board" ? share.boardId !== null : share.cardId !== null;
 }
 
@@ -159,7 +178,21 @@ function targetOf(share: Share): ProjectionTarget | null {
   if (share.scope === "card") {
     return share.cardId ? { scope: "card", cardId: share.cardId } : null;
   }
+  if (share.scope === "selection") {
+    return share.boardId && share.cardIds.length > 0
+      ? { scope: "selection", boardId: share.boardId, cardIds: share.cardIds }
+      : null;
+  }
   return null;
+}
+
+/**
+ * Narrows a target to what a publish may write. A selection share is
+ * viewer-only, so reaching this with one is a bug the caller already refused.
+ */
+function publishTarget(target: ProjectionTarget): PublishTarget {
+  if (target.scope === "selection") throw new Error("Selection links are read-only.");
+  return target;
 }
 
 function message(error: unknown): string {
@@ -183,6 +216,9 @@ function failure(reason: string): SharePublishResult {
 function publishProblem(share: Share): string | null {
   if (share.revokedAt !== null) return "This share was revoked.";
   if (share.scope === "workspace") return "Workspace shares do not publish.";
+  // The API only creates viewer selection links; a hand-written editor row
+  // still must not publish into the workspace it is a subset of.
+  if (share.scope === "selection") return "Selection links are read-only.";
   if (share.role !== "editor") return "This link is read-only.";
   if (!share.roomId) return "This share has no room.";
   return null;
@@ -207,12 +243,13 @@ function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
 }
 
 /**
- * Keeps every board and card share room in sync with the workspace it projects.
+ * Keeps every board, card and selection share room in sync with the workspace
+ * it projects.
  *
  * Each share room gets one long-lived `LoroDoc` held by this worker; rebuilds
  * write into that document, so the worker peer keeps winning the last-write-wins
- * race for the values it replaces. Board and card shares are read-only views, so
- * the worker is the only writer such a room sees.
+ * race for the values it replaces. Board, card and selection shares are
+ * read-only views, so the worker is the only writer such a room sees.
  */
 export class ProjectionWorker {
   private readonly options: ProjectionWorkerOptions;
@@ -230,7 +267,7 @@ export class ProjectionWorker {
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   }
 
-  /** Joins every active board and card share room and publishes their projections. */
+  /** Joins every active board, card and selection share room and publishes their projections. */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
@@ -517,7 +554,7 @@ export class ProjectionWorker {
     target: ProjectionTarget,
   ): boolean {
     try {
-      return planPublish(draft, baseline, baseline, target).changes.length > 0;
+      return planPublish(draft, baseline, baseline, publishTarget(target)).changes.length > 0;
     } catch (error) {
       // Comparing must never freeze a room; a broken comparison reads as clean.
       this.warn(`could not compare a draft with its baseline: ${message(error)}`);
@@ -786,7 +823,7 @@ export class ProjectionWorker {
       room.workspace,
       baseline,
       source.workspace,
-      room.target,
+      publishTarget(room.target),
       overwrite === undefined ? undefined : { overwrite: new Set(overwrite) },
     );
     if (plan.conflicts.length > 0 || plan.unsupported.length > 0) {
@@ -816,8 +853,12 @@ export class ProjectionWorker {
     // Count what the discard drops, so the caller can report it.
     let discarded = 0;
     if (room.baseline) {
-      discarded = planPublish(room.workspace, room.baseline, room.baseline, room.target).changes
-        .length;
+      discarded = planPublish(
+        room.workspace,
+        room.baseline,
+        room.baseline,
+        publishTarget(room.target),
+      ).changes.length;
     }
 
     try {
@@ -861,5 +902,21 @@ export class ProjectionWorker {
 
   private warn(text: string): void {
     (this.options.logger ?? console).warn(`[projection] ${text}`);
+  }
+
+  /**
+   * The projection rooms this worker currently holds. `loro-websocket` cannot
+   * enumerate rooms, so this is the only complete answer to "which share rooms
+   * are live, and whose are they"; read-only and safe while rooms are opening.
+   */
+  projectionRooms(): ProjectionRoomInfo[] {
+    return [...this.rooms.values()].map((room) => ({
+      roomId: room.roomId,
+      shareId: room.shareId,
+      workspaceId: room.workspaceId,
+      role: room.role,
+      hasBaseline: room.baseline !== null,
+      dirty: room.dirty,
+    }));
   }
 }

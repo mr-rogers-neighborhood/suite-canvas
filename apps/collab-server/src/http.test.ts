@@ -218,6 +218,80 @@ describe("share API", () => {
     expect(cardBody.share.roomId).toBe(`share-${cardBody.token}`);
   });
 
+  it("creates a selection link without leaking its card ids to the holder", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "selection",
+      role: "viewer",
+      boardId: "board-1",
+      cardIds: ["card-2", "card-1", "card-2"],
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as {
+      token: string;
+      share: { roomId: string; cardIds: string[]; cardCount: number };
+    };
+
+    expect(body.share.roomId).toBe(`share-${body.token}`);
+    expect(body.share.cardIds).toEqual([]);
+    expect(body.share.cardCount).toBe(2);
+
+    const resolved = await fetch(`${baseUrl}/api/shares/${body.token}`);
+    expect(resolved.status).toBe(200);
+    const resolvedBody = (await resolved.json()) as {
+      share: { cardIds: string[]; cardCount: number; scope: string };
+    };
+    expect(resolvedBody.share.scope).toBe("selection");
+    expect(resolvedBody.share.cardIds).toEqual([]);
+    expect(resolvedBody.share.cardCount).toBe(2);
+
+    // The owner listing keeps the ids: only the link holder loses them.
+    const listed = (await (await list("ws-1")).json()) as {
+      shares: { cardIds: string[]; cardCount: number }[];
+    };
+    expect(listed.shares[0]?.cardIds).toEqual(["card-2", "card-1"]);
+    expect(listed.shares[0]?.cardCount).toBe(2);
+  });
+
+  it("rejects an editor selection link", async () => {
+    const response = await post({
+      workspaceId: "ws-1",
+      scope: "selection",
+      role: "editor",
+      boardId: "board-1",
+      cardIds: ["card-1"],
+    });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain("read-only");
+  });
+
+  it("refuses to publish or report status for a selection link", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "selection",
+      role: "viewer",
+      boardId: "board-1",
+      cardIds: ["card-1"],
+    });
+    const { token } = (await created.json()) as { token: string };
+    const headers = { authorization: ["Bearer", token].join(" ") };
+
+    const publish = await fetch(`${baseUrl}/api/shares/${token}/publish`, {
+      method: "POST",
+      headers,
+    });
+    expect(publish.status).toBe(403);
+    expect(((await publish.json()) as { error: string }).error).toContain("editor");
+
+    const status = await fetch(`${baseUrl}/api/shares/${token}/status`, { headers });
+    expect(status.status).toBe(403);
+    expect(((await status.json()) as { error: string }).error).toContain("editor");
+
+    expect(published).toHaveLength(0);
+    expect(statuses).toHaveLength(0);
+  });
+
   it("creates a workspace viewer link", async () => {
     const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
 
@@ -848,5 +922,201 @@ describe("share expiry", () => {
       expiresAt: Date.now() - 1,
     });
     expect(past.status).toBe(400);
+  });
+});
+
+describe("share session exchange", () => {
+  /** Creates a board share through the API and returns what a recipient holds. */
+  async function boardLink() {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+    expect(created.status).toBe(201);
+    return (await created.json()) as {
+      token: string;
+      share: { id: string; roomId: string; workspaceId: string };
+    };
+  }
+
+  function exchange(token: string, query = ""): Promise<Response> {
+    return fetch(`${baseUrl}/api/shares/session${query}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  /** The cookie value a browser would send back. */
+  function cookieOf(response: Response): string {
+    const header = response.headers.getSetCookie?.()[0] ?? response.headers.get("set-cookie") ?? "";
+    return header.split(";")[0] ?? "";
+  }
+
+  function withCookie(cookie: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${baseUrl}/api/shares/session`, { ...init, headers: { cookie } });
+  }
+
+  it("sets an HttpOnly cookie and answers with the public share", async () => {
+    const { token, share } = await boardLink();
+
+    const response = await exchange(token);
+
+    expect(response.status).toBe(200);
+    const header = response.headers.getSetCookie?.()[0] ?? response.headers.get("set-cookie") ?? "";
+    expect(header).toContain("suite_share=");
+    expect(header).toContain("HttpOnly");
+    expect(header).toContain("Secure");
+    expect(header).toContain("SameSite=Lax");
+    expect(header).toContain("Path=/");
+    expect(header).toMatch(/Max-Age=\d+/);
+
+    const body = (await response.json()) as {
+      share: { id: string; workspaceId: string; roomId: string };
+      session: string;
+    };
+    expect(body.share.id).toBe(share.id);
+    // The public shape: a projection hides the owner's workspace id.
+    expect(body.share.workspaceId).toBe(share.roomId);
+    // The permanent token never comes back as a field; the session is a
+    // different value. (A projection room id embeds the token by design.)
+    expect(body).not.toHaveProperty("token");
+    expect(body.session).not.toBe(token);
+    expect(cookieOf(response)).toBe(`suite_share=${body.session}`);
+  });
+
+  it("refuses unknown and revoked tokens without minting a session", async () => {
+    const unknown = await exchange("not-a-token");
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.getSetCookie?.() ?? []).toEqual([]);
+
+    const { token, share } = await boardLink();
+    await revoke(share.id);
+    const revoked = await exchange(token);
+    expect(revoked.status).toBe(404);
+    expect(revoked.headers.getSetCookie?.() ?? []).toEqual([]);
+  });
+
+  it("requires the token in the body, never in the query", async () => {
+    const { token } = await boardLink();
+
+    const response = await fetch(
+      `${baseUrl}/api/shares/session?token=${encodeURIComponent(token)}`,
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+
+    expect(response.status).toBe(400);
+    // A query string never mints a session: the token must arrive in the body.
+    expect(response.headers.getSetCookie?.() ?? []).toEqual([]);
+  });
+
+  it("resolves the share from the cookie alone", async () => {
+    const { token, share } = await boardLink();
+    const cookie = cookieOf(await exchange(token));
+
+    const response = await withCookie(cookie);
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { share: { id: string; workspaceId: string } };
+    expect(body.share.id).toBe(share.id);
+    expect(body.share.workspaceId).toBe(share.roomId);
+    // Each resolve renews the cookie to the slid expiry.
+    expect(response.headers.getSetCookie?.()[0] ?? "").toContain("suite_share=");
+  });
+
+  it("answers 404 for a missing or unusable cookie and clears it", async () => {
+    const missing = await fetch(`${baseUrl}/api/shares/session`);
+    expect(missing.status).toBe(404);
+
+    const empty = await withCookie("suite_share=");
+    expect(empty.status).toBe(404);
+
+    const garbage = await withCookie("suite_share=not-a-session");
+    expect(garbage.status).toBe(404);
+    expect(garbage.headers.getSetCookie?.()[0] ?? "").toContain("Max-Age=0");
+
+    const unrelated = await withCookie("other=1; suite_share=stale");
+    expect(unrelated.status).toBe(404);
+  });
+
+  it("keeps the legacy token resolve working for links in the wild", async () => {
+    const { token, share } = await boardLink();
+
+    const response = await fetch(`${baseUrl}/api/shares/${encodeURIComponent(token)}`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ share: { id: share.id } });
+  });
+
+  it("invalidates a live session when its share is revoked", async () => {
+    const { token, share } = await boardLink();
+    const cookie = cookieOf(await exchange(token));
+    expect((await withCookie(cookie)).status).toBe(200);
+
+    const revoked = await revoke(share.id);
+
+    expect(revoked.status).toBe(200);
+    // The revoking browser is told to forget its cookie...
+    expect(revoked.headers.getSetCookie?.()[0] ?? "").toContain("Max-Age=0");
+    // ...and the credential behind it no longer resolves anywhere.
+    expect((await withCookie(cookie)).status).toBe(404);
+  });
+
+  it("invalidates a live session on a bulk revoke", async () => {
+    const { token } = await boardLink();
+    const cookie = cookieOf(await exchange(token));
+
+    const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
+      method: "DELETE",
+      headers: owner,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie?.()[0] ?? "").toContain("Max-Age=0");
+    expect((await withCookie(cookie)).status).toBe(404);
+  });
+
+  it("clears the session on DELETE", async () => {
+    const { token, share } = await boardLink();
+    const cookie = cookieOf(await exchange(token));
+
+    const closed = await withCookie(cookie, { method: "DELETE" });
+
+    expect(closed.status).toBe(204);
+    expect(closed.headers.getSetCookie?.()[0] ?? "").toContain("Max-Age=0");
+    expect((await withCookie(cookie)).status).toBe(404);
+    // Closing the browser session leaves the share itself alone.
+    await expect(
+      fetch(`${baseUrl}/api/shares/${encodeURIComponent(token)}`).then((result) => result.json()),
+    ).resolves.toMatchObject({ share: { id: share.id } });
+  });
+
+  it("lets an editor session publish with the session credential", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "editor",
+      boardId: "board-1",
+    });
+    const { token, share } = (await created.json()) as { token: string; share: { id: string } };
+    const cookie = cookieOf(await exchange(token));
+    const body = (await (await withCookie(cookie)).json()) as { session: string };
+
+    const response = await fetch(
+      `${baseUrl}/api/shares/${encodeURIComponent(body.session)}/publish`,
+      {
+        method: "POST",
+        headers: {
+          authorization: ["Bearer", body.session].join(" "),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ version: {} }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(published.map((entry) => entry.id)).toEqual([share.id]);
   });
 });

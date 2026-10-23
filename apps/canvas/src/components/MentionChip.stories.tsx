@@ -28,6 +28,27 @@ export const LongTitle: Story = {
   args: { title: "A very long card title that has to truncate inside a paragraph" },
 };
 
+export const NotShared: Story = {
+  args: { title: "Private card", presence: "stub" },
+};
+
 export const Unavailable: Story = {
   args: { unavailable: true },
+};
+
+/** The three states a share boundary can put a mention in, side by side. */
+export const States: Story = {
+  render: () => (
+    <span className="flex flex-col items-start gap-2">
+      <span>
+        Shared card <MentionChip cardId="card-1" title="Onboarding friction" onOpen={() => {}} />
+      </span>
+      <span>
+        Referenced only <MentionChip cardId="card-2" title="Private card" presence="stub" />
+      </span>
+      <span>
+        Gone <MentionChip cardId="card-3" title="" presence="missing" />
+      </span>
+    </span>
+  ),
 };

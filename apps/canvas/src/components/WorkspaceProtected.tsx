@@ -3,10 +3,21 @@
  * It only needs the theme and the logo: no store, no sync connection, no
  * document. The way back in is the recovery key file saved from the File menu,
  * or an editor link that carries the owner fragment.
+ *
+ * A 409 has two shapes and the copy names the right one from this device's
+ * claim record: the workspace was worked on here before anyone owned it and was
+ * claimed in the meantime, or this browser's key was replaced. Both keep the
+ * local document — only a device that never had one omits that sentence.
  */
 
 import { useRef, useState } from "react";
-import { claimWorkspace, reloadWithOwnerKey, writeOwnerKey } from "../session/ownerKey";
+import {
+  type ClaimRecord,
+  claimWorkspace,
+  readClaimRecord,
+  reloadWithOwnerKey,
+  writeOwnerKey,
+} from "../session/ownerKey";
 import { OWNER_KIT_MISMATCH, readOwnerKit } from "../session/ownerKit";
 
 export interface WorkspaceProtectedProps {
@@ -14,11 +25,58 @@ export interface WorkspaceProtectedProps {
   workspaceId?: string | null;
 }
 
+export interface ConflictCopy {
+  /** What happened, in the order it happened. */
+  detail: string;
+  /**
+   * True only when this device opened the workspace before, so it really does
+   * hold a local copy worth keeping.
+   */
+  keepsLocalCopy: boolean;
+}
+
+const EXITS = "Open a recovery key file, or the editor link that includes the current owner key.";
+
+/**
+ * The two 409s read differently even though they are the same outcome. The
+ * claim record — not the relay — says which one this is: `pending` means the
+ * workspace was edited here before anyone owned it and was claimed by someone
+ * else in the meantime, `claimed` means this browser used to own it. Neither
+ * discards the local document, and neither may say so on a device that never
+ * had one.
+ */
+export function conflictCopy(record: ClaimRecord | null): ConflictCopy {
+  if (record === "pending") {
+    return {
+      detail: "This device worked on the workspace offline, and another browser claimed it first.",
+      keepsLocalCopy: true,
+    };
+  }
+  if (record === "claimed") {
+    return {
+      detail: "The owner key on this device was replaced by another browser.",
+      keepsLocalCopy: true,
+    };
+  }
+  return {
+    detail: "Another browser's owner key already owns this workspace.",
+    keepsLocalCopy: false,
+  };
+}
+
+function protectedCopy(record: ClaimRecord | null): string {
+  const { detail, keepsLocalCopy } = conflictCopy(record);
+  return keepsLocalCopy
+    ? `${detail} Your edits on this device are kept. ${EXITS}`
+    : `${detail} ${EXITS}`;
+}
+
 export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paste, setPaste] = useState("");
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const record = readClaimRecord(workspaceId ?? "");
 
   const open = async (text: string, name?: string) => {
     setError(null);
@@ -37,10 +95,18 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
     setBusy(true);
     try {
       // The claim is the real verification: a wrong key is refused here instead
-      // of after a reload that would land back on this screen.
+      // of after a reload that would land back on this screen. A key that could
+      // not be verified is not installed either, but the local document is
+      // never touched, so nothing is lost by waiting for the relay.
       const claim = await claimWorkspace(workspaceId, parsed.ownerKey);
       if (claim === "conflict") {
         setError(OWNER_KIT_MISMATCH);
+        return;
+      }
+      if (claim !== "claimed") {
+        setError(
+          "The server could not be reached, so this key is not verified yet. Your edits on this device are kept — try again when you are back online.",
+        );
         return;
       }
       writeOwnerKey(workspaceId, parsed.ownerKey);
@@ -70,8 +136,12 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
         <h1 className="text-[15px] font-semibold text-[var(--ink)]">
           This workspace is protected.
         </h1>
-        <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">
-          Open a recovery key file, or the editor link that includes its owner key.
+        <p
+          data-testid="workspace-protected-detail"
+          data-conflict={record ?? "unknown"}
+          className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]"
+        >
+          {protectedCopy(record)}
         </p>
       </div>
 

@@ -602,6 +602,24 @@ Creating a share rebuilds immediately and revoking one closes its room. Resolvin
 token reports the projection room as its `workspaceId`; the owner workspace id never reaches that
 holder, so a board or card link cannot be exchanged for a workspace link.
 
+A reference row is emitted for every link that crosses the projection boundary, so the same card is
+reported once even when several kinds point the same way. Building those rows walks the workspace
+once — mention targets, `card`-valued properties and edge endpoints are indexed in a single pass —
+because asking the per-card reference helpers for every copied card re-scanned every other card and
+made a large board's rebuild quadratic. Rebuild cost is recorded in `docs/operations.md`.
+
+### Selection shares
+
+A **selection** share is the board projection filtered to an explicit set of card ids chosen when
+the link is created. The set is fixed, so changing it means creating a new link. `projectWorkspace`
+takes this scope beside `board` and `card`, and the projection keeps the real board id, name and
+geometry: the viewer sees the same arrangement with the unshared cards missing. Section membership
+is derived from card positions (`cardAnchor` and the smallest containing rectangle), so the filter
+copies every section whose rectangle contains a selected card's anchor, plus that section's
+ancestors; nothing is resized or moved, which keeps membership inside the share exactly the
+selected subset. An edge is copied only when both endpoints are selected. `ShareDialog` caps a
+selection at 200 card ids; the active-shares-per-workspace cap is unchanged.
+
 ### Room authorization
 
 Every sync join carries an `auth` payload that `authorize(roomId, auth, deps)` maps to a

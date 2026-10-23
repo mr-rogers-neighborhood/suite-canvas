@@ -1,8 +1,10 @@
 import { createServer } from "node:http";
 import { SimpleServer } from "loro-websocket/server";
+import { handleAdminRequest } from "./adminHttp.js";
 import { authorize, resolveWorkerTokens } from "./auth.js";
 import { handleShareRequest } from "./http.js";
-import { createDocumentStore } from "./persistence.js";
+import { createLogger, createRequestLogger } from "./logging.js";
+import { configureSqlite, createDocumentStore } from "./persistence.js";
 import {
   loadLoroDocument,
   loroDocumentKey,
@@ -18,25 +20,48 @@ import { createShareStore, SHARE_ROOM_PREFIX, type Share } from "./shares.js";
 import { handleWorkspaceRequest } from "./workspaceHttp.js";
 import { createWorkspaceRegistry } from "./workspaces.js";
 
+const logger = createLogger().child({ component: "server" });
+
 // loro-websocket 0.6.2 can reject its internal connection promise while a
 // client is closing. Only that teardown case is ignored; other unhandled
 // rejections are logged so they stay visible.
 process.on("unhandledRejection", (reason) => {
   if (reason instanceof Error && /^(Destroyed|Disconnected)$/u.test(reason.message)) return;
-  console.error("[server] unhandled rejection", reason);
+  logger.error("unhandled rejection", {
+    error: reason instanceof Error ? reason.message : String(reason),
+  });
 });
 
 const port = Number(process.env.PORT ?? 1234);
 const healthPort = Number(process.env.HEALTH_PORT ?? 1235);
-const store = createDocumentStore(process.env.SUITE_DB ?? "suite.documents.sqlite");
+const paths = {
+  documents: process.env.SUITE_DB ?? "suite.documents.sqlite",
+  shares: process.env.SUITE_SHARES_DB ?? "suite.shares.sqlite",
+  workspaces: process.env.SUITE_WORKSPACES_DB ?? "suite.workspaces.sqlite",
+};
+// The document store opens its own connection, but the share and workspace
+// stores do not set a journal mode. WAL is a property of the file, so setting
+// it here covers all three without touching those modules.
+for (const name of ["shares", "workspaces"] as const) {
+  try {
+    const mode = configureSqlite(paths[name]);
+    if (mode.toLowerCase() !== "wal") {
+      logger.warn("journal mode was not applied", { db: name, journalMode: mode });
+    }
+  } catch (error) {
+    logger.error("could not configure SQLite", {
+      db: name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+const store = createDocumentStore(paths.documents);
 // Shares live in their own file so token writes never contend with the
 // document store's save interval.
-const shares = createShareStore(process.env.SUITE_SHARES_DB ?? "suite.shares.sqlite");
+const shares = createShareStore(paths.shares);
 // Owner key hashes live beside the share hashes: both are credentials, neither
 // is document state, so they stay out of the document store's save loop.
-const workspaces = createWorkspaceRegistry(
-  process.env.SUITE_WORKSPACES_DB ?? "suite.workspaces.sqlite",
-);
+const workspaces = createWorkspaceRegistry(paths.workspaces);
 const { projectionToken, sourceToken } = resolveWorkerTokens();
 
 // Board and card shares read a projection room kept up to date by this worker.
@@ -100,6 +125,10 @@ const expirySweep = setInterval(() => {
 expirySweep.unref();
 
 const health = createServer((request, response) => {
+  // One line per request, written when the response finishes. The target is
+  // redacted first, so a share token or key never reaches stdout.
+  const requestLog = createRequestLogger(request, response, { logger });
+
   void handleShareRequest(request, response, shares, workspaces, {
     onSharesChanged: (workspaceId) => {
       void worker.schedule(workspaceId, { immediate: true });
@@ -121,25 +150,61 @@ const health = createServer((request, response) => {
     })
     .then((handled) => {
       if (handled || response.writableEnded) return;
+      return handleAdminRequest(request, response, {
+        documents: store,
+        shares,
+        workspaces,
+        paths,
+        projectionRooms: () => worker.projectionRooms(),
+        disconnectRoom: (roomId) => server.disconnectRoomWhere(roomId, () => true),
+        onShareRemoved: removeShare,
+        onSharesChanged: (workspaceId) => {
+          void worker.schedule(workspaceId, { immediate: true });
+        },
+        logger: logger.child({ component: "admin" }),
+      });
+    })
+    .then((handled) => {
+      if (handled || response.writableEnded) return;
       if (request.url === "/health") {
-        response.writeHead(200, { "content-type": "text/plain" });
-        response.end("ok");
+        // Readiness only: no counts, no database sizes. Detailed state lives in
+        // `/api/admin/status`, which requires the operator token.
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: true }));
         return;
       }
       response.writeHead(404);
       response.end();
     })
-    .catch(() => {
+    .catch((error: unknown) => {
+      logger.error("request failed", {
+        requestId: requestLog.requestId,
+        method: requestLog.method,
+        path: requestLog.path,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (response.writableEnded) return;
       response.writeHead(500);
       response.end();
     });
 });
 health.listen(healthPort);
-console.log(`Loro sync server ready on ws://localhost:${port} (health :${healthPort})`);
+
+// Refresh SQLite's planner hourly; the timer is unref'd and never keeps the
+// process alive on its own.
+store.startMaintenance();
+
+logger.info("server ready", {
+  ws: `ws://localhost:${port}`,
+  health: `http://localhost:${healthPort}`,
+  documents: store.inventory(),
+  shares: paths.shares,
+  workspaces: paths.workspaces,
+});
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
+    logger.info("server stopping", { signal });
     void worker
       .stop()
       .catch(() => undefined)

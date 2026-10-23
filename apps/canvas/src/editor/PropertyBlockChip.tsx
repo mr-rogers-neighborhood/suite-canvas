@@ -1,18 +1,22 @@
-import type { Card, CardType, FieldDefinition, PropertyValue } from "@suite/graph";
-import { displayTemplate, formatPropertyValue } from "@suite/graph";
+import type { Card, CardPresence, CardType, FieldDefinition, PropertyValue } from "@suite/graph";
+import { displayTemplate, readPropertyValue } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { ContextMenu } from "../components/ContextMenu";
 import { DisplayStyleDialog } from "../components/DisplayStyleDialog";
 import { FieldValueInput } from "../components/PropertyField";
 import { ValueTemplate } from "../components/ValueTemplate";
-import { useCardTitle } from "../hooks/useCardContainers";
+import { useCardPresence, useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useCard, useWorkspaceStore } from "../store/workspaceStore";
 import type { PropertyBlockOptions } from "./PropertyBlock";
 
 const EM_DASH = "\u2014";
+
+/** Inert styling for an unshared card value: quiet, and never a hover link. */
+const NOT_SHARED_VALUE = { color: "var(--ink-muted)", cursor: "default" } as const;
+const NOT_SHARED_NOTE = { opacity: 0.8, marginLeft: 3 } as const;
 
 /** The field behind a block, in the card's type order (same as the panel). */
 function fieldFor(card: Card, fieldId: string, types: readonly CardType[]) {
@@ -37,12 +41,13 @@ export function propertyBlockDisplayValue(
   field: FieldDefinition,
   value: PropertyValue | undefined,
   cardLabel = "",
+  cardPresence: CardPresence = "card",
 ): string {
-  return formatPropertyValue(field, value, {
+  return readPropertyValue(field, value, {
     cardTitle: cardLabel,
+    cardPresence,
     empty: EM_DASH,
-    unavailable: "Unavailable",
-  });
+  }).text;
 }
 
 export interface PropertyBlockChipProps {
@@ -51,6 +56,8 @@ export interface PropertyBlockChipProps {
   value: PropertyValue | undefined;
   /** Live title of the card a `card` value points at. */
   cardLabel?: string;
+  /** Whether that card is here, only a projection stub, or gone. */
+  cardPresence?: CardPresence;
   /** The block's own card, for `{{card}}` and `{{type}}` in its template. */
   cardTitle?: string;
   typeName?: string;
@@ -74,6 +81,7 @@ export function PropertyBlockChip({
   field,
   value,
   cardLabel = "",
+  cardPresence = "card",
   cardTitle = "",
   typeName = "",
   template,
@@ -101,13 +109,37 @@ export function PropertyBlockChip({
     );
   }
 
-  const display = propertyBlockDisplayValue(field, value, cardLabel);
+  const reading = readPropertyValue(field, value, {
+    cardTitle: cardLabel,
+    cardPresence,
+    empty: EM_DASH,
+  });
+  const display = reading.text;
   const opensPanelOnly = field.kind === "card" || field.kind === "multiSelect";
 
   const stopPointer = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
   let control: ReactNode;
-  if (readOnly) {
+  if (reading.notShared) {
+    // Referenced but not copied: show the title the share kept, inert. It is
+    // not an error, so it stays quietly muted and never opens a panel.
+    control = (
+      <span
+        data-testid="property-block-value"
+        data-not-shared="true"
+        role="note"
+        className="property-block-value property-block-readonly property-block-not-shared"
+        style={NOT_SHARED_VALUE}
+        title={`${display} \u2014 not shared`}
+        aria-label={`${display} \u2014 not shared`}
+      >
+        {display}
+        <span className="property-block-note" style={NOT_SHARED_NOTE}>
+          {"\u00b7 not shared"}
+        </span>
+      </span>
+    );
+  } else if (readOnly) {
     control = (
       <span
         data-testid="property-block-value"
@@ -259,7 +291,9 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
   const types = useCardTypes();
   const field = card ? fieldFor(card, fieldId, types) : undefined;
   const value = card?.properties[fieldId];
-  const cardLabel = useCardTitle(field?.kind === "card" && typeof value === "string" ? value : "");
+  const linkedCardId = field?.kind === "card" && typeof value === "string" ? value : "";
+  const cardLabel = useCardTitle(linkedCardId);
+  const cardPresence = useCardPresence(linkedCardId);
   const cardTitle = useCardTitle(cardId);
   const typeName =
     types.find((type) => type.id === (card?.primaryTypeId ?? card?.typeIds[0]))?.name ?? "";
@@ -303,6 +337,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
         field={field}
         value={value}
         cardLabel={cardLabel}
+        cardPresence={cardPresence}
         cardTitle={cardTitle}
         typeName={typeName}
         {...(ownDisplay ? { template: ownDisplay } : {})}
@@ -349,7 +384,7 @@ export function PropertyBlockNodeView({ node, extension, getPos, editor }: NodeV
           fieldName={field.name}
           sample={{
             label: field.name,
-            value: propertyBlockDisplayValue(field, value, cardLabel),
+            value: propertyBlockDisplayValue(field, value, cardLabel, cardPresence),
             card: cardTitle,
             type: typeName,
           }}

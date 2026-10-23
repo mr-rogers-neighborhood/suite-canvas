@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Restore one deploy/backup.sh snapshot into the compose `suite-data` volume.
 #
-# Order matters: verify the snapshot, stop `app`, replace the three databases
+# Order matters: verify the snapshot, stop `app`, replace all six databases
 # together, start `app`, then require /health to answer. The volume is left
 # untouched unless the manifest and every integrity_check pass.
 #
@@ -17,18 +17,22 @@
 # Environment:
 #   SUITE_DATA_VOLUME   Docker volume to restore into. Resolved from the `app`
 #                       container, then from compose labels, then `suite_suite-data`.
-#   SUITE_HEALTH_URL    optional URL to curl after the restart, e.g.
-#                       https://canvas.example.com/health. Default: run curl in
-#                       the app container's network namespace (port 1235).
+#   SUITE_HEALTH_URL    optional URL to fetch after the restart, e.g.
+#                       https://canvas.example.com/health. Default: ask the app
+#                       container's own loopback (port 1235) from a helper.
 #   SUITE_RESTORE_IMAGE helper image with a shell (default: alpine:3)
-#   SUITE_CURL_IMAGE    image used for the /health check (default: curlimages/curl:8)
+#   SUITE_HEALTH_IMAGE  helper image with `wget` for the /health check
+#                       (default: alpine:3, which the compose file already pulls)
 #   SUITE_HEALTH_TIMEOUT seconds to wait for health (default: 90)
 #
-# The snapshot holds five stores: documents, shares and workspaces, plus the
-# operator's runtime settings (limit overrides) and the hosted licence claims.
-# The last two matter: restoring without them silently reverts quotas and
-# unlinks paid workspaces from their licence. Snapshots taken before they were
-# added still restore; the missing entries are simply skipped.
+# The snapshot holds six stores: documents, shares and workspaces, plus the
+# operator's runtime settings (limit overrides), the hosted licence claims and
+# the attachment bytes. The last three matter: restoring without them silently
+# reverts quotas, unlinks paid workspaces from their licence, and leaves every
+# image in the documents as a permanent placeholder. Snapshots taken before a
+# store was added still restore; the missing entries are skipped with a warning.
+# A manifest row count or attachment-id checksum that disagrees with the
+# snapshot is a hard failure: an empty database also passes integrity_check.
 set -euo pipefail
 
 usage() {
@@ -74,7 +78,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
 HELPER_IMAGE=${SUITE_RESTORE_IMAGE:-alpine:3}
-CURL_IMAGE=${SUITE_CURL_IMAGE:-curlimages/curl:8}
+HEALTH_IMAGE=${SUITE_HEALTH_IMAGE:-alpine:3}
 HEALTH_TIMEOUT=${SUITE_HEALTH_TIMEOUT:-90}
 
 command -v docker >/dev/null 2>&1 || die "docker is required (the restore replaces a volume)."
@@ -95,6 +99,16 @@ sha256_of() {
   fi
 }
 
+stdin_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | cut -d' ' -f1
+  else
+    printf 'unavailable'
+  fi
+}
+
 integrity_check() {
   local file=$1
   if command -v sqlite3 >/dev/null 2>&1; then
@@ -109,17 +123,23 @@ integrity_check() {
 }
 
 STORES=()
+SKIPPED=()
 while IFS=$'\t' read -r kind name _source bytes checksum; do
   [ "$kind" = "file" ] || continue
   [ "$name" = "name" ] && continue # the manifest's column header
   case "$name" in
-    documents | shares | workspaces | settings | licences) ;;
+    documents | shares | workspaces | settings | licences | attachments) ;;
     *)
       printf 'warning: ignoring unexpected entry "%s" in the manifest\n' "$name" >&2
       continue
       ;;
   esac
   file="$SNAPSHOT/$name.sqlite"
+  if [ "$bytes" = "missing" ]; then
+    printf 'warning: the snapshot has no %s store; it will be left as it is\n' "$name" >&2
+    SKIPPED+=("$name")
+    continue
+  fi
   if [ ! -f "$file" ]; then
     die "the manifest lists $name.sqlite but $file is missing"
   fi
@@ -140,6 +160,69 @@ while IFS=$'\t' read -r kind name _source bytes checksum; do
 done <"$MANIFEST"
 
 [ "${#STORES[@]}" -gt 0 ] || die "the manifest lists no documents, shares or workspaces snapshot."
+
+# ------------------------------------------------- completeness, not readability
+
+# `integrity_check` is happy with an empty file. The manifest's row counts and
+# the attachment-id checksum are what prove the snapshot carries the same data
+# the operator had; a mismatch is a hard failure before anything is written.
+store_for_table() {
+  case "$1" in
+    documents | share_projection_documents) printf 'documents' ;;
+    shares | share_baselines) printf 'shares' ;;
+    workspaces) printf 'workspaces' ;;
+    settings) printf 'settings' ;;
+    workspace_licences) printf 'licences' ;;
+    attachments) printf 'attachments' ;;
+    *) printf '' ;;
+  esac
+}
+
+declare -A EXPECTED_ROWS=()
+EXPECTED_ATTACHMENT_IDS=""
+while IFS=$'\t' read -r kind key value _rest; do
+  case "$kind" in
+    counts)
+      [ "$key" = "table" ] && continue
+      EXPECTED_ROWS["$key"]=$value
+      ;;
+    attachment_ids)
+      [ "$key" = "sha256" ] && EXPECTED_ATTACHMENT_IDS=$value
+      ;;
+  esac
+done <"$MANIFEST"
+
+for table in "${!EXPECTED_ROWS[@]}"; do
+  store=$(store_for_table "$table")
+  [ -n "$store" ] || continue
+  file="$SNAPSHOT/$store.sqlite"
+  [ -f "$file" ] || continue
+  actual=$(sqlite3 "$file" "SELECT COUNT(*) FROM $table;" 2>/dev/null || printf 'absent')
+  [ "$actual" = "absent" ] && continue
+  expected=${EXPECTED_ROWS[$table]}
+  [ "$actual" = "$expected" ] ||
+    die "$table holds $actual rows; the manifest says $expected"
+done
+
+if [ -n "$EXPECTED_ATTACHMENT_IDS" ] &&
+  [ "$EXPECTED_ATTACHMENT_IDS" != "unavailable" ] &&
+  [ "$EXPECTED_ATTACHMENT_IDS" != "missing" ] &&
+  [ -f "$SNAPSHOT/attachments.sqlite" ]; then
+  actual_ids=$(sqlite3 "$SNAPSHOT/attachments.sqlite" "SELECT id FROM attachments ORDER BY id;" 2>/dev/null |
+    stdin_sha256)
+  [ "$actual_ids" = "unavailable" ] || [ "$actual_ids" = "$EXPECTED_ATTACHMENT_IDS" ] ||
+    die "the attachment ids hash to $actual_ids; the manifest says $EXPECTED_ATTACHMENT_IDS"
+  printf '  verified  attachment id set (%s)\n' "$EXPECTED_ATTACHMENT_IDS"
+fi
+
+for name in "${SKIPPED[@]:-}"; do
+  case "$name" in
+    "" ) ;;
+    attachments)
+      printf 'warning: this snapshot has no attachment store; every image in the restored documents will render as a placeholder\n' >&2
+      ;;
+  esac
+done
 
 if [ "$VERIFY_ONLY" = "1" ]; then
   printf 'snapshot  %s is consistent; nothing was written\n' "$SNAPSHOT"
@@ -227,21 +310,27 @@ trap - ERR
 
 # --------------------------------------------------------------------- the check
 
+# A failed fetch must be distinguishable from a slow one: `wget -q -O -`
+# exits non-zero on a 4xx/5xx and prints nothing, exactly like `curl -f`.
+fetch_health() {
+  local url=$1 network=$2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time 5 "$url" 2>/dev/null || true
+    return 0
+  fi
+  docker run --rm --network "$network" "$HEALTH_IMAGE" \
+    wget -q -O - -T 5 "$url" 2>/dev/null || true
+}
+
 elapsed=0
 health=""
 while [ "$elapsed" -lt "$HEALTH_TIMEOUT" ]; do
   if [ -n "${SUITE_HEALTH_URL:-}" ]; then
-    if command -v curl >/dev/null 2>&1; then
-      health=$(curl -fsS --max-time 5 "$SUITE_HEALTH_URL" 2>/dev/null || true)
-    else
-      health=$(docker run --rm --network host "$CURL_IMAGE" \
-        -fsS --max-time 5 "$SUITE_HEALTH_URL" 2>/dev/null || true)
-    fi
+    health=$(fetch_health "$SUITE_HEALTH_URL" host)
   else
     container=$(docker compose ps -q app 2>/dev/null | head -n1 || true)
     if [ -n "$container" ]; then
-      health=$(docker run --rm --network "container:$container" "$CURL_IMAGE" \
-        -fsS --max-time 5 http://127.0.0.1:1235/health 2>/dev/null || true)
+      health=$(fetch_health http://127.0.0.1:1235/health "container:$container")
     fi
   fi
   [ -n "$health" ] && break
@@ -273,7 +362,7 @@ Restore complete. Check next:
   curl -s -H "Authorization: Bearer \$SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/api/admin/status
   docker compose exec app ls -l /data
 
-settings.sqlite (runtime limit overrides) is not part of a snapshot and was
-left untouched; recreate any overrides in the /admin panel if the restore was
-meant to reset them too.
+All six stores were restored together: documents, shares, workspaces, settings,
+licences and attachments. The last three are why the volume is replaced as a
+set — quotas revert, paid workspaces unlink and images break when one is stale.
 EOF

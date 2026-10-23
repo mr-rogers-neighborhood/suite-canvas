@@ -39,6 +39,7 @@ describe("validateConfig", () => {
       workspaces: "suite.workspaces.sqlite",
       settings: null,
       licences: null,
+      attachments: null,
     });
     expect(result.config.tokens).toEqual({ admin: null, projection: null, source: null });
     expect(result.config.hosted).toBe(false);
@@ -109,6 +110,12 @@ describe("validateConfig", () => {
       "SUITE_WORKSPACES_DB",
     ],
     ["an empty settings path", { SUITE_SETTINGS_DB: "" }, "SUITE_SETTINGS_DB"],
+    ["an empty attachment path", { SUITE_ATTACHMENTS_DB: "" }, "SUITE_ATTACHMENTS_DB"],
+    [
+      "attachments sharing the document file",
+      { SUITE_DB: "same.sqlite", SUITE_ATTACHMENTS_DB: "same.sqlite" },
+      "SUITE_ATTACHMENTS_DB",
+    ],
     ["a short admin token", { SUITE_ADMIN_TOKEN: "too-short" }, "SUITE_ADMIN_TOKEN"],
     [
       "a token with a space",

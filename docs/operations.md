@@ -77,12 +77,13 @@ Release flow, in order:
 | `SUITE_MAX_WORKSPACES` | unlimited | Workspaces a licence (hosted) or this instance (self-host) may hold. |
 | `SUITE_DOCUMENT_BYTES_PER_WORKSPACE` | unlimited | Document bytes a workspace may reach before it is marked over quota. |
 | `SUITE_PROJECTION_BYTES_PER_WORKSPACE` | unlimited (`32 MiB` when `SUITE_HOSTED=1`) | Bytes of a workspace's active share projections. |
-| `SUITE_ATTACHMENT_BYTES_PER_WORKSPACE` | unlimited | Reserved for attachments; nothing stores them yet. |
+| `SUITE_ATTACHMENT_BYTES_PER_WORKSPACE` | unlimited | Bytes one workspace's uploaded images may use, checked on every upload. |
 | `SUITE_MAX_SELECTION_CARDS` | `200` | Cards one selection share may include. |
 | `SUITE_DISK_SOFT_BYTES` | unlimited (`4 GiB` when `SUITE_HOSTED=1`) | Document-store size that logs a warning. |
 | `SUITE_DISK_HARD_BYTES` | unlimited (`5 GiB` when `SUITE_HOSTED=1`) | Document-store size that pauses new workspaces. |
-| `SUITE_SETTINGS_DB` | in memory | SQLite file holding runtime limit overrides; set it to survive a restart. |
-| `SUITE_LICENCE_DB` | in memory | SQLite file recording hosted licence claims; set it to survive a restart. |
+| `SUITE_SETTINGS_DB` | `/data/settings.sqlite` in compose; in memory otherwise | SQLite file holding runtime limit overrides; compose puts it on the volume so an override survives a restart. |
+| `SUITE_LICENCE_DB` | `/data/licences.sqlite` in compose; in memory otherwise | SQLite file recording hosted licence claims. |
+| `SUITE_ATTACHMENTS_DB` | `/data/attachments.sqlite` in compose; the working directory otherwise | SQLite file holding every uploaded image's bytes. A document stores only the id, so a lost store means permanent broken images. |
 | `SUITE_CLAIM_RATE_LIMIT` | `600` | Claims per minute per client address. |
 | `SUITE_ROTATE_RATE_LIMIT` | `10` | Owner-key rotations per minute. |
 | `SUITE_SHARE_RESOLVE_RATE_LIMIT` | `300` | Share-token resolutions per minute. |
@@ -90,7 +91,10 @@ Release flow, in order:
 | `SUITE_PUBLISH_RATE_LIMIT` | `20` | Draft publishes per minute. |
 | `SUITE_ADMIN_RATE_LIMIT` | `300` | Admin API requests per minute. |
 
-The database paths are relative to the working directory; `compose.yaml` points them at `/data`.
+Six stores exist in code (`documents`, `shares`, `workspaces`, `settings`, `licences`,
+`attachments`) and `compose.yaml` configures all six on the `suite-data` volume. Standalone paths are
+relative to the working directory; an unset `SUITE_SETTINGS_DB` or `SUITE_LICENCE_DB` is `:memory:`,
+which is disposable by design for a local run and is why compose always names a file.
 
 ### Secrets
 
@@ -131,7 +135,7 @@ What is checked:
 - **Ports** — `PORT` and `HEALTH_PORT` must be whole numbers in 1–65535 and must differ.
 - **Database paths** — `SUITE_DB`, `SUITE_SHARES_DB`, `SUITE_WORKSPACES_DB` must be non-empty, must
   be distinct files (each store needs its own), and must be a regular file when they already exist.
-  `SUITE_SETTINGS_DB` and `SUITE_LICENCE_DB` accept `:memory:`.
+  `SUITE_SETTINGS_DB`, `SUITE_LICENCE_DB` and `SUITE_ATTACHMENTS_DB` accept `:memory:`.
 - **Tokens** — `SUITE_ADMIN_TOKEN`, `SUITE_PROJECTION_TOKEN`, `SUITE_SOURCE_TOKEN` may be unset; when
   set they need at least 16 characters and no whitespace or control characters. The refusal never
   repeats the value.
@@ -505,8 +509,9 @@ file rotation built in.
 
 ## Back it up
 
-`deploy/backup.sh` snapshots the three databases together with the share draft baselines and the
-projected share documents into one timestamped directory:
+`deploy/backup.sh` snapshots all six stores — documents, shares, workspaces, settings, licences and
+attachments — together with the share draft baselines and the projected share documents into one
+timestamped directory:
 
 ```sh
 deploy/backup.sh                 # writes backups/suite-<UTC timestamp>/
@@ -516,33 +521,45 @@ deploy/backup.sh /srv/backups    # or an explicit destination
 What it does, per database: `sqlite3 <db> ".timeout 10000" ".backup '<name>.sqlite'"`, which is
 SQLite's online backup mechanism — consistent while the server runs, and it includes whatever is
 still in the `-wal` file. Each snapshot is then checked with `PRAGMA integrity_check`, hashed with
-SHA-256 and counted into `manifest.txt`:
+SHA-256 and counted into `manifest.txt`, with the payload bytes of every table that stores blobs:
 
 ```
-documents      12684 rows
+documents      12684 rows, 412689055 bytes
 shares           369 rows
-share_baselines  223 rows
+share_baselines  223 rows, 8812340 bytes
 workspaces      2772 rows
+settings           4 rows
+workspace_licences 1 rows
+attachments       57 rows, 23881143 bytes
 ```
 
-Why all three files: share rows, owner-key hashes and document snapshots reference each other.
-Restoring one without the others leaves links or owner keys orphaned. Baselines live in the share
-database (`share_baselines`), projected share rooms in the document database (`…:share-*` keys);
-both are in the snapshot.
+The manifest also records a SHA-256 over the attachment ids in sorted order, so a restore can prove
+it restored the same *set* of images, not merely a readable file:
+
+```
+attachment_ids  sha256  <64 hex characters>
+```
+
+Why all six files: share rows, owner-key hashes and document snapshots reference each other, a
+document holds only an attachment **id**, `settings` holds the operator's runtime quota overrides
+and `workspace_licences` links a paid workspace to its entitlement. Restoring one without the others
+leaves links orphaned, images permanently broken, quotas reverted or a paid customer unentitled.
+Baselines live in the share database (`share_baselines`), projected share rooms in the document
+database (`…:share-*` keys); both are in the snapshot.
 
 Caveats, honestly:
 
-- The three snapshots are taken one after another, not in one cross-file transaction. A share
+- The six snapshots are taken one after another, not in one cross-file transaction. A share
   created in the seconds between them can be missing its projection (fixed by the next projection
   run) and a document saved after its file was copied is one save behind. For a byte-exact
   cross-file point in time, stop `app`, then run the script.
 - `sqlite3` must be installed where you run it. The runtime container image does not include it;
   run the script on the host against a bind mount, or stop `app` and copy the files with `tar`
   (see the README).
-- Backups are unencrypted and contain every workspace in plaintext plus share and owner hashes.
-  Store them encrypted.
-- `SUITE_SETTINGS_DB` (runtime limit overrides) is not one of the three snapshotted stores; a restore
-  reverts any overrides made in the admin panel.
+- Backups are unencrypted and contain every workspace in plaintext, every uploaded image, plus
+  share and owner hashes. Store them encrypted.
+- A snapshot taken before a store was added restores with a warning naming the missing store; it
+  does not silently invent an empty database.
 
 ### Off-host copies
 
@@ -579,7 +596,7 @@ SNAP=backups/suite-20261023T001541Z
 sha256sum "$SNAP"/*.sqlite            # compare with $SNAP/manifest.txt
 sqlite3 "$SNAP/documents.sqlite" "PRAGMA integrity_check;"   # -> ok
 
-# 2. Replace all three files together, in a fresh data directory.
+# 2. Replace all six files together, in a fresh data directory.
 docker run --rm -v suite_suite-data:/data -v "$PWD/$SNAP":/snapshot alpine \
   sh -c 'rm -f /data/*.sqlite /data/*.sqlite-wal /data/*.sqlite-shm && cp /snapshot/*.sqlite /data/'
 
@@ -606,20 +623,24 @@ deploy/restore.sh SNAP --verify-only   # the monthly drill: verify, write nothin
 ```
 
 It resolves the compose volume from the `app` container (`SUITE_DATA_VOLUME` overrides it), checks
-the manifest's sizes and SHA-256, runs `PRAGMA integrity_check` on every file (host `sqlite3`, or a
-throwaway container when the host lacks it), stops `app`, deletes the three main files **and their
-stale `-wal`/`-shm` sidecars**, copies the snapshot in, starts `app`, and waits up to 90 s for
-`/health` (a containerised `curl` in the app's network namespace, or `SUITE_HEALTH_URL`). Anything
-it cannot verify aborts before the volume is touched; a failure after the stop leaves `app` down and
-says so. `settings.sqlite` (runtime limit overrides) is not part of a snapshot and is left in place.
+the manifest's sizes, SHA-256, per-table row counts and the attachment-id checksum, runs
+`PRAGMA integrity_check` on every file (host `sqlite3`, or a throwaway container when the host lacks
+it), stops `app`, deletes the six main files **and their stale `-wal`/`-shm` sidecars**, copies the
+snapshot in, starts `app`, and waits up to 90 s for `/health` (a containerised `curl` in the app's
+network namespace, or `SUITE_HEALTH_URL`). Anything it cannot verify aborts before the volume is
+touched; a failure after the stop leaves `app` down and says so. A store the snapshot does not
+contain is reported and left as it is: an old snapshot restores, but it does not pretend the missing
+store was empty.
 
 The full drill for a deployed host is in
 [deploy-aws.md § Restore drill](./deploy-aws.md#9-restore-drill).
 
-### Drill performed
+### Drills performed
 
-Run against the live development databases while the server was running (SQLite in WAL mode), then
-restored into a scratch directory and read back through the server's own store:
+Two drills, both replayable:
+
+**A six-store integrity drill against the live development databases** (SQLite in WAL mode), restored
+into a scratch directory and read back through the server's own store:
 
 ```sh
 deploy/backup.sh "$PWD/.ops-drill/backups"
@@ -627,15 +648,53 @@ cp .ops-drill/backups/suite-20261023T001541Z/*.sqlite .ops-drill/restored/
 sqlite3 -readonly .ops-drill/restored/documents.sqlite "PRAGMA integrity_check; SELECT COUNT(*) FROM documents;"
 sqlite3 -readonly .ops-drill/restored/shares.sqlite "PRAGMA integrity_check; SELECT COUNT(*) FROM shares; SELECT COUNT(*) FROM share_baselines;"
 sqlite3 -readonly .ops-drill/restored/workspaces.sqlite "PRAGMA integrity_check; SELECT COUNT(*) FROM workspaces;"
+sqlite3 -readonly .ops-drill/restored/settings.sqlite "PRAGMA integrity_check; SELECT COUNT(*) FROM settings;"
+sqlite3 -readonly .ops-drill/restored/licences.sqlite "PRAGMA integrity_check; SELECT COUNT(*) FROM workspace_licences;"
+sqlite3 -readonly .ops-drill/restored/attachments.sqlite "PRAGMA integrity_check; SELECT COUNT(*), COALESCE(SUM(size), 0) FROM attachments;"
 ```
 
-Result: all three `integrity_check`s returned `ok`; counts matched the live databases
+Result: every `integrity_check` returned `ok`; counts matched the live databases
 (12,685 documents including 299 share projections, 369 shares, 223 baselines, 2,773 owner rows).
 Reading the restored files through `createDocumentStore` and `WorkspaceDocument` parsed
 `%LOR:default-workspace` (3 cards, 1 board, schema v4) and a `share-*` projection (2 cards); the
 largest draft baseline (176,118 bytes) also parsed. A separate check with 50 rows living only in an
 uncheckpointed `-wal` file (4 KB main file) restored all 50 rows from the snapshot, confirming
 `.backup` drains the WAL.
+
+**The composed attachments drill** — the deployment half, which no unit test can cover:
+
+```sh
+deploy/drills/attachments.sh --record deploy/drills/attachments-record.md
+```
+
+It starts the composed `app` on a scratch project, uploads a 24 KiB image, reads the bytes back,
+recreates the container (`docker compose up -d --force-recreate app`), reads the same sha256 again,
+backs the volume up with `deploy/backup.sh`, restores the snapshot into a second scratch volume with
+`deploy/restore.sh`, and reads the bytes back a third time. The record is in
+[`deploy/drills/attachments-record.md`](../deploy/drills/attachments-record.md); the script and its
+record template are documented in [`deploy/drills/README.md`](../deploy/drills/README.md).
+
+### Upgrade policy
+
+The stores and the document blobs carry an explicit version, and a build only ever reads what it
+can prove it understands.
+
+- **Schema bumps are explicit.** Adding a column is its own commit: the new DDL, the migration that
+  fills it (`migrateShareColumns`, `migrateSettingsColumns`, `migrateLicenceColumns`), an N−1 fixture
+  in `apps/collab-server/src/fixtures/n-1/`, and a test that opens it. Nothing is added by accident.
+- **A blob carries a format tag.** Every stored snapshot starts with `loro-snapshot-v1` and a
+  newline. Untagged blobs are the pre-tag format and are read as v1 — passed through untouched, not
+  rewritten. A tag this build does not know throws `UnsupportedStoreVersionError` naming both
+  versions, so a downgrade fails loudly instead of importing a document it may truncate.
+- **A newer store refuses to open.** `PRAGMA user_version` records the store schema
+  (`DOCUMENT_STORE_SCHEMA`). A file above it is refused at boot, with the same error and the same
+  advice: upgrade the binary, or restore a backup taken on this build.
+- **No silent backfill.** Reading a document rewrites nothing. The only derived value is the
+  `session`/`updated_at`-style column a documented migration fills, and the store version stamp
+  itself, which records what this build just opened.
+
+The fixtures and the exact expectations are in
+[`apps/collab-server/src/fixtures/n-1/README.md`](../apps/collab-server/src/fixtures/n-1/README.md).
 
 ## Tune it
 
@@ -665,7 +724,7 @@ links**.
 | Workspaces | `SUITE_MAX_WORKSPACES` | unlimited | the licence's `workspaces` | New workspace refused `429` `workspace-limit` |
 | Document bytes per workspace | `SUITE_DOCUMENT_BYTES_PER_WORKSPACE` | unlimited | the licence's `documentBytes` | Workspace marked over quota: saves keep working, new shares refused `409` |
 | Projection bytes per workspace | `SUITE_PROJECTION_BYTES_PER_WORKSPACE` | unlimited | 32 MiB | New share refused `507` |
-| Attachment bytes per workspace | `SUITE_ATTACHMENT_BYTES_PER_WORKSPACE` | unlimited | the licence's `attachmentBytes` | Reserved; enforced when attachments land |
+| Attachment bytes per workspace | `SUITE_ATTACHMENT_BYTES_PER_WORKSPACE` | unlimited | the licence's `attachmentBytes` | Enforced on upload (`attachments.ts`) |
 | Active shares per workspace | `SUITE_MAX_SHARES_PER_WORKSPACE` | 100 | 100 | New share refused `409` |
 | Cards per selection share | `SUITE_MAX_SELECTION_CARDS` | 200 | 200 | Selection share refused `400` |
 | Disk soft watermark | `SUITE_DISK_SOFT_BYTES` | unlimited | 4 GiB | New workspace allowed, one warning logged |

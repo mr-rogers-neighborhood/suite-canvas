@@ -22,7 +22,13 @@ export interface ConfigProblem {
   message: string;
 }
 
-export type DatabaseName = "documents" | "shares" | "workspaces" | "settings" | "licences";
+export type DatabaseName =
+  | "documents"
+  | "shares"
+  | "workspaces"
+  | "settings"
+  | "licences"
+  | "attachments";
 
 export interface ServerConfig {
   /** Version stamp: `SUITE_VERSION` when the image bakes one, else `package.json`. */
@@ -36,6 +42,7 @@ export interface ServerConfig {
     workspaces: string;
     settings: string | null;
     licences: string | null;
+    attachments: string | null;
   };
   /** Configured credentials; `null` means the feature is off or generated. */
   tokens: { admin: string | null; projection: string | null; source: string | null };
@@ -77,6 +84,7 @@ export const DATABASE_ENV = {
   workspaces: "SUITE_WORKSPACES_DB",
   settings: "SUITE_SETTINGS_DB",
   licences: "SUITE_LICENCE_DB",
+  attachments: "SUITE_ATTACHMENTS_DB",
 } as const satisfies Record<DatabaseName, string>;
 
 /** Fixed windows from `rateLimit.ts`; only their per-minute limits are read here. */
@@ -427,7 +435,7 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
     readPaths[name] = read.value;
     problems.push(...read.problems);
   }
-  for (const name of ["settings", "licences"] as const) {
+  for (const name of ["settings", "licences", "attachments"] as const) {
     const read = databasePath(env, name, null);
     readPaths[name] = read.value;
     problems.push(...read.problems);
@@ -505,6 +513,7 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
         workspaces: readPaths.workspaces ?? DEFAULT_DATABASE_PATHS.workspaces,
         settings: readPaths.settings,
         licences: readPaths.licences,
+        attachments: readPaths.attachments,
       },
       tokens: {
         admin: admin.value,

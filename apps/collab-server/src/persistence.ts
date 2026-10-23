@@ -7,6 +7,84 @@ import { createLogger } from "./logging.js";
  */
 export const OPTIMIZE_INTERVAL_MS = 60 * 60 * 1000;
 
+/**
+ * Format tag every stored snapshot blob starts with, followed by a newline and
+ * the Loro bytes. Documents written before the tag existed have no prefix and
+ * are read as v1 — that is a format decision, not a migration: the bytes are
+ * passed through unchanged and nothing is rewritten on read.
+ *
+ * Changing the tag is an explicit, reviewable commit plus a fixture in
+ * `src/fixtures/n-1/`. `decodeSnapshot` refuses a tag it does not know instead
+ * of guessing: a newer server may store shapes this build would silently drop.
+ */
+export const SNAPSHOT_FORMAT_TAG = "loro-snapshot-v1";
+
+/** Prefix shared by every tag, so an unknown version is recognised as one. */
+const SNAPSHOT_TAG_MAGIC = "loro-snapshot-";
+
+/** A tag line is short; anything longer is a legacy blob that happens to start with it. */
+const MAX_TAG_LENGTH = 64;
+
+const TAG_PREFIX = new TextEncoder().encode(`${SNAPSHOT_FORMAT_TAG}\n`);
+const MAGIC_PREFIX = new TextEncoder().encode(SNAPSHOT_TAG_MAGIC);
+
+/**
+ * The schema version this build writes into `PRAGMA user_version`. A store from
+ * a *newer* build refuses to open; an older or unstamped store opens as-is.
+ * Bumping this number is an explicit change that ships with a migration and an
+ * N−1 fixture — never an implicit side effect of `CREATE TABLE IF NOT EXISTS`.
+ */
+export const DOCUMENT_STORE_SCHEMA = 1;
+
+/** A blob or database written by a newer build than this one. */
+export class UnsupportedStoreVersionError extends Error {
+  readonly reason = "unsupported-store-version";
+
+  constructor(
+    readonly found: number | string,
+    readonly supported: number | string,
+  ) {
+    super(
+      `This store was written by a newer Suite build (${String(found)}; this build reads ${String(supported)}). Refusing to open it: a newer format may carry data this build would drop. Upgrade the server, or restore from a backup taken on this build.`,
+    );
+    this.name = "UnsupportedStoreVersionError";
+  }
+}
+
+/** Reads the tag off a stored blob, or null when it is a legacy untagged blob. */
+function snapshotTag(stored: Uint8Array): string | null {
+  const limit = Math.min(stored.byteLength, MAX_TAG_LENGTH);
+  for (let index = 0; index < limit; index += 1) {
+    if (stored[index] === 0x0a) {
+      const head = stored.subarray(0, index);
+      for (let offset = 0; offset < MAGIC_PREFIX.byteLength; offset += 1) {
+        if (head[offset] !== MAGIC_PREFIX[offset]) return null;
+      }
+      return new TextDecoder().decode(head);
+    }
+  }
+  return null;
+}
+
+/** Prefixes a Loro snapshot with the format tag. */
+export function encodeSnapshot(bytes: Uint8Array): Uint8Array {
+  const tagged = new Uint8Array(TAG_PREFIX.byteLength + bytes.byteLength);
+  tagged.set(TAG_PREFIX, 0);
+  tagged.set(bytes, TAG_PREFIX.byteLength);
+  return tagged;
+}
+
+/**
+ * Strips the format tag, or returns an untagged legacy blob unchanged. Throws
+ * `UnsupportedStoreVersionError` for a tag this build does not know.
+ */
+export function decodeSnapshot(stored: Uint8Array): Uint8Array {
+  const tag = snapshotTag(stored);
+  if (tag === null) return new Uint8Array(stored);
+  if (tag !== SNAPSHOT_FORMAT_TAG) throw new UnsupportedStoreVersionError(tag, SNAPSHOT_FORMAT_TAG);
+  return stored.slice(TAG_PREFIX.byteLength);
+}
+
 const logger = createLogger().child({ component: "sqlite" });
 
 export interface DocumentStore {
@@ -86,6 +164,7 @@ interface PragmaRow {
 export function configureSqlite(path: string): string {
   const db = new DatabaseSync(path);
   try {
+    db.exec("PRAGMA busy_timeout = 5000");
     const row = db.prepare("PRAGMA journal_mode = WAL").get() as PragmaRow | undefined;
     db.exec("PRAGMA optimize");
     return row?.journal_mode ?? "unknown";
@@ -103,9 +182,20 @@ export function createDocumentStore(
   path: string,
 ): DocumentStore & DocumentInventory & DocumentMaintenance {
   const db = new DatabaseSync(path);
+  // A second connection (an admin command, a backup script) waits for the
+  // writer instead of failing with SQLITE_BUSY.
+  db.exec("PRAGMA busy_timeout = 5000");
   // One writer at a time with readers: WAL lets the HTTP side read while a room
   // save is in flight, and survives a crash without losing committed saves.
   const journal = db.prepare("PRAGMA journal_mode = WAL").get() as PragmaRow | undefined;
+  const storeVersion = Number(
+    (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+      ?.user_version ?? 0,
+  );
+  if (storeVersion > DOCUMENT_STORE_SCHEMA) {
+    db.close();
+    throw new UnsupportedStoreVersionError(storeVersion, DOCUMENT_STORE_SCHEMA);
+  }
   db.exec(
     `CREATE TABLE IF NOT EXISTS documents (
        name TEXT PRIMARY KEY,
@@ -113,6 +203,11 @@ export function createDocumentStore(
        updated_at INTEGER NOT NULL
      )`,
   );
+  // Stamping the version records what this build just opened. It rewrites no
+  // row and backfills no column: an older database is read exactly as it is.
+  if (storeVersion < DOCUMENT_STORE_SCHEMA) {
+    db.exec(`PRAGMA user_version = ${DOCUMENT_STORE_SCHEMA}`);
+  }
   // Collected statistics are refreshed on open and hourly; see `maintenance`.
   db.exec("PRAGMA optimize");
 
@@ -122,7 +217,16 @@ export function createDocumentStore(
      ON CONFLICT(name) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at`,
   );
   const remove = db.prepare("DELETE FROM documents WHERE name = ?");
-  const listAll = db.prepare("SELECT name, length(state) AS bytes, updated_at FROM documents");
+  // `bytes` is the document, not the container: the format tag is subtracted so
+  // a per-workspace budget does not move when the tag is introduced. `hex()`
+  // keeps the comparison a text-to-text one; a BLOB never equals a TEXT pattern.
+  const tagHex = Buffer.from(TAG_PREFIX).toString("hex").toUpperCase();
+  const listAll = db.prepare(
+    `SELECT name,
+            length(state) - CASE WHEN substr(hex(state), 1, ?) = ? THEN ? ELSE 0 END AS bytes,
+            updated_at
+       FROM documents`,
+  );
   const countAll = db.prepare("SELECT COUNT(*) AS count FROM documents");
   const pageCount = db.prepare("PRAGMA page_count");
   const pageSize = db.prepare("PRAGMA page_size");
@@ -142,16 +246,22 @@ export function createDocumentStore(
   return {
     load: (name) => {
       const row = select.get(name) as { state?: Uint8Array } | undefined;
-      return row?.state ? new Uint8Array(row.state) : null;
+      return row?.state ? decodeSnapshot(new Uint8Array(row.state)) : null;
     },
     save: (name, state) => {
-      upsert.run(name, state, Date.now());
+      upsert.run(name, encodeSnapshot(state), Date.now());
     },
     delete: (name) => {
       remove.run(name);
     },
     list: () =>
-      (listAll.all() as unknown as DocumentRow[]).map((row) => ({
+      (
+        listAll.all(
+          String(tagHex.length),
+          tagHex,
+          String(TAG_PREFIX.byteLength),
+        ) as unknown as DocumentRow[]
+      ).map((row) => ({
         name: row.name,
         bytes: Number(row.bytes),
         updatedAt: Number(row.updated_at),

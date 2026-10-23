@@ -1,6 +1,6 @@
-# One deployment for a hosted instance and for self-hosting. `app` owns the
-# three SQLite files in the `suite-data` volume; `caddy` terminates TLS, serves
-# the built canvas and proxies the API and WebSocket to `app`.
+# One deployment for a hosted instance and for self-hosting. `app` owns all six
+# SQLite files in the `suite-data` volume; `caddy` terminates TLS, serves the
+# built canvas and proxies the API and WebSocket to `app`.
 #
 # Run with: cp .env.example .env && docker compose up -d --build
 # A real deployment (instance sizing, EBS, Cloudflare, backups) is
@@ -32,13 +32,19 @@ services:
       NODE_ENV: production
       PORT: "1234"
       HEALTH_PORT: "1235"
-      # The three stores that must survive; the two optional stores default to
-      # memory and are set only when the operator wants them on disk.
-      SUITE_DB: /data/documents.sqlite
-      SUITE_SHARES_DB: /data/shares.sqlite
-      SUITE_WORKSPACES_DB: /data/workspaces.sqlite
-      SUITE_SETTINGS_DB: "${SUITE_SETTINGS_DB:-:memory:}"
-      SUITE_LICENCE_DB: "${SUITE_LICENCE_DB:-:memory:}"
+      # Six stores exist in code and all six are configured here, on the
+      # `suite-data` volume. Attachments used to default to the process working
+      # directory and settings/licences to `:memory:`, so a container recreate
+      # lost images, quota overrides and licence claims. Do not point any of
+      # these at a path outside /data: the volume is what a backup and a restore
+      # swap out. Setting one to `:memory:` is accepted by the server but makes
+      # that store disposable.
+      SUITE_DB: ${SUITE_DB:-/data/documents.sqlite}
+      SUITE_SHARES_DB: ${SUITE_SHARES_DB:-/data/shares.sqlite}
+      SUITE_WORKSPACES_DB: ${SUITE_WORKSPACES_DB:-/data/workspaces.sqlite}
+      SUITE_SETTINGS_DB: ${SUITE_SETTINGS_DB:-/data/settings.sqlite}
+      SUITE_LICENCE_DB: ${SUITE_LICENCE_DB:-/data/licences.sqlite}
+      SUITE_ATTACHMENTS_DB: ${SUITE_ATTACHMENTS_DB:-/data/attachments.sqlite}
       # Credentials and switches. Empty tokens are the documented defaults:
       # admin API off, worker tokens generated per start, self-host mode.
       SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}

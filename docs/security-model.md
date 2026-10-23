@@ -41,6 +41,10 @@ boards, schema, trash or links.
 - **Documents are plaintext.** SQLite stores the full Loro snapshot of every workspace and every
   projected share room. The server process can read all cards, boards and content. There is no
   end-to-end encryption.
+- **Attachment bytes are plaintext too.** Uploaded images live in their own store beside the
+  documents, protected only by a 128-bit unguessable id: anyone holding the id can read the bytes,
+  and the operator can read all of them. An SVG or HTML upload is refused precisely because a
+  served attachment must never be executable content.
 - **Credentials are hashed.** Owner keys and share tokens are stored as SHA-256 hashes, never in
   plaintext. A stolen database does not directly hand out working credentials.
 - **A live socket keeps its credential in memory.** The relay's revoke path has to decide *which*
@@ -69,8 +73,9 @@ boards, schema, trash or links.
   revocation timestamps, and the IP addresses seen by the server or its proxy are visible to the
   operator. Last-used is coarse (one write a minute at most) and only says a link was opened, not
   by whom.
-- **Backups are unencrypted.** The three SQLite files and `.suite` exports contain the same
-  plaintext documents and are not encrypted by Suite.
+- **Backups are unencrypted.** All six SQLite stores and `.suite` exports contain the same
+  plaintext documents, every uploaded image, and the licence and quota bookkeeping, and are not
+  encrypted by Suite.
 
 ## Sharing risks
 
@@ -118,10 +123,15 @@ boards, schema, trash or links.
   port. Use one same-origin deployment where possible; allowlist CORS instead of `*`.
 - **Encrypt the host disk and backups.** SQLite has no encryption at rest in Suite. Use an
   encrypted volume for the data directory, and encrypt off-site backups.
-- **Back up all three databases together.** Documents, shares and owner hashes are separate SQLite
-  files. Copy them while the server is stopped (or with a consistent SQLite backup) and include any
-  `-wal`/`-shm` sidecars. A mixed backup can pair documents with the wrong share or owner rows.
-  Restore into a fresh volume, and do not put these files on a network filesystem.
+- **Back up all six stores together.** Six stores exist in code (`documents`, `shares`,
+  `workspaces`, `settings`, `licences`, `attachments`) and `compose.yaml` writes all six to
+  `/data`. Documents, shares, owner hashes, quota overrides, licence claims and attachment bytes are
+  separate files. Copy them while the server is stopped (or use `deploy/backup.sh`, which takes a
+  consistent SQLite backup of each) and include any `-wal`/`-shm` sidecars. A mixed backup can pair
+  documents with the wrong share rows, and one that omits `attachments` leaves every image as a
+  permanent placeholder: the document stores only an id, so the bytes are unrecoverable from the
+  text. Restore into a fresh volume with `deploy/restore.sh`, and do not put these files on a
+  network filesystem.
 - **Run a single instance.** Rooms, presence, projection state and rate-limit counters live in one
   Node process, and SQLite is local to it. There is no Redis/Postgres, no shared lock and no
   multi-replica mode. Restarting the process drops live sockets, not documents.

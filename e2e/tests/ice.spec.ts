@@ -87,4 +87,39 @@ test.describe("ICE demo surface", () => {
       await browser.close();
     }
   });
+
+  test("projects the Suite example into the desk", async () => {
+    test.setTimeout(120_000);
+
+    const testInfo = test.info();
+    const origin = testInfo.project.use.baseURL ?? "http://localhost:5173";
+    const browser = await launchChrome();
+    const context = await browser.newContext({
+      baseURL: origin,
+      viewport: { width: 1280, height: 900 },
+    });
+    const page = await context.newPage();
+
+    try {
+      await page.goto("/ice.html?demo=suite");
+      await expect(page.getByTestId("ice-status")).toHaveText("engine: ready", { timeout: 60_000 });
+      await expect(page.getByTestId("ice-seed")).toHaveText("20/20 objects seeded");
+      await expect(page.getByTestId("ice-demo-summary")).toHaveText(
+        "Suite demo: 20 objects / 3 boards",
+      );
+      await expect(page.locator('[data-testid="ice-surface"] canvas').first()).toBeVisible();
+      console.log(`ICE Suite adapter: ${await page.getByTestId("ice-adapter").innerText()}`);
+    } catch (error) {
+      const path = testInfo.outputPath("ice-suite-failure.png");
+      const captured = await page
+        .screenshot({ path, fullPage: true })
+        .then(() => true)
+        .catch(() => false);
+      if (captured) await testInfo.attach("ice-suite-failure", { path, contentType: "image/png" });
+      throw error;
+    } finally {
+      await context.close();
+      await browser.close();
+    }
+  });
 });

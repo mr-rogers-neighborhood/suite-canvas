@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IceSurface } from "./IceSurface";
+import { demoModeFromSearch, IceSurface } from "./IceSurface";
 
 /**
  * The ICE modules are mocked so the wiring (detection, adapter reporting,
@@ -114,6 +114,7 @@ function stubClipboard(writeText: (text: string) => Promise<void>): void {
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState({}, "", "/");
   Reflect.deleteProperty(navigator, "gpu");
   Reflect.deleteProperty(navigator, "clipboard");
   ice.layerStatus.current = { state: "ready" };
@@ -242,7 +243,7 @@ describe("IceSurface", () => {
     expect(await screen.findByTestId("ice-seed-failures")).toHaveTextContent("desk.board");
     expect(screen.getByTestId("ice-seed-failures")).toHaveTextContent("no board today");
     expect(screen.getByTestId("ice-seed")).toHaveTextContent("9/10 objects seeded");
-    expect(screen.getByText("engine: ready")).toBeInTheDocument();
+    expect(await screen.findByText("engine: ready")).toBeInTheDocument();
   });
 
   it("should keep a degraded desk mounted and say so in the HUD", async () => {
@@ -378,5 +379,74 @@ describe("IceSurface", () => {
     );
     expect(ice.createCanvasEngine).not.toHaveBeenCalled();
     expect(ice.destroyDevice).not.toHaveBeenCalled();
+  });
+
+  it("should read the demo choice from the query string", () => {
+    expect(demoModeFromSearch("?demo=suite")).toBe("suite");
+    expect(demoModeFromSearch("?canvas=ice&demo=suite")).toBe("suite");
+    expect(demoModeFromSearch("?canvas=ice")).toBe("native");
+    expect(demoModeFromSearch("?demo=native")).toBe("native");
+  });
+
+  it("should switch to the Suite demo, reseed and tear the native desk down", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    const view = render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-demo-native")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent("Native demo: 10 objects");
+    expect(ice.spawnWidget).toHaveBeenCalledTimes(10);
+
+    fireEvent.click(screen.getByTestId("ice-demo-suite"));
+
+    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(30));
+    expect(ice.createCanvasEngine).toHaveBeenCalledTimes(2);
+    expect(ice.close).toHaveBeenCalledTimes(1);
+    expect(ice.dispose).toHaveBeenCalledTimes(1);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(1);
+
+    expect(await screen.findByText("engine: ready")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-demo-suite")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("ice-demo-native")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
+      "Suite demo: 20 objects / 3 boards",
+    );
+    expect(screen.getByTestId("ice-seed")).toHaveTextContent("20/20 objects seeded");
+    expect(screen.getByTestId("ice-demo-skipped")).toHaveTextContent("skipped: 2 cycle, 5 section");
+
+    const suiteTypes = ice.spawnWidget.mock.calls.slice(10).map(([type]) => type);
+    expect(suiteTypes.filter((type) => type === "desk.note")).toHaveLength(17);
+    expect(suiteTypes.filter((type) => type === "desk.minimat")).toHaveLength(3);
+    expect(ice.step).toHaveBeenCalledTimes(3 + 4);
+
+    // Switching back is another reset, with the native count again.
+    fireEvent.click(screen.getByTestId("ice-demo-native"));
+    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(40));
+    expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent("Native demo: 10 objects");
+    expect(screen.queryByTestId("ice-demo-skipped")).not.toBeInTheDocument();
+    expect(ice.close).toHaveBeenCalledTimes(2);
+
+    view.unmount();
+    expect(ice.close).toHaveBeenCalledTimes(3);
+    expect(ice.dispose).toHaveBeenCalledTimes(3);
+    expect(ice.destroyDevice).toHaveBeenCalledTimes(3);
+  });
+
+  it("should open the Suite demo directly when ?demo=suite is in the URL", async () => {
+    window.history.replaceState({}, "", "/ice.html?demo=suite");
+    stubGpu({ requestAdapter: async () => ADAPTER });
+
+    render(<IceSurface />);
+
+    expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
+    expect(screen.getByTestId("ice-demo-suite")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("ice-demo-native")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
+      "Suite demo: 20 objects / 3 boards",
+    );
+    expect(ice.spawnWidget).toHaveBeenCalledTimes(20);
+    expect(ice.spawnWidget.mock.calls.some(([type]) => type === "desk.board")).toBe(false);
+    expect(screen.getByTestId("ice-hud")).toHaveTextContent("not document truth");
   });
 });

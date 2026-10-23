@@ -2,10 +2,19 @@
  * The ICE demo surface — `?canvas=ice` (ADR-0032 amendment, 2026-10-23).
  *
  * EXPERIMENTAL, NOT DOCUMENT TRUTH. This surface mounts a private, in-memory
- * `@vibecook/ice` desk seeded with ten objects: six notes (four loose, one
- * inside each mini mat), two mini mats, a whiteboard and a notebook. It never
- * reads or writes Suite's graph. The default canvas and `?canvas=scene` remain
- * the only real surfaces.
+ * `@vibecook/ice` desk and seeds it from one of two demos:
+ *
+ * - **Native demo** (default): ten ICE-native objects — six notes (four loose,
+ *   one inside each mini mat), two mini mats, a whiteboard and a notebook.
+ * - **Suite demo** (`?demo=suite`): a one-way, read-only projection of the
+ *   example workspace's graph into the same native note and mini-mat kinds, so
+ *   the counts line up with the scene surface. `suiteProjection.ts` owns the
+ *   mapping; this file only spawns it.
+ *
+ * Neither demo reads or writes Suite's graph: the projection builds a
+ * throwaway in-memory document, and no workspace write, provider or owner key
+ * is involved. The default canvas and `?canvas=scene` remain the only real
+ * surfaces.
  *
  * Route contract: `App` mounts this only when `currentCanvasSurface()` returns
  * `"ice"`, behind `lazy(() => import("./ice/IceSurface"))`, so the default
@@ -40,6 +49,7 @@ import type {
   EngineProvider as IceEngineProvider,
 } from "@vibecook/ice/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildSuiteSeed, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
 
 const NOTE_TYPE = "desk.note";
@@ -47,6 +57,21 @@ const MINIMAT_TYPE = "desk.minimat";
 const BOARD_TYPE = "desk.board";
 const NOTEBOOK_TYPE = "desk.notebook";
 const DEMO_SEED_COUNT = 10;
+/** Which demo the desk seeds. Selected by `?demo=suite`; Native is the default. */
+type DemoMode = "native" | "suite";
+const DEMO_PARAM = "demo";
+
+/**
+ * Reads the demo choice from a query string. The ICE route keeps its other
+ * parameters (`canvas`, workspace id), so the toggle never rewrites the URL.
+ */
+export function demoModeFromSearch(search: string): DemoMode {
+  return new URLSearchParams(search).get(DEMO_PARAM) === "suite" ? "suite" : "native";
+}
+
+function demoLabel(mode: DemoMode): string {
+  return mode === "suite" ? "Suite demo" : "Native demo";
+}
 /**
  * A discarded StrictMode mount tears its own device down and reports it lost.
  * A real loss is not undone by a fresh mount, so the report waits long enough
@@ -89,12 +114,24 @@ interface AdapterSummary {
 }
 
 interface SeedReport {
+  readonly mode: DemoMode;
+  readonly label: string;
   readonly seeded: number;
   readonly total: number;
   readonly kinds: readonly string[];
   readonly failures: readonly string[];
   /** The entities that did spawn — what the camera frames on the first mount. */
   readonly entities: readonly Entity[];
+  /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
+  readonly boards: number;
+  /** Things the seed deliberately did not map (cycles, depth caps, sections). */
+  readonly skipped: readonly SeedSkip[];
+}
+
+/** One omitted entity, kept as a reason plus a human-readable detail. */
+interface SeedSkip {
+  readonly reason: string;
+  readonly detail: string;
 }
 
 interface LoadedIce {
@@ -238,9 +275,11 @@ function diagnosticsText(input: {
     `phase: ${phase.kind}`,
     engineLine(phase, engineState),
     adapterLine(phase),
+    seed === null ? "demo: not seeded" : `demo: ${seed.label} (${seed.mode})`,
     seed === null
       ? "seeded: none"
       : `seeded: ${seed.seeded}/${seed.total} — ${countKinds(seed.kinds) || "no kinds"}`,
+    seed === null ? "boards: —" : `boards: ${seed.boards}`,
     `fps: ${fps === null ? "not sampled" : fps}`,
   ];
   if (adapter !== undefined) {
@@ -255,7 +294,20 @@ function diagnosticsText(input: {
   if (seed !== null && seed.failures.length > 0) {
     lines.push("seed failures:", ...seed.failures.map((failure) => `- ${failure}`));
   }
+  if (seed !== null && seed.skipped.length > 0) {
+    lines.push("skipped:", ...seed.skipped.map((skip) => `- ${skip.reason}: ${skip.detail}`));
+  }
   return lines.join("\n");
+}
+
+/** `2 cycle, 4 section` — the HUD's one-line tally of what was refused. */
+function skipTally(skipped: readonly SeedSkip[]): string {
+  const counts = new Map<string, number>();
+  for (const skip of skipped) counts.set(skip.reason, (counts.get(skip.reason) ?? 0) + 1);
+  return [...counts]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(", ");
 }
 
 /**
@@ -385,7 +437,59 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
 
   project();
 
-  return { seeded, total: DEMO_SEED_COUNT, kinds, failures, entities };
+  return {
+    mode: "native",
+    label: demoLabel("native"),
+    seeded,
+    total: DEMO_SEED_COUNT,
+    kinds,
+    failures,
+    entities,
+    boards: 0,
+    skipped: [],
+  };
+}
+
+/**
+ * Projects the example Suite graph into native ICE notes and mini mats and
+ * spawns it. The projection is pure and read-only; this adapter is the only
+ * place the two engines meet.
+ */
+function seedSuiteDocument(engine: CanvasEngine): SeedReport {
+  let seed: ReturnType<typeof buildSuiteSeed>;
+  try {
+    seed = buildSuiteSeed();
+  } catch (error) {
+    return {
+      mode: "suite",
+      label: demoLabel("suite"),
+      seeded: 0,
+      total: 0,
+      kinds: [],
+      failures: [`suite projection: ${describeError(error)}`],
+      entities: [],
+      boards: 0,
+      skipped: [],
+    };
+  }
+
+  const report = spawnIceSuite<Entity>(seed, {
+    spawn: (type, opts) => engine.ops.spawnWidget(type, { ...opts, undoable: false }),
+    project: () => engine.step(performance.now()),
+  });
+
+  return {
+    mode: "suite",
+    label: demoLabel("suite"),
+    seeded: report.seeded,
+    total: seed.objects.length,
+    kinds: report.kinds,
+    failures: report.failures,
+    entities: [...report.objects.values()],
+    // Boards are counted by identity: the same board can open in several mats.
+    boards: new Set(seed.boards.map((board) => board.id)).size,
+    skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
+  };
 }
 
 export interface IceSurfaceFallbackProps {
@@ -426,6 +530,9 @@ export interface IceSurfaceProps {
 }
 
 export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
+  const [mode, setMode] = useState<DemoMode>(() =>
+    demoModeFromSearch(typeof window === "undefined" ? "" : window.location.search),
+  );
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
   const [engineState, setEngineState] = useState<EngineState | null>(null);
   const [seed, setSeed] = useState<SeedReport | null>(null);
@@ -547,7 +654,7 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
         const doc = engine.docs.create();
         owned.current = { engine, doc, gpu };
 
-        const report = seedDemoDocument(engine);
+        const report = mode === "suite" ? seedSuiteDocument(engine) : seedDemoDocument(engine);
         seededEntities.current = report.entities;
         const layer = desk.deskLayer({
           theme: objects.deskTheme("light"),
@@ -584,7 +691,7 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
       cancelled = true;
       teardown();
     };
-  }, [runId, teardown]);
+  }, [mode, runId, teardown]);
 
   // A desk that reported `failed` is replaced by the fallback, so its engine
   // is released here rather than held until the route changes.
@@ -672,6 +779,16 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
     clearPendingFit();
     setRunId((id) => id + 1);
   }, [clearPendingFit]);
+
+  /** Switching demos is a Reset: the desk, document and device are rebuilt. */
+  const chooseDemo = useCallback(
+    (next: DemoMode) => {
+      if (next === mode) return;
+      setMode(next);
+      resetDemo();
+    },
+    [mode, resetDemo],
+  );
 
   const copyDiagnostics = useCallback(async (): Promise<void> => {
     const text = diagnosticsText({ phase, engineState, seed, fps });
@@ -763,9 +880,46 @@ export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
         <span className="ice-surface__badge-meta" data-testid="ice-phase">
           phase: {phase.kind}
         </span>
+        <fieldset className="ice-surface__modes" data-testid="ice-demo-modes">
+          <legend>Demo seed</legend>
+          <button
+            type="button"
+            className="ice-surface__button"
+            data-testid="ice-demo-native"
+            aria-pressed={mode === "native"}
+            onClick={() => chooseDemo("native")}
+          >
+            Native demo
+          </button>
+          <button
+            type="button"
+            className="ice-surface__button"
+            data-testid="ice-demo-suite"
+            aria-pressed={mode === "suite"}
+            onClick={() => chooseDemo("suite")}
+          >
+            Suite demo
+          </button>
+        </fieldset>
+        <span className="ice-surface__badge-seed" data-testid="ice-demo-summary" aria-live="polite">
+          {seed === null
+            ? `${demoLabel(mode)}: not seeded`
+            : seed.mode === "suite"
+              ? `Suite demo: ${seed.seeded} objects / ${seed.boards} boards`
+              : `Native demo: ${seed.seeded} objects`}
+        </span>
         <span className="ice-surface__badge-seed" data-testid="ice-seed">
           {seed === null ? "seeded: —" : `${seed.seeded}/${seed.total} objects seeded`}
         </span>
+        {seed !== null && seed.skipped.length > 0 ? (
+          <span
+            className="ice-surface__badge-meta"
+            data-testid="ice-demo-skipped"
+            title={seed.skipped.map((skip) => `${skip.reason}: ${skip.detail}`).join("\n")}
+          >
+            skipped: {skipTally(seed.skipped)}
+          </span>
+        ) : null}
         <span
           className="ice-surface__badge-meta"
           data-testid="ice-adapter"

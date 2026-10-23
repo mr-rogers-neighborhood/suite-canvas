@@ -21,10 +21,11 @@ const meta = {
     docs: {
       description: {
         component:
-          "`?canvas=ice` mounts a private, in-memory ICE desk seeded with notes, mini mats, " +
-          "a whiteboard and a notebook. It is experimental and never reads or writes Suite's " +
-          "graph; the default canvas and `?canvas=scene` remain the only real surfaces " +
-          "(ADR-0032).",
+          "`?canvas=ice` mounts a private, in-memory ICE desk. Its Native demo is seeded with " +
+          "notes, mini mats, a whiteboard and a notebook; its Suite demo (`?demo=suite`) projects " +
+          "the example graph's boards and cards into the same native kinds, one way and read-only. " +
+          "It is experimental and never reads or writes Suite's graph; the default canvas and " +
+          "`?canvas=scene` remain the only real surfaces (ADR-0032).",
       },
     },
   },

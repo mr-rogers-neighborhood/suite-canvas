@@ -1,0 +1,94 @@
+/* The suite.card feasibility lab: full-bleed desk plus a small read-only HUD. */
+
+.suite-card-lab {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+}
+
+.suite-card-lab__desk {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.suite-card-lab__hud {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  max-width: min(380px, calc(100vw - 24px));
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(1.2);
+  pointer-events: auto;
+}
+
+.suite-card-lab__eyebrow {
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.suite-card-lab__title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.suite-card-lab__note {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.suite-card-lab__note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.suite-card-lab__error {
+  color: var(--section-rose);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+/* The minimal card the kind renders when no React renderer is registered.
+   A real NodeCard replaces this inside .suite-card-overlay__content. */
+.suite-card-overlay__card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.suite-card-overlay__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.suite-card-overlay__body {
+  margin-top: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+}

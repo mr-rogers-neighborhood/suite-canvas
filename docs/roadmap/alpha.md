@@ -708,6 +708,21 @@ owner is the maintainer/operator; no separate review board is implied.
   treated as `failed` for planning purposes. Its dependent work is cut or moved to a later stage,
   not kept open indefinitely.
 
+### 7.3 Gate status at integration
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| A1 | `open` | `compose.yaml:45-47`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `apps/collab-server/src/attachmentDurability.test.ts` |
+| A2 | `open` | `apps/canvas/src/collab/loroPersistence.ts`; `loroPersistence.test.ts` (two-instance and leader-takeover); ADR-0024 |
+| A3 | `failed` | See the A3 note in §7.1. Actions returns `startup_failure` with zero jobs; branch protection is unavailable on the private free repo. |
+| A4 | `open` | `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |
+| A5 | `open` | `services/billing/handler.ts` (closed by default, `503` before signature), `docs/billing.md`, `.env.example` |
+| A6 | `open` | `apps/canvas/src/shell/ErrorBoundary.tsx`, `storage/durability.ts`, `components/StoragePanel.tsx`, `crash/*`, `compose.crash.yaml`; ADR-0025, ADR-0027 |
+| A7 | `open` | `apps/collab-server/src/persistence.ts` (`loro-snapshot-v1`), `fixtures/n-1/`, `storeUpgrade.test.ts` |
+| A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
+| A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
+| A10 | `measuring` | Marquee regression spec and the duplicate-selection fix are in; two React Flow cancel/peer cases and local drag easing are tracked in the A10 follow-up. |
+
 ---
 
 ## 8. Work packages
@@ -814,9 +829,26 @@ housekeeping one. Each row was re-read on 2026-10-23.
 | D10 | ADR-0020 lists export/import and card sharing as gaps | `.suite` export/import and projection shares now exist | `docs/decisions/0020-…md` (context) | ✅ (as history, not drift to fix) |
 | D11 | Ops doc describes a "three database" backup | Six stores exist; compose configures five; backup covers five; attachments covered by none | `docs/operations.md`, `deploy/backup.sh:70-77` | ✅ |
 
-**Why D7 is the worst of these.** `AGENTS.md` is the entry point for AI agents. Stale names there
+### 9.1 Closure status
+
+| # | Status | Evidence |
+| --- | --- | --- |
+| D1 | fixed | `docs/testing.md` no longer claims billing is outside the workspace |
+| D2, D3 | fixed | `docs/testing.md` counts re-derived at integration |
+| D4, D5, D11 | fixed | README, security model, operations, and AWS runbook now state six stores |
+| D6 | fixed | operations and `limits.ts` describe attachments as shipped |
+| D7 | fixed | `AGENTS.md` names `WorkspaceDocument` / `useWorkspaceSnapshot` |
+| D8 | fixed | the stale `preview-light.png` was removed; README uses `preview-dark.png` |
+| D9 | fixed | backup and restore both cover settings |
+| D10 | history | ADR-0020 remains a dated decision; no rewrite |
+
+**Mechanical guard (A8).** `node scripts/docs-check.mjs` checks relative links and anchors, fenced
+blocks, retired terms, and version consistency. The CI `quality` job runs it. The limits page has
+its own `--check`.
+
+**Why D7 was the worst of these.** `AGENTS.md` is the entry point for AI agents. Stale names there
 cause agents to invent APIs — which is exactly how a codebase acquires plausible-looking phantom
-methods. It is also the smallest change to make.
+methods. It was also the smallest change to make.
 
 **Why D10 is not on the fix list.** ADRs are dated decisions. ADR-0020 correctly said export/import
 was a gap *on 2026-10-22*. The fix is a new ADR or an amendment line, not a rewrite of history.

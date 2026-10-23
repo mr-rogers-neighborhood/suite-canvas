@@ -1,6 +1,6 @@
 # Deploy to AWS
 
-One small instance, one Docker host, one `app` container, three SQLite files on one EBS volume,
+One small instance, one Docker host, one `app` container, six SQLite stores on one EBS volume,
 Caddy in front, Cloudflare in front of Caddy. That is the whole architecture; this runbook takes a
 fresh AWS account to a running, monitored, backed-up deployment and says where the sharp edges are.
 
@@ -14,7 +14,7 @@ visitor ──▶ Cloudflare (proxy, WAF, cache bypass) ──▶ :443 Caddy ─
                                                           └──────▶ app:1234 /ws
                                                                      │
                                                               /data = EBS volume
-                                                          documents / shares / workspaces .sqlite
+                                    documents / shares / workspaces / settings / licences / attachments
 ```
 
 Everything below assumes the repository at `/srv/suite`, the compose project name `suite` (set in

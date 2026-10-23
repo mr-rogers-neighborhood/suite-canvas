@@ -79,9 +79,9 @@ documents refer to each other.
 | Documents | `SUITE_DB` | `/data/documents.sqlite` | yes |
 | Share links | `SUITE_SHARES_DB` | `/data/shares.sqlite` | yes |
 | Workspaces | `SUITE_WORKSPACES_DB` | `/data/workspaces.sqlite` | yes |
-| Settings | `SUITE_SETTINGS_DB` | `:memory:` (inside the process) | **no** |
-| Licence claims | `SUITE_LICENCE_DB` | `:memory:` (inside the process) | **no** |
-| Attachments | `SUITE_ATTACHMENTS_DB` | not set in `compose.yaml`; defaults to `suite.attachments.sqlite` in the process working directory | **no** |
+| Settings | `SUITE_SETTINGS_DB` | `/data/settings.sqlite` | yes |
+| Licence claims | `SUITE_LICENCE_DB` | `/data/licences.sqlite` | yes |
+| Attachments | `SUITE_ATTACHMENTS_DB` | `/data/attachments.sqlite` | yes |
 
 Backup and restore use `deploy/backup.sh` and `deploy/restore.sh`; the
 procedure is in [operations.md](./operations.md#back-it-up) and

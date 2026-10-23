@@ -301,6 +301,32 @@ matters because acting on an empty document is indistinguishable from acting on 
 
 `data-ready` on the app root reports the combined state, which is what the startup work keys off.
 
+### Startup and hydration
+
+The first editable frame waits for **local** hydration (`ready`), never for the first server sync
+(`synced`). Until then the shell renders a small themed loading page — the logo, a progress bar and
+the active theme — and does not mount the canvas, React Flow, ICE, Excalidraw or any Tiptap editor.
+The loader is held for a short minimum and faded out, so a warm IndexedDB read does not flash. Remote
+sync continues underneath and may flip `synced` after the canvas is already interactive.
+
+Boot marks (`apps/canvas/src/dev/bootTiming.ts`, shown with `?perf=1`) separate the fixed floor from
+document-size cost:
+
+| Mark | Meaning |
+| --- | --- |
+| `hydrate` | IndexedDB open + snapshot/update import |
+| `to-ready` | module load → first editable shell |
+| `to-synced` | module load → first server sync |
+| `to-canvas` | module load → first canvas mount |
+
+Compare a cold hard reload, a warm in-session reload and a 5-card vs 500-card document separately.
+Card count is a rendering/CRDT-application cost, not part of the startup floor.
+
+The same principle applies inside the infinite canvas: a collapsed portal renders its impostor until
+its effective zoom crosses the expansion gate; only visible subtrees are expanded; a whiteboard card
+shows its cached SVG preview until the focus surface mounts Excalidraw. These are view concerns — the
+Loro graph remains the truth, and an aborted expansion leaves the portal usable as a card.
+
 ## Rendering
 
 The canvas target is a **derived scene over the graph**, not a canvas whose document is the

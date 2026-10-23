@@ -162,7 +162,10 @@ export const SuiteCard = defineObject({
   groups: { face: ["title", "body", "cardId", "boardId"] },
   size: SUITE_CARD_SIZE,
   kind: suiteCardKind,
-  interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  // Resizable because the canonical placement stores width/height: ICE's own
+  // handles are the resize gesture, and the bridge commits the final snapped
+  // box as one position+size write. `snap: "both"` keeps the native guides.
+  interaction: { selectable: true, movable: true, resizable: true, snap: "both" },
   provides: [DESK_OBJECT, CONTAINABLE],
   drivers: (host) => {
     const local = host.local as SuiteCardLocal | undefined;

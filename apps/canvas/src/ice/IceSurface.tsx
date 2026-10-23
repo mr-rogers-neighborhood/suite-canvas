@@ -54,8 +54,17 @@ import type {
   EngineProvider as IceEngineProvider,
 } from "@vibecook/ice/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { useUiStore } from "../store/useUiStore";
-import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
+import { workspaceWriter } from "./iceBridge";
+import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
+import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
+import {
+  buildSuiteSeed,
+  projectWorkspaceToIce,
+  SUITE_CARD_TYPE,
+  spawnIceSuite,
+} from "./suiteProjection";
 import "./iceSurface.css";
 
 const NOTE_TYPE = "desk.note";
@@ -131,7 +140,8 @@ interface SeedReport {
   /** The entities that did spawn — what the camera frames on the first mount. */
   readonly entities: readonly Entity[];
   /** Entity → canonical card id, for selection and later the write bridge. */
-  readonly entityCards: ReadonlyMap<Entity, string>;
+  /** Mutable on purpose: a re-spawned card replaces its entity in place. */
+  readonly entitySlots: Map<Entity, { cardId: string; boardId: string }>;
   /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
   readonly boards: number;
   /** Things the seed deliberately did not map (cycles, depth caps, sections). */
@@ -456,7 +466,7 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
     kinds,
     failures,
     entities,
-    entityCards: new Map(),
+    entitySlots: new Map(),
     boards: 0,
     skipped: [],
   };
@@ -480,7 +490,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
       kinds: [],
       failures: [`suite projection: ${describeError(error)}`],
       entities: [],
-      entityCards: new Map(),
+      entitySlots: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -491,10 +501,12 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     project: () => engine.step(performance.now()),
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
-  const entityCards = new Map<Entity, string>();
+  const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
-    if (object?.kind === "card" || object?.kind === "note") entityCards.set(entity, object.cardId);
+    if (object?.kind === "card" || object?.kind === "note") {
+      entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
+    }
   }
 
   return {
@@ -505,7 +517,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     kinds: report.kinds,
     failures: report.failures,
     entities: [...report.objects.values()],
-    entityCards,
+    entitySlots,
     // Boards are counted by identity: the same board can open in several mats.
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
@@ -533,7 +545,7 @@ function seedWorkspaceDocument(
       kinds: [],
       failures: [`workspace projection: ${describeError(error)}`],
       entities: [],
-      entityCards: new Map(),
+      entitySlots: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -544,10 +556,12 @@ function seedWorkspaceDocument(
     project: () => engine.step(performance.now()),
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
-  const entityCards = new Map<Entity, string>();
+  const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
-    if (object?.kind === "card" || object?.kind === "note") entityCards.set(entity, object.cardId);
+    if (object?.kind === "card" || object?.kind === "note") {
+      entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
+    }
   }
 
   return {
@@ -558,7 +572,7 @@ function seedWorkspaceDocument(
     kinds: report.kinds,
     failures: report.failures,
     entities: [...report.objects.values()],
-    entityCards,
+    entitySlots,
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
   };
@@ -624,6 +638,7 @@ export function IceSurface({
   const [seed, setSeed] = useState<SeedReport | null>(null);
   const [fps, setFps] = useState<number | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
+  const canWriteLayout = useUiStore((state) => state.canEditLayout && !state.readOnly);
   const [runId, setRunId] = useState(0);
   const sceneHref = useMemo(() => sceneHrefProp ?? sceneSurfaceHref(), [sceneHrefProp]);
   const owned = useRef<{
@@ -826,13 +841,13 @@ export function IceSurface({
   // non-empty selection wins; a shell-driven selection is not cleared just
   // because ICE has not selected anything yet.
   useEffect(() => {
-    if (phase.kind !== "ready" || seed === null || seed.entityCards.size === 0) return;
+    if (phase.kind !== "ready" || seed === null || seed.entitySlots.size === 0) return;
     let handle = 0;
     let previous = "";
     const tick = (): void => {
       const selected = phase.core
         .selectedEntities(phase.engine.world)
-        .map((entity) => seed.entityCards.get(entity))
+        .map((entity) => seed.entitySlots.get(entity)?.cardId)
         .filter((cardId): cardId is string => cardId !== undefined);
       const key = selected.join("\u001f");
       if (key !== previous && (selected.length > 0 || previous.length > 0)) {
@@ -874,6 +889,8 @@ export function IceSurface({
   const handleReady = useCallback(
     (handle: DeskHandle) => {
       const layer = handle.layer as Partial<DeskLayerHandle>;
+      deskLayerRef.current = layer as DeskLayerHandle;
+      setLayerReady((count) => count + 1);
       let active = true;
       let framing = false;
       const frameDemo = (): void => {
@@ -907,6 +924,7 @@ export function IceSurface({
       const stop = typeof layer.onStatus === "function" ? layer.onStatus(apply) : undefined;
       return () => {
         active = false;
+        deskLayerRef.current = null;
         clearPendingFailure();
         clearPendingFit();
         stop?.();
@@ -948,10 +966,204 @@ export function IceSurface({
     }
   }, [phase, engineState, seed, fps]);
 
+  const surfaceRef = useRef<HTMLElement | null>(null);
+  const deskLayerRef = useRef<DeskLayerHandle | null>(null);
+  const commandsRef = useRef<{
+    undo(): void;
+    redo(): void;
+    deleteSelection(): void;
+    reconcile(): void;
+  } | null>(null);
+  const [layerReady, setLayerReady] = useState(0);
+
+  // The editable root board: drag and resize commit once per gesture, delete is
+  // one trash write, and undo/redo are Loro's. ICE's own history is never read.
+  useEffect(() => {
+    if (phase.kind !== "ready" || seed === null || layerReady === 0) return;
+    if (!workspaceMode || liveWorkspace === null || rootBoardId === null) return;
+    const root = surfaceRef.current;
+    const desk = deskLayerRef.current;
+    if (root === null || desk === null) return;
+
+    const { engine, core } = phase;
+    const slots = seed.entitySlots;
+
+    const cameraOf = () => {
+      const view = engine.world.getResource(core.Camera);
+      if (view === undefined) return null;
+      const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
+      return { x: -view.x * zoom, y: -view.y * zoom, zoom };
+    };
+
+    const rectOf = (entity: Entity) => {
+      const geometry = desk.geometryOf(entity) as
+        | { centre?: readonly [number, number]; half?: readonly [number, number] }
+        | undefined;
+      if (geometry?.centre === undefined || geometry.half === undefined) return null;
+      const [cx, cy] = geometry.centre;
+      const [hx, hy] = geometry.half;
+      if (![cx, cy, hx, hy].every((value) => Number.isFinite(value))) return null;
+      const width = Math.abs(hx) * 2;
+      const height = Math.abs(hy) * 2;
+      return { x: cx - width / 2, y: cy - height / 2, width, height };
+    };
+
+    const pickEntity = (screen: { x: number; y: number }) => {
+      try {
+        return desk.pick(screen)?.entity ?? null;
+      } catch {
+        return null;
+      }
+    };
+
+    const removeEntities = (entities: readonly Entity[]) => {
+      if (entities.length === 0) return;
+      try {
+        engine.ops.setSelection(entities);
+        engine.ops.deleteSelection();
+      } catch {
+        // A refused removal is repaired by the next reconcile.
+      }
+    };
+
+    const projection = new CardProjection<Entity>({
+      spawn: (placement: CanonicalPlacement) => {
+        const entity = engine.ops.spawnWidget(SUITE_CARD_TYPE, {
+          x: placement.x,
+          y: placement.y,
+          ...(placement.width !== undefined && placement.height !== undefined
+            ? { w: placement.width, h: placement.height }
+            : {}),
+          undoable: false,
+          props: {
+            cardId: placement.cardId,
+            boardId: placement.boardId,
+            title: "",
+            body: "",
+            paper: "yellow",
+            pen: "fountain",
+            seed: 0,
+          },
+        });
+        slots.set(entity, { cardId: placement.cardId, boardId: placement.boardId });
+        return entity;
+      },
+      remove: (entity) => {
+        removeEntities([entity]);
+        slots.delete(entity);
+      },
+      boxOf: (entity) => rectOf(entity),
+    });
+    for (const [entity, slot] of seed.entitySlots) {
+      projection.register(entity, slot.cardId, slot.boardId);
+    }
+
+    const reconcile = () => {
+      const placements = liveWorkspace
+        .listBoardPlacements(rootBoardId)
+        .filter((placement) => liveWorkspace.getCard(placement.cardId)?.deletedAt === undefined)
+        .map((placement) => ({
+          boardId: placement.boardId,
+          cardId: placement.cardId,
+          x: placement.x,
+          y: placement.y,
+          ...(placement.width !== undefined ? { width: placement.width } : {}),
+          ...(placement.height !== undefined ? { height: placement.height } : {}),
+        }));
+      const report = projection.reconcile(placements, {
+        width: DEFAULT_CARD_WIDTH,
+        height: DEFAULT_CARD_HEIGHT,
+      });
+      if (
+        report.failures.length > 0 &&
+        typeof console !== "undefined" &&
+        typeof console.warn === "function"
+      ) {
+        console.warn("[ice] projection reconcile", report.failures);
+      }
+    };
+
+    const controller = createIceEditingController({
+      camera: cameraOf,
+      pick: pickEntity,
+      rectOf,
+      writer: workspaceWriter(liveWorkspace),
+      role: canWriteLayout ? "editor" : "viewer",
+      removeCards: (cardIds) => {
+        const entities = [...slots]
+          .filter(([, slot]) => cardIds.includes(slot.cardId))
+          .map(([entity]) => entity);
+        removeEntities(entities);
+        for (const [entity, slot] of [...slots]) {
+          if (cardIds.includes(slot.cardId)) slots.delete(entity);
+        }
+      },
+      slots,
+      rootBoardId,
+      selection: () => useUiStore.getState().selectedNodeIds,
+    });
+
+    commandsRef.current = {
+      undo: () => {
+        liveWorkspace.undo();
+        reconcile();
+      },
+      redo: () => {
+        liveWorkspace.redo();
+        reconcile();
+      },
+      deleteSelection: () => {
+        controller.deleteSelection(useUiStore.getState().selectedNodeIds);
+      },
+      reconcile,
+    };
+
+    const detach = attachIcePointerEditing(root, controller);
+    return () => {
+      detach();
+      controller.cancel();
+      commandsRef.current = null;
+    };
+  }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, canWriteLayout]);
+
+  const keymapOverrides = useMemo(() => {
+    if (!workspaceMode) return undefined;
+    return [
+      {
+        key: "z",
+        mod: true,
+        run: () => {
+          commandsRef.current?.undo();
+        },
+      },
+      {
+        key: "z",
+        mod: true,
+        shift: true,
+        run: () => {
+          commandsRef.current?.redo();
+        },
+      },
+      {
+        key: "Backspace",
+        run: () => {
+          commandsRef.current?.deleteSelection();
+        },
+      },
+      {
+        key: "Delete",
+        run: () => {
+          commandsRef.current?.deleteSelection();
+        },
+      },
+    ];
+  }, [workspaceMode]);
+
   const ready = phase.kind === "ready" ? phase : null;
 
   return (
     <section
+      ref={surfaceRef}
       className="ice-surface"
       data-testid="ice-surface"
       data-ice-phase={phase.kind}
@@ -965,6 +1177,7 @@ export function IceSurface({
             engine={ready.engine}
             layer={ready.layer}
             onReady={handleReady}
+            {...(keymapOverrides ? { keymapOverrides } : {})}
             className="ice-surface__desk"
             style={{ position: "absolute", inset: 0 }}
           />

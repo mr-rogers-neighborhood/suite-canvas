@@ -404,8 +404,8 @@ ICE owns the world, spatial index, camera and pointer input. It does not own doc
 - Selection, drag, resize, create, delete, section and edge gestures report intent through one
   bridge. Live motion is ephemeral; pointer-up calls one `WorkspaceDocument` method per gesture.
   ICE's native history is disabled for document objects; Loro undo is the only user-visible history.
-  The read-only port currently mirrors ICE's `Selected` set into the shell selection; the write
-  bridge is wired in the next phase.
+  The port mirrors ICE's `Selected` set into the shell selection, commits the final snapped box on
+  pointer-up, and re-derives entities from canonical placements after undo.
 - ICE's snap guides, equal-spacing bars, auto-alignment, `arrange`, `frameContent`, container
   entry/exit, lock and reorder stay. The bridge commits the final snapped ICE rect inverse-
   transformed into canonical board coordinates; it does not derive a position from the raw pointer

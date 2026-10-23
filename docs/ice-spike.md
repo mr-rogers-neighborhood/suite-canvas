@@ -84,9 +84,22 @@ http://localhost:5173/?canvas=ice
 ```
 
 The app waits for the workspace to hydrate, then projects the live graph. The HUD says
-`ICE workspace` and `Read-only projection — not document truth`; selecting a card mirrors the
-Suite shell selection. Dragging is intentionally not saved yet; the write bridge is the next phase
-in [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md).
+`ICE workspace` and `Live workspace`; selecting a card mirrors the Suite shell selection.
+
+What is editable today:
+
+- drag a card and its position commits once, with the snapped geometry ICE settled on;
+- drag a resize handle and position plus size commit together;
+- Delete trashes the selection; Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z are Loro's, and the projection
+  re-derives the entity from the canonical placement;
+- double-click a mini mat to move the camera inside it, Escape to come back;
+- the library's **Pins** tab lists pins, **Drop pin** places one at the camera centre, and clicking a
+  row pans to it;
+- a whiteboard mounts Excalidraw inline after the pointer rests on it for a moment, and commits
+  through the same drawing path as the focus surface.
+
+Text editing stays in the Suite property inspector and the card focus surface. Inline Tiptap on the
+ICE overlay is deliberately deferred.
 
 Useful knobs:
 

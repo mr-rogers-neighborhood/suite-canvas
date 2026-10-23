@@ -122,4 +122,53 @@ test.describe("ICE demo surface", () => {
       await browser.close();
     }
   });
+
+  test("opens a live workspace and drops a pin", async () => {
+    test.setTimeout(120_000);
+
+    const testInfo = test.info();
+    const origin = testInfo.project.use.baseURL ?? "http://localhost:5173";
+    const browser = await launchChrome();
+    const context = await browser.newContext({
+      baseURL: origin,
+      viewport: { width: 1280, height: 900 },
+    });
+    const page = await context.newPage();
+
+    try {
+      const workspace = `suite-ice-live-${Date.now()}`;
+      await page.goto(`/?workspace=${workspace}&fresh=1&canvas=ice`);
+
+      // The app has to hydrate the real document before ICE can project it, so
+      // this is slower than the standalone demo by design.
+      await expect(page.getByTestId("ice-status")).toHaveText("engine: ready", { timeout: 90_000 });
+      await expect(page.getByTestId("ice-hud")).toContainText("Live workspace", {
+        timeout: 60_000,
+      });
+      await expect(page.getByTestId("ice-demo-summary")).toContainText("Workspace:");
+      await expect(page.locator('[data-testid="ice-surface"] canvas').first()).toBeVisible();
+
+      // The pins list lives in the existing library; a pin is one write and one
+      // marker, and it must show up in the list without a reload.
+      if ((await page.getByTestId("library-drawer").count()) === 0) {
+        await page.getByTestId("dock-library").click();
+      }
+      await page.getByTestId("library-tab-pins").click();
+      await page.getByTestId("library-drop-pin").click();
+      await expect(page.locator('[data-testid^="pin-row-"]')).toHaveCount(1, { timeout: 15_000 });
+
+      console.log(`ICE live adapter: ${await page.getByTestId("ice-adapter").innerText()}`);
+    } catch (error) {
+      const path = testInfo.outputPath("ice-live-failure.png");
+      const captured = await page
+        .screenshot({ path, fullPage: true })
+        .then(() => true)
+        .catch(() => false);
+      if (captured) await testInfo.attach("ice-live-failure", { path, contentType: "image/png" });
+      throw error;
+    } finally {
+      await context.close();
+      await browser.close();
+    }
+  });
 });

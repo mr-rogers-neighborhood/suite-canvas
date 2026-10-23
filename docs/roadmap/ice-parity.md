@@ -343,13 +343,13 @@ Stretch only if the must-land set is green: LOD crossfade and the mounted-editor
 | Workstream | Status | Next artifact |
 | --- | --- | --- |
 | Decisions and docs | done | ADR-0034/0035/0036 |
-| Read-only real workspace | done — live graph, real `SceneCardView` overlays and selection mirroring; no writes | 5k fixture + reload/camera restore |
-| `suite.card` production | partial — real card, inspector, read-only selection | pointer-mode switch for editing |
-| Interaction bridge | contract landed; selection mirror integrated; writes pending | wire `IceGestureSession` + Loro undo |
-| Whiteboard | pending | preview + focus-surface round trip |
+| Real workspace on ICE | done — live graph, real `SceneCardView` overlays, selection mirroring | 5k fixture + reload/camera restore |
+| `suite.card` production | done for text via the inspector; the overlay stays read-only | inline Tiptap (deferred) |
+| Interaction bridge | done — drag/resize/delete commit once, Loro undo re-derives the projection | 5k drag budget |
+| Whiteboard | done — inline Excalidraw after an intent dwell, one instance, preview underlay, focus surface retained | measure the mount cost and record the ladder rung |
 | Sections/edges/connectors | plan landed; integration pending | custom kinds/overlays + e2e |
-| Portals/shared views | plan landed; integration pending | spawn from `icePortals` + camera entry |
+| Portals/shared views | camera entry, breadcrumb, Escape exit and cycle/depth/missing stubs done; canonical multi-instance selection pending | shared-view selection across instances |
 | Presence/shares | pending | two-browser artifact |
-| Views/Pins | model landed; UI pending | Views switcher + Pins list + drop-pin |
+| Views/Pins | done — pins tab, drop action, markers, drag and click-to-focus | Views switcher rename (ADR-0035) |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
 | Failure/accessibility/rollout | pending | P0 table + unsupported screen |

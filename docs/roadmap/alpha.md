@@ -666,6 +666,14 @@ would pass today.
 commit proves the check is *required*. Branch protection is the difference between "we have CI" and
 "CI gates us".
 
+**A3 status: blocked externally (2026-10-23).** Actions is enabled, the workflow passes
+`actionlint` v1.7.12, and the remote file matches the local file. Every run, including
+`workflow_dispatch` and a one-line smoke workflow on a throwaway branch, ends in
+`startup_failure` with 0 jobs and 0 check runs. Branch protection and rulesets return
+`403: Upgrade to GitHub Pro or make this repository public`. A3 is therefore `failed` until Actions
+executes and the repository can require checks. The local gate is `pnpm verify` plus `pnpm e2e`; it
+does not close A3.
+
 **A4 — why a tag and not a version field.** `package.json` says `0.1.0` and `git tag` is empty ✅, so
 "which build are you running?" has no answer and no artifact to roll back to. The tag is the artifact.
 

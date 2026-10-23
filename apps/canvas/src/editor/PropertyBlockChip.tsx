@@ -16,7 +16,8 @@ const EM_DASH = "\u2014";
 
 /** Inert styling for an unshared card value: quiet, and never a hover link. */
 const NOT_SHARED_VALUE = { color: "var(--ink-muted)", cursor: "default" } as const;
-const NOT_SHARED_NOTE = { opacity: 0.8, marginLeft: 3 } as const;
+/* No opacity: fading muted ink drops it below 4.5:1 on the chip surface. */
+const NOT_SHARED_NOTE = { marginLeft: 3 } as const;
 
 /** The field behind a block, in the card's type order (same as the panel). */
 function fieldFor(card: Card, fieldId: string, types: readonly CardType[]) {

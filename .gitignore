@@ -21,3 +21,10 @@ blob-report/
 *.sqlite-shm
 
 *storybook.log
+
+# Stryker: HTML/JSON reports are build output; the incremental file is
+# per-machine state (mutant ids and timings), so committing it would let a
+# stale score masquerade as a fresh one.
+reports/
+.stryker-tmp/
+stryker.log

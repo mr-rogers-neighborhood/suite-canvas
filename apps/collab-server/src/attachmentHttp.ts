@@ -14,8 +14,11 @@ import {
 import { applyCors, CORS_HEADERS, HttpError, sendEmpty, sendJson } from "./http.js";
 import { licenceRequired } from "./licence.js";
 import { formatBytes } from "./limits.js";
+import { createLogger } from "./logging.js";
 import { defaultLicenceClaimStore } from "./workspaceHttp.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
+
+const logger = createLogger().child({ component: "attachments" });
 
 /** Route prefix. Beside the share and workspace APIs, with its own segment. */
 export const ATTACHMENT_API_PATH = "/api/attachments";
@@ -289,7 +292,9 @@ export async function handleAttachmentRequest(
       sendJson(response, error.status, { error: error.message });
       return true;
     }
-    console.error("[attachments] request failed", error);
+    logger.error("request failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sendJson(response, 500, { error: "The attachment request failed." });
   }
 

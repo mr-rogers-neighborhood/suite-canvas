@@ -12,6 +12,7 @@ import { LoroAdaptor } from "loro-adaptors/loro";
 import { LoroDoc, VersionVector } from "loro-crdt";
 import { CrdtType } from "loro-protocol";
 import { LoroWebsocketClient, type LoroWebsocketClientRoom, RoomJoinStatus } from "loro-websocket";
+import { licenceRequired } from "./licence.js";
 import type { DocumentStore } from "./persistence.js";
 import type { Share, ShareRole, ShareStore } from "./shares.js";
 
@@ -61,7 +62,13 @@ type PublishTarget = { scope: "board"; boardId: string } | { scope: "card"; card
 export type ProjectionWorkerShares = Pick<
   ShareStore,
   "list" | "listAllActive" | "getBaseline" | "setBaseline" | "deleteBaseline"
->;
+> & {
+  /**
+   * Revokes one link. The idle sweep needs it; a store without it leaves the
+   * sweep switched off rather than half-working.
+   */
+  revoke?: (id: string) => Share | null;
+};
 
 /** A share document's version vector as JSON, keyed by peer id. */
 export type ShareVersion = Record<string, number>;
@@ -89,6 +96,54 @@ export interface ProjectionRoomInfo {
   dirty: boolean;
 }
 
+/** One projection room the idle sweep closed, or would close on a dry run. */
+export interface SweptRoom {
+  roomId: string;
+  shareId: string;
+  workspaceId: string;
+  /** Silence since the room was last refreshed or used, in milliseconds. */
+  idleMs: number;
+}
+
+/**
+ * What one sweep pass did. `checked` and `unknown` make a zero result readable:
+ * a sweep that looked at nothing is not the same as a sweep that found nothing.
+ */
+export interface RoomSweepReport {
+  /** Idle window applied, in hours; `0` means the sweep is switched off. */
+  idleHours: number;
+  dryRun: boolean;
+  /** Rooms examined. */
+  checked: number;
+  /** Rooms whose connected sessions could not be read, so they were kept. */
+  unknown: number;
+  /** Rooms closed, or the rooms a dry run would close. */
+  rooms: SweptRoom[];
+}
+
+/** The hosted relay's default idle window; a self-host sweeps nothing by default. */
+export const DEFAULT_HOSTED_ROOM_IDLE_HOURS = 24;
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Hours a projection room may sit idle before the sweep revokes its link.
+ *
+ * `SUITE_ROOM_IDLE_HOURS` wins when it is a non-negative number; `0` switches
+ * the sweep off. The default follows the same switch the rest of the hosted
+ * behaviour does (`licenceRequired()`, i.e. `SUITE_HOSTED=1`): a relay expires
+ * links nobody came back to, a self-host keeps every link warm as it always has.
+ */
+export function roomIdleHours(
+  env: { SUITE_ROOM_IDLE_HOURS?: string | undefined } = process.env,
+  hosted: boolean = licenceRequired(),
+): number {
+  const fallback = hosted ? DEFAULT_HOSTED_ROOM_IDLE_HOURS : 0;
+  const raw = env.SUITE_ROOM_IDLE_HOURS?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
   url: string;
@@ -100,6 +155,26 @@ export interface ProjectionWorkerOptions {
   shares: ProjectionWorkerShares;
   /** Quiet period before a saved workspace is rebuilt. */
   debounceMs?: number;
+  /**
+   * Hours a projection room may sit idle before the sweep revokes it; `0`
+   * switches the sweep off. Defaults to `roomIdleHours()`, which is off on a
+   * self-host and 24 hours on the hosted relay.
+   */
+  idleHours?: number;
+  /**
+   * Sessions in a room other than the worker's own, or `null` when the sync
+   * server cannot be read. Wired to `roomSessionCount`; without it the sweep
+   * never closes anything, because it cannot prove a room has no viewers.
+   */
+  roomClients?: (roomId: string) => number | null;
+  /**
+   * Called with a room id after the sweep has closed it and dropped its stored
+   * documents. Wired to `forgetRoomDocument` so the sync server's in-memory copy
+   * goes too — otherwise the sweep frees disk but not memory.
+   */
+  onRoomClosed?: (roomId: string) => void;
+  /** Clock for idle accounting; tests replace it. */
+  now?: () => number;
   logger?: Pick<Console, "warn">;
 }
 
@@ -120,6 +195,8 @@ interface RoomState {
   baselineVersion: string;
   /** True once an editor changed the draft after the last projection. */
   dirty: boolean;
+  /** Last time an owner save, a publish, a reload or a status read touched it. */
+  lastActiveAt: number;
 }
 
 /** The worker's writer connection to a real workspace room, used by publish. */
@@ -169,6 +246,91 @@ function deleteRoomDocuments(documents: Pick<DocumentStore, "delete">, roomId: s
       // A missing/legacy key is already gone; deletion is best-effort cleanup.
     }
   }
+}
+
+/**
+ * The slice of the patched sync server `roomSessionCount` reads: the socket set
+ * and the per-socket session records. `loro-websocket` keeps both private and
+ * the patch adds no getter, so the shape is declared here rather than imported;
+ * the same internals back `disconnectRoomWhere` in `roomSockets.ts`.
+ */
+interface SyncServerSessions {
+  wss?: { clients?: Iterable<unknown> };
+  clients?: {
+    get(socket: unknown): { rooms?: Iterable<string>; auths?: Map<string, string> } | undefined;
+  };
+}
+
+/**
+ * The patched sync server's room table, keyed `<roomId>:<crdtType>`. Upstream
+ * keeps it private and never removes an entry, so this module reaches into it
+ * the same way `roomSessionCount` reaches into the session maps.
+ */
+interface SyncServerRooms {
+  rooms?: Map<string, unknown>;
+}
+
+/**
+ * Drops the sync server's in-memory copy of a room that no longer has a share.
+ *
+ * `SimpleServer` keeps one room document per room for the life of the process,
+ * even after the last session leaves; for a projection room that is a full
+ * document copy per dead link, which is the memory the idle sweep exists to
+ * free. Only call this once the room has no sessions and its link is revoked: a
+ * document dropped while somebody can still join would be rebuilt from the
+ * store, which the revoke just emptied.
+ */
+export function forgetRoomDocument(server: unknown, roomId: string): boolean {
+  const rooms = (server as SyncServerRooms | null)?.rooms;
+  if (!(rooms instanceof Map)) return false;
+  const names = new Set([roomId, `${roomId}:presence`, `${roomId}:cursors`]);
+  let dropped = false;
+  for (const key of [...rooms.keys()]) {
+    const split = key.lastIndexOf(":");
+    const name = split === -1 ? key : key.slice(0, split);
+    if (!names.has(name)) continue;
+    rooms.delete(key);
+    dropped = true;
+  }
+  return dropped;
+}
+
+/**
+ * Sessions in one share room other than the worker's own, or `null` when the
+ * sync server cannot be read.
+ *
+ * A room key is `<roomId>:<crdtType>`; the derived presence and cursor rooms
+ * count too, because a browser that only opened presence is still looking at
+ * the link. One socket is one session however many rooms it joined.
+ */
+export function roomSessionCount(
+  server: unknown,
+  roomId: string,
+  workerToken: string,
+): number | null {
+  const internals = server as SyncServerSessions | null;
+  const sockets = internals?.wss?.clients;
+  const clients = internals?.clients;
+  if (!sockets || !clients || typeof clients.get !== "function") return null;
+
+  const names = new Set([roomId, `${roomId}:presence`, `${roomId}:cursors`]);
+  let sessions = 0;
+  for (const socket of sockets) {
+    const client = clients.get(socket);
+    if (!client?.rooms || !client.auths) continue;
+    for (const key of client.rooms) {
+      const split = key.lastIndexOf(":");
+      const name = split === -1 ? key : key.slice(0, split);
+      if (!names.has(name)) continue;
+      // The worker holds every projection room it projects; anybody else is a
+      // reader the sweep must not close the room under.
+      if ((client.auths.get(key) ?? "") !== workerToken) {
+        sessions += 1;
+        break;
+      }
+    }
+  }
+  return sessions;
 }
 
 function targetOf(share: Share): ProjectionTarget | null {
@@ -261,10 +423,22 @@ export class ProjectionWorker {
   private readonly pending = new Map<string, PendingRebuild>();
   private readonly queues = new Map<string, Promise<void>>();
   private started = false;
+  /** Tail of the sweep chain, so two operator calls never interleave. */
+  private sweeping: Promise<void> = Promise.resolve();
 
   constructor(options: ProjectionWorkerOptions) {
     this.options = options;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+  }
+
+  /** Clock for idle accounting; a test can freeze or advance it. */
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
+  /** Records that something used the room, so the idle window restarts. */
+  private touch(room: RoomState): void {
+    room.lastActiveAt = this.now();
   }
 
   /** Joins every active board, card and selection share room and publishes their projections. */
@@ -525,6 +699,7 @@ export class ProjectionWorker {
         baseline,
         baselineVersion: baseline ? versionJson(baseline.doc) : "",
         dirty: false,
+        lastActiveAt: this.now(),
       };
       // A draft that survived a restart is still the editor's until it is
       // published or reloaded. The version vector cannot answer that on its own:
@@ -720,6 +895,9 @@ export class ProjectionWorker {
   }
 
   private project(source: WorkspaceDocument, room: RoomState): void {
+    // An owner save is activity even when the rebuild is held back: the room is
+    // still the one this workspace projects into.
+    this.touch(room);
     // A dirty draft belongs to the editor: an owner save must not overwrite it.
     if (room.dirty) return;
     try {
@@ -783,6 +961,7 @@ export class ProjectionWorker {
     if (!this.rooms.has(roomId)) await this.syncRooms(share.workspaceId);
     const room = this.rooms.get(roomId);
     if (!room) return idle;
+    this.touch(room);
 
     if (!room.baseline) {
       const baseline = this.loadBaseline(room.shareId);
@@ -803,6 +982,7 @@ export class ProjectionWorker {
     const prepared = await this.prepareDraft(share);
     if ("ok" in prepared) return prepared;
     const { room, source } = prepared;
+    this.touch(room);
     const baseline = room.baseline;
     if (!baseline) return failure("This share has no baseline yet; reload it from the workspace.");
 
@@ -849,6 +1029,7 @@ export class ProjectionWorker {
     const prepared = await this.prepareDraft(share);
     if ("ok" in prepared) return prepared;
     const { room, source } = prepared;
+    this.touch(room);
 
     // Count what the discard drops, so the caller can report it.
     let discarded = 0;
@@ -919,4 +1100,104 @@ export class ProjectionWorker {
       dirty: room.dirty,
     }));
   }
+
+  /**
+   * Revokes the links of projection rooms nobody has used for the idle window.
+   *
+   * A room qualifies when no owner save, publish, reload or status read has
+   * touched it for `idleHours` **and** the sync server reports no session in it
+   * other than the worker's own. Closing reuses the revoke path every other
+   * revoke takes: the link is revoked through the share store, then the next
+   * `syncRooms` pass leaves the room and drops its documents and baseline.
+   *
+   * A room whose sessions cannot be read is kept, and a `dryRun` reports the
+   * candidates without touching them. With `idleHours` at `0` — the self-host
+   * default — this is a no-op that still says so in its report.
+   */
+  sweepIdle(options: { dryRun?: boolean } = {}): Promise<RoomSweepReport> {
+    // Serialized: two operator calls must not revoke, then race the cleanup.
+    const next = this.sweeping.then(
+      () => this.sweepNow(options.dryRun === true),
+      () => this.sweepNow(options.dryRun === true),
+    );
+    this.sweeping = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async sweepNow(dryRun: boolean): Promise<RoomSweepReport> {
+    const idleHours = this.options.idleHours ?? roomIdleHours();
+    const report: RoomSweepReport = { idleHours, dryRun, checked: 0, unknown: 0, rooms: [] };
+    if (!this.started || idleHours <= 0) return report;
+
+    const now = this.now();
+    const idleMs = idleHours * HOUR_MS;
+    const candidates: RoomState[] = [];
+    for (const room of this.rooms.values()) {
+      report.checked += 1;
+      if (now - room.lastActiveAt < idleMs) continue;
+      const sessions = this.options.roomClients?.(room.roomId) ?? null;
+      if (sessions === null) {
+        // No reader, or a server that cannot answer: never close blind.
+        report.unknown += 1;
+        continue;
+      }
+      if (sessions > 0) continue;
+      candidates.push(room);
+    }
+    if (candidates.length === 0) return report;
+    if (dryRun) {
+      report.rooms = candidates.map((room) => sweptRoom(room, now));
+      return report;
+    }
+    if (!this.options.shares.revoke) {
+      this.warn("the room sweep needs a share store that can revoke links");
+      return report;
+    }
+    const revoke = this.options.shares.revoke;
+
+    // One rebuild per workspace closes every room it lost and deletes their
+    // documents and baselines; that is the same cleanup a revoke always runs.
+    const byWorkspace = new Map<string, RoomState[]>();
+    for (const room of candidates) {
+      const rooms = byWorkspace.get(room.workspaceId) ?? [];
+      rooms.push(room);
+      byWorkspace.set(room.workspaceId, rooms);
+    }
+    for (const [workspaceId, rooms] of byWorkspace) {
+      for (const room of rooms) {
+        try {
+          revoke(room.shareId);
+        } catch (error) {
+          this.warn(`could not revoke the idle share ${room.shareId}: ${message(error)}`);
+        }
+      }
+      await this.enqueue(workspaceId, () => this.syncRooms(workspaceId));
+      for (const room of rooms) {
+        if (this.rooms.has(room.roomId)) continue;
+        report.rooms.push(sweptRoom(room, now));
+        try {
+          this.options.onRoomClosed?.(room.roomId);
+        } catch (error) {
+          this.warn(`could not forget the room ${room.roomId}: ${message(error)}`);
+        }
+      }
+    }
+    if (report.rooms.length > 0) {
+      this.warn(`swept ${report.rooms.length} idle projection room(s) older than ${idleHours} h`);
+    }
+    return report;
+  }
+}
+
+/** The operator-facing shape of one swept room. */
+function sweptRoom(room: RoomState, now: number): SweptRoom {
+  return {
+    roomId: room.roomId,
+    shareId: room.shareId,
+    workspaceId: room.workspaceId,
+    idleMs: Math.max(0, now - room.lastActiveAt),
+  };
 }

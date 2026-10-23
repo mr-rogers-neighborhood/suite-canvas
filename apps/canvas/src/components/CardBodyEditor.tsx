@@ -49,6 +49,8 @@ export interface CardBodyEditorProps {
   readOnly?: boolean | undefined;
   /** Copy for the empty state; `null` turns it off. */
   placeholder?: string | null | undefined;
+  /** Accessible name for the ProseMirror surface; every surface gets one. */
+  ariaLabel?: string | undefined;
   /** Extra classes for the editor wrapper (for example `nodrag nopan`). */
   className?: string | undefined;
   onFocus?: (() => void) | undefined;
@@ -144,6 +146,7 @@ export function CardBodyEditor({
   editable,
   readOnly = false,
   placeholder,
+  ariaLabel = "Card body",
   className,
   onFocus,
   onBlur,
@@ -180,12 +183,13 @@ export function CardBodyEditor({
         attributes: {
           class:
             "node-card-editor min-h-[52px] w-full px-3 pt-2.5 pb-2 text-sm text-[var(--ink)] focus:outline-none",
+          "aria-label": ariaLabel,
         },
       },
       onFocus: () => onFocus?.(),
       onBlur: () => onBlur?.(),
     },
-    [cardId, cardDoc, contentId, cursorStore, localUser, placeholderText, readOnly],
+    [cardId, cardDoc, contentId, cursorStore, localUser, placeholderText, readOnly, ariaLabel],
   );
 
   useLocalMirrorSync(cardDoc, contentId, editor);
@@ -379,7 +383,7 @@ export function CardTitleEditor({
       {titleEmpty ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 text-[13px] leading-5 text-[var(--ink-muted)]/70"
+          className="pointer-events-none absolute inset-0 text-[13px] leading-5 text-[var(--ink-muted)]"
         >
           Untitled
         </span>

@@ -24,7 +24,10 @@ export type ClaimOutcome = (typeof CLAIM_OUTCOMES)[number];
  * "unlimited"), in which case the series is omitted instead of guessed.
  */
 export interface MetricsGauges {
-  /** Resident set size in bytes; defaults to `process.memoryUsage().rss`. */
+  /**
+   * Resident set size in bytes; defaults to `readProcessRss()`. A zero is never
+   * a real reading, so it is omitted rather than published.
+   */
   rssBytes?: () => number | null;
   /** Seconds since the process started; defaults to `process.uptime()`. */
   uptimeSeconds?: () => number | null;
@@ -113,6 +116,31 @@ function read(source: (() => number | null) | undefined, fallback: () => number 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * The resident set size of this process, in bytes, or `null` when the platform
+ * cannot answer. One reader for both the scrape (`suite_rss_bytes`) and
+ * `/api/admin/status`, so the two can never disagree.
+ */
+export function readProcessRss(): number | null {
+  try {
+    const { rss } = process.memoryUsage();
+    return Number.isFinite(rss) && rss > 0 ? Math.floor(rss) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * RSS is never legitimately zero: a process always maps at least its own code.
+ * A zero therefore means "no reading", and publishing it would make an alert
+ * that compares the gauge against a threshold silently pass. Such a reading is
+ * dropped, so the series is absent and `deploy/alert.sh` reports it as skipped.
+ */
+function readRss(source: (() => number | null) | undefined): number | null {
+  const value = read(source, readProcessRss);
+  return value !== null && value > 0 ? value : null;
+}
+
 const GAUGE_HELP: Record<keyof MetricsSnapshot["gauges"], string> = {
   rssBytes: "Resident set size of the server process in bytes.",
   uptimeSeconds: "Seconds since the server process started.",
@@ -198,7 +226,7 @@ export class MetricsCollector {
   /** Counters as they stand, plus gauges read now. */
   snapshot(): MetricsSnapshot {
     const gauges = this.gauges;
-    const rssBytes = read(gauges.rssBytes, () => process.memoryUsage().rss);
+    const rssBytes = readRss(gauges.rssBytes);
     const uptimeSeconds = read(gauges.uptimeSeconds, () => process.uptime());
     const databaseBytes = read(gauges.databaseBytes, () => null);
     const diskSoftBytes = read(gauges.diskSoftBytes, () => null);

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { WorkspaceDocument } from "@suite/graph";
 import { LoroMap, LoroText } from "loro-crdt";
+import { expect, screen, userEvent, waitFor } from "storybook/test";
 import { LibraryDrawer } from "./LibraryDrawer";
 import { UNSORTED_SECTION } from "./libraryFilters";
 
@@ -127,7 +128,21 @@ type Story = StoryObj<typeof meta>;
 
 export const Inbox: Story = {};
 
-export const Cards: Story = { args: { tab: "cards" } };
+export const Cards: Story = {
+  args: {
+    tab: "cards",
+    workspace: searchWorkspace,
+    counts: { inbox: 2, cards: 2, trash: 1 },
+  },
+  // The drawer indexes note bodies, not just titles: the query only matches the
+  // second card through the word "grading" in its paragraph.
+  play: async () => {
+    await userEvent.type(screen.getByTestId("library-search"), "grading");
+    await waitFor(() => expect(screen.queryByTestId("library-item-c1")).toBeNull());
+    await expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+    await expect(screen.getByTestId("library-item-c2")).toHaveTextContent("Interview notes");
+  },
+};
 
 export const BoardScope: Story = {
   args: { tab: "cards", scope: "board", sectionFilter: ["s1"] },

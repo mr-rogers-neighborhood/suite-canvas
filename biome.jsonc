@@ -24,9 +24,35 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      // A dropped promise is a dropped error: nothing awaits the rejection, so
+      // a failed write or a stuck request leaves no trace. Zero hits today,
+      // which makes this free insurance against the next forgotten `await`.
+      "nursery": {
+        "noFloatingPromises": "error"
+      }
     }
   },
+  "overrides": [
+    {
+      // One logging path: request handlers log through `logging.ts`, which
+      // writes JSON lines with a request id and redacted capability paths.
+      // Only the logger itself, and the licence CLI whose stdout/stderr *is*
+      // its product, may write to the console.
+      "includes": [
+        "apps/collab-server/src/**",
+        "!apps/collab-server/src/logging.ts",
+        "!apps/collab-server/src/licenceCli.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

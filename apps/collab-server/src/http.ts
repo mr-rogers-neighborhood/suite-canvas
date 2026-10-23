@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createLogger } from "./logging.js";
 import type { SharePublishResult, ShareStatus } from "./projectionWorker.js";
 import {
   clientAddress,
@@ -16,6 +17,8 @@ import {
   validateShareInput,
 } from "./shares.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
+
+const logger = createLogger().child({ component: "shares" });
 
 export const SHARE_API_PATH = "/api/shares";
 
@@ -60,7 +63,9 @@ function notify(hooks: ShareRequestHooks | undefined, workspaceId: string): void
   try {
     hooks?.onSharesChanged?.(workspaceId);
   } catch (error) {
-    console.error("[shares] change hook failed", error);
+    logger.error("change hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -68,7 +73,9 @@ function notifyRemoved(hooks: ShareRequestHooks | undefined, share: Share): void
   try {
     hooks?.onShareRemoved?.(share);
   } catch (error) {
-    console.error("[shares] removal hook failed", error);
+    logger.error("removal hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -752,7 +759,9 @@ export async function handleShareRequest(
       sendJson(response, error.status, { error: error.message });
       return true;
     }
-    console.error("[shares] request failed", error);
+    logger.error("request failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sendJson(response, 500, { error: "The share request failed." });
   }
 

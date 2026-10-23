@@ -110,13 +110,15 @@ export function OutlineTree({
           type="button"
           className="board-outline__tab"
           data-testid="outline-tab"
-          aria-label={`Expand outline (${rows.length} section${rows.length === 1 ? "" : "s"})`}
+          aria-label={`Outline, ${rows.length} section${rows.length === 1 ? "" : "s"}`}
+          aria-expanded={false}
+          // The label leads in the DOM so the name starts with the visible text;
+          // column-reverse keeps the count on top, as designed.
+          style={{ flexDirection: "column-reverse" }}
           onClick={onToggle}
         >
+          <span className="board-outline__tab-label">Outline</span>{" "}
           <span className="board-outline__tab-count">{rows.length}</span>
-          <span aria-hidden="true" className="board-outline__tab-label">
-            Outline
-          </span>
         </button>
       )}
     </div>

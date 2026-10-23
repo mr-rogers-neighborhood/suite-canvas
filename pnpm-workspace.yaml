@@ -15,3 +15,8 @@ minimumReleaseAgeExclude:
 patchedDependencies:
   loro-prosemirror@0.4.4: patches/loro-prosemirror@0.4.4.patch
   loro-websocket@0.6.2: patches/loro-websocket@0.6.2.patch
+  # Stryker 10's vitest-runner joins test-suite names with a space, but Vitest 5
+  # matches testNamePattern against names joined with " > ", so every covered
+  # mutant ran zero tests and was reported Survived. Same change as
+  # stryker-mutator/stryker-js#6214; drop this entry when it is released.
+  "@stryker-mutator/vitest-runner@10.0.0": patches/@stryker-mutator__vitest-runner@10.0.0.patch

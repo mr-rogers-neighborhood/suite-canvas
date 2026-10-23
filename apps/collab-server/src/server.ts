@@ -15,13 +15,16 @@ import {
   resolveLimits,
 } from "./limits.js";
 import { createLogger, createRequestLogger } from "./logging.js";
-import { metrics as processMetrics } from "./metrics.js";
+import { metrics as processMetrics, readProcessRss } from "./metrics.js";
 import { configureSqlite, createDocumentStore } from "./persistence.js";
 import {
+  forgetRoomDocument,
   loadLoroDocument,
   loroDocumentKey,
   loroDocumentKeys,
   ProjectionWorker,
+  roomIdleHours,
+  roomSessionCount,
 } from "./projectionWorker.js";
 import {
   disconnectAuthSessions,
@@ -165,6 +168,17 @@ const worker = new ProjectionWorker({
   sourceToken,
   documents: store,
   shares,
+  // Hosted links expire when nobody comes back; a self-host keeps them warm
+  // unless the operator sets a window. The reader is the sync server itself,
+  // which is declared below: the sweep only asks once it is running.
+  idleHours: roomIdleHours(),
+  roomClients: (roomId) => roomSessionCount(server, roomId, projectionToken),
+  // A closed room must leave the server's room table too: `SimpleServer` keeps
+  // one document per room for the life of the process, which is exactly the
+  // memory a dead projection room holds on to.
+  onRoomClosed: (roomId) => {
+    forgetRoomDocument(server, roomId);
+  },
 });
 
 const isWorkspaceRoom = (roomId: string): boolean => !roomId.startsWith(SHARE_ROOM_PREFIX);
@@ -248,6 +262,17 @@ const expirySweep = setInterval(() => {
 }, 60_000);
 expirySweep.unref();
 
+// The same cadence as the expiry sweep. It is a no-op while
+// `SUITE_ROOM_IDLE_HOURS` is off, which is the self-host default.
+const idleSweep = setInterval(() => {
+  void worker.sweepIdle().catch((error: unknown) => {
+    logger.warn("idle room sweep failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}, 60_000);
+idleSweep.unref();
+
 const health = createServer((request, response) => {
   // One line per request, written when the response finishes. The target is
   // redacted first, so a share token or key never reaches stdout.
@@ -279,6 +304,16 @@ const health = createServer((request, response) => {
           // nothing; drop the sessions that still hold it.
           disconnectAuthSessions(server, previousOwnerKey);
         },
+        onDeleted: (workspaceId) => {
+          // The rows are gone, but the live room still holds the document and
+          // saves every `saveInterval` — without this the workspace reappears
+          // seconds after a successful delete. Close the sessions, drop the
+          // in-memory room so nothing can save it again, and let the worker's
+          // next pass find no shares and close the projections.
+          server.disconnectRoomWhere(workspaceId, () => true);
+          forgetRoomDocument(server, workspaceId);
+          void worker.schedule(workspaceId, { immediate: true });
+        },
         quota: quotaGate,
       });
     })
@@ -303,6 +338,8 @@ const health = createServer((request, response) => {
         metrics: processMetrics,
         diskBytes: () => quotas.disk(),
         projectionRooms: () => worker.projectionRooms(),
+        rssBytes: readProcessRss,
+        sweepRooms: (options) => worker.sweepIdle(options),
         disconnectRoom: (roomId) => server.disconnectRoomWhere(roomId, () => true),
         onShareRemoved: removeShare,
         onSharesChanged: (workspaceId) => {
@@ -372,6 +409,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       .catch(() => undefined)
       .finally(() => {
         clearInterval(expirySweep);
+        clearInterval(idleSweep);
         health.close();
         store.close();
         shares.close();

@@ -328,7 +328,7 @@ function parseWorkspaceId(value: string | undefined, log: Log): string | null {
 export function runAdmin(
   argv: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
-  log: Log = (line) => console.log(line),
+  log: Log = (line) => process.stdout.write(`${line}\n`),
 ): number {
   const [command, workspaceArg, ...rest] = argv;
 

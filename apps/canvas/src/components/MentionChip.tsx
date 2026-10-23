@@ -90,7 +90,8 @@ const NOT_SHARED_CHIP = {
   fontWeight: 400,
 } as const;
 
-const NOT_SHARED_NOTE = { opacity: 0.8, marginLeft: 3 } as const;
+/* No opacity: fading muted ink over a chip drops it below 4.5:1. */
+const NOT_SHARED_NOTE = { marginLeft: 3 } as const;
 
 /** The chip's own menu: this is a mention, so actions stay in place. */
 function chipMenuItems(

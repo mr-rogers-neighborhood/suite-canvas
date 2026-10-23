@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CLAIM_OUTCOMES, MetricsCollector, STATUS_CLASSES, statusClassOf } from "./metrics.js";
+import {
+  CLAIM_OUTCOMES,
+  MetricsCollector,
+  readProcessRss,
+  STATUS_CLASSES,
+  statusClassOf,
+} from "./metrics.js";
 
 /** Everything a label is allowed to be; ids, tokens and paths are not. */
 const LABEL_VALUES = new Set<string>([...STATUS_CLASSES, ...CLAIM_OUTCOMES, "1.4.0", "0.0.0-test"]);
@@ -207,5 +213,28 @@ describe("MetricsCollector", () => {
     const snapshot = new MetricsCollector().snapshot();
     expect(snapshot.gauges.rssBytes).toBeGreaterThan(0);
     expect(snapshot.gauges.uptimeSeconds).toBeGreaterThan(0);
+  });
+
+  it("reports a plausible resident set size for this process", () => {
+    const snapshot = new MetricsCollector().snapshot();
+    const rss = snapshot.gauges.rssBytes;
+
+    expect(rss).not.toBeNull();
+    // More than the code alone, nowhere near the 8 GiB a 32-bit-era bug showed.
+    expect(rss ?? 0).toBeGreaterThan(10 * 1024 * 1024);
+    expect(rss ?? 0).toBeLessThan(8 * 1024 * 1024 * 1024);
+    expect(readProcessRss()).toBeGreaterThan(0);
+    expect(sampleLines(new MetricsCollector().prometheus())).toContainEqual(
+      expect.stringMatching(/^suite_rss_bytes \d+$/u),
+    );
+  });
+
+  it("omits RSS instead of publishing a zero reading", () => {
+    const collector = new MetricsCollector({ gauges: { rssBytes: () => 0 } });
+
+    expect(collector.snapshot().gauges.rssBytes).toBeNull();
+    expect(
+      sampleLines(collector.prometheus()).some((line) => line.startsWith("suite_rss_bytes")),
+    ).toBe(false);
   });
 });

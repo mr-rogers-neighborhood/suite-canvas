@@ -5,6 +5,10 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Mutation testing is too slow for PRs; it runs nightly-ish and on demand.
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -38,6 +42,17 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Coverage (reported, graph thresholds enforced)
+        run: pnpm coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          retention-days: 7
+
       - name: Build
         run: pnpm build
 
@@ -47,6 +62,39 @@ jobs:
           name: canvas-dist
           path: apps/canvas/dist
           retention-days: 7
+
+  mutation:
+    name: Mutation report (graph)
+    # Scheduled/manual only: a full graph run costs minutes per mutant batch, and
+    # the score is a diagnostic, so it must never gate a pull request.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Mutation testing (report only, no score gate)
+        run: pnpm mutation
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation
+          retention-days: 14
 
   e2e:
     name: End-to-end

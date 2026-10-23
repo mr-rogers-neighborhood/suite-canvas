@@ -20,10 +20,15 @@ process.on("unhandledRejection", (reason) => {
 
 import type { DocumentStore } from "./persistence.js";
 import {
+  DEFAULT_HOSTED_ROOM_IDLE_HOURS,
+  forgetRoomDocument,
   loadLoroDocument,
   loroDocumentKey,
   loroDocumentKeys,
   ProjectionWorker,
+  type ProjectionWorkerOptions,
+  roomIdleHours,
+  roomSessionCount,
 } from "./projectionWorker.js";
 import { createShareStore, type Share, type ShareStore } from "./shares.js";
 
@@ -120,7 +125,15 @@ function saveSource(state: Harness): void {
   );
 }
 
-async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> {
+async function startHarness(
+  options: {
+    seed?: boolean;
+    /** Worker settings a test cares about; the rest keep the harness defaults. */
+    worker?: Partial<
+      Pick<ProjectionWorkerOptions, "idleHours" | "now" | "roomClients" | "onRoomClosed">
+    >;
+  } = {},
+): Promise<Harness> {
   const port = await freePort();
   const documents = memoryDocuments();
   const database = join(directory, "shares.sqlite");
@@ -164,6 +177,13 @@ async function startHarness(options: { seed?: boolean } = {}): Promise<Harness> 
       shares,
       debounceMs: 60,
       logger: { warn: (text: string) => warnings.push(text) },
+      // The real readers, so the sweep tests exercise the patched server's view
+      // of who is connected and what it still holds, not stand-ins for it.
+      roomClients: (roomId) => roomSessionCount(server, roomId, PROJECTION_TOKEN),
+      onRoomClosed: (roomId) => {
+        forgetRoomDocument(server, roomId);
+      },
+      ...options.worker,
     }),
     warnings,
   };
@@ -420,6 +440,198 @@ describe("projection worker", () => {
     expect(state.worker.roomIds()).toEqual([]);
     await expect(state.worker.schedule(WORKSPACE_ID, { immediate: true })).resolves.toBeUndefined();
   });
+});
+
+describe("room idle hours", () => {
+  it("is off on a self-host and 24 hours on the hosted relay", () => {
+    expect(roomIdleHours({}, false)).toBe(0);
+    expect(DEFAULT_HOSTED_ROOM_IDLE_HOURS).toBe(24);
+    expect(roomIdleHours({}, true)).toBe(24);
+  });
+
+  it("reads SUITE_ROOM_IDLE_HOURS, including 0 to switch it off", () => {
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: "6" }, false)).toBe(6);
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: " 12 " }, false)).toBe(12);
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: "0" }, true)).toBe(0);
+  });
+
+  it("falls back to the default rather than guessing at a bad value", () => {
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: "soon" }, true)).toBe(24);
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: "soon" }, false)).toBe(0);
+    expect(roomIdleHours({ SUITE_ROOM_IDLE_HOURS: "-3" }, false)).toBe(0);
+  });
+});
+
+describe("roomSessionCount", () => {
+  const shareRoom = "share-token";
+  const worker = "projection-token";
+
+  function syncServer(sessions: { rooms: string[]; auths: Record<string, string> }[]): unknown {
+    const clients = new Map<object, { rooms: Set<string>; auths: Map<string, string> }>();
+    const sockets: object[] = [];
+    for (const session of sessions) {
+      const socket = {};
+      sockets.push(socket);
+      clients.set(socket, {
+        rooms: new Set(session.rooms),
+        auths: new Map(Object.entries(session.auths)),
+      });
+    }
+    return { wss: { clients: sockets }, clients };
+  }
+
+  it("counts viewers and ignores the worker and other rooms", () => {
+    const server = syncServer([
+      // The projection worker in its own room.
+      { rooms: [`${shareRoom}:0`], auths: { [`${shareRoom}:0`]: worker } },
+      // A browser that joined the room and its presence stream: one session.
+      {
+        rooms: [`${shareRoom}:0`, `${shareRoom}:presence`],
+        auths: {
+          [`${shareRoom}:0`]: "share-token-value",
+          [`${shareRoom}:presence`]: "share-token-value",
+        },
+      },
+      // An unrelated workspace room.
+      { rooms: ["ws-1:0"], auths: { "ws-1:0": "owner-key" } },
+    ]);
+
+    expect(roomSessionCount(server, shareRoom, worker)).toBe(1);
+  });
+
+  it("counts a viewer that only opened a presence room", () => {
+    const server = syncServer([
+      { rooms: [`${shareRoom}:presence`], auths: { [`${shareRoom}:presence`]: "viewer" } },
+    ]);
+    expect(roomSessionCount(server, shareRoom, worker)).toBe(1);
+  });
+
+  it("returns null when the sync server cannot be read", () => {
+    expect(roomSessionCount({}, shareRoom, worker)).toBeNull();
+    expect(roomSessionCount(null, shareRoom, worker)).toBeNull();
+  });
+});
+
+describe("idle room sweep", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  async function idleEditorRoom(idleHours: number) {
+    let clock = Date.now();
+    const state = await startHarness({ worker: { idleHours, now: () => clock } });
+    const { share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "editor",
+      boardId: BOARD_ID,
+    });
+    const roomId = share.roomId as string;
+    await state.worker.start();
+    // An editor room keeps a draft baseline, so the sweep has both artefacts to
+    // drop: the projected document and the baseline row.
+    await waitFor(() => state.shares.getBaseline(share.id) !== null, "the draft baseline");
+    await waitForSaved(state, roomId, () => true, "the projected document");
+    return { state, share, roomId, advance: (ms: number) => (clock += ms) };
+  }
+
+  it("sweeps an idle room and deletes its documents and baseline", async () => {
+    const { state, share, roomId, advance } = await idleEditorRoom(1);
+    advance(2 * HOUR);
+
+    const report = await state.worker.sweepIdle();
+
+    expect(report).toEqual({
+      idleHours: 1,
+      dryRun: false,
+      checked: 1,
+      unknown: 0,
+      rooms: [{ roomId, shareId: share.id, workspaceId: WORKSPACE_ID, idleMs: 2 * HOUR }],
+    });
+    expect(state.worker.roomIds()).toEqual([]);
+    expect(loadLoroDocument(state.documents, roomId)).toBeNull();
+    expect(state.shares.getBaseline(share.id)).toBeNull();
+    expect(state.shares.get(share.id)?.revokedAt).toBeTypeOf("number");
+    // The sync server's in-memory copy is the largest part of a dead room.
+    const roomKeys = [...(state.server as unknown as { rooms: Map<string, unknown> }).rooms.keys()];
+    expect(roomKeys.filter((key) => key.startsWith(`${roomId}:`))).toEqual([]);
+  }, 20_000);
+
+  it("reports a dry run's candidates without closing them", async () => {
+    const { state, share, roomId, advance } = await idleEditorRoom(1);
+    advance(2 * HOUR);
+
+    const report = await state.worker.sweepIdle({ dryRun: true });
+
+    expect(report).toMatchObject({ idleHours: 1, dryRun: true, checked: 1, unknown: 0 });
+    expect(report.rooms.map((room) => room.roomId)).toEqual([roomId]);
+    expect(state.worker.roomIds()).toEqual([roomId]);
+    expect(state.shares.get(share.id)?.revokedAt).toBeNull();
+    expect(state.shares.getBaseline(share.id)).not.toBeNull();
+  }, 20_000);
+
+  it("keeps a room a viewer is still connected to", async () => {
+    let clock = Date.now();
+    const state = await startHarness({ worker: { idleHours: 1, now: () => clock } });
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    try {
+      await state.worker.start();
+      await waitFor(() => boardCards(viewer).length === 2, "the projection");
+
+      clock += 5 * HOUR;
+      const report = await state.worker.sweepIdle();
+
+      expect(report).toMatchObject({ checked: 1, unknown: 0, rooms: [] });
+      expect(state.worker.roomIds()).toEqual([share.roomId]);
+      expect(state.shares.get(share.id)?.revokedAt).toBeNull();
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  }, 20_000);
+
+  it("keeps a room whose sessions cannot be read", async () => {
+    let clock = Date.now();
+    const state = await startHarness({
+      worker: { idleHours: 1, now: () => clock, roomClients: () => null },
+    });
+    const { share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    await state.worker.start();
+
+    clock += 5 * HOUR;
+    const report = await state.worker.sweepIdle();
+
+    expect(report).toMatchObject({ checked: 1, unknown: 1, rooms: [] });
+    expect(state.worker.roomIds()).toEqual([share.roomId]);
+  }, 20_000);
+
+  it("sweeps nothing while the idle window is off", async () => {
+    let clock = Date.now();
+    const state = await startHarness({ worker: { idleHours: 0, now: () => clock } });
+    state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    await state.worker.start();
+    expect(state.worker.roomIds()).toHaveLength(1);
+
+    clock += 1000 * HOUR;
+    const report = await state.worker.sweepIdle();
+
+    expect(report).toEqual({ idleHours: 0, dryRun: false, checked: 0, unknown: 0, rooms: [] });
+    expect(state.worker.roomIds()).toHaveLength(1);
+  }, 20_000);
 });
 
 describe("selection shares", () => {

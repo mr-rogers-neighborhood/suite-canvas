@@ -33,62 +33,67 @@ export function BoardTabs({
     setRenamingId(null);
   };
 
+  const activeBoard = boards.find((board) => board.id === activeBoardId);
+
   return (
-    <div className="flex min-w-0 items-center gap-1" role="tablist" aria-label="Boards">
-      {boards.map((board) => {
-        const active = board.id === activeBoardId;
-        return (
-          <div key={board.id} className="group flex min-w-0 items-center">
-            {renamingId === board.id ? (
-              <input
-                // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
-                autoFocus
-                value={draft}
-                aria-label={`Rename ${board.name}`}
-                className="w-28 rounded px-2 py-1 text-[12px] outline-none ring-1 ring-blue-400"
-                onChange={(event) => setDraft(event.target.value)}
-                onBlur={commit}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") commit();
-                  if (event.key === "Escape") setRenamingId(null);
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active}
-                data-testid={`board-tab-${board.id}`}
-                data-active={active ? "true" : undefined}
-                title={canManageBoards ? "Double-click to rename" : board.name}
-                className={`max-w-[140px] truncate rounded px-2 py-1 text-[12px] transition-colors ${
-                  active
-                    ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
-                    : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
-                }`}
-                onClick={() => onSelect(board.id)}
-                onDoubleClick={() => {
-                  if (!canManageBoards) return;
-                  setRenamingId(board.id);
-                  setDraft(board.name);
-                }}
-              >
-                {board.name}
-              </button>
-            )}
-            {active && canManageBoards ? (
-              <button
-                type="button"
-                aria-label={`Delete ${board.name}`}
-                className="rounded px-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-white/10"
-                onClick={() => onDeleteRequest(board.id)}
-              >
-                {"\u00d7"}
-              </button>
-            ) : null}
-          </div>
-        );
-      })}
+    // The tablist owns the tabs and nothing else; the per-board delete and the
+    // "new board" button live beside it instead of inside it.
+    <div className="group flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1" role="tablist" aria-label="Boards">
+        {boards.map((board) => {
+          const active = board.id === activeBoardId;
+          return renamingId === board.id ? (
+            <input
+              key={board.id}
+              // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
+              autoFocus
+              value={draft}
+              aria-label={`Rename ${board.name}`}
+              className="w-28 rounded px-2 py-1 text-[12px] outline-none ring-1 ring-blue-400"
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") commit();
+                if (event.key === "Escape") setRenamingId(null);
+              }}
+            />
+          ) : (
+            <button
+              key={board.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-testid={`board-tab-${board.id}`}
+              data-active={active ? "true" : undefined}
+              title={canManageBoards ? "Double-click to rename" : board.name}
+              className={`max-w-[140px] truncate rounded px-2 py-1 text-[12px] transition-colors ${
+                active
+                  ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
+                  : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
+              }`}
+              onClick={() => onSelect(board.id)}
+              onDoubleClick={() => {
+                if (!canManageBoards) return;
+                setRenamingId(board.id);
+                setDraft(board.name);
+              }}
+            >
+              {board.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {canManageBoards && activeBoard ? (
+        <button
+          type="button"
+          aria-label={`Delete ${activeBoard.name}`}
+          className="rounded px-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-white/10"
+          onClick={() => onDeleteRequest(activeBoard.id)}
+        >
+          {"\u00d7"}
+        </button>
+      ) : null}
 
       {canCreateBoards ? (
         <button

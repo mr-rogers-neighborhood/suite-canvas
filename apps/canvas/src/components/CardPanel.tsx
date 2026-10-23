@@ -663,6 +663,7 @@ export function CardPanel({
           localUser={localUser}
           editable={editContent && editing === "body"}
           readOnly={!editContent}
+          ariaLabel="Note body"
           onFocus={keepFocusAlive}
           onBlur={releaseFocusSoon}
           onOpenCardPanel={onOpenCardPanel}

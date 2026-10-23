@@ -27,9 +27,14 @@ import {
   writeLimitOverrides,
 } from "./limits.js";
 import { createLogger, type Logger } from "./logging.js";
-import { type MetricsCollector, metrics as processMetrics } from "./metrics.js";
+import { type MetricsCollector, metrics as processMetrics, readProcessRss } from "./metrics.js";
 import type { DocumentInventory, DocumentStore } from "./persistence.js";
-import { loadLoroDocument, loroDocumentKey, type ProjectionRoomInfo } from "./projectionWorker.js";
+import {
+  loadLoroDocument,
+  loroDocumentKey,
+  type ProjectionRoomInfo,
+  type RoomSweepReport,
+} from "./projectionWorker.js";
 import { clientAddress, createRateLimiter } from "./rateLimit.js";
 import type { SettingsStore } from "./settings.js";
 import { MAX_SELECTION_CARDS, SHARE_ROOM_PREFIX, type Share, type ShareStore } from "./shares.js";
@@ -150,6 +155,18 @@ export interface AdminRequestDeps {
   diskBytes?: () => number;
   /** Collector rendered by `GET /metrics`; defaults to the process-wide one. */
   metrics?: MetricsCollector;
+  /**
+   * Resident set size reader for `status`; defaults to
+   * `process.memoryUsage().rss` through the metrics module, so the JSON and the
+   * scrape cannot disagree.
+   */
+  rssBytes?: () => number | null;
+  /**
+   * Revokes the links of projection rooms nobody has used for the idle window.
+   * Without the worker that owns them there is nothing to sweep, so the route
+   * answers 501 instead of pretending to have looked.
+   */
+  sweepRooms?: (options: { dryRun: boolean }) => Promise<RoomSweepReport> | RoomSweepReport;
 }
 
 interface AdminDatabaseRow {
@@ -412,6 +429,22 @@ function databaseRow(path: string | undefined, fallback?: () => number): AdminDa
   return { bytes: 0, ok: false };
 }
 
+/**
+ * The process's resident set size, or null when it cannot be read. A zero
+ * reading is treated as "unknown" rather than published: no process uses zero
+ * bytes, and a zero is what makes an operator believe a broken gauge.
+ */
+function rssBytesOf(deps: AdminRequestDeps): number | null {
+  let value: number | null;
+  try {
+    value = (deps.rssBytes ?? readProcessRss)();
+  } catch {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return Math.floor(value);
+}
+
 /** The Loro peers of a workspace, or an empty map when its state is unreadable. */
 function versionsOf(doc: LoroDoc | null): Record<string, number> {
   if (!doc) return {};
@@ -475,15 +508,21 @@ function statusBody(deps: AdminRequestDeps) {
     uptimeMs: Math.max(0, Date.now() - (deps.startedAt ?? processStartedAt)),
     node: process.version,
     pid: process.pid,
+    rssBytes: rssBytesOf(deps),
     databases: {
       documents: databaseRow(deps.paths?.documents, () => deps.documents.size?.() ?? 0),
       shares: databaseRow(deps.paths?.shares),
       workspaces: databaseRow(deps.paths?.workspaces),
     },
+    // `total` counts socket rooms, which the sync server can only enumerate on
+    // some versions; projections are always known and are the number that
+    // actually drives memory, so report them separately rather than letting a
+    // bare zero imply the process holds no rooms at all.
     rooms: {
       total: rooms.length,
       workers: rooms.filter((room) => (room.authKinds?.internal ?? 0) > 0).length,
       clients: rooms.reduce((sum, room) => sum + clamp(room.clients), 0),
+      projections: (deps.projectionRooms?.() ?? []).length,
     },
     limits: {
       sharesPerWorkspace: envLimit("SUITE_MAX_SHARES_PER_WORKSPACE", DEFAULT_SHARES_PER_WORKSPACE),
@@ -916,6 +955,61 @@ async function deleteWorkspaceData(
   });
 }
 
+/**
+ * `POST /api/admin/rooms/sweep` revokes the links of projection rooms nobody
+ * touched for the idle window (`SUITE_ROOM_IDLE_HOURS`). `?dryRun=1` — or
+ * `{"dryRun":true}` in the body — reports the candidates without closing them.
+ * What was closed comes back as `closed`; each room's documents and draft
+ * baseline go with it, through the same revoke path an operator revoke takes.
+ */
+async function sweepProjectionRooms(
+  request: IncomingMessage,
+  response: ServerResponse,
+  deps: AdminRequestDeps,
+  url: URL,
+): Promise<void> {
+  if (!deps.sweepRooms) {
+    throw new HttpError(501, "This server cannot sweep projection rooms.");
+  }
+  const dryRun = await dryRunFlag(request, url);
+  const report = await deps.sweepRooms({ dryRun });
+  audit(deps, {
+    path: url.pathname,
+    target: "projection-rooms",
+    action: "sweep-rooms",
+    outcome: dryRun ? "dry-run" : "swept",
+    details: {
+      idleHours: report.idleHours,
+      checked: report.checked,
+      unknown: report.unknown,
+      closed: dryRun ? 0 : report.rooms.length,
+      candidates: report.rooms.length,
+    },
+  });
+  sendJson(response, 200, {
+    ok: true,
+    dryRun,
+    idleHours: report.idleHours,
+    checked: report.checked,
+    unknown: report.unknown,
+    closed: report.rooms,
+  });
+}
+
+/** A `dryRun` flag from the query string or the JSON body; the body wins. */
+async function dryRunFlag(request: IncomingMessage, url: URL): Promise<boolean> {
+  const query = url.searchParams.get("dryRun")?.trim().toLowerCase() ?? "";
+  let dryRun = query === "1" || query === "true" || query === "yes";
+  const fromBody = (await readBody(request))?.dryRun;
+  if (fromBody !== undefined) {
+    if (typeof fromBody !== "boolean") {
+      throw new HttpError(400, "dryRun must be true or false.");
+    }
+    dryRun = fromBody;
+  }
+  return dryRun;
+}
+
 /** Closes every session in a room; the counting seam the patched server exposes. */
 function disconnectRoomSessions(
   response: ServerResponse,
@@ -1273,6 +1367,11 @@ export async function handleAdminRequest(
         sendJson(response, 200, roomsBody(deps));
         return true;
       }
+      if (parts.length === 2 && second === "sweep") {
+        requireMethod(response, method, "POST");
+        await sweepProjectionRooms(request, response, deps, url);
+        return true;
+      }
       if (parts.length === 3 && second?.length && third === "disconnect") {
         requireMethod(response, method, "POST");
         disconnectRoomSessions(response, deps, second, url);
@@ -1334,7 +1433,9 @@ export async function handleAdminRequest(
       sendJson(response, error.status, { error: error.message });
       return true;
     }
-    console.error("[admin] request failed", error);
+    (deps.logger ?? auditLogger).error("request failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sendJson(response, 500, { error: "The admin request failed." });
   }
 

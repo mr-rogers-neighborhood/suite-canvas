@@ -205,7 +205,7 @@ describe("admin API", () => {
       expect(typeof database?.path).toBe("string");
     }
 
-    expect(body.rooms).toEqual({ total: 0, workers: 0, clients: 0 });
+    expect(body.rooms).toEqual({ total: 0, workers: 0, clients: 0, projections: 0 });
     expect(body.limits).toEqual({
       sharesPerWorkspace: expect.any(Number),
       selectionCards: 200,
@@ -216,6 +216,33 @@ describe("admin API", () => {
       expect(Number.isSafeInteger(limit)).toBe(true);
       expect(limit).toBeGreaterThan(0);
     }
+  });
+
+  it("reports a plausible resident set size for the server process", async () => {
+    await startServer();
+
+    const body = (await (await get(`${ADMIN_API_PATH}/status`)).json()) as {
+      rssBytes: number | null;
+    };
+
+    // A live process maps more than its own code and nowhere near 8 GiB.
+    expect(body.rssBytes).not.toBeNull();
+    expect(body.rssBytes ?? 0).toBeGreaterThan(10 * 1024 * 1024);
+    expect(body.rssBytes ?? 0).toBeLessThan(8 * 1024 * 1024 * 1024);
+  });
+
+  it("reads RSS from the wired reader", async () => {
+    await startServer({ rssBytes: () => 123_456_789 });
+    const body = (await (await get(`${ADMIN_API_PATH}/status`)).json()) as { rssBytes: number };
+    expect(body.rssBytes).toBe(123_456_789);
+  });
+
+  it("reports an unreadable RSS as null, never as zero", async () => {
+    await startServer({ rssBytes: () => 0 });
+    const body = (await (await get(`${ADMIN_API_PATH}/status`)).json()) as {
+      rssBytes: number | null;
+    };
+    expect(body.rssBytes).toBeNull();
   });
 
   it("lists workspaces with counts and paginates", async () => {
@@ -352,7 +379,9 @@ describe("admin API", () => {
     const status = (await (await get(`${ADMIN_API_PATH}/status`)).json()) as {
       rooms: { total: number; workers: number; clients: number };
     };
-    expect(status.rooms).toEqual({ total: 1, workers: 1, clients: 3 });
+    // `projections` is always reported: a bare socket-room count of zero would
+    // otherwise imply the process holds no rooms at all.
+    expect(status.rooms).toEqual({ total: 1, workers: 1, clients: 3, projections: 0 });
 
     const withoutRooms = deps();
     delete withoutRooms.rooms;
@@ -449,6 +478,7 @@ describe("admin mutations", () => {
     ["DELETE", `${ADMIN_API_PATH}/shares?workspaceId=ws-a`],
     ["POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`],
     ["POST", `${ADMIN_API_PATH}/rooms/ws-a/disconnect`],
+    ["POST", `${ADMIN_API_PATH}/rooms/sweep`],
     ["DELETE", `${ADMIN_API_PATH}/workspaces/ws-a`],
   ];
 
@@ -481,6 +511,7 @@ describe("admin mutations", () => {
     expect((await get(`${ADMIN_API_PATH}/shares/any-share/revoke`)).status).toBe(405);
     expect((await get(`${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`)).status).toBe(405);
     expect((await get(`${ADMIN_API_PATH}/rooms/ws-a/disconnect`)).status).toBe(405);
+    expect((await get(`${ADMIN_API_PATH}/rooms/sweep`)).status).toBe(405);
     expect((await mutation("POST", `${ADMIN_API_PATH}/status`)).status).toBe(405);
     expect((await mutation("POST", `${ADMIN_API_PATH}/workspaces`, {})).status).toBe(405);
   });
@@ -672,6 +703,77 @@ describe("admin mutations", () => {
   it("answers 501 when the server cannot close rooms", async () => {
     await startServer();
     expect((await mutation("POST", `${ADMIN_API_PATH}/rooms/ws-a/disconnect`)).status).toBe(501);
+  });
+
+  it("sweeps idle projection rooms and returns what it closed", async () => {
+    const asked: { dryRun: boolean }[] = [];
+    const rooms = [
+      { roomId: "share-a", shareId: "share-1", workspaceId: "ws-a", idleMs: 90_000_000 },
+    ];
+    const lines: string[] = [];
+    const logger = createLogger({ level: "debug", write: (line) => lines.push(line) });
+    await startServer({
+      logger,
+      sweepRooms: (options) => {
+        asked.push(options);
+        return { idleHours: 24, dryRun: options.dryRun, checked: 3, unknown: 1, rooms };
+      },
+    });
+
+    const response = await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep`);
+    expect(response.status).toBe(200);
+    expect(asked).toEqual([{ dryRun: false }]);
+    expect(await response.json()).toEqual({
+      ok: true,
+      dryRun: false,
+      idleHours: 24,
+      checked: 3,
+      unknown: 1,
+      closed: rooms,
+    });
+
+    const auditLines = lines.filter((line) => line.includes("admin.mutation"));
+    expect(auditLines).toHaveLength(1);
+    const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
+    expect(record).toMatchObject({
+      path: `${ADMIN_API_PATH}/rooms/sweep`,
+      target: "projection-rooms",
+      action: "sweep-rooms",
+      outcome: "swept",
+      idleHours: 24,
+      checked: 3,
+      unknown: 1,
+      closed: 1,
+      candidates: 1,
+    });
+    expect(auditLines[0]).not.toContain(ADMIN_TOKEN);
+  });
+
+  it("takes dryRun from the query string or the body", async () => {
+    const asked: boolean[] = [];
+    await startServer({
+      sweepRooms: ({ dryRun }) => {
+        asked.push(dryRun);
+        return { idleHours: 24, dryRun, checked: 0, unknown: 0, rooms: [] };
+      },
+    });
+
+    const query = await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep?dryRun=1`);
+    expect(query.status).toBe(200);
+    expect(((await query.json()) as { dryRun: boolean }).dryRun).toBe(true);
+
+    const body = await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep`, { dryRun: true });
+    expect(body.status).toBe(200);
+    expect(((await body.json()) as { dryRun: boolean }).dryRun).toBe(true);
+
+    const invalid = await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep`, { dryRun: "yes" });
+    expect(invalid.status).toBe(400);
+    expect(asked).toEqual([true, true]);
+  });
+
+  it("answers 501 when the server cannot sweep projection rooms", async () => {
+    await startServer();
+    expect((await mutation("POST", `${ADMIN_API_PATH}/rooms/sweep`)).status).toBe(501);
   });
 
   it("requires an explicit confirmation before deleting a workspace", async () => {

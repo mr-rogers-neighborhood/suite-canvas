@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, screen, userEvent } from "storybook/test";
 import type { Share } from "../session/shares";
 import { type ShareClient, ShareDialog } from "./ShareDialog";
 
@@ -114,7 +115,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Workspace: Story = {};
+export const Workspace: Story = {
+  play: async () => {
+    // Nothing is selected, so the subset scope is offered but disabled.
+    await expect(screen.getByTestId("share-tab-selection")).toBeDisabled();
+    await expect(screen.getByTestId("share-tab-workspace")).toHaveAttribute("aria-pressed", "true");
+    await expect(screen.getByTestId("share-hint")).toHaveTextContent(
+      "Editors can change every board",
+    );
+  },
+};
 
 export const Empty: Story = {
   args: { client: demoClient([]) },
@@ -129,10 +139,22 @@ export const Selection: Story = {
     initialScope: "selection",
     selectedCardIds: ["card-1", "card-2", "card-3"],
   },
+  play: async () => {
+    await expect(screen.getByTestId("share-tab-selection")).toBeEnabled();
+    await userEvent.click(screen.getByTestId("share-tab-selection"));
+    // A subset link names how many cards the viewer gets, and stays read-only.
+    await expect(screen.getByTestId("share-hint")).toHaveTextContent("Viewers see these 3 cards");
+    await expect(screen.getByTestId("share-role-editor")).toBeDisabled();
+  },
 };
 
 export const SelectionNeedsTwoCards: Story = {
   args: {
     selectedCardIds: ["card-1"],
+  },
+  play: async () => {
+    const tab = screen.getByTestId("share-tab-selection");
+    await expect(tab).toBeDisabled();
+    await expect(tab).toHaveAttribute("title", "Select two or more cards to share a subset.");
   },
 };

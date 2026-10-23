@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { MentionChip } from "./MentionChip";
 
 const meta = {
@@ -22,7 +23,19 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = {
+  args: { onOpen: fn() },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const chip = canvas.getByTestId("mention-chip");
+    await expect(chip).toHaveTextContent("Onboarding friction");
+    await userEvent.click(chip);
+    await expect(args.onOpen as unknown as ReturnType<typeof fn>).toHaveBeenCalledWith(
+      "card-1",
+      undefined,
+    );
+  },
+};
 
 export const LongTitle: Story = {
   args: { title: "A very long card title that has to truncate inside a paragraph" },
@@ -30,10 +43,24 @@ export const LongTitle: Story = {
 
 export const NotShared: Story = {
   args: { title: "Private card", presence: "stub" },
+  play: async ({ canvasElement }) => {
+    const chip = within(canvasElement).getByRole("note");
+    // The reference survives the share boundary, but it reads as a note and
+    // says so: no link affordance, no pretence that it can be opened.
+    await expect(chip).toHaveAttribute("data-not-shared", "true");
+    await expect(chip).toHaveTextContent("Private card");
+    await expect(chip).toHaveTextContent("not shared");
+    await expect(chip).toHaveAccessibleName("Private card \u2014 not shared");
+  },
 };
 
 export const Unavailable: Story = {
   args: { unavailable: true },
+  play: async ({ canvasElement }) => {
+    const chip = within(canvasElement).getByTestId("mention-chip");
+    await expect(chip).toHaveAttribute("data-unavailable", "true");
+    await expect(chip).toHaveTextContent("Unavailable card");
+  },
 };
 
 /** The three states a share boundary can put a mention in, side by side. */

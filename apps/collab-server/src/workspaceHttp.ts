@@ -19,8 +19,11 @@ import {
   verifyLicence,
 } from "./licence.js";
 import { formatBytes, publicLimits, type QuotaService, shareBlockReason } from "./limits.js";
+import { createLogger } from "./logging.js";
 import { claimLimiter, clientAddress, rotateLimiter } from "./rateLimit.js";
 import { validateClaimInput, validateRotateInput, type WorkspaceRegistry } from "./workspaces.js";
+
+const logger = createLogger().child({ component: "workspaces" });
 
 export const WORKSPACE_API_PATH = "/api/workspaces";
 
@@ -421,7 +424,9 @@ async function rotate(
   try {
     hooks?.onRotated?.(workspaceId.trim(), currentOwnerKey);
   } catch (error) {
-    console.error("[workspaces] rotation hook failed", error);
+    logger.error("rotation hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -487,7 +492,9 @@ async function remove(
   try {
     hooks?.onDeleted?.(id);
   } catch (error) {
-    console.error("[workspaces] delete hook failed", error);
+    logger.error("delete hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -586,7 +593,9 @@ export async function handleWorkspaceRequest(
       sendJson(response, error.status, { error: error.message });
       return true;
     }
-    console.error("[workspaces] request failed", error);
+    logger.error("request failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     sendJson(response, 500, { error: "The workspace request failed." });
   }
 

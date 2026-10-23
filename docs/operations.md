@@ -71,6 +71,7 @@ Release flow, in order:
 | `SUITE_VERSION` | `package.json` | Version stamp for `/metrics`, `/api/admin/status` and the startup line; the image sets it from the tag. |
 | `SUITE_HOSTED` | unset (self-host) | `1` turns on the hosted relay: licence enforcement and the hosted limit defaults. |
 | `SUITE_LICENCE_PUBLIC_KEY` | unset | Ed25519 key that verifies licences; **required** when `SUITE_HOSTED=1`. |
+| `SUITE_ROOM_IDLE_HOURS` | `0` (off); `24` when `SUITE_HOSTED=1` | Hours a projection room may sit with no viewer and no owner save before the sweep revokes its link. `0` switches the sweep off. |
 | `SUITE_MAX_SHARES_PER_WORKSPACE` | `100` | Active links allowed per workspace. |
 | `SUITE_MAX_WORKSPACES` | unlimited | Workspaces a licence (hosted) or this instance (self-host) may hold. |
 | `SUITE_DOCUMENT_BYTES_PER_WORKSPACE` | unlimited | Document bytes a workspace may reach before it is marked over quota. |
@@ -199,7 +200,7 @@ Counters are incremented where the server already knows the event; gauges are re
 | `suite_projection_rebuilds_total` | counter | Rebuild passes requested: one per debounced save batch, one per share create/revoke. Coalesced saves share one pass. |
 | `suite_projection_failures_total` | counter | Rebuild requests whose promise rejected; each also logs a `projection rebuild failed` warning. |
 | `suite_build_info{version="…"}` | gauge, always `1` | The version stamp (`SUITE_VERSION`, else `package.json`), for joining with a release. |
-| `suite_rss_bytes` | gauge | Resident set size of the process. |
+| `suite_rss_bytes` | gauge | Resident set size of the process, from `process.memoryUsage().rss`. Absent when it cannot be read — never `0`, because a zero would let an RSS threshold silently pass. |
 | `suite_uptime_seconds` | gauge | Seconds since the process started. |
 | `suite_database_bytes` | gauge | Bytes the document database occupies (page count × page size), the same number the disk watermarks compare against. |
 | `suite_disk_soft_bytes` | gauge | The soft watermark in force. **Absent when it is unlimited**, because "unlimited" is not a number. |
@@ -317,15 +318,66 @@ Set `SUITE_ADMIN_TOKEN` and read the detailed state from there:
 curl -s -H "Authorization: Bearer $SUITE_ADMIN_TOKEN" http://localhost:1235/api/admin/status
 ```
 
-It returns uptime, pid, the version stamp, per-database sizes (documents, shares, workspaces), room
-and client counts, and the limits in force. Without `SUITE_ADMIN_TOKEN` every `/api/admin/*` path
-answers `404`, so the
+It returns uptime, pid, the version stamp, `rssBytes` (this process's resident set size, from
+`process.memoryUsage().rss`; `null` when it cannot be read, never `0`), per-database sizes
+(documents, shares, workspaces), room and client counts, and the limits in force. Without
+`SUITE_ADMIN_TOKEN` every `/api/admin/*` path answers `404`, so the
 route does not advertise itself. Other read-only routes: `/api/admin/rooms`,
 `/api/admin/shares?workspaceId=…`, `/api/admin/workspaces?limit=&offset=`,
 `/api/admin/workspaces/:id`, `/api/admin/limits`. Two more sit behind the same token:
 `POST /api/admin/fixtures` seeds a disposable workspace (see below) and
 `GET /api/admin/workspaces/:id/export` downloads its stored snapshot as a `.suite` file.
-`PUT /api/admin/limits` is the one mutation on that route: it stores runtime overrides.
+`PUT /api/admin/limits` stores runtime overrides, and `POST /api/admin/rooms/sweep` closes idle
+projection rooms (below).
+
+#### Sweeping idle projection rooms
+
+Every board, card and selection link keeps one live projection room — a full copy of the projected
+document — for as long as the link exists. Links do not expire by default, so a single long e2e
+session left **354** of those rooms behind on a development instance, each one a document copy.
+`SUITE_ROOM_IDLE_HOURS` bounds that:
+
+- A room is **idle** when no owner save, publish, reload or status read has touched it for the
+  window **and** the sync server reports no connected session in it other than the projection
+  worker. A browser that is still looking at the link keeps it alive however long the owner has
+  been away, and a room whose sessions cannot be read is never swept.
+- The sweep runs every 60 seconds (the same timer cadence as the share-expiry sweep) and is a
+  no-op at `0`, which is the self-host default: a self-host keeps every link warm unless the
+  operator asks for a window. `SUITE_HOSTED=1` defaults to 24 hours.
+- A swept room is **revoked**, not just closed: the link stops working, it leaves
+  `/api/admin/rooms`, its stored documents and draft baseline are deleted through the same revoke
+  path an operator revoke takes, and the sync server drops its in-memory copy of the room — that
+  copy, not the row on disk, is the largest part of a dead link's footprint. A viewer who
+  reconnects gets **Share not found.** and the owner has to share again.
+
+Run it by hand, or dry-run it first to see what it would close:
+
+```sh
+curl -s -X POST -H "Authorization: ******" \
+  'http://localhost:1235/api/admin/rooms/sweep?dryRun=1'
+curl -s -X POST -H "Authorization: ******" \
+  http://localhost:1235/api/admin/rooms/sweep
+```
+
+The dry run reports candidates and changes nothing; `{"dryRun":true}` in a JSON body does the same.
+With `dryRun: true`, `closed` lists what it *would* close. Both forms answer:
+
+```json
+{
+  "ok": true,
+  "dryRun": false,
+  "idleHours": 24,
+  "checked": 41,
+  "unknown": 0,
+  "closed": [
+    { "roomId": "share-…", "shareId": "…", "workspaceId": "ws-…", "idleMs": 90061000 }
+  ]
+}
+```
+
+`checked` is how many rooms the pass looked at and `unknown` how many it kept because it could not
+read their sessions, so "closed nothing" is distinguishable from "looked at nothing". Every call
+writes one `admin.mutation` audit line with `action: "sweep-rooms"` and the counts, never a token.
 
 ### The `/admin` panel
 
@@ -611,6 +663,7 @@ owner's own `GET /api/workspaces/:id/status`. Per-licence caps are enforced agai
 | Admin requests per minute | 300 | `adminHttp.ts` |
 | Room save interval | 2 s, coalesced | `server.ts` (`saveInterval`) |
 | Expired-share sweep | 60 s | `server.ts` |
+| Idle projection-room sweep | 60 s; a no-op while `SUITE_ROOM_IDLE_HOURS` is `0` (the self-host default) | `server.ts`, `projectionWorker.ts` |
 | `PRAGMA optimize` | document store on start and hourly (unref'd timer); share and workspace files on start | `persistence.ts` |
 | Journal mode | WAL on all three databases | `persistence.ts` |
 | Disk measurement cache | 1 s per process, so a request batch does not re-stat the store | `limits.ts` |
@@ -688,6 +741,26 @@ seconds per rebuild per link, and rebuilds follow the owner's saves. Two things 
   ([ADR-0021](../docs/decisions/0021-sharing-seam-deferred.md)), not more tuning: the remaining cost
   is copying every card's rich text into the projection.
 
+**One workspace, five editors.** `apps/collab-server/src/roomsLoad.test.ts` runs five websocket
+clients on one workspace room, each with its own credential: 40 edits apiece (200 in total — text
+appends into each client's own card, plus card moves), then waits until all five report the same
+version vector, title text and placement. Measured on this checkout:
+
+```
+[load] 5 clients / 200 edits converge in 936ms
+```
+
+Three runs on this checkout printed 890 ms, 895 ms and 1 101 ms, so expect a little under a second
+on a developer machine. The test prints its own line on every run, so the number belongs to the
+machine that ran it; it fails only if convergence takes longer than 20 seconds, which is the
+regression signal.
+
+**Idle rooms add up.** A link with no expiry keeps its projection room forever, so one long e2e
+session left **354** live rooms on the development instance (381 at the worst, against a 146 MiB
+document store). `SUITE_ROOM_IDLE_HOURS` — off on a self-host, 24 h when `SUITE_HOSTED=1` — and
+`POST /api/admin/rooms/sweep` bound that; see "Sweeping idle projection rooms" above. Sweep, or
+lower the window, before a backup: a backup carries every live projection with it.
+
 ### Known gaps and risks
 
 - **An over-quota workspace keeps its bytes.** A per-workspace document budget is enforced by
@@ -706,3 +779,35 @@ seconds per rebuild per link, and rebuilds follow the owner's saves. Two things 
   workspace's metadata and share list.
 - **`sqlite3` is not in the runtime image**, so the online backup script runs on the host (or needs
   a throwaway container with it installed).
+- **A claim that only succeeds after boot does not re-join the sync room.** The claim retries; the
+  sync connection does not, so a tab that booted offline keeps editing locally and only syncs on its
+  next boot even though the relay now considers the workspace claimed. The fix is in the canvas app
+  and is written out below rather than guessed at from the server side.
+
+#### Offline re-join: proposal (not shipped)
+
+The claim retries today: a failed `POST /api/workspaces/:id/claim` leaves the tab `pending` or
+`offline`, `startClaimRetry` in `apps/canvas/src/session/ownerKey.ts` backs off up to a minute and
+watches `online`, and it settles on `claimed`. The **sync connection does not retry**. It is created
+at module load in `apps/canvas/src/store/useCanvasStore.ts` (`new LoroProvider(...)`) after
+`bootRelay` configured the session, and the relay refuses that join while the workspace is
+unclaimed — `authorize` verifies an owner key, it never claims one. Nothing re-runs when the claim
+settles, so the tab edits locally, looks disconnected, and syncs only on the next boot.
+
+The change, in four small steps (all in `apps/canvas`, outside this lane):
+
+1. `prepareOwnerSession` already forwards `onOutcome` into `startClaimRetry`. `bootRelay` in
+   `apps/canvas/src/main.tsx` passes a callback that fires on the **transition** to `claimed` only.
+2. `LoroProvider` (`collab/loroProvider.ts`) gains `rejoin()`: return if `this.disposed`, if the
+   workspace room is already joined, or if `this.joining` is set; otherwise
+   `await this.client.waitConnected()` and run the existing `join()` again. A refused join leaves
+   `workspaceRoom` null and clears `joining` in `finally`, so this is a second attempt on the same
+   socket, not a second socket.
+3. The callback resolves the store lazily (`useCanvasStore.getState().provider?.rejoin()` after a
+   dynamic `import`, because `main.tsx` runs before the store module exists).
+4. Loop guard: fire at most once per boot, only on the `claimed` transition, and let `rejoin()`
+   no-op while a join is in flight. A re-join that fails is retried by the next `online` event or
+   the next boot, never by its own timer, so a relay that keeps refusing cannot spin.
+
+Until that ships, reloading the tab after the claim settles is the workaround — it is what "sync
+resumes on the next boot" means in practice.

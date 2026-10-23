@@ -9,7 +9,8 @@
   --surface-translucent: rgba(255, 255, 255, 0.72);
   --hairline: rgba(0, 0, 0, 0.08);
   --ink: #1d1d1f;
-  --ink-muted: #6e6e73;
+  /* 4.57:1 on the darkest muted surface (--segmented-bg over --canvas-bg). */
+  --ink-muted: #68686d;
   --canvas-bg: #f5f5f7;
   --rf-dot: #d6d6db;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.25);
@@ -21,6 +22,8 @@
   --section-amber: #f59e0b;
   --section-rose: #f43f5e;
   --section-violet: #8b5cf6;
+  /* The brand blue is too light for chip text (2.9:1); this keeps the hue. */
+  --mention-ink: color-mix(in srgb, var(--section-blue) 72%, #000);
 }
 
 .dark {
@@ -29,7 +32,8 @@
   --surface-translucent: rgba(28, 28, 30, 0.72);
   --hairline: rgba(255, 255, 255, 0.1);
   --ink: #f5f5f7;
-  --ink-muted: #a1a1a6;
+  /* 5.29:1 on a hovered surface (dark:hover:bg-white/10 over --surface). */
+  --ink-muted: #a8a8ad;
   --canvas-bg: #151517;
   --rf-dot: #333338;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 44px -22px rgba(0, 0, 0, 0.9);
@@ -41,6 +45,8 @@
   --section-amber: #fbbf24;
   --section-rose: #fb7185;
   --section-violet: #a78bfa;
+  /* On dark surfaces the light brand blue already clears 4.5:1. */
+  --mention-ink: var(--section-blue);
 }
 
 html,
@@ -1160,7 +1166,7 @@ body {
   padding: 0 5px;
   border-radius: 5px;
   background: color-mix(in srgb, var(--section-blue) 14%, transparent);
-  color: var(--section-blue);
+  color: var(--mention-ink);
   font-weight: 500;
   line-height: 1.5;
   vertical-align: baseline;

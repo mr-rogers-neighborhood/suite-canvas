@@ -1,4 +1,5 @@
 import type { PresenceUser } from "../collab/presence";
+import { presenceChipInk } from "./PeerNameTag";
 
 export interface PresenceCursorProps {
   user: PresenceUser;
@@ -33,7 +34,7 @@ export function PresenceCursor({ user, x, y, scale = 1, leaving = false }: Prese
       </svg>
       <span
         className="presence-cursor-label ml-4 inline-block rounded-md px-2 py-0.5 text-xs font-medium text-white shadow-sm"
-        style={{ backgroundColor: user.color }}
+        style={{ backgroundColor: user.color, color: presenceChipInk(user.color) }}
       >
         {user.name}
       </span>

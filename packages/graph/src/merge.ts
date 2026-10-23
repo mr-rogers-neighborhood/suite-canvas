@@ -1742,6 +1742,11 @@ function applyChange(
       const card = source.getCard(change.cardId);
       if (!card) return false;
       if (!allowedFieldIds(source, card).has(change.fieldId)) return false;
+      // Replaying a plan must be a no-op. `setProperty` always stamps
+      // `updatedAt`, which reorders the inbox, so write only a real change.
+      // Every other kind below already compares first.
+      const current = card.properties[change.fieldId] ?? null;
+      if (same(current, value.value ?? null)) return false;
       source.setProperty(change.cardId, change.fieldId, value.value);
       return true;
     }

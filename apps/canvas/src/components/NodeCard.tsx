@@ -264,7 +264,11 @@ export function NodeCard({
         {hasMeta ? (
           <button
             type="button"
-            aria-label={metaExpanded ? "Hide details" : "Show details"}
+            aria-label={
+              metaExpanded
+                ? "Hide details"
+                : `Show details: ${metaCount} ${metaCount === 1 ? "property" : "properties"}`
+            }
             aria-expanded={metaExpanded}
             title={metaExpanded ? "Hide properties" : `Show properties (${metaCount})`}
             data-testid="card-meta-toggle"

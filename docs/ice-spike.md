@@ -74,6 +74,20 @@ The launcher (`scripts/ice-chrome.mjs`) does four things:
 
    Every launch uses a new workspace id, so you never have to clear state to get the demo back.
 
+### Testing the live workspace in the app
+
+The launcher opens the standalone engine desk. To test the app path, use the same headed Chrome
+window and open:
+
+```text
+http://localhost:5173/?canvas=ice
+```
+
+The app waits for the workspace to hydrate, then projects the live graph. The HUD says
+`ICE workspace` and `Read-only projection — not document truth`; selecting a card mirrors the
+Suite shell selection. Dragging is intentionally not saved yet; the write bridge is the next phase
+in [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md).
+
 Useful knobs:
 
 | Variable | Meaning |

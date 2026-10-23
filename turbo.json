@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["SUITE_E2E_WINDOW_POSITION", "SUITE_E2E_WINDOW_SIZE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -94,7 +94,11 @@ describe("suiteProjection", () => {
         cardId: "demo-card-atlas-welcome",
         boardId: "board-1",
         title: "Welcome to Atlas",
-        paper: "yellow",
+        // The card's own sheet and ink from the Suite palette, and the one text
+        // flow the paper writes.
+        paper: "card",
+        pen: "card",
+        text: expect.stringContaining("Welcome to Atlas"),
       },
     });
     expect(cards[0]?.id).toBe("card:demo-card-atlas-welcome");

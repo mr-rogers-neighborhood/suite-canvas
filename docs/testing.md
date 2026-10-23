@@ -115,6 +115,17 @@ Prefer `e2e:headed` over `e2e:ui` when the failure depends on real execution ord
 tests, because UI mode runs whatever you click, on demand; use `e2e:ui` when you want to pause,
 step through actions and inspect DOM snapshots instead.
 
+### Headed windows open on the other screen
+
+A headed window that lands under the pointer interrupts whoever is working. `scripts/e2e-window.mjs`
+picks the widest monitor that is not the primary one (`xrandr --listmonitors`) and passes Chrome
+`--window-position`/`--window-size`; the ICE specs use it, and so does
+`scripts/ice-chrome.mjs`. Override the choice when a desk is arranged differently:
+
+```sh
+SUITE_E2E_WINDOW_POSITION=64,64 SUITE_E2E_WINDOW_SIZE=1280x900 pnpm e2e:headed
+```
+
 Headed runs are slower than the parallel headless run and open one window at a time — use them to
 observe, not as the gate. `pnpm e2e` stays the CI command.
 

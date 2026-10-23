@@ -34,6 +34,9 @@ export interface SuiteCardGeometry {
   readonly alpha?: number;
 }
 
+/** What a card shows at its current on-screen size. */
+export type SuiteCardBand = "full" | "compact" | "icon";
+
 export interface SuiteCardBox {
   /** Screen-space top-left of the (unrotated) screen box, CSS px of the container. */
   readonly left: number;
@@ -47,10 +50,26 @@ export interface SuiteCardBox {
   /** The camera zoom; the content is laid out at world size and scaled by this. */
   readonly scale: number;
   readonly angleDeg: number;
+  /** Which face to draw. The face never unmounts, so there is no pop at a boundary. */
+  readonly band: SuiteCardBand;
 }
 
-/** A card narrower than this on screen is not a card any more; it is a chip. */
-export const SUITE_CARD_MIN_SCREEN_WIDTH = 180;
+/**
+ * The width at which the live card is worth mounting. Below it the card is a
+ * static face, not a missing card: the DOM face is the only face a Suite card
+ * has, so nothing may be unmounted on the way out.
+ */
+export const SUITE_CARD_FULL_SCREEN_WIDTH = 180;
+/** Below this the static face is a glyph only. */
+export const SUITE_CARD_COMPACT_SCREEN_WIDTH = 56;
+
+/** The band a card of this on-screen width shows. */
+export function suiteCardBand(screenWidth: number): SuiteCardBand {
+  if (!Number.isFinite(screenWidth)) return "icon";
+  if (screenWidth >= SUITE_CARD_FULL_SCREEN_WIDTH) return "full";
+  if (screenWidth >= SUITE_CARD_COMPACT_SCREEN_WIDTH) return "compact";
+  return "icon";
+}
 
 function finite(value: number): boolean {
   return Number.isFinite(value);
@@ -64,7 +83,7 @@ function finite(value: number): boolean {
 export function suiteCardBox(
   geometry: SuiteCardGeometry | null | undefined,
   camera: SuiteCardCamera | null | undefined,
-  minScreenWidth = SUITE_CARD_MIN_SCREEN_WIDTH,
+  minScreenWidth = 0,
 ): SuiteCardBox | null {
   if (geometry === null || geometry === undefined) return null;
   if (camera === null || camera === undefined) return null;
@@ -90,6 +109,47 @@ export function suiteCardBox(
     worldHeight,
     scale: zoom,
     angleDeg: (geometry.angle * 180) / Math.PI,
+    band: suiteCardBand(width),
+  };
+}
+
+/** A canonical widget rect in world units: top-left plus size. */
+export interface SuiteCardRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/**
+ * Position a card from the widget's own `Position`/`Size` rather than the
+ * paper's drawn extents. `PaperGeometry.half` is "as drawn" — it carries the
+ * hold's lift and curl — so a DOM face sized from it drifts against the GPU
+ * rect it is standing in for.
+ */
+export function suiteCardBoxFromRect(
+  rect: SuiteCardRect | null | undefined,
+  camera: SuiteCardCamera | null | undefined,
+): SuiteCardBox | null {
+  if (rect === null || rect === undefined) return null;
+  if (camera === null || camera === undefined) return null;
+  const { x, y, w, h } = rect;
+  if (!finite(x) || !finite(y) || !finite(w) || !finite(h)) return null;
+  if (!finite(camera.x) || !finite(camera.y) || !finite(camera.zoom)) return null;
+  const zoom = camera.zoom;
+  if (!(zoom > 0)) return null;
+  const width = w * zoom;
+  const height = h * zoom;
+  return {
+    left: (x - camera.x) * zoom,
+    top: (y - camera.y) * zoom,
+    width,
+    height,
+    worldWidth: w,
+    worldHeight: h,
+    scale: zoom,
+    angleDeg: 0,
+    band: suiteCardBand(width),
   };
 }
 
@@ -98,6 +158,8 @@ export interface SuiteCardInfo {
   readonly entity: number;
   readonly title: string;
   readonly body: string;
+  /** Which face to draw; the renderer switches content, not existence. */
+  readonly band: SuiteCardBand;
   /**
    * The workspace card this object stands for. "" when the kind carries none,
    * which is the lab's case; a production renderer then mounts nothing.
@@ -134,10 +196,19 @@ export interface SuiteCardOverlayOptions {
   /** Enumerate the kind's live entities, once per `sync()`. */
   readonly entities: () => Iterable<number>;
   readonly geometryOf: (entity: number) => SuiteCardGeometry | null | undefined;
+  /**
+   * The canonical widget rect, preferred over `geometryOf`. The paper's drawn
+   * extents include lift; the widget's own rect does not.
+   */
+  readonly rectOf?: ((entity: number) => SuiteCardRect | null | undefined) | undefined;
   readonly camera: () => SuiteCardCamera | null | undefined;
   /** Title/body (and, in production, the card's ids) for the slot's content. */
   readonly infoOf?: (entity: number) => SuiteCardFace | undefined;
   readonly renderer?: SuiteCardSlotRenderer | undefined;
+  /**
+   * Hide a slot entirely below this on-screen width. Defaults to 0: a Suite
+   * card's DOM face is the only face it has, so it is never hidden by size.
+   */
   readonly minScreenWidth?: number | undefined;
 }
 
@@ -156,6 +227,8 @@ interface Slot {
   readonly content: HTMLElement;
   cleanup: (() => void) | undefined;
   mounted: boolean;
+  /** The band the mounted content was built for; content swaps when it changes. */
+  band: SuiteCardBand | undefined;
 }
 
 const SLOT_CLASS = "suite-card-overlay__slot";
@@ -220,7 +293,7 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
     content.style.cssText = "position:absolute;left:0;top:0;transform-origin:0 0;";
     element.append(content);
     layer.append(element);
-    const slot: Slot = { element, content, cleanup: undefined, mounted: false };
+    const slot: Slot = { element, content, cleanup: undefined, mounted: false, band: undefined };
     slots.set(entity, slot);
     return slot;
   };
@@ -233,6 +306,7 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
     }
     slot.mounted = true;
     slot.element.dataset.entity = String(entity);
+    slot.element.dataset.band = info.band;
   };
 
   const sync = (): void => {
@@ -241,7 +315,11 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
     for (const entity of opts.entities()) {
       seen.add(entity);
       const slot = ensure(entity);
-      const box = suiteCardBox(opts.geometryOf(entity), camera, opts.minScreenWidth);
+      const rect = opts.rectOf?.(entity);
+      const box =
+        rect === null || rect === undefined
+          ? suiteCardBox(opts.geometryOf(entity), camera, opts.minScreenWidth)
+          : suiteCardBoxFromRect(rect, camera);
       if (box === null) {
         if (slot.mounted) unmount(slot);
         slot.element.style.display = "none";
@@ -255,6 +333,7 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
         body: face?.body ?? "suite.card — screen-space DOM half",
         cardId: face?.cardId ?? "",
         boardId: face?.boardId ?? "",
+        band: box.band,
         worldWidth: box.worldWidth,
         worldHeight: box.worldHeight,
       };
@@ -270,7 +349,9 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
       slot.element.style.width = `${box.width}px`;
       slot.element.style.height = `${box.height}px`;
       slot.element.style.transform = `rotate(${box.angleDeg}deg)`;
+      if (slot.mounted && slot.band !== box.band) unmount(slot);
       if (!slot.mounted) mount(entity, slot, info);
+      slot.band = box.band;
     }
     for (const [entity, slot] of slots) {
       if (!seen.has(entity)) destroy(entity, slot);

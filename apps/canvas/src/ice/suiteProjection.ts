@@ -112,9 +112,12 @@ export interface IceSuiteCardObject {
   readonly props: Readonly<{
     cardId: string;
     boardId: string;
+    /** The one text flow the paper writes (title, blank line, body). */
+    text: string;
+    seeds: string;
     title: string;
     body: string;
-    paper: "yellow";
+    paper: "card" | "yellow";
     pen: string;
     seed: number;
   }>;
@@ -306,10 +309,13 @@ function suiteCardFrom(
     props: {
       cardId: card.id,
       boardId,
+      // The paper writes this: title, blank line, body.
+      text: snippet.length === 0 ? title : `${title}\n\n${snippet}`,
+      seeds: "",
       title,
       body: snippet,
-      paper: "yellow",
-      pen: "fountain",
+      paper: "card",
+      pen: "card",
       seed: 2000 + index,
     },
   };

@@ -27,7 +27,14 @@ import type { Placement } from "@suite/graph";
 export type CanonicalPlacement = Pick<
   Placement,
   "boardId" | "cardId" | "x" | "y" | "width" | "height"
->;
+> & {
+  /**
+   * What the card says, as one text flow (title, blank line, body). A card's
+   * face is drawn from this, so a change to it replaces the entity the same way
+   * a move does.
+   */
+  readonly text?: string;
+};
 
 /** What the lifecycle needs from the ICE engine. Kept structural so it is testable. */
 export interface CardProjectionOps<TEntity> {
@@ -85,15 +92,17 @@ export function placementBox(
 export class CardProjection<TEntity> {
   private readonly host: CardProjectionHost<TEntity>;
   private readonly byCard = new Map<string, TEntity>();
+  private readonly textOf = new Map<string, string>();
   private readonly byEntity = new Map<TEntity, { cardId: string; boardId: string }>();
 
   constructor(host: CardProjectionHost<TEntity>) {
     this.host = host;
   }
 
-  register(entity: TEntity, cardId: string, boardId: string): void {
+  register(entity: TEntity, cardId: string, boardId: string, text = ""): void {
     this.byCard.set(cardId, entity);
     this.byEntity.set(entity, { cardId, boardId });
+    this.textOf.set(cardId, text);
   }
 
   entityOf(cardId: string): TEntity | undefined {
@@ -112,7 +121,7 @@ export class CardProjection<TEntity> {
   /** Spawn one canonical placement and register it. */
   spawn(placement: CanonicalPlacement): TEntity {
     const entity = this.host.spawn(placement);
-    this.register(entity, placement.cardId, placement.boardId);
+    this.register(entity, placement.cardId, placement.boardId, placement.text);
     return entity;
   }
 
@@ -122,6 +131,7 @@ export class CardProjection<TEntity> {
     if (entity === undefined) return false;
     this.byCard.delete(cardId);
     this.byEntity.delete(entity);
+    this.textOf.delete(cardId);
     this.host.remove(entity);
     return true;
   }
@@ -154,6 +164,7 @@ export class CardProjection<TEntity> {
       if (wanted.has(cardId)) continue;
       this.byCard.delete(cardId);
       this.byEntity.delete(entity);
+      this.textOf.delete(cardId);
       try {
         this.host.remove(entity);
         removed.push(entity);
@@ -174,11 +185,16 @@ export class CardProjection<TEntity> {
       }
       if (options.force !== true) {
         const current = this.host.boxOf(existing);
-        if (current !== null && sameBox(current, placementBox(placement, natural))) continue;
+        const sameText = (this.textOf.get(cardId) ?? "") === (placement.text ?? "");
+        if (sameText && current !== null && sameBox(current, placementBox(placement, natural))) {
+          continue;
+        }
       }
-      // Geometry diverged: replace rather than mutate. The entity is disposable.
+      // Geometry or text diverged: replace rather than mutate. The entity is
+      // disposable, and a replacement lands with the new face already written.
       this.byCard.delete(cardId);
       this.byEntity.delete(existing);
+      this.textOf.delete(cardId);
       try {
         this.host.remove(existing);
       } catch (error) {

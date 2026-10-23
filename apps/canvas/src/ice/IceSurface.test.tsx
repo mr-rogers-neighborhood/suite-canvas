@@ -78,7 +78,16 @@ vi.mock("@vibecook/ice", () => ({
   createCanvasEngine: ice.createCanvasEngine,
   selectedEntities: vi.fn(() => []),
 }));
-vi.mock("@vibecook/ice/desk", () => ({ deskLayer: ice.deskLayer }));
+vi.mock("@vibecook/ice/desk", () => ({
+  deskLayer: ice.deskLayer,
+  // The desk asks for a text raster to write notes with; in jsdom there is no
+  // font to measure, so it reports no metrics and every sheet stays blank.
+  inkRaster: () => ({
+    metrics: () => undefined,
+    version: () => 0,
+    raster: () => ({ bytes: new Uint8Array(0), w: 0, h: 0 }),
+  }),
+}));
 vi.mock("@vibecook/ice/desk/objects", () => ({
   DESK_ENGINE: { widgets: [] },
   DESK_OBJECTS: [],
@@ -212,7 +221,17 @@ describe("IceSurface", () => {
     expect(ice.deskTheme).toHaveBeenCalledWith("light");
     expect(ice.deskPalette).toHaveBeenCalledWith("light");
     expect(ice.deskLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "ice-demo-1", theme: {}, palette: {} }),
+      expect.objectContaining({
+        name: "ice-demo-1",
+        theme: {},
+        // The engine palette plus the card's own sheet and ink.
+        palette: expect.objectContaining({
+          papers: expect.objectContaining({ card: expect.anything() }),
+          pens: expect.objectContaining({ card: expect.anything() }),
+        }),
+        // Without a text raster ICE writes no note at all.
+        text: expect.anything(),
+      }),
     );
     // One projection for the root, one that compiles the mini mats' frames,
     // and one that settles the children.

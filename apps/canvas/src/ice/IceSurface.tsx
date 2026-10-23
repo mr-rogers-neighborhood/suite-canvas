@@ -62,6 +62,7 @@ import { workspaceWriter } from "./iceBridge";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
+import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
 import {
   buildSuiteSeed,
   projectWorkspaceToIce,
@@ -904,7 +905,7 @@ export function IceSurface({
         });
         const doc = engine.docs.create();
         let clearCardRenderer: (() => void) | undefined;
-        if (suiteCardModules !== null) {
+        if (suiteCardModules !== null && SUITE_CARD_DOM_FACE) {
           suiteCardModules[0].setSuiteCardSlotRenderer(
             suiteCardModules[1].createWorkspaceCardSlotRenderer(),
           );
@@ -921,9 +922,10 @@ export function IceSurface({
         seededEntities.current = report.entities;
         const layer = desk.deskLayer({
           theme: objects.deskTheme("light"),
-          palette: objects.deskPalette("light"),
+          palette: suitePalette(objects.deskPalette("light")),
           objects: widgets,
           docs: engine.docs,
+          text: desk.inkRaster({ faces: SUITE_PEN_FACES }),
           name: `ice-demo-${runId + 1}`,
         });
 
@@ -979,7 +981,15 @@ export function IceSurface({
       const key = selected.join("\u001f");
       if (key !== previous && (selected.length > 0 || previous.length > 0)) {
         previous = key;
-        useUiStore.getState().setSelectedNodeIds(selected);
+        const store = useUiStore.getState();
+        store.setSelectedNodeIds(selected);
+        // Selecting one card is a request to read it: the inspector is the
+        // shell's reading surface, so a single pick opens it directly rather
+        // than needing a second gesture. Nothing closes it here — the panel
+        // keeps its subject until the user closes it or the card goes away,
+        // which is how the shell already behaved.
+        const only = selected.length === 1 ? selected[0] : undefined;
+        if (only !== undefined && store.inspectorNodeId !== only) store.openInspector(only);
       }
       handle = requestAnimationFrame(tick);
     };
@@ -1130,17 +1140,16 @@ export function IceSurface({
       return { x: -view.x * zoom, y: -view.y * zoom, zoom };
     };
 
+    // The committed rect is the widget's own `Position`/`Size`, never the
+    // paper's drawn extents: `half` is "as drawn", so it carries the hold's
+    // lift and would commit a shifted card.
     const rectOf = (entity: Entity) => {
-      const geometry = desk.geometryOf(entity) as
-        | { centre?: readonly [number, number]; half?: readonly [number, number] }
-        | undefined;
-      if (geometry?.centre === undefined || geometry.half === undefined) return null;
-      const [cx, cy] = geometry.centre;
-      const [hx, hy] = geometry.half;
-      if (![cx, cy, hx, hy].every((value) => Number.isFinite(value))) return null;
-      const width = Math.abs(hx) * 2;
-      const height = Math.abs(hy) * 2;
-      return { x: cx - width / 2, y: cy - height / 2, width, height };
+      const position = phase.engine.world.read(entity, phase.core.Position);
+      const size = phase.engine.world.read(entity, phase.core.Size);
+      if (position === undefined || size === undefined) return null;
+      const values = [position.x, position.y, size.w, size.h];
+      if (!values.every((value) => Number.isFinite(value))) return null;
+      return { x: position.x, y: position.y, width: size.w, height: size.h };
     };
 
     const pickEntity = (screen: { x: number; y: number }) => {
@@ -1161,6 +1170,14 @@ export function IceSurface({
       }
     };
 
+    // What a card says, as the one text flow its paper writes. Title, a blank
+    // line, then the body: the same two facts the DOM face used to lay out.
+    const faceText = (cardId: string): string => {
+      const title = liveWorkspace.displayTitle(cardId);
+      const body = liveWorkspace.cardText(cardId).trim();
+      return body.length === 0 ? title : `${title}\n\n${body}`;
+    };
+
     const projection = new CardProjection<Entity>({
       spawn: (placement: CanonicalPlacement) => {
         const entity = engine.ops.spawnWidget(SUITE_CARD_TYPE, {
@@ -1173,10 +1190,14 @@ export function IceSurface({
           props: {
             cardId: placement.cardId,
             boardId: placement.boardId,
+            // The paper writes this: title, blank line, body — the same two
+            // facts the card showed as a DOM face, now drawn by the GPU.
+            text: placement.text ?? "",
+            seeds: "",
             title: "",
             body: "",
-            paper: "yellow",
-            pen: "fountain",
+            paper: "card",
+            pen: "card",
             seed: 0,
           },
         });
@@ -1190,7 +1211,7 @@ export function IceSurface({
       boxOf: (entity) => rectOf(entity),
     });
     for (const [entity, slot] of seed.entitySlots) {
-      projection.register(entity, slot.cardId, slot.boardId);
+      projection.register(entity, slot.cardId, slot.boardId, faceText(slot.cardId));
     }
 
     const reconcile = () => {
@@ -1202,6 +1223,7 @@ export function IceSurface({
           cardId: placement.cardId,
           x: placement.x,
           y: placement.y,
+          text: faceText(placement.cardId),
           ...(placement.width !== undefined ? { width: placement.width } : {}),
           ...(placement.height !== undefined ? { height: placement.height } : {}),
         }));

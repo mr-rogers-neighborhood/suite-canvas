@@ -275,3 +275,28 @@ editor nobody asked for.
 
 This does not change the bands or the crossfade. It changes *when* the expensive face is allowed to
 exist, which is the part that decides whether the frame budget survives a real workspace.
+
+## Amendment (2026-10-23): the sheet is the card
+
+The card face is drawn by the desk, not by a DOM overlay. A `suite.card` reuses the engine's paper
+pass — sheet, shadow, greek LOD and banded text raster — so a card is part of the canvas at every
+zoom instead of a panel floating above it. The engine rasters a card's text only when the zoom
+crosses a band, which is the same ladder a note rides; that is why nothing pops.
+
+- **No second face.** The DOM overlay is not mounted for a card unless a renderer is explicitly
+  registered. Two faces at once is a second renderer of the same object, and the one underneath
+  shows through as "old text over the new".
+- **The desk needs a text raster.** ICE writes nothing when `deskLayer` gets no `text`; the desk is
+  handed `inkRaster` with the shell's family. The face spec must name **one** family — a family
+  *list* measures as an unmeasurable stack, every sheet then draws blank, and the kind is struck out
+  after repeated faults.
+- **The card's own type.** A note's hand is a marker scrawl (24-unit glyphs, tilted, wandering).
+  A card takes a card law instead: 13 world units, 1.45 line pitch, 14 units of padding, zero jitter
+  and zero wander, so body text is the size the shell uses.
+- **The card's own surface.** Cards use the Suite palette's `card` paper and ink
+  (`--surface`/`--ink`), keeping the sticky's `yellow` for notes.
+- **What the card says** is one flow: title, a blank line, body. A change to that text replaces the
+  projected entity the same way a move does, so the face never lags the document.
+- **Editing is not on the card.** Text is read in the inspector (decision 6, and the
+  inspector-first amendment); the sheet carries no caret, and copy/paste on the canvas is out of
+  scope for this surface.

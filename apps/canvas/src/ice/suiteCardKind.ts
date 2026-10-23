@@ -46,8 +46,10 @@ import {
   type Component,
   defineQuery,
   type Entity,
+  Position,
   PrefabId,
   p,
+  Size,
   type World,
 } from "@vibecook/ice";
 import {
@@ -64,6 +66,7 @@ import {
   type SuiteCardOverlayHandle,
   type SuiteCardSlotRenderer,
 } from "./suiteCardOverlay";
+import { SUITE_CARD_DOM_FACE, SUITE_CARD_HAND, SUITE_FACE } from "./suitePen";
 
 /** The object type and its kind share the name; both are unique on this desk. */
 export const SUITE_CARD_TYPE = "suite.card";
@@ -129,15 +132,16 @@ interface SuiteCardDriver extends KindDriver {
   attach(overlay: SuiteCardOverlayHandle): void;
 }
 
-const paper = paperKind();
+const paper = paperKind({ hand: { law: SUITE_CARD_HAND, face: SUITE_FACE, bleed: 0 } });
 
 const suiteCardKind: PaperKindOf = {
   ...paper,
   name: SUITE_CARD_KIND,
   resolve(ctx) {
     const geometry = paper.resolve(ctx);
-    // A card sits square: drop the sticky note's seeded tilt but keep the
-    // paper's lift/curl/scale so the GPU body still reads as paper.
+    // A card sits square: the sticky note's seeded tilt is dropped, so a board
+    // reads as a grid of cards, while the paper's own lift, curl and shadow stay
+    // — the card IS a sheet on the desk, drawn by the same pass as a note.
     return { ...geometry, angle: 0, cos: 1, sin: 0 };
   },
   local: (host) => createSuiteCardLocal(paper.local?.(host)),
@@ -147,6 +151,12 @@ export const SuiteCard = defineObject({
   type: SUITE_CARD_TYPE,
   version: 1,
   props: {
+    // The card's text, in the paper kind's own names: its writing rasters
+    // `text` (title and body as one flow) at the band the zoom asks for, so a
+    // card is written by the GPU exactly like a note — no DOM face, no LOD
+    // pop-in. `seeds` is the per-glyph wobble key, empty for a card.
+    text: p.string({ default: "" }),
+    seeds: p.string({ default: "" }),
     title: p.string({ default: "" }),
     body: p.string({ default: "" }),
     // Which workspace card this object stands for. Empty in the lab, whose
@@ -154,12 +164,14 @@ export const SuiteCard = defineObject({
     cardId: p.string({ default: "" }),
     // The board the card is placed on; scopes the card's presence and menus.
     boardId: p.string({ default: "" }),
-    // Read by the reused paper kind for the GPU sheet's colour and edge.
-    paper: p.enum(["yellow"] as const, { default: "yellow" }),
-    pen: p.enum(PENS, { default: "fountain" }),
+    // Read by the reused paper kind for the GPU sheet's colour and edge. `card`
+    // is the Suite palette's own entry (the shell's `--surface`/`--ink`), so a
+    // card is a document surface while a note stays a yellow sticky.
+    paper: p.enum(["card", "yellow"] as const, { default: "card" }),
+    pen: p.enum(["card", ...PENS] as const, { default: "card" }),
     seed: p.number({ default: 0 }),
   },
-  groups: { face: ["title", "body", "cardId", "boardId"] },
+  groups: { face: ["text", "seeds", "title", "body", "cardId", "boardId"] },
   size: SUITE_CARD_SIZE,
   kind: suiteCardKind,
   // Resizable because the canonical placement stores width/height: ICE's own
@@ -188,10 +200,23 @@ export const SuiteCard = defineObject({
   },
   host: {
     mount: (host) => {
+      // The sheet is the card. A DOM overlay is only mounted when something
+      // asks for one (the comparison renderer, or the lab's default face);
+      // mounting it beside the GPU text would paint a second card on top of the
+      // first, which is exactly the "old text over the new" seam.
+      if (!SUITE_CARD_DOM_FACE && slotRenderer === undefined) return;
       const overlay = createSuiteCardOverlay({
         container: host.container,
         entities: () => suiteCardEntities(host.world).map((entity) => entity as unknown as number),
         geometryOf: (entity) => host.geometryOf(entity as Entity) as PaperGeometry | undefined,
+        // The widget's own rect, not the paper's drawn extents: `half` carries
+        // the hold's lift, so a DOM face sized from it drifts off the object.
+        rectOf: (entity) => {
+          const position = host.world.read(entity as Entity, Position);
+          const size = host.world.read(entity as Entity, Size);
+          if (position === undefined || size === undefined) return null;
+          return { x: position.x, y: position.y, w: size.w, h: size.h };
+        },
         camera: () => host.world.getResource(Camera),
         infoOf: (entity) => faceOf(host.world, entity as Entity),
         ...(slotRenderer !== undefined ? { renderer: slotRenderer } : {}),

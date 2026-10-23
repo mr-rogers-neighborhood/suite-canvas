@@ -19,6 +19,7 @@ import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { windowArgs } from "./e2e-window.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROFILE_ROOT = join(root, ".ice-chrome-profile");
@@ -188,6 +189,9 @@ function chromeBaseArgs(profileDir) {
     // NVIDIA compositing is steadier on X11 here; Wayland is still available
     // by overriding SUITE_ICE_CHROME_ARGS with --ozone-platform=wayland.
     ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
+    // A demo window belongs on the screen the developer is not using; an
+    // unpositioned one opens under the pointer and steals the keystroke.
+    ...windowArgs(),
     ...extraArgs(),
   ];
 }

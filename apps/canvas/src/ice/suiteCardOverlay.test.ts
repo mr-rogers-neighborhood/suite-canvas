@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createSuiteCardOverlay,
-  SUITE_CARD_MIN_SCREEN_WIDTH,
+  SUITE_CARD_COMPACT_SCREEN_WIDTH,
+  SUITE_CARD_FULL_SCREEN_WIDTH,
   type SuiteCardGeometry,
+  type SuiteCardRect,
+  suiteCardBand,
   suiteCardBox,
+  suiteCardBoxFromRect,
 } from "./suiteCardOverlay";
 
 function geometry(overrides: Partial<SuiteCardGeometry> = {}): SuiteCardGeometry {
@@ -23,16 +27,42 @@ describe("suiteCardBox", () => {
       worldHeight: 240,
       scale: 2,
       angleDeg: 90,
+      band: "full",
     });
   });
 
-  it("hides a card below the readable screen width", () => {
-    // 288 world units × 0.6 = 172.8px, just under the 180px floor.
-    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0.6 })).toBeNull();
-    // 288 × 0.625 = 180px exactly is readable.
-    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0.625 })?.width).toBe(
-      SUITE_CARD_MIN_SCREEN_WIDTH,
-    );
+  it("bands a shrink instead of hiding it: full, then compact, then glyph", () => {
+    // 288 world units × 0.6 = 172.8px: under the full card, still a face.
+    const compact = suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0.6 });
+    expect(compact?.band).toBe("compact");
+    expect(compact?.width).toBeCloseTo(172.8);
+    // 288 × 0.625 = 180px exactly is the full card.
+    const full = suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0.625 });
+    expect(full?.band).toBe("full");
+    expect(full?.width).toBe(SUITE_CARD_FULL_SCREEN_WIDTH);
+    // 288 × 0.1 = 28.8px: a glyph, still positioned in its own footprint.
+    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0.1 })?.band).toBe("icon");
+    expect(suiteCardBand(SUITE_CARD_COMPACT_SCREEN_WIDTH)).toBe("compact");
+    expect(suiteCardBand(0)).toBe("icon");
+    expect(suiteCardBand(Number.NaN)).toBe("icon");
+  });
+
+  it("positions from the canonical rect, which carries no paper lift", () => {
+    const rect: SuiteCardRect = { x: 40, y: 60, w: 288, h: 240 };
+    expect(suiteCardBoxFromRect(rect, { x: 10, y: 20, zoom: 2 })).toEqual({
+      left: 60,
+      top: 80,
+      width: 576,
+      height: 480,
+      worldWidth: 288,
+      worldHeight: 240,
+      scale: 2,
+      angleDeg: 0,
+      band: "full",
+    });
+    expect(suiteCardBoxFromRect(null, { x: 0, y: 0, zoom: 1 })).toBeNull();
+    expect(suiteCardBoxFromRect(rect, { x: 0, y: 0, zoom: 0 })).toBeNull();
+    expect(suiteCardBoxFromRect({ ...rect, w: Number.NaN }, { x: 0, y: 0, zoom: 1 })).toBeNull();
   });
 
   it("refuses missing or nonsensical geometry and a faded object", () => {
@@ -45,17 +75,17 @@ describe("suiteCardBox", () => {
 });
 
 describe("createSuiteCardOverlay", () => {
-  it("mounts once per readable card, unmounts below the threshold, and removes stale slots", () => {
+  it("keeps a slot at every band and swaps its content in place", () => {
     const container = document.createElement("div");
     document.body.append(container);
     let entities = [7];
     let camera = { x: 0, y: 0, zoom: 1 };
     const geo: SuiteCardGeometry | undefined = geometry();
-    const mounts: number[] = [];
+    const mounts: Array<{ entity: number; band: string }> = [];
     const cleanups: number[] = [];
     const renderer = {
-      mount: (_content: HTMLElement, info: { entity: number }) => {
-        mounts.push(info.entity);
+      mount: (_content: HTMLElement, info: { entity: number; band: string }) => {
+        mounts.push({ entity: info.entity, band: info.band });
         return () => {
           cleanups.push(info.entity);
         };
@@ -73,7 +103,7 @@ describe("createSuiteCardOverlay", () => {
 
     overlay.sync();
     expect(overlay.visibleCount()).toBe(1);
-    expect(mounts).toEqual([7]);
+    expect(mounts).toEqual([{ entity: 7, band: "full" }]);
     const slot = container.querySelector<HTMLElement>('[data-entity="7"]');
     expect(slot).not.toBeNull();
     expect(slot?.style.left).toBe("156px");
@@ -81,28 +111,40 @@ describe("createSuiteCardOverlay", () => {
     expect(slot?.style.width).toBe("288px");
     expect(slot?.style.height).toBe("240px");
     expect(slot?.dataset.visible).toBe("true");
-    // Re-syncing at the same camera does not remount the card UI.
+    expect(slot?.dataset.band).toBe("full");
+    // Re-syncing at the same camera does not remount the content.
     overlay.sync();
-    expect(mounts).toEqual([7]);
+    expect(mounts).toEqual([{ entity: 7, band: "full" }]);
 
-    // Below the readable width: hidden and the DOM editor is torn down.
+    // Zoomed out past the full card: the slot STAYS, its content becomes the
+    // static face. Nothing is hidden, so a card never pops out of existence.
     camera = { x: 0, y: 0, zoom: 0.4 };
     overlay.sync();
-    expect(overlay.visibleCount()).toBe(0);
+    expect(overlay.visibleCount()).toBe(1);
     expect(cleanups).toEqual([7]);
-    expect(slot?.style.display).toBe("none");
-    expect(slot?.dataset.visible).toBe("false");
+    expect(mounts).toEqual([
+      { entity: 7, band: "full" },
+      { entity: 7, band: "compact" },
+    ]);
+    expect(slot?.style.display).toBe("block");
+    expect(slot?.dataset.visible).toBe("true");
+    expect(slot?.dataset.band).toBe("compact");
+    expect(slot?.style.width).toBe("115.2px");
 
-    // Back at a readable zoom: a fresh mount.
+    // Far out: a glyph, still in the card's own footprint.
+    camera = { x: 0, y: 0, zoom: 0.1 };
+    overlay.sync();
+    expect(slot?.dataset.band).toBe("icon");
+
+    // Back at a readable zoom: the live face again.
     camera = { x: 0, y: 0, zoom: 1 };
     overlay.sync();
-    expect(mounts).toEqual([7, 7]);
     expect(overlay.visibleCount()).toBe(1);
+    expect(mounts.at(-1)).toEqual({ entity: 7, band: "full" });
 
     // A dead entity's slot goes away entirely.
     entities = [];
     overlay.sync();
-    expect(cleanups).toEqual([7, 7]);
     expect(container.querySelector('[data-entity="7"]')).toBeNull();
 
     overlay.dispose();

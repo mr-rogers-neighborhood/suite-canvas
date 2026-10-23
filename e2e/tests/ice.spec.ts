@@ -1,4 +1,5 @@
 import { type Browser, chromium, expect, test } from "@playwright/test";
+import { windowArgs } from "../../scripts/e2e-window.mjs";
 
 /**
  * The live ICE desk is the one surface the default suite cannot cover: it needs
@@ -35,7 +36,9 @@ async function launchChrome(): Promise<Browser> {
     return await chromium.launch({
       channel: "chrome",
       headless: false,
-      args: CHROME_ARGS,
+      // A headed test window opens on the screen the developer is NOT using:
+      // an unpositioned one lands under the pointer and interrupts them.
+      args: [...CHROME_ARGS, ...windowArgs()],
     });
   } catch (error) {
     test.skip(true, `system Chrome is not available to Playwright: ${messageOf(error)}`);

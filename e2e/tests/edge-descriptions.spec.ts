@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expectPeersConnected } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
@@ -280,8 +281,7 @@ test("a peer sees a new description without reloading", async ({ browser }) => {
   // B must be *live* before A acts: a peer that is still loading its snapshot
   // when the edge is created is asserting on a document it has not read yet,
   // which is a race in the test, not a slow relay.
-  await expect(pageB.getByTestId("node-card")).toHaveCount(2);
-  await expect(pageB.getByTestId("sync-status")).toHaveText(/Live/);
+  await expectPeersConnected(pageA, pageB);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
 
   await connectCards(pageA);

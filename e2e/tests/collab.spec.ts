@@ -1,4 +1,5 @@
 import { type BoundingBox, expect, type Locator, type Page, test } from "@playwright/test";
+import { expectPeersConnected } from "../interactions";
 
 /**
  * Finds a point on the React Flow pane with no node or control panel under it,
@@ -596,7 +597,7 @@ test("clears a peer's ghost when their gestures stop arriving", async ({ browser
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
-  await expect(pageB.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expectPeersConnected(pageA, pageB);
 
   const cardA = pageA.locator('[data-testid="node-card"]').first();
   const box = await cardA.boundingBox();
@@ -651,7 +652,7 @@ test("shows link selection and connector movement presence", async ({ browser })
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
-  await expectPeerLive(pageB);
+  await expectPeersConnected(pageA, pageB);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
 
   await connectCards(pageA);
@@ -685,17 +686,6 @@ test("shows link selection and connector movement presence", async ({ browser })
   await contextB.close();
 });
 
-/**
- * The peer has joined its room and drawn the document. Without this, a test can
- * create a change on A and then assert propagation on a B that has not finished
- * reading its own snapshot — a race in the test, which reads exactly like a slow
- * relay, and the reason two-browser specs failed under load but never alone.
- */
-async function expectPeerLive(page: Page): Promise<void> {
-  await expect(page.getByTestId("sync-status")).toHaveText(/Live/);
-  await expect(page.getByTestId("node-card")).toHaveCount(2);
-}
-
 /** Screen point of the connector a peer is currently holding. */
 async function peerConnectorPoint(page: Page) {
   return page.evaluate(() => {
@@ -716,7 +706,7 @@ test("a peer sees the connector and its link move before release", async ({ brow
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
-  await expectPeerLive(pageB);
+  await expectPeersConnected(pageA, pageB);
   await connectCards(pageA);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(1);
 
@@ -764,7 +754,7 @@ test("shows a peer's connector selection", async ({ browser }) => {
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
-  await expect(pageB.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expectPeersConnected(pageA, pageB);
 
   const peerConnector = pageB.locator('[data-testid="connector"][data-peer-selected="true"]');
   await expect(peerConnector).toHaveCount(0);
@@ -893,7 +883,7 @@ test("shows a peer's new link drag before it is dropped", async ({ browser }) =>
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
-  await expect(pageB.locator('[data-testid="node-card"]')).toHaveCount(2);
+  await expectPeersConnected(pageA, pageB);
 
   const cards = pageA.locator('[data-testid="node-card"]');
   const source = await cards.nth(0).locator('[data-testid="connector-dot"]').nth(1).boundingBox();

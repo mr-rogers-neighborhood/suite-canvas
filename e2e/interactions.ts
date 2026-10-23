@@ -34,3 +34,23 @@ export async function startBodyEdit(page: Page, card: Locator): Promise<void> {
     "the card body never took focus: the card menu did not hand over to the editor",
   ).toHaveCount(1);
 }
+
+/**
+ * Both browsers are joined *and* see each other, before either one asserts that
+ * the other received something.
+ *
+ * `Live` only proves the document room; presence rides an ephemeral store on
+ * derived rooms, and ephemeral state is deliberately **not replayed** to a late
+ * joiner. So a peer that joins presence after the sender's last update never
+ * learns about it — not slowly, never — and a drag that stops moving emits
+ * nothing further. Waiting for `· 2 here` on both sides is the only cheap proof
+ * that the channel is warm in both directions, and it is exactly the condition
+ * the test needs.
+ */
+export async function expectPeersConnected(pageA: Page, pageB: Page): Promise<void> {
+  for (const page of [pageA, pageB]) {
+    await expect(page.getByTestId("sync-status")).toHaveText(/Live/);
+    await expect(page.getByTestId("sync-status")).toHaveText(/2 here/);
+    await expect(page.getByTestId("node-card")).toHaveCount(2);
+  }
+}

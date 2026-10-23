@@ -253,6 +253,11 @@ export interface CardPanelProps {
   where: CardWhere;
   /** Selectable cards for a `card` field's picker; memoised by the host. */
   cards: readonly CardPickerOption[];
+  /**
+   * Known boards, so a `board` value (a portal's target) reads as a name. An id
+   * that is not in this list is a deleted board and reads as unavailable.
+   */
+  boards?: readonly Board[] | undefined;
   /** Every link this card has, grouped and derived by the host. */
   links: CardLinks;
   /** Field the panel was asked to reveal; it scrolls into view and takes focus. */
@@ -301,6 +306,20 @@ export interface CardPanelProps {
   canManageSchema?: boolean;
   /** A projection may not contain every linked card; those rows read inert. */
   restrictLinks?: boolean;
+}
+
+/**
+ * A board value's reading: the live name when the board exists, otherwise the
+ * explicit "missing" state. Other kinds carry no board reading.
+ */
+function boardReading(
+  field: CardFieldView["field"],
+  value: PropertyValue | undefined,
+  boardNames: Map<string, string>,
+): { boardName?: string; boardPresence?: "missing" } {
+  if (field.kind !== "board" || typeof value !== "string") return {};
+  const name = boardNames.get(value);
+  return name ? { boardName: name } : { boardPresence: "missing" };
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -481,6 +500,7 @@ export function CardPanel({
   fields,
   where,
   cards,
+  boards = [],
   links,
   focusedField = null,
   variant = "inspector",
@@ -599,6 +619,7 @@ export function CardPanel({
   };
 
   const typesById = new Map(types.map((type) => [type.id, type]));
+  const boardNames = new Map(boards.map((board) => [board.id, board.name]));
   const groups = card.typeIds.length > 1 ? card.typeIds : [null];
   const current =
     where.entries.find((entry) => entry.isCurrent) ??
@@ -896,6 +917,7 @@ export function CardPanel({
                                     typeof value === "string"
                                       ? cards.find((entry) => entry.id === value)?.title
                                       : undefined,
+                                  ...boardReading(field, value, boardNames),
                                 })}
                               </p>
                             </div>
@@ -922,6 +944,7 @@ export function CardPanel({
                               field={field}
                               value={value}
                               cards={cards}
+                              boards={boards}
                               excludeCardId={card.id}
                               onChange={(next) => onSetProperty(field.id, next)}
                               onClear={() => onClearProperty(field.id)}

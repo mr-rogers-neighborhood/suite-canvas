@@ -1489,3 +1489,311 @@ body {
   color: var(--ink-muted);
   font-style: italic;
 }
+
+/* ---------------------------------------------------------------- portals */
+
+/* A portal is a card whose frame is another board's miniature. */
+.portal-card {
+  display: flex;
+  min-width: 200px;
+  min-height: 150px;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.portal-card:focus-visible {
+  outline: 2px solid var(--section-blue);
+  outline-offset: 2px;
+}
+
+.portal-card[data-selected="true"] {
+  border-color: var(--section-blue);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--section-blue) 35%, transparent),
+    var(--card-shadow);
+}
+
+.portal-card[data-unavailable="true"] {
+  border-style: dashed;
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.portal-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.portal-card__glyph {
+  flex: none;
+  font-size: 12px;
+  color: var(--section-violet);
+}
+
+.portal-card__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-card__frame {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--canvas-bg);
+}
+
+.portal-card__missing {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.portal-card__empty {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.portal-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.portal-card__peers {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.portal-card__peer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+/* Static drawing; every colour is a token so both themes read the same. */
+.portal-miniature {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.portal-miniature__ground {
+  fill: var(--canvas-bg);
+}
+
+.portal-miniature__section {
+  stroke: color-mix(in srgb, var(--ink-muted) 30%, transparent);
+  stroke-width: 0.4;
+}
+
+.portal-miniature__card {
+  fill: var(--surface);
+  stroke: color-mix(in srgb, var(--ink-muted) 45%, transparent);
+  stroke-width: 0.5;
+}
+
+.portal-miniature__dot {
+  stroke: var(--surface);
+  stroke-width: 0.8;
+}
+
+/* Camera trick: the miniature grows from the portal's rect to the canvas. */
+.portal-transition-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.portal-transition {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.portal-transition__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--canvas-bg);
+  opacity: 0;
+  animation: portal-scrim 320ms ease-out forwards;
+}
+
+.portal-transition__box {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--canvas-bg);
+  box-shadow: var(--card-shadow);
+}
+
+@keyframes portal-scrim {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.55;
+  }
+}
+
+/* Tab presence: a dot beside the board a peer is reading. */
+.board-tab-peer-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 4px;
+  border-radius: 9999px;
+  vertical-align: middle;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+.portal-back {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.portal-back:hover,
+.portal-back:focus-visible {
+  color: var(--ink);
+  background: var(--segmented-bg);
+}
+
+.portal-back:focus-visible {
+  outline: 2px solid var(--section-blue);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- card focus */
+
+/* Sits over the canvas area only, so the title bar, tabs and dock stay live. */
+.card-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: color-mix(in srgb, var(--canvas-bg) 82%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.card-focus__sheet {
+  display: flex;
+  width: min(720px, 100%);
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+
+.card-focus__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.card-focus__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-focus__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.card-focus__button:hover,
+.card-focus__button:focus-visible {
+  color: var(--ink);
+  background: var(--segmented-bg);
+}
+
+.card-focus__button:focus-visible {
+  outline: 2px solid var(--section-blue);
+  outline-offset: 1px;
+}
+
+.card-focus__body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* A focused card reads at reading width even when the surface is wide. */
+.card-focus__body .card-panel {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-transition__scrim {
+    animation: none;
+    opacity: 0;
+  }
+
+  .node-card,
+  .portal-card {
+    transition: none;
+  }
+}

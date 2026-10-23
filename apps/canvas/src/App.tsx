@@ -1,12 +1,15 @@
 import { sectionForCard, sectionMembership } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { outlineRows } from "./canvas/outlineTree";
+import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
-import { BoardTabs } from "./components/BoardTabs";
+import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
+import { CardFocusHost } from "./components/CardFocusHost";
 import { CardInspectorHost } from "./components/CardInspectorHost";
 import { sectionPath } from "./components/cardWhere";
 import { Dialog } from "./components/Dialog";
@@ -116,6 +119,33 @@ function WorkspaceShell({
   const setBoard = usePresenceStore((state) => state.setBoard);
   const bindPresence = usePresenceStore((state) => state.bind);
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
+  // One dot per board with company; the value is primitives so a pointer tick
+  // on the same board does not re-render the shell.
+  const peersByBoard = usePresenceStore(
+    useShallow((state) => {
+      const names = new Map<string, Set<string>>();
+      const colors = new Map<string, string>();
+      for (const peer of Object.values(state.peers)) {
+        if (!peer.board) continue;
+        const set = names.get(peer.board) ?? new Set<string>();
+        set.add(peer.user.name);
+        names.set(peer.board, set);
+        if (!colors.has(peer.board)) colors.set(peer.board, peer.user.color);
+      }
+      const map: Record<string, BoardPresence> = {};
+      for (const [boardId, set] of names) {
+        map[boardId] = {
+          label: [...set].sort().join(", "),
+          color: colors.get(boardId) ?? "var(--section-violet)",
+        };
+      }
+      return map;
+    }),
+  );
+  const activateBoard = useUiStore((state) => state.activateBoard);
+  const goBackBoard = useUiStore((state) => state.goBackBoard);
+  const boardHistory = useUiStore((state) => state.boardHistory);
+  const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
 
   // The live workspace surface — dock, library, boards and schema — belongs to
   // the owner and to a workspace editor token. Board and card shares edit one
@@ -283,6 +313,33 @@ function WorkspaceShell({
     [activeBoardId, canvasPoint, workspace, startEditing],
   );
 
+  /**
+   * Dock-created portals land at the viewport centre, centred on the pointer
+   * the way a placed card is. The card and its target are one commit.
+   */
+  const createPortal = useCallback(
+    (targetBoardId: string) => {
+      if (!activeBoardId || !canCreateContent) return;
+      const centre = canvasPoint();
+      const card = workspace.createPortalCard({
+        boardId: activeBoardId,
+        targetBoardId,
+        position: {
+          x: centre.x - DEFAULT_PORTAL_SIZE.width / 2,
+          y: centre.y - DEFAULT_PORTAL_SIZE.height / 2,
+        },
+      });
+      setSelectedNodeIds([card.id]);
+    },
+    [activeBoardId, canvasPoint, workspace, canCreateContent, setSelectedNodeIds],
+  );
+
+  const createBoardPortal = useCallback(() => {
+    if (!activeBoardId || !canCreateBoards) return;
+    const board = workspace.createBoard();
+    createPortal(board.id);
+  }, [activeBoardId, canCreateBoards, workspace, createPortal]);
+
   const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
   const boardSections = useMemo(
     () =>
@@ -416,15 +473,34 @@ function WorkspaceShell({
       >
         {workspaceSurface ? (
           <>
+            {boardHistory.length > 0 && activeBoardId ? (
+              <button
+                type="button"
+                data-testid="portal-back"
+                aria-label={`Back to ${
+                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
+                    ?.name ?? "the previous board"
+                }`}
+                title={`Back to ${
+                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
+                    ?.name ?? "the previous board"
+                }`}
+                className="portal-back"
+                onClick={() => goBackBoard()}
+              >
+                <span aria-hidden="true">{"\u2039"}</span>
+              </button>
+            ) : null}
             <BoardTabs
               boards={snapshot.boards}
               activeBoardId={activeBoardId}
-              onSelect={setActiveBoardId}
+              onSelect={activateBoard}
+              peersByBoard={peersByBoard}
               canCreateBoards={canCreateBoards}
               canManageBoards={canManageBoards}
               onCreate={() => {
                 const board = workspace.createBoard();
-                setActiveBoardId(board.id);
+                activateBoard(board.id);
               }}
               onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
               onDeleteRequest={(boardId) => {
@@ -478,6 +554,7 @@ function WorkspaceShell({
         ) : null}
         <BoardOutlineHost />
         <CardInspectorHost />
+        <CardFocusHost />
       </main>
 
       {workspaceSurface && !readOnly ? (
@@ -486,9 +563,15 @@ function WorkspaceShell({
           libraryOpen={libraryOpen}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           types={snapshot.types}
+          boards={snapshot.boards}
+          activeBoardId={activeBoardId}
           onCreateCard={(typeId) => createCard(typeId)}
+          onCreatePortal={createPortal}
+          onCreateBoardPortal={createBoardPortal}
           onManageTypes={openTypeSettings}
           canManageSchema={canManageSchema}
+          canCreateContent={canCreateContent}
+          canCreateBoards={canCreateBoards}
         />
       ) : null}
 
@@ -510,7 +593,7 @@ function WorkspaceShell({
           onRestore={(cardId) => workspace.restoreCard(cardId)}
           onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
           onEmptyTrash={() => workspace.emptyTrash()}
-          onGoToBoard={setActiveBoardId}
+          onGoToBoard={activateBoard}
           onDropAt={(cardId, point) => placeCard(cardId, point)}
           types={snapshot.types}
           tags={snapshot.tags}

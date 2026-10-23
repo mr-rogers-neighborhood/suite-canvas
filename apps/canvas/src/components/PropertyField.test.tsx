@@ -263,3 +263,37 @@ describe("PropertyField per kind", () => {
     expect(screen.queryByRole("option", { name: "Self" })).not.toBeInTheDocument();
   });
 });
+
+describe("PropertyField board kind", () => {
+  const boardField = field({ kind: "board", name: "Board", required: true });
+  const boards = [{ id: "b1", name: "Research" }];
+
+  it("should read a board value as the target's name, not its id", () => {
+    render(
+      <PropertyField
+        field={boardField}
+        value="b1"
+        boards={boards}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("property-board-value")).toHaveTextContent("Research");
+    expect(screen.queryByText("b1")).toBeNull();
+  });
+
+  it("should read a deleted board as unavailable", () => {
+    render(
+      <PropertyField
+        field={boardField}
+        value="gone"
+        boards={boards}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    const value = screen.getByTestId("property-board-value");
+    expect(value).toHaveTextContent("Unavailable board");
+    expect(value).toHaveAttribute("title", "Unavailable board");
+  });
+});

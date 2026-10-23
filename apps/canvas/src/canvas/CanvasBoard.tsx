@@ -1,4 +1,4 @@
-import type { Card, CardType, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
+import type { Card, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
 import { sectionColors, sectionMembership, sectionMovePlan, unionRect } from "@suite/graph";
 import {
   Background,
@@ -26,6 +26,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
+import { isPortalCard, portalTargetId } from "../cards/portal";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -46,7 +47,10 @@ import {
   selectionSummary,
 } from "./multiSelect";
 import { nodeTypes } from "./NoteNode";
+import type { CardNodeData } from "./nodeData";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
+import { PortalNode } from "./PortalNode";
+import { PortalTransitionLayer } from "./PortalTransitionLayer";
 import { PresenceLayer } from "./PresenceLayer";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
@@ -62,12 +66,17 @@ const FOCUS_FALLBACK_SIZE = { width: 224, height: 160 };
 const FOCUS_DURATION_MS = 300;
 /** A focused card or section should not fill the screen. */
 const FOCUS_MAX_ZOOM = 1.2;
-type CardNodeData = {
-  card: Card;
-  placement: Placement;
-  type: CardType;
-  meta: CardMeta;
-};
+/**
+ * Share of the canvas a portal must cover, while zooming in, before the camera
+ * takes it as an intent to enter. A portal "filling most of the viewport" is a
+ * doorway; brushing past one is not.
+ */
+const PORTAL_ZOOM_COVERAGE = 0.82;
+/** Zooming out by this share of the gesture's starting zoom is a step back. */
+const PORTAL_ZOOM_BACK_RATIO = 0.5;
+
+/** React Flow node types; a portal card paints its target instead of a note. */
+const canvasNodeTypes = { ...nodeTypes, portal: PortalNode };
 
 const EMPTY_META: CardMeta = { properties: [], tags: [] };
 
@@ -204,6 +213,7 @@ export function CanvasBoard() {
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
+  const canCreateBoards = useUiStore((state) => state.canCreateBoards);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
   const requestShare = useUiStore((state) => state.requestShare);
@@ -214,8 +224,14 @@ export function CanvasBoard() {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
-  const { screenToFlowPosition, setViewport } = useReactFlow();
+  const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow();
   const store = useStoreApi();
+  const requestPortalEntry = useUiStore((state) => state.requestPortalEntry);
+  const recordBoardViewport = useUiStore((state) => state.recordBoardViewport);
+  const goBackBoard = useUiStore((state) => state.goBackBoard);
+  const viewportRequest = useUiStore((state) => state.viewportRequest);
+  const clearViewportRequest = useUiStore((state) => state.clearViewportRequest);
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
 
   const [nodes, setNodes, applyNodeChanges] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -547,7 +563,7 @@ export function CanvasBoard() {
           return [
             {
               id: card.id,
-              type: "note",
+              type: isPortalCard(card) ? "portal" : "note",
               position: { x: position.x, y: position.y },
               selected,
               zIndex: layer,
@@ -1130,6 +1146,165 @@ export function CanvasBoard() {
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
   );
 
+  /**
+   * A portal is created with its target in one commit (`createPortalCard`), so
+   * the new card can never be seen — or undo-stepped into — without a board.
+   */
+  const createPortalAt = useCallback(
+    (position: { x: number; y: number }, targetBoardId: string) => {
+      if (!canCreateContent || !activeBoardId) return;
+      const card = workspace.createPortalCard({
+        boardId: activeBoardId,
+        targetBoardId,
+        position,
+      });
+      store.getState().unselectNodesAndEdges();
+      store.getState().addSelectedNodes([card.id]);
+      setSelectedNodeIds([card.id]);
+    },
+    [workspace, activeBoardId, setSelectedNodeIds, store, canCreateContent],
+  );
+
+  /** "New board and portal": stay here and open the new board from the card. */
+  const createPortalToNewBoard = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !canCreateBoards || !activeBoardId) return;
+      const board = workspace.createBoard();
+      createPortalAt(position, board.id);
+    },
+    [workspace, createPortalAt, activeBoardId, canCreateContent, canCreateBoards],
+  );
+
+  /** Screen rectangle of a node, used to start the camera trick at the card. */
+  const nodeScreenRect = useCallback(
+    (nodeId: string) => {
+      const node = store.getState().nodeLookup.get(nodeId);
+      const pane = document.querySelector<HTMLElement>('[data-testid="canvas-board"]');
+      if (!node || !pane) return null;
+      const rect = pane.getBoundingClientRect();
+      const [tx, ty, zoom] = store.getState().transform;
+      const position = node.internals.positionAbsolute;
+      const width = node.measured?.width ?? FOCUS_FALLBACK_SIZE.width;
+      const height = node.measured?.height ?? FOCUS_FALLBACK_SIZE.height;
+      return {
+        left: rect.left + position.x * zoom + tx,
+        top: rect.top + position.y * zoom + ty,
+        width: width * zoom,
+        height: height * zoom,
+      };
+    },
+    [store],
+  );
+
+  const enterPortal = useCallback(
+    (nodeId: string, targetBoardId: string) => {
+      const rect = nodeScreenRect(nodeId);
+      if (!rect) return;
+      requestPortalEntry({ nodeId, targetBoardId, rect });
+    },
+    [nodeScreenRect, requestPortalEntry],
+  );
+
+  /** Orderly arrival on a board whose stored camera should be restored. */
+  useEffect(() => {
+    if (!viewportRequest || viewportRequest.boardId !== activeBoardId) return;
+    const request = viewportRequest;
+    // The board's nodes paint on the render this effect follows; one frame
+    // later React Flow has the size it needs to fit them. The request is
+    // cleared after the move, not before: clearing re-renders, and a cleanup
+    // on that render would cancel the frame this effect just scheduled.
+    const frame = requestAnimationFrame(() => {
+      if (request.viewport) {
+        void setViewport(request.viewport, { duration: 0 });
+      } else {
+        void fitView({ padding: 0.2, duration: 0 });
+      }
+      clearViewportRequest();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewportRequest, activeBoardId, clearViewportRequest, setViewport, fitView]);
+
+  useEffect(() => {
+    if (!activeBoardId) return;
+    // Capture the camera a board opens with (the first visit's fit-view), so a
+    // return is exact even if the reader never panned on it.
+    const frame = requestAnimationFrame(() => {
+      recordBoardViewport(activeBoardId, getViewport());
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeBoardId, recordBoardViewport, getViewport]);
+
+  const lastMoveZoom = useRef<number | null>(null);
+  /** Zoom a pan/zoom gesture started at; reverse zoom compares against it. */
+  const gestureStartZoom = useRef<number | null>(null);
+  /** Portals already entered by zooming, so a lingering overview does not re-enter. */
+  const autoEntered = useRef(new Set<string>());
+  /** The board the zoom-entry guards belong to. */
+  const autoEnteredBoard = useRef<string | null>(null);
+  useEffect(() => {
+    if (autoEnteredBoard.current === activeBoardId) return;
+    autoEnteredBoard.current = activeBoardId;
+    autoEntered.current.clear();
+    lastMoveZoom.current = null;
+  }, [activeBoardId]);
+
+  /**
+   * Two camera gestures end a board visit: zooming until a portal fills most of
+   * the canvas enters it, and zooming far back out of a board entered through a
+   * portal returns to the one before it. Both are read at the end of the
+   * gesture, so neither reacts per frame.
+   */
+  const readCameraGesture = useCallback(
+    (startZoom: number, zoom: number) => {
+      const history = useUiStore.getState().boardHistory;
+      const previousMove = lastMoveZoom.current;
+      lastMoveZoom.current = zoom;
+
+      // Reverse zoom: only a portal visit advertised itself as a doorway, and
+      // only a deliberate pull-back (half the gesture's starting scale) counts.
+      if (
+        startZoom > 0 &&
+        zoom <= startZoom * PORTAL_ZOOM_BACK_RATIO &&
+        zoom < 0.6 &&
+        history.at(-1)?.via === "portal"
+      ) {
+        goBackBoard();
+        return;
+      }
+
+      // Entering needs an inward gesture; a fit-view or a tab switch must not
+      // drop the reader into whichever portal happens to be on screen.
+      if (previousMove === null || zoom <= previousMove * 1.02) return;
+      const pane = document.querySelector<HTMLElement>('[data-testid="canvas-board"]');
+      if (!pane) return;
+      const paneRect = pane.getBoundingClientRect();
+      if (paneRect.width === 0 || paneRect.height === 0) return;
+      const paneArea = paneRect.width * paneRect.height;
+
+      for (const [id, node] of store.getState().nodeLookup) {
+        if (autoEntered.current.has(id)) continue;
+        const targetBoardId = portalTargetId(cardsById.get(id));
+        if (!targetBoardId) continue;
+        const position = node.internals.positionAbsolute;
+        const rect = nodeScreenRect(id);
+        if (!rect) continue;
+        const overlapWidth =
+          Math.min(rect.left + rect.width, paneRect.right) - Math.max(rect.left, paneRect.left);
+        const overlapHeight =
+          Math.min(rect.top + rect.height, paneRect.bottom) - Math.max(rect.top, paneRect.top);
+        if (overlapWidth <= 0 || overlapHeight <= 0) continue;
+        if ((overlapWidth * overlapHeight) / paneArea < PORTAL_ZOOM_COVERAGE) continue;
+        // `position` is read so a node without geometry is skipped rather than
+        // measured at the origin, which would read as a full-canvas portal.
+        if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) continue;
+        autoEntered.current.add(id);
+        enterPortal(id, targetBoardId);
+        return;
+      }
+    },
+    [store, cardsById, nodeScreenRect, enterPortal, goBackBoard],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1170,6 +1345,13 @@ export function CanvasBoard() {
         return;
       }
 
+      // Focus is a mode of its own: Escape leaves it (and stops its editing)
+      // before the card-level or selection-level branches see the key.
+      if (event.key === "Escape" && state.cardFocusId) {
+        state.closeCardFocus();
+        return;
+      }
+
       if (event.key === "Escape" && state.editingNodeId) {
         state.stopEditing();
         (document.activeElement as HTMLElement | null)?.blur();
@@ -1178,6 +1360,13 @@ export function CanvasBoard() {
 
       if (event.key === "Escape" && state.focusTarget) {
         state.clearFocusTarget();
+        return;
+      }
+
+      // A board entered through a portal is a doorway: Escape steps back to the
+      // exact board and viewport it was entered from.
+      if (event.key === "Escape" && state.boardHistory.at(-1)?.via === "portal") {
+        goBackBoard();
         return;
       }
 
@@ -1252,12 +1441,20 @@ export function CanvasBoard() {
         return;
       }
 
-      if (event.key === "Enter" && !isTyping && canEditContent && !state.editingNodeId) {
+      if (event.key === "Enter" && !isTyping && !state.editingNodeId) {
         const first = state.selectedNodeIds[0];
-        if (first) {
+        if (!first) return;
+        // A selected portal is a doorway even for a viewer: navigating is not
+        // an edit. Any other card opens its body editor.
+        const targetBoardId = portalTargetId(cardsById.get(first));
+        if (targetBoardId) {
           event.preventDefault();
-          state.startEditing(first, "body");
+          enterPortal(first, targetBoardId);
+          return;
         }
+        if (!canEditContent) return;
+        event.preventDefault();
+        state.startEditing(first, "body");
       }
     };
 
@@ -1277,6 +1474,9 @@ export function CanvasBoard() {
     canEditLayout,
     canManageTrash,
     canManageStructure,
+    goBackBoard,
+    enterPortal,
+    cardsById,
   ]);
 
   const onConnect = useCallback(
@@ -1528,6 +1728,24 @@ export function CanvasBoard() {
     if (contextMenu.kind === "canvas") {
       if (!canCreateContent) return [];
       const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
+      // Every board is a possible target; creating one requires the board
+      // capability, so a board share without it only sees existing boards.
+      const portalItems: ContextMenuItem[] = [
+        ...snapshot.boards
+          .filter((board) => board.id !== activeBoardId)
+          .map((board) => ({
+            label: board.name,
+            onSelect: () => createPortalAt(flowPosition, board.id),
+          })),
+        ...(canCreateBoards
+          ? [
+              {
+                label: "New board and portal",
+                onSelect: () => createPortalToNewBoard(flowPosition),
+              },
+            ]
+          : []),
+      ];
       return [
         {
           label: "New note",
@@ -1539,6 +1757,14 @@ export function CanvasBoard() {
           label: "New section",
           onSelect: () => createSectionAt(flowPosition),
         },
+        ...(portalItems.length > 0
+          ? [
+              {
+                label: "New portal",
+                items: portalItems,
+              },
+            ]
+          : []),
         ...(selectedNodeIds.length > 0
           ? [
               {
@@ -1749,7 +1975,16 @@ export function CanvasBoard() {
     }
 
     const moveTargets = otherBoards(activeBoardId);
+    const portalTarget = nodeId ? portalTargetId(cardsById.get(nodeId)) : null;
     return [
+      ...(nodeId && portalTarget
+        ? [
+            {
+              label: "Open portal",
+              onSelect: () => enterPortal(nodeId, portalTarget),
+            },
+          ]
+        : []),
       ...(canCreateContent
         ? [
             {
@@ -1861,6 +2096,12 @@ export function CanvasBoard() {
     canManageStructure,
     canManageLinks,
     requestShare,
+    snapshot.boards,
+    createPortalAt,
+    createPortalToNewBoard,
+    canCreateBoards,
+    cardsById,
+    enterPortal,
   ]);
 
   return (
@@ -1880,7 +2121,7 @@ export function CanvasBoard() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
+        nodeTypes={canvasNodeTypes}
         edgeTypes={edgeTypes}
         // Unmount nodes and edges outside the viewport. React Flow keeps measured
         // sizes and handle bounds for unmounted nodes, so edges still route and
@@ -1920,6 +2161,25 @@ export function CanvasBoard() {
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
         onEdgeClick={() => setSelectedConnector(null)}
+        onNodeDoubleClick={(event, node) => {
+          // A portal is a doorway: the camera transition replaces the board in
+          // place. Any other card opens the full-canvas focus surface.
+          const targetBoardId = portalTargetId(cardsById.get(node.id));
+          if (targetBoardId) {
+            event.preventDefault();
+            enterPortal(node.id, targetBoardId);
+            return;
+          }
+          if (isEditorTarget(event)) return;
+          openCardFocus(node.id);
+        }}
+        onMoveStart={(_event, viewport) => {
+          gestureStartZoom.current = viewport.zoom;
+        }}
+        onMoveEnd={(_event, viewport) => {
+          if (activeBoardId) recordBoardViewport(activeBoardId, viewport);
+          readCameraGesture(gestureStartZoom.current ?? viewport.zoom, viewport.zoom);
+        }}
         onEdgeDoubleClick={(event, edge) => {
           if (!canEditLayout) return;
           event.preventDefault();
@@ -2065,6 +2325,7 @@ export function CanvasBoard() {
         <PresenceLayer />
         <PeerReconnectLayer />
       </ReactFlow>
+      <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput
           key={edgeDescription.edgeId}

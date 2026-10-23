@@ -25,6 +25,11 @@ export interface FieldValueInputProps {
   onCommit: (value: PropertyValue | null) => void;
   /** Selectable cards for a `card` field. */
   cards?: readonly CardPickerOption[] | undefined;
+  /**
+   * Known boards, so a `board` value reads as the target's name. An id that is
+   * not in the list is a deleted board, shown as "Unavailable board".
+   */
+  boards?: readonly { id: string; name: string }[] | undefined;
   /** The card being edited, so a `card` property cannot point at itself. */
   excludeCardId?: string | undefined;
   autoFocus?: boolean | undefined;
@@ -127,6 +132,7 @@ export function FieldValueInput({
   value,
   onCommit,
   cards,
+  boards,
   excludeCardId,
   autoFocus,
   onDone,
@@ -180,6 +186,22 @@ export function FieldValueInput({
             onDone?.();
           }}
         />
+      );
+    }
+    case "board": {
+      // The target is chosen when the portal is created; the value reads as the
+      // board's name, and a deleted board reads as unavailable rather than as
+      // an opaque id.
+      const board = boards?.find((entry) => entry.id === value);
+      return (
+        <p
+          className="text-[13px] text-[var(--ink)]"
+          data-testid="property-board-value"
+          data-missing={board ? undefined : "true"}
+          title={board?.name ?? "Unavailable board"}
+        >
+          {board?.name ?? "Unavailable board"}
+        </p>
       );
     }
     case "select": {
@@ -258,6 +280,8 @@ export interface PropertyFieldProps {
   onClear: () => void;
   /** Selectable cards for a `card` field. */
   cards?: readonly CardPickerOption[] | undefined;
+  /** Known boards, so a `board` value reads as the target's name. */
+  boards?: readonly { id: string; name: string }[] | undefined;
   /** The card being edited, so a `card` property cannot point at itself. */
   excludeCardId?: string | undefined;
 }
@@ -269,6 +293,7 @@ export function PropertyField({
   onChange,
   onClear,
   cards,
+  boards,
   excludeCardId,
 }: PropertyFieldProps) {
   return (
@@ -280,6 +305,7 @@ export function PropertyField({
         else onChange(next);
       }}
       cards={cards}
+      boards={boards}
       excludeCardId={excludeCardId}
     />
   );

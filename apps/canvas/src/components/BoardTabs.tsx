@@ -1,6 +1,12 @@
 import type { Board } from "@suite/graph";
 import { useState } from "react";
 
+/** Peers whose active board is this one, named for the tab's tooltip. */
+export interface BoardPresence {
+  label: string;
+  color: string;
+}
+
 export interface BoardTabsProps {
   boards: Board[];
   activeBoardId: string | null;
@@ -12,6 +18,8 @@ export interface BoardTabsProps {
   canCreateBoards?: boolean;
   /** Renaming and deleting a board belongs to the workspace surface, not a draft. */
   canManageBoards?: boolean;
+  /** Cross-board presence, keyed by board id; no transport of its own. */
+  peersByBoard?: Record<string, BoardPresence>;
 }
 
 /** Board switcher in the app bar: one tab per board, plus create and delete. */
@@ -24,6 +32,7 @@ export function BoardTabs({
   onDeleteRequest,
   canCreateBoards = true,
   canManageBoards = true,
+  peersByBoard,
 }: BoardTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -42,6 +51,7 @@ export function BoardTabs({
       <div className="flex min-w-0 items-center gap-1" role="tablist" aria-label="Boards">
         {boards.map((board) => {
           const active = board.id === activeBoardId;
+          const presence = peersByBoard?.[board.id];
           return renamingId === board.id ? (
             <input
               key={board.id}
@@ -66,7 +76,7 @@ export function BoardTabs({
               data-testid={`board-tab-${board.id}`}
               data-active={active ? "true" : undefined}
               title={canManageBoards ? "Double-click to rename" : board.name}
-              className={`max-w-[140px] truncate rounded px-2 py-1 text-[12px] transition-colors ${
+              className={`inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
                 active
                   ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
                   : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
@@ -78,7 +88,17 @@ export function BoardTabs({
                 setDraft(board.name);
               }}
             >
-              {board.name}
+              <span className="min-w-0 truncate">{board.name}</span>
+              {presence ? (
+                <span
+                  data-testid="board-tab-peer-dot"
+                  className="board-tab-peer-dot"
+                  role="img"
+                  aria-label={`${presence.label} here now`}
+                  title={`${presence.label} here now`}
+                  style={{ backgroundColor: presence.color }}
+                />
+              ) : null}
             </button>
           );
         })}

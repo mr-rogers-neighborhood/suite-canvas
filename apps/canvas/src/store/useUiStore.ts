@@ -21,8 +21,45 @@ export interface SelectedConnector {
 
 export type LibraryTab = "inbox" | "cards" | "trash";
 
-/** Which editor of one card holds the keystrokes; only one may be editable at a time. */
-export type EditingSurface = "canvas" | "panel";
+/**
+ * Which editor of one card holds the keystrokes; only one may be editable at a
+ * time. `focus` is the full-canvas card surface, which owns the body editor the
+ * same way the inspector's `panel` does.
+ */
+export type EditingSurface = "canvas" | "panel" | "focus";
+
+/** React Flow's viewport: world-to-screen translate plus zoom. */
+export interface ViewportState {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/** A board the user left, with the viewport that returns to it exactly. */
+export interface BoardVisit {
+  boardId: string;
+  viewport: ViewportState;
+  /**
+   * How the board was entered. A portal visit can also be left by zooming out;
+   * a tab switch is only undone by Escape or the back control.
+   */
+  via: "portal" | "manual";
+}
+
+/** Screen rectangle of a portal node, in window coordinates. */
+export interface ScreenRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** A portal the user activated; the canvas draws the camera transition for it. */
+export interface PortalEntryRequest {
+  nodeId: string;
+  targetBoardId: string;
+  rect: ScreenRect;
+}
 
 /** Library scope: the whole workspace, or the cards placed on the active board. */
 export type LibraryScope = "all" | "board";
@@ -45,9 +82,29 @@ const nextFocusTarget = (kind: FocusTarget["kind"], id: string, boardId: string)
   return { kind, id, boardId, nonce: focusNonce };
 };
 
+/** One camera instruction per board switch; the canvas consumes it once. */
+let navigationNonce = 0;
+const nextNavigationNonce = () => {
+  navigationNonce += 1;
+  return navigationNonce;
+};
+
 interface UiState extends SessionCapabilities {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
+  /** Viewport last seen on each board, so a return lands where it left. */
+  boardViewports: Record<string, ViewportState>;
+  /** Boards visited from the current one, newest last. */
+  boardHistory: BoardVisit[];
+  /**
+   * A one-shot instruction to move the camera after a board switch; `viewport`
+   * null means "fit the board's content".
+   */
+  viewportRequest: { boardId: string; viewport: ViewportState | null; nonce: number } | null;
+  /** A portal entry waiting for the camera transition to play. */
+  portalEntry: PortalEntryRequest | null;
+  /** Card shown on the full-canvas focus surface, if any. */
+  cardFocusId: string | null;
   /**
    * Viewer shorthand; capability flags remain the gate for every write path.
    * It is UI state (not read from the session in each component) so tests and
@@ -113,6 +170,23 @@ interface UiState extends SessionCapabilities {
   requestShare: (scope: ShareScope) => void;
   clearShareRequest: () => void;
   setActiveBoardId: (id: string | null) => void;
+  /**
+   * Switches boards and remembers where the user came from. Tab clicks, the
+   * library's "go to board" and a finished portal transition all use it, so a
+   * back stack exists for every path into another board.
+   */
+  activateBoard: (
+    boardId: string,
+    options?: { via?: BoardVisit["via"]; viewport?: ViewportState | null },
+  ) => void;
+  /** Returns to the previous board and viewport; false when there is nowhere to go. */
+  goBackBoard: () => boolean;
+  recordBoardViewport: (boardId: string, viewport: ViewportState) => void;
+  clearViewportRequest: () => void;
+  requestPortalEntry: (request: PortalEntryRequest) => void;
+  clearPortalEntry: () => void;
+  openCardFocus: (cardId: string) => void;
+  closeCardFocus: () => void;
   setLibraryOpen: (open: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   setSelectedNodeIds: (ids: string[]) => void;
@@ -148,6 +222,11 @@ interface UiState extends SessionCapabilities {
 export const useUiStore = create<UiState>((set) => ({
   ...sessionCapabilities(getSession()),
   activeBoardId: null,
+  boardViewports: {},
+  boardHistory: [],
+  viewportRequest: null,
+  portalEntry: null,
+  cardFocusId: null,
   readOnly: getSession().readOnly,
   setReadOnly: (readOnly) => set({ readOnly }),
   setCapabilities: (capabilities) => set(capabilities),
@@ -179,6 +258,88 @@ export const useUiStore = create<UiState>((set) => ({
   requestShare: (shareRequest) => set({ shareRequest }),
   clearShareRequest: () => set({ shareRequest: null }),
   setActiveBoardId: (activeBoardId) => set({ activeBoardId }),
+  activateBoard: (boardId, options = {}) =>
+    set((state) => {
+      if (state.activeBoardId === boardId) return state;
+      const from = state.activeBoardId;
+      const leaving = from
+        ? [
+            {
+              boardId: from,
+              viewport: state.boardViewports[from] ?? { x: 0, y: 0, zoom: 1 },
+              via: options.via ?? ("manual" as const),
+            },
+          ]
+        : [];
+      const request =
+        options.viewport !== undefined ? options.viewport : (state.boardViewports[boardId] ?? null);
+      return {
+        activeBoardId: boardId,
+        // Bounded: a long portal chain should not grow the session forever.
+        boardHistory: [...state.boardHistory, ...leaving].slice(-24),
+        viewportRequest: { boardId, viewport: request, nonce: nextNavigationNonce() },
+        // Editing, focus and a marquee belong to the board that left the screen.
+        editingNodeId: null,
+        editingSurface: "canvas" as EditingSurface,
+        editingSectionId: null,
+        selectedSectionId: null,
+        // A card selection is also board-scoped; entering a portal starts clean.
+        selectedNodeIds: options.via === "portal" ? [] : state.selectedNodeIds,
+        selectedEdgeIds: [],
+        selectedConnector: null,
+        cardFocusId: null,
+      };
+    }),
+  goBackBoard: () => {
+    const state = useUiStore.getState();
+    const previous = state.boardHistory.at(-1);
+    if (!previous) return false;
+    useUiStore.setState({
+      activeBoardId: previous.boardId,
+      boardHistory: state.boardHistory.slice(0, -1),
+      viewportRequest: {
+        boardId: previous.boardId,
+        viewport: previous.viewport,
+        nonce: nextNavigationNonce(),
+      },
+      editingNodeId: null,
+      editingSurface: "canvas" as EditingSurface,
+      editingSectionId: null,
+      selectedSectionId: null,
+      selectedNodeIds: [],
+      selectedEdgeIds: [],
+      selectedConnector: null,
+      cardFocusId: null,
+    });
+    return true;
+  },
+  recordBoardViewport: (boardId, viewport) =>
+    set((state) => {
+      const current = state.boardViewports[boardId];
+      if (
+        current &&
+        current.x === viewport.x &&
+        current.y === viewport.y &&
+        current.zoom === viewport.zoom
+      ) {
+        return state;
+      }
+      return { boardViewports: { ...state.boardViewports, [boardId]: viewport } };
+    }),
+  clearViewportRequest: () => set({ viewportRequest: null }),
+  requestPortalEntry: (request) =>
+    // One transition at a time: a second activation during the animation would
+    // stack overlays and write a second board switch.
+    set((state) => (state.portalEntry ? state : { portalEntry: request })),
+  clearPortalEntry: () => set({ portalEntry: null }),
+  openCardFocus: (cardFocusId) => set({ cardFocusId, inspectorFieldId: null }),
+  closeCardFocus: () =>
+    set((state) => ({
+      cardFocusId: null,
+      ...(state.editingSurface === "focus"
+        ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
+        : {}),
+    })),
   setLibraryOpen: (libraryOpen) => set({ libraryOpen }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
@@ -220,11 +381,14 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       inspectorNodeId,
       inspectorFieldId: fieldId,
-      // Opening another card's inspector ends the previous card's panel
-      // session; the panel has to start its own edit before accepting keys.
+      // The inspector is the reading surface: opening it ends a focus session,
+      // and the panel starts its own edit before accepting keys.
+      cardFocusId: null,
       ...(state.editingSurface === "panel" && state.editingNodeId !== inspectorNodeId
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
-        : {}),
+        : state.editingSurface === "focus"
+          ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
+          : {}),
       selectedNodeIds: [inspectorNodeId],
       selectedSectionId: null,
       editingSectionId: null,
@@ -233,7 +397,10 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       inspectorNodeId: null,
       inspectorFieldId: null,
-      ...(state.editingSurface === "panel"
+      // Closing the inspector leaves focus mode with it, so Escape cannot strand
+      // the canvas behind a surface the reader has already dismissed.
+      cardFocusId: null,
+      ...(state.editingSurface === "panel" || state.editingSurface === "focus"
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
         : {}),
     })),

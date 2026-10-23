@@ -1,4 +1,4 @@
-import type { Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/graph";
+import type { Board, Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
@@ -10,6 +10,8 @@ export interface CardInspectorProps {
   title: string;
   types: CardType[];
   tags: Tag[];
+  /** Known boards, so a portal's board field reads as a name. */
+  boards?: readonly Board[] | undefined;
   fields: CardFieldView[];
   where: CardWhere;
   /** Selectable cards for a `card` field's picker. */
@@ -64,6 +66,7 @@ export function CardInspector({
   title,
   types,
   tags,
+  boards,
   fields,
   where,
   cards,
@@ -152,6 +155,7 @@ export function CardInspector({
           title={title}
           types={types}
           tags={tags}
+          boards={boards}
           fields={fields}
           where={where}
           cards={cards}

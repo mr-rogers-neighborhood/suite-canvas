@@ -193,3 +193,141 @@ describe("useUiStore", () => {
     expect(state.librarySectionFilter).toEqual([]);
   });
 });
+
+describe("useUiStore board navigation", () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      activeBoardId: "board-a",
+      boardViewports: {},
+      boardHistory: [],
+      viewportRequest: null,
+      portalEntry: null,
+      cardFocusId: null,
+      editingNodeId: null,
+      editingSurface: "canvas",
+      editingSectionId: null,
+      selectedEdgeIds: [],
+      selectedConnector: null,
+    });
+  });
+
+  it("should remember the board and viewport it came from", () => {
+    useUiStore.getState().recordBoardViewport("board-a", { x: -40, y: 12, zoom: 0.75 });
+    useUiStore.getState().activateBoard("board-b", { via: "portal" });
+
+    const state = useUiStore.getState();
+    expect(state.activeBoardId).toBe("board-b");
+    expect(state.boardHistory).toEqual([
+      { boardId: "board-a", viewport: { x: -40, y: 12, zoom: 0.75 }, via: "portal" },
+    ]);
+    expect(state.viewportRequest).toMatchObject({ boardId: "board-b", viewport: null });
+  });
+
+  it("should return to the exact previous board and viewport", () => {
+    useUiStore.getState().recordBoardViewport("board-a", { x: 3, y: -9, zoom: 1.25 });
+    useUiStore.getState().activateBoard("board-b", { via: "portal" });
+
+    expect(useUiStore.getState().goBackBoard()).toBe(true);
+
+    const state = useUiStore.getState();
+    expect(state.activeBoardId).toBe("board-a");
+    expect(state.boardHistory).toEqual([]);
+    expect(state.viewportRequest).toMatchObject({
+      boardId: "board-a",
+      viewport: { x: 3, y: -9, zoom: 1.25 },
+    });
+    // Nothing left to go back to.
+    expect(useUiStore.getState().goBackBoard()).toBe(false);
+  });
+
+  it("should treat A → B → A as two visits, not a switch in place", () => {
+    useUiStore.getState().activateBoard("board-b", { via: "portal" });
+    useUiStore.getState().activateBoard("board-a", { via: "portal" });
+
+    expect(useUiStore.getState().activeBoardId).toBe("board-a");
+    expect(useUiStore.getState().boardHistory.map((entry) => entry.boardId)).toEqual([
+      "board-a",
+      "board-b",
+    ]);
+
+    useUiStore.getState().goBackBoard();
+    expect(useUiStore.getState().activeBoardId).toBe("board-b");
+    useUiStore.getState().goBackBoard();
+    expect(useUiStore.getState().activeBoardId).toBe("board-a");
+  });
+
+  it("should ignore a repeated activation of the board already on screen", () => {
+    useUiStore.getState().activateBoard("board-a");
+    expect(useUiStore.getState().boardHistory).toEqual([]);
+    expect(useUiStore.getState().viewportRequest).toBeNull();
+  });
+
+  it("should keep only one portal transition in flight", () => {
+    const rect = { left: 10, top: 20, width: 100, height: 80 };
+    useUiStore.getState().requestPortalEntry({ nodeId: "n1", targetBoardId: "b2", rect });
+    useUiStore.getState().requestPortalEntry({ nodeId: "n2", targetBoardId: "b3", rect });
+
+    expect(useUiStore.getState().portalEntry?.nodeId).toBe("n1");
+    useUiStore.getState().clearPortalEntry();
+    useUiStore.getState().requestPortalEntry({ nodeId: "n2", targetBoardId: "b3", rect });
+    expect(useUiStore.getState().portalEntry?.nodeId).toBe("n2");
+  });
+
+  it("should reset editing and focus when the board changes", () => {
+    useUiStore.getState().startEditing("card-a", "body", "focus");
+    useUiStore.getState().openCardFocus("card-a");
+
+    useUiStore.getState().activateBoard("board-b");
+
+    const state = useUiStore.getState();
+    expect(state.cardFocusId).toBeNull();
+    expect(state.editingNodeId).toBeNull();
+    expect(state.editingSurface).toBe("canvas");
+  });
+});
+
+describe("useUiStore card focus", () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      cardFocusId: null,
+      inspectorNodeId: null,
+      inspectorFieldId: null,
+      editingNodeId: null,
+      editingField: "body",
+      editingSurface: "canvas",
+      canEditContent: true,
+    });
+  });
+
+  it("should open focus mode and stop focus editing when it closes", () => {
+    useUiStore.getState().openCardFocus("card-a");
+    expect(useUiStore.getState().cardFocusId).toBe("card-a");
+
+    useUiStore.getState().startEditing("card-a", "body", "focus");
+    useUiStore.getState().closeCardFocus();
+
+    const state = useUiStore.getState();
+    expect(state.cardFocusId).toBeNull();
+    expect(state.editingNodeId).toBeNull();
+    expect(state.editingSurface).toBe("canvas");
+  });
+
+  it("should leave focus mode when the inspector closes", () => {
+    useUiStore.getState().openInspector("card-a");
+    useUiStore.getState().openCardFocus("card-a");
+    useUiStore.getState().startEditing("card-a", "body", "focus");
+
+    useUiStore.getState().closeInspector();
+
+    const state = useUiStore.getState();
+    expect(state.inspectorNodeId).toBeNull();
+    expect(state.cardFocusId).toBeNull();
+    expect(state.editingSurface).toBe("canvas");
+  });
+
+  it("should close focus mode when the inspector opens another card", () => {
+    useUiStore.getState().openCardFocus("card-a");
+    useUiStore.getState().openInspector("card-b");
+    expect(useUiStore.getState().cardFocusId).toBeNull();
+  });
+});

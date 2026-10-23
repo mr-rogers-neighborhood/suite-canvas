@@ -74,10 +74,12 @@ implementation and a temporary development escape hatch, not the product target.
    ([ADR-0020](./0020-main-and-loro-plan-of-record.md)), not through the renderer.
 
 6. **Excalidraw is a card, never the canvas engine.** The whiteboard keeps the existing Excalidraw
-   card and Loro drawing binding. Its card face is a cached preview; at full LOD it may mount the
+   card and Loro drawing binding. Its card face is a cached SVG preview; at full LOD it mounts the
    real Excalidraw surface inline, and the existing focus surface remains available for deep
    editing. Excalidraw's internal camera is local to the card and never becomes the workspace
-   camera. The Suite property inspector and card chrome stay DOM.
+   camera. The Suite property inspector and card chrome stay DOM. The inline mount is budgeted:
+   **at most one** Excalidraw instance is mounted, the preview is the underlay so there is no blank
+   frame, and the mount decision is intent-gated (see the amendment below).
 
 7. **ICE's native spatial affordances are kept.** Snap guides, equal-spacing bars, auto-alignment,
    `arrange`, `frameContent`, container entry/exit, `setLocked` and `reorder` are product assets,
@@ -161,3 +163,47 @@ polish and a minimap. These are specified in
   protocol. The ECS is projection state.
 - **Keep ICE's undo for canvas gestures.** Two histories cannot agree about a drag that also
   changes a Loro placement. Loro's history is the only user-visible one.
+
+## Amendment (2026-10-23): the inline whiteboard ladder
+
+Decision 6 says the whiteboard may mount inline at full LOD. That "may" is now a measured ladder,
+because an Excalidraw instance is the most expensive DOM surface in the product and the immersive
+version must not be bought with the whole frame budget.
+
+**The mount gate is intent plus budget, not scale alone.** LOD says the card is big enough; intent
+says the user is actually working on it. A whiteboard mounts its editor only when it is the *active*
+whiteboard: pointer over it, focused, or opened from the focus surface, held for roughly 200 ms. A
+camera fly-through at `full` keeps the SVG preview. Exactly one Excalidraw instance exists at a
+time; every other whiteboard renders its preview.
+
+**The preview is the underlay.** `WhiteboardPreview` is vector, so it is crisp at any zoom. It stays
+mounted beneath the editor until the editor's first paint, which removes the blank frame and makes
+the upgrade a crossfade rather than a swap.
+
+**Camera isolation.** The stage is `pointer-events:none` until edit mode. Entering edit mode is
+explicit (click/dwell, or Enter); Escape leaves it, and the caller decides whether Escape first pops
+the card camera or the editor. Wheel and pointer are stopped at the card boundary, so Excalidraw's
+own pan/zoom stay local and the workspace camera keeps the wheel outside the card. While the
+workspace camera moves, the editor is suspended with `content-visibility: hidden` rather than
+unmounted, so there is no rehydration cost and no paint work during the flight.
+
+**The ladder, measured at each rung.**
+
+1. **Single keyed mount.** Reuse `WhiteboardSurface` unchanged, keyed by card id. The lazy Excalidraw
+   module imports once per session; switching between two whiteboards pays a remount.
+2. **Roaming stage.** If that remount is visible, hoist one `WhiteboardSurface` into a screen-space
+   stage and move/resize it to the active card, swapping the scene with
+   `updateScene({ resetScene })`. This needs a `sceneIdentity` prop so the commit-signature refs
+   reset per card without emitting a phantom commit. The focus surface keeps working unchanged.
+3. **Focus surface only.** If inline editing cannot hold budget, keep the focus surface and leave
+   the inline work behind a flag. The product still ships; the immersive version ships when it is
+   measured.
+
+**Rung 3 triggers.** A blocking mount over ~50 ms, p95 frame time above 16.7 ms while panning with
+an editor mounted, memory growth above 10% over ten minutes, or any case where the editor's internal
+camera fights the workspace camera.
+
+**Why this is still worth doing.** The whiteboard is the one card type whose *content* benefits from
+an infinite camera of its own. Inline editing is the difference between "a preview of a drawing" and
+"a drawing on the canvas". The ladder keeps that experience while making the cost bounded and
+visible, instead of discovering it as a regression later.

@@ -252,3 +252,26 @@ roadmap.
   board is this?” or “where did I put that card?”. Views, Pins and the outline do.
 - **Infinite nesting with no cap.** Cycles and pathological graphs need a guard; the document may
   keep the cycle, the view stops expanding.
+
+## Amendment (2026-10-23): intent-gated editor mounts
+
+The editor budget in decision 7 counts mounted editors. A band crossing is necessary but not
+sufficient to spend one: a card that becomes `full` during a camera fly-through should not mount an
+editor nobody asked for.
+
+- **Intent gate.** A full-LOD card mounts its editor only when it is the active card: pointer over
+  it, focused, selected with an edit gesture, or opened from the focus surface, held for about
+  200 ms. Otherwise it keeps its static GPU face at full fidelity.
+- **Mount on settle.** No editor mounts while the camera is moving. After the settle window, the
+  incremental pass mounts in priority order (focused, selected, pointer, centre, z-order).
+- **Suspend, do not unmount, during a camera move.** A mounted editor that is already open keeps its
+  React tree and loses paint and pointer routing (`content-visibility: hidden`). Unmounting and
+  rehydrating is more expensive than hiding, and rehydration is where editors lose caret state.
+- **One editor per whiteboard, ever.** The whiteboard editor is the heaviest mount in the product;
+  it gets its own single-instance rule (ADR-0034 amendment) rather than competing for the general
+  budget.
+- **Evidence.** `?perf=1` reports `mountedEditors`, `intentGated` and `settleMs`; the LOD
+  experiments in §Experiments measure stability with the gate on.
+
+This does not change the bands or the crossfade. It changes *when* the expensive face is allowed to
+exist, which is the part that decides whether the frame budget survives a real workspace.

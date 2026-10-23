@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { SimpleServer } from "loro-websocket/server";
 import { handleAdminRequest } from "./adminHttp.js";
 import { handleAttachmentRequest } from "./attachmentHttp.js";
+import { defaultAttachmentStore } from "./attachments.js";
 import { authorize, resolveWorkerTokens } from "./auth.js";
 import { validateConfig } from "./config.js";
 import { handleShareRequest } from "./http.js";
@@ -306,6 +307,10 @@ const health = createServer((request, response) => {
     },
     reload: (share) => worker.reload(share),
     status: (share) => worker.status(share),
+    // A room opens because somebody resolved its link. This is the only
+    // viewer-side path that opens one: boot opens none, and an owner save only
+    // refreshes the rooms already open.
+    onShareOpened: (share) => worker.openShare(share),
   })
     .then((handled) => {
       if (handled || response.writableEnded) return;
@@ -349,8 +354,12 @@ const health = createServer((request, response) => {
         metrics: processMetrics,
         diskBytes: () => quotas.disk(),
         projectionRooms: () => worker.projectionRooms(),
+        projectionStats: () => worker.projectionStats(),
         rssBytes: readProcessRss,
         sweepRooms: (options) => worker.sweepIdle(options),
+        // The same store the attachment route serves from, so an exported
+        // reprex carries the images the app would show.
+        attachments: defaultAttachmentStore(),
         disconnectRoom: (roomId) => server.disconnectRoomWhere(roomId, () => true),
         onShareRemoved: removeShare,
         onSharesChanged: (workspaceId) => {

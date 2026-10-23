@@ -2,6 +2,8 @@ import { Placeholder } from "@tiptap/extensions";
 import type { Extensions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Attachment } from "./attachmentNode";
+import { ImageLink } from "./imageLinkNode";
+import { ImageUrlPrompt } from "./imageUrlPrompt";
 import { Mention } from "./Mention";
 import { PropertyBlock } from "./PropertyBlock";
 import { PasteImages } from "./pasteImages";
@@ -39,9 +41,15 @@ export function cardBodySchemaExtensions({
     // owner id is what adds this card's fields to the picker.
     Mention.configure({ cardId }),
     SlashCommands,
+    // The `/` menu's image row asks for a URL here: a widget inside the editor,
+    // so the caret and the editing session survive the answer.
+    ImageUrlPrompt,
     // Images are nodes that name their bytes by id; the bytes live beside the
     // document, so a share projection copies metadata only.
     Attachment,
+    // A link image names a URL and holds no bytes, so it works in every
+    // edition, including a standalone build with no relay at all.
+    ImageLink,
     PasteImages,
     PropertyBlock.configure({
       cardId,

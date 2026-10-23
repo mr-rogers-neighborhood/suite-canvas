@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkspaceFile, WorkspaceDocument } from "@suite/graph";
-import { LoroDoc } from "loro-crdt";
+import { LoroDoc, LoroMap } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADMIN_API_PATH,
@@ -139,6 +139,25 @@ function seedWorkspace(id: string, cards = 2): void {
     });
   }
   documents.save(loroDocumentKey(id), workspace.doc.export({ mode: "snapshot" }));
+}
+
+/** Writes one attachment-shaped node into a card body, as the editor would. */
+function seedBodyImage(workspace: WorkspaceDocument, cardId: string, id: string): void {
+  const root = workspace.getContent(cardId);
+  root.set("nodeName", "doc");
+  root.ensureMergeableMap("attributes");
+  const blocks = root.ensureMergeableList("children");
+  const paragraph = blocks.insertContainer(0, new LoroMap());
+  paragraph.set("nodeName", "paragraph");
+  paragraph.ensureMergeableMap("attributes");
+  const node = paragraph.ensureMergeableList("children").insertContainer(0, new LoroMap());
+  node.set("nodeName", "attachment");
+  const attrs = node.ensureMergeableMap("attributes");
+  attrs.set("id", id);
+  attrs.set("mime", "image/png");
+  attrs.set("name", "pixel.png");
+  attrs.set("width", 1);
+  attrs.set("height", 1);
 }
 
 describe("admin API", () => {
@@ -1026,6 +1045,47 @@ describe("admin mutations", () => {
     expect(parsed.workspace.listCards()).toHaveLength(2);
 
     expect((await get(`${ADMIN_API_PATH}/workspaces/missing/export`)).status).toBe(404);
+  });
+
+  it("embeds attachment bytes in the export, and still exports when it has none", async () => {
+    const ATTACHMENT_ID = "0123456789abcdef0123456789abcdef";
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x80, 0x00, 0xc3]);
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    workspace.markSeeded();
+    const board = workspace.ensureBoard();
+    const card = workspace.createCard({ id: "ws-img-card", typeId: "note", boardId: board.id });
+    seedBodyImage(workspace, card.id, ATTACHMENT_ID);
+    documents.save(loroDocumentKey("ws-img"), workspace.doc.export({ mode: "snapshot" }));
+
+    const store = {
+      get: (id: string) =>
+        id === ATTACHMENT_ID
+          ? {
+              id,
+              workspaceId: "ws-img",
+              mime: "image/png",
+              size: png.byteLength,
+              createdAt: 0,
+              bytes: png,
+            }
+          : null,
+    };
+
+    await startServer({ attachments: store });
+    const withBytes = (await (await get(`${ADMIN_API_PATH}/workspaces/ws-img/export`)).json()) as {
+      attachments: Record<string, { data: string }>;
+    };
+    const decoded = atob(withBytes.attachments[ATTACHMENT_ID]?.data ?? "");
+    expect(Array.from(decoded, (character) => character.charCodeAt(0))).toEqual(Array.from(png));
+
+    // Without the store the export still succeeds; the node keeps its id and the
+    // operator is told nothing was attached rather than the route failing.
+    await startServer({});
+    const withoutStore = (await (
+      await get(`${ADMIN_API_PATH}/workspaces/ws-img/export`)
+    ).json()) as { attachments: Record<string, unknown> };
+    expect(withoutStore.attachments).toEqual({});
   });
 
   it("hides fixtures and export while SUITE_ADMIN_TOKEN is unset", async () => {

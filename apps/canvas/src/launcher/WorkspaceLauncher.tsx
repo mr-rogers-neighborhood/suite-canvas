@@ -3,6 +3,15 @@ import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "../session/ownerK
 import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
 import { isShareSession } from "../session/session";
 import {
+  forgetWorkspaceName,
+  readWorkspaceNames,
+  refreshWorkspaceNames,
+  rememberWorkspaceName,
+  renameCachedWorkspace,
+  resolveWorkspaceName,
+  workspaceNameProblem,
+} from "../session/workspaceName";
+import {
   downloadWorkspaceById,
   forgetWorkspace,
   importWorkspaceFile,
@@ -15,6 +24,11 @@ import {
   rememberWorkspace,
   workspaceUrl,
 } from "../session/workspaceTransfer";
+
+/** A recents row with the workspace name resolved for display. */
+interface RecentEntry extends RecentWorkspace {
+  name: string;
+}
 
 /** The prompt only ever names one workspace at a time. */
 interface RecoveryPrompt {
@@ -38,6 +52,15 @@ function openedAt(timestamp: number): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** The workspace name leads the row; the last board name is only a fallback. */
+function labelRecent(
+  entry: RecentWorkspace,
+  names: Record<string, string>,
+  fallback = entry.title,
+): RecentEntry {
+  return { ...entry, name: resolveWorkspaceName(names[entry.id], fallback) };
+}
+
 /**
  * The starting screen: a workspace picker rather than a document. Recent
  * workspaces are local metadata; opening one navigates to that workspace's
@@ -54,17 +77,35 @@ const DeleteWorkspaceDialog = lazy(async () => {
 });
 
 export function WorkspaceLauncher() {
-  const [recents, setRecents] = useState<RecentWorkspace[]>([]);
+  const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
   const [choice, setChoice] = useState<CreationChoice | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<RecentWorkspace | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RecentEntry | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const recoveryInput = useRef<HTMLInputElement | null>(null);
+  const renameCancelled = useRef(false);
 
   useEffect(() => {
-    setRecents(readRecentWorkspaces());
+    const entries = readRecentWorkspaces();
+    const names = readWorkspaceNames();
+    setRecents(entries.map((entry) => labelRecent(entry, names)));
+    // A cached replica carries the newest name — including a rename made on
+    // another device — so each launcher visit re-reads it. No live subscription:
+    // the workspace is either open in the editor or not shown here at all.
+    let live = true;
+    void refreshWorkspaceNames(entries.map((entry) => entry.id)).then((refreshed) => {
+      if (!live) return;
+      setRecents((current) => current.map((entry) => labelRecent(entry, refreshed, entry.name)));
+    });
+    return () => {
+      live = false;
+    };
   }, []);
 
   /**
@@ -108,21 +149,58 @@ export function WorkspaceLauncher() {
     }
   };
 
-  const exportRecent = async (entry: RecentWorkspace) => {
+  const exportRecent = async (entry: RecentEntry) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      await downloadWorkspaceById(entry.id, entry.title);
+      // An export is the only copy a launcher user has, so a size or
+      // missing-image warning is shown here exactly as the editor shows it.
+      await downloadWorkspaceById(entry.id, entry.name, setNotice);
       // Same offer as the workspace's own backup export: only when this browser
       // still holds an owner key it has never saved.
       const ownerKey = readOwnerKey(entry.id);
       if (ownerKey && !hasSavedRecoveryKey(entry.id)) {
-        setPrompt({ workspaceId: entry.id, ownerKey, title: entry.title });
+        setPrompt({ workspaceId: entry.id, ownerKey, title: entry.name });
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not export that workspace.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startRename = (entry: RecentEntry) => {
+    renameCancelled.current = false;
+    setRenamingId(entry.id);
+    setDraft(entry.name);
+    setNameError(null);
+  };
+
+  /**
+   * The name is written to the recents mirror first, so the row is right even
+   * when the document is not in this browser. A cached document is the one
+   * writable copy; a relay-only recent has nothing local to write to yet.
+   */
+  const commitRename = async (entry: RecentEntry) => {
+    if (renameCancelled.current) {
+      renameCancelled.current = false;
+      return;
+    }
+    const problem = workspaceNameProblem(draft);
+    if (problem) {
+      setNameError(problem);
+      return;
+    }
+    const name = draft.trim();
+    setRenamingId(null);
+    setNameError(null);
+    setRecents((current) => current.map((row) => (row.id === entry.id ? { ...row, name } : row)));
+    rememberWorkspaceName(entry.id, name);
+    try {
+      await renameCachedWorkspace(entry.id, name);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename that workspace.");
     }
   };
 
@@ -231,6 +309,14 @@ export function WorkspaceLauncher() {
               {error}
             </p>
           ) : null}
+          {notice ? (
+            <p
+              data-testid="launcher-notice"
+              className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-200"
+            >
+              {notice}
+            </p>
+          ) : null}
         </header>
 
         <section className="px-8 py-6" aria-labelledby="recent-title">
@@ -247,59 +333,135 @@ export function WorkspaceLauncher() {
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-[var(--hairline)]">
-              {recents.map((entry) => (
-                <li
-                  key={entry.id}
-                  data-testid={`launcher-recent-${entry.id}`}
-                  className="group flex items-center gap-3 py-2.5"
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => openWorkspace(entry.id, entry.boardId)}
+              {recents.map((entry) => {
+                const renaming = renamingId === entry.id;
+                // The board name repeats the workspace name until someone names
+                // the workspace, so it only earns space when it differs.
+                const board = entry.title?.trim();
+                const detail = [board && board !== entry.name ? board : null, entry.boardId]
+                  .filter((part): part is string => Boolean(part))
+                  .join(" · ");
+                return (
+                  <li
+                    key={entry.id}
+                    data-testid={`launcher-recent-${entry.id}`}
+                    className="group flex items-center gap-3 py-2.5"
                   >
-                    <span className="block truncate text-[13px] font-medium">{entry.title}</span>
-                    <span className="block truncate text-[11px] text-[var(--ink-muted)]">
-                      {entry.boardId ? `${entry.boardId} · ` : ""}
-                      {openedAt(entry.lastOpenedAt)}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`launcher-export-${entry.id}`}
-                    className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                    onClick={() => void exportRecent(entry)}
-                    disabled={busy}
-                  >
-                    Export
-                  </button>
-                  {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
+                    {renaming ? (
+                      <div className="min-w-0 flex-1">
+                        <input
+                          // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
+                          autoFocus
+                          data-testid={`launcher-rename-input-${entry.id}`}
+                          aria-label={`Rename ${entry.name}`}
+                          aria-invalid={nameError ? true : undefined}
+                          value={draft}
+                          className="w-full rounded bg-transparent px-1 text-[13px] font-medium leading-5 outline-none ring-1 ring-blue-400"
+                          onChange={(event) => {
+                            setDraft(event.target.value);
+                            setNameError(null);
+                          }}
+                          onBlur={() => void commitRename(entry)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            }
+                            if (event.key === "Escape") {
+                              renameCancelled.current = true;
+                              setRenamingId(null);
+                              setNameError(null);
+                            }
+                          }}
+                        />
+                        <span
+                          data-testid={`launcher-rename-hint-${entry.id}`}
+                          role={nameError ? "alert" : undefined}
+                          className={`block truncate text-[11px] leading-4 ${
+                            nameError ? "text-red-600 dark:text-red-300" : "text-[var(--ink-muted)]"
+                          }`}
+                        >
+                          {nameError ?? "Enter to save · Escape to cancel"}
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => openWorkspace(entry.id, entry.boardId)}
+                      >
+                        <span
+                          data-testid={`launcher-name-${entry.id}`}
+                          className="block truncate text-[13px] font-medium"
+                        >
+                          {entry.name}
+                        </span>
+                        <span className="flex items-baseline gap-2 text-[11px] text-[var(--ink-muted)]">
+                          <span
+                            data-testid={`launcher-detail-${entry.id}`}
+                            title={detail}
+                            className="min-w-0 truncate"
+                          >
+                            {detail}
+                          </span>
+                          <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
+                        </span>
+                      </button>
+                    )}
+                    {renaming ? null : (
+                      <button
+                        type="button"
+                        data-testid={`launcher-rename-${entry.id}`}
+                        aria-label={`Rename ${entry.name}`}
+                        title="Rename workspace"
+                        className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                        onClick={() => startRename(entry)}
+                        disabled={busy}
+                      >
+                        Rename
+                      </button>
+                    )}
                     <button
                       type="button"
-                      data-testid={`launcher-delete-${entry.id}`}
-                      aria-label="Delete this workspace…"
-                      title="Delete this workspace…"
-                      className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
-                      onClick={() => setDeleteTarget(entry)}
+                      data-testid={`launcher-export-${entry.id}`}
+                      className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                      onClick={() => void exportRecent(entry)}
                       disabled={busy}
                     >
-                      Delete
+                      Export
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    aria-label="Remove from this list (does not delete the workspace)"
-                    title="Remove from this list (does not delete the workspace)"
-                    className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                    onClick={() => {
-                      forgetWorkspace(entry.id);
-                      setRecents(readRecentWorkspaces());
-                    }}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
+                    {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
+                      <button
+                        type="button"
+                        data-testid={`launcher-delete-${entry.id}`}
+                        aria-label="Delete this workspace…"
+                        title="Delete this workspace…"
+                        className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
+                        onClick={() => setDeleteTarget(entry)}
+                        disabled={busy}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label="Remove from this list (does not delete the workspace)"
+                      title="Remove from this list (does not delete the workspace)"
+                      className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                      onClick={() => {
+                        forgetWorkspace(entry.id);
+                        setRecents(
+                          readRecentWorkspaces().map((row) =>
+                            labelRecent(row, readWorkspaceNames()),
+                          ),
+                        );
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -338,11 +500,14 @@ export function WorkspaceLauncher() {
           <DeleteWorkspaceDialog
             mode="standalone"
             workspaceId={deleteTarget.id}
-            title={deleteTarget.title}
+            title={deleteTarget.name}
             onClose={() => setDeleteTarget(null)}
             onDeleted={() => {
+              forgetWorkspaceName(deleteTarget.id);
               setDeleteTarget(null);
-              setRecents(readRecentWorkspaces());
+              setRecents(
+                readRecentWorkspaces().map((row) => labelRecent(row, readWorkspaceNames())),
+              );
               navigateTo("/");
             }}
           />

@@ -28,3 +28,7 @@ blob-report/
 reports/
 .stryker-tmp/
 stryker.log
+
+# Measurement scratch: JSON dumps and one-off probes kept while a change is
+# being verified. Never imported, never shipped, and never worth a lint error.
+.scratch/

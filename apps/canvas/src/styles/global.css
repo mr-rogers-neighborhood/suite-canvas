@@ -1282,6 +1282,70 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------------------------------------------------------- image link node */
+
+.image-link-node {
+  display: block;
+  margin: 6px 0;
+}
+
+/* A link image keeps its own aspect ratio but never widens the card. */
+.image-link-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+/* Link rot is visible, not silent: the URL stays readable when the bytes do not arrive. */
+.image-link-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px dashed var(--hairline);
+  border-radius: 6px;
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.image-link-placeholder-title {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.image-link-url {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.image-link-placeholder-note {
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------- image URL prompt */
+
+/* The prompt is a line of editor text, so it wears an inline label, not a surface. */
+.image-url-hint {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+  font-size: 11px;
+  vertical-align: baseline;
+}
+
+.image-url-hint.is-error {
+  color: var(--section-rose);
+}
+
 /* ------------------------------------------------------- property block view */
 
 .property-block-node {

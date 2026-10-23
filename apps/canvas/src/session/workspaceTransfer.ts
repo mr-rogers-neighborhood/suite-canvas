@@ -1,11 +1,21 @@
 import {
   createWorkspaceFile,
+  documentAttachments,
   exportPortable,
   readWorkspaceFile,
   WorkspaceDocument,
 } from "@suite/graph";
+
+export { type CardAttachment, documentAttachments } from "@suite/graph";
+
 import { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
+import { storeLocalAttachment } from "../editor/attachmentNode";
+import {
+  type AttachmentSource,
+  defaultAttachmentSources,
+  resolveAttachmentBytes,
+} from "./attachmentBytes";
 import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "./ownerKey";
 
 const RECENT_KEY = "suite.recentWorkspaces.v1";
@@ -162,22 +172,166 @@ export function downloadWorkspaceMarkdown(workspace: WorkspaceDocument, title = 
   downloadText(`${fileStem(title)}.md`, portable.markdown, "text/markdown");
 }
 
-/** Exact backup from an already-open workspace. */
-export function downloadWorkspaceBackup(
+/** Above this the export still proceeds, but the user is told the real size. */
+export const BACKUP_SIZE_WARNING_BYTES = 25 * 1024 * 1024;
+
+/** An image whose bytes no source could produce. */
+export interface MissingAttachment {
+  id: string;
+  name: string | null;
+  cards: Array<{ id: string; title: string }>;
+}
+
+/** One attachment's bytes, ready for the envelope. */
+interface EmbeddedAttachment {
+  mime: string;
+  name: string;
+  width: number | null;
+  height: number | null;
+  bytes: Uint8Array;
+}
+
+export interface AttachmentGathering {
+  attachments: Record<string, EmbeddedAttachment>;
+  missing: MissingAttachment[];
+}
+
+/**
+ * Collects the bytes for every image the document references. Local first, then
+ * relay. An image found nowhere lands in `missing` with its cards — never
+ * silently dropped, because the export is the user's only backup.
+ */
+export async function gatherAttachments(
+  workspace: WorkspaceDocument,
+  sources: readonly AttachmentSource[],
+): Promise<AttachmentGathering> {
+  const attachments: Record<string, EmbeddedAttachment> = {};
+  const missing: MissingAttachment[] = [];
+  for (const node of documentAttachments(workspace)) {
+    const found = await resolveAttachmentBytes(node.id, sources);
+    if (found === null) {
+      missing.push({ id: node.id, name: node.name, cards: node.cards });
+      continue;
+    }
+    attachments[node.id] = {
+      // The node's own type is what the editor drew; a source's type is the
+      // fallback for a node written before that attribute existed.
+      mime: node.mime ?? (found.mime || "application/octet-stream"),
+      name: node.name ?? "",
+      width: node.width,
+      height: node.height,
+      bytes: found.bytes,
+    };
+  }
+  return { attachments, missing };
+}
+
+function megabytes(bytes: number): string {
+  const value = bytes / (1024 * 1024);
+  return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} MB`;
+}
+
+/** UTF-8 size of the exact JSON the download would write. */
+export function backupSizeBytes(json: string): number {
+  return new TextEncoder().encode(json).byteLength;
+}
+
+/**
+ * The size warning, or null under the threshold. The real number is in the
+ * copy: "large" without a figure tells nobody anything.
+ */
+export function backupSizeWarning(
+  bytes: number,
+  threshold = BACKUP_SIZE_WARNING_BYTES,
+): string | null {
+  if (bytes < threshold) return null;
+  return `This backup is ${megabytes(bytes)} with its images. Large files can be slow to save and open, but every image is included.`;
+}
+
+function quote(title: string): string {
+  return `“${title}”`;
+}
+
+/**
+ * One readable line naming the affected cards, not their ids. An export that
+ * quietly leaves images behind is the data loss this format exists to stop, so
+ * this is reported to the user, while the export itself still completes.
+ */
+export function missingAttachmentWarning(missing: readonly MissingAttachment[]): string | null {
+  if (missing.length === 0) return null;
+  const titles = [...new Set(missing.flatMap((entry) => entry.cards.map((card) => card.title)))];
+  const images = missing.length === 1 ? "1 image is" : `${missing.length} images are`;
+  const noun = titles.length === 1 ? "card" : "cards";
+  return `${images} missing from this backup (${noun} ${titles.map(quote).join(", ")}). Everything else exported; ${missing.length === 1 ? "that image" : "those images"} will show a placeholder.`;
+}
+
+export interface PreparedWorkspaceBackup {
+  /** The exact JSON to write to the file. */
+  json: string;
+  /** UTF-8 byte length of `json`, measured before anything is written. */
+  bytes: number;
+  missing: MissingAttachment[];
+  /** Human-readable warnings, in the order they should be shown. */
+  warnings: string[];
+}
+
+/** Gathers attachment bytes and builds the envelope, without writing a file. */
+export async function prepareWorkspaceBackup(
+  workspaceId: string,
+  workspace: WorkspaceDocument,
+  options: {
+    sources?: readonly AttachmentSource[];
+    exportedAt?: string;
+    /** Overrides `BACKUP_SIZE_WARNING_BYTES`; the warning never blocks. */
+    sizeWarningBytes?: number;
+  } = {},
+): Promise<PreparedWorkspaceBackup> {
+  const sources = options.sources ?? defaultAttachmentSources();
+  const { attachments, missing } = await gatherAttachments(workspace, sources);
+  const { json } = createWorkspaceFile(workspaceId, workspace, options.exportedAt, attachments);
+  const bytes = backupSizeBytes(json);
+  const warnings = [
+    backupSizeWarning(bytes, options.sizeWarningBytes),
+    missingAttachmentWarning(missing),
+  ].filter((warning): warning is string => warning !== null);
+  return { json, bytes, missing, warnings };
+}
+
+/**
+ * Exact backup from an already-open workspace, images included.
+ *
+ * `onWarning` runs before the file is written, so the app can show the real
+ * size or the missing-image line first. Neither warning can cancel the export:
+ * refusing to back up is worse than a large or incomplete one.
+ */
+export async function downloadWorkspaceBackup(
   workspaceId: string,
   workspace: WorkspaceDocument,
   title = "workspace",
-): void {
-  const { json } = createWorkspaceFile(workspaceId, workspace);
-  downloadText(`${fileStem(title)}.suite`, json);
+  options: {
+    sources?: readonly AttachmentSource[];
+    onWarning?: (message: string) => void;
+  } = {},
+): Promise<PreparedWorkspaceBackup> {
+  const prepared = await prepareWorkspaceBackup(workspaceId, workspace, {
+    ...(options.sources ? { sources: options.sources } : {}),
+  });
+  if (prepared.warnings.length > 0) options.onWarning?.(prepared.warnings.join(" "));
+  downloadText(`${fileStem(title)}.suite`, prepared.json);
+  return prepared;
 }
 
 /**
  * Export a recent workspace without opening it. The launcher can only export
  * what this browser has cached; a workspace that lives only on the relay must
- * be opened once first.
+ * be opened once first. Attachment bytes are gathered exactly as the editor
+ * gathers them, so a cached workspace exports complete.
  */
-export async function downloadWorkspaceById(id: string, title = "workspace"): Promise<void> {
+export async function downloadWorkspaceById(
+  id: string,
+  title = "workspace",
+  onWarning?: (message: string) => void,
+): Promise<void> {
   const doc = new LoroDoc();
   const persistence = new LoroIndexeddbPersistence(id, doc);
   try {
@@ -188,7 +342,9 @@ export async function downloadWorkspaceById(id: string, title = "workspace"): Pr
         "This workspace is not stored on this device yet. Open it once, then export.",
       );
     }
-    downloadWorkspaceBackup(id, workspace, title);
+    // The launcher shows the same size/missing-image lines the editor shows;
+    // an export nobody is told about is how a partial backup goes unnoticed.
+    await downloadWorkspaceBackup(id, workspace, title, onWarning ? { onWarning } : {});
   } finally {
     persistence.destroy();
   }
@@ -200,24 +356,56 @@ export interface ImportedWorkspace {
   title: string;
 }
 
-/**
- * Import a `.suite` backup into a brand-new workspace id. The current document
- * is never touched, so import can never merge two histories.
- */
-export async function importWorkspaceFile(file: File): Promise<ImportedWorkspace> {
-  const text = await file.text();
-  const { workspace } = readWorkspaceFile(text);
-  const id = newWorkspaceId();
-  // An import is a new workspace, so it gets a new owner key of its own.
-  writeOwnerKey(id, generateOwnerKey());
-  const doc = workspace.doc;
-  const persistence = new LoroIndexeddbPersistence(id, doc);
+/** Writes one image into this browser's store, under the node's own id. */
+export type LocalAttachmentWriter = (id: string, bytes: Uint8Array, mime: string) => Promise<void>;
+
+export interface ImportWorkspaceOptions {
+  /** Local byte store; IndexedDB unless a test supplies its own. */
+  storeAttachment?: LocalAttachmentWriter;
+  /** Persists the imported document; IndexedDB unless a test supplies its own. */
+  persist?: (workspaceId: string, doc: LoroDoc) => Promise<void>;
+}
+
+async function persistWithIndexedDb(workspaceId: string, doc: LoroDoc): Promise<void> {
+  const persistence = new LoroIndexeddbPersistence(workspaceId, doc);
   try {
     await persistence.open();
     await persistence.compact();
   } finally {
     persistence.destroy();
   }
+}
+
+/**
+ * Import a `.suite` backup into a brand-new workspace id. The current document
+ * is never touched, so import can never merge two histories.
+ */
+export async function importWorkspaceFile(
+  file: File,
+  options: ImportWorkspaceOptions = {},
+): Promise<ImportedWorkspace> {
+  const text = await file.text();
+  const { workspace, attachments } = readWorkspaceFile(text);
+  const id = newWorkspaceId();
+  // An import is a new workspace, so it gets a new owner key of its own.
+  writeOwnerKey(id, generateOwnerKey());
+
+  // Restore every embedded image under the id its node already carries, so the
+  // card renders the moment it opens. These copies are LOCAL-ONLY — the same
+  // state a paste reaches with no relay — i.e. not yet uploaded: a share viewer
+  // resolves the node only once the owning relay holds the bytes under this id.
+  const storeAttachment = options.storeAttachment ?? storeLocalAttachment;
+  for (const attachment of attachments) {
+    try {
+      await storeAttachment(attachment.id, attachment.bytes, attachment.mime);
+    } catch (error) {
+      // One image that cannot be cached must not cost the user the document.
+      console.warn(`[attachments] could not restore ${attachment.id} from the backup`, error);
+    }
+  }
+
+  const doc = workspace.doc;
+  await (options.persist ?? persistWithIndexedDb)(id, doc);
   const restored = new WorkspaceDocument(doc);
   const board = restored.listBoards().sort((left, right) => left.createdAt - right.createdAt)[0];
   const title = board?.name?.trim() || "Imported workspace";

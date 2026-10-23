@@ -51,13 +51,33 @@ function titleText(nodes: readonly PortableNode[]): string {
 }
 
 /**
+ * A link image is text: an address and a label, with no text child for the
+ * generic walker to find. So the index adds both explicitly, and a card can be
+ * found by the URL the picture points at or by the alt text it carries.
+ */
+function imageText(nodes: readonly PortableNode[] | undefined): string {
+  let text = "";
+  for (const node of nodes ?? []) {
+    if (node.type === "image") {
+      const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
+      const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
+      text += ` ${alt} ${src} `;
+    }
+    if (node.content) text += imageText(node.content);
+  }
+  return text;
+}
+
+/**
  * Searchable text for one card: normalized title, separator, normalized body.
  * The title comes from the title container only, so an untitled card is not
  * findable through the "Untitled" placeholder the UI shows for it.
  */
 export function cardSearchText(workspace: WorkspaceDocument, cardId: string): string {
   const title = normalizeSearchText(titleText(loroTreeToJson(workspace.peekTitle(cardId))));
-  const body = normalizeSearchText(workspace.cardText(cardId));
+  const body = normalizeSearchText(
+    `${workspace.cardText(cardId)} ${imageText(loroTreeToJson(workspace.peekContent(cardId)))}`,
+  );
   if (title.length === 0) return body;
   if (body.length === 0) return title;
   return `${title}${FIELD_SEPARATOR}${body}`;

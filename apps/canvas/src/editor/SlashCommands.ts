@@ -1,6 +1,7 @@
 import { PluginKey } from "@tiptap/pm/state";
 import { type Editor, Extension } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
+import { openImageUrlPrompt } from "./imageUrlPrompt";
 import { createSlashRenderer } from "./SlashMenu";
 
 export interface SlashRange {
@@ -81,6 +82,19 @@ export const SLASH_ITEMS: SlashItem[] = [
     glyph: "\u2014",
     keywords: ["divider", "hr", "horizontal", "rule", "separator", "line"],
     run: (editor, range) => consumeQuery(editor, range).setHorizontalRule().run(),
+  },
+  {
+    id: "image-url",
+    title: "Image from URL",
+    hint: "Embed a picture by link",
+    glyph: "IMG",
+    keywords: ["image", "picture", "photo", "img", "url", "embed"],
+    // The block is the only thing the menu inserts; the address is one line
+    // asked for inline, so no dialog and no second menu.
+    run: (editor, range) => {
+      consumeQuery(editor, range).run();
+      openImageUrlPrompt(editor);
+    },
   },
   {
     id: "mention",

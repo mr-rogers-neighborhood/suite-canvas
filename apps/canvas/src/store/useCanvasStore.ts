@@ -74,6 +74,13 @@ interface CanvasState {
    */
   flush: () => Promise<void>;
   /**
+   * Rejoin the relay room with this browser's local document. The claim retry
+   * calls it when a workspace becomes claimable after boot; the provider also
+   * calls its own `rejoin` when the connection returns. A no-op without a
+   * relay, or while the room is live.
+   */
+  rejoin: () => void;
+  /**
    * Stops writing this document to this browser. Used by “Forget this browser”:
    * without it, the pagehide flush would recreate the copy just deleted.
    */
@@ -139,6 +146,9 @@ export const useCanvasStore = create<CanvasState>((set) => {
     },
     flush: async () => {
       await Promise.all([persistence?.flush(), provider?.flush()]);
+    },
+    rejoin: () => {
+      void provider?.rejoin();
     },
     forgetLocal: () => {
       persistence?.destroy();

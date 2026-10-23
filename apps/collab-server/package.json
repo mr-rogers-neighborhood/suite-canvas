@@ -16,7 +16,7 @@
     "loro-adaptors": "^0.6.1",
     "loro-crdt": "^1.16.4",
     "loro-protocol": "^0.3.0",
-    "loro-websocket": "^0.6.2"
+    "loro-websocket": "0.6.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

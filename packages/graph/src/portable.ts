@@ -205,6 +205,15 @@ function blockText(nodes: PortableNode[] | undefined, context: MarkdownContext):
         }
         case "mention":
           return inlineText([node], context);
+        // A link image is a URL, and Markdown already has a syntax for one.
+        // Without this case the generic walker returns "" and the picture
+        // silently disappears from the only human-readable export.
+        case "image": {
+          const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
+          if (src.length === 0) return "_Image link_";
+          const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
+          return `![${alt}](${src})`;
+        }
         default:
           return inlineText(node.content, context);
       }

@@ -43,6 +43,15 @@ boards, schema, trash or links.
   end-to-end encryption.
 - **Credentials are hashed.** Owner keys and share tokens are stored as SHA-256 hashes, never in
   plaintext. A stolen database does not directly hand out working credentials.
+- **A live socket keeps its credential in memory.** The relay's revoke path has to decide *which*
+  open sockets belong to a share or an owner key it just invalidated, so the patched sync server
+  keeps each socket's credential per joined room for as long as the socket is connected; it is
+  cleared on leave and on disconnect (see `patches/loro-websocket@0.6.2.patch`). This is retention,
+  not new exposure: the same process holds every document in plaintext, so anyone who can read the
+  process's memory already has the content and needs no credential. What it does mean is that
+  "hashed at rest" should not be read as "never present in memory" — a heap dump from a running
+  relay contains the credentials of everyone currently connected, exactly as it would for any
+  server that authenticates a connection once and keeps it open.
 - **Links are still the weak point.** An owner key travels in the URL fragment and in the
   `Authorization` header for owner API calls. A share link's token is now exchanged, on first open,
   for a short-lived `HttpOnly` session cookie; the browser then replaces the URL so the token is no
@@ -77,6 +86,13 @@ boards, schema, trash or links.
   sockets and removes the projected draft; it does not change the workspace.
 - Share links can be set to expire after 7 or 30 days, or never. Delete links you no longer need,
   and keep the number of active links small.
+- **A link image is fetched from a third party by every reader.** An `image` node stores a URL, not
+  bytes, so the viewer's browser contacts that host, which learns the viewer's IP address and when
+  the card was opened. Each link image renders with `referrerpolicy="no-referrer"`, `loading="lazy"`
+  and `decoding="async"` so the workspace URL and share token are not sent along, and the URL itself
+  is part of the document — a share reader can see it. The CSP allows `https:` in `img-src` for this
+  one reason; that relaxation is the cost of supporting link images, and an `attachment` (bytes
+  stored beside the document) is the option that keeps readers off third-party hosts.
 
 ## Recovery and device hygiene
 

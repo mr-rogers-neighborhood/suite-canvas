@@ -59,9 +59,15 @@ type ProjectionTarget =
 /** A target an editor draft may publish into; a selection share has none. */
 type PublishTarget = { scope: "board"; boardId: string } | { scope: "card"; cardId: string };
 
+/**
+ * The share-store slice the worker needs. `listAllActive` is deliberately absent:
+ * the worker only ever asks about one workspace, so no code path can walk every
+ * stored link and open a room for it again. `list` is still whole-workspace: a
+ * reconcile pass has to see which open rooms were revoked.
+ */
 export type ProjectionWorkerShares = Pick<
   ShareStore,
-  "list" | "listAllActive" | "getBaseline" | "setBaseline" | "deleteBaseline"
+  "list" | "getBaseline" | "setBaseline" | "deleteBaseline"
 > & {
   /**
    * Revokes one link. The idle sweep needs it; a store without it leaves the
@@ -144,6 +150,54 @@ export function roomIdleHours(
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+/**
+ * Ceiling on simultaneously open projection rooms when the operator sets none.
+ *
+ * A projection document is a full copy of what it projects, so the measured
+ * cost on this checkout is a few MiB per open room (see `docs/operations.md`,
+ * "Capacity: what a projection costs"); 128 rooms keep the worst case inside a
+ * small hosted instance while leaving room for far more concurrent readers than
+ * a single relay usually sees. `SUITE_PROJECTION_ROOMS_MAX` tunes it.
+ */
+export const DEFAULT_PROJECTION_ROOM_LIMIT = 128;
+
+/**
+ * The room ceiling from `SUITE_PROJECTION_ROOMS_MAX`. Only a positive integer
+ * is a limit: a missing, zero, negative or unparsable value falls back to the
+ * default rather than switching the guard off, because "no ceiling" is the
+ * failure this option exists to prevent.
+ */
+export function projectionRoomLimit(
+  env: { SUITE_PROJECTION_ROOMS_MAX?: string | undefined } = process.env,
+): number {
+  const raw = env.SUITE_PROJECTION_ROOMS_MAX?.trim();
+  if (!raw) return DEFAULT_PROJECTION_ROOM_LIMIT;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : DEFAULT_PROJECTION_ROOM_LIMIT;
+}
+
+/**
+ * What the worker holds right now, for the admin status.
+ *
+ * `opened` is cumulative since `start()`, so immediately after boot it *is* the
+ * boot cost: before rooms became lazy this number equalled the count of stored
+ * links and the process died with it.
+ */
+export interface ProjectionRoomStats {
+  /** Projection rooms open right now. */
+  open: number;
+  /** Ceiling `SUITE_PROJECTION_ROOMS_MAX` set, or its default. */
+  limit: number;
+  /** Rooms opened since `start()`. */
+  opened: number;
+  /** Rooms closed by the ceiling to make room for a newer one. */
+  evicted: number;
+  /** Opens refused because every room was attached to a client. */
+  refused: number;
+  /** Bytes the open projection documents are estimated to hold, summed. */
+  documentBytes: number;
+}
+
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
   url: string;
@@ -155,6 +209,12 @@ export interface ProjectionWorkerOptions {
   shares: ProjectionWorkerShares;
   /** Quiet period before a saved workspace is rebuilt. */
   debounceMs?: number;
+  /**
+   * Ceiling on simultaneously open projection rooms. Defaults to
+   * `projectionRoomLimit()`, so `SUITE_PROJECTION_ROOMS_MAX` tunes production
+   * and a test can pass a small number.
+   */
+  maxRooms?: number;
   /**
    * Hours a projection room may sit idle before the sweep revokes it; `0`
    * switches the sweep off. Defaults to `roomIdleHours()`, which is off on a
@@ -168,9 +228,13 @@ export interface ProjectionWorkerOptions {
    */
   roomClients?: (roomId: string) => number | null;
   /**
-   * Called with a room id after the sweep has closed it and dropped its stored
-   * documents. Wired to `forgetRoomDocument` so the sync server's in-memory copy
-   * goes too — otherwise the sweep frees disk but not memory.
+   * Called with a room id after the worker has closed it, so the sync server's
+   * in-memory copy goes too — otherwise closing a room frees the worker's copy
+   * but not the server's. Wired to `forgetRoomDocument`.
+   *
+   * A swept room has also had its stored documents and baseline deleted; an
+   * evicted room has not, and its document is rebuilt from the store next time
+   * somebody opens the link. Either way the in-memory copy must go.
    */
   onRoomClosed?: (roomId: string) => void;
   /** Clock for idle accounting; tests replace it. */
@@ -197,6 +261,10 @@ interface RoomState {
   dirty: boolean;
   /** Last time an owner save, a publish, a reload or a status read touched it. */
   lastActiveAt: number;
+  /** Approximate bytes this room's document holds; the ceiling's cost gauge. */
+  bytes: number;
+  /** Document version `bytes` was measured at, so only the delta is measured. */
+  measured: VersionVector;
 }
 
 /** The worker's writer connection to a real workspace room, used by publish. */
@@ -423,12 +491,21 @@ export class ProjectionWorker {
   private readonly pending = new Map<string, PendingRebuild>();
   private readonly queues = new Map<string, Promise<void>>();
   private started = false;
+  /** Ceiling on open projection rooms, read once so the gauge has one truth. */
+  private readonly maxRooms: number;
+  /** Rooms opened since `start()`; the boot cost divides nothing else. */
+  private opened = 0;
+  private evicted = 0;
+  private refused = 0;
+  /** Joins in flight, counted against the ceiling so concurrent opens cannot race past it. */
+  private opening = 0;
   /** Tail of the sweep chain, so two operator calls never interleave. */
   private sweeping: Promise<void> = Promise.resolve();
 
   constructor(options: ProjectionWorkerOptions) {
     this.options = options;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+    this.maxRooms = options.maxRooms ?? projectionRoomLimit();
   }
 
   /** Clock for idle accounting; a test can freeze or advance it. */
@@ -441,10 +518,22 @@ export class ProjectionWorker {
     room.lastActiveAt = this.now();
   }
 
-  /** Joins every active board, card and selection share room and publishes their projections. */
+  /**
+   * Connects the worker and **opens no rooms**.
+   *
+   * A room is opened because somebody is looking at it (`openShare`) or because
+   * it must be written (a publish, a status read), never because a share row
+   * exists. The previous loop over `listAllActive()` loaded one document per
+   * stored link: measured on this checkout, restarting a relay with 486 stored
+   * links reached 6.5 GB RSS and was killed by the kernel before it could even
+   * bind its health port. Boot now costs one socket.
+   */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
+    this.opened = 0;
+    this.evicted = 0;
+    this.refused = 0;
 
     const client = new LoroWebsocketClient({
       url: this.options.url,
@@ -456,14 +545,118 @@ export class ProjectionWorker {
       await client.waitConnected();
     } catch (error) {
       this.warn(`could not connect to ${this.options.url}: ${message(error)}`);
+    }
+  }
+
+  /**
+   * Opens the projection room behind exactly this share, because somebody is
+   * looking at it. This is the on-demand path the HTTP share resolve calls; the
+   * room is projected from the freshest source available before this settles.
+   *
+   * A room that is already open is just touched: the idle window is about use,
+   * and a second reader must not restart the join.
+   */
+  openShare(share: Share): Promise<void> {
+    if (!this.started) return Promise.resolve();
+    if (!isProjectionShare(share) || !share.roomId || !isLiveShare(share)) return Promise.resolve();
+    const roomId = share.roomId;
+    const open = this.rooms.get(roomId);
+    if (open) {
+      this.touch(open);
+      return Promise.resolve();
+    }
+    // Serialized per workspace: two readers resolving the same link at once
+    // must join once, and an open must not interleave with a rebuild.
+    return this.enqueue(share.workspaceId, () => this.openRoomNow(share));
+  }
+
+  /**
+   * Opens one share room and projects it. Called from inside the workspace
+   * queue, so it must not enqueue again.
+   */
+  private async openRoomNow(share: Share): Promise<void> {
+    if (!this.started) return;
+    const roomId = share.roomId;
+    if (!roomId) return;
+    const open = this.rooms.get(roomId);
+    if (open) {
+      this.touch(open);
       return;
     }
 
-    const workspaces = new Set<string>();
-    for (const share of this.options.shares.listAllActive()) {
-      if (isProjectionShare(share)) workspaces.add(share.workspaceId);
+    const room = await this.createRoom(share);
+    if (!room) return;
+    // An editor room is written back to its workspace, so it needs the live
+    // writer for a publish to see owner state. A viewer room is served from the
+    // saved bytes, and loading the workspace document for it would be the very
+    // eager cost this path exists to remove.
+    if (share.role === "editor") await this.ensureSource(share.workspaceId);
+    // A cold room holds whatever was last saved for it, which may lag the
+    // owner's latest save. Project once so the reader sees the current board
+    // rather than yesterday's copy, then keep following saves as before.
+    const source = this.loadSource(share.workspaceId);
+    if (source) this.project(source, room);
+  }
+
+  /**
+   * Joins a projection room if the ceiling allows it.
+   *
+   * Choice: **LRU eviction, refusing only when nothing may be evicted.**
+   *
+   * A pure refusal would deny the newest reader a live projection whenever the
+   * relay is busy, and a live projection is what makes an open link follow the
+   * owner's edits - so the busiest relay would be the one serving stale boards.
+   * Evicting the least-recently-used room that has **no session attached** only
+   * costs freshness for a link nobody is looking at; its document stays in the
+   * store and is rebuilt the moment it is opened again. A room with a session
+   * is never evicted, because dropping it would freeze what that reader is
+   * looking at mid-view. When every room is attached, the open is refused and
+   * counted: the reader still gets the saved projection, just not a live one.
+   */
+  private async createRoom(share: Share): Promise<RoomState | null> {
+    if (this.rooms.size + this.opening >= this.maxRooms) {
+      if (!(await this.evictLeastRecentlyUsed())) {
+        this.refused += 1;
+        this.warn(
+          `refusing to open ${share.roomId as string}: the ${this.rooms.size} open projection ` +
+            "room(s) are all attached to a reader or cannot be checked, so none may be closed " +
+            `(SUITE_PROJECTION_ROOMS_MAX=${this.maxRooms})`,
+        );
+        return null;
+      }
     }
-    for (const workspaceId of workspaces) await this.run(workspaceId);
+    if (!this.started) return null;
+    this.opening += 1;
+    try {
+      return await this.openRoom(share);
+    } finally {
+      this.opening -= 1;
+    }
+  }
+
+  /** Closes the oldest open room no client is attached to; false when none is. */
+  private async evictLeastRecentlyUsed(): Promise<boolean> {
+    let victim: RoomState | null = null;
+    for (const room of this.rooms.values()) {
+      // `null` is "cannot tell", which is not proof that nobody is watching.
+      if ((this.options.roomClients?.(room.roomId) ?? null) !== 0) continue;
+      if (!victim || room.lastActiveAt < victim.lastActiveAt) victim = room;
+    }
+    if (!victim) return false;
+
+    this.rooms.delete(victim.roomId);
+    await this.closeRoom(victim);
+    // The server keeps its own copy of every room for the life of the process;
+    // dropping it is half the memory. The stored document is untouched, so the
+    // next reader reloads and re-projects it.
+    this.options.onRoomClosed?.(victim.roomId);
+    this.evicted += 1;
+    this.warn(
+      `evicted projection room ${victim.roomId} (idle for ` +
+        `${Math.max(0, this.now() - victim.lastActiveAt)} ms) to stay under ` +
+        `${this.maxRooms} open rooms`,
+    );
+    return true;
   }
 
   /**
@@ -613,7 +806,7 @@ export class ProjectionWorker {
 
   private async refresh(workspaceId: string): Promise<void> {
     if (!this.started) return;
-    await this.syncRooms(workspaceId);
+    await this.reconcileRooms(workspaceId);
 
     const rooms = [...this.rooms.values()].filter((room) => room.workspaceId === workspaceId);
     if (rooms.length === 0) return;
@@ -625,18 +818,32 @@ export class ProjectionWorker {
     for (const room of rooms) this.project(source, room);
   }
 
-  /** Opens rooms for new shares and closes the ones that were revoked. */
-  private async syncRooms(workspaceId: string): Promise<void> {
-    const wanted = new Map<string, Share>();
+  /**
+   * Brings the worker's open rooms for one workspace in line with the store:
+   * closes the rooms whose link was revoked or expired, and leaves every other
+   * room alone.
+   *
+   * This used to open a room for every active share of the workspace. It no
+   * longer opens any: an owner's save must refresh the rooms that are **already
+   * open**, and a room opens because a reader asked for it (`openShare`) or a
+   * write needs it. That is what keeps a restart (and a save in a workspace with
+   * fifty stored links) from loading fifty documents for nobody.
+   *
+   * A whole-workspace pass is still the right scope here, because closing a
+   * revoked link and its baseline has to reach every open room of the workspace,
+   * and the sweep relies on that to clean up after a revoke.
+   */
+  private async reconcileRooms(workspaceId: string): Promise<void> {
+    const live = new Map<string, Share>();
     for (const share of this.options.shares.list(workspaceId)) {
       if (isProjectionShare(share) && share.roomId && isLiveShare(share)) {
-        wanted.set(share.roomId, share);
+        live.set(share.roomId, share);
       }
     }
 
     for (const [roomId, room] of [...this.rooms]) {
       if (room.workspaceId !== workspaceId) continue;
-      if (wanted.has(roomId)) continue;
+      if (live.has(roomId)) continue;
       this.rooms.delete(roomId);
       await this.closeRoom(room);
       // The share was revoked or expired; its projected copy and draft baseline
@@ -649,26 +856,25 @@ export class ProjectionWorker {
       }
     }
 
-    for (const [roomId, share] of wanted) {
-      if (this.rooms.has(roomId)) continue;
-      await this.openRoom(share);
-    }
-
-    // Only a workspace with an editor share needs a writer connection: viewers
-    // are served from the saved bytes, and a publish must see live owner state.
-    const hasEditor = [...wanted.values()].some((share) => share.role === "editor");
+    // Only a workspace with an open editor room needs a writer connection: a
+    // viewer is served from the saved bytes, and a publish must see live owner
+    // state. Asking for one per stored editor link would load the workspace
+    // document for links nobody has open.
+    const hasEditor = [...this.rooms.values()].some(
+      (room) => room.workspaceId === workspaceId && room.role === "editor",
+    );
     if (hasEditor) await this.ensureSource(workspaceId);
     else await this.closeSource(workspaceId);
   }
 
-  private async openRoom(share: Share): Promise<void> {
+  private async openRoom(share: Share): Promise<RoomState | null> {
     const client = this.client;
     const roomId = share.roomId;
     const target = targetOf(share);
-    if (!client || !roomId || !target) return;
+    if (!client || !roomId || !target) return null;
 
     const doc = new LoroDoc();
-    this.seed(doc, roomId);
+    const seeded = this.seed(doc, roomId);
     const adaptor = new LoroAdaptor(doc);
 
     try {
@@ -682,7 +888,7 @@ export class ProjectionWorker {
       if (!this.started) {
         await room.leave().catch(() => undefined);
         adaptor.destroy();
-        return;
+        return null;
       }
 
       const baseline = this.loadBaseline(share.id);
@@ -700,6 +906,8 @@ export class ProjectionWorker {
         baselineVersion: baseline ? versionJson(baseline.doc) : "",
         dirty: false,
         lastActiveAt: this.now(),
+        bytes: seeded,
+        measured: doc.version(),
       };
       // A draft that survived a restart is still the editor's until it is
       // published or reloaded. The version vector cannot answer that on its own:
@@ -711,9 +919,18 @@ export class ProjectionWorker {
         this.draftDiffers(state.workspace, baseline, target);
       this.watchDraft(state);
       this.rooms.set(roomId, state);
+      this.opened += 1;
+      // A cap breach here is the only way past `createRoom`'s check: two
+      // workspaces finished their joins at the same instant. Evicting the
+      // least-recently-used unattached room restores the ceiling.
+      if (this.rooms.size > this.maxRooms && (await this.evictLeastRecentlyUsed())) {
+        return this.rooms.get(roomId) ?? null;
+      }
+      return state;
     } catch (error) {
       adaptor.destroy();
       this.warn(`could not join ${roomId}: ${message(error)}`);
+      return null;
     }
   }
 
@@ -762,13 +979,15 @@ export class ProjectionWorker {
    * the worker's first rebuild a lamport clock above every earlier projection,
    * so the rewrite wins instead of losing to a stale op.
    */
-  private seed(doc: LoroDoc, roomId: string): void {
+  private seed(doc: LoroDoc, roomId: string): number {
     const state = loadLoroDocument(this.options.documents, roomId);
-    if (!state) return;
+    if (!state) return 0;
     try {
       doc.import(state);
+      return state.length;
     } catch (error) {
       this.warn(`ignoring unreadable projection state for ${roomId}: ${message(error)}`);
+      return 0;
     }
   }
 
@@ -805,6 +1024,10 @@ export class ProjectionWorker {
     room.baseline = this.documentFrom(snapshot);
     room.baselineVersion = versionJson(room.doc);
     room.dirty = false;
+    // The snapshot is the document, so it is the exact byte figure; nothing is
+    // left to measure on the delta path for this room.
+    room.bytes = snapshot.length;
+    room.measured = room.doc.version();
   }
 
   /**
@@ -914,7 +1137,26 @@ export class ProjectionWorker {
     const projection = projectWorkspace(source, room.target);
     applyProjection(room.workspace, projection.workspace);
     // Viewers never publish; only an editor draft needs a baseline snapshot.
+    // That snapshot also re-measures the room, so only viewers measure here.
     if (room.role === "editor") this.captureBaseline(room);
+    else this.measure(room);
+  }
+
+  /**
+   * Adds the bytes written since the last measurement to the room's size, so
+   * the admin status can attribute resident memory to projection documents.
+   *
+   * The delta, never the whole document: a snapshot export per save would cost
+   * as much as the save itself. Measurement is observability, so a failure here
+   * is logged and never allowed to cost a projection.
+   */
+  private measure(room: RoomState): void {
+    try {
+      room.bytes += room.doc.export({ mode: "update", from: room.measured }).length;
+      room.measured = room.doc.version();
+    } catch (error) {
+      this.warn(`could not measure the projection of ${room.shareId}: ${message(error)}`);
+    }
   }
 
   private async prepareDraft(
@@ -924,8 +1166,9 @@ export class ProjectionWorker {
     if (problem) return failure(problem);
     const roomId = share.roomId as string;
 
-    // A share created since the last refresh has no room yet.
-    if (!this.rooms.has(roomId)) await this.syncRooms(share.workspaceId);
+    // A share created since the last refresh has no room yet, and a publish
+    // must be written: open exactly this share's room, not its workspace's.
+    if (!this.rooms.has(roomId)) await this.openRoomNow(share);
     const room = this.rooms.get(roomId);
     if (!room) return failure("The share room is not open.");
     if (room.role !== "editor") return failure("This link is read-only.");
@@ -957,8 +1200,9 @@ export class ProjectionWorker {
     if (share.role !== "editor" || share.scope === "workspace" || !share.roomId) return idle;
     const roomId = share.roomId;
 
-    // A share created since the last refresh has no room yet.
-    if (!this.rooms.has(roomId)) await this.syncRooms(share.workspaceId);
+    // A share created since the last refresh has no room yet; reading its
+    // draft is a reason to open exactly this room.
+    if (!this.rooms.has(roomId)) await this.openRoomNow(share);
     const room = this.rooms.get(roomId);
     if (!room) return idle;
     this.touch(room);
@@ -1102,13 +1346,34 @@ export class ProjectionWorker {
   }
 
   /**
+   * Rooms opened, rooms open, the ceiling and the bytes held.
+   *
+   * `opened` right after boot is the boot cost, which is the number that used to
+   * equal the count of stored links; `bytes` is the one that explains RSS. Both
+   * are exposed through `/api/admin/status` so the next reader does not need a
+   * profiler to see a regression here.
+   */
+  projectionStats(): ProjectionRoomStats {
+    let documentBytes = 0;
+    for (const room of this.rooms.values()) documentBytes += room.bytes;
+    return {
+      open: this.rooms.size,
+      limit: this.maxRooms,
+      opened: this.opened,
+      evicted: this.evicted,
+      refused: this.refused,
+      documentBytes,
+    };
+  }
+
+  /**
    * Revokes the links of projection rooms nobody has used for the idle window.
    *
    * A room qualifies when no owner save, publish, reload or status read has
    * touched it for `idleHours` **and** the sync server reports no session in it
    * other than the worker's own. Closing reuses the revoke path every other
    * revoke takes: the link is revoked through the share store, then the next
-   * `syncRooms` pass leaves the room and drops its documents and baseline.
+   * `reconcileRooms` pass leaves the room and drops its documents and baseline.
    *
    * A room whose sessions cannot be read is kept, and a `dryRun` reports the
    * candidates without touching them. With `idleHours` at `0` — the self-host
@@ -1174,7 +1439,7 @@ export class ProjectionWorker {
           this.warn(`could not revoke the idle share ${room.shareId}: ${message(error)}`);
         }
       }
-      await this.enqueue(workspaceId, () => this.syncRooms(workspaceId));
+      await this.enqueue(workspaceId, () => this.reconcileRooms(workspaceId));
       for (const room of rooms) {
         if (this.rooms.has(room.roomId)) continue;
         report.rooms.push(sweptRoom(room, now));

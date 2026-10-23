@@ -17,9 +17,13 @@ describe("TitleBar", () => {
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Editor");
   });
 
-  it("keeps the connection words while syncing or offline", () => {
+  it("keeps the connection words while syncing, rejoining or offline", () => {
     bar({ status: "connecting", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing");
+
+    cleanup();
+    bar({ status: "rejoining", role: "viewer" });
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Reconnecting");
 
     cleanup();
     bar({ status: "disconnected", role: "viewer" });

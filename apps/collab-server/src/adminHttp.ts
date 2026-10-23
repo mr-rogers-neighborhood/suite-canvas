@@ -1,9 +1,15 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createWorkspaceFile, WorkspaceDocument } from "@suite/graph";
+import {
+  createWorkspaceFile,
+  documentAttachments,
+  WorkspaceDocument,
+  type WorkspaceFileAttachmentInput,
+} from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { type AdminPaths, adminPaths, deleteWorkspace, resetOwner } from "./admin.js";
+import type { AttachmentStore } from "./attachments.js";
 import { serverVersion } from "./config.js";
 import {
   applyCors,
@@ -33,6 +39,7 @@ import {
   loadLoroDocument,
   loroDocumentKey,
   type ProjectionRoomInfo,
+  type ProjectionRoomStats,
   type RoomSweepReport,
 } from "./projectionWorker.js";
 import { clientAddress, createRateLimiter } from "./rateLimit.js";
@@ -131,6 +138,12 @@ export interface AdminRequestDeps {
    */
   projectionRooms?: () => readonly ProjectionRoomInfo[] | undefined;
   /**
+   * The worker's room accounting: open rooms, the ceiling, opens since boot and
+   * the bytes those documents hold. Optional so a caller without a projection
+   * worker keeps the smaller status body rather than a block of zeros.
+   */
+  projectionStats?: () => ProjectionRoomStats | undefined;
+  /**
    * The server's own revocation hook: closes the revoked share's viewers and
    * drops its projected document. Wiring it here makes an admin revoke behave
    * exactly like one made through the share API.
@@ -167,6 +180,13 @@ export interface AdminRequestDeps {
    * answers 501 instead of pretending to have looked.
    */
   sweepRooms?: (options: { dryRun: boolean }) => Promise<RoomSweepReport> | RoomSweepReport;
+  /**
+   * Attachment bytes, so a bug-report export is as complete as the app's own
+   * backup. Without it the export still succeeds but every image node is left
+   * without its bytes, and the operator gets a workspace they cannot reproduce
+   * with — the reason `createWorkspaceFile` takes the map at all.
+   */
+  attachments?: Pick<AttachmentStore, "get">;
 }
 
 interface AdminDatabaseRow {
@@ -498,6 +518,26 @@ function roomsBody(deps: AdminRequestDeps) {
   };
 }
 
+/**
+ * Room accounting as `status` reports it, or nothing at all when the caller has
+ * no projection worker. `documentBytes` is the worker's estimate of what the
+ * open projection documents hold; `limit` is `SUITE_PROJECTION_ROOMS_MAX`.
+ */
+function projectionStatsOf(deps: AdminRequestDeps): { projections?: ProjectionRoomStats } {
+  const stats = deps.projectionStats?.();
+  if (!stats) return {};
+  return {
+    projections: {
+      open: stats.open,
+      limit: stats.limit,
+      opened: stats.opened,
+      evicted: stats.evicted,
+      refused: stats.refused,
+      documentBytes: stats.documentBytes,
+    },
+  };
+}
+
 function statusBody(deps: AdminRequestDeps) {
   const rooms = roomRows(deps);
   const clamp = (value: number | undefined): number =>
@@ -524,6 +564,10 @@ function statusBody(deps: AdminRequestDeps) {
       clients: rooms.reduce((sum, room) => sum + clamp(room.clients), 0),
       projections: (deps.projectionRooms?.() ?? []).length,
     },
+    // `opened` is the boot cost: it stays at zero on a restart with thousands of
+    // stored links, and a number that grows with the link count is the signal
+    // that rooms are being opened for existing rather than for being read.
+    ...projectionStatsOf(deps),
     limits: {
       sharesPerWorkspace: envLimit("SUITE_MAX_SHARES_PER_WORKSPACE", DEFAULT_SHARES_PER_WORKSPACE),
       selectionCards: MAX_SELECTION_CARDS,
@@ -1245,6 +1289,11 @@ async function createFixtures(
 /**
  * Downloads the stored snapshot as the `.suite` envelope the app already reads,
  * so an operator can reproduce a bug locally with the workspace it came from.
+ *
+ * Images are gathered from the same walker the app's export uses, so an image
+ * this box holds ends up in the file byte-for-byte. An id whose bytes are gone
+ * is skipped rather than failing the whole export: a partial reprex is still
+ * better than none, and the document keeps the node either way.
  */
 function exportWorkspace(
   response: ServerResponse,
@@ -1257,7 +1306,31 @@ function exportWorkspace(
     throw new HttpError(500, "The stored workspace state could not be read.");
   }
 
-  const { json } = createWorkspaceFile(workspaceId, loaded.workspace);
+  const attachments: Record<string, WorkspaceFileAttachmentInput> = {};
+  const store = deps.attachments;
+  if (store) {
+    for (const node of documentAttachments(loaded.workspace)) {
+      const record = store.get(node.id);
+      if (!record) continue;
+      // The store holds bytes and a mime type, not a filename; the node's own
+      // attributes are the only source for the name and dimensions the editor
+      // drew, so they win and the store is the fallback for a node without them.
+      attachments[node.id] = {
+        mime: node.mime ?? record.mime,
+        name: node.name ?? "",
+        width: node.width,
+        height: node.height,
+        bytes: record.bytes,
+      };
+    }
+  }
+
+  const { json } = createWorkspaceFile(
+    workspaceId,
+    loaded.workspace,
+    new Date().toISOString(),
+    attachments,
+  );
   const stem = workspaceId.replace(/[^A-Za-z0-9._-]/gu, "_").slice(0, 96) || "workspace";
   response.writeHead(200, {
     ...CORS_HEADERS,

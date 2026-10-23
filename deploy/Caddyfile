@@ -22,7 +22,11 @@
 		X-Content-Type-Options "nosniff"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Strict-Transport-Security "max-age=31536000"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+		# img-src allows https: because an image can be a link the document
+		# carries instead of bytes the relay stores. That relaxation is the
+		# cost of link images: the viewer's browser fetches a third party's
+		# image, with `referrerpolicy="no-referrer"` on every such node.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
 		-Server
 	}
 

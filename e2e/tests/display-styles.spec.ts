@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { startBodyEdit } from "../interactions";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-style-${name}-${Date.now()}-${++sequence}`;
@@ -45,10 +46,7 @@ async function addStatusField(page: Page, title: string, value: string): Promise
 
 /** Opens the body editor of the card at `index` (titles can be matched by chips). */
 async function editBody(page: Page, index: number): Promise<void> {
-  const card = cards(page).nth(index);
-  await card.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
-  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
+  await startBodyEdit(page, cards(page).nth(index));
 }
 
 test("styles a field once and every view follows", async ({ page }) => {

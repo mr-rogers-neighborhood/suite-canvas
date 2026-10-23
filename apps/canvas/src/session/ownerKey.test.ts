@@ -24,6 +24,7 @@ import {
   readClaimRecord,
   readOwnerKey,
   recordClaimOutcome,
+  rejoinOnClaim,
   rotateOwnerKey,
   startClaimRetry,
   stopAllClaimRetries,
@@ -204,6 +205,29 @@ describe("claim machine", () => {
       expect(nextClaimState("conflict", event)).toBe("conflict");
     }
     expect(mayWriteWorkspace("conflict")).toBe(false);
+  });
+
+  it("bridges only a claimed outcome to a sync rejoin", () => {
+    const rejoined: number[] = [];
+    const document = {
+      rejoin: async () => {
+        rejoined.push(1);
+      },
+    };
+
+    expect(rejoinOnClaim("claimed", document)).toBe(true);
+    expect(rejoined).toHaveLength(1);
+
+    // The 409 must not rejoin (and therefore cannot write): another key owns
+    // the workspace, and the local document has to stay local.
+    expect(rejoinOnClaim("conflict", document)).toBe(false);
+    // A retryable outcome leaves the next move to the claim retry loop.
+    expect(rejoinOnClaim("pending", document)).toBe(false);
+    expect(rejoinOnClaim("offline", document)).toBe(false);
+    // No provider (standalone, test, no room) is not an error.
+    expect(rejoinOnClaim("claimed", null)).toBe(false);
+
+    expect(rejoined).toHaveLength(1);
   });
 });
 

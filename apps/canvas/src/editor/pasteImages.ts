@@ -9,9 +9,12 @@ import {
   attachmentBlob,
   attachmentId,
   isAttachmentMime,
+  markAttachmentUploaded,
   pageLocation,
   storeLocalAttachment,
 } from "./attachmentNode";
+import { imageLinkFromText, insertImageNodeAt } from "./imageLinkNode";
+import { closeImageUrlPrompt } from "./imageUrlPrompt";
 
 /** One pasted image on its way to the relay. */
 export interface PasteUpload {
@@ -155,6 +158,11 @@ function clipboardImages(event: ClipboardEvent): File[] {
   return files;
 }
 
+/** The clipboard's plain text, which is where a copied image URL arrives. */
+function clipboardText(event: ClipboardEvent): string {
+  return event.clipboardData?.getData("text/plain") ?? "";
+}
+
 /** Inserts one attachment node at the current selection. */
 function insertAttachment(
   view: EditorView,
@@ -206,6 +214,14 @@ async function insertImages(
         console.warn("[attachments] upload failed; keeping the image locally", error);
       }
     }
+    if (uploaded) {
+      // If this browser still holds a local copy under the id (a retry, or a
+      // paste whose earlier attempt failed), the fact that the relay accepted
+      // the bytes is recorded beside it, so the pending caption goes away. No
+      // retry loop exists today; this keeps the store truthful for one added
+      // later rather than growing a background uploader here.
+      await markAttachmentUploaded(id);
+    }
     if (!uploaded) {
       // LOCAL-ONLY: with no relay (standalone build, offline tab, share session)
       // these bytes live in this browser's IndexedDB and nowhere else. The card
@@ -244,14 +260,29 @@ export const PasteImages = Extension.create<PasteImagesOptions>({
         props: {
           handlePaste: (view, event) => {
             const files = clipboardImages(event);
-            if (files.length === 0) return false;
-            // The default paste is claimed now; the nodes land when the upload
-            // (or the local write) finishes, so ProseMirror never inserts the
-            // image as HTML or file data of its own.
-            void insertImages(view, files, options).catch((error: unknown) => {
-              console.error("[attachments] paste failed", error);
-            });
-            return true;
+            if (files.length > 0) {
+              // Bytes win over a URL when a clipboard carries both: the user
+              // had a real image, and dropping it for a link would lose the
+              // pixels they copied (and leave them dependent on a third party).
+              // The default paste is claimed now; the nodes land when the
+              // upload (or the local write) finishes, so ProseMirror never
+              // inserts the image as HTML or file data of its own.
+              closeImageUrlPrompt(view);
+              void insertImages(view, files, options).catch((error: unknown) => {
+                console.error("[attachments] paste failed", error);
+              });
+              return true;
+            }
+            // No bytes: a bare image URL becomes a link node, so an image
+            // copied from a web page can be placed without a relay or storage.
+            // A `javascript:` or `data:` URL never reaches here:
+            // `imageLinkFromText` refuses anything but http and https.
+            const url = imageLinkFromText(clipboardText(event));
+            if (url === null) return false;
+            // A URL pasted into an open prompt answers it, so the hint goes
+            // away with the paragraph that held it.
+            closeImageUrlPrompt(view);
+            return insertImageNodeAt(view, view.state.selection.from, url);
           },
         },
       }),

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { startBodyEdit as editBody } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 
 test.describe.configure({ timeout: 60_000 });
@@ -65,13 +66,6 @@ async function createNote(page: Page, title: string): Promise<void> {
     return;
   }
   throw new Error("could not open the canvas menu");
-}
-
-/** Starts canvas body editing from the card menu. */
-async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<void> {
-  await card.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
-  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
 }
 
 /** Opens the inspector with a click on the card header, not the editors. */

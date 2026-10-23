@@ -1,3 +1,5 @@
+export type { CardAttachment } from "./cardAttachments.js";
+export { documentAttachmentIds, documentAttachments } from "./cardAttachments.js";
 export {
   CONNECTOR_ANCHORS,
   createConnectorId,
@@ -24,7 +26,9 @@ export type {
 export {
   cardFromMap,
   cardTypeFromMap,
+  cleanWorkspaceName,
   DEFAULT_BOARD_ID,
+  DEFAULT_WORKSPACE_NAME,
   fieldFromMap,
   INDEX_ORIGIN,
   normalizeCard,
@@ -33,7 +37,9 @@ export {
   SCHEMA_VERSION,
   sectionFromMap,
   tagFromMap,
+  WORKSPACE_NAME_MAX_LENGTH,
   WorkspaceDocument,
+  workspaceNameProblem,
 } from "./loro/WorkspaceDocument.js";
 export type {
   PlacementSnapshot,
@@ -230,6 +236,9 @@ export {
 } from "./views.js";
 export type {
   WorkspaceFile,
+  WorkspaceFileAttachmentBytes,
+  WorkspaceFileAttachmentInput,
+  WorkspaceFileAttachmentInputs,
   WorkspaceFileExport,
   WorkspaceFileManifest,
 } from "./workspaceFile.js";

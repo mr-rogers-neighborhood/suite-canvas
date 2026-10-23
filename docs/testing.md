@@ -133,7 +133,19 @@ viewer replace it. Pass `--reporter=html` to `playwright test` if you want one.
 
 ## Coverage
 
-Not configured yet.
+`pnpm coverage` runs the whole suite with `@vitest/coverage-v8` and prints a summary plus an
+`lcov` report under `coverage/` (`coverage/lcov-report/index.html` for the browsable view). All
+three projects are measured; only `@suite/graph` is **gated**:
+
+| Project | Gated | Why |
+| --- | --- | --- |
+| `packages/graph` | statements 85, branches 74, functions 93, lines 90 | A real behavioural suite already exists, so the floor can only go up. |
+| `apps/collab-server` | no | Measured and printed. Much of it is socket and SQLite wiring that e2e covers; gating would invite assertion-free tests. |
+| `apps/canvas` | no | 54% and dominated by entry points and hosts. e2e is what moves this number; add a unit test only where a pure function hides there. |
+
+The gate is one glob key inside `coverage.thresholds` — `"packages/graph/src/**"`. Per-project
+`test.coverage` blocks are accepted by the vitest types but **ignored at runtime**, which is why
+the thresholds live at the root.
 
 ## Mutation testing
 
@@ -147,7 +159,7 @@ Only the modules where a mistake is expensive are mutated:
 
 | Run | Files mutated | Command | Typical cost (16 cores) |
 | --- | --- | --- | --- |
-| graph | `packages/graph/src/{merge,projection,search,views,sections}.ts` | `pnpm mutation` | ~12 min, 2,740 mutants |
+| graph | `packages/graph/src/publish/*.ts`, `{projection,search,views,sections}.ts` | `pnpm mutation` | ~12 min, 2,700 mutants |
 | server | `apps/collab-server/src/{licence,limits,config}.ts` | `pnpm mutation:server` | ~35 s, 1,080 mutants |
 | quick | `packages/graph/src/search.ts`, or `--mutate <file>` | `pnpm mutation:quick` | ~45 s |
 

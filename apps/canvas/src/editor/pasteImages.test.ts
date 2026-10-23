@@ -4,7 +4,14 @@ import { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureSession } from "../session/session";
-import { ATTACHMENT_NODE_NAME, Attachment } from "./attachmentNode";
+import { installFakeIndexedDb } from "../test/fakeIndexedDb";
+import {
+  ATTACHMENT_NODE_NAME,
+  Attachment,
+  attachmentUploadState,
+  storeLocalAttachment,
+} from "./attachmentNode";
+import { IMAGE_NODE_NAME, ImageLink } from "./imageLinkNode";
 import {
   PasteImages,
   type PasteImagesOptions,
@@ -36,6 +43,7 @@ function createEditor(options: Partial<PasteImagesOptions> = {}): {
     extensions: [
       StarterKit.configure({ undoRedo: false }),
       Attachment,
+      ImageLink,
       PasteImages.configure({
         upload: null,
         newId: () => ID,
@@ -51,25 +59,29 @@ function createEditor(options: Partial<PasteImagesOptions> = {}): {
   return { editor, recorder };
 }
 
-function clipboardEvent(files: File[]): ClipboardEvent {
+function clipboardEvent(files: File[], text = ""): ClipboardEvent {
   const items = files.map((file) => ({
     kind: "file",
     type: file.type,
     getAsFile: () => file,
   }));
   return {
-    clipboardData: { items, types: files.map((file) => file.type), getData: () => "" },
+    clipboardData: {
+      items,
+      types: files.map((file) => file.type),
+      getData: (type: string) => (type === "text/plain" ? text : ""),
+    },
   } as unknown as ClipboardEvent;
 }
 
 /** Runs the plugin's paste handler the way ProseMirror would. */
-function paste(instance: Editor, files: File[]): boolean {
+function paste(instance: Editor, files: File[], text = ""): boolean {
   // ProseMirror's own prop type, so the void return of an unhandled paste is
   // the library's, not a hand-written union in this file.
   type Handler = NonNullable<EditorProps["handlePaste"]>;
   return Boolean(
     instance.view.someProp("handlePaste", (handler: Handler) =>
-      handler(instance.view, clipboardEvent(files), Slice.empty),
+      handler(instance.view, clipboardEvent(files, text), Slice.empty),
     ),
   );
 }
@@ -82,6 +94,52 @@ function attachmentNode(instance: Editor): { attrs: Record<string, unknown> } | 
   });
   return found;
 }
+
+function imageLinkNode(instance: Editor): { attrs: Record<string, unknown> } | null {
+  let found: { attrs: Record<string, unknown> } | null = null;
+  instance.state.doc.descendants((node) => {
+    if (node.type.name === IMAGE_NODE_NAME) found = { attrs: node.attrs };
+    return true;
+  });
+  return found;
+}
+
+describe("routing a paste by what the clipboard carries", () => {
+  it("should make a link node out of clipboard text that is one image URL", () => {
+    const { editor: instance, recorder } = createEditor();
+
+    expect(paste(instance, [], "https://cdn.example.com/shots/relay.png")).toBe(true);
+
+    expect(imageLinkNode(instance)?.attrs).toEqual({
+      src: "https://cdn.example.com/shots/relay.png",
+      alt: "relay.png",
+      width: null,
+      height: null,
+    });
+    expect(attachmentNode(instance)).toBeNull();
+    expect(recorder.stored).toHaveLength(0);
+  });
+
+  it("should keep the bytes when the clipboard carries an image and its URL", async () => {
+    const { editor: instance } = createEditor();
+    const file = new File([PNG], "diagram.png", { type: "image/png" });
+
+    expect(paste(instance, [file], "https://cdn.example.com/shots/relay.png")).toBe(true);
+
+    await vi.waitFor(() => expect(attachmentNode(instance)).not.toBeNull());
+    expect(imageLinkNode(instance)).toBeNull();
+  });
+
+  it("should leave ordinary prose and non-image links to the default paste", () => {
+    const { editor: instance } = createEditor();
+
+    expect(paste(instance, [], "read https://cdn.example.com/shots/relay.png later")).toBe(false);
+    expect(paste(instance, [], "https://example.com/an-article")).toBe(false);
+    expect(paste(instance, [], "javascript:alert(1)")).toBe(false);
+    expect(paste(instance, [], "https://example.com/a.png and more")).toBe(false);
+    expect(imageLinkNode(instance)).toBeNull();
+  });
+});
 
 describe("pasting an image", () => {
   it("creates an attachment node with the id, type, size and name", async () => {
@@ -143,6 +201,53 @@ describe("pasting an image", () => {
     await vi.waitFor(() => expect(recorder.stored).toHaveLength(1));
     expect(attachmentNode(instance)).not.toBeNull();
     warning.mockRestore();
+  });
+
+  it("records that a failed upload's bytes are local-only, durably", async () => {
+    const fake = installFakeIndexedDb();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { editor: instance } = createEditor({
+        upload: async () => {
+          throw new Error("relay is down");
+        },
+        // The real write, backed by the fake IndexedDB, not just a recorder.
+        storeLocal: async (id, bytes, mime) => {
+          await storeLocalAttachment(id, bytes, mime);
+        },
+      });
+      paste(instance, [new File([PNG], "shot.png", { type: "image/png" })]);
+
+      await vi.waitFor(async () => {
+        expect(await attachmentUploadState(ID)).toBe("local");
+      });
+      // A reload re-reads the store: the fact did not live in a transient set.
+      expect(await attachmentUploadState(ID)).toBe("local");
+    } finally {
+      warning.mockRestore();
+      fake.restore();
+    }
+  });
+
+  it("flips a local record to synced when the relay accepts the same id", async () => {
+    const fake = installFakeIndexedDb();
+    try {
+      // What an earlier failed attempt (or an import) left behind.
+      await storeLocalAttachment(ID, PNG, "image/png");
+      expect(await attachmentUploadState(ID)).toBe("local");
+
+      const { editor: instance } = createEditor({
+        upload: async () => {},
+        newId: () => ID,
+      });
+      paste(instance, [new File([PNG], "shot.png", { type: "image/png" })]);
+
+      await vi.waitFor(async () => {
+        expect(await attachmentUploadState(ID)).toBe("synced");
+      });
+    } finally {
+      fake.restore();
+    }
   });
 
   it("leaves a paste with no image to the editor", async () => {

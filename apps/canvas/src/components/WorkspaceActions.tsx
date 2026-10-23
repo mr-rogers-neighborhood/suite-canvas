@@ -48,6 +48,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const [backupPrompt, setBackupPrompt] = useState(false);
   const [savedOnDevice, setSavedOnDevice] = useState(() => readSavedRecoveryKey(workspaceId));
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
   const ownerKey = getSession().ownerKey ?? "";
@@ -93,15 +94,22 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
     window.location.assign("/");
   };
 
-  const exportTo = (kind: "backup" | "json" | "markdown") => {
+  const exportTo = async (kind: "backup" | "json" | "markdown") => {
     setError(null);
+    setNotice(null);
     try {
-      if (kind === "backup") downloadWorkspaceBackup(workspaceId, workspace, title);
-      else if (kind === "json") downloadWorkspaceJson(workspace, title);
+      if (kind === "backup") {
+        // The warning lands before the file is written, and never cancels it:
+        // a large or incomplete backup is still better than no backup. The
+        // message carries the real size, or the cards whose images are missing.
+        await downloadWorkspaceBackup(workspaceId, workspace, title, {
+          onWarning: (message) => setNotice(message),
+        });
+        // A backup is exactly the moment someone should also save the key, so
+        // this single prompt is the only export-time follow-up.
+        if (!hasSavedRecoveryKey(workspaceId)) setBackupPrompt(true);
+      } else if (kind === "json") downloadWorkspaceJson(workspace, title);
       else downloadWorkspaceMarkdown(workspace, title);
-      // A backup is exactly the moment someone should also save the key, so
-      // this single prompt is the only export-time follow-up.
-      if (kind === "backup" && !hasSavedRecoveryKey(workspaceId)) setBackupPrompt(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not export this workspace.");
     }
@@ -156,7 +164,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
               className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
               onClick={() => {
                 setMenuOpen(false);
-                exportTo("backup");
+                void exportTo("backup");
               }}
             >
               Export backup…
@@ -168,7 +176,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
               className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
               onClick={() => {
                 setMenuOpen(false);
-                exportTo("json");
+                void exportTo("json");
               }}
             >
               Export JSON…
@@ -180,7 +188,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
               className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
               onClick={() => {
                 setMenuOpen(false);
-                exportTo("markdown");
+                void exportTo("markdown");
               }}
             >
               Export Markdown…
@@ -240,6 +248,16 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           title={error}
         >
           {error}
+        </span>
+      ) : null}
+      {notice ? (
+        <span
+          role="status"
+          data-testid="workspace-export-notice"
+          className="max-w-[320px] text-[11px] leading-snug text-[var(--ink-muted)]"
+          title={notice}
+        >
+          {notice}
         </span>
       ) : null}
       {canDeleteWorkspace && deleteOpen ? (

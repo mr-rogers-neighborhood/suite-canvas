@@ -87,6 +87,13 @@ export interface ShareRequestHooks {
   reload?: (share: Share) => Promise<SharePublishResult> | SharePublishResult;
   /** Whether the share's draft holds unpublished changes. */
   status?: (share: Share) => Promise<ShareStatus> | ShareStatus;
+  /**
+   * Somebody resolved this link, which is the one moment a projection room has a
+   * reader. The worker opens exactly this share's room on it; without the hook a
+   * link nobody resolves would still be opened at boot, once per stored link.
+   * Never awaited: resolving a link must not wait for a document to load.
+   */
+  onShareOpened?: (share: Share) => Promise<void> | void;
 }
 
 function notify(hooks: ShareRequestHooks | undefined, workspaceId: string): void {
@@ -104,6 +111,24 @@ function notifyRemoved(hooks: ShareRequestHooks | undefined, share: Share): void
     hooks?.onShareRemoved?.(share);
   } catch (error) {
     logger.error("removal hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Tells the worker that a link was opened. A failure here costs freshness, never
+ * the resolve: the reader still gets the saved projection.
+ */
+function notifyOpened(hooks: ShareRequestHooks | undefined, share: Share): void {
+  try {
+    void Promise.resolve(hooks?.onShareOpened?.(share)).catch((error: unknown) => {
+      logger.warn("share open hook failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  } catch (error) {
+    logger.warn("share open hook failed", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -148,7 +173,10 @@ function enforceRateLimit(
 
 export const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-  "access-control-allow-headers": "content-type, authorization, x-suite-owner",
+  "access-control-allow-headers":
+    "content-type, authorization, x-suite-owner, x-suite-attachment-id",
+  // Adding a custom header in the app means adding it here too;
+  // corsAllowlist.test.ts fails if the two lists drift apart.
   "access-control-max-age": "86400",
 };
 
@@ -432,6 +460,7 @@ function resolveShare(
   store: ShareStore,
   response: ServerResponse,
   token: string,
+  hooks: ShareRequestHooks | undefined,
 ): void {
   enforceRateLimit(
     shareResolveLimiter,
@@ -442,6 +471,7 @@ function resolveShare(
   const share = store.resolve(token);
   if (!share) throw new HttpError(404, "Share not found.");
   sendJson(response, 200, { share: publicShare(share) });
+  notifyOpened(hooks, share);
 }
 
 function revokeShare(
@@ -528,6 +558,7 @@ async function exchangeSession(
   request: IncomingMessage,
   store: ShareStore,
   response: ServerResponse,
+  hooks: ShareRequestHooks | undefined,
 ): Promise<void> {
   enforceRateLimit(
     shareResolveLimiter,
@@ -551,6 +582,7 @@ async function exchangeSession(
   const { session, expiresAt } = store.createSession(share);
   setSessionCookie(response, session, expiresAt);
   sendJson(response, 200, { share: publicShare(share), session });
+  notifyOpened(hooks, share);
 }
 
 /**
@@ -562,6 +594,7 @@ function readSessionShare(
   request: IncomingMessage,
   store: ShareStore,
   response: ServerResponse,
+  hooks: ShareRequestHooks | undefined,
 ): void {
   enforceRateLimit(
     shareResolveLimiter,
@@ -579,6 +612,7 @@ function readSessionShare(
 
   setSessionCookie(response, session, Date.now() + SHARE_SESSION_TTL_MS);
   sendJson(response, 200, { share: publicShare(share), session });
+  notifyOpened(hooks, share);
 }
 
 /**
@@ -787,9 +821,9 @@ export async function handleShareRequest(
     // here, because a link token is a long random value, never this word.
     if (segment === SESSION_SEGMENT) {
       if (method === "POST") {
-        await exchangeSession(request, store, response);
+        await exchangeSession(request, store, response, hooks);
       } else if (method === "GET") {
-        readSessionShare(request, store, response);
+        readSessionShare(request, store, response, hooks);
       } else if (method === "DELETE") {
         endSession(request, store, response);
       } else {
@@ -838,7 +872,7 @@ export async function handleShareRequest(
     const identifier = decodeSegment(segment);
 
     if (method === "GET") {
-      resolveShare(request, store, response, identifier);
+      resolveShare(request, store, response, identifier, hooks);
     } else if (method === "DELETE") {
       revokeShare(request, store, workspaces, response, identifier, hooks);
     } else {

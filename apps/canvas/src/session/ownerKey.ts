@@ -261,6 +261,35 @@ export function mayWriteWorkspace(state: ClaimState): boolean {
   return state === "claimed";
 }
 
+/**
+ * The part of the sync provider a claim cares about. Typed here so the claim
+ * machine does not depend on the transport: the provider is passed in by the
+ * caller that resolves it lazily.
+ */
+export interface RejoinableDocument {
+  rejoin: () => Promise<void>;
+}
+
+/**
+ * The one bridge from the claim machine to the sync room, called with every
+ * outcome the retry loop produces while the page is open.
+ *
+ * - `claimed` — rejoin once. This is the only outcome that makes a room the
+ *   relay refused at boot joinable.
+ * - `conflict` (the 409) — never rejoin and never write: another key owns the
+ *   workspace, so the local document stays local and the protected screen is
+ *   the only way back in.
+ * - `pending` / `offline` — no rejoin yet; the retry loop owns the next move.
+ *
+ * Returns whether a rejoin was requested, which is what a test can assert for
+ * the 409 path without opening a socket.
+ */
+export function rejoinOnClaim(outcome: ClaimOutcome, document: RejoinableDocument | null): boolean {
+  if (document === null || !mayWriteWorkspace(outcome)) return false;
+  void document.rejoin();
+  return true;
+}
+
 async function requestClaim(workspaceId: string, ownerKey: string): Promise<ClaimSignal> {
   const url = `${collabHttpBase()}${WORKSPACE_API_PATH}/${encodeURIComponent(workspaceId)}/claim`;
   try {

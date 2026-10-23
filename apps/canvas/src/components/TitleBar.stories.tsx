@@ -19,6 +19,11 @@ export const Offline: Story = {
   args: { status: "disconnected", peerCount: 0 },
 };
 
+/** Back from offline and pushing the local edits, in the same amber slot. */
+export const Reconnecting: Story = {
+  args: { status: "rejoining", peerCount: 1 },
+};
+
 /** A share link names what the reader can do where a live session says Live. */
 export const ViewerShare: Story = {
   args: { status: "connected", role: "viewer", documentId: "Board share" },

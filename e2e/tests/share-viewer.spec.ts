@@ -1,4 +1,5 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
+import { startBodyEdit as editBody } from "../interactions";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -58,13 +59,6 @@ async function createNote(page: Page, title: string): Promise<void> {
     return;
   }
   throw new Error("could not open the canvas menu");
-}
-
-/** Starts body editing from the card menu, which does not open the inspector. */
-async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<void> {
-  await card.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
-  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
 }
 
 /** Creates a viewer link for the active scope and returns its URL. */

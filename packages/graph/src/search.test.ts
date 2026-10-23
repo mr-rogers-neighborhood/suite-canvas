@@ -75,6 +75,27 @@ describe("searchTerms", () => {
   });
 });
 
+describe("a card with a link image", () => {
+  it("should be findable by the image's URL and by its alt text", () => {
+    const { workspace } = fixture();
+    workspace.createCard({
+      id: "link",
+      boardId: workspace.ensureBoard().id,
+      position: { x: 0, y: 0 },
+    });
+    addText(workspace.getTitle("link"), "Wiring plan");
+    const image = addNode(workspace.getContent("link"), "image");
+    const attributes = image.ensureMergeableMap("attributes");
+    attributes.set("src", "https://cdn.example.com/photos/relay-rack.png");
+    attributes.set("alt", "Rack elevation");
+    workspace.doc.commit({ origin: "test" });
+
+    const index = buildSearchText(workspace);
+    expect(searchCards(index, "rack elevation").map((hit) => hit.id)).toEqual(["link"]);
+    expect(searchCards(index, "photos/relay-rack").map((hit) => hit.id)).toEqual(["link"]);
+  });
+});
+
 describe("buildSearchText", () => {
   it("should index title and body per card in normalized form", () => {
     const { workspace } = fixture();

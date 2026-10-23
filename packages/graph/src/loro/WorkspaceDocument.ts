@@ -153,6 +153,32 @@ export interface CreateViewInput {
 export const DEFAULT_BOARD_ID = "board-1";
 /** Spatial sections start at version 4. */
 export const SCHEMA_VERSION = 4;
+/** Shown for a workspace that has never been named and has no board to borrow from. */
+export const DEFAULT_WORKSPACE_NAME = "Untitled workspace";
+export const WORKSPACE_NAME_MAX_LENGTH = 80;
+
+/**
+ * A readable reason the name cannot be used, or `null` when it can. Control
+ * characters are refused because the name is a one-line label everywhere it
+ * appears (launcher, recovery file names).
+ */
+export function workspaceNameProblem(name: string): string | null {
+  if (/\p{Cc}/u.test(name)) return "A workspace name cannot contain control characters.";
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return "A workspace name cannot be empty.";
+  if (trimmed.length > WORKSPACE_NAME_MAX_LENGTH) {
+    return `A workspace name can be at most ${WORKSPACE_NAME_MAX_LENGTH} characters.`;
+  }
+  return null;
+}
+
+/** The trimmed name, or a thrown reason when it is not usable. */
+export function cleanWorkspaceName(name: string): string {
+  const problem = workspaceNameProblem(name);
+  if (problem) throw new Error(problem);
+  return name.trim();
+}
+
 /** Below this gap two ranks are one float step apart; the board renumbers. */
 const MIN_RANK_GAP = 1e-7;
 
@@ -900,6 +926,37 @@ export class WorkspaceDocument {
   markSeeded(): void {
     this.meta.set("seeded", true);
     this.commit(`${STRUCT_ORIGIN}seed`);
+  }
+
+  // -------------------------------------------------------- workspace name
+
+  /** True when the document stores a name of its own, not a derived fallback. */
+  hasWorkspaceName(): boolean {
+    const stored = this.meta.get("name");
+    return typeof stored === "string" && stored.trim().length > 0;
+  }
+
+  /**
+   * The workspace's own name. A document from before workspace names existed
+   * borrows its first board's name, so it never renders blank; "Untitled
+   * workspace" is the last resort.
+   */
+  workspaceName(): string {
+    const stored = this.meta.get("name");
+    if (typeof stored === "string") {
+      const trimmed = stored.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+    const first = this.listBoards()[0]?.name.trim();
+    return first && first.length > 0 ? first : DEFAULT_WORKSPACE_NAME;
+  }
+
+  /** Renames the workspace; a name that fails validation throws its reason. */
+  renameWorkspace(name: string): void {
+    const trimmed = cleanWorkspaceName(name);
+    if (this.meta.get("name") === trimmed) return;
+    this.meta.set("name", trimmed);
+    this.commit(`${STRUCT_ORIGIN}rename-workspace`);
   }
 
   // ---------------------------------------------------------------- boards

@@ -211,34 +211,35 @@ test("shift-click toggles membership without opening the inspector", async ({ pa
   await page.goto(workspaceUrl("shift-toggle"));
   await expect(cards(page)).toHaveCount(2);
 
-  const boxes = await cardBoxes(page);
-  const [first, second] = boxes;
-  if (!first || !second) throw new Error("cards not visible");
+  // Click through the node locator, not page coordinates: `fitView` re-fits a
+  // freshly loaded board, so a box read a moment earlier can be stale and the
+  // click lands on empty canvas, which leaves the selection unchanged and reads
+  // as a broken toggle. The locator re-resolves the element and verifies the
+  // click actually hits it.
+  const nodes = page.locator(".react-flow__node");
+  await expect(nodes).toHaveCount(2);
+  const inside = { x: 40, y: 60 } as const;
 
-  await page.keyboard.down("Shift");
-  await page.mouse.click(first.x + 40, first.y + 60);
+  await nodes.nth(0).click({ position: inside, modifiers: ["Shift"] });
   await expect(selectedNodes(page)).toHaveCount(1);
-  await page.mouse.click(second.x + 40, second.y + 60);
-  await page.keyboard.up("Shift");
+  await nodes.nth(1).click({ position: inside, modifiers: ["Shift"] });
 
   // Modifier clicks add to the selection and never open the inspector.
   await expect(selectedNodes(page)).toHaveCount(2);
   await expect(page.getByTestId("card-inspector")).toHaveCount(0);
 
   // A second shift-click on a member drops just that card.
-  await page.keyboard.down("Shift");
-  await page.mouse.click(first.x + 40, first.y + 60);
-  await page.keyboard.up("Shift");
+  await nodes.nth(0).click({ position: inside, modifiers: ["Shift"] });
   await expect(selectedNodes(page)).toHaveCount(1);
 
   // A lone selected card keeps the single-card menu.
-  await page.mouse.click(second.x + 40, second.y + 14, { button: "right" });
+  await nodes.nth(1).click({ position: { x: 40, y: 14 }, button: "right" });
   await expect(page.getByRole("menuitem", { name: "Delete card", exact: true })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Delete cards" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // A plain click still opens the inspector.
-  await page.mouse.click(first.x + 40, first.y + 60);
+  await nodes.nth(0).click({ position: inside });
   await expect(page.getByTestId("card-inspector")).toBeVisible();
 });
 

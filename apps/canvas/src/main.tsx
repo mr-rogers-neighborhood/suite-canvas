@@ -92,8 +92,21 @@ async function bootRelay(plan: BootPlan): Promise<boolean> {
   const workspaceId = workspaceIdFromUrl(window.location.href);
   if (workspaceId === null) return true;
 
-  const { prepareOwnerSession, withOwnerFragment } = await import("./session/ownerKey");
-  const { ownerKey, claim } = await prepareOwnerSession(workspaceId);
+  const { prepareOwnerSession, rejoinOnClaim, withOwnerFragment } = await import(
+    "./session/ownerKey"
+  );
+  const { ownerKey, claim } = await prepareOwnerSession(workspaceId, {
+    // A claim that settles while the page is open is the only event that makes
+    // a room refused at boot joinable. `bootRelay` runs before the store module
+    // exists, so the store is resolved on demand; only `claimed` rejoins — a
+    // 409 must not write, and a retryable outcome leaves it to the next attempt.
+    onOutcome: (outcome) => {
+      void (async () => {
+        const { useCanvasStore } = await import("./store/useCanvasStore");
+        rejoinOnClaim(outcome, useCanvasStore.getState().provider);
+      })();
+    },
+  });
   if (claim === "conflict") {
     const { WorkspaceProtected } = await import("./components/WorkspaceProtected");
     render(<WorkspaceProtected workspaceId={workspaceId} />);

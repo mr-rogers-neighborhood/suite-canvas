@@ -1,8 +1,68 @@
 import { LoroAdaptor, LoroEphemeralAdaptor } from "loro-adaptors/loro";
 import type { EphemeralStore, LoroDoc } from "loro-crdt";
-import { LoroWebsocketClient, type LoroWebsocketClientRoom } from "loro-websocket";
+import { CrdtType } from "loro-protocol";
+import {
+  LoroWebsocketClient,
+  type LoroWebsocketClientRoom,
+  type RoomJoinStatusValue,
+} from "loro-websocket";
 
-export type LoroConnectionStatus = "connecting" | "connected" | "disconnected";
+/**
+ * The one sync state machine, reported to the title bar's status slot.
+ *
+ * - `connecting`: the socket is opening, or the first room join is in flight.
+ * - `rejoining`: the relay is back, or a claim just landed, and the open
+ *   document is rejoining its room to push the edits made while it was away.
+ * - `connected`: the workspace room is joined and merged; edits stream live.
+ * - `disconnected`: no usable relay — offline, or the relay refused the room
+ *   (an unclaimed workspace). Edits stay in the local document.
+ */
+export type LoroConnectionStatus = "connecting" | "rejoining" | "connected" | "disconnected";
+
+/** Every event that can move the sync status. */
+export type SyncEvent =
+  | { type: "transport-connecting" }
+  /** `everJoined` separates a first boot's "Syncing" from a return's "Reconnecting". */
+  | { type: "transport-connected"; everJoined: boolean }
+  | { type: "transport-lost" }
+  | { type: "room-joined" }
+  | { type: "room-refused" }
+  | { type: "rejoin-requested" };
+
+/**
+ * Each transition, and exactly when it fires:
+ *
+ * - `transport-connecting` — the socket starts opening (boot, reconnect timer).
+ *   A drop keeps reporting `disconnected` until the socket is actually open, so
+ *   the status does not flap between Offline and Syncing on every retry.
+ * - `transport-connected` — the socket is open. A join or rejoin starts now, so
+ *   this is never reported as `connected` before the room is. A tab that has
+ *   never been live is still "Syncing"; one that was live is "Reconnecting".
+ * - `transport-lost` — the socket closed, or the browser went offline.
+ * - `room-joined` — the workspace room handshake completed; the CRDT merge ran.
+ * - `room-refused` — the relay answered and refused the credential, e.g. an
+ *   unclaimed workspace. The document keeps accepting local edits.
+ * - `rejoin-requested` — a claim settled as `claimed`, or a reconnect returned.
+ *   A live room stays live; anything else moves to `rejoining`.
+ */
+export function nextConnectionStatus(
+  status: LoroConnectionStatus,
+  event: SyncEvent,
+): LoroConnectionStatus {
+  switch (event.type) {
+    case "transport-lost":
+    case "room-refused":
+      return "disconnected";
+    case "room-joined":
+      return "connected";
+    case "rejoin-requested":
+      return status === "connected" ? status : "rejoining";
+    case "transport-connected":
+      return event.everJoined ? "rejoining" : "connecting";
+    case "transport-connecting":
+      return status === "disconnected" || status === "rejoining" ? status : "connecting";
+  }
+}
 
 export interface LoroProviderOptions {
   url: string;
@@ -25,6 +85,11 @@ export interface LoroProviderOptions {
  * Owns the workspace room and the presence room. Loro's protocol multiplexes
  * rooms over one socket, so cards/boards and ephemeral state can share a
  * connection without a second transport.
+ *
+ * The provider also owns the one re-join path: `rejoin()` runs the same `join()`
+ * as boot on the same socket, so an offline document pushes what it changed
+ * instead of opening a second connection or replacing itself with the relay's
+ * copy. See `nextConnectionStatus` for the status transitions it reports.
  */
 export class LoroProvider {
   readonly client: LoroWebsocketClient;
@@ -32,6 +97,12 @@ export class LoroProvider {
   private presenceRoom: LoroWebsocketClientRoom | null = null;
   private cursorRoom: LoroWebsocketClientRoom | null = null;
   private joining: Promise<void> | null = null;
+  /** The workspace room is joined right now, not merely known to this tab. */
+  private joined = false;
+  /** A live room has existed on this page, so a return is a reconnect. */
+  private everJoined = false;
+  private syncedOnce = false;
+  private statusValue: LoroConnectionStatus = "connecting";
   private disposed = false;
 
   constructor(private readonly options: LoroProviderOptions) {
@@ -40,9 +111,112 @@ export class LoroProvider {
       onError: (error) => console.warn("[loro] transport error", error),
     });
     this.client.onStatusChange((status) => {
-      options.onStatus?.(status as LoroConnectionStatus);
+      if (status === "connected") {
+        this.transition({ type: "transport-connected", everJoined: this.everJoined });
+        // The library only re-joins rooms it already joined. A room refused at
+        // boot (an unclaimed workspace) is not one of them, so retry here.
+        void this.rejoin();
+        return;
+      }
+      if (status === "connecting") {
+        this.transition({ type: "transport-connecting" });
+        return;
+      }
+      this.joined = false;
+      this.transition({ type: "transport-lost" });
     });
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", this.onBrowserOnline);
+    }
     void this.join();
+  }
+
+  /**
+   * loro-websocket 0.6.2 closes a dropped socket with code 1001, which browsers
+   * reject; the socket is then half-open, and the library's own reconnect sees
+   * an OPEN socket and does nothing. On a real browser reconnect, close it with
+   * a code the browser accepts and ask for a fresh connection. The following
+   * `connected` transition runs `rejoin()`.
+   */
+  private readonly onBrowserOnline = (): void => {
+    if (this.disposed || this.client.getStatus() !== "disconnected") return;
+    try {
+      this.client.socket?.close(1000, "browser online");
+    } catch {
+      // Already closing or closed; `connect` below is enough.
+    }
+    this.client.connect({ resetBackoff: true }).catch((error: unknown) => {
+      console.warn("[loro] reconnect failed", error);
+    });
+  };
+
+  /** Reports a status only when the state machine actually changes it. */
+  private transition(event: SyncEvent): void {
+    const next = nextConnectionStatus(this.statusValue, event);
+    if (next === this.statusValue) return;
+    this.statusValue = next;
+    this.options.onStatus?.(next);
+  }
+
+  /**
+   * Room status drives `joined` and the visible state. `connecting` and
+   * `reconnecting` only mean the handshake is not finished; `error` is the
+   * relay's refusal.
+   */
+  private readonly onWorkspaceRoomStatus = (status: RoomJoinStatusValue): void => {
+    if (status === "joined") {
+      this.joined = true;
+      this.everJoined = true;
+      this.transition({ type: "room-joined" });
+      return;
+    }
+    this.joined = false;
+    if (status === "error") this.transition({ type: "room-refused" });
+  };
+
+  /**
+   * Re-join the room after the relay connection returns, or after a claim makes
+   * a refused workspace joinable. The local document is the source of truth:
+   * the adapter exports the operations the relay does not have, so offline edits
+   * are pushed. A live room, or a join already in flight, makes this a no-op.
+   */
+  async rejoin(): Promise<void> {
+    if (this.disposed || this.joined) return;
+    this.transition({ type: "rejoin-requested" });
+    await this.join();
+  }
+
+  /**
+   * Settles with `work`, or rejects as soon as the socket drops. The client
+   * leaves a join that was in flight when the transport closed in its pending
+   * map — it neither resolves nor rejects it while it plans to reconnect — so
+   * without this a rejoin interrupted by a second disconnect would hang forever
+   * and the next reconnect would reuse the stranded promise.
+   */
+  private untilTransportLoses<T>(work: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const unsubscribe = this.client.onStatusChange((status) => {
+        if (settled || status !== "disconnected") return;
+        settled = true;
+        unsubscribe();
+        reject(new Error("transport lost during join"));
+      });
+      work.then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          resolve(value);
+        },
+        (error: unknown) => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          reject(error);
+        },
+      );
+    });
   }
 
   private async join(): Promise<void> {
@@ -51,16 +225,22 @@ export class LoroProvider {
       await this.client.waitConnected();
       if (this.disposed) return;
 
-      this.workspaceRoom = await this.client.join({
-        roomId: this.options.workspaceId,
-        crdtAdaptor: new LoroAdaptor(this.options.doc),
-        ...(this.options.auth ? { auth: this.options.auth } : {}),
-      });
+      this.workspaceRoom = await this.untilTransportLoses(
+        this.client.join({
+          roomId: this.options.workspaceId,
+          crdtAdaptor: new LoroAdaptor(this.options.doc),
+          onStatusChange: this.onWorkspaceRoomStatus,
+          ...(this.options.auth ? { auth: this.options.auth } : {}),
+        }),
+      );
 
       // The room handshake is complete. `waitForReachingServerVersion` never
       // resolves for a brand-new room with an empty server version, so don't
       // gate startup on it.
-      if (!this.disposed) this.options.onSynced?.();
+      if (!this.disposed && !this.syncedOnce) {
+        this.syncedOnce = true;
+        this.options.onSynced?.();
+      }
 
       // A viewer token also writes the derived ephemeral rooms, so presence and
       // cursors work for every role.
@@ -84,6 +264,10 @@ export class LoroProvider {
     })()
       .catch((error) => {
         console.warn("[loro] join failed", error);
+        // A join interrupted by a drop would otherwise stay in the client's
+        // pending map, and the next reconnect would reuse that dead promise
+        // instead of sending a fresh join request.
+        this.client.cleanupRoom(this.options.workspaceId, CrdtType.Loro);
       })
       .finally(() => {
         this.joining = null;
@@ -92,7 +276,7 @@ export class LoroProvider {
   }
 
   get status(): LoroConnectionStatus {
-    return this.client.getStatus() as LoroConnectionStatus;
+    return this.statusValue;
   }
 
   async connect(): Promise<void> {
@@ -106,6 +290,10 @@ export class LoroProvider {
 
   destroy(): void {
     this.disposed = true;
+    this.joined = false;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("online", this.onBrowserOnline);
+    }
     void this.workspaceRoom?.destroy();
     void this.presenceRoom?.destroy();
     void this.cursorRoom?.destroy();

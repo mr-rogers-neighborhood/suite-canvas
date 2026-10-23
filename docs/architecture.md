@@ -195,6 +195,20 @@ The app starts at `/` on a **workspace launcher**. It lists recent workspaces fr
 (`localStorage`, never document truth), starts a blank workspace (`?fresh=1`), and imports a
 `.suite` backup. Opening a workspace navigates to the ordinary `?workspace=<id>` canvas.
 
+A workspace has a name of its own, stored in the document's `meta` map (`meta.name`) so it syncs
+with the workspace and travels in a `.suite` export. That makes it document truth, not a launcher
+preference. `WorkspaceDocument.workspaceName()` returns it, falling back to the first board's name
+and then `"Untitled workspace"`, so a document from before workspace names existed never renders
+blank; `renameWorkspace` trims and refuses empty, overlong (> 80 characters) or control-character
+names with a readable reason. The launcher shows that name as a recents row's primary label, with
+the board name and id as muted detail, and renames inline from the row's Rename action (no dialog).
+A rename writes through to the cached document when this browser has one and to a local
+`suite.workspaceNames.v1` mirror when the workspace is only a recent entry; that mirror also lets
+the row read correctly before the document is opened, and such a local-only name is adopted into the
+document the first time a cached copy exists. Each launcher mount re-reads the name from every
+cached replica, so a rename made elsewhere shows up on the next visit rather than through a live
+subscription from a screen that no longer has the workspace open.
+
 A `.suite` backup is a versioned JSON envelope around `doc.export({ mode: "snapshot" })` with a
 small manifest. Import validates the envelope, refuses a newer file/schema by name, creates a new
 workspace id, writes the snapshot to that workspace's IndexedDB, and navigates. It never merges into
@@ -761,9 +775,10 @@ Images are **nodes that name bytes stored beside the document**, never bytes ins
   allowlisted in `publishValidation.ts`, so a publish accepts it and `editorSchemaContract.test.ts`
   keeps the editor schema and the allowlist from drifting apart.
 - **Why no bytes in the document.** A share projection copies the *document*. Bytes in a node would
-  therefore put a private copy of every image in every share link, in every exported backup and in
-  every peer's CRDT state. With metadata only, a projection carries ids and a viewer fetches each
-  image once from the relay.
+  therefore put a private copy of every image in every share link and in every peer's CRDT state.
+  With metadata only, a projection carries ids and a viewer fetches each image once from the relay.
+  The export file is the deliberate exception, and it embeds the bytes *beside* the document rather
+  than inside it — see **Export** below.
 - **Storage.** `attachments.ts` owns the bytes: `put`/`get`/`delete`/`usage` over one SQLite table
   (`attachments`: id, workspace_id, mime, bytes, size, created_at) in the file named by
   `SUITE_ATTACHMENTS_DB`. The interface is the seam for object storage; a signed-read S3 backend is
@@ -789,6 +804,16 @@ Images are **nodes that name bytes stored beside the document**, never bytes ins
   (which holds no owner key) they are written to this browser's IndexedDB under that same id, and the
   card renders them from there. Such a node is **local-only**: a share viewer has no way to fetch
   those bytes until the image is uploaded under the same id, and sees the node's placeholder.
+- **Stored is not the same as uploaded.** Bytes are local-first: a paste writes them to this browser
+  first, and a failed relay upload leaves them in IndexedDB, so "I can see my image" never implies
+  "my collaborator can". The record beside those bytes therefore carries the upload fact as well
+  (`local`, `synced`, or `unknown` for records written before the flag existed, which must never be
+  read as `local`). `attachmentUploadState(id)` is the one accessor over that fact; where it says
+  `local`, the node view draws one quiet muted line under the image — not uploaded yet, and a
+  collaborator sees a placeholder until it reaches the relay. The line is hidden in a standalone
+  build (no relay by design, so nothing to fix) and never applies to a URL `image` node, which holds
+  no bytes at all. Nothing retries an upload in the background today: a node stays `local` until a
+  later upload under the same id succeeds and flips the record to `synced`.
 - **Placeholder.** A node whose bytes are unreachable — offline viewer, GC'd row, a local-only node on
   another device — renders a placeholder with its name. Rendering never throws: it runs inside a
   replicated editor.
@@ -798,3 +823,18 @@ Images are **nodes that name bytes stored beside the document**, never bytes ins
   operator (the admin HTTP surface has no route for it yet, so adding one would be a new admin
   module): call it after a document edit that removed images, passing the ids still present in card
   bodies. `DELETE /api/attachments/<id>` removes one row by hand.
+
+- **Export.** A `.suite` backup is the only portability and backup mechanism this product has, so
+  the file must be complete: `workspaceFile.ts` version 2 adds an `attachments` section holding
+  `{ mime, name, width, height, data }` per id, where `data` is base64 of the exact bytes. The
+  document still carries only the node's metadata; the bytes sit beside it in the envelope. Import
+  restores each image into this browser's local store under the same id, so the card renders
+  immediately, and deliberately does not upload it: like an offline paste, that copy is
+  **local-only / not-yet-uploaded**, and a share viewer resolves the node only after the owning
+  relay holds the bytes under that id. `attachmentBytes.ts` gathers the bytes with an injectable
+  `AttachmentSource`: IndexedDB first (where a paste writes), then `GET /api/attachments/<id>`
+  (where an upload writes). An image found nowhere is listed, named by its card's title, and the
+  export still completes — silently dropping it is the data loss this format exists to prevent.
+  Because the bytes travel with the file, a workspace full of screenshots produces a large
+  `.suite`: above 25 MB (`BACKUP_SIZE_WARNING_BYTES`) the app states the real size before writing
+  the file, then writes it anyway. Refusing to back up would be worse than a big backup.

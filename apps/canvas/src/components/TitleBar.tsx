@@ -21,12 +21,16 @@ export interface TitleBarProps {
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
   connected: "Live",
   connecting: "Syncing",
+  // Back from offline and pushing the local edits; the same amber as a first
+  // sync, because it is the same "catching up" state.
+  rejoining: "Reconnecting",
   disconnected: "Offline",
 };
 
 const STATUS_DOT: Record<ConnectionStatus, string> = {
   connected: "bg-emerald-500",
   connecting: "bg-amber-400",
+  rejoining: "bg-amber-400",
   disconnected: "bg-gray-400 dark:bg-gray-500",
 };
 

@@ -130,7 +130,10 @@ async function startHarness(
     seed?: boolean;
     /** Worker settings a test cares about; the rest keep the harness defaults. */
     worker?: Partial<
-      Pick<ProjectionWorkerOptions, "idleHours" | "now" | "roomClients" | "onRoomClosed">
+      Pick<
+        ProjectionWorkerOptions,
+        "idleHours" | "now" | "roomClients" | "onRoomClosed" | "maxRooms"
+      >
     >;
   } = {},
 ): Promise<Harness> {
@@ -211,6 +214,16 @@ async function openViewer(url: string, roomId: string, token: string): Promise<V
   return { client, doc, room, workspace: () => new WorkspaceDocument(doc) };
 }
 
+/**
+ * Starts the worker and opens exactly the rooms a test is looking at, which is
+ * what the HTTP share resolve does in production. Boot itself opens nothing:
+ * that is the regression this helper exists to make visible.
+ */
+async function startViewing(state: Harness, ...shares: Share[]): Promise<void> {
+  await state.worker.start();
+  for (const share of shares) await state.worker.openShare(share);
+}
+
 async function waitFor(check: () => boolean, label: string, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -279,7 +292,7 @@ describe("projection worker", () => {
 
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => boardCards(viewer).length === 2, "the first projection");
 
       const projected = viewer.workspace();
@@ -319,7 +332,7 @@ describe("projection worker", () => {
 
       const viewer = await openViewer(state.url, share.roomId as string, token);
       try {
-        await state.worker.start();
+        await startViewing(state, share);
         await waitFor(() => boardCards(viewer).length === 2, "the legacy workspace");
         expect(boardCards(viewer)).toEqual(["a", "b"]);
       } finally {
@@ -340,7 +353,7 @@ describe("projection worker", () => {
 
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => viewer.workspace().getCard("a") !== undefined, "the card projection");
 
       const projected = viewer.workspace();
@@ -364,7 +377,7 @@ describe("projection worker", () => {
 
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       expect(boardCards(viewer)).toEqual([]);
 
       saveSource(state);
@@ -396,7 +409,7 @@ describe("projection worker", () => {
 
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => viewer.workspace().getCard("a") !== undefined, "the card projection");
 
       state.source.trashCard("a");
@@ -421,7 +434,7 @@ describe("projection worker", () => {
       boardId: BOARD_ID,
     });
 
-    await state.worker.start();
+    await startViewing(state, share);
     expect(state.worker.roomIds()).toEqual([share.roomId]);
 
     state.shares.revoke(share.id);
@@ -440,6 +453,179 @@ describe("projection worker", () => {
     expect(state.worker.roomIds()).toEqual([]);
     await expect(state.worker.schedule(WORKSPACE_ID, { immediate: true })).resolves.toBeUndefined();
   });
+});
+
+describe("lazy rooms", () => {
+  /** A board link, a card link and a selection link over the same workspace. */
+  function threeShares(state: Harness): {
+    board: { share: Share; token: string };
+    card: { share: Share; token: string };
+    selection: { share: Share; token: string };
+  } {
+    return {
+      board: state.shares.create({
+        workspaceId: WORKSPACE_ID,
+        scope: "board",
+        role: "viewer",
+        boardId: BOARD_ID,
+      }),
+      card: state.shares.create({
+        workspaceId: WORKSPACE_ID,
+        scope: "card",
+        role: "viewer",
+        cardId: "a",
+      }),
+      selection: state.shares.create({
+        workspaceId: WORKSPACE_ID,
+        scope: "selection",
+        role: "viewer",
+        boardId: BOARD_ID,
+        cardIds: ["a", "b"],
+      }),
+    };
+  }
+
+  it("boots with stored projection shares without opening a single room", async () => {
+    const state = await startHarness();
+    const stored = Array.from(
+      { length: 25 },
+      (_, index) =>
+        state.shares.create({
+          workspaceId: WORKSPACE_ID,
+          scope: index % 2 === 0 ? "board" : "card",
+          role: "viewer",
+          boardId: BOARD_ID,
+          cardId: index % 2 === 0 ? null : "a",
+        }).share,
+    );
+
+    await state.worker.start();
+
+    // The regression: a restart used to load one document per stored link.
+    expect(state.worker.roomIds()).toEqual([]);
+    expect(state.worker.projectionRooms()).toEqual([]);
+    expect(state.worker.projectionStats()).toMatchObject({ open: 0, opened: 0, evicted: 0 });
+    for (const share of stored) {
+      expect(loadLoroDocument(state.documents, share.roomId as string)).toBeNull();
+    }
+
+    // An owner save with nobody looking still opens nothing.
+    await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+    expect(state.worker.roomIds()).toEqual([]);
+  }, 20_000);
+
+  it("opens exactly the room that was asked for, not its workspace's other links", async () => {
+    const state = await startHarness();
+    const { board, card, selection } = threeShares(state);
+    const viewer = await openViewer(state.url, card.share.roomId as string, card.token);
+    try {
+      await state.worker.start();
+
+      await state.worker.openShare(card.share);
+
+      expect(state.worker.roomIds()).toEqual([card.share.roomId]);
+      expect(state.worker.projectionStats()).toMatchObject({ open: 1, opened: 1 });
+      expect(state.worker.projectionStats().limit).toBeGreaterThan(0);
+      await waitFor(() => viewer.workspace().getCard("a") !== undefined, "the requested card");
+
+      // An owner edit must reach that open room and still must not open the
+      // sibling links: a reader of one link does not make the other two live.
+      state.source.renameBoard(BOARD_ID, "After the edit");
+      appendText(state.source.getContent("a"), "Lazy update");
+      state.source.doc.commit({ origin: "owner:edit" });
+      saveSource(state);
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      await waitFor(
+        () => textOf(viewer.workspace(), "a").includes("Lazy update"),
+        "the owner edit in the open room",
+      );
+      expect(state.worker.roomIds()).toEqual([card.share.roomId]);
+      expect(state.worker.roomIds()).not.toContain(board.share.roomId);
+      expect(state.worker.roomIds()).not.toContain(selection.share.roomId);
+      expect(state.worker.projectionStats()).toMatchObject({ opened: 1 });
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  }, 20_000);
+
+  it("evicts the least-recently-used unattached room at the ceiling", async () => {
+    let clock = 1_000;
+    const state = await startHarness({
+      worker: { maxRooms: 2, now: () => clock },
+    });
+    const { board, card, selection } = threeShares(state);
+    await state.worker.start();
+
+    await state.worker.openShare(board.share);
+    clock += 1_000;
+    await state.worker.openShare(card.share);
+    clock += 1_000;
+    await state.worker.openShare(selection.share);
+
+    // Board was read longest ago and nobody is attached, so it is the one that
+    // goes; the newest room the reader asked for stays.
+    expect(state.worker.roomIds()).toEqual([card.share.roomId, selection.share.roomId]);
+    expect(state.worker.projectionStats()).toMatchObject({
+      open: 2,
+      limit: 2,
+      opened: 3,
+      evicted: 1,
+      refused: 0,
+    });
+
+    // The evicted link is not revoked: asking for it again reopens it and
+    // evicts the next coldest room.
+    clock += 1_000;
+    await state.worker.openShare(board.share);
+    expect(state.worker.roomIds()).toEqual([selection.share.roomId, board.share.roomId]);
+    expect(state.worker.projectionStats()).toMatchObject({ evicted: 2 });
+    expect(state.shares.get(board.share.id)?.revokedAt).toBeNull();
+  }, 20_000);
+
+  it("refuses to open past the ceiling rather than evict a room with a reader", async () => {
+    const state = await startHarness({ worker: { maxRooms: 1 } });
+    const { board, card } = threeShares(state);
+    const viewer = await openViewer(state.url, board.share.roomId as string, board.token);
+    try {
+      await state.worker.start();
+      await state.worker.openShare(board.share);
+      await waitFor(() => boardCards(viewer).length === 2, "the first projection");
+
+      await state.worker.openShare(card.share);
+
+      // The reader keeps its live room; the second link is served from what was
+      // saved, which is a freshness cost, never a broken link.
+      expect(state.worker.roomIds()).toEqual([board.share.roomId]);
+      expect(state.worker.projectionRooms()).toHaveLength(1);
+      expect(state.worker.projectionStats()).toMatchObject({
+        open: 1,
+        opened: 1,
+        evicted: 0,
+        refused: 1,
+      });
+      expect(state.warnings.some((text) => text.includes("SUITE_PROJECTION_ROOMS_MAX=1"))).toBe(
+        true,
+      );
+
+      // Once the reader leaves, the same room may be evicted for a newer one.
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+      // The worker evicts nothing while a session is attached, so wait for the
+      // sync server to drop the reader before asking for the newer room.
+      await waitFor(
+        () => roomSessionCount(state.server, board.share.roomId as string, PROJECTION_TOKEN) === 0,
+        "the reader to leave",
+      );
+      await state.worker.openShare(card.share);
+      expect(state.worker.roomIds()).toEqual([card.share.roomId]);
+      expect(state.worker.projectionStats()).toMatchObject({ evicted: 1, open: 1 });
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  }, 20_000);
 });
 
 describe("room idle hours", () => {
@@ -525,7 +711,7 @@ describe("idle room sweep", () => {
       boardId: BOARD_ID,
     });
     const roomId = share.roomId as string;
-    await state.worker.start();
+    await startViewing(state, share);
     // An editor room keeps a draft baseline, so the sweep has both artefacts to
     // drop: the projected document and the baseline row.
     await waitFor(() => state.shares.getBaseline(share.id) !== null, "the draft baseline");
@@ -579,7 +765,7 @@ describe("idle room sweep", () => {
     });
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => boardCards(viewer).length === 2, "the projection");
 
       clock += 5 * HOUR;
@@ -605,7 +791,7 @@ describe("idle room sweep", () => {
       role: "viewer",
       boardId: BOARD_ID,
     });
-    await state.worker.start();
+    await startViewing(state, share);
 
     clock += 5 * HOUR;
     const report = await state.worker.sweepIdle();
@@ -617,13 +803,13 @@ describe("idle room sweep", () => {
   it("sweeps nothing while the idle window is off", async () => {
     let clock = Date.now();
     const state = await startHarness({ worker: { idleHours: 0, now: () => clock } });
-    state.shares.create({
+    const { share } = state.shares.create({
       workspaceId: WORKSPACE_ID,
       scope: "board",
       role: "viewer",
       boardId: BOARD_ID,
     });
-    await state.worker.start();
+    await startViewing(state, share);
     expect(state.worker.roomIds()).toHaveLength(1);
 
     clock += 1000 * HOUR;
@@ -667,7 +853,7 @@ describe("selection shares", () => {
 
     const viewer = await openViewer(state.url, share.roomId as string, token);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
 
       const projected = viewer.workspace();
@@ -696,9 +882,9 @@ describe("selection shares", () => {
   });
 
   it("follows an owner edit to a selected card", async () => {
-    const { state, viewer } = await openSelection(["a", "b"]);
+    const { state, share, viewer } = await openSelection(["a", "b"]);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
 
       appendText(state.source.getContent("a"), "Selection update");
@@ -720,9 +906,9 @@ describe("selection shares", () => {
   });
 
   it("drops a selected card that leaves the board and keeps the rest", async () => {
-    const { state, viewer } = await openSelection(["a", "b"]);
+    const { state, share, viewer } = await openSelection(["a", "b"]);
     try {
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => boardCards(viewer).length === 2, "the selection projection");
 
       state.source.trashCard("a");
@@ -772,7 +958,7 @@ describe("selection shares", () => {
     const share = state.shares.get("manual-editor");
     if (!share) throw new Error("expected the hand-written selection share");
 
-    await state.worker.start();
+    await startViewing(state, share);
     expect(state.worker.roomIds()).toContain("share-manual");
     const before = savedVersion(state.documents, WORKSPACE_ID);
 
@@ -796,7 +982,7 @@ describe("selection shares", () => {
 
   it("reports no draft for a selection viewer", async () => {
     const { state, share } = await openSelection(["a", "b"]);
-    await state.worker.start();
+    await startViewing(state, share);
     await waitFor(
       () => state.worker.roomIds().includes(share.roomId as string),
       "the selection room",
@@ -815,7 +1001,7 @@ describe("selection shares", () => {
       cardIds: ["a", "b"],
     });
 
-    await state.worker.start();
+    await startViewing(state, share);
     expect(state.worker.roomIds()).toEqual([share.roomId]);
 
     state.shares.revoke(share.id);
@@ -921,7 +1107,7 @@ describe("editor shares", () => {
     const roomId = share.roomId as string;
     const owner = await openViewer(state.url, WORKSPACE_ID, SOURCE_TOKEN);
     const editor = await openEditor(state, roomId, token);
-    await state.worker.start();
+    await startViewing(state, share);
     await waitFor(() => boardCards(editor).length === 2, "the editor projection");
     await waitFor(() => owner.workspace().getCard("a") !== undefined, "the owner copy");
     return { state, token, share, roomId, owner, editor, fieldId };
@@ -1110,12 +1296,10 @@ describe("editor shares", () => {
     });
     expect(state.worker.roomIds()).toEqual([]);
 
-    // The share was created after the worker started; status must join it.
-    expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: false });
-    expect(state.worker.roomIds()).toContain(share.roomId as string);
-
-    await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+    // The share was created after the worker started; status must join it, and
+    // a room opened for a reader is projected before the read settles.
     expect(await state.worker.status(share)).toEqual({ dirty: false, hasBaseline: true });
+    expect(state.worker.roomIds()).toContain(share.roomId as string);
 
     // A viewer has no draft of its own, even with an open projection room.
     const viewer = state.shares.create({
@@ -1250,7 +1434,9 @@ describe("editor shares", () => {
 
       await state.worker.stop();
       state.worker = createWorker(state);
-      await state.worker.start();
+      // A restart is lazy: the room reopens when the editor comes back, not
+      // because its row exists.
+      await startViewing(state, share);
       await waitFor(() => state.worker.roomIds().includes(roomId), "the reopened room");
 
       // The draft survived: the persisted baseline made it dirty again.
@@ -1269,7 +1455,7 @@ describe("editor shares", () => {
   }, 20_000);
 
   it("does not freeze a restarted room whose history advanced without draft edits", async () => {
-    const { state, roomId, owner, editor } = await editorHarness();
+    const { state, share, roomId, owner, editor } = await editorHarness();
     try {
       await state.worker.stop();
 
@@ -1293,7 +1479,7 @@ describe("editor shares", () => {
       }
 
       state.worker = createWorker(state);
-      await state.worker.start();
+      await startViewing(state, share);
       await waitFor(() => state.worker.roomIds().includes(roomId), "the reopened room");
 
       // No draft edits: the next owner save is projected as usual.

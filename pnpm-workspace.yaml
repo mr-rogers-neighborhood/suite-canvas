@@ -19,8 +19,23 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-64@2.11.10"
   - "@turbo/windows-arm64@2.11.10"
   - turbo@2.11.10
+# Patches are keyed by exact version, so every patched dependency is pinned in
+# its package.json: a caret range would let a patch release install unpatched,
+# and the patch would be silently gone. Bumping any version below means
+# re-checking its patch against the new dist (see each entry's note).
 patchedDependencies:
+  # Fixes carried here because 0.4.4 is the newest published version. The patch
+  # touches `src/` and `dist/`, so it documents the change and applies it:
+  # `exports` resolves to `dist`, which is what actually runs, and `src` is what
+  # a reader diffs against upstream. Includes the loro-prosemirror#77 init race
+  # and a `commitOrigin` option for scoping undo. Drop it when a release has them.
   loro-prosemirror@0.4.4: patches/loro-prosemirror@0.4.4.patch
+  # 0.6.2 is the newest published version and it ships `dist` only (`files:
+  # ["dist"]`), so there is no `src/` to patch and no release to upgrade to.
+  # This adds per-room credential tracking plus `disconnectRoomWhere`/
+  # `disconnectAuth`, which the relay's own revoke path depends on for live
+  # kick: without it, revoking a link stops new joins but leaves open sockets
+  # connected. `apps/collab-server/src/patchGuard.test.ts` fails if it is missing.
   loro-websocket@0.6.2: patches/loro-websocket@0.6.2.patch
   # Stryker 10's vitest-runner joins test-suite names with a space, but Vitest 5
   # matches testNamePattern against names joined with " > ", so every covered

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   claimWorkspace,
@@ -10,12 +10,22 @@ import {
 import { createOwnerKit, downloadOwnerKit } from "../session/ownerKit";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
+  readWorkspaceNames,
+  rememberWorkspaceName,
+  renameCachedWorkspace,
+} from "../session/workspaceName";
+import {
   downloadWorkspaceById,
   navigateTo,
   openNewWorkspace,
   readRecentWorkspaces,
 } from "../session/workspaceTransfer";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
+
+vi.mock("../session/workspaceName", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../session/workspaceName")>();
+  return { ...actual, renameCachedWorkspace: vi.fn(async () => true) };
+});
 
 vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceTransfer")>();
@@ -36,6 +46,7 @@ const exportWorkspace = vi.mocked(downloadWorkspaceById);
 const navigate = vi.mocked(navigateTo);
 const download = vi.mocked(downloadOwnerKit);
 const startNewWorkspace = vi.mocked(openNewWorkspace);
+const renameCached = vi.mocked(renameCachedWorkspace);
 
 const WORKSPACE = "ws-recent";
 const TITLE = "Research";
@@ -109,6 +120,22 @@ function seedRecent(): void {
   );
 }
 
+function seedRecents(
+  entries: ReadonlyArray<{ id: string; title: string; boardId?: string }>,
+): void {
+  window.localStorage.setItem(
+    "suite.recentWorkspaces.v1",
+    JSON.stringify(
+      entries.map((entry, index) => ({
+        id: entry.id,
+        title: entry.title,
+        lastOpenedAt: 1_000 + index,
+        ...(entry.boardId ? { boardId: entry.boardId } : {}),
+      })),
+    ),
+  );
+}
+
 async function chooseFile(testId: string, text: string, name: string): Promise<void> {
   fireEvent.change(screen.getByTestId(testId), {
     target: { files: [new File([text], name, { type: "application/json" })] },
@@ -122,6 +149,7 @@ beforeEach(() => {
   navigate.mockClear();
   download.mockClear();
   startNewWorkspace.mockClear();
+  renameCached.mockClear();
 });
 
 afterEach(() => {
@@ -154,8 +182,28 @@ describe("WorkspaceLauncher recovery flow", () => {
 
     fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
 
-    await waitFor(() => expect(exportWorkspace).toHaveBeenCalledWith(WORKSPACE, TITLE));
+    await waitFor(() =>
+      expect(exportWorkspace).toHaveBeenCalledWith(WORKSPACE, TITLE, expect.any(Function)),
+    );
     expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
+  });
+
+  it("shows the export's own warnings, so a partial backup is never silent", async () => {
+    seedRecent();
+    exportWorkspace.mockImplementationOnce(async (_id, _title, onWarning) => {
+      onWarning?.("1 image is missing from this backup (card “Trip plan”).");
+    });
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("launcher-notice")).toHaveTextContent(
+        "1 image is missing from this backup",
+      ),
+    );
+    // A warning is not a failure: the file was written, so no error is shown.
+    expect(screen.queryByTestId("launcher-error")).not.toBeInTheDocument();
   });
 
   it("stays quiet when this browser holds no owner key", async () => {
@@ -344,5 +392,94 @@ describe("WorkspaceLauncher passphrase choice at creation", () => {
 
     expect(screen.queryByTestId("recovery-creation")).not.toBeInTheDocument();
     expect(startNewWorkspace).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WorkspaceLauncher workspace names", () => {
+  it("shows the workspace name as the primary label and the board as detail", () => {
+    seedRecents([{ id: WORKSPACE, title: TITLE, boardId: "board-1" }]);
+    rememberWorkspaceName(WORKSPACE, "Research 2026");
+    render(<WorkspaceLauncher />);
+
+    const row = screen.getByTestId(`launcher-recent-${WORKSPACE}`);
+    // The first line of the row is the workspace name, not the board name.
+    const name = within(row).getByTestId(`launcher-name-${WORKSPACE}`);
+    expect(name).toHaveTextContent(/^Research 2026$/);
+
+    // The board name and id stay, as muted detail under the name.
+    expect(within(row).getByTestId(`launcher-detail-${WORKSPACE}`)).toHaveTextContent(
+      `${TITLE} · board-1`,
+    );
+  });
+
+  it("renames from the launcher without a reload and writes through to the openable document", async () => {
+    seedRecents([{ id: WORKSPACE, title: TITLE, boardId: "board-1" }]);
+    rememberWorkspaceName(WORKSPACE, TITLE);
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId(`launcher-rename-${WORKSPACE}`));
+    const input = screen.getByTestId(`launcher-rename-input-${WORKSPACE}`);
+    expect(input).toHaveValue(TITLE);
+
+    fireEvent.change(input, { target: { value: "  Research 2026  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The same mounted launcher shows the new name; nothing reloads.
+    await waitFor(() =>
+      expect(screen.getByTestId(`launcher-name-${WORKSPACE}`)).toHaveTextContent("Research 2026"),
+    );
+    expect(navigate).not.toHaveBeenCalled();
+    expect(readWorkspaceNames()[WORKSPACE]).toBe("Research 2026");
+    // The recents list itself keeps its existing entries and board detail.
+    expect(readRecentWorkspaces()).toMatchObject([{ id: WORKSPACE, title: TITLE }]);
+    await waitFor(() => expect(renameCached).toHaveBeenCalledWith(WORKSPACE, "Research 2026"));
+  });
+
+  it("states why a rename was refused and leaves the row as it was", async () => {
+    seedRecents([{ id: WORKSPACE, title: TITLE, boardId: "board-1" }]);
+    rememberWorkspaceName(WORKSPACE, TITLE);
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId(`launcher-rename-${WORKSPACE}`));
+    const input = screen.getByTestId(`launcher-rename-input-${WORKSPACE}`);
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("A workspace name cannot be empty.")).toBeVisible();
+    expect(screen.getByTestId(`launcher-rename-hint-${WORKSPACE}`)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(readWorkspaceNames()[WORKSPACE]).toBe(TITLE);
+    expect(renameCached).not.toHaveBeenCalled();
+  });
+
+  it("makes two workspaces with the same default board name distinguishable", async () => {
+    // The reported regression: every workspace's first board is "Board 1", so
+    // the old rows were all identical. Naming one now separates them.
+    seedRecents([
+      { id: "ws-a", title: "Board 1", boardId: "board-1" },
+      { id: "ws-b", title: "Board 1", boardId: "board-1" },
+    ]);
+    render(<WorkspaceLauncher />);
+
+    expect(screen.getByTestId("launcher-name-ws-a")).toHaveTextContent("Board 1");
+    expect(screen.getByTestId("launcher-name-ws-b")).toHaveTextContent("Board 1");
+
+    fireEvent.click(screen.getByTestId("launcher-rename-ws-a"));
+    const input = screen.getByTestId("launcher-rename-input-ws-a");
+    fireEvent.change(input, { target: { value: "Roadmap" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("launcher-name-ws-a")).toHaveTextContent("Roadmap"),
+    );
+    expect(screen.getByTestId("launcher-name-ws-b")).toHaveTextContent("Board 1");
+    expect(screen.getByTestId("launcher-name-ws-a").textContent).not.toBe(
+      screen.getByTestId("launcher-name-ws-b").textContent,
+    );
+    // Both rows still carry their (identical) board as secondary detail.
+    expect(screen.getByTestId("launcher-detail-ws-a")).toHaveTextContent("board-1");
+    expect(screen.getByTestId("launcher-detail-ws-b")).toHaveTextContent("board-1");
   });
 });

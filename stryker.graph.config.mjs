@@ -11,6 +11,7 @@
  * Report-only on purpose: no `thresholds.break`. A mutation score is a
  * diagnostic for deciding where to write tests, not a number to satisfy.
  */
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // pnpm links the runner under `.pnpm/`, and Stryker's `@stryker-mutator/*`
@@ -35,7 +36,9 @@ export default {
   testFiles: ["packages/graph/src/**/*.test.ts"],
 
   mutate: [
-    "packages/graph/src/merge.ts",
+    // Publish planning and apply live under `publish/`; `merge.ts` is now only
+    // a re-export barrel, so mutating it would score an empty file.
+    "packages/graph/src/publish/*.ts",
     "packages/graph/src/projection.ts",
     "packages/graph/src/search.ts",
     "packages/graph/src/views.ts",
@@ -76,3 +79,27 @@ export default {
   // No `thresholds.break`: report-only.
   thresholds: { high: 80, low: 60, break: null },
 };
+
+// The patch below is invisible when it is missing: Stryker still runs, every
+// mutant is reported Survived, and the report looks like a terrible test suite
+// rather than a broken runner. So fail here, at config load, with the reason.
+const joinerFix = "join(' > ')";
+const runnerFiles = ["stryker-setup.js", "test-helpers.js"].map(
+  (name) => `node_modules/@stryker-mutator/vitest-runner/dist/src/${name}`,
+);
+for (const file of runnerFiles) {
+  let source;
+  try {
+    source = readFileSync(new URL(file, import.meta.url), "utf8");
+  } catch {
+    throw new Error(
+      `${file} is not installed. Run pnpm install before pnpm mutation; the runner patch lives in patches/.`,
+    );
+  }
+  if (!source.includes(joinerFix)) {
+    throw new Error(
+      `${file} does not contain ${joinerFix}. patches/@stryker-mutator__vitest-runner@10.0.0.patch was not applied, ` +
+        "so every mutant would be reported Survived. Check `patchedDependencies` in pnpm-workspace.yaml and re-run pnpm install.",
+    );
+  }
+}

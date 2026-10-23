@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { startBodyEdit as editBody } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
@@ -72,19 +73,6 @@ async function createNote(page: Page, title: string): Promise<void> {
  * Starts canvas body editing from the card menu. A double click would also open
  * the inspector with the first click, which can then swallow the second click.
  */
-async function editBody(page: Page, card: ReturnType<typeof cards>): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await card.getByTestId("card-menu").click();
-    const item = page.getByRole("menuitem", { name: "Edit body" });
-    if (await item.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await item.click({ timeout: 5000 }).catch(() => undefined);
-    }
-    if (await card.getByTestId("card-body").locator(".ProseMirror-focused").count()) return;
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(150);
-  }
-  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
-}
 
 test("inserts a mention from the picker and keeps it after a reload", async ({ page }) => {
   await page.goto(workspaceUrl("insert"));

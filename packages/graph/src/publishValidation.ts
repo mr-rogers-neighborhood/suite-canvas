@@ -99,6 +99,7 @@ export const RICH_TEXT_NODE_NAMES = [
   "mention",
   "propertyBlock",
   "attachment",
+  "image",
 ] as const;
 
 /** Marks the editor schema produces. */
@@ -128,6 +129,8 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   propertyBlock: ["fieldId", "display"],
   // Metadata only: the pixels are bytes beside the document, never in it.
   attachment: ["id", "mime", "width", "height", "name", "bytes"],
+  // A link image: an address to fetch, a label, and the size it draws at.
+  image: ["src", "alt", "width", "height"],
 } as const satisfies Record<string, readonly string[]>;
 
 const ALLOWED_NODES = new Set<string>(RICH_TEXT_NODE_NAMES);
@@ -226,6 +229,61 @@ function validateTextDelta(delta: unknown, limits: PublishLimits, path: string):
   return null;
 }
 
+const IMAGE_URL_MAX_LENGTH = 2048;
+const IMAGE_ALT_MAX_BYTES = 200;
+
+/**
+ * A link image stores an address, not bytes, so a publish checks that a
+ * reader's browser may fetch it: http or https only, no whitespace, and bounded
+ * in length. The schemes that execute or embed — `javascript:`, `data:`,
+ * `file:` — are refused by name so the reason says which scheme it was; a
+ * handed-in draft can hold any string, and a viewer must never hand it to `src`.
+ * Alt text is a label, so it is capped like the attachment's name.
+ */
+function validateImageAttribute(key: string, value: string | number | boolean): string | null {
+  if (key === "src") {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return "is empty; an image link needs an http or https URL";
+    }
+    if (value.length > IMAGE_URL_MAX_LENGTH) {
+      return `is longer than ${IMAGE_URL_MAX_LENGTH} characters`;
+    }
+    for (const character of value) {
+      if (character.charCodeAt(0) <= 0x20) {
+        return "contains whitespace or a control character";
+      }
+    }
+    if (/^javascript:/iu.test(value)) {
+      return "uses the javascript: scheme; only http and https image links are allowed";
+    }
+    if (/^data:/iu.test(value)) {
+      return "uses the data: scheme; an image link is a URL, never inlined bytes";
+    }
+    if (/^file:/iu.test(value)) {
+      return "uses the file: scheme; only http and https image links are allowed";
+    }
+    if (!/^https?:\/\//iu.test(value)) return "is not an http or https URL";
+    try {
+      new URL(value);
+      return null;
+    } catch {
+      return "is not a valid URL";
+    }
+  }
+  if (key === "alt") {
+    if (typeof value !== "string") return "is not text";
+    return utf8ByteLength(value) <= IMAGE_ALT_MAX_BYTES
+      ? null
+      : `is longer than ${IMAGE_ALT_MAX_BYTES} bytes`;
+  }
+  if (key === "width" || key === "height") {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? null
+      : "is not a non-negative whole number";
+  }
+  return null;
+}
+
 /**
  * The attachment node's attributes are metadata for bytes held elsewhere, so a
  * publish checks their shape: an id the relay could have issued, a type it
@@ -273,7 +331,13 @@ function validateAttributes(nodeName: string, attributes: unknown, path: string)
   const allowed = NODE_ATTRIBUTES[nodeName] ?? new Set<string>();
   for (const [key, value] of Object.entries(attributes)) {
     if (!allowed.has(key)) return `${path} has an unknown attribute "${clip(key)}"`;
-    if (value === null) continue;
+    if (value === null) {
+      // A link without an address projects a placeholder nothing can resolve.
+      if (nodeName === "image" && key === "src") {
+        return `${path}.src is empty; an image link needs an http or https URL`;
+      }
+      continue;
+    }
     const ok =
       typeof value === "string"
         ? true
@@ -283,6 +347,10 @@ function validateAttributes(nodeName: string, attributes: unknown, path: string)
     if (!ok) return `${path}.${key} is not a plain value`;
     if (nodeName === "attachment") {
       const issue = validateAttachmentAttribute(key, value as string | number | boolean);
+      if (issue !== null) return `${path}.${key} ${issue}`;
+    }
+    if (nodeName === "image") {
+      const issue = validateImageAttribute(key, value as string | number | boolean);
       if (issue !== null) return `${path}.${key} ${issue}`;
     }
   }

@@ -277,6 +277,11 @@ test("a peer sees a new description without reloading", async ({ browser }) => {
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
+  // B must be *live* before A acts: a peer that is still loading its snapshot
+  // when the edge is created is asserting on a document it has not read yet,
+  // which is a race in the test, not a slow relay.
+  await expect(pageB.getByTestId("node-card")).toHaveCount(2);
+  await expect(pageB.getByTestId("sync-status")).toHaveText(/Live/);
   await expect(pageB.locator(".react-flow__edge")).toHaveCount(0);
 
   await connectCards(pageA);

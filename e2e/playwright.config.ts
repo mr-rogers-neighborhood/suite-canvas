@@ -26,7 +26,13 @@ export default defineConfig({
   // different 30 s timeout each time (a collab drag, a context menu) while every
   // test passed in isolation. Capping workers and allowing a slower default
   // trades a little wall-clock for a deterministic gate.
-  workers: process.env.CI ? 3 : "50%",
+  //
+  // A fixed number, not "50%": on a 16-core box that meant 8 browsers, and the
+  // two-browser presence specs (an ephemeral-store round trip plus a React Flow
+  // re-render on both sides) lost that race — different test, same shape, every
+  // run. Four is measured: 159/159 twice at 4, and flaking at 6 and 8. The
+  // ceiling is per browser, not per core, so it does not scale with the machine.
+  workers: process.env.CI ? 3 : 4,
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? "github" : "list",

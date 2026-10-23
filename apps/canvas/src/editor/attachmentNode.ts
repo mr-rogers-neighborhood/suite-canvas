@@ -143,11 +143,38 @@ const LOCAL_DATABASE = "suite-attachments";
 const LOCAL_STORE = "bytes";
 const LOCAL_VERSION = 1;
 
+/**
+ * What this browser knows about an image's journey to the relay.
+ *
+ * - `local`: the bytes are here and have *not* been accepted by a relay, so a
+ *   collaborator or another device sees a placeholder.
+ * - `synced`: a relay accepted these bytes under this id.
+ * - `unknown`: this browser holds no record of the image, or holds one written
+ *   before the flag existed. Nothing may be claimed about it.
+ */
+export type AttachmentUploadState = "local" | "synced" | "unknown";
+
 interface LocalRecord {
   id: string;
   mime: string;
   bytes: Uint8Array;
   createdAt: number;
+  /**
+   * Whether the relay accepted these bytes. Optional because records written
+   * before this field existed carry no answer: those read `unknown`, never
+   * `local`, so the editor does not show a caption that might be false.
+   */
+  uploadState?: "local" | "synced";
+  /** When the relay accepted the bytes; absent until then. */
+  uploadedAt?: number;
+}
+
+/** The single mapping from a stored record to what a surface may say about it. */
+function uploadStateOf(record: LocalRecord | null): AttachmentUploadState {
+  if (record === null) return "unknown";
+  return record.uploadState === "local" || record.uploadState === "synced"
+    ? record.uploadState
+    : "unknown";
 }
 
 function openLocalDatabase(): Promise<IDBDatabase> | null {
@@ -166,37 +193,8 @@ function openLocalDatabase(): Promise<IDBDatabase> | null {
   });
 }
 
-/** Keeps a local copy under the node's id. Never throws: a paste must still land. */
-export async function storeLocalAttachment(
-  id: string,
-  bytes: Uint8Array,
-  mime: string,
-): Promise<void> {
-  const database = openLocalDatabase();
-  if (database === null) return;
-  try {
-    const db = await database;
-    const record: LocalRecord = { id, mime, bytes, createdAt: Date.now() };
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(LOCAL_STORE, "readwrite");
-      transaction.objectStore(LOCAL_STORE).put(record);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () =>
-        reject(transaction.error ?? new Error("could not store the image"));
-      transaction.onabort = () => reject(transaction.error ?? new Error("storage aborted"));
-    });
-  } catch (error) {
-    console.warn("[attachments] could not keep a local copy", error);
-  } finally {
-    // `database` is a promise; close the connection once the work is done.
-    void database.then((db) => db.close()).catch(() => {});
-  }
-}
-
-/** The local copy for one id, or null when this browser has none. */
-export async function readLocalAttachment(
-  id: string,
-): Promise<{ bytes: Uint8Array; mime: string } | null> {
+/** One local record, including what this browser knows about its upload. */
+async function readLocalRecord(id: string): Promise<LocalRecord | null> {
   const database = openLocalDatabase();
   if (database === null || !ATTACHMENT_ID_PATTERN.test(id)) return null;
   try {
@@ -208,8 +206,7 @@ export async function readLocalAttachment(
         request.onsuccess = () => resolve(request.result as LocalRecord | undefined);
         request.onerror = () => reject(request.error ?? new Error("could not read the image"));
       });
-      if (!record) return null;
-      return { bytes: new Uint8Array(record.bytes), mime: record.mime };
+      return record ?? null;
     } finally {
       db.close();
     }
@@ -217,6 +214,79 @@ export async function readLocalAttachment(
     console.warn("[attachments] could not read the local copy", error);
     return null;
   }
+}
+
+/** Writes one record whole. Never throws: a paste must still land. */
+async function putLocalRecord(record: LocalRecord): Promise<void> {
+  const database = openLocalDatabase();
+  if (database === null) return;
+  try {
+    const db = await database;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(LOCAL_STORE, "readwrite");
+        transaction.objectStore(LOCAL_STORE).put(record);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () =>
+          reject(transaction.error ?? new Error("could not store the image"));
+        transaction.onabort = () => reject(transaction.error ?? new Error("storage aborted"));
+      });
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    console.warn("[attachments] could not keep a local copy", error);
+  }
+}
+
+/**
+ * Keeps a local copy under the node's id, marked `local`: these bytes exist
+ * only on this device until a relay accepts them. Never throws: a paste must
+ * still land even when storage is unavailable.
+ */
+export async function storeLocalAttachment(
+  id: string,
+  bytes: Uint8Array,
+  mime: string,
+): Promise<void> {
+  await putLocalRecord({ id, mime, bytes, createdAt: Date.now(), uploadState: "local" });
+}
+
+/**
+ * Records that a relay accepted these bytes, so a later read says `synced`.
+ *
+ * Flipping is a no-op when this browser holds no record: a paste that uploaded
+ * first never wrote one, and "no record" already reads `unknown`, which shows
+ * no caption. Called after a successful upload so a retry under an id this
+ * browser had kept locally clears the pending notice.
+ */
+export async function markAttachmentUploaded(id: string): Promise<void> {
+  const record = await readLocalRecord(id);
+  if (record === null || record.uploadState === "synced") return;
+  await putLocalRecord({ ...record, uploadState: "synced", uploadedAt: Date.now() });
+}
+
+/**
+ * What this browser knows about one attachment: `local`, `synced` or
+ * `unknown`. The one accessor every surface uses, so the editor and a future
+ * retry/export UI cannot disagree about the same record. A record written
+ * before the flag existed reads `unknown`, not `local`.
+ */
+export async function attachmentUploadState(id: string): Promise<AttachmentUploadState> {
+  return uploadStateOf(await readLocalRecord(id));
+}
+
+/** The local copy for one id, plus the upload fact stored beside it. */
+export async function readLocalAttachment(
+  id: string,
+): Promise<{ bytes: Uint8Array; mime: string; uploadState: AttachmentUploadState } | null> {
+  const record = await readLocalRecord(id);
+  if (record === null) return null;
+  return {
+    bytes: new Uint8Array(record.bytes),
+    mime: record.mime,
+    uploadState: uploadStateOf(record),
+  };
 }
 
 /** Drops a local copy, used once the relay holds the bytes. */

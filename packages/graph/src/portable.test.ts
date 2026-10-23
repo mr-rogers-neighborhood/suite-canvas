@@ -69,6 +69,28 @@ describe("portable export", () => {
     expect(card?.body.some((node) => node.type === "propertyBlock")).toBe(true);
   });
 
+  it("should keep a link image in both projections, as a URL and a label", () => {
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureBoard();
+    workspace.createCard({ id: "link", boardId: board.id, position: { x: 0, y: 0 } });
+    addText(workspace.getTitle("link"), "Wiring plan");
+    const paragraph = addNode(workspace.getContent("link"), "paragraph");
+    addText(paragraph, "Before the photo.");
+    addNode(workspace.getContent("link"), "image", {
+      src: "https://cdn.example.com/photos/relay-rack.png",
+      alt: "Rack elevation",
+    });
+    workspace.doc.commit({ origin: "test" });
+
+    const portable = exportPortable(workspace);
+    const card = portable.cards.find((entry) => entry.id === "link");
+    expect(card?.body.some((node) => node.type === "image")).toBe(true);
+    expect(portable.markdown).toContain(
+      "![Rack elevation](https://cdn.example.com/photos/relay-rack.png)",
+    );
+  });
+
   it("should write readable Markdown with boards, properties, links and inbox", () => {
     const { workspace } = fixture();
     const { markdown } = exportPortable(workspace);

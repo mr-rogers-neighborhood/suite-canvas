@@ -1,4 +1,5 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
+import { startBodyEdit } from "../interactions";
 
 // Every journey here opens a second browser context and waits on a live
 // projection room, so they contend for the same worker and collab server.
@@ -245,9 +246,7 @@ test("a selection link projects exactly the shared cards and stays a snapshot", 
 
   // Live: an owner edit reaches the viewer.
   const sharedA = cards(page).filter({ hasText: "Shared A" });
-  await sharedA.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
-  await expect(sharedA.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
+  await startBodyEdit(page, sharedA);
   await page.keyboard.type("Edited by the owner");
   await page.keyboard.press("Escape");
   await expect(
@@ -276,9 +275,7 @@ test("a reference outside a projection reads as not shared, not unavailable", as
   await createNote(page, "Subject card");
 
   const subject = cards(page).filter({ hasText: "Subject card" });
-  await subject.getByTestId("card-menu").click();
-  await page.getByRole("menuitem", { name: "Edit body" }).click();
-  await expect(subject.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(1);
+  await startBodyEdit(page, subject);
   await page.keyboard.type("@Target");
   await expect(page.getByTestId("mention-picker")).toBeVisible();
   await page.keyboard.press("Enter");

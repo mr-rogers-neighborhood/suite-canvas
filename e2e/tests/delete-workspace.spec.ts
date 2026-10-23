@@ -33,7 +33,7 @@ async function cachedDocumentRows(page: Page, workspaceId: string): Promise<numb
   return page.evaluate(async (id) => {
     const open = () =>
       new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open("suite-loro");
+        const request = indexedDB.open("suite-loro-scene");
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

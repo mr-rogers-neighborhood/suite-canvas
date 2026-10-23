@@ -25,6 +25,12 @@ export interface DraggingState {
    * stays a single payload instead of per-node streaming.
    */
   nodeIds?: string[];
+  /**
+   * Board the gesture runs on. A card may be placed on more than one board, so
+   * the scene needs to know which placement `position` belongs to; the flat
+   * flow surface can derive it from the peer's board and leaves this unset.
+   */
+  boardId?: string;
 }
 
 /** A connector a peer has clicked, so peers can see who is working on it. */
@@ -81,6 +87,8 @@ export interface ResizingState {
   position: PointerState;
   width: number;
   height: number;
+  /** Board the gesture runs on; see `DraggingState.boardId`. */
+  boardId?: string;
 }
 
 /** A link end a peer is dragging toward another connector. */

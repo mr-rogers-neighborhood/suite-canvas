@@ -124,7 +124,7 @@ export function navigateTo(url: string): void {
   window.location.assign(url);
 }
 
-/** A new workspace starts empty; the flag keeps the starter demo cards out. */
+/** A new workspace starts from the example seed; `fresh=1` marks it as just created. */
 export function openNewWorkspace(): void {
   const id = newWorkspaceId();
   const ownerKey = generateOwnerKey();

@@ -3,7 +3,13 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { LoroDoc, LoroList, LoroMap, LoroText, VersionVector } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LoroIndexeddbPersistence, PERSIST_CHANNEL_PREFIX, versionCovers } from "./loroPersistence";
+import {
+  deleteWorkspaceDocument,
+  LoroIndexeddbPersistence,
+  PERSIST_CHANNEL_PREFIX,
+  versionCovers,
+  WORKSPACE_DB_NAME,
+} from "./loroPersistence";
 
 /**
  * A2: two tabs over one IndexedDB. A compacts while B holds unmerged text; B
@@ -105,7 +111,7 @@ function writeTitle(workspace: WorkspaceDocument, cardId: string, text: string):
 
 async function rows(): Promise<{ tabId?: string; version?: Uint8Array }[]> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open("suite-loro");
+    const open = indexedDB.open(WORKSPACE_DB_NAME);
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error);
   });
@@ -126,7 +132,7 @@ async function rows(): Promise<{ tabId?: string; version?: Uint8Array }[]> {
 
 async function storedSnapshot(): Promise<{ updatedAt: number; version?: Uint8Array } | undefined> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open("suite-loro");
+    const open = indexedDB.open(WORKSPACE_DB_NAME);
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error);
   });
@@ -331,7 +337,7 @@ describe("two tabs on one workspace", () => {
     // A row from before A2, or from a build that did not record a version:
     // nothing can prove the snapshot contains it.
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const open = indexedDB.open("suite-loro");
+      const open = indexedDB.open(WORKSPACE_DB_NAME);
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
     });
@@ -429,5 +435,59 @@ describe("without the Web Locks API", () => {
 describe("the channel name", () => {
   it("is scoped per workspace, so two workspaces never share updates", () => {
     expect(`${PERSIST_CHANNEL_PREFIX}${WORKSPACE}`).toBe("suite-persist:workspace-1");
+  });
+});
+
+const LEGACY_DB_NAME = "suite-loro";
+
+/** Opens (and, with `upgrade`, creates) a database by its literal name. */
+function openNamed(name: string, upgrade?: (db: IDBDatabase) => void): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(name, 1);
+    if (upgrade) open.onupgradeneeded = () => upgrade(open.result);
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error);
+  });
+}
+
+describe("the local database name", () => {
+  it("starts from the new database and never reads the previous stage's cache", async () => {
+    // A document cached by the previous build, under the old database name.
+    const legacyDoc = new LoroDoc();
+    workspaceOf(legacyDoc).createBoard({ id: "board-legacy", name: "Legacy" });
+    const legacyBytes = legacyDoc.export({ mode: "snapshot" });
+    const legacy = await openNamed(LEGACY_DB_NAME, (db) => {
+      db.createObjectStore("snapshots", { keyPath: "id" });
+      const updates = db.createObjectStore("updates", { keyPath: "id", autoIncrement: true });
+      updates.createIndex("workspaceId", "workspaceId");
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = legacy.transaction("snapshots", "readwrite");
+      transaction.objectStore("snapshots").put({
+        id: WORKSPACE,
+        bytes: legacyBytes,
+        updatedAt: Date.now(),
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+    });
+    legacy.close();
+
+    expect(WORKSPACE_DB_NAME).not.toBe(LEGACY_DB_NAME);
+
+    const doc = new LoroDoc();
+    const persistence = new LoroIndexeddbPersistence(WORKSPACE, doc, { tabId: "tab-a" });
+    await persistence.load();
+    // The rename is the reset: the old snapshot is not imported.
+    expect(workspaceOf(doc).listBoards()).toHaveLength(0);
+
+    // Writes and deletes use the new name, so "Forget this browser" still works.
+    workspaceOf(doc).createBoard({ id: "board-new", name: "New" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await rows()).length).toBeGreaterThan(0);
+    await deleteWorkspaceDocument(WORKSPACE);
+    expect(await rows()).toHaveLength(0);
+    expect(await storedSnapshot()).toBeUndefined();
+    persistence.destroy();
   });
 });

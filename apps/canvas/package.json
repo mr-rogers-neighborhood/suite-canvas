@@ -24,6 +24,7 @@
     "@tiptap/react": "^3.32.0",
     "@tiptap/starter-kit": "^3.32.0",
     "@tiptap/suggestion": "^3.32.0",
+    "@vibecook/ice": "0.16.0",
     "@xyflow/react": "^12.12.0",
     "loro-adaptors": "^0.6.1",
     "loro-crdt": "^1.16.4",

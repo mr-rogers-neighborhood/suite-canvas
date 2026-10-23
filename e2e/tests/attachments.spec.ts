@@ -281,8 +281,8 @@ test("a pasted image survives export, a storage wipe and import", async ({
       });
     let snapshots: string[] = [];
     let updates = 0;
-    if (databases.includes("suite-loro")) {
-      const database = await open("suite-loro");
+    if (databases.includes("suite-loro-scene")) {
+      const database = await open("suite-loro-scene");
       try {
         snapshots = await new Promise<string[]>((resolve, reject) => {
           const request = database
@@ -307,7 +307,7 @@ test("a pasted image survives export, a storage wipe and import", async ({
     return { localStorageKeys: Object.keys(window.localStorage), databases, snapshots, updates };
   });
   expect(remaining.databases).not.toContain("suite-attachments");
-  // The launcher itself opens an empty `suite-loro`; what matters is that no
+  // The launcher itself opens an empty `suite-loro-scene`; what matters is that no
   // row of this workspace's document survived.
   expect(remaining.snapshots).not.toContain(workspaceId);
   expect(remaining.updates).toBe(0);

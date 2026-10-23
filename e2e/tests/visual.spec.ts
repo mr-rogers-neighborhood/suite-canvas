@@ -8,7 +8,8 @@ import { withOwnerKey } from "./ownerUrl";
 /**
  * Visual regression baselines for the surfaces where layout is the contract:
  * the mention/property chips that carry share-boundary state, the sharing and
- * library dialogs, the card shell, and two real app states.
+ * library dialogs, the card shell, the recursive-portal scene projection, and
+ * two real app states.
  *
  * Baselines live in `tests/visual/` (committed), not in Playwright's default
  * `tests/visual.spec.ts-snapshots/` sibling: this file sets the path template
@@ -32,6 +33,13 @@ const STORYBOOK_URL = `http://127.0.0.1:${STORYBOOK_PORT}`;
  */
 const COMPONENT_MAX_DIFF_PIXELS = 60;
 const CANVAS_MAX_DIFF_PIXELS = 250;
+/**
+ * The projected scene repaints cards, portal miniatures and connector curves
+ * in page coordinates, so it carries more antialiased geometry than the DOM
+ * board while still moving whole boxes on a real layout change. The extra
+ * headroom is for glyph and edge hinting only.
+ */
+const SCENE_MAX_DIFF_PIXELS = 350;
 
 const STABILITY = {
   animations: "disabled",
@@ -276,6 +284,32 @@ test.describe("visual: app", () => {
         page.getByRole("tab").first(),
         page.getByTestId("sync-status"),
       ],
+    });
+  });
+});
+
+test.describe("visual: scene", () => {
+  test.use({
+    // The scene story decorator is a fixed 1100x800 frame; a smaller viewport
+    // would clip the screenshot target.
+    viewport: { width: 1200, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+  });
+
+  test("recursive portals story", async ({ page }) => {
+    // `scene-layer` is an absolutely positioned overlay with no box of its
+    // own (every child is absolute), so Playwright sees it as hidden and cannot
+    // screenshot it. The decorator wrapper is the visible frame the projection
+    // is drawn into.
+    const target = page.locator("#storybook-root > div");
+    await openStory(page, "canvas-scenelayer--recursive-portals", target);
+    // The wrapper exists before the projection paints; wait for the cards and
+    // the expanded portal child so the frame is complete.
+    await expect(page.getByTestId("scene-card")).toHaveCount(6);
+    await expect(page.getByTestId("scene-portal-child")).toHaveCount(1);
+    await expectStable("scene-recursive-portals.png", target, {
+      maxDiffPixels: SCENE_MAX_DIFF_PIXELS,
     });
   });
 });

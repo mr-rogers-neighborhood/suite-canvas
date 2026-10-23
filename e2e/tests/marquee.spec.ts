@@ -19,9 +19,9 @@ import {
 import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
-/** A blank board: `fresh=1` skips the two starter cards, so counts are exact. */
+/** A blank board: `blank=1` seeds nothing, so counts are exact. */
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?fresh=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`);
+  withOwnerKey(`/?blank=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`);
 
 /**
  * Gate A10, §6.3: a marquee must never break the page.

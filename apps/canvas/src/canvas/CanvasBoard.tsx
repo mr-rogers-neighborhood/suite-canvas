@@ -1,5 +1,5 @@
 import type { Card, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
-import { sectionColors, sectionMembership, sectionMovePlan, unionRect } from "@suite/graph";
+import { sectionMembership, sectionMovePlan, unionRect } from "@suite/graph";
 import {
   Background,
   type Connection,
@@ -23,7 +23,6 @@ import {
   useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { DEFAULT_FRACTAL_RECIPE, LAYOUT_PATTERNS, type LayoutPattern } from "@suite/scene";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
@@ -31,11 +30,10 @@ import { isPortalCard, portalTargetId } from "../cards/portal";
 import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import { ContextMenu } from "../components/ContextMenu";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
-import { applyBoardFractal } from "../scene/layoutCommand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -48,7 +46,6 @@ import {
   dragRects,
   layerActions,
   orderedSelection,
-  selectionSummary,
 } from "./multiSelect";
 import { nodeTypes } from "./NoteNode";
 import type { CardNodeData } from "./nodeData";
@@ -60,6 +57,7 @@ import { PresenceLayer } from "./PresenceLayer";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
+import { useCanvasMenuItems } from "./useCanvasMenuItems";
 import { WhiteboardNode } from "./WhiteboardNode";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
@@ -1158,22 +1156,6 @@ export function CanvasBoard() {
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
   );
 
-  const arrangeFractal = useCallback(
-    (pattern: LayoutPattern) => {
-      if (!canEditLayout || !activeBoardId) return;
-      try {
-        applyBoardFractal(workspace, {
-          snapshot,
-          rootBoardId: activeBoardId,
-          recipe: { ...DEFAULT_FRACTAL_RECIPE, pattern },
-        });
-      } catch (error) {
-        console.warn("[layout] could not apply fractal layout", error);
-      }
-    },
-    [workspace, snapshot, activeBoardId, canEditLayout],
-  );
-
   const createWhiteboardAt = useCallback(
     (position: { x: number; y: number }) => {
       if (!canCreateContent || !activeBoardId) return;
@@ -1748,14 +1730,6 @@ export function CanvasBoard() {
     [workspace, canEditLayout, setSelectedNodeIds, stopEditing],
   );
 
-  const otherBoards = useCallback(
-    (boardId: string | null) =>
-      snapshot.boards
-        .filter((board) => board.id !== boardId)
-        .map((board) => ({ id: board.id, name: board.name })),
-    [snapshot.boards],
-  );
-
   const commitEdgeDescription = useCallback(
     (value: string) => {
       if (!edgeDescription) return;
@@ -1768,405 +1742,51 @@ export function CanvasBoard() {
 
   const cancelEdgeDescription = useCallback(() => setEdgeDescription(null), []);
 
-  const menuItems = useMemo<ContextMenuItem[]>(() => {
-    // Menus are built from what this session may do, so a share never renders
-    // an action its publish would reject. A viewer gets no menu at all.
-    if (!contextMenu) return [];
-    if (contextMenu.kind === "canvas") {
-      if (!canCreateContent) return [];
-      const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
-      // Every board is a possible target; creating one requires the board
-      // capability, so a board share without it only sees existing boards.
-      const portalItems: ContextMenuItem[] = [
-        ...snapshot.boards
-          .filter((board) => board.id !== activeBoardId)
-          .map((board) => ({
-            label: board.name,
-            onSelect: () => createPortalAt(flowPosition, board.id),
-          })),
-        ...(canCreateBoards
-          ? [
-              {
-                label: "New board and portal",
-                onSelect: () => createPortalToNewBoard(flowPosition),
-              },
-            ]
-          : []),
-      ];
-      return [
-        {
-          label: "New note",
-          onSelect: () => {
-            if (contextMenu.flowPosition) createNoteAt(contextMenu.flowPosition);
-          },
-        },
-        {
-          label: "New whiteboard",
-          onSelect: () => createWhiteboardAt(flowPosition),
-        },
-        {
-          label: "New section",
-          onSelect: () => createSectionAt(flowPosition),
-        },
-        ...(canEditLayout
-          ? [
-              {
-                label: "Arrange fractally",
-                items: LAYOUT_PATTERNS.map((pattern) => ({
-                  label: pattern.charAt(0).toUpperCase() + pattern.slice(1),
-                  onSelect: () => arrangeFractal(pattern),
-                })),
-              },
-            ]
-          : []),
-        ...(portalItems.length > 0
-          ? [
-              {
-                label: "New portal",
-                items: portalItems,
-              },
-            ]
-          : []),
-        ...(selectedNodeIds.length > 0
-          ? [
-              {
-                label: `New section from ${selectedNodeIds.length} card${
-                  selectedNodeIds.length === 1 ? "" : "s"
-                }`,
-                onSelect: () => createSectionAt(flowPosition, true),
-              },
-            ]
-          : []),
-      ];
-    }
+  // React Flow keeps its own node selection, so the menu mirrors a selection
+  // into it after the store write and highlighting follows.
+  const selectNodesInFlow = useCallback(
+    (ids: string[]) => {
+      store.getState().addSelectedNodes(ids);
+    },
+    [store],
+  );
 
-    if (contextMenu.kind === "section" && contextMenu.sectionId) {
-      if (!canEditLayout) return [];
-      const sectionId = contextMenu.sectionId;
-      const memberIds = [...sectionMembershipMap]
-        .filter(([, id]) => id === sectionId)
-        .map(([cardId]) => cardId);
-      return [
-        {
-          label: "Rename section",
-          onSelect: () => setEditingSection(sectionId),
-        },
-        {
-          label: "Color",
-          items: sectionColors.map((color) => ({
-            label: color.charAt(0).toUpperCase() + color.slice(1),
-            onSelect: () => workspace.setSectionColor(sectionId, color),
-          })),
-        },
-        {
-          label: `Select ${memberIds.length} card${memberIds.length === 1 ? "" : "s"}`,
-          onSelect: () => {
-            setSelectedNodeIds(memberIds);
-            store.getState().addSelectedNodes(memberIds);
-            selectSection(null);
-          },
-        },
-        ...(canManageStructure
-          ? [
-              {
-                label: "Delete section",
-                danger: true,
-                onSelect: () => {
-                  workspace.deleteSection(sectionId);
-                  selectSection(null);
-                },
-              },
-            ]
-          : []),
-      ];
-    }
-
-    const nodeId = contextMenu.nodeId;
-    const edgeId = contextMenu.edgeId;
-
-    if (contextMenu.kind === "edge" && edgeId) {
-      if (!canEditLayout) return [];
-      const edge = workspace.getEdge(edgeId);
-      return [
-        {
-          label: edge?.label ? "Edit description…" : "Add description…",
-          onSelect: () => startEdgeDescription(edgeId, { x: contextMenu.x, y: contextMenu.y }),
-        },
-        ...(edge?.label
-          ? [
-              {
-                label: "Remove description",
-                danger: true,
-                onSelect: () => workspace.setEdgeLabel(edgeId, null),
-              },
-            ]
-          : []),
-        {
-          label: "Reverse direction",
-          onSelect: () => workspace.reverseEdge(edgeId),
-        },
-        {
-          label: edge?.bidirectional ? "Make one-way" : "Make bidirectional",
-          onSelect: () => workspace.setEdgeBidirectional(edgeId, !edge?.bidirectional),
-        },
-        {
-          label: "Path",
-          items: [
-            {
-              label: edge?.path === "bezier" ? "Curved ✓" : "Curved",
-              onSelect: () => workspace.setEdgePath(edgeId, "bezier"),
-            },
-            {
-              label: edge?.path === "straight" ? "Straight ✓" : "Straight",
-              onSelect: () => workspace.setEdgePath(edgeId, "straight"),
-            },
-            {
-              label: edge?.path === "step" ? "Step ✓" : "Step",
-              onSelect: () => workspace.setEdgePath(edgeId, "step"),
-            },
-            {
-              label: edge?.path === "smoothstep" ? "Smooth step ✓" : "Smooth step",
-              onSelect: () => workspace.setEdgePath(edgeId, "smoothstep"),
-            },
-          ],
-        },
-        {
-          label: "Delete link",
-          danger: true,
-          onSelect: () => workspace.removeEdge(edgeId),
-        },
-      ];
-    }
-
-    if (contextMenu.kind === "connector") {
-      if (!canManageStructure) return [];
-      return [
-        {
-          label: "Reposition Connector",
-          onSelect: () => {
-            if (nodeId && contextMenu.connectorId) {
-              setSelectedConnector({ nodeId, connectorId: contextMenu.connectorId });
-            }
-          },
-        },
-        {
-          label: "Delete connector",
-          danger: true,
-          onSelect: () => {
-            if (nodeId && contextMenu.connectorId) {
-              workspace.removeConnector(nodeId, contextMenu.connectorId);
-              setSelectedConnector(null);
-            }
-          },
-        },
-      ];
-    }
-
-    // Right-clicking a card that is part of a multi-selection acts on the whole
-    // selection; a lone card keeps the single-card menu.
-    const selection = selectionSummary(selectedNodeIds);
-    if (nodeId && selection.multiple && selection.ids.includes(nodeId)) {
-      const anchor = contextMenu.flowPosition ?? { x: 0, y: 0 };
-      return [
-        ...(canCreateContent
-          ? [
-              {
-                label: `Duplicate ${selection.noun}`,
-                onSelect: () => duplicateCards(selection.ids),
-              },
-            ]
-          : []),
-        ...(canCreateContent
-          ? [
-              {
-                label: `New section from ${selection.noun}`,
-                onSelect: () => createSectionAt(anchor, true),
-              },
-            ]
-          : []),
-        ...(canEditLayout
-          ? [
-              {
-                label: "Position",
-                items: [
-                  {
-                    label: "Bring Forward",
-                    onSelect: () => changeLayerBulk(selection.ids, "forward"),
-                  },
-                  {
-                    label: "Bring to Front",
-                    onSelect: () => changeLayerBulk(selection.ids, "front"),
-                  },
-                  {
-                    label: "Send Back",
-                    onSelect: () => changeLayerBulk(selection.ids, "backward"),
-                  },
-                  {
-                    label: "Send to Back",
-                    onSelect: () => changeLayerBulk(selection.ids, "back"),
-                  },
-                ],
-              },
-              {
-                label: "Remove from board",
-                onSelect: () => unplaceSelected(),
-              },
-            ]
-          : []),
-        // Sharing is a link owner's right, and only a subset with two or more
-        // cards is worth a link; the dialog opens on the selection scope.
-        ...(canManageLinks
-          ? [
-              {
-                label: `Share ${selection.noun}\u2026`,
-                onSelect: () => requestShare("selection"),
-              },
-            ]
-          : []),
-        // Destructive entries stay last.
-        ...(canManageTrash
-          ? [
-              {
-                label: "Delete cards",
-                danger: true,
-                onSelect: () => trashSelected(),
-              },
-            ]
-          : []),
-      ];
-    }
-
-    const moveTargets = otherBoards(activeBoardId);
-    const portalTarget = nodeId ? portalTargetId(cardsById.get(nodeId)) : null;
-    return [
-      ...(nodeId && portalTarget
-        ? [
-            {
-              label: "Open portal",
-              onSelect: () => enterPortal(nodeId, portalTarget),
-            },
-          ]
-        : []),
-      ...(canCreateContent
-        ? [
-            {
-              label: "Duplicate",
-              onSelect: () => {
-                if (nodeId) duplicateCards([nodeId]);
-              },
-            },
-          ]
-        : []),
-      ...(canEditLayout && moveTargets.length > 0
-        ? [
-            {
-              label: "Move to board",
-              items: moveTargets.map((board) => ({
-                label: board.name,
-                onSelect: () => {
-                  if (nodeId) moveCardToBoard(nodeId, board.id);
-                },
-              })),
-            },
-          ]
-        : []),
-      ...(canManageStructure
-        ? [
-            {
-              label: "Add connector",
-              onSelect: () => {
-                if (nodeId) workspace.addConnector(nodeId);
-              },
-            },
-          ]
-        : []),
-      ...(canEditLayout
-        ? [
-            {
-              label: "Position",
-              items: [
-                {
-                  label: "Bring Forward",
-                  onSelect: () => nodeId && changeLayer(nodeId, "forward"),
-                },
-                {
-                  label: "Bring to Front",
-                  onSelect: () => nodeId && changeLayer(nodeId, "front"),
-                },
-                {
-                  label: "Send Back",
-                  onSelect: () => nodeId && changeLayer(nodeId, "backward"),
-                },
-                {
-                  label: "Send to Back",
-                  onSelect: () => nodeId && changeLayer(nodeId, "back"),
-                },
-              ],
-            },
-            {
-              label: "Remove from board",
-              onSelect: () => {
-                if (nodeId && activeBoardId) {
-                  workspace.unplaceCard(activeBoardId, nodeId);
-                  setSelectedNodeIds([]);
-                  setSelectedConnector(null);
-                }
-              },
-            },
-          ]
-        : []),
-      ...(canManageTrash
-        ? [
-            {
-              label: "Delete card",
-              danger: true,
-              onSelect: () => {
-                if (nodeId) {
-                  workspace.trashCard(nodeId);
-                  setSelectedNodeIds([]);
-                  setSelectedConnector(null);
-                }
-              },
-            },
-          ]
-        : []),
-    ];
-  }, [
+  // One menu for every canvas surface: the builder lives in a hook so the
+  // scene renderer can open the exact same items.
+  const menuItems = useCanvasMenuItems({
     contextMenu,
     workspace,
+    snapshot,
     activeBoardId,
-    createNoteAt,
-    createWhiteboardAt,
-    arrangeFractal,
-    createSectionAt,
-    duplicateCards,
-    moveCardToBoard,
-    otherBoards,
-    changeLayer,
-    changeLayerBulk,
-    unplaceSelected,
-    trashSelected,
     selectedNodeIds,
     sectionMembershipMap,
-    setEditingSection,
-    selectSection,
-    store,
     setSelectedNodeIds,
     setSelectedConnector,
-    startEdgeDescription,
+    selectSection,
+    setEditingSection,
     canCreateContent,
+    canCreateBoards,
+    canEditContent,
     canEditLayout,
-    canManageTrash,
     canManageStructure,
+    canManageTrash,
     canManageLinks,
-    requestShare,
-    snapshot.boards,
+    createNoteAt,
+    createWhiteboardAt,
+    createSectionAt,
     createPortalAt,
     createPortalToNewBoard,
-    canCreateBoards,
-    cardsById,
+    duplicateCards,
+    startEdgeDescription,
     enterPortal,
-  ]);
+    moveCardToBoard,
+    unplaceSelected,
+    trashSelected,
+    changeLayer,
+    changeLayerBulk,
+    requestShare,
+    syncCardSelection: selectNodesInFlow,
+  });
 
   return (
     <div

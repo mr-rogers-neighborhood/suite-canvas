@@ -1,0 +1,38 @@
+/* Live card faces mounted by the scene surface; geometry belongs to SceneLayer. */
+
+.scene-card-view {
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* A whiteboard has no Tiptap body: the preview fills the box and opens focus. */
+.scene-card-view__whiteboard {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0.35em;
+  cursor: zoom-in;
+}
+
+.scene-card-view__drawing {
+  width: 100%;
+  height: 100%;
+}
+
+/* Shown while a card's text containers have not arrived yet. */
+.scene-card-view__placeholder {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0.5em;
+  overflow: hidden;
+  border: 1px dashed var(--hairline);
+  border-radius: 0.45em;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
+}

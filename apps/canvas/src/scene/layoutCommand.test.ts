@@ -122,6 +122,32 @@ describe("planBoardFractal", () => {
     expect(leafCards).toHaveLength(2);
   });
 
+  it("arranges a board reachable by two portals once", () => {
+    const workspace = new WorkspaceDocument();
+    const root = workspace.ensureBoard();
+    const middle = workspace.createBoard({ name: "Middle" });
+    const leaf = workspace.createBoard({ name: "Leaf" });
+    workspace.createCard({ boardId: root.id, position: { x: 0, y: 0 } });
+    // Leaf is reachable directly from the root and again through Middle.
+    workspace.createPortalCard({ boardId: root.id, targetBoardId: leaf.id });
+    workspace.createPortalCard({ boardId: root.id, targetBoardId: middle.id });
+    workspace.createPortalCard({ boardId: middle.id, targetBoardId: leaf.id });
+    workspace.createCard({ boardId: leaf.id, position: { x: 0, y: 0 } });
+
+    const snapshot = snapshotOf(workspace);
+    const plan = planBoardFractal({ snapshot, rootBoardId: root.id, recipe: recipe() });
+
+    expect(new Set(plan.boards)).toEqual(new Set([root.id, middle.id, leaf.id]));
+    expect(plan.boards.filter((boardId) => boardId === leaf.id)).toHaveLength(1);
+    expect(plan.placements.filter((entry) => entry.boardId === leaf.id)).toHaveLength(1);
+
+    // The plan is valid, so it can be applied: a duplicate placement would be
+    // rejected outright.
+    expect(() =>
+      applyBoardFractal(workspace, { snapshot, rootBoardId: root.id, recipe: recipe() }),
+    ).not.toThrow();
+  });
+
   it("stops at a portal cycle and at the depth cap", () => {
     const workspace = new WorkspaceDocument();
     const a = workspace.ensureBoard();

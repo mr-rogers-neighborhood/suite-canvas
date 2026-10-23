@@ -183,9 +183,15 @@ export function layoutPlanFromScene(plan: SceneLayoutPlan): LayoutPlan {
   const placements: LayoutPlanPlacement[] = [];
   const portalSizes: Record<string, LayoutPlanSize> = {};
   const boards: string[] = [];
+  const visited = new Set<string>();
 
   const visit = (board: SceneLayoutPlan): void => {
-    if (!boards.includes(board.boardId)) boards.push(board.boardId);
+    // A board can be reachable by two portals (a second path, or a cycle that
+    // was cut). It is arranged once: repeating its placements would make the
+    // plan invalid, because a card has one placement per board.
+    if (visited.has(board.boardId)) return;
+    visited.add(board.boardId);
+    boards.push(board.boardId);
     for (const portal of board.portals) {
       portalSizes[portal.cardId] = { width: portal.frame.width, height: portal.frame.height };
       if (portal.child) visit(portal.child);

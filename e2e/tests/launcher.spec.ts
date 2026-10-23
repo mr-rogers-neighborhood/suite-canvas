@@ -29,13 +29,25 @@ test("starts on the workspace launcher", async ({ page }) => {
   await expect(page.getByTestId("workspace-launcher")).toContainText("Recent workspaces");
 });
 
-test("creates an empty workspace from the launcher", async ({ page }) => {
+test("seeds the example workspace from the launcher", async ({ page }) => {
   await page.getByTestId("launcher-new").click();
   // Creating a workspace offers the passphrase choice first; this test is about
-  // the empty board, so it takes the documented skip path.
+  // the seeded example, so it takes the documented skip path.
   await expect(page.getByTestId("recovery-creation")).toBeVisible();
   await page.getByTestId("recovery-creation-skip").click();
   await expect(page).toHaveURL(/workspace=/);
+  await expect(page.locator('.app-canvas[data-ready="true"]')).toBeVisible({ timeout: 15_000 });
+
+  // The example workspace, not an empty board: Atlas, Research and Sources.
+  await expect(page.getByTestId("empty-board")).toHaveCount(0);
+  await expect(page.getByTestId("board-tab-board-1")).toBeVisible();
+  await expect(page.getByTestId("board-tab-demo-board-research")).toBeVisible();
+  await expect(page.getByTestId("board-tab-demo-board-sources")).toBeVisible();
+  await expect(page.getByText("Welcome to Atlas").first()).toBeVisible();
+});
+
+test("starts a blank board when asked for one", async ({ page }) => {
+  await page.goto(`/?blank=1&workspace=e2e-launcher-blank-${Date.now()}-${++sequence}`);
   await expect(page.getByTestId("empty-board")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);
 

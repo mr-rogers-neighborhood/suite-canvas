@@ -1,8 +1,18 @@
-import type { Card, CardType, Drawing, Tag, WorkspaceDocument } from "@suite/graph";
+import {
+  type Card,
+  type CardType,
+  type Drawing,
+  type LayerAction,
+  sectionMembership,
+  sectionMovePlan,
+  type Tag,
+  type WorkspaceDocument,
+} from "@suite/graph";
 import {
   buildScene,
   type Camera,
   DEFAULT_SCENE_CONFIG,
+  hitTest,
   type LodKind,
   type LodState,
   type PortalGateState,
@@ -30,17 +40,23 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EdgeDescriptionInput } from "../canvas/EdgeDescription";
 import { prefersReducedMotion } from "../canvas/localEasing";
-import { type BoardMiniatureModel, boardMiniature } from "../canvas/portalMiniature";
+import { portalSizeForBounds } from "../canvas/PortalCard";
+import { type BoardMiniatureModel, boardBounds, boardMiniature } from "../canvas/portalMiniature";
+import { useCanvasMenuItems } from "../canvas/useCanvasMenuItems";
 import { typesById } from "../cards/cardTypes";
-import { isWhiteboardCard } from "../cards/whiteboard";
+import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
+import { ContextMenu } from "../components/ContextMenu";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { sceneOutlineItems } from "./outlineAdapter";
 import { SceneLayer } from "./SceneLayer";
 import { SceneOutline, type SceneOutlineItem } from "./SceneOutline";
+import { type SceneConnectorCreate, useSceneInteraction } from "./useSceneInteraction";
 
 const EMPTY_NODES = [] as never[];
 const EMPTY_EDGES = [] as never[];
@@ -173,11 +189,11 @@ function SceneBadge({
         countLabel(counts.cards, "card"),
         countLabel(counts.portals, "portal"),
       ].join(" \u00b7 ")
-    : "Read-only projection of the workspace graph";
+    : "Infinite, fractal scene";
 
   return (
     <div className="scene-board__badge" data-testid="scene-preview-badge">
-      <span className="scene-board__badge-title">Scene preview</span>
+      <span className="scene-board__badge-title">Infinite canvas</span>
       <span className="scene-board__counts" data-testid="scene-preview-counts">
         {summary}
       </span>
@@ -258,6 +274,8 @@ function SceneCanvas({
         selectionOnDrag={false}
         zoomOnDoubleClick={false}
         deleteKeyCode={null}
+        // Left drag is the scene marquee; middle/right keep React Flow's pan.
+        panOnDrag={[1, 2]}
       >
         <Background color="var(--rf-dot)" />
         <Controls showInteractive={false} />
@@ -279,6 +297,8 @@ function SceneViewport({
   const viewport = useViewport();
   const paneWidth = useStore((state) => state.width);
   const paneHeight = useStore((state) => state.height);
+  const workspace = useCanvasStore((state) => state.workspace);
+  const snapshot = useWorkspaceSnapshot();
   const { fitBounds, setViewport } = useReactFlow();
   const [tick, setTick] = useState(() => Date.now());
   const [focusPath, setFocusPath] = useState<FocusEntry[]>([]);
@@ -289,6 +309,29 @@ function SceneViewport({
     () => new Set<string>(),
   );
   const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
+  const canEditLayout = useUiStore((state) => state.canEditLayout && !state.readOnly);
+  const canCreateContent = useUiStore((state) => state.canCreateContent && !state.readOnly);
+  const canCreateBoards = useUiStore((state) => state.canCreateBoards && !state.readOnly);
+  const canManageStructure = useUiStore((state) => state.canManageTrash && !state.readOnly);
+  const canManageTrash = useUiStore((state) => state.canManageTrash && !state.readOnly);
+  const canManageLinks = useUiStore((state) => state.canManageLinks && !state.readOnly);
+  // Peers on this board; presence is workspace-wide, so it has to be filtered.
+  const peers = useBoardPeers(rootBoardId);
+  const contextMenu = useUiStore((state) => state.contextMenu);
+  const openContextMenu = useUiStore((state) => state.openContextMenu);
+  const closeContextMenu = useUiStore((state) => state.closeContextMenu);
+  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
+  const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
+  const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
+  const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
+  const selectSection = useUiStore((state) => state.selectSection);
+  const setEditingSection = useUiStore((state) => state.setEditingSection);
+  const [edgeDescription, setEdgeDescription] = useState<{
+    edgeId: string;
+    x: number;
+    y: number;
+    value: string;
+  } | null>(null);
 
   const camera = useMemo<Camera>(
     () => ({
@@ -437,6 +480,276 @@ function SceneViewport({
     });
   }, [focusPath, setViewport]);
 
+  // Selection, marquee, card/section gestures and connector drags live in one
+  // hook so every gesture shares the same hit testing and commit point.
+  const planSectionMove = useCallback(
+    (sectionId: string) => {
+      const section = snapshot.sections.find((entry) => entry.id === sectionId);
+      if (!section) return null;
+      const plan = sectionMovePlan(
+        sectionId,
+        snapshot.sections.filter((entry) => entry.boardId === section.boardId),
+        snapshot.placements.filter((entry) => entry.boardId === section.boardId),
+      );
+      if (plan.sections.length === 0) return null;
+      return {
+        sections: plan.sections.map((entry) => ({ id: entry.id, x: entry.x, y: entry.y })),
+        placements: plan.placements.map((entry) => ({
+          boardId: entry.boardId,
+          cardId: entry.cardId,
+          x: entry.x,
+          y: entry.y,
+        })),
+      };
+    },
+    [snapshot.placements, snapshot.sections],
+  );
+
+  const connectorsFor = useCallback(
+    (cardId: string) => prepared.cardsById.get(cardId)?.connectors ?? [],
+    [prepared.cardsById],
+  );
+
+  const createConnector = useCallback(
+    (input: SceneConnectorCreate) => {
+      if (!canCreateContent) return;
+      workspace.addEdge({
+        boardId: input.boardId,
+        source: input.sourceCardId,
+        target: input.targetCardId,
+        ...(input.sourceConnectorId === null ? {} : { sourceConnector: input.sourceConnectorId }),
+        ...(input.targetConnectorId === null ? {} : { targetConnector: input.targetConnectorId }),
+      });
+    },
+    [canCreateContent, workspace],
+  );
+
+  const interaction = useSceneInteraction({
+    scene,
+    canEditLayout,
+    workspace,
+    onFocusPortal: enterPortal,
+    planSectionMove,
+    connectorsFor,
+    ...(canCreateContent ? { createConnector } : {}),
+  });
+
+  const placements = snapshot.placements;
+  const sections = snapshot.sections;
+  const sectionMembershipMap = useMemo(
+    () =>
+      sectionMembership(
+        placements.filter((placement) => placement.boardId === rootBoardId),
+        sections.filter((section) => section.boardId === rootBoardId),
+      ),
+    [placements, rootBoardId, sections],
+  );
+
+  const createNoteAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent) return;
+      const card = workspace.createCard({ boardId: rootBoardId, position });
+      setSelectedNodeIds([card.id]);
+      useUiStore.getState().startEditing(card.id, "title");
+    },
+    [canCreateContent, rootBoardId, setSelectedNodeIds, workspace],
+  );
+
+  const createWhiteboardAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent) return;
+      const type = ensureWhiteboardType(workspace);
+      const card = workspace.createCard({ typeId: type.id, boardId: rootBoardId, position });
+      setSelectedNodeIds([card.id]);
+      useUiStore.getState().openCardFocus(card.id);
+    },
+    [canCreateContent, rootBoardId, setSelectedNodeIds, workspace],
+  );
+
+  const createSectionAt = useCallback(
+    (position: { x: number; y: number }, wrapSelection = false) => {
+      if (!canCreateContent) return;
+      const ids = useUiStore.getState().selectedNodeIds;
+      let rect = { x: position.x, y: position.y, width: 360, height: 260 };
+      if (wrapSelection && ids.length > 0) {
+        const cards = scene.cards.filter(
+          (card) => ids.includes(card.cardId) && card.boardId === rootBoardId,
+        );
+        if (cards.length > 0) {
+          const minX = Math.min(...cards.map((card) => card.local.x));
+          const minY = Math.min(...cards.map((card) => card.local.y));
+          const maxX = Math.max(...cards.map((card) => card.local.x + card.local.width));
+          const maxY = Math.max(...cards.map((card) => card.local.y + card.local.height));
+          rect = {
+            x: minX,
+            y: minY - 16,
+            width: Math.max(360, maxX - minX),
+            height: Math.max(260, maxY - minY + 16),
+          };
+        }
+      }
+      const section = workspace.createSection({ boardId: rootBoardId, ...rect });
+      setSelectedNodeIds([]);
+      selectSection(section.id);
+      setEditingSection(section.id);
+    },
+    [
+      canCreateContent,
+      rootBoardId,
+      scene.cards,
+      selectSection,
+      setEditingSection,
+      setSelectedNodeIds,
+      workspace,
+    ],
+  );
+
+  const createPortalAt = useCallback(
+    (position: { x: number; y: number }, targetBoardId: string) => {
+      if (!canCreateContent) return;
+      const card = workspace.createPortalCard({
+        boardId: rootBoardId,
+        targetBoardId,
+        position,
+        size: portalSizeForBounds(
+          boardBounds(
+            sections.filter((section) => section.boardId === targetBoardId),
+            placements.filter((placement) => placement.boardId === targetBoardId),
+          ),
+        ),
+      });
+      setSelectedNodeIds([card.id]);
+    },
+    [canCreateContent, placements, rootBoardId, sections, setSelectedNodeIds, workspace],
+  );
+
+  const createPortalToNewBoard = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !canCreateBoards) return;
+      const board = workspace.createBoard();
+      createPortalAt(position, board.id);
+    },
+    [canCreateBoards, canCreateContent, createPortalAt, workspace],
+  );
+
+  const duplicateCards = useCallback(
+    (ids: string[]) => {
+      if (!canCreateContent) return;
+      for (const id of ids) {
+        workspace.duplicateCard(id, {
+          boardId: rootBoardId,
+          offset: { x: 24, y: 24 },
+        });
+      }
+    },
+    [canCreateContent, rootBoardId, workspace],
+  );
+
+  const startEdgeDescription = useCallback(
+    (edgeId: string, point: { x: number; y: number }) => {
+      const edge = workspace.getEdge(edgeId);
+      if (!edge) return;
+      setEdgeDescription({ edgeId, x: point.x, y: point.y, value: edge.label ?? "" });
+    },
+    [workspace],
+  );
+
+  const enterScenePortal = useCallback(
+    (nodeId: string, _targetBoardId: string) => {
+      const portal = scene.portals.find((candidate) => candidate.cardId === nodeId);
+      if (portal) enterPortal(portal);
+    },
+    [enterPortal, scene.portals],
+  );
+
+  const moveCardToBoard = useCallback(
+    (cardId: string, boardId: string) => {
+      if (!canEditLayout) return;
+      workspace.moveCardToBoard(cardId, boardId);
+      setSelectedNodeIds([]);
+    },
+    [canEditLayout, setSelectedNodeIds, workspace],
+  );
+
+  const unplaceSelected = useCallback(() => {
+    if (!canEditLayout) return;
+    for (const id of useUiStore.getState().selectedNodeIds) {
+      workspace.unplaceCard(rootBoardId, id);
+    }
+    setSelectedNodeIds([]);
+  }, [canEditLayout, rootBoardId, setSelectedNodeIds, workspace]);
+
+  const trashSelected = useCallback(() => {
+    if (!canManageTrash) return;
+    for (const id of useUiStore.getState().selectedNodeIds) {
+      workspace.trashCard(id);
+    }
+    setSelectedNodeIds([]);
+  }, [canManageTrash, setSelectedNodeIds, workspace]);
+
+  const changeLayer = useCallback(
+    (nodeId: string, action: LayerAction) => {
+      if (!canEditLayout) return;
+      workspace.moveLayer(rootBoardId, nodeId, action);
+      setSelectedNodeIds([]);
+    },
+    [canEditLayout, rootBoardId, setSelectedNodeIds, workspace],
+  );
+
+  const changeLayerBulk = useCallback(
+    (ids: string[], action: LayerAction) => {
+      if (!canEditLayout) return;
+      for (const id of ids) workspace.moveLayer(rootBoardId, id, action);
+      setSelectedNodeIds([]);
+    },
+    [canEditLayout, rootBoardId, setSelectedNodeIds, workspace],
+  );
+
+  const requestShare = useUiStore((state) => state.requestShare);
+
+  const menuItems = useCanvasMenuItems({
+    contextMenu,
+    workspace,
+    snapshot,
+    activeBoardId: rootBoardId,
+    selectedNodeIds,
+    sectionMembershipMap,
+    setSelectedNodeIds,
+    setSelectedConnector,
+    selectSection,
+    setEditingSection,
+    canCreateContent,
+    canCreateBoards,
+    canEditContent: canCreateContent,
+    canEditLayout,
+    canManageStructure,
+    canManageTrash,
+    canManageLinks,
+    createNoteAt,
+    createWhiteboardAt,
+    createSectionAt,
+    createPortalAt,
+    createPortalToNewBoard,
+    duplicateCards,
+    startEdgeDescription,
+    enterPortal: enterScenePortal,
+    moveCardToBoard,
+    unplaceSelected,
+    trashSelected,
+    changeLayer,
+    changeLayerBulk,
+    requestShare,
+  });
+
+  const commitEdgeDescription = useCallback(
+    (value: string) => {
+      if (!edgeDescription) return;
+      workspace.setEdgeLabel(edgeDescription.edgeId, value.trim() ? value : null);
+      setEdgeDescription(null);
+    },
+    [edgeDescription, workspace],
+  );
+
   const focusOutlineItem = useCallback(
     (item: SceneOutlineItem) => {
       if (item.id === scene.root.key) {
@@ -477,13 +790,78 @@ function SceneViewport({
       event.preventDefault();
       goBack();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Capture so back-navigation claims Escape before the surface clears the
+    // selection; `useSceneInteraction` skips events already handled.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [focusPath.length, goBack]);
 
   return (
     <>
       <ViewportPortal>
+        <div
+          className="scene-surface"
+          data-testid="scene-surface"
+          role="application"
+          aria-label="Infinite canvas"
+          style={{
+            left: pageViewport.x,
+            top: pageViewport.y,
+            width: pageViewport.width,
+            height: pageViewport.height,
+          }}
+          {...interaction.handlers}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            const rect = event.currentTarget.getBoundingClientRect();
+            const screen = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+            const page = screenToPage(camera, screen);
+            const hit = hitTest(scene, camera, screen);
+            const point = hit.kind === "pane" ? page : hit.board;
+            if (hit.kind === "card" || hit.kind === "portal") {
+              if (!useUiStore.getState().selectedNodeIds.includes(hit.cardId)) {
+                selectSection(null);
+                setSelectedNodeIds([hit.cardId]);
+              }
+              openContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                kind: "node",
+                nodeId: hit.cardId,
+                flowPosition: point,
+              });
+            } else if (hit.kind === "section") {
+              selectSection(hit.sectionId);
+              openContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                kind: "section",
+                sectionId: hit.sectionId,
+                flowPosition: point,
+              });
+            } else if (hit.kind === "edge") {
+              // The edge never owns a card selection, so the highlight is the
+              // same one a left click would leave behind.
+              selectSection(null);
+              setSelectedNodeIds([]);
+              setSelectedEdgeIds([hit.edgeId]);
+              openContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                kind: "edge",
+                edgeId: hit.edgeId,
+                flowPosition: point,
+              });
+            } else {
+              openContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                kind: "canvas",
+                flowPosition: point,
+              });
+            }
+          }}
+        />
         <SceneLayer
           scene={scene}
           onFocusPortal={enterPortal}
@@ -493,6 +871,16 @@ function SceneViewport({
           tags={prepared.tagsById}
           miniatures={prepared.miniatures}
           drawings={prepared.drawings}
+          selectedIds={interaction.selectedIds}
+          selectedSectionId={interaction.selectedSectionId}
+          selectedEdgeIds={interaction.selectedEdgeIds}
+          overrides={interaction.overrides}
+          marquee={interaction.marquee}
+          connectorHandles={interaction.connectorHandles}
+          connectorDrag={interaction.connectorDrag}
+          canEditLayout={canEditLayout}
+          peers={peers}
+          liveCards
         />
       </ViewportPortal>
       <SceneBadge
@@ -505,10 +893,28 @@ function SceneViewport({
           <div className="scene-board__empty-card">
             <p className="scene-board__empty-title">Nothing on this board yet</p>
             <p className="scene-board__empty-copy">
-              Cards, sections and portals appear here as a read-only preview.
+              Cards, sections and portals appear here as you build the scene.
             </p>
           </div>
         </div>
+      ) : null}
+      {edgeDescription ? (
+        <EdgeDescriptionInput
+          key={edgeDescription.edgeId}
+          x={edgeDescription.x}
+          y={edgeDescription.y}
+          value={edgeDescription.value}
+          onCommit={commitEdgeDescription}
+          onCancel={() => setEdgeDescription(null)}
+        />
+      ) : null}
+      {contextMenu ? (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={closeContextMenu}
+        />
       ) : null}
       <div className="scene-board__outline">
         <SceneOutline

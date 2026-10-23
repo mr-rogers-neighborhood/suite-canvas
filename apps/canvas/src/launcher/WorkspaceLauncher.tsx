@@ -231,13 +231,16 @@ export function WorkspaceLauncher() {
       data-testid="workspace-launcher"
       className="workspace-launcher flex min-h-screen items-center justify-center bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
     >
-      <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
-        <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">
+      <div className="flex max-h-[min(820px,calc(100vh-5rem))] w-[min(760px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
+        <header className="shrink-0 border-b border-[var(--hairline)] px-8 pt-8 pb-7">
           <div className="flex items-end justify-between gap-6">
             <div>
-              <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
+              <h1 className="text-[30px] font-semibold tracking-tight">Suite</h1>
               <p className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                <i>An infinite, local-first, collaborative canvas.</i>
+                <i>
+                  An infinite, fractilized, collaborative canvas &mdash;{" "}
+                  <strong>built with types!</strong>
+                </i>
                 <br />
                 <br />
                 You can open a workspace file, pick from a list of recent workspaces, or create a
@@ -320,7 +323,10 @@ export function WorkspaceLauncher() {
           ) : null}
         </header>
 
-        <section className="px-8 py-6" aria-labelledby="recent-title">
+        <section
+          className="min-h-0 flex-1 overflow-y-auto px-8 py-6"
+          aria-labelledby="recent-title"
+        >
           <div className="flex items-center justify-between">
             <h2 id="recent-title" className="text-[12px] font-semibold uppercase tracking-wide">
               Recent workspaces
@@ -467,8 +473,23 @@ export function WorkspaceLauncher() {
           )}
         </section>
 
-        <footer className="border-t border-[var(--hairline)] px-8 py-3 text-[11px] text-[var(--ink-muted)]">
-          Fully open-source and MIT Licensed (c) {new Date().getFullYear()} Suite
+        <footer className="shrink-0 border-t border-[var(--hairline)] px-8 py-3 text-[11px] text-[var(--ink-muted)]">
+          <p>
+            Local-first architecture enhanced with optional hosted or self-hosted sync and
+            collaboration features.
+          </p>
+          <p className="mt-2">
+            <strong>
+              <a
+                href="https://github.com/mr-rogers-neighborhood"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Fully open-source and MIT Licensed — (c) {new Date().getFullYear()} Suite — Created
+                by Mr. Rogers 🏘️
+              </a>
+            </strong>
+          </p>
         </footer>
       </div>
       {choice ? (

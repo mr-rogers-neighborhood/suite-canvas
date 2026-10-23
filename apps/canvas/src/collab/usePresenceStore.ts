@@ -134,6 +134,8 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
           // A single-card drag keeps the original payload; the set is only
           // carried when more than the anchor moves.
           ...(nodeIds.length > 1 ? { nodeIds } : {}),
+          // The scene needs the board to pick the right placement of a card.
+          ...(dragging.boardId ? { boardId: dragging.boardId } : {}),
         });
         clearPointer();
         return;

@@ -204,8 +204,15 @@ collaborator's work**. Structural edits commit with a `struct:` origin; editor c
 ## Workspace launcher and files
 
 The app starts at `/` on a **workspace launcher**. It lists recent workspaces from local metadata
-(`localStorage`, never document truth), starts a blank workspace (`?fresh=1`), and imports a
+(`localStorage`, never document truth), starts a new workspace (`?fresh=1`), and imports a
 `.suite` backup. Opening a workspace navigates to the ordinary `?workspace=<id>` canvas.
+
+Seeding happens once per document (`meta.seeded`). A workspace the launcher just created carries
+`?fresh=1` and is seeded with the **example workspace**
+(`apps/canvas/src/demo/seedExample.ts`): Atlas, Research and Sources, linked by portals (one at
+depth two, one closing a cycle), with sections, tags, typed properties, an edge and an Excalidraw
+scene, arranged by the shared fractal planner. Older workspaces and direct URLs keep the two
+starter cards. `?blank=1` seeds no cards at all and is what count-sensitive tests use.
 
 A workspace has a name of its own, stored in the document's `meta` map (`meta.name`) so it syncs
 with the workspace and travels in a `.suite` export. That makes it document truth, not a launcher
@@ -343,16 +350,18 @@ Scene projection (pure, engine-agnostic)
   board instances · transforms · effective zoom · LOD · portal gates · edges
         │
         ▼
-Scene surface (React Flow camera + DOM projection, `?canvas=scene`)
-  SceneBoard (camera, LOD state, focus path) │ SceneLayer (cards, edges, portals)
+Scene surface (React Flow camera + DOM projection, the default)
+  SceneBoard (camera, LOD state, focus path, pointer gestures) │ SceneLayer (cards, edges, portals)
         │
         ▼
-Read-only card faces + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
+Live `NodeCard` at full LOD + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
 ```
 
-The projection is the target, not today's default: the canvas still ships the React Flow flow
-surface. The pure layer is `packages/scene` (`@suite/scene`); a `?canvas=scene` flag exists for the
-scene surface while it reaches parity, and neither new surface is the default.
+The scene is the default surface; the React Flow flow surface stays reachable as `?canvas=flow`, and
+`?canvas=ice` is the experimental spike. The pure layer is `packages/scene` (`@suite/scene`).
+Interaction is described in
+[ADR-0033](./decisions/0033-interactive-scene-surface.md); the sections below record what is
+implemented and where the parity gaps still are.
 
 ### Graph truth, derived scene
 
@@ -381,16 +390,54 @@ renderer.
   (`scale = min(frameW / boardBounds.w, frameH / boardBounds.h) × padding`).
 - Below the expansion gate the portal renders its **impostor** — the existing `BoardMiniature` SVG —
   and instantiates nothing. Above the gate the target's cards, sections and edges are instantiated at
-  the projected scale and are focusable. Editing inside a portal is Phase 4 parity work; the scene
-surface itself writes nothing.
-- Creating a card inside a portal writes the canonical placement at the inverse-transformed
-  position. Writes stay one CRDT commit per gesture; live drag positions remain presence.
+  the projected scale and are interactive: the same pointer handlers select, drag and resize inside
+  a portal, and a drag is divided by the instance's board scale before it is committed.
+- A card inside a portal moved by the scene writes the canonical placement at the
+  inverse-transformed position. One gesture is one commit per board it touched; live positions stay
+  ephemeral (see below).
+- Starting a gesture inside a collapsed portal frame, or on an expanded portal's header, still means
+  *enter*: the click focuses the child board through the camera path.
+
+### Pointer interaction and commits
+
+`SceneBoard` mounts an empty React Flow instance for the camera (`panOnDrag={[1, 2]}`,
+`nodesDraggable`/`nodesConnectable`/`elementsSelectable`/`selectionOnDrag` off, no delete key) and
+renders `SceneLayer` through `ViewportPortal`. Every card, section, edge and portal is DOM inside that
+layer, positioned in page space from the projection; none of them is a React Flow node.
+
+- `useSceneInteraction` converts the pointer with `screenToPage`, hit-tests the pure scene and runs
+  one gesture at a time: card drag, section drag, resize, connector drag, marquee and edge press.
+  Cards win the pick over the section that contains them.
+- A press that moves less than 3 screen pixels is a click: click selects, shift-click toggles, an
+  empty click clears and starts a marquee, a portal click enters its target and an edge click selects
+  the link.
+- Live geometry is an `overrides` map keyed by instance key. Nothing writes while the pointer moves.
+- On release the hook commits once: `movePlacements` per board touched, `moveSectionsBatch` for a
+  section with its contained cards and nested sections, `updatePlacementGeometry` or
+  `updateSectionGeometry` for a resize, or one `addEdge` from a connector drop. A click, a
+  sub-epsilon move, a cancelled pointer and a viewer's drag write nothing.
+- The gesture is published while it runs, at the flow surface's cadence: pointer samples, the
+  dragged canonical set with its board id, card and section resizes, section drags and the marquee
+  box go through the same presence store, and the closed selection is written once. A viewer
+  publishes selection and marquee but never a drag, and unmounting mid-gesture clears the samples.
+- Resize handles, section chrome, connector handles and the marquee are painted by `SceneLayer`'s
+  selection overlay, not by the cards; handles reach past the box edge so they win the pick over the
+  body. An edge is redrawn thicker on top when selected, and its label stays readable.
+- Connector handles come from the overlay and appear only for the single selected card, because
+  `SceneCardView` turns `NodeCard`'s own dots off. Dragging one onto another card on the same board
+  commits one edge with the canonical anchors; the connector menu (reposition, delete) is therefore
+  reachable only on the flow surface, and connectors stay invisible until a card is selected.
+- Every write path is gated by the same capability flags the flow surface uses (`canEditLayout`,
+  `canCreateContent`, `canManageStructure` and `readOnly`), so a share viewer selects, shift-selects
+  and marquees but cannot drag, resize, create or connect.
+- Escape clears selection, section and edge state. The focus path claims Escape first when there is a
+  path to pop, so back-navigation never also clears the selection.
 
 ### Effective zoom, LOD bands and hysteresis
 
 | Band | Effective scale | Card | Portal | Section | Edge |
 | --- | --- | --- | --- | --- | --- |
-| `full` | ≥ 0.75 | static `NodeCard` face + whiteboard preview (Tiptap is Phase 4) | live child board | fill + header + handles | full path + label |
+| `full` | ≥ 0.75 | live `NodeCard` (Tiptap title/body) + whiteboard preview | live child board | fill + header (+ handles when selected) | full path + label |
 | `compact` | 0.35–0.75 | static title + glyph + chips | live miniature | title chip | simplified path |
 | `icon` | 0.12–0.35 | glyph + layout badge | layout-encoded icon | colour band | hidden |
 | `hidden` | < 0.12 | none | aggregate proxy | none | none |
@@ -398,7 +445,51 @@ surface itself writes nothing.
 Downgrade immediately; upgrade only after the higher threshold is crossed and the state has held for
 a dwell time (default 80 ms). The resolved band is stored per instance and is never a continuous
 function recomputed per frame. DOM editors mount only at `full` (and for the focused card in reader
-mode); budgets cap mounted editors, expanded boards, live portal faces and visible nodes.
+mode). There is no separate numeric editor budget: culling to the page-space viewport plus the LOD
+hysteresis are what bound mounted editors, live portal faces and visible nodes. `?perf=1` render
+counters and a `buildScene` perf smoke exist, but no frame-time, GPU or mounted-editor measurement
+has been recorded.
+
+### The live card layer
+
+`SceneCardView` is the real `NodeCard` inside the box the layer positions: Tiptap title and body,
+card menu, move targets, duplicate, trash, inspector and focus actions, and peer chips. It takes no
+pointer or drag handlers on its wrapper and runs no effect that writes on mount, so mounting an
+instance that just reached `full` is a pure render. A card whose text containers have
+not arrived shows a neutral placeholder and adopts them when the observer reports one — mounting a
+card never creates a container.
+
+- **One editable surface per card, still.** `SceneCardView` reads `editingSurface`; while the panel
+  owns editing, the scene twin is read-only and does not publish carets. Starting editing from the
+  scene sets `editingSurface: "canvas"` through the same store, so the existing rule holds.
+- **Whiteboards** mount the cached preview and a double click opens the existing card focus surface;
+  the drawing itself is written by `applyDrawing` there, never on the board.
+- **Connectors live in the overlay.** The live card sets `showConnectors={false}`; `SceneLayer` draws
+  the four side handles for the single selected card at scene scale, so they stay the same size at
+  any zoom, and `useSceneInteraction` turns a handle drag into one `addEdge` on drop. Because those
+  handles are the only dots, connectors are not visible or repositionable until the card is selected,
+  and the connector menu is still a flow-surface action.
+
+### Peer presence over the projection
+
+`SceneBoard` reads `useBoardPeers(rootBoardId)` — presence is workspace-wide, so every board-scoped
+surface filters by `peer.board` — and hands the result to `SceneLayer`; `scenePresence.ts` projects
+each peer sample into page space, so presence pans and zooms with the camera and needs no second
+layout. Page space is the root board's own coordinates — the root instance transform is the
+identity — so the same samples mean the same thing on the flow surface.
+
+- **Selection** is canonical: every visible instance the projection holds for the card gets the
+  peer's ring, and a selected section gets the same treatment. A portal card is ringed by its frame.
+- **Gestures in flight** become a dashed ghost at the peer's published geometry on every instance of
+  the moved cards or section, reconstructed through the instance transform. One ghost per gesture
+  carries the name tag, and a multi-card drag adds its count. When the card is mounted at `full`,
+  `NodeCard` already labels the gesture from its own peer props, so the ghost stays a plain outline.
+- **Pointers** are a dot per peer at the published page point. A dot over expanded portal content is
+  clipped to that portal's frame; a dot over a collapsed target is dropped, so a share cannot reveal
+  content the projection does not contain.
+- Chips are counter-scaled with `--scene-chrome-scale`, the same variable the local selection chrome
+  uses. Peer presence is not duplicated into the outline rail; the rail lists the scene, the surface
+  shows who is where.
 
 ### Lazy expansion, cycles and depth
 
@@ -416,24 +507,56 @@ mode); budgets cap mounted editors, expanded boards, live portal faces and visib
 - Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
   the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
 - Escape or back pops the focus path and restores the exact camera checkpoint.
-- Keyboard focus and search auto-expand ancestors and move the camera to the target.
-  `prefers-reduced-motion` skips camera flights and LOD transitions.
+- The outline's arrow/Enter navigation focuses portal and board rows; the scene badge shows the
+  focused path. A *reveal* request from the inspector or the board outline (`focusTarget`) is still
+  consumed only by `CanvasBoard`, so "show on board" does not yet move the scene camera.
+- `prefers-reduced-motion` skips camera flights and LOD transitions.
 
 ### Scene outline
 
 The **scene outline** is a first-class derived tree: workspace → root board → portal instances →
-target boards → nested portals, carrying the focus path, the per-instance LOD band and
-expanded/collapsed state, peer presence by board, and actions to reveal, expand, enter, go back or
-open in focus. It is a projection of the same graph and scene, never a second document, and it is
-the accessibility path when the spatial canvas is not legible.
+target boards → nested portals, carrying the focus path, the per-instance LOD band, card counts and
+expanded/collapsed state, plus actions to focus a board or enter a portal, expand/collapse a row and
+go back. Rows are a `role="tree"` with arrow/Home/End/Enter navigation. It is a projection of the
+same graph and scene, never a second document, and it is the accessibility path when the spatial
+canvas is not legible.
+Peer activity is painted on the surface itself (above), not in the rail.
+
+### Context menus, shared
+
+`useCanvasMenuItems` (`buildCanvasMenuItems`) is the single builder for the canvas, card, section,
+edge and connector menus. It receives the menu context, the capability flags and every action as a
+callback, and both `CanvasBoard` and `SceneBoard` call it, so creation, portal targets, fractal
+arrangement, layer actions, share and trash cannot drift between surfaces. A viewer gets no menu, and
+a capability that cannot complete an action removes it. The scene converts the right-click into a
+board-space point for the hit instance before opening the menu; creation itself still targets the
+root board.
+
+### Surface routing, demo seed and cache reset
+
+`canvasSurfaceFromSearch` (`apps/canvas/src/scene/surfaceFlag.ts`) returns `scene` unless the URL
+asks for `flow` or `ice`, so a normal workspace and a share both open on the scene. The scene badge
+shows board/card/portal counts, the focused path and a link back to `?canvas=flow`.
+`?canvas=ice` mounts the lazy spike of [ADR-0032](./decisions/0032-ice-engine-deferral.md) or its
+WebGPU fallback.
+
+A workspace created from the launcher carries `?fresh=1` and is seeded once with
+`seedExampleWorkspace`: three boards (Atlas, Research, Sources), fourteen cards, four portals
+(depth two plus a cycle), four sections, tags, two typed properties, one labelled edge, one
+whiteboard scene, arranged by the shared fractal planner. `?blank=1` seeds no cards for
+count-sensitive tests, and an existing workspace keeps the two starter cards. The local IndexedDB
+cache is `suite-loro-scene`; the previous `suite-loro` database is never opened again, and nothing
+deletes it. Server rooms are untouched and re-sync on open.
 
 ### SceneSurface adapter
 
-The seam is the pure `Scene` value: `SceneBoard` owns the camera, LOD/gate state and focus path;
-`SceneLayer` paints the frame. The React Flow scene surface is the parity baseline and fallback; an
-ICE surface remains a deferred spike ([ADR-0032](./decisions/0032-ice-engine-deferral.md)). LOD
-proxies and card faces are shared, so the engine choice stays reversible and a failed spike costs an
-adapter rather than a document.
+The seam is the pure `Scene` value plus the gesture contract: `SceneBoard` owns the camera,
+LOD/gate state, focus path and pointer gestures; `SceneLayer` paints the frame from the scene,
+`SceneCardView` mounts the real card at `full`. The React Flow scene is the default and the parity
+baseline; `?canvas=flow` keeps the pre-scene surface usable; an ICE surface remains a deferred spike
+([ADR-0032](./decisions/0032-ice-engine-deferral.md)). LOD proxies, card faces and interaction math
+are shared, so the engine choice stays reversible and a failed spike costs an adapter rather than a
+document ([ADR-0033](./decisions/0033-interactive-scene-surface.md)).
 
 ### The card layer
 
@@ -749,7 +872,7 @@ and links follow when the footer expands.
 | UI | `apps/canvas` | Canvas shell and scene surfaces, Tiptap editors, panels |
 | UI state | `apps/canvas` (Zustand) | Selection, tools, panels, connection status |
 | Domain | `packages/graph` | Schema, types, typed CRDT access |
-| Persistence | `LoroIndexeddbPersistence` | Offline-first local snapshot + update log |
+| Persistence | `LoroIndexeddbPersistence` | Offline-first local snapshot + update log in the `suite-loro-scene` database |
 | Sync | `loro-websocket` provider + server | Real-time collaboration |
 
 ## Drag tracking

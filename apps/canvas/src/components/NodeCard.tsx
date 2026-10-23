@@ -89,6 +89,8 @@ export interface NodeCardProps {
   canManageTrash?: boolean;
   /** Shorthand for a viewer: no menu and no editing gesture at all. */
   readOnly?: boolean;
+  /** The flow surface renders connectors; a scene surface uses its own overlay. */
+  showConnectors?: boolean;
 }
 
 export function NodeCard({
@@ -135,6 +137,7 @@ export function NodeCard({
   canEditLayout,
   canManageTrash,
   readOnly = false,
+  showConnectors = true,
 }: NodeCardProps) {
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
@@ -437,24 +440,26 @@ export function NodeCard({
         />
       </div>
 
-      {card.connectors.map((connector: ConnectorModel) => (
-        <Connector
-          key={connector.id}
-          connector={connector}
-          nodeId={card.id}
-          color={focusedBy?.color ?? draggingPeer?.color}
-          selected={selectedConnectorId === connector.id}
-          onSelect={(id) => onConnectorSelect?.(id)}
-          onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
-          movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
-          selectingPeers={selectingConnectorPeers[connector.id] ?? []}
-          peerPosition={movingConnectorPeers[connector.id]?.position ?? null}
-          onMoveStart={() => onConnectorMoveStart?.(connector.id)}
-          onMove={(position) => onConnectorMove?.(connector.id, position)}
-          onMoveFinished={onConnectorMoveFinished}
-          onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
-        />
-      ))}
+      {showConnectors
+        ? card.connectors.map((connector: ConnectorModel) => (
+            <Connector
+              key={connector.id}
+              connector={connector}
+              nodeId={card.id}
+              color={focusedBy?.color ?? draggingPeer?.color}
+              selected={selectedConnectorId === connector.id}
+              onSelect={(id) => onConnectorSelect?.(id)}
+              onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
+              movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
+              selectingPeers={selectingConnectorPeers[connector.id] ?? []}
+              peerPosition={movingConnectorPeers[connector.id]?.position ?? null}
+              onMoveStart={() => onConnectorMoveStart?.(connector.id)}
+              onMove={(position) => onConnectorMove?.(connector.id, position)}
+              onMoveFinished={onConnectorMoveFinished}
+              onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
+            />
+          ))
+        : null}
 
       {menu ? (
         // The menu is portalled, but React still bubbles its clicks through this

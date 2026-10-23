@@ -1,7 +1,13 @@
 import { type LoroDoc, VersionVector } from "loro-crdt";
 import { TAB_ID } from "./tabId";
 
-const DB_NAME = "suite-loro";
+/**
+ * Local document cache. The name is versioned by stage rather than by schema:
+ * a dev-stage reset is a rename, so the previous cache (`suite-loro`) is simply
+ * never read again and old sample data cannot leak into the new canvas. Server
+ * rooms are untouched — a workspace re-syncs its document on next open.
+ */
+export const WORKSPACE_DB_NAME = "suite-loro-scene";
 const DB_VERSION = 1;
 const SNAPSHOTS = "snapshots";
 const UPDATES = "updates";
@@ -87,7 +93,7 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
-    const open = indexedDB.open(DB_NAME, DB_VERSION);
+    const open = indexedDB.open(WORKSPACE_DB_NAME, DB_VERSION);
     open.onupgradeneeded = () => {
       const db = open.result;
       if (!db.objectStoreNames.contains(SNAPSHOTS)) {

@@ -1,0 +1,143 @@
+/* The ICE spike host (`?canvas=ice`) — full-bleed desk plus a read-only HUD. */
+.ice-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+}
+
+.ice-surface__desk {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The calm states: checking, importing, no WebGPU, a failed boot. */
+
+.ice-surface__state {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.ice-surface__card {
+  max-width: 380px;
+  padding: 18px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  text-align: center;
+}
+
+.ice-surface__card-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ice-surface__card-copy,
+.ice-surface__card-detail {
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.ice-surface__card-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ice-surface__card-link {
+  display: inline-block;
+  margin-top: 10px;
+  border-radius: 4px;
+  color: var(--mention-ink);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: auto;
+}
+
+.ice-surface__card-link:hover,
+.ice-surface__card-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* The HUD mirrors the scene badge so the two experimental surfaces read alike. */
+
+.ice-surface__badge {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  max-width: min(280px, calc(100vw - 24px));
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(1.2);
+  pointer-events: auto;
+}
+
+.ice-surface__badge-title {
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ice-surface__badge-note {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ice-surface__badge-status {
+  color: var(--ink-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ice-surface__badge-seed,
+.ice-surface__badge-hint {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+}
+
+.ice-surface__link {
+  margin-top: 2px;
+  width: fit-content;
+  border-radius: 4px;
+  color: var(--mention-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ice-surface__link:hover,
+.ice-surface__link:focus-visible {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ice-surface__badge,
+  .ice-surface__card {
+    backdrop-filter: none;
+  }
+}

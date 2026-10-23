@@ -31,6 +31,30 @@
   flex-direction: column;
 }
 
+.scene-card--live {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.scene-card__scale {
+  position: relative;
+  pointer-events: none;
+}
+
+/* The static shell is a drag target; editors and controls inside a live card
+   keep their own pointer events so typing and menus still work. */
+.scene-card--live .ProseMirror,
+.scene-card--live button,
+.scene-card--live a,
+.scene-card--live input,
+.scene-card--live textarea,
+.scene-card--live select,
+.scene-card--live [role="button"] {
+  pointer-events: auto;
+}
+
 .scene-card__header {
   display: flex;
   flex-shrink: 0;
@@ -144,6 +168,15 @@
   white-space: nowrap;
 }
 
+.scene-section[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--scene-section-color) 78%, transparent);
+  background: color-mix(in srgb, var(--scene-section-color) 17%, transparent);
+}
+
+.scene-section[data-selected="true"] .scene-section__title {
+  box-shadow: 0 0 0 calc(1.5px * var(--scene-chrome-scale, 1)) var(--mention-ink);
+}
+
 /* Edges --------------------------------------------------------------- */
 
 .scene-edges {
@@ -156,6 +189,20 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.7;
+}
+
+.scene-edge[data-selected="true"] {
+  stroke: var(--mention-ink);
+  opacity: 1;
+}
+
+.scene-edge__label {
+  fill: var(--ink-muted);
+  stroke: var(--surface);
+  stroke-width: 0.35em;
+  paint-order: stroke;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* Portals ------------------------------------------------------------- */
@@ -430,4 +477,127 @@
   .scene-board__empty-card {
     backdrop-filter: none;
   }
+}
+
+/* Selection and gestures ---------------------------------------------- */
+
+/* Pointer surface: covers the visible page so gestures are hit tested in the
+   scene, not by DOM stacking. It sits above the projected faces. */
+.scene-surface {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.scene-selection {
+  position: absolute;
+  z-index: 5000;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene-selection__outline {
+  box-sizing: border-box;
+  border: calc(1.5px * var(--scene-chrome-scale, 1)) solid var(--mention-ink);
+  border-radius: 0.45em;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 55%, transparent);
+  pointer-events: none;
+}
+
+.scene-selection__handle {
+  box-sizing: border-box;
+  border: calc(1px * var(--scene-chrome-scale, 1)) solid var(--mention-ink);
+  border-radius: 2px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.scene-marquee {
+  box-sizing: border-box;
+  border: calc(1px * var(--scene-chrome-scale, 1)) solid var(--mention-ink);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--mention-ink) 10%, transparent);
+  pointer-events: none;
+}
+
+.scene-selection__connector {
+  box-sizing: border-box;
+  border: calc(1px * var(--scene-chrome-scale, 1)) solid var(--mention-ink);
+  border-radius: 9999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.scene-connector-drag path {
+  fill: none;
+  stroke: var(--mention-ink);
+  stroke-linecap: round;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* Peer presence -------------------------------------------------------- */
+
+/* Rendered above the local selection chrome; every box is page space. */
+.scene-peers {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Canonical selection is shared by all instances of a card, portals included. */
+.scene-peer-selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(1.5px * var(--scene-chrome-scale, 1)) solid currentColor;
+  border-radius: 0.45em;
+  pointer-events: none;
+}
+
+/* A peer's drag or resize, painted where the instance actually is. */
+.scene-peer-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(1.5px * var(--scene-chrome-scale, 1)) dashed currentColor;
+  border-radius: 0.45em;
+  pointer-events: none;
+  transition:
+    left 60ms linear,
+    top 60ms linear,
+    width 60ms linear,
+    height 60ms linear;
+}
+
+.scene-peer-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  transform: scale(var(--scene-chrome-scale, 1));
+  transform-origin: left top;
+  translate: 0 -100%;
+  pointer-events: none;
+}
+
+/* A page-space dot, clipped to the portal it sits inside. */
+.scene-peer-pointer {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-peer-pointer__dot {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--surface);
+  border-radius: 9999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
 }

@@ -62,3 +62,37 @@ package.
 - The React Flow surface carries the near-term cost of portal interactions (selection, multi-drag,
   resize, edges, sections, presence). If that cost becomes the bottleneck, the ICE gates above are
   the trigger to revisit the spike.
+
+## Amendment (2026-10-23): an isolated spike entry point
+
+An isolated, non-default ICE surface now exists at `apps/canvas/src/ice/IceSurface.tsx` and is
+rendered only for `?canvas=ice`. This amendment records the entry point; it does not change the
+status above or answer any of the gates.
+
+- **Not default, not document truth.** The routing agent may mount it only when
+  `currentCanvasSurface()` is `ice`, behind `lazy(() => import("./ice/IceSurface"))`. The desk is a
+  private, in-memory `@vibecook/ice` document: the spike seeds two notes and one mini mat (a note
+  inside a container, so the nested face and far-LOD chips are visible), and it never reads or
+  writes Suite's graph, session or stores. Closing the route disposes the document and the engine.
+- **Lazy by construction.** The surface checks `navigator.gpu` and asks for an adapter before it
+  imports anything. `@vibecook/ice`, `/desk`, `/desk/objects` and `/react` are dynamic imports, so
+  the default canvas and the scene surface load no ICE code. A production `vite build` of the app
+  as wired today emits no ICE chunk at all.
+- **Measured cost.** `@vibecook/ice` is pinned to `0.16.0`. A throwaway entry that lazily imports
+  the surface (same Vite config and target) produced six ICE chunks: 1.39 MB minified, 489 kB
+  gzip, plus 2.25 kB CSS (0.78 kB gzip). React and `loro-crdt` are already in the app's baseline,
+  so the incremental delta when the route lands will be smaller and must be re-measured; the
+  isolated graph is the upper bound gate 7 has to judge.
+- **No handwriting yet.** The layer gets no `text` raster: that needs the Caveat/Kalam face files,
+  which the app does not host, and the spike must not fetch a third-party font. The seeded notes
+  show their paper and the mini mat's chip LOD, not glyphs.
+- **Fallback.** No `navigator.gpu`, no adapter, a refused import or a `failed` desk layer all
+  render a calm card with the cause and a link back to `?canvas=scene`. A `degraded` layer keeps
+  drawing and says so in the HUD.
+- **Evidence collected.** `IceSurface.test.tsx` covers the no-WebGPU path, the no-adapter path,
+  the seed and teardown, a degraded desk and a failed desk (5 tests). Storybook has a fallback-only story
+  (`Canvas/ICE spike`); the live desk cannot be a story because the story runner's headless
+  Chromium has no WebGPU adapter.
+- **What this does not prove.** Gates 1–7 remain open: this is a rendering spike with no Suite
+  cards, portal projection, canonical writes, presence or text. Nothing here should be read as
+  evidence that ICE fits Suite.

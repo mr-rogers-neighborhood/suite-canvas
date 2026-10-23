@@ -23,6 +23,7 @@ import { StoragePanel } from "./components/StoragePanel";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { ViewsBar } from "./components/ViewsBar";
+import { seedExampleWorkspace, seedModeFor } from "./demo/seedExample";
 import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
@@ -60,6 +61,8 @@ function documentLabel(share: ShareSession, workspaceId: string): string {
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
+const IceSurface = lazy(() => import("./ice/IceSurface"));
+
 const WorkspaceActions = lazy(async () => {
   const module = await import("./components/WorkspaceActions");
   return { default: module.WorkspaceActions };
@@ -202,25 +205,29 @@ function WorkspaceShell({
     // and the note type is the fallback for cards with no type.
     workspace.ensureDefaultTypes();
     if (!workspace.hasSeeded()) {
-      const board = workspace.ensureBoard();
       // A direct URL can create the first document without the launcher, so
       // the friendly default is applied here too; an existing name always wins.
       if (!workspace.hasWorkspaceName()) {
         workspace.renameWorkspace(friendlyWorkspaceName());
         setWorkspaceName(workspace.workspaceName());
       }
-      // A workspace created from the launcher starts blank; older workspaces
-      // keep the two-card demo they were seeded with.
-      const fresh = new URLSearchParams(window.location.search).get("fresh") === "1";
-      if (!fresh && workspace.listCards().length === 0) {
-        workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
-        // One card width plus a gap, so the two starters read as two cards and a
-        // section drawn around the first does not reach into the second.
-        workspace.createCard({
-          id: "starter-2",
-          boardId: board.id,
-          position: { x: DEFAULT_CARD_WIDTH + 192, y: 0 },
-        });
+      const seedMode = seedModeFor(window.location.search);
+      if (seedMode === "blank") {
+        workspace.ensureBoard();
+      } else if (seedMode === "example") {
+        seedExampleWorkspace(workspace);
+      } else {
+        const board = workspace.ensureBoard();
+        if (workspace.listCards().length === 0) {
+          workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
+          // One card width plus a gap, so the two starters read as two cards and a
+          // section drawn around the first does not reach into the second.
+          workspace.createCard({
+            id: "starter-2",
+            boardId: board.id,
+            position: { x: DEFAULT_CARD_WIDTH + 192, y: 0 },
+          });
+        }
       }
       workspace.markSeeded();
     }
@@ -609,8 +616,16 @@ function WorkspaceShell({
       </TitleBar>
 
       <main className="relative z-10 min-h-0 flex-1">
-        {canvasSurface === "scene" ? <SceneBoard /> : <CanvasBoard />}
-        {canvasSurface !== "scene" && workspaceSurface && canCreateContent && boardEmpty ? (
+        {canvasSurface === "scene" ? (
+          <SceneBoard />
+        ) : canvasSurface === "ice" ? (
+          <Suspense fallback={null}>
+            <IceSurface />
+          </Suspense>
+        ) : (
+          <CanvasBoard />
+        )}
+        {canvasSurface === "flow" && workspaceSurface && canCreateContent && boardEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -630,7 +645,7 @@ function WorkspaceShell({
             </div>
           </div>
         ) : null}
-        {canvasSurface !== "scene" && sharedEmpty ? (
+        {canvasSurface === "flow" && sharedEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"

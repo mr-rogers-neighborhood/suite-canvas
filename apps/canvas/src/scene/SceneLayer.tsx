@@ -4,20 +4,36 @@ import {
   boardInstanceKey,
   type CardInstance,
   type EdgeInstance,
+  edgeRoutePolyline,
   type Point,
   type PortalInstance,
+  RESIZE_HANDLES,
   type Rect,
+  type ResizeHandle,
   rectIntersects,
   type Scene,
   type SectionInstance,
 } from "@suite/scene";
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, useCallback, useMemo } from "react";
 import { BoardMiniature } from "../canvas/BoardMiniature";
 import type { BoardMiniatureModel } from "../canvas/portalMiniature";
-import { cardMeta } from "../cards/cardMeta";
+import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { FALLBACK_CARD_TYPE, resolveCardType } from "../cards/cardTypes";
 import { WhiteboardPreview } from "../cards/WhiteboardPreview";
 import { isWhiteboardCard } from "../cards/whiteboard";
+import type { PeerPresence } from "../collab/presence";
+import { PeerNameTag } from "../components/PeerNameTag";
+import { SceneCardView } from "./SceneCardView";
+import { peerGhosts, peerPointerDots, peerSelectionOutlines } from "./scenePresence";
+import {
+  resizeHandleBoxes,
+  resizeHandleCursor,
+  resizeHandlePageSize,
+  resolveResizeTarget,
+  resolveSectionResizeTarget,
+  type SceneConnectorHandle,
+  sceneChromeScale,
+} from "./sceneSelection";
 import "./sceneLayer.css";
 
 export interface SceneLayerProps {
@@ -34,6 +50,26 @@ export interface SceneLayerProps {
   drawings?: ReadonlyMap<string, Drawing>;
   /** Enter a portal by focusing its child board, never by switching boards. */
   onFocusPortal?: ((portal: PortalInstance) => void) | undefined;
+  /** Canonical card ids selected in the shared UI store. */
+  selectedIds?: readonly string[];
+  /** Canonical section id selected on the surface, if any. */
+  selectedSectionId?: string | null;
+  /** Canonical edge ids selected on the surface. */
+  selectedEdgeIds?: readonly string[];
+  /** Live page-space boxes keyed by instance key while a gesture runs. */
+  overrides?: ReadonlyMap<string, Rect>;
+  /** Page-space marquee rectangle while a marquee gesture runs. */
+  marquee?: Rect | null;
+  /** Side-midpoint handles of a single selected card, in page space. */
+  connectorHandles?: readonly SceneConnectorHandle[];
+  /** Live connector line while a handle is dragged. */
+  connectorDrag?: { readonly from: Point; readonly to: Point } | null;
+  /** Resize handles only appear for editors, never for a read-only viewer. */
+  canEditLayout?: boolean;
+  /** Mount real NodeCard/Tiptap faces at full LOD (needs a ReactFlowProvider ancestor). */
+  liveCards?: boolean;
+  /** Peers looking at the root board; their presence paints over the projection. */
+  peers?: readonly PeerPresence[];
 }
 
 interface BoardContent {
@@ -55,10 +91,23 @@ interface SceneLayerContext {
   onFocusPortal: ((portal: PortalInstance) => void) | undefined;
   viewport: Rect;
   culling: boolean;
+  /** Live gesture rect for an instance, or its canonical box. */
+  rectFor: (instanceKey: string, rect: Rect) => Rect;
+  /** Canonical card ids the shared store has selected. */
+  selected: ReadonlySet<string>;
+  /** Canonical edge ids the shared store has selected. */
+  selectedEdges: ReadonlySet<string>;
+  /** Canonical section id the shared store has selected. */
+  selectedSectionId: string | null;
+  liveCards: boolean;
 }
 
 const ORIGIN: Point = { x: 0, y: 0 };
-const EMPTY_META = { properties: [], tags: [] } as const;
+const EMPTY_META: CardMeta = { properties: [], tags: [] };
+const EMPTY_IDS: readonly string[] = [];
+const EMPTY_OVERRIDES: ReadonlyMap<string, Rect> = new Map();
+const EMPTY_HANDLES: readonly SceneConnectorHandle[] = [];
+const EMPTY_PEERS: readonly PeerPresence[] = [];
 
 function indexScene(scene: Scene): Map<string, BoardContent> {
   const content = new Map<string, BoardContent>();
@@ -115,15 +164,60 @@ function edgePath(from: Point, to: Point, route: EdgePath): string {
   return `M ${from.x} ${from.y} C ${from.x + pull} ${from.y}, ${to.x - pull} ${to.y}, ${to.x} ${to.y}`;
 }
 
+/**
+ * Halfway point along the drawn route, so a label sits on the line for every
+ * path kind instead of always at the straight midpoint.
+ */
+function edgeLabelPoint(edge: EdgeInstance): Point {
+  const points = edgeRoutePolyline(edge.from, edge.to, edge.route);
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return edge.from;
+  let total = 0;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const a = points[index];
+    const b = points[index + 1];
+    if (a && b) total += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  if (total <= 0) return first;
+  let travelled = 0;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const a = points[index];
+    const b = points[index + 1];
+    if (!a || !b) continue;
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (travelled + length >= total / 2) {
+      const t = length === 0 ? 0 : (total / 2 - travelled) / length;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    travelled += length;
+  }
+  return last;
+}
+
+/**
+ * Edges paint above sections and below cards, at the same LOD the projection
+ * chose. A selected edge is redrawn on top so its highlight is never covered.
+ */
 function EdgeLayer({
   edges,
   origin,
   strokeWidth,
+  selected,
+  fontSize,
 }: {
   edges: readonly EdgeInstance[];
   origin: Point;
   strokeWidth: number;
+  selected: ReadonlySet<string>;
+  fontSize: number;
 }) {
+  const ordered = useMemo(
+    () =>
+      [...edges].sort((a, b) => Number(selected.has(a.edgeId)) - Number(selected.has(b.edgeId))),
+    [edges, selected],
+  );
+
   return (
     <svg
       className="scene-edges"
@@ -138,31 +232,56 @@ function EdgeLayer({
         overflow: "visible",
       }}
     >
-      {edges.map((edge) => (
+      {ordered.map((edge) => (
         <path
           key={edge.key}
           className="scene-edge"
+          data-testid={selected.has(edge.edgeId) ? "scene-edge-selected" : "scene-edge"}
           data-edge-id={edge.edgeId}
+          data-selected={selected.has(edge.edgeId) ? "true" : undefined}
           d={edgePath(
             { x: edge.from.x - origin.x, y: edge.from.y - origin.y },
             { x: edge.to.x - origin.x, y: edge.to.y - origin.y },
             edge.route,
           )}
-          strokeWidth={strokeWidth}
+          strokeWidth={selected.has(edge.edgeId) ? strokeWidth * 2 : strokeWidth}
         />
       ))}
+      {ordered.map((edge) => {
+        if (!edge.label) return null;
+        const point = edgeLabelPoint(edge);
+        return (
+          <text
+            key={`${edge.key}:label`}
+            className="scene-edge__label"
+            data-testid="scene-edge-label"
+            data-edge-id={edge.edgeId}
+            x={point.x - origin.x}
+            y={point.y - origin.y}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={fontSize}
+          >
+            {edge.label}
+          </text>
+        );
+      })}
     </svg>
   );
 }
 
 function SectionView({
   section,
+  rect,
   origin,
   scale,
+  selected,
 }: {
   section: SectionInstance;
+  rect: Rect;
   origin: Point;
   scale: number;
+  selected: boolean;
 }) {
   const color = section.color ?? "slate";
   return (
@@ -171,9 +290,10 @@ function SectionView({
       data-testid="scene-section"
       data-section-id={section.sectionId}
       data-lod={section.lod}
+      data-selected={selected ? "true" : undefined}
       style={
         {
-          ...translated(section.rect, origin, 11 * scale),
+          ...translated(rect, origin, 11 * scale),
           "--scene-section-color": `var(--section-${color})`,
           zIndex: Math.round(section.z),
         } as CSSProperties
@@ -199,12 +319,46 @@ function CardFace({
   const type = context.types
     ? resolveCardType(context.types, model?.primaryTypeId ?? FALLBACK_CARD_TYPE.id)
     : FALLBACK_CARD_TYPE;
-  const meta =
+  const meta: CardMeta =
     model && context.types && context.tags
       ? cardMeta(model, context.types, context.tags, 3)
       : EMPTY_META;
   const title = card.title ?? "Untitled";
   const drawing = context.drawings?.get(card.cardId);
+
+  if (card.lod === "full" && context.liveCards && model && context.types && context.tags) {
+    const rect = context.rectFor(card.key, card.rect);
+    const boardScale = card.transform.scale;
+    return (
+      <div
+        className="scene-card scene-card--full scene-card--live"
+        data-testid="scene-card"
+        data-card-id={card.cardId}
+        data-lod={card.lod}
+        style={{ ...translated(rect, origin), zIndex: 2000 + Math.round(card.z) }}
+      >
+        <div
+          className="scene-card__scale"
+          style={{
+            width: card.local.width,
+            height: card.local.height,
+            transform: `scale(${boardScale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          <SceneCardView
+            card={model}
+            type={type}
+            meta={meta}
+            boardId={card.boardId}
+            width={card.local.width}
+            height={card.local.height}
+            selected={context.selected.has(card.cardId)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (card.lod === "full") {
     return (
@@ -213,7 +367,10 @@ function CardFace({
         data-testid="scene-card"
         data-card-id={card.cardId}
         data-lod={card.lod}
-        style={{ ...translated(card.rect, origin, 13 * scale), zIndex: 2000 + Math.round(card.z) }}
+        style={{
+          ...translated(context.rectFor(card.key, card.rect), origin, 13 * scale),
+          zIndex: 2000 + Math.round(card.z),
+        }}
       >
         <div className="scene-card__header">
           <span className="scene-card__glyph" aria-hidden="true">
@@ -261,7 +418,10 @@ function CardFace({
         data-testid="scene-card"
         data-card-id={card.cardId}
         data-lod={card.lod}
-        style={{ ...translated(card.rect, origin, 12 * scale), zIndex: 2000 + Math.round(card.z) }}
+        style={{
+          ...translated(context.rectFor(card.key, card.rect), origin, 12 * scale),
+          zIndex: 2000 + Math.round(card.z),
+        }}
       >
         <span className="scene-card__glyph" aria-hidden="true">
           {type.glyph}
@@ -278,7 +438,10 @@ function CardFace({
         data-testid="scene-card"
         data-card-id={card.cardId}
         data-lod={card.lod}
-        style={{ ...translated(card.rect, origin, 18 * scale), zIndex: 2000 + Math.round(card.z) }}
+        style={{
+          ...translated(context.rectFor(card.key, card.rect), origin, 18 * scale),
+          zIndex: 2000 + Math.round(card.z),
+        }}
       >
         <span className="scene-card__glyph" aria-hidden="true">
           {type.glyph}
@@ -340,6 +503,7 @@ function PortalView({
   origin: Point;
 }) {
   const scale = portal.transform.scale;
+  const frame = context.rectFor(portal.key, portal.frame);
   const focus = context.onFocusPortal;
   const canFocus = focus !== undefined && !portal.targetMissing;
   const focusPortal = () => {
@@ -367,7 +531,7 @@ function PortalView({
       <div
         {...common}
         className="scene-portal scene-portal--live"
-        style={{ ...translated(portal.frame, origin, 12 * scale), zIndex: 2000 + cardZ }}
+        style={{ ...translated(frame, origin, 12 * scale), zIndex: 2000 + cardZ }}
       >
         <div className="scene-portal__clip" data-testid="scene-portal-child">
           <BoardView context={context} board={board} origin={portal.frame} />
@@ -377,8 +541,8 @@ function PortalView({
           className="scene-portal__header scene-portal__header--live"
           disabled={!canFocus}
           onClick={focusPortal}
-          aria-label={`Focus ${portal.targetBoardName ?? board.name}`}
         >
+          <span className="sr-only">Focus </span>
           <span className="scene-portal__glyph" aria-hidden="true">
             {"\u25c9"}
           </span>
@@ -394,7 +558,7 @@ function PortalView({
       {...common}
       className="scene-portal scene-portal--impostor"
       data-interactive={canFocus ? "true" : undefined}
-      style={{ ...translated(portal.frame, origin, 12 * scale), zIndex: 2000 + cardZ }}
+      style={{ ...translated(frame, origin, 12 * scale), zIndex: 2000 + cardZ }}
     >
       {canFocus ? (
         <button
@@ -424,16 +588,21 @@ function BoardView({
 
   const scale = board.transform.scale;
   const cards = content.cards.filter(
-    (card) => card.portalKey === null && card.lod !== "hidden" && isShown(context, card.rect),
+    (card) =>
+      card.portalKey === null &&
+      card.lod !== "hidden" &&
+      isShown(context, context.rectFor(card.key, card.rect)),
   );
   const sections = content.sections.filter(
-    (section) => section.lod !== "hidden" && isShown(context, section.rect),
+    (section) =>
+      section.lod !== "hidden" && isShown(context, context.rectFor(section.key, section.rect)),
   );
   const edges = content.edges.filter(
     (edge) => edge.lod !== "hidden" && isShown(context, edge.bounds),
   );
   const portals = content.portals.filter(
-    (portal) => portal.lod !== "hidden" && isShown(context, portal.frame),
+    (portal) =>
+      portal.lod !== "hidden" && isShown(context, context.rectFor(portal.key, portal.frame)),
   );
 
   return (
@@ -444,10 +613,23 @@ function BoardView({
       data-lod={board.lod}
     >
       {sections.map((section) => (
-        <SectionView key={section.key} section={section} origin={origin} scale={scale} />
+        <SectionView
+          key={section.key}
+          section={section}
+          rect={context.rectFor(section.key, section.rect)}
+          origin={origin}
+          scale={scale}
+          selected={section.sectionId === context.selectedSectionId}
+        />
       ))}
       {edges.length > 0 ? (
-        <EdgeLayer edges={edges} origin={origin} strokeWidth={Math.max(0.5, 1.4 * scale)} />
+        <EdgeLayer
+          edges={edges}
+          origin={origin}
+          strokeWidth={Math.max(0.5, 1.4 * scale)}
+          selected={context.selectedEdges}
+          fontSize={Math.max(8, 11 * scale)}
+        />
       ) : null}
       {cards.map((card) => (
         <CardFace key={card.key} card={card} context={context} origin={origin} scale={scale} />
@@ -459,8 +641,272 @@ function BoardView({
   );
 }
 
+/** Page-space overlay box; selection chrome renders at the layer's origin. */
+function pageBox(rect: Rect): CSSProperties {
+  return {
+    position: "absolute",
+    left: rect.x,
+    top: rect.y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+interface SelectionOutline {
+  readonly instanceKey: string;
+  readonly cardId: string;
+  readonly rect: Rect;
+}
+
+function selectionOutlines(scene: Scene, context: SceneLayerContext): SelectionOutline[] {
+  const outlines: SelectionOutline[] = [];
+  for (const card of scene.cards) {
+    // Portal cards are outlined by their frame, not the card box underneath it.
+    if (card.portalKey !== null || card.lod === "hidden") continue;
+    if (!context.selected.has(card.cardId)) continue;
+    outlines.push({
+      instanceKey: card.key,
+      cardId: card.cardId,
+      rect: context.rectFor(card.key, card.rect),
+    });
+  }
+  for (const portal of scene.portals) {
+    if (portal.lod === "hidden" || !context.selected.has(portal.cardId)) continue;
+    outlines.push({
+      instanceKey: portal.key,
+      cardId: portal.cardId,
+      rect: context.rectFor(portal.key, portal.frame),
+    });
+  }
+  return outlines;
+}
+
 /**
- * A read-only DOM projection of a `@suite/scene` tree. Every box is in page
+ * Selected outline, resize handles, connector handles and the live marquee.
+ * All boxes are page space, so the overlay pans and zooms with the scene
+ * without extra math. Handles exist for a single readable card or a selected
+ * section, and only for editors.
+ */
+function SelectionOverlay({
+  scene,
+  context,
+  selectedIds,
+  selectedSectionId,
+  marquee,
+  canEditLayout,
+  connectorHandles,
+  connectorDrag,
+}: {
+  scene: Scene;
+  context: SceneLayerContext;
+  selectedIds: readonly string[];
+  selectedSectionId: string | null;
+  marquee: Rect | null;
+  canEditLayout: boolean;
+  connectorHandles: readonly SceneConnectorHandle[];
+  connectorDrag: { readonly from: Point; readonly to: Point } | null;
+}) {
+  const outlines = selectedIds.length === 0 ? [] : selectionOutlines(scene, context);
+  const cardTarget = canEditLayout ? resolveResizeTarget(scene, selectedIds) : null;
+  const sectionTarget = canEditLayout ? resolveSectionResizeTarget(scene, selectedSectionId) : null;
+  const handleSize = resizeHandlePageSize(scene.camera.zoom);
+  const handles: { key: string; handle: ResizeHandle; rect: Rect; lod: string }[] = [];
+  for (const target of [cardTarget, sectionTarget]) {
+    if (!target) continue;
+    const rect = context.rectFor(target.instanceKey, target.rect);
+    for (const handle of RESIZE_HANDLES) {
+      handles.push({
+        key: `${target.instanceKey}:${handle}`,
+        handle,
+        rect: resizeHandleBoxes(rect, handleSize)[handle],
+        lod: target.lod,
+      });
+    }
+  }
+
+  const empty =
+    outlines.length === 0 &&
+    handles.length === 0 &&
+    marquee === null &&
+    connectorHandles.length === 0 &&
+    connectorDrag === null;
+  if (empty) return null;
+
+  return (
+    <div
+      className="scene-selection"
+      data-testid="scene-selection"
+      aria-hidden="true"
+      style={{ "--scene-chrome-scale": sceneChromeScale(scene.camera.zoom) } as CSSProperties}
+    >
+      {outlines.map((outline) => (
+        <div
+          key={outline.instanceKey}
+          className="scene-selection__outline"
+          data-testid="scene-selection-outline"
+          data-card-id={outline.cardId}
+          style={pageBox(outline.rect)}
+        />
+      ))}
+      {connectorHandles.map((handle) => (
+        <span
+          key={handle.key}
+          className="scene-selection__connector"
+          data-testid="scene-connector-handle"
+          data-side={handle.side}
+          data-card-id={handle.cardId}
+          {...(handle.connectorId === null ? {} : { "data-connector-id": handle.connectorId })}
+          style={pageBox(handle.rect)}
+        />
+      ))}
+      {connectorDrag ? (
+        <svg
+          className="scene-connector-drag"
+          data-testid="scene-connector-drag"
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            overflow: "visible",
+          }}
+        >
+          <path
+            d={`M ${connectorDrag.from.x} ${connectorDrag.from.y} L ${connectorDrag.to.x} ${connectorDrag.to.y}`}
+            strokeWidth={1.5 * sceneChromeScale(scene.camera.zoom)}
+          />
+        </svg>
+      ) : null}
+      {handles.map((entry) => (
+        <span
+          key={entry.key}
+          className="scene-selection__handle"
+          data-testid="scene-resize-handle"
+          data-handle={entry.handle}
+          data-lod={entry.lod}
+          style={{ ...pageBox(entry.rect), cursor: resizeHandleCursor(entry.handle) }}
+        />
+      ))}
+      {marquee ? (
+        <div className="scene-marquee" data-testid="scene-marquee" style={pageBox(marquee)} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Peer presence over the projection: a ring around every instance of a card a
+ * peer selected, a dashed ghost where a peer's drag or resize is landing, and a
+ * dot for each pointer in page space. Chips are counter-scaled through
+ * `--scene-chrome-scale`, the same variable the local selection chrome uses.
+ */
+function PeerPresenceOverlay({
+  scene,
+  peers,
+  rectFor,
+  liveCards,
+}: {
+  scene: Scene;
+  peers: readonly PeerPresence[];
+  rectFor: (instanceKey: string, rect: Rect) => Rect;
+  liveCards: boolean;
+}) {
+  const outlines = useMemo(
+    () => peerSelectionOutlines(scene, peers, rectFor),
+    [scene, peers, rectFor],
+  );
+  const ghosts = useMemo(() => peerGhosts(scene, peers), [scene, peers]);
+  const dots = useMemo(() => peerPointerDots(scene, peers), [scene, peers]);
+  // A live card mounts the real NodeCard, which already labels the gesture; the
+  // ghost outline stays so far-LOD copies of the same gesture are visible too.
+  const liveKeys = useMemo(() => {
+    if (!liveCards) return null;
+    const keys = new Set<string>();
+    for (const card of scene.cards) {
+      if (card.lod === "full" && card.portalKey === null) keys.add(card.key);
+    }
+    return keys;
+  }, [liveCards, scene]);
+
+  if (outlines.length === 0 && ghosts.length === 0 && dots.length === 0) return null;
+
+  return (
+    <div className="scene-peers" data-testid="scene-peers" aria-hidden="true">
+      {outlines.map((outline) => (
+        <div
+          key={`selection-${outline.peer.clientId}-${outline.instanceKey}`}
+          className="scene-peer-selection"
+          data-testid="scene-peer-selection"
+          data-peer-name={outline.peer.user.name}
+          {...(outline.cardId ? { "data-card-id": outline.cardId } : {})}
+          {...(outline.sectionId ? { "data-section-id": outline.sectionId } : {})}
+          style={{
+            ...pageBox(outline.rect),
+            borderColor: outline.peer.user.color,
+            boxShadow: `0 0 0 2px color-mix(in srgb, ${outline.peer.user.color} 26%, transparent)`,
+          }}
+        />
+      ))}
+      {ghosts.map((ghost) => (
+        <div
+          key={`ghost-${ghost.peer.clientId}-${ghost.kind}-${ghost.instanceKey}`}
+          className="scene-peer-ghost"
+          data-testid="scene-peer-ghost"
+          data-kind={ghost.kind}
+          data-peer-name={ghost.peer.user.name}
+          style={{
+            ...pageBox(ghost.rect),
+            borderColor: ghost.peer.user.color,
+            backgroundColor: `color-mix(in srgb, ${ghost.peer.user.color} 8%, transparent)`,
+          }}
+        >
+          {ghost.anchor && !liveKeys?.has(ghost.instanceKey) ? (
+            <span className="scene-peer-tag">
+              <PeerNameTag user={ghost.peer.user} detail={ghost.detail} />
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {dots.map((dot) =>
+        dot.clip ? (
+          <div
+            key={`pointer-${dot.peer.clientId}`}
+            className="scene-peer-pointer"
+            data-testid="scene-peer-pointer"
+            data-peer-name={dot.peer.user.name}
+            style={pageBox(dot.clip)}
+          >
+            <span
+              className="scene-peer-pointer__dot"
+              style={{
+                left: dot.point.x - dot.clip.x,
+                top: dot.point.y - dot.clip.y,
+                backgroundColor: dot.peer.user.color,
+              }}
+            />
+          </div>
+        ) : (
+          <span
+            key={`pointer-${dot.peer.clientId}`}
+            className="scene-peer-pointer__dot scene-peer-pointer__dot--free"
+            data-testid="scene-peer-pointer"
+            data-peer-name={dot.peer.user.name}
+            style={{
+              left: dot.point.x,
+              top: dot.point.y,
+              backgroundColor: dot.peer.user.color,
+            }}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * A DOM projection of a `@suite/scene` tree. Every box is in page
  * coordinates, so the layer can live inside React Flow's `ViewportPortal` and
  * pan/zoom with the camera; portals clip a recursive child board in place.
  */
@@ -473,10 +919,26 @@ export function SceneLayer({
   miniatures,
   drawings,
   onFocusPortal,
+  selectedIds = EMPTY_IDS,
+  selectedSectionId = null,
+  selectedEdgeIds = EMPTY_IDS,
+  overrides = EMPTY_OVERRIDES,
+  marquee = null,
+  connectorHandles = EMPTY_HANDLES,
+  connectorDrag = null,
+  canEditLayout = false,
+  liveCards = false,
+  peers = EMPTY_PEERS,
 }: SceneLayerProps) {
   const content = useMemo(() => indexScene(scene), [scene]);
   const boards = useMemo(() => new Map(scene.boards.map((board) => [board.key, board])), [scene]);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedEdges = useMemo(() => new Set(selectedEdgeIds), [selectedEdgeIds]);
   const culling = viewport.width > 0 && viewport.height > 0;
+  const rectFor = useCallback(
+    (instanceKey: string, rect: Rect) => overrides.get(instanceKey) ?? rect,
+    [overrides],
+  );
   const context: SceneLayerContext = {
     content,
     boards,
@@ -488,6 +950,11 @@ export function SceneLayer({
     onFocusPortal,
     viewport,
     culling,
+    rectFor,
+    selected,
+    selectedEdges,
+    selectedSectionId,
+    liveCards,
   };
 
   return (
@@ -495,9 +962,23 @@ export function SceneLayer({
       className="scene-layer"
       data-testid="scene-layer"
       role="img"
-      aria-label={`Scene preview: ${scene.counts.boards} boards, ${scene.counts.cards} cards, ${scene.counts.portals} portals`}
+      aria-label={`Scene: ${scene.counts.boards} boards, ${scene.counts.cards} cards, ${scene.counts.portals} portals`}
+      style={{ "--scene-chrome-scale": sceneChromeScale(scene.camera.zoom) } as CSSProperties}
     >
       <BoardView context={context} board={scene.root} origin={ORIGIN} />
+      <SelectionOverlay
+        scene={scene}
+        context={context}
+        selectedIds={selectedIds}
+        selectedSectionId={selectedSectionId}
+        marquee={marquee}
+        canEditLayout={canEditLayout}
+        connectorHandles={connectorHandles}
+        connectorDrag={connectorDrag}
+      />
+      {peers.length > 0 ? (
+        <PeerPresenceOverlay scene={scene} peers={peers} rectFor={rectFor} liveCards={liveCards} />
+      ) : null}
     </div>
   );
 }

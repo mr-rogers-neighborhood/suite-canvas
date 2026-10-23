@@ -1,0 +1,235 @@
+.scene-outline {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  width: min(220px, calc(100vw - 24px));
+  max-height: calc(100% - 24px);
+  flex-direction: column;
+  align-items: flex-start;
+  /* The container must not swallow canvas gestures; only its surfaces do. */
+  pointer-events: none;
+}
+
+.scene-outline__panel {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(16px) saturate(1.2);
+  pointer-events: none;
+}
+
+.scene-outline__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 6px 7px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.scene-outline__heading {
+  flex: 1;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scene-outline__total,
+.scene-outline__count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--segmented-bg);
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.scene-outline__back,
+.scene-outline__toggle {
+  display: flex;
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.scene-outline__back:hover,
+.scene-outline__back:focus-visible,
+.scene-outline__toggle:hover,
+.scene-outline__toggle:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+.scene-outline__rows {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.scene-outline__row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+  padding-top: 1px;
+  padding-right: 4px;
+  padding-bottom: 1px;
+}
+
+.scene-outline__row:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.scene-outline__row.is-active {
+  background: var(--segmented-bg);
+}
+
+.scene-outline__disclosure {
+  display: flex;
+  pointer-events: auto;
+  width: 16px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.scene-outline__disclosure:hover,
+.scene-outline__disclosure:focus-visible {
+  color: var(--ink);
+}
+
+.scene-outline__disclosure.is-empty {
+  pointer-events: none;
+}
+
+.scene-outline__label {
+  display: flex;
+  pointer-events: auto;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 3px 4px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.scene-outline__label:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--section-blue) 60%, transparent);
+  outline-offset: 1px;
+}
+
+.scene-outline__glyph {
+  flex: none;
+  width: 14px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.scene-outline__row.is-active .scene-outline__glyph {
+  color: var(--ink);
+}
+
+.scene-outline__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-outline__row.is-active .scene-outline__title {
+  font-weight: 600;
+}
+
+.scene-outline__lod {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.scene-outline__unavailable {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.scene-outline__peer {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+.scene-outline__tab {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  box-shadow: var(--card-shadow);
+  color: var(--ink-muted);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.scene-outline__tab:hover,
+.scene-outline__tab:focus-visible {
+  color: var(--ink);
+}
+
+.scene-outline__tab-count {
+  color: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.scene-outline__tab-label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+}

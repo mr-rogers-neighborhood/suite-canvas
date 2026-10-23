@@ -35,6 +35,19 @@ export interface ViewportState {
   zoom: number;
 }
 
+/** One nested level inside the infinite scene; the camera restores on pop. */
+export interface SceneFocusEntry {
+  /** Board ids from the root board to this instance, inclusive. */
+  path: string[];
+  boardId: string;
+  /** The portal card that opened this level; absent at the root. */
+  portalCardId?: string;
+  /** Camera checkpoint to restore when this level is left. */
+  camera: ViewportState;
+  label?: string;
+  nonce: number;
+}
+
 /** A board the user left, with the viewport that returns to it exactly. */
 export interface BoardVisit {
   boardId: string;
@@ -96,6 +109,8 @@ interface UiState extends SessionCapabilities {
   boardViewports: Record<string, ViewportState>;
   /** Boards visited from the current one, newest last. */
   boardHistory: BoardVisit[];
+  /** Nested scene levels entered without switching the root board, newest last. */
+  sceneFocusPath: SceneFocusEntry[];
   /**
    * A one-shot instruction to move the camera after a board switch; `viewport`
    * null means "fit the board's content".
@@ -181,6 +196,11 @@ interface UiState extends SessionCapabilities {
   ) => void;
   /** Returns to the previous board and viewport; false when there is nowhere to go. */
   goBackBoard: () => boolean;
+  /** Push one nested scene level; the current camera becomes its checkpoint. */
+  pushSceneFocus: (entry: Omit<SceneFocusEntry, "nonce">) => void;
+  /** Pop the deepest scene level and return it, or null at the root. */
+  popSceneFocus: () => SceneFocusEntry | null;
+  clearSceneFocus: () => void;
   recordBoardViewport: (boardId: string, viewport: ViewportState) => void;
   clearViewportRequest: () => void;
   requestPortalEntry: (request: PortalEntryRequest) => void;
@@ -224,6 +244,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeBoardId: null,
   boardViewports: {},
   boardHistory: [],
+  sceneFocusPath: [],
   viewportRequest: null,
   portalEntry: null,
   cardFocusId: null,
@@ -275,6 +296,8 @@ export const useUiStore = create<UiState>((set) => ({
         options.viewport !== undefined ? options.viewport : (state.boardViewports[boardId] ?? null);
       return {
         activeBoardId: boardId,
+        // A tab click is a new root; a nested focus path belongs to the old one.
+        sceneFocusPath: [],
         // Bounded: a long portal chain should not grow the session forever.
         boardHistory: [...state.boardHistory, ...leaving].slice(-24),
         viewportRequest: { boardId, viewport: request, nonce: nextNavigationNonce() },
@@ -313,6 +336,18 @@ export const useUiStore = create<UiState>((set) => ({
     });
     return true;
   },
+  pushSceneFocus: (entry) =>
+    set((state) => ({
+      sceneFocusPath: [...state.sceneFocusPath, { ...entry, nonce: nextNavigationNonce() }],
+    })),
+  popSceneFocus: () => {
+    const state = useUiStore.getState();
+    const entry = state.sceneFocusPath.at(-1);
+    if (!entry) return null;
+    useUiStore.setState({ sceneFocusPath: state.sceneFocusPath.slice(0, -1) });
+    return entry;
+  },
+  clearSceneFocus: () => set({ sceneFocusPath: [] }),
   recordBoardViewport: (boardId, viewport) =>
     set((state) => {
       const current = state.boardViewports[boardId];

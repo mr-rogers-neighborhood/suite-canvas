@@ -8,7 +8,10 @@ Claude Code, …). Read it first; keep it high-signal.
 
 - **Monorepo:** pnpm workspaces + Turborepo (task caching)
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
-  Zustand (UI state), React Flow (`@xyflow/react`), Tiptap 3 (every node is an editor)
+  Zustand (UI state), React Flow (`@xyflow/react`) as the current surface, Tiptap 3 (every node is an
+  editor). The rendering **target** is a derived scene — Loro graph → `@suite/scene` projection →
+  `SceneSurface` adapter → DOM cards ([ADR-0030](docs/decisions/0030-scene-projection-lod-and-real-portals.md));
+  it is not the default yet.
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +

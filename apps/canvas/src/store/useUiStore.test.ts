@@ -200,6 +200,7 @@ describe("useUiStore board navigation", () => {
       activeBoardId: "board-a",
       boardViewports: {},
       boardHistory: [],
+      sceneFocusPath: [],
       viewportRequest: null,
       portalEntry: null,
       cardFocusId: null,
@@ -329,5 +330,52 @@ describe("useUiStore card focus", () => {
     useUiStore.getState().openCardFocus("card-a");
     useUiStore.getState().openInspector("card-b");
     expect(useUiStore.getState().cardFocusId).toBeNull();
+  });
+});
+
+describe("useUiStore scene focus path", () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      activeBoardId: "board-a",
+      sceneFocusPath: [],
+      boardHistory: [],
+      viewportRequest: null,
+    });
+  });
+
+  it("should push nested levels and pop the deepest checkpoint", () => {
+    useUiStore.getState().pushSceneFocus({
+      path: ["board-a", "board-b"],
+      boardId: "board-b",
+      portalCardId: "portal-1",
+      camera: { x: 10, y: 20, zoom: 0.5 },
+      label: "Sources",
+    });
+    useUiStore.getState().pushSceneFocus({
+      path: ["board-a", "board-b", "board-c"],
+      boardId: "board-c",
+      portalCardId: "portal-2",
+      camera: { x: 40, y: 50, zoom: 0.25 },
+    });
+
+    const deepest = useUiStore.getState().popSceneFocus();
+    expect(deepest?.boardId).toBe("board-c");
+    expect(deepest?.camera).toEqual({ x: 40, y: 50, zoom: 0.25 });
+    expect(useUiStore.getState().sceneFocusPath.map((entry) => entry.boardId)).toEqual(["board-b"]);
+
+    expect(useUiStore.getState().popSceneFocus()?.portalCardId).toBe("portal-1");
+    expect(useUiStore.getState().popSceneFocus()).toBeNull();
+  });
+
+  it("should clear the nested path when the root board changes", () => {
+    useUiStore.getState().pushSceneFocus({
+      path: ["board-a", "board-b"],
+      boardId: "board-b",
+      camera: { x: 0, y: 0, zoom: 1 },
+    });
+
+    useUiStore.getState().activateBoard("board-c");
+
+    expect(useUiStore.getState().sceneFocusPath).toEqual([]);
   });
 });

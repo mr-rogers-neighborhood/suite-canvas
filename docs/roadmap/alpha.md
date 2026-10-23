@@ -18,7 +18,8 @@ This is a stage contract with evidence. It answers three questions:
 1. Where is the product? Late Alpha.
 2. Why is it not Beta? Two live data-loss paths, no executed CI, no release identity, no durable
    billing, and no client durability work.
-3. What must be true before Beta? Gates A1–A10.
+3. What must be true before Beta? Gates A1–A10, plus A11 (Portals) once its
+   planning phase lands.
 
 It does not answer "when". Sequencing is by dependency and evidence. No dates, durations, or effort
 estimates are used.
@@ -629,9 +630,12 @@ part of A1, not a separate work item.
 
 ## 7. Alpha exit gates
 
-Beta entry is defined by these ten gates. Each gate names its **evidence artifact**: the thing an
+Beta entry is defined by these gates. Each gate names its **evidence artifact**: the thing an
 outsider could inspect. A gate without an artifact is not closed. The Beta and V1 gate mapping is in
 [beta.md §1.3](./beta.md#gate-crosswalk).
+
+A11 (Portals) is pinned as an alpha gate for the next planning phase. It is not claimed open; its
+scope, data model, and acceptance are sketched in §7.4.
 
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
@@ -645,6 +649,7 @@ outsider could inspect. A gate without an artifact is not closed. The Beta and V
 | **A8** | The docs tell the truth | §9 ledger emptied; `pnpm docs:check` (links + code fences) in CI; `AGENTS.md` names real types | — |
 | **A9** | The limits are published | A single limits page: workspace bytes, card count, attachment bytes/workspace, shares/workspace, selection cards, open rooms, peers/room, restore targets. Values sourced from `limits.ts` and `compose.yaml`, not prose | A1 |
 | **A10** | Both reported UX bugs are closed | Marquee e2e checklist (1, 2, many, across sections, with a peer); local-vs-remote smoothing acceptance at 60/120 Hz; one CRDT commit per gesture | A6 |
+| **A11** | Portals vertical slice | Portal card type, mini-map outline, enter/exit camera transition, cross-board presence, and card focus mode; e2e covers enter/exit, presence, and one commit per gesture | A10 |
 
 ### 7.1 Gate notes
 
@@ -722,6 +727,75 @@ owner is the maintainer/operator; no separate review board is implied.
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `measuring` | Marquee regression spec and the duplicate-selection fix are in; two React Flow cancel/peer cases and local drag easing are tracked in the A10 follow-up. |
+| A11 | `unopened` | Pinned for the next planning phase; design sketch in §7.4. |
+
+### 7.4 A11 — Portals and card focus (pinned)
+
+**Name.** "Portals" is the working name. It is better than "nested canvases" because the user-facing
+object is a doorway, not a container. Alternatives if it ever needs renaming: *Vistas*, *Doorways*,
+*Looking Glass*.
+
+**Definition.** A portal is a card on a board that represents another board. It renders a high-level
+outline of that board, and activating it replaces the active board with the target board through a
+camera transition. The transition is a camera trick: the target outline is drawn into the portal's
+screen rectangle, animated to fill the viewport, then the board switches underneath the overlay. The
+result should feel like zooming into a nested canvas, not navigating to a different page.
+
+The same trick applies to a single card. The inspector's **Edit** action and a double-click/zoom
+gesture open a full-canvas card editor; Escape or zoom-out returns to the previous board and
+viewport.
+
+**Data model (decision for the planning phase).**
+- Recommended: a built-in `portal` card type with a `board` field kind. A board reference then
+  participates in views, publish redaction, and backlinks like any other reference value.
+- Alternative: a reserved `portalBoardId` text property. Smaller schema change, weaker validation
+  and no first-class view predicate.
+- A portal is a *card*, not a new object class. Cards already have multiple placements, so the same
+  target board can be reached from several boards.
+
+**Rendering.**
+- `PortalNode` draws a static miniature of the target board: section bands, card rectangles, and
+  presence dots. Do not mount a second React Flow instance per portal; that would multiply the
+  editor and gesture cost.
+- The miniature is derived from the same snapshot and increments with the target board's version
+  vector. It is not stored.
+- Cross-board presence uses the existing `AWARENESS_FIELDS.board` value; no new transport. Render
+  peer avatars on the portal card and a dot/badge on the board tab.
+
+**Transition.**
+1. Measure the portal node's screen rectangle.
+2. Render the target board's outline into an overlay at that rectangle.
+3. Animate the overlay to the full canvas viewport and fade the old board.
+4. Switch `activeBoardId`, set the target viewport so the target's content maps to the screen, and
+   remove the overlay.
+5. Keep a back stack: Escape, breadcrumb, or the reverse zoom returns to the exact previous
+   board/viewport.
+
+**Card focus.** Reuse the same overlay. The inspector Edit action sets a `focusTarget` that expands
+the card to the canvas, focuses the title/body editor, and restores the previous viewport on exit.
+The card remains the same object; no second editor model.
+
+**Open decisions.**
+- Does a portal *own* the target board (create/delete semantics), or only reference it?
+- How are cycles represented (A portals to B, B portals to A) and navigated? A back stack is enough
+  for the first slice.
+- Do portals appear in publish/projections as inert links, stubs, or redacted rows?
+- Is the first slice one level deep, or arbitrary nesting? Recommend one level plus a back stack.
+- Tab grouping and cross-board edges are follow-ons, not part of the first slice.
+
+**Acceptance for the first slice.**
+- A portal can be created from the right-click menu and the Add card/type menu.
+- Double-click or zooming past a threshold enters the target board with no full-page reload and no
+  white flash.
+- Escape or zoom-out returns to the exact previous board and viewport.
+- A peer on the target board appears on the portal card and the board tab.
+- The inspector Edit action opens the card in the canvas; Escape restores the previous viewport.
+- One CRDT commit per gesture; no per-frame document writes.
+- Keyboard activation and `prefers-reduced-motion` paths work.
+- E2E: enter/exit, back stack, presence on portal/tab, card focus, and a portal cycle.
+
+**Non-goals for the first slice:** tab grouping, cross-board edges, portal-aware publish/export,
+mobile, and more than one level of nesting.
 
 ---
 

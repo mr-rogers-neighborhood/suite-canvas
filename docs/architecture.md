@@ -65,7 +65,7 @@ now; the target index/card-doc split is described in
 | `references` | derived `LoroMap` per card: `targetCardId -> true`, rebuilt from mention nodes in the title and body |
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
-| `drawings` | whiteboard scenes (planned, [ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)), one key per whiteboard card: `elements` (a map of element id → element field map), `order` (a movable list of element ids for z-order), `tombstones` (deleted element ids kept until purge), `version`, `updatedAt` |
+| `drawings` | whiteboard scenes ([ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)), one key per whiteboard card: `elements` (a map of element id → element field map with per-element `deletedAt` tombstones), `order` (a movable list of element ids for z-order), `version`, `updatedAt` |
 | `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
 | `views` | `LoroMap`, one key per saved view: `id`, `name`, `position`, plus a `query` sub-map: `text?`, `scope`, `groupBySection`, `order` and the `types`/`tags`/`sections` facet maps (`id -> true`). No card id is ever stored |
 
@@ -97,12 +97,14 @@ member placement; nothing is written while the gesture runs. Dropping a card who
 a section but whose measured rectangle hangs outside expands that section and its ancestors, again
 as geometry writes. Membership is recomputed on read, so no drag ever rewrites card state.
 
-**Whiteboard scenes will be element maps.** A planned `whiteboard` card keeps its Excalidraw scene
-under `drawings.<cardId>`: one field map per element, a movable `order` list for z-order, and
-tombstones for deleted elements so a concurrent delete and an undo converge. One Loro transaction
-covers a gesture, Loro's undo is canonical, and Excalidraw's own history is scoped to the open
-whiteboard. The card face is a cached SVG preview — a derived projection, not a second copy of the
-scene ([ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)).
+**Whiteboard scenes are element maps.** A `whiteboard` card keeps its Excalidraw scene under
+`drawings.<cardId>`: one field map per element, a movable `order` list for z-order, and a
+per-element `deletedAt` tombstone so a concurrent delete and an undo converge. `applyDrawing`
+writes only changed fields, tombstones elements missing from a snapshot and lands the diff in one
+commit; `setDrawing` remains the seed/import escape hatch. One Loro transaction covers a gesture,
+Loro's undo is canonical, and Excalidraw's own history is scoped to the open whiteboard. The card
+face is a cached SVG preview — a derived projection, not a second copy of the scene
+([ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)).
 
 **Dormant values are intentional.** Removing a field from a type, switching a card's type or
 removing a tag hides the stored value without deleting it; restoring the definition revives it.
@@ -341,11 +343,11 @@ Scene projection (pure, engine-agnostic)
   board instances · transforms · effective zoom · LOD · portal gates · edges
         │
         ▼
-SceneSurface adapter (planned seam)
-  ReactFlowSceneSurface (parity baseline) │ IceSceneSurface (spike) │ later surfaces
+Scene surface (React Flow camera + DOM projection, `?canvas=scene`)
+  SceneBoard (camera, LOD state, focus path) │ SceneLayer (cards, edges, portals)
         │
         ▼
-DOM card layer (NodeCard/Tiptap) + proxy layers (miniatures, icons, edges, sections)
+Read-only card faces + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
 ```
 
 The projection is the target, not today's default: the canvas still ships the React Flow flow
@@ -379,7 +381,8 @@ renderer.
   (`scale = min(frameW / boardBounds.w, frameH / boardBounds.h) × padding`).
 - Below the expansion gate the portal renders its **impostor** — the existing `BoardMiniature` SVG —
   and instantiates nothing. Above the gate the target's cards, sections and edges are instantiated at
-  the projected scale and become interactive.
+  the projected scale and are focusable. Editing inside a portal is Phase 4 parity work; the scene
+surface itself writes nothing.
 - Creating a card inside a portal writes the canonical placement at the inverse-transformed
   position. Writes stay one CRDT commit per gesture; live drag positions remain presence.
 
@@ -387,7 +390,7 @@ renderer.
 
 | Band | Effective scale | Card | Portal | Section | Edge |
 | --- | --- | --- | --- | --- | --- |
-| `full` | ≥ 0.75 | `NodeCard` + Tiptap | live child board | fill + header + handles | full path + label |
+| `full` | ≥ 0.75 | static `NodeCard` face + whiteboard preview (Tiptap is Phase 4) | live child board | fill + header + handles | full path + label |
 | `compact` | 0.35–0.75 | static title + glyph + chips | live miniature | title chip | simplified path |
 | `icon` | 0.12–0.35 | glyph + layout badge | layout-encoded icon | colour band | hidden |
 | `hidden` | < 0.12 | none | aggregate proxy | none | none |
@@ -426,10 +429,11 @@ the accessibility path when the spatial canvas is not legible.
 
 ### SceneSurface adapter
 
-`SceneSurface` is the seam: it receives a scene frame, reports camera and gesture intent, and paints
-instances. `ReactFlowSceneSurface` is the parity baseline and fallback; an ICE surface is a spike.
-LOD proxies and the DOM card layer are shared across surfaces, so the engine choice stays reversible
-and a failed spike costs an adapter rather than a document.
+The seam is the pure `Scene` value: `SceneBoard` owns the camera, LOD/gate state and focus path;
+`SceneLayer` paints the frame. The React Flow scene surface is the parity baseline and fallback; an
+ICE surface remains a deferred spike ([ADR-0032](./decisions/0032-ice-engine-deferral.md)). LOD
+proxies and card faces are shared, so the engine choice stays reversible and a failed spike costs an
+adapter rather than a document.
 
 ### The card layer
 

@@ -54,6 +54,7 @@ import type {
   EngineProvider as IceEngineProvider,
 } from "@vibecook/ice/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useUiStore } from "../store/useUiStore";
 import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
 
@@ -129,6 +130,8 @@ interface SeedReport {
   readonly failures: readonly string[];
   /** The entities that did spawn — what the camera frames on the first mount. */
   readonly entities: readonly Entity[];
+  /** Entity → canonical card id, for selection and later the write bridge. */
+  readonly entityCards: ReadonlyMap<Entity, string>;
   /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
   readonly boards: number;
   /** Things the seed deliberately did not map (cycles, depth caps, sections). */
@@ -146,6 +149,7 @@ interface LoadedIce {
   readonly layer: DeskLayerFactory;
   readonly Desk: typeof IceDesk;
   readonly EngineProvider: typeof IceEngineProvider;
+  readonly core: typeof import("@vibecook/ice");
 }
 
 type Phase =
@@ -452,6 +456,7 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
     kinds,
     failures,
     entities,
+    entityCards: new Map(),
     boards: 0,
     skipped: [],
   };
@@ -475,6 +480,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
       kinds: [],
       failures: [`suite projection: ${describeError(error)}`],
       entities: [],
+      entityCards: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -484,6 +490,12 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     spawn: (type, opts) => engine.ops.spawnWidget(type, { ...opts, undoable: false }),
     project: () => engine.step(performance.now()),
   });
+  const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
+  const entityCards = new Map<Entity, string>();
+  for (const [objectId, entity] of report.objects) {
+    const object = byObjectId.get(objectId);
+    if (object?.kind === "card" || object?.kind === "note") entityCards.set(entity, object.cardId);
+  }
 
   return {
     mode: "suite",
@@ -493,6 +505,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     kinds: report.kinds,
     failures: report.failures,
     entities: [...report.objects.values()],
+    entityCards,
     // Boards are counted by identity: the same board can open in several mats.
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
@@ -520,6 +533,7 @@ function seedWorkspaceDocument(
       kinds: [],
       failures: [`workspace projection: ${describeError(error)}`],
       entities: [],
+      entityCards: new Map(),
       boards: 0,
       skipped: [],
     };
@@ -529,6 +543,12 @@ function seedWorkspaceDocument(
     spawn: (type, opts) => engine.ops.spawnWidget(type, { ...opts, undoable: false }),
     project: () => engine.step(performance.now()),
   });
+  const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
+  const entityCards = new Map<Entity, string>();
+  for (const [objectId, entity] of report.objects) {
+    const object = byObjectId.get(objectId);
+    if (object?.kind === "card" || object?.kind === "note") entityCards.set(entity, object.cardId);
+  }
 
   return {
     mode: "workspace",
@@ -538,6 +558,7 @@ function seedWorkspaceDocument(
     kinds: report.kinds,
     failures: report.failures,
     entities: [...report.objects.values()],
+    entityCards,
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
   };
@@ -772,6 +793,7 @@ export function IceSurface({
           layer,
           Desk: react.Desk,
           EngineProvider: react.EngineProvider,
+          core,
         });
       } catch (error) {
         if (!cancelled) {
@@ -798,6 +820,30 @@ export function IceSurface({
   useEffect(() => {
     if (phase.kind === "failed") teardown();
   }, [phase.kind, teardown]);
+
+  // ICE is the canvas, but Suite owns the selection. Read the engine's
+  // `Selected` set once per frame and mirror it into the shell. The first
+  // non-empty selection wins; a shell-driven selection is not cleared just
+  // because ICE has not selected anything yet.
+  useEffect(() => {
+    if (phase.kind !== "ready" || seed === null || seed.entityCards.size === 0) return;
+    let handle = 0;
+    let previous = "";
+    const tick = (): void => {
+      const selected = phase.core
+        .selectedEntities(phase.engine.world)
+        .map((entity) => seed.entityCards.get(entity))
+        .filter((cardId): cardId is string => cardId !== undefined);
+      const key = selected.join("\u001f");
+      if (key !== previous && (selected.length > 0 || previous.length > 0)) {
+        previous = key;
+        useUiStore.getState().setSelectedNodeIds(selected);
+      }
+      handle = requestAnimationFrame(tick);
+    };
+    handle = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(handle);
+  }, [phase, seed]);
 
   // FPS is sampled in a rAF counter and published once per second, never per
   // frame: the HUD must not make React the desk's frame loop.
@@ -1082,7 +1128,7 @@ export function IceSurface({
         )}
         <span className="ice-surface__badge-hint">
           {workspaceMode
-            ? "Read-only projection · pan the mat · wheel to zoom · drag a note (not saved yet)"
+            ? "Read-only projection · select a card (mirrors the shell) · pan/zoom · drag is not saved yet"
             : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
         <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>

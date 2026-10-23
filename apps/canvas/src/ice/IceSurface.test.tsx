@@ -76,6 +76,7 @@ const ice = vi.hoisted(() => {
 vi.mock("@vibecook/ice", () => ({
   acquireCompositorDevice: ice.acquireCompositorDevice,
   createCanvasEngine: ice.createCanvasEngine,
+  selectedEntities: vi.fn(() => []),
 }));
 vi.mock("@vibecook/ice/desk", () => ({ deskLayer: ice.deskLayer }));
 vi.mock("@vibecook/ice/desk/objects", () => ({

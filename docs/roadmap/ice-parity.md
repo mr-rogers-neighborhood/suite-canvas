@@ -326,9 +326,9 @@ the reference machine; a software adapter is correctness-only.
 | Workstream | Status | Next artifact |
 | --- | --- | --- |
 | Decisions and docs | done | ADR-0034/0035/0036 |
-| Read-only real workspace | done — live graph + real `SceneCardView` overlays; no writes | 5k fixture + reload/camera restore |
-| `suite.card` production | partial — real card, inspector, read-only | pointer-mode switch for editing |
-| Interaction bridge | contract landed; integration pending | wire `IceGestureSession` + Loro undo |
+| Read-only real workspace | done — live graph, real `SceneCardView` overlays and selection mirroring; no writes | 5k fixture + reload/camera restore |
+| `suite.card` production | partial — real card, inspector, read-only selection | pointer-mode switch for editing |
+| Interaction bridge | contract landed; selection mirror integrated; writes pending | wire `IceGestureSession` + Loro undo |
 | Whiteboard | pending | preview + focus-surface round trip |
 | Sections/edges/connectors | plan landed; integration pending | custom kinds/overlays + e2e |
 | Portals/shared views | plan landed; integration pending | spawn from `icePortals` + camera entry |

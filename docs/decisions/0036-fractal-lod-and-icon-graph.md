@@ -126,6 +126,11 @@ band begins, using the band's existing threshold rather than a second text thres
 is banded, not continuous; the fade is only for the card face, never for text appearing at a new
 size. A label appears on hover, focus or selection at a readable size.
 
+The icon field is the last **card-band** LOD. Below it the canvas does not fade to nothing: it
+aggregates into a type graph inside a `graph` band, entered through a membrane rather than a clamp,
+specified in [ADR-0037](./0037-the-ceiling-and-the-graph-band.md). The rules above still hold there
+— glyphs and counts, derived positions, no reference edges.
+
 ### 6. The editor budget is explicit
 
 The DOM overlay is the expensive resource. The overlay mounts at most **24** cards by default, and

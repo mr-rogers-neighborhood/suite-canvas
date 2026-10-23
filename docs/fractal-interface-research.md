@@ -3,8 +3,9 @@
 - **Date:** 2026-10-23
 - **Scope:** zoomable user interfaces (ZUI), semantic zoom, focus+context, portal navigation,
   level-of-detail transitions, icon legibility and DOM-over-WebGPU budgets.
-- **Use:** informs [ADR-0036](./decisions/0036-fractal-lod-and-icon-graph.md) and the LOD
-  experiments in [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md).
+- **Use:** informs [ADR-0036](./decisions/0036-fractal-lod-and-icon-graph.md) and
+  [ADR-0037](./decisions/0037-the-ceiling-and-the-graph-band.md), and the LOD experiments in
+  [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md).
 - **Caveat:** the ZUI canon is lab work from 1993–2004 on much smaller displays. There is no
   peer-reviewed field study of Miro/Figma-class infinite canvases, and no literature on a
   WebGPU/DOM hybrid overlay. Claims below are marked **measured**, **design property**, or
@@ -179,7 +180,107 @@ decision in the parity roadmap.
 | E5 | **Threshold crossing.** Hysteresis 0 / 80 / 160 ms × slow/flick sweep × text/image card. | Band flips, layout shift, object constancy, edit-entry latency, dropped frames. | 0 flips with hysteresis; ≥ 95% constancy; p95 edit-entry < 150 ms; < 2 px shift; ≥ 55 fps. |
 | E6 | **Two-phase settle.** Motion frame vs settle mount with 6 ms deadline and 6 editors/frame. | Time to first readable card, settle time, long tasks. | First readable card ≤ 100 ms; settle ≤ 250 ms at 40 editors; no long task > 100 ms. |
 
-## 5. Sources
+## 5. Ceiling and membrane
+
+This section backs [ADR-0037](./decisions/0037-the-ceiling-and-the-graph-band.md). It is thinner than
+§1, and deliberately so: the ceiling is mostly a *gap* in the literature that we are filling by
+design, not a finding we are applying.
+
+### 5.1 "Semantic ceiling" is not an established term
+
+**White space.** Searches for a bounded zoom extent, a "ceiling" of a zoomable surface, or an
+asymmetric recursion depth (unbounded descent, bounded ascent) returned nothing that formalises the
+shape. "Semantic ceiling" is our word; no paper defines it, and this document should not be cited as
+if one did. What exists is adjacent:
+
+- **The infinite-space ZUIs.** Pad++ renders an unbounded plane and treats scale as a first-class
+  navigation dimension ([Bederson & Hollan, UIST 1994](https://doi.org/10.1145/192426.192435);
+  [Perlin & Fox, SIGGRAPH 1993](https://doi.org/10.1145/166117.166125)). Neither has a top.
+- **The analytic tool for a bounded extent.** Space-scale diagrams plot a zooming interaction as a
+  path through a diagram whose extent *is* the zoom range, which makes "how far can you go" a
+  geometric question ([Furnas & Bederson, CHI 1995](https://doi.org/10.1145/223904.223934)).
+- **The overview literature.** A survey of overview+detail and zooming interfaces documents the
+  trade-offs of getting further from the content, but treats the range as given rather than as a
+  thing with an edge ([Cockburn, Karlson & Bederson, CSUR 2009](https://doi.org/10.1145/1456650.1456652)).
+  Shneiderman's overview-first mantra is a design claim about starting there, not about stopping
+  there ([Shneiderman, VL 1996](https://doi.org/10.1109/VL.1996.545307)).
+
+**Recommendation:** say so in the docs. The ADR defines the vocabulary rather than sourcing it, and
+the first experiment at the ceiling should measure whether users read the boundary as intended, not
+assume the analogy carried.
+
+### 5.2 Soft boundaries are a platform convention, not a canvas finding
+
+Every mobile platform ships a rubber-band edge, and its contract is worth copying because it is
+already learned:
+
+- iOS scroll views bounce on overscroll and can be told not to
+  ([`bounces`](https://developer.apple.com/documentation/uikit/uiscrollview/bounces)).
+- Android 12 added a stretch effect for the same edge, replacing an unbounded glow
+  ([Android 12 behaviour changes](https://developer.android.com/about/versions/12/behavior-changes-all)).
+- Pull-to-refresh is the cleanest statement of the grammar: past a threshold the gesture *commits*,
+  below it the surface returns. `overscroll-behavior` exposes the same boundary as a CSS contract
+  ([Chrome](https://developer.chrome.com/blog/overscroll-behavior)).
+- A sheet's detents are the best-named soft ceiling — discrete stops with resistance between them
+  ([`UISheetPresentationController.Detent`](https://developer.apple.com/documentation/uikit/uisheetpresentationcontroller/detent)).
+
+**Recommendation:** resistance builds from the first frame, the cue is labelled, and the commit has a
+return path in the same gesture. Two honest caveats: all of this is touch evidence, and we found no
+study of *wheel* overscroll on a desktop canvas. Raskin's quasimode is the closest argument for why a
+sustained action is the right trigger — a state change that requires holding something is deliberate
+by construction ([*The Humane Interface*](https://en.wikipedia.org/wiki/The_Humane_Interface)).
+
+### 5.3 Changing the representation at the top
+
+Two shipping systems change what the top of their zoom range *is*:
+
+- **Strategic zoom** replaces units with icons as the camera pulls back, with a hard clamp at the
+  limit ([Supreme Commander](https://en.wikipedia.org/wiki/Supreme_Commander_(video_game))).
+- **Mapbox** switches from a flat map to a globe at low zoom, and every style declares `minzoom` and
+  `maxzoom`, i.e. a clamp
+  ([globe](https://docs.mapbox.com/mapbox-gl-js/guides/globe/),
+  [root spec](https://docs.mapbox.com/style-spec/reference/root/)).
+
+Both are *representation change on scale*, which supports the band. Both also **clamp**, which is the
+alternative ADR-0037 rejects: the precedent for a soft top comes from touch, and the precedent for a
+hard top comes from maps. Combining them — a band at the top, entered through a membrane — is our
+synthesis, not a documented pattern.
+
+### 5.4 Movement, not teleporting
+
+The flight rule (duration grows with distance) follows the same evidence as the camera grammar in
+§1.5: a joint pan/zoom path needs log-scale interpolation or the world appears to run away
+([Furnas & Bederson](https://doi.org/10.1145/223904.223934)), and short animated transitions reduce
+disorientation at modest cost. The specific claim — a *distance-scaled* duration beats a fixed one —
+is **not** settled by the studies we found; they compare instant against short, not short against
+proportional. Treat the scaling as a design property to measure (E4), with a floor and a ceiling so a
+long flight cannot become a cutscene.
+
+### 5.5 Aggregation, depth and the "everything visible" property
+
+- **World in Miniature** established that a scaled copy of the same world is a usable manipulable
+  overview, because it preserves spatial relations rather than recomputing them
+  ([Stoakley, Conway & Pausch, CHI 1995](https://doi.org/10.1145/223904.223938)). That is the argument
+  for deriving the graph band from member positions instead of laying it out afresh.
+- **Treemaps** show recursive containment as area, and recurse without limit inside a fixed root
+  ([Johnson & Shneiderman, 1991](https://doi.org/10.1145/102377.115768)); **hyperbolic browsing**
+  gives every level a constant amount of room ([Lamping & Rao, CHI 1995](https://doi.org/10.1145/223904.223956)).
+  Both are unbounded in both directions, which is exactly the asymmetry ADR-0037 introduces.
+- Occlusion is the reason 3D is refused. The canvas's value is that everything is visible at once;
+  depth that hides things trades that property away, and with it the shared frame collaborators point
+  at. We found no study of a shared 3D knowledge canvas to contradict this, but also none to support
+  one.
+
+### 5.6 What this section does not support
+
+- Not that a ceiling improves orientation — untested. The comparable claim (overviews help preference
+  more than accuracy, §1.4) suggests measuring both.
+- Not that a count is a better label than a truncated title at unknown scale — plausible from §1.0's
+  "readable or don't bother", not measured.
+- Not that derived depth reads as depth. It is a shading convention on flat quads; the experiment is
+  whether users read nesting from it without a legend.
+
+## 6. Sources
 
 Primary:
 
@@ -197,10 +298,25 @@ Primary:
 - Gruget, Touya & Muehlenhaus, *FogDetector*, GIScience 2023 — https://doi.org/10.4230/LIPIcs.GIScience.2023.73
 - Lin et al., small-icon legibility, 2007 — https://doi.org/10.2466/pms.104.1.191-200
 - Lin et al., pictogram/text size, 2021 — https://doi.org/10.1177/00187208211061938
+- Perlin & Fox, *Pad*, SIGGRAPH 1993 — https://doi.org/10.1145/166117.166125
+- Bederson & Hollan, *Pad++*, UIST 1994 — https://doi.org/10.1145/192426.192435
+- Lamping & Rao, *A Focus+Context Technique Based on Hyperbolic Geometry*, CHI 1995 — https://doi.org/10.1145/223904.223956
+- Stoakley, Conway & Pausch, *Virtual Reality on a WIM*, CHI 1995 — https://doi.org/10.1145/223904.223938
+- Johnson & Shneiderman, *Tree-Maps*, 1991 — https://doi.org/10.1145/102377.115768
+- Cockburn, Karlson & Bederson, *A Review of Overview+Detail, Zooming, and Focus+Context Interfaces*, CSUR 2009 — https://doi.org/10.1145/1456650.1456652
+- Shneiderman, *The Eyes Have It*, VL 1996 — https://doi.org/10.1109/VL.1996.545307
+- Raskin, *The Humane Interface*, 2000 — https://en.wikipedia.org/wiki/The_Humane_Interface
 
 Platform and product:
 
 - MapLibre layers — https://maplibre.org/maplibre-style-spec/layers/
+- Mapbox globe — https://docs.mapbox.com/mapbox-gl-js/guides/globe/
+- Mapbox style root (`minzoom`/`maxzoom`) — https://docs.mapbox.com/style-spec/reference/root/
+- *Supreme Commander* strategic zoom — https://en.wikipedia.org/wiki/Supreme_Commander_(video_game)
+- UIKit `UIScrollView.bounces` — https://developer.apple.com/documentation/uikit/uiscrollview/bounces
+- UIKit sheet detents — https://developer.apple.com/documentation/uikit/uisheetpresentationcontroller/detent
+- Android 12 stretch overscroll — https://developer.android.com/about/versions/12/behavior-changes-all
+- `overscroll-behavior` and pull-to-refresh — https://developer.chrome.com/blog/overscroll-behavior
 - Cytoscape style reference — https://js.cytoscape.org/
 - React Flow performance — https://reactflow.dev/learn/advanced-use/performance
 - three.js `LOD` hysteresis — https://github.com/mrdoob/three.js/blob/dev/src/objects/LOD.js

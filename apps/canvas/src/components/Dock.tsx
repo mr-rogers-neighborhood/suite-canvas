@@ -13,6 +13,11 @@ export interface DockProps {
   boards?: Board[];
   activeBoardId?: string | null;
   onToggleLibrary: () => void;
+  /**
+   * The ceiling's camera action. Omitted when the surface cannot fly there (the
+   * React Flow reference, a viewer without a camera), which hides the control.
+   */
+  onGraphView?: () => void;
   onCreateCard: (typeId: string) => void;
   onCreatePortal?: (targetBoardId: string) => void;
   onCreateBoardPortal?: () => void;
@@ -37,6 +42,7 @@ export function Dock({
   boards = [],
   activeBoardId = null,
   onToggleLibrary,
+  onGraphView,
   onCreateCard,
   onCreatePortal,
   onCreateBoardPortal,
@@ -128,6 +134,20 @@ export function Dock({
           </span>
         ) : null}
       </button>
+
+      {onGraphView ? (
+        <button
+          type="button"
+          data-testid="dock-graph-view"
+          className="dock-button"
+          onClick={onGraphView}
+        >
+          <span aria-hidden="true" className="text-[13px] leading-none">
+            {"\u2b21"}
+          </span>
+          <span>Graph view</span>
+        </button>
+      ) : null}
 
       <span className="dock-separator" aria-hidden="true" />
 

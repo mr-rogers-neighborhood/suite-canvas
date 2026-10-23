@@ -267,6 +267,42 @@ Goal: a default that fails honestly.
 **Exit evidence:** the P0 table in ADR-0034 is green; unsupported browsers see the right screen;
 accessibility checks pass; the perf artifact is linked; the default opens ICE.
 
+### Phase 11 — The ceiling and the graph band
+
+Goal: the far end of the zoom range has a top with a behaviour, not an empty field.
+
+- Add the `graph` band below `icon` and the type-graph projection from
+  [ADR-0037](../decisions/0037-the-ceiling-and-the-graph-band.md): one node per (container, type)
+  inside its container, one unfiled bucket, deterministic grid positions derived from member bounds,
+  counts and glyphs only, containment edges only. The projection writes nothing.
+- Add the membrane: rubber-band `pull` at `z_ceiling`, a cue from the first frame, commit past a
+  sustained threshold, return by the same gesture, `Escape` or the Dock control, with hysteresis and
+  a settle so wheel wobble never flaps.
+- Route every navigation through the camera flight helper — duration grows with pan distance and
+  log zoom ratio, clamped at both ends. No teleporting camera ops; the one exception is clicking a
+  card in the library, a drawer or the Types table.
+- Draw derived depth in the graph band only: nesting depth becomes offset, scale and shadow on flat
+  quads. No perspective camera, no authored Z.
+- Add the inspector's **Types in view** table: count and share per type, selectable, scoping the
+  library by type and container, framing the instances as a camera action. Read-only for viewers.
+
+| Lane | Work | Owner artifact |
+| --- | --- | --- |
+| A | Pure projection: aggregate into (container, type) nodes, deterministic layout, containment edges | `packages/scene/src/typeGraph.ts` + tests |
+| B | Two ICE kinds for the band: `suite.typeNode` (glyph + count) and `suite.containerNode` (frame + label) | `apps/canvas/src/ice/suiteTypeNodeKind.ts`, `suiteContainerNodeKind.ts` + tests |
+| C | Surface integration: membrane, camera flights, band spawn/despawn, keymap, HUD, reconcile — single owner of `IceSurface.tsx` | `apps/canvas/src/ice/iceMembrane.ts`, `iceCameraFlight.ts` + `IceSurface.tsx` |
+| D | Dock control, Types table, library scoping, frame-instances action | `apps/canvas/src/components/Dock.tsx`, `TypeTable.tsx`, `ice/useTypeTable.ts` |
+| E | ADR-0037, this phase, the architecture paragraph, the research note | `docs/` |
+| F | Verification: unit coverage, headed e2e (membrane commit returns, graph labels render, table scopes the library), `?perf=1` sample at the ceiling | `e2e/tests/ice-graph.spec.ts` |
+
+**Exit evidence:** pushing past the ceiling with the wheel shows a cue, commits at the threshold, and
+the same gesture (or `Escape`) returns; wheel wobble at either boundary does not flap. The graph band
+shows one node per (container, type) with a count at stable positions across renders and clients, and
+nested containers read as a stack through derived depth. The Dock's Graph view control and the
+gesture produce the identical camera result, and both are flights. Selecting a type in the table
+scopes the library and frames its instances without writing. Nothing in the graph band writes to
+Loro, references never appear as edges, and a viewer sees the same graph read-only.
+
 ## 4. Dependency order
 
 ```text
@@ -280,7 +316,11 @@ Phase 1 read-only real workspace
                           └── Phase 8 views/pins/navigation
                                 └── Phase 9 fractal LOD/budget
                                       └── Phase 10 failure/accessibility/rollout
+                                      └── Phase 11 ceiling/graph band
 ```
+
+Phase 11 depends on Phase 9's bands and on nothing in Phase 10; it can overlap the rollout work once
+the icon band is stable.
 
 Phase 5 and 6 can overlap once the bridge exists. Phase 8 can start its schema and library work in
 parallel, but its canvas interactions depend on Phase 3.
@@ -426,4 +466,9 @@ draws one.
 | Presence/shares | pending | two-browser artifact |
 | Views/Pins | done — pins tab, drop action, markers, drag and click-to-focus | Views switcher rename (ADR-0035) |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
+| Ceiling graph projection | landing with this fleet — pure aggregation in `@suite/scene`, deterministic positions, containment edges | band wiring + story |
+| Graph-band kinds | landing with this fleet — `suite.typeNode` glyph + count, `suite.containerNode` frame + label | spawn/despawn on band cross |
+| Membrane and camera flights | landing with this fleet — rubber-band pull, commit/return, distance-scaled flight planner | headed e2e: commit and return |
+| Types table | landing with this fleet — count and share per type, scopes the library, frames instances | viewer read-only artifact |
+| Ceiling docs | done with this fleet — ADR-0037, architecture paragraph, Phase 11, research note | — |
 | Failure/accessibility/rollout | pending | P0 table + unsupported screen |

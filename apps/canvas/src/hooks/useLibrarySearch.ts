@@ -50,6 +50,13 @@ export function useLibrarySearch(
   const [query, setQuery] = useState(initialQuery);
   const index = useRef<Map<string, string> | null>(null);
   const indexOwner = useRef<WorkspaceDocument | null>(null);
+  /**
+   * How many cards the cached index covers. A structural change (a new or a
+   * deleted card) that arrived before the index existed, or that the change
+   * stream coalesced away, would otherwise leave the new card unsearchable
+   * until a reload. Comparing counts is cheap and self-healing.
+   */
+  const indexSize = useRef(0);
   const [version, invalidate] = useReducer((count: number) => count + 1, 0);
 
   useEffect(() => {
@@ -60,14 +67,15 @@ export function useLibrarySearch(
     const flush = () => {
       timer = null;
       const current = index.current;
-      if (!current || dirty.size === 0) {
-        dirty.clear();
-        return;
-      }
+      // Nothing built yet: keep the ids so the full build picks them up instead
+      // of dropping them on the floor.
+      if (!current) return;
+      if (dirty.size === 0) return;
       for (const cardId of dirty) {
         if (workspace.getCard(cardId) === undefined) current.delete(cardId);
         else current.set(cardId, cardSearchText(workspace, cardId));
       }
+      indexSize.current = current.size;
       dirty.clear();
       invalidate();
     };
@@ -110,8 +118,13 @@ export function useLibrarySearch(
       // A different document (workspace vs projection) needs its own index.
       index.current = null;
       indexOwner.current = workspace;
+      indexSize.current = 0;
     }
-    if (index.current === null) index.current = buildSearchText(workspace);
+    const cardCount = workspace.listCards().length;
+    if (index.current === null || indexSize.current !== cardCount) {
+      index.current = buildSearchText(workspace);
+      indexSize.current = index.current.size;
+    }
     return searchCards(index.current, query, { limit: MAX_HITS });
   }, [workspace, active, query, version]);
 

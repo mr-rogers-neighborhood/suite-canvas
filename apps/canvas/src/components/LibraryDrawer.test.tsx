@@ -56,6 +56,8 @@ function fixture(): Fixture {
 interface Rendered {
   props: LibraryDrawerProps;
   onOpenCard: ReturnType<typeof vi.fn>;
+  /** Re-renders the same component tree, so hook state and caches survive. */
+  rerender: (next: Partial<LibraryDrawerProps>) => void;
 }
 
 function renderDrawer(
@@ -101,8 +103,13 @@ function renderDrawer(
     workspace,
     ...overrides,
   };
-  render(<LibraryDrawer {...props} />);
-  return { props, onOpenCard };
+  const view = render(<LibraryDrawer {...props} />);
+  return {
+    props,
+    onOpenCard,
+    rerender: (next: Partial<LibraryDrawerProps>) =>
+      view.rerender(<LibraryDrawer {...props} {...next} />),
+  };
 }
 
 function type(text: string): void {
@@ -125,6 +132,51 @@ describe("LibraryDrawer search", () => {
 
     expect(screen.queryByTestId("library-item-c1")).not.toBeInTheDocument();
     expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+  });
+
+  /**
+   * Regression: the index is built on the first query and patched afterwards.
+   * A card created while no search was active used to stay invisible until a
+   * reload, because the patch stream never carried it into a not-yet-built
+   * index. The index now re-checks how many cards it covers.
+   */
+  it("should find a card created after the index was built", () => {
+    const { workspace, items } = fixture();
+    const view = renderDrawer(workspace, items);
+
+    // Warm the index with a query that matches, then clear it.
+    type("grading");
+    expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+    type("");
+    expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
+
+    // A card added to the live document after that first build.
+    const boardId = workspace.listBoards()[0]?.id ?? "";
+    workspace.createCard({ id: "c3", boardId, position: { x: 640, y: 0 } });
+    addText(workspace.getTitle("c3"), "Freshly written retrospective");
+    workspace.doc.commit({ origin: "test" });
+
+    // The drawer's item list comes from the snapshot in the app; here the test
+    // re-renders the same tree with the new item, so the assertion is about the
+    // index rather than about a fresh mount.
+    type("grading");
+    view.rerender({
+      cards: [
+        ...items,
+        {
+          id: "c3",
+          title: "Freshly written retrospective",
+          boards: [{ id: boardId, name: "Board" }],
+          typeIds: [],
+          tagIds: [],
+          sectionIds: [],
+          properties: {},
+        },
+      ],
+    });
+
+    type("retrospective");
+    expect(screen.getByTestId("library-item-c3")).toBeInTheDocument();
   });
 
   it("should rank title matches above body matches", () => {

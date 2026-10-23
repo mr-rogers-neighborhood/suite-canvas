@@ -5,6 +5,7 @@ import {
   LoroDoc,
   LoroList,
   LoroMap,
+  type LoroMovableList,
   LoroText,
   UndoManager,
   type Value,
@@ -15,6 +16,15 @@ import {
   nextFreeAnchor,
   snapToAnchor,
 } from "../connectors.js";
+import {
+  type Drawing,
+  type DrawingElement,
+  type DrawingVersion,
+  drawingElementSchema,
+  nextDrawingVersion,
+  normalizeDrawingOrder,
+  sameDrawingValue,
+} from "../drawings.js";
 import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
@@ -26,6 +36,7 @@ import {
   cardSchema,
   cardTypeSchema,
   DEFAULT_TYPE_ID,
+  entityIdSchema,
   type FieldDefinition,
   fieldDefinitionSchema,
   type GraphEdge,
@@ -302,6 +313,12 @@ function isList(value: unknown): value is LoroList {
 
 function isText(value: unknown): value is LoroText {
   return isContainer(value) && getType(value) === "Text";
+}
+
+function isMovableList(value: unknown): value is LoroMovableList {
+  // `getType`'s conditional return type omits "MovableList", though the runtime
+  // reports it; widen to the plain string to compare.
+  return isContainer(value) && (getType(value) as string) === "MovableList";
 }
 
 function readString(map: LoroMap, key: string): string | undefined {
@@ -689,6 +706,37 @@ function sortByLayer(placements: Placement[]): Placement[] {
   );
 }
 
+/** One element's field map as a validated element; `id` is the map key. */
+function drawingElementFromMap(id: string, fields: LoroMap): DrawingElement {
+  const raw: Record<string, unknown> = { id };
+  for (const key of fields.keys()) {
+    const value = fields.get(key);
+    if (value === undefined || isContainer(value)) continue;
+    raw[key] = value;
+  }
+  return drawingElementSchema.parse(raw);
+}
+
+/** Writes only the element's own fields; the key already carries its id. */
+function writeDrawingElementFields(fields: LoroMap, element: DrawingElement): void {
+  for (const [key, value] of Object.entries(element)) {
+    if (key === "id" || value === undefined) continue;
+    fields.set(key, value as Value);
+  }
+}
+
+function readDrawingVersion(fields: LoroMap): DrawingVersion | undefined {
+  const value = fields.get("version");
+  if (typeof value === "string" || typeof value === "number") return value;
+  return undefined;
+}
+
+/** Ids in a movable list, ignoring anything a hand-edited doc left behind. */
+function drawingOrderIds(list: unknown): string[] {
+  if (!isMovableList(list)) return [];
+  return list.toArray().filter((value): value is string => typeof value === "string");
+}
+
 export class WorkspaceDocument {
   static readonly BOARDS_KEY = "boards";
   static readonly CARDS_KEY = "cards";
@@ -702,6 +750,7 @@ export class WorkspaceDocument {
   static readonly REFERENCES_KEY = "references";
   static readonly META_KEY = "meta";
   static readonly VIEWS_KEY = "views";
+  static readonly DRAWINGS_KEY = "drawings";
 
   readonly doc: LoroDoc;
   private readonly boards: LoroMap;
@@ -716,6 +765,7 @@ export class WorkspaceDocument {
   private readonly references: LoroMap;
   private readonly meta: LoroMap;
   private readonly viewsMap: LoroMap;
+  private readonly drawings: LoroMap;
   private readonly cardCache = new Map<string, Card>();
   private readonly placementCache = new Map<string, Placement>();
   private readonly edgeCache = new Map<string, GraphEdge>();
@@ -752,6 +802,7 @@ export class WorkspaceDocument {
     this.references = doc.getMap(WorkspaceDocument.REFERENCES_KEY);
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
     this.viewsMap = doc.getMap(WorkspaceDocument.VIEWS_KEY);
+    this.drawings = doc.getMap(WorkspaceDocument.DRAWINGS_KEY);
     this.known = {
       boards: new Set(this.boards.keys()),
       cards: new Set(this.cards.keys()),
@@ -2025,6 +2076,7 @@ export class WorkspaceDocument {
     for (const edge of edges) this.edges.delete(edge.id);
     this.content.delete(id);
     this.titles.delete(id);
+    this.drawings.delete(id);
     // The card's own outgoing refs are derived from content that is gone;
     // other cards keep their dangling ids on purpose.
     this.references.delete(id);
@@ -2927,6 +2979,258 @@ export class WorkspaceDocument {
     const cardFields = this.cards.get(cardId);
     if (isMap(cardFields)) cardFields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}move-connector`);
+  }
+
+  // -------------------------------------------------------------- drawings
+
+  /**
+   * One card's scene, or null when the card has no drawing entry. Tombstoned
+   * elements are filtered out; `order` is the live paint order, bottom-first.
+   */
+  drawing(cardId: string): Drawing | null {
+    const fields = this.drawingEntry(cardId);
+    if (!fields) return null;
+    const byId = this.liveDrawingElements(fields);
+    const order = normalizeDrawingOrder(
+      drawingOrderIds(fields.get("order")),
+      [...byId.keys()].sort(),
+    );
+    const elements: DrawingElement[] = [];
+    for (const elementId of order) {
+      const element = byId.get(elementId);
+      if (element) elements.push(element);
+    }
+    return {
+      cardId,
+      elements,
+      order,
+      version: readDrawingVersion(fields) ?? 1,
+      updatedAt: readNumber(fields, "updatedAt") ?? 0,
+    };
+  }
+
+  private drawingEntry(cardId: string): LoroMap | undefined {
+    const value = this.drawings.get(cardId);
+    return isMap(value) ? value : undefined;
+  }
+
+  private drawingEntryForWrite(cardId: string): LoroMap {
+    return this.drawingEntry(cardId) ?? this.drawings.ensureMergeableMap(cardId);
+  }
+
+  /** Live elements of one drawing keyed by id; tombstones are skipped. */
+  private liveDrawingElements(fields: LoroMap): Map<string, DrawingElement> {
+    const byId = new Map<string, DrawingElement>();
+    const elements = fields.get("elements");
+    if (!isMap(elements)) return byId;
+    for (const elementId of elements.keys()) {
+      const elementFields = elements.get(elementId);
+      if (!isMap(elementFields)) continue;
+      const element = drawingElementFromMap(elementId, elementFields);
+      if (element.deletedAt !== undefined) continue;
+      byId.set(elementId, element);
+    }
+    return byId;
+  }
+
+  /** Marks a drawing as written: one timestamp and one version bump per call. */
+  private touchDrawing(fields: LoroMap, now: number): void {
+    fields.set("updatedAt", now);
+    fields.set("version", nextDrawingVersion(readDrawingVersion(fields)));
+  }
+
+  /**
+   * Seed/import escape hatch: replaces the whole scene in one commit. Updates
+   * should use `upsertDrawingElement`, which merges field by field.
+   */
+  setDrawing(
+    cardId: string,
+    elements: readonly DrawingElement[],
+    order?: readonly string[],
+  ): Drawing {
+    const id = entityIdSchema.parse(cardId);
+    const parsed = elements.map((element) => drawingElementSchema.parse(element));
+    const seen = new Set<string>();
+    for (const element of parsed) {
+      if (element.deletedAt !== undefined) {
+        throw new Error(`A seeded drawing cannot contain a tombstone: ${element.id}`);
+      }
+      if (seen.has(element.id)) throw new Error(`Duplicate drawing element: ${element.id}`);
+      seen.add(element.id);
+    }
+
+    const elementIds = parsed.map((element) => element.id);
+    const paintOrder = normalizeDrawingOrder(order ?? elementIds, elementIds);
+    const fields = this.drawingEntryForWrite(id);
+    const targetElements = fields.ensureMergeableMap("elements");
+    targetElements.clear();
+    for (const element of parsed) {
+      const elementFields = targetElements.ensureMergeableMap(element.id);
+      elementFields.clear();
+      writeDrawingElementFields(elementFields, element);
+    }
+    const targetOrder = fields.ensureMergeableMovableList("order");
+    targetOrder.clear();
+    for (const elementId of paintOrder) targetOrder.push(elementId);
+    this.touchDrawing(fields, Date.now());
+    this.commit(`${STRUCT_ORIGIN}set-drawing`);
+
+    const drawing = this.drawing(id);
+    if (!drawing) throw new Error(`Drawing was not written: ${id}`);
+    return drawing;
+  }
+
+  /**
+   * Writes only the fields that changed, so two peers editing different fields
+   * of one element both keep their edit. A new element is appended to the top
+   * of the z-order; a tombstoned one is revived where it still stands in the
+   * order, or appended when it no longer does.
+   */
+  upsertDrawingElement(cardId: string, element: DrawingElement): DrawingElement {
+    const id = entityIdSchema.parse(cardId);
+    const parsed = drawingElementSchema.parse(element);
+    if (parsed.deletedAt !== undefined) {
+      throw new Error("Use removeDrawingElement to tombstone a drawing element");
+    }
+
+    const fields = this.drawingEntryForWrite(id);
+    const elements = fields.ensureMergeableMap("elements");
+    const before = elements.get(parsed.id);
+    const target = isMap(before) ? before : elements.ensureMergeableMap(parsed.id);
+    let changed = !isMap(before);
+
+    const desired = new Map<string, unknown>();
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === "id" || value === undefined) continue;
+      desired.set(key, value);
+    }
+    for (const [key, value] of desired) {
+      const current = target.get(key);
+      if (current === value || sameDrawingValue(current, value)) continue;
+      target.set(key, value as Value);
+      changed = true;
+    }
+    for (const key of [...target.keys()]) {
+      if (desired.has(key)) continue;
+      // A field the caller dropped goes away; this is also what revives a
+      // tombstoned element, because `deletedAt` is never in `desired`.
+      target.delete(key);
+      changed = true;
+    }
+    const order = fields.ensureMergeableMovableList("order");
+    if (!drawingOrderIds(order).includes(parsed.id)) {
+      order.push(parsed.id);
+      changed = true;
+    }
+    if (!changed) return drawingElementFromMap(parsed.id, target);
+
+    this.touchDrawing(fields, Date.now());
+    this.commit(`${STRUCT_ORIGIN}drawing-element`);
+    return drawingElementFromMap(parsed.id, target);
+  }
+
+  /** Tombstones an element and takes it out of the paint order. */
+  removeDrawingElement(cardId: string, elementId: string): void {
+    const id = entityIdSchema.parse(cardId);
+    const targetId = entityIdSchema.parse(elementId);
+    const fields = this.drawingEntry(id);
+    if (!fields) return;
+    const elements = fields.get("elements");
+    const target = isMap(elements) ? elements.get(targetId) : undefined;
+    if (!isMap(target)) return;
+
+    let changed = false;
+    if (target.get("deletedAt") === undefined) {
+      target.set("deletedAt", Date.now());
+      changed = true;
+    }
+    if (this.dropFromDrawingOrder(fields, targetId)) changed = true;
+    if (!changed) return;
+
+    this.touchDrawing(fields, Date.now());
+    this.commit(`${STRUCT_ORIGIN}remove-drawing-element`);
+  }
+
+  /** Removes a tombstone for good; a live element is removed outright. */
+  purgeDrawingElement(cardId: string, elementId: string): void {
+    const id = entityIdSchema.parse(cardId);
+    const targetId = entityIdSchema.parse(elementId);
+    const fields = this.drawingEntry(id);
+    if (!fields) return;
+
+    let changed = false;
+    const elements = fields.get("elements");
+    if (isMap(elements) && elements.get(targetId) !== undefined) {
+      elements.delete(targetId);
+      changed = true;
+    }
+    if (this.dropFromDrawingOrder(fields, targetId)) changed = true;
+    if (!changed) return;
+
+    this.touchDrawing(fields, Date.now());
+    this.commit(`${STRUCT_ORIGIN}purge-drawing-element`);
+  }
+
+  /** Removes every occurrence of an id from the z-order list; true if it moved. */
+  private dropFromDrawingOrder(fields: LoroMap, elementId: string): boolean {
+    const order = fields.get("order");
+    if (!isMovableList(order)) return false;
+    let removed = false;
+    const ids = drawingOrderIds(order);
+    for (let index = ids.length - 1; index >= 0; index -= 1) {
+      if (ids[index] !== elementId) continue;
+      order.delete(index, 1);
+      removed = true;
+    }
+    return removed;
+  }
+
+  /**
+   * Sets the whole z-order. Unknown ids are ignored and live elements the
+   * caller left out keep their relative order after the listed ones. Moves are
+   * Loro move operations, so concurrent reorders converge instead of forking.
+   */
+  setDrawingOrder(cardId: string, order: readonly string[]): void {
+    const id = entityIdSchema.parse(cardId);
+    const fields = this.drawingEntry(id);
+    if (!fields) return;
+    const list = fields.get("order");
+    if (!isMovableList(list)) return;
+
+    const live = this.liveDrawingElements(fields);
+    const current = drawingOrderIds(list);
+    const liveOrder = current.filter((elementId) => live.has(elementId));
+    const desired = normalizeDrawingOrder(order, liveOrder);
+
+    let changed = false;
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+      const elementId = current[index];
+      if (elementId === undefined || live.has(elementId)) continue;
+      list.delete(index, 1);
+      changed = true;
+    }
+    desired.forEach((elementId, index) => {
+      const at = drawingOrderIds(list).indexOf(elementId);
+      if (at === -1) {
+        list.insert(index, elementId);
+        changed = true;
+      } else if (at !== index) {
+        list.move(at, index);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+
+    this.touchDrawing(fields, Date.now());
+    this.commit(`${STRUCT_ORIGIN}drawing-order`);
+  }
+
+  /** Drops a card's whole scene; the card itself is untouched. */
+  clearDrawing(cardId: string): void {
+    const id = entityIdSchema.parse(cardId);
+    if (this.drawings.get(id) === undefined) return;
+    this.drawings.delete(id);
+    this.commit(`${STRUCT_ORIGIN}clear-drawing`);
   }
 
   // -------------------------------------------------------------- observe

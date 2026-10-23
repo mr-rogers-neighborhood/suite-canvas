@@ -160,6 +160,7 @@ const PROJECTION_ROOTS = [
   "sections",
   "content",
   "titles",
+  "drawings",
   "references",
   "meta",
 ] as const;

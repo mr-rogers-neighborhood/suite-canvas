@@ -7,6 +7,14 @@ export {
   nextFreeAnchor,
   snapToAnchor,
 } from "./connectors.js";
+export type { Drawing, DrawingElement, DrawingVersion } from "./drawings.js";
+export {
+  drawingElementSchema,
+  drawingVersionSchema,
+  nextDrawingVersion,
+  normalizeDrawingOrder,
+  sameDrawingValue,
+} from "./drawings.js";
 export type {
   CardContainers,
   CardFieldView,

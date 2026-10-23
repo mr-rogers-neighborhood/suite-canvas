@@ -1,4 +1,12 @@
-import { getType, isContainer, LoroDoc, LoroList, LoroMap, LoroText } from "loro-crdt";
+import {
+  getType,
+  isContainer,
+  LoroDoc,
+  LoroList,
+  LoroMap,
+  LoroMovableList,
+  LoroText,
+} from "loro-crdt";
 import { placementKey, SCHEMA_VERSION, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import type { ReferenceIndex } from "./references.js";
 import { mentionTargets, outgoingReferences } from "./references.js";
@@ -44,6 +52,12 @@ function isList(value: unknown): value is LoroList {
   return isContainer(value) && getType(value) === "List";
 }
 
+function isMovableList(value: unknown): value is LoroMovableList {
+  // `getType`'s conditional return type omits "MovableList" even though the
+  // runtime reports it, so widen before comparing.
+  return isContainer(value) && (getType(value) as string) === "MovableList";
+}
+
 function isText(value: unknown): value is LoroText {
   return isContainer(value) && getType(value) === "Text";
 }
@@ -70,6 +84,10 @@ function copyMap(source: LoroMap, target: LoroMap): void {
       copyMap(value, target.ensureMergeableMap(key));
       continue;
     }
+    if (isMovableList(value)) {
+      copyMovableList(value, target.ensureMergeableMovableList(key));
+      continue;
+    }
     if (isList(value)) {
       copyList(value, target.ensureMergeableList(key));
       continue;
@@ -87,6 +105,33 @@ function copyList(source: LoroList, target: LoroList): void {
   source.toArray().forEach((value, index) => {
     if (isMap(value)) {
       copyMap(value, target.insertContainer(index, new LoroMap()));
+      return;
+    }
+    if (isMovableList(value)) {
+      copyMovableList(value, target.insertContainer(index, new LoroMovableList()));
+      return;
+    }
+    if (isList(value)) {
+      copyList(value, target.insertContainer(index, new LoroList()));
+      return;
+    }
+    if (isText(value)) {
+      copyText(value, target.insertContainer(index, new LoroText()));
+      return;
+    }
+    if (isScalar(value)) target.insert(index, value);
+  });
+}
+
+/** Movable lists copy like lists: the order is the valuable part. */
+function copyMovableList(source: LoroMovableList, target: LoroMovableList): void {
+  source.toArray().forEach((value, index) => {
+    if (isMap(value)) {
+      copyMap(value, target.insertContainer(index, new LoroMap()));
+      return;
+    }
+    if (isMovableList(value)) {
+      copyMovableList(value, target.insertContainer(index, new LoroMovableList()));
       return;
     }
     if (isList(value)) {
@@ -111,6 +156,51 @@ function copyText(source: LoroText, target: LoroText): void {
 function copyEntry(source: LoroMap, target: LoroMap, key: string): void {
   const value = source.get(key);
   if (isMap(value)) copyMap(value, target.ensureMergeableMap(key));
+}
+
+function orderedIds(value: unknown): string[] {
+  if (!isMovableList(value)) return [];
+  return value.toArray().filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Copies a card's scene without its tombstones: a viewer never needs a deleted
+ * element, and leaving one behind would carry its last geometry into the share.
+ * Order and version travel untouched.
+ */
+function copyDrawing(source: LoroMap, target: LoroMap, cardId: string): void {
+  const from = source.get(cardId);
+  if (!isMap(from)) return;
+  const to = target.ensureMergeableMap(cardId);
+  for (const key of ["version", "updatedAt"]) {
+    const value = from.get(key);
+    if (isScalar(value)) to.set(key, value);
+  }
+
+  const live = new Set<string>();
+  const fromElements = from.get("elements");
+  const toElements = to.ensureMergeableMap("elements");
+  if (isMap(fromElements)) {
+    for (const elementId of fromElements.keys()) {
+      const fields = fromElements.get(elementId);
+      if (!isMap(fields)) continue;
+      if (fields.get("deletedAt") !== undefined) continue;
+      live.add(elementId);
+      copyMap(fields, toElements.ensureMergeableMap(elementId));
+    }
+  }
+
+  const seen = new Set<string>();
+  const toOrder = to.ensureMergeableMovableList("order");
+  for (const elementId of orderedIds(from.get("order"))) {
+    if (!live.has(elementId) || seen.has(elementId)) continue;
+    seen.add(elementId);
+    toOrder.push(elementId);
+  }
+  for (const elementId of [...live].sort()) {
+    if (seen.has(elementId)) continue;
+    toOrder.push(elementId);
+  }
 }
 
 function copyMeta(source: LoroDoc, target: LoroDoc): void {
@@ -143,11 +233,13 @@ function copyCards(source: WorkspaceDocument, target: LoroDoc, copied: ReadonlyS
   const sourceTags = source.doc.getMap(WorkspaceDocument.TAGS_KEY);
   const sourceContent = source.doc.getMap(WorkspaceDocument.CONTENT_KEY);
   const sourceTitles = source.doc.getMap(WorkspaceDocument.TITLES_KEY);
+  const sourceDrawings = source.doc.getMap(WorkspaceDocument.DRAWINGS_KEY);
   const targetCards = target.getMap(WorkspaceDocument.CARDS_KEY);
   const targetTypes = target.getMap(WorkspaceDocument.TYPES_KEY);
   const targetTags = target.getMap(WorkspaceDocument.TAGS_KEY);
   const targetContent = target.getMap(WorkspaceDocument.CONTENT_KEY);
   const targetTitles = target.getMap(WorkspaceDocument.TITLES_KEY);
+  const targetDrawings = target.getMap(WorkspaceDocument.DRAWINGS_KEY);
 
   const typeIds = new Set<string>();
   const tagIds = new Set<string>();
@@ -160,6 +252,9 @@ function copyCards(source: WorkspaceDocument, target: LoroDoc, copied: ReadonlyS
     for (const tagId of card.tags) tagIds.add(tagId);
     copyEntry(sourceContent, targetContent, cardId);
     copyEntry(sourceTitles, targetTitles, cardId);
+    // A shared whiteboard carries its scene; a card left out of the share does
+    // not, which is the same redaction body text gets.
+    copyDrawing(sourceDrawings, targetDrawings, cardId);
   }
 
   // Only the schema the shared cards actually use travels with them.
@@ -422,6 +517,7 @@ const PROJECTION_ROOTS = [
   WorkspaceDocument.SECTIONS_KEY,
   WorkspaceDocument.CONTENT_KEY,
   WorkspaceDocument.TITLES_KEY,
+  WorkspaceDocument.DRAWINGS_KEY,
   WorkspaceDocument.REFERENCES_KEY,
   WorkspaceDocument.META_KEY,
 ] as const;
@@ -437,6 +533,10 @@ function overwriteMap(source: LoroMap, target: LoroMap): void {
   for (const [key, value] of source.entries()) {
     if (isMap(value)) {
       overwriteMap(value, target.ensureMergeableMap(key));
+      continue;
+    }
+    if (isMovableList(value)) {
+      overwriteMovableList(value, target.ensureMergeableMovableList(key));
       continue;
     }
     if (isList(value)) {
@@ -457,6 +557,34 @@ function overwriteList(source: LoroList, target: LoroList): void {
   source.toArray().forEach((value, index) => {
     if (isMap(value)) {
       overwriteMap(value, target.insertContainer(index, new LoroMap()));
+      return;
+    }
+    if (isMovableList(value)) {
+      overwriteMovableList(value, target.insertContainer(index, new LoroMovableList()));
+      return;
+    }
+    if (isList(value)) {
+      overwriteList(value, target.insertContainer(index, new LoroList()));
+      return;
+    }
+    if (isText(value)) {
+      overwriteText(value, target.insertContainer(index, new LoroText()));
+      return;
+    }
+    if (isScalar(value)) target.insert(index, value);
+  });
+}
+
+/** Movable lists are rebuilt on every projection pass, order included. */
+function overwriteMovableList(source: LoroMovableList, target: LoroMovableList): void {
+  target.clear();
+  source.toArray().forEach((value, index) => {
+    if (isMap(value)) {
+      overwriteMap(value, target.insertContainer(index, new LoroMap()));
+      return;
+    }
+    if (isMovableList(value)) {
+      overwriteMovableList(value, target.insertContainer(index, new LoroMovableList()));
       return;
     }
     if (isList(value)) {

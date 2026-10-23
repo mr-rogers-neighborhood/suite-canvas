@@ -56,10 +56,12 @@ import type {
 } from "@vibecook/ice/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
+import { isWhiteboardCard } from "../cards/whiteboard";
 import { useUiStore } from "../store/useUiStore";
 import { workspaceWriter } from "./iceBridge";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
+import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
 import {
   buildSuiteSeed,
   projectWorkspaceToIce,
@@ -1102,6 +1104,11 @@ export function IceSurface({
   } | null>(null);
   const [portalPath, setPortalPath] = useState<readonly string[]>([]);
   const portalDepth = useRef(0);
+  const [whiteboard, setWhiteboard] = useState<{
+    cardId: string;
+    box: { left: number; top: number; width: number; height: number; scale: number };
+  } | null>(null);
+  const [cameraMoving, setCameraMoving] = useState(false);
   const [layerReady, setLayerReady] = useState(0);
 
   // The editable root board: drag and resize commit once per gesture, delete is
@@ -1300,6 +1307,102 @@ export function IceSurface({
     };
   }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, canWriteLayout]);
 
+  /**
+   * The inline whiteboard is intent-gated: the pointer must rest over a
+   * whiteboard for a moment, at a readable zoom, before the editor mounts. One
+   * editor exists at a time; every other whiteboard keeps its SVG preview.
+   */
+  useEffect(() => {
+    if (phase.kind !== "ready" || seed === null || layerReady === 0) return;
+    if (!workspaceMode || liveWorkspace === null) return;
+    const root = surfaceRef.current;
+    const desk = deskLayerRef.current;
+    if (root === null || desk === null) return;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const clearTimer = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    };
+
+    const onMove = (event: PointerEvent): void => {
+      clearTimer();
+      timer = setTimeout(() => {
+        timer = undefined;
+        const bounds = root.getBoundingClientRect();
+        const screen = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+        let entity: Entity | null = null;
+        try {
+          entity = desk.pick(screen)?.entity ?? null;
+        } catch {
+          entity = null;
+        }
+        const slot = entity === null ? undefined : seed.entitySlots.get(entity);
+        if (slot === undefined || !liveWorkspace.getCard(slot.cardId)) {
+          setWhiteboard(null);
+          return;
+        }
+        if (!isWhiteboardCard(liveWorkspace.getCard(slot.cardId))) {
+          setWhiteboard(null);
+          return;
+        }
+        const rect = entity === null ? null : desk.geometryOf(entity);
+        const view = phase.engine.world.getResource(phase.core.Camera);
+        if (rect === null || view === undefined) {
+          setWhiteboard(null);
+          return;
+        }
+        const geometry = rect as {
+          centre?: readonly [number, number];
+          half?: readonly [number, number];
+        };
+        if (geometry.centre === undefined || geometry.half === undefined) {
+          setWhiteboard(null);
+          return;
+        }
+        const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
+        const worldWidth = Math.abs(geometry.half[0]) * 2;
+        const worldHeight = Math.abs(geometry.half[1]) * 2;
+        // Below the readable width the preview is the better face.
+        if (worldWidth * zoom < 180) {
+          setWhiteboard(null);
+          return;
+        }
+        setWhiteboard({
+          cardId: slot.cardId,
+          box: {
+            left: (geometry.centre[0] - view.x) * zoom - (worldWidth * zoom) / 2,
+            top: (geometry.centre[1] - view.y) * zoom - (worldHeight * zoom) / 2,
+            width: worldWidth * zoom,
+            height: worldHeight * zoom,
+            scale: zoom,
+          },
+        });
+      }, 200);
+    };
+
+    const onLeave = (): void => {
+      clearTimer();
+      setWhiteboard(null);
+    };
+
+    const onDown = (): void => setCameraMoving(true);
+    const onUp = (): void => setCameraMoving(false);
+
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerleave", onLeave);
+    root.addEventListener("pointerdown", onDown, true);
+    root.addEventListener("pointerup", onUp, true);
+    return () => {
+      clearTimer();
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerleave", onLeave);
+      root.removeEventListener("pointerdown", onDown, true);
+      root.removeEventListener("pointerup", onUp, true);
+      setWhiteboard(null);
+    };
+  }, [phase, seed, layerReady, workspaceMode, liveWorkspace]);
+
   // A pin click is navigation: centre the camera on the marked point.
   useEffect(() => {
     if (phase.kind !== "ready" || pendingPinFocus === null) return;
@@ -1419,6 +1522,24 @@ export function IceSurface({
           />
         </ready.EngineProvider>
       )}
+
+      {whiteboard !== null ? (
+        <SuiteWhiteboardStage
+          activeCardId={whiteboard.cardId}
+          box={whiteboard.box}
+          readOnly={!canWriteLayout}
+          suspended={cameraMoving}
+          onCommit={(cardId, commit) => {
+            if (liveWorkspace === null) return;
+            try {
+              liveWorkspace.applyDrawing(cardId, commit.elements, commit.order);
+            } catch (error) {
+              console.warn("[ice] could not save whiteboard", error);
+            }
+          }}
+          onExit={() => setWhiteboard(null)}
+        />
+      ) : null}
 
       {phase.kind === "checking" ? (
         <IceSurfaceFallback

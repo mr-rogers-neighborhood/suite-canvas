@@ -90,22 +90,12 @@ export interface TypeGraph {
 }
 
 /**
- * The zoom at which the canvas becomes the graph.
- *
- * `enter` is deliberately the same threshold at which the card LOD culls
- * (`DEFAULT_LOD_THRESHOLDS.icon`, ADR-0036): the moment a card stops being
- * drawable is the moment the graph takes over, so there is no zoom range where
- * nothing is shown. `exit` sits just above it and exists only so a camera that
- * wobbles on the boundary does not flicker; while the graph is committed the
- * surface suppresses card faces, so the two representations never overlap.
+ * A fallback zoom for a View that fits nothing: the deepest scale at which a
+ * card is still a card (the `icon` floor of ADR-0036). Only used where a camera
+ * number is required and there is no content to derive one from — never as a
+ * limit on the camera, which keeps whatever range the engine gives it.
  */
-export const GRAPH_BAND = { enter: 0.12, exit: 0.13 } as const;
-
-/** Is this zoom inside the graph band? Hysteresis is the caller's `was`. */
-export function isGraphBand(zoom: number, was: boolean): boolean {
-  if (!Number.isFinite(zoom) || zoom <= 0) return was;
-  return was ? zoom <= GRAPH_BAND.exit : zoom <= GRAPH_BAND.enter;
-}
+export const EMPTY_VIEW_ZOOM = 0.12;
 
 /** The key of the bucket for cards no section holds. */
 export function looseContainerKey(boardId: string): string {

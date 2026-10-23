@@ -650,7 +650,7 @@ describe("IceSurface", () => {
     expect(ice.destroyDevice).toHaveBeenCalledTimes(3);
   });
 
-  it("should enter the graph band from the canvas zoom cluster", async () => {
+  it("should open the graph projection from the canvas zoom cluster", async () => {
     stubGpu({ requestAdapter: async () => ADAPTER });
     stubReducedMotion();
     const workspace = new WorkspaceDocument();
@@ -665,13 +665,13 @@ describe("IceSurface", () => {
     expect(screen.getByTestId("canvas-controls")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("canvas-graph-view"));
 
-    // The same transition the gesture performs: one widget per (container,
-    // type) pair, the card faces gone, and the band's own way back on screen.
+    // One widget per (container, type) pair, drawn *over* the canvas: the card
+    // projection is untouched, which is what makes this an overlay.
     const spawned = ice.spawnWidget.mock.calls.map(([type]) => type);
     expect(spawned).toContain("suite.containerNode");
     expect(spawned).toContain("suite.typeNode");
-    expect(ice.setSelection).toHaveBeenCalled();
-    expect(ice.deleteSelection).toHaveBeenCalled();
+    const cardsBefore = spawned.filter((type) => type === "suite.card").length;
+    expect(cardsBefore).toBeGreaterThan(0);
     expect(screen.getByTestId("ice-graph-crumb")).toBeInTheDocument();
     expect(screen.getByTestId("ice-band-types")).toBeInTheDocument();
     expect(screen.getByTestId("canvas-graph-view")).toHaveAttribute("data-graph-active", "true");
@@ -750,41 +750,12 @@ describe("IceSurface", () => {
     const escapeEntry = ice.keymap.current?.find((binding) => binding.key === "Escape");
     act(() => escapeEntry?.run(undefined));
 
-    // The band follows the camera: once the return lands above the graph's
-    // zoom the crumb goes away and the cards come back.
+    // The projection closes: the crumb goes away, and the graph widgets are
+    // removed through the engine's delete path. The cards were never disturbed,
+    // which is the point of an overlay.
     await waitFor(() => expect(screen.queryByTestId("ice-graph-crumb")).not.toBeInTheDocument());
-    await waitFor(() =>
-      expect(
-        ice.spawnWidget.mock.calls.filter(([type]) => type === "suite.card").length,
-      ).toBeGreaterThan(1),
-    );
-  });
-
-  it("should build the membrane's cue while pulling and commit past the threshold", async () => {
-    stubGpu({ requestAdapter: async () => ADAPTER });
-    stubReducedMotion();
-    const workspace = new WorkspaceDocument();
-    workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
-    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
-    ice.cameraWorld.enabled = true;
-
-    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
-    await settled();
-
-    const root = screen.getByTestId("ice-surface");
-    fireEvent.wheel(root, { deltaY: 200 });
-
-    const cue = await screen.findByTestId("ice-membrane-cue", {}, { timeout: 4000 });
-    expect(cue).toHaveAttribute("data-cue-state", "pulling");
-    expect(cue).toHaveTextContent("Keep pulling for the graph");
-    // The cue is the only thing that says the canvas has not stalled.
-    expect(Number(cue.getAttribute("data-pull"))).toBeGreaterThan(0.02);
-
-    fireEvent.wheel(root, { deltaY: 400 });
-
-    expect(await screen.findByTestId("ice-graph-crumb")).toBeInTheDocument();
-    expect(ice.spawnWidget.mock.calls.map(([type]) => type)).toContain("suite.containerNode");
+    expect(ice.deleteSelection).toHaveBeenCalled();
+    expect(screen.queryByTestId("ice-band-types")).toBeNull();
   });
 
   it("should open the Suite demo directly when ?demo=suite is in the URL", async () => {

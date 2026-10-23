@@ -1,6 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { CanvasZoomControls } from "./CanvasZoomControls";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CanvasZoomControls, holdZoomFactor } from "./CanvasZoomControls";
+import { HOLD_DELAY_MS, HOLD_INTERVAL_MS } from "./useHoldRepeat";
+
+beforeEach(() => {
+  vi.useRealTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function mount(overrides: Partial<Parameters<typeof CanvasZoomControls>[0]> = {}) {
   const handlers = {
@@ -9,7 +17,7 @@ function mount(overrides: Partial<Parameters<typeof CanvasZoomControls>[0]> = {}
     onFitView: vi.fn(),
     onGraphView: vi.fn(),
   };
-  render(<CanvasZoomControls zoom={1} {...handlers} {...overrides} />);
+  render(<CanvasZoomControls {...handlers} {...overrides} />);
   return handlers;
 }
 
@@ -34,37 +42,64 @@ describe("CanvasZoomControls", () => {
     expect(handlers.onGraphView).toHaveBeenCalledTimes(1);
   });
 
-  it("should show the zoom as a percentage and never invent one", () => {
-    const { rerender } = render(
-      <CanvasZoomControls
-        zoom={0.421}
-        onZoomIn={vi.fn()}
-        onZoomOut={vi.fn()}
-        onFitView={vi.fn()}
-        onGraphView={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId("canvas-zoom-label")).toHaveTextContent("42%");
+  it("should repeat while a zoom button is held and stop on release", () => {
+    vi.useFakeTimers();
+    try {
+      const handlers = mount();
+      const button = screen.getByTestId("canvas-zoom-in");
+      fireEvent.pointerDown(button, { button: 0 });
+      // The first step is immediate: a click never feels late.
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(1);
+      expect(handlers.onZoomIn).toHaveBeenCalledWith(1.25);
+      act(() => {
+        vi.advanceTimersByTime(HOLD_DELAY_MS - 10);
+      });
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(HOLD_INTERVAL_MS);
+      });
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(2);
+      act(() => {
+        vi.advanceTimersByTime(HOLD_INTERVAL_MS * 3);
+      });
+      expect(handlers.onZoomIn.mock.calls.length).toBeGreaterThan(3);
 
-    // A camera that has not resolved yet reads 100%, not NaN or 0%.
-    rerender(
-      <CanvasZoomControls
-        zoom={Number.NaN}
-        onZoomIn={vi.fn()}
-        onZoomOut={vi.fn()}
-        onFitView={vi.fn()}
-        onGraphView={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId("canvas-zoom-label")).toHaveTextContent("100%");
+      fireEvent.pointerUp(button);
+      const whileHeld = handlers.onZoomIn.mock.calls.length;
+      act(() => {
+        vi.advanceTimersByTime(HOLD_INTERVAL_MS * 5);
+      });
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(whileHeld);
+      // The pointer-generated click that follows a press must not step twice.
+      fireEvent.click(button, { detail: 1 });
+      expect(handlers.onZoomIn).toHaveBeenCalledTimes(whileHeld);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("should offer the way back while the graph band is active", () => {
-    mount({ graphActive: true });
-    const graph = screen.getByTestId("canvas-graph-view");
-    expect(graph).toHaveAttribute("aria-label", "Exit graph");
-    expect(graph).toHaveAttribute("aria-pressed", "true");
-    expect(graph).toHaveAttribute("data-graph-active", "true");
+  it("should still step once for a keyboard click", () => {
+    const handlers = mount();
+    fireEvent.click(screen.getByTestId("canvas-zoom-out"));
+    expect(handlers.onZoomOut).toHaveBeenCalledTimes(1);
+    expect(handlers.onZoomOut).toHaveBeenCalledWith(1 / 1.25);
+  });
+
+  it("should accelerate the step while held, so a hold traverses the extent", () => {
+    expect(holdZoomFactor(0)).toBe(1.25);
+    expect(holdZoomFactor(1)).toBe(1.25);
+    let previous = holdZoomFactor(1);
+    for (let repeat = 2; repeat <= 40; repeat += 1) {
+      const factor = holdZoomFactor(repeat);
+      expect(factor).toBeGreaterThanOrEqual(previous);
+      previous = factor;
+    }
+    // Capped: a long hold stays controllable rather than exploding.
+    expect(holdZoomFactor(1000)).toBeLessThanOrEqual(1.8);
   });
 
   it("should hide the graph control when there is nothing to graph", () => {

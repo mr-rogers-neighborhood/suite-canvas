@@ -46,7 +46,7 @@
  * their chip LOD.
  */
 import type { WorkspaceDocument } from "@suite/graph";
-import { buildTypeGraph, GRAPH_BAND, isGraphBand, type TypeGraphNode } from "@suite/scene";
+import { buildTypeGraph, type TypeGraphNode } from "@suite/scene";
 import type {
   CanvasEngine,
   DocSession,
@@ -85,27 +85,14 @@ import { attachIcePointerEditing, createIceEditingController } from "./iceEditin
 import {
   type BandRect,
   cameraForBounds,
-  ceilingZoomFor,
-  dampedZoom,
   frameCameraFor,
-  GRAPH_MIN_ZOOM,
-  GRAPH_PAST_LID,
-  graphCameraFor,
   graphNodeSignature,
   graphReconcile,
   placementRect,
-  returnCameraFor,
   typeUnionBounds,
   unionRect,
   zoomedCamera,
 } from "./iceGraphBand";
-import {
-  atCeiling,
-  type MembraneState,
-  RESTING_MEMBRANE,
-  settleMembrane,
-  stepMembrane,
-} from "./iceMembrane";
 import { planCardLanding } from "./iceSelectionLanding";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
@@ -315,9 +302,6 @@ function prefersReducedMotion(): boolean {
   }
 }
 
-/** What the membrane's cue is saying. */
-type CuePhase = "pulling" | "graph" | "returning";
-
 /** Which way a flight is going: the return is deliberately slower. */
 type FlightKind = "enter" | "return";
 
@@ -327,9 +311,6 @@ type FlightKind = "enter" | "return";
  * exit"). The planner still owns the duration, so a short hop stays short.
  */
 const RETURN_FLIGHT_STRETCH = 0.35;
-
-/** One notch of the zoom controls. */
-const ZOOM_STEP = 1.25;
 
 /** The graph kinds' spawn helpers, loaded beside the card kind (never statically). */
 interface GraphKindSpawns {
@@ -873,6 +854,8 @@ export function IceSurface({
   );
   const pendingPinFocus = useUiStore((state) => state.pendingPinFocus);
   const dropPinRequest = useUiStore((state) => state.dropPinRequest);
+  const graphFrameTypeRequest = useUiStore((state) => state.graphFrameTypeRequest);
+  const inspectorOpen = useUiStore((state) => state.inspectorNodeId !== null);
   const graphViewRequest = useUiStore((state) => state.graphViewRequest);
   // The *Types in view* rows the graph band's panel shows; a live projection of
   // this board's cards, never a stored table.
@@ -1263,7 +1246,6 @@ export function IceSurface({
     fitView(): void;
     frameType(typeId: string): void;
     selectType(typeId: string): void;
-    syncBand(zoom: number, committed: boolean): void;
   } | null>(null);
   const [portalPath, setPortalPath] = useState<readonly string[]>([]);
   const portalDepth = useRef(0);
@@ -1271,32 +1253,25 @@ export function IceSurface({
     cardId: string;
     box: { left: number; top: number; width: number; height: number; scale: number };
   } | null>(null);
-  const [cameraMoving, setCameraMoving] = useState(false);
+  /**
+   * True while a pointer is down on the canvas. The inline whiteboard uses it to
+   * suspend its paint rather than being unmounted: a drag, a pan or a resize
+   * should not tear down (and rehydrate) an editor.
+   */
+  const [suspendedStage, setSuspendedStage] = useState(false);
   const [layerReady, setLayerReady] = useState(0);
-  /** True while the graph band is the representation on screen. */
-  const [graphBand, setGraphBand] = useState(false);
-  /** The membrane's cue, published only when its visible state changes. */
-  const [cue, setCue] = useState<{ pull: number; phase: CuePhase } | null>(null);
-  /** The live camera zoom, published at whole percents for the zoom cluster. */
-  const [zoomPercent, setZoomPercent] = useState(100);
+  /** True while the type graph is projected over the canvas. */
+  const [graphOverlay, setGraphOverlay] = useState(false);
   /** False while the View holds nothing, which hides the graph control. */
   const [hasContent, setHasContent] = useState(false);
   /** The graph kinds' spawns, loaded in the dynamic block with the card kind. */
   const graphKindsRef = useRef<GraphKindSpawns | null>(null);
-  const membraneRef = useRef<MembraneState>(RESTING_MEMBRANE);
-  const ceilingRef = useRef<number>(GRAPH_BAND.exit);
   const flightRef = useRef<{ plan: FlightPlan; startedAt: number; kind: FlightKind } | null>(null);
   /**
-   * Where the user was when the graph band was entered. The return flies here
-   * rather than merely to the ceiling, so panning inside the graph never
-   * strands them: the exit lands exactly where they left.
+   * Where the user was when the graph overlay opened. The return flies here, so
+   * panning or zooming inside the graph never strands them.
    */
   const returnCameraRef = useRef<FlightCamera | null>(null);
-  const dampRef = useRef<{
-    before: FlightCamera;
-    share: number;
-    anchor: { x: number; y: number };
-  } | null>(null);
 
   /**
    * The one way to read and move the camera. ICE stores the *world* coordinate
@@ -1471,12 +1446,10 @@ export function IceSurface({
         })),
       ]);
 
-    const refreshCeiling = (): void => {
-      const bounds = contentBounds();
-      ceilingRef.current = ceilingZoomFor(bounds, cameraApi?.viewportOf() ?? null);
-      // An empty View has nothing to graph, so the control is hidden rather
-      // than offered and inert.
-      setHasContent((current) => (current === (bounds !== null) ? current : bounds !== null));
+    /** An empty View has nothing to graph, so the control is hidden, not inert. */
+    const refreshContent = (): void => {
+      const has = contentBounds() !== null;
+      setHasContent((current) => (current === has ? current : has));
     };
 
     const spawnGraphNode = (node: TypeGraphNode): Entity | undefined => {
@@ -1649,83 +1622,66 @@ export function IceSurface({
      * graph when it is the representation on screen, else re-derive the cards.
      */
     const reconcile = () => {
-      refreshCeiling();
+      refreshContent();
+      // The overlay is a projection of the same document, so it is re-derived
+      // on a revision; the cards are always re-derived, because the overlay
+      // draws over them rather than replacing them.
       if (bandOn) syncGraph();
-      else reconcileCards();
+      reconcileCards();
     };
 
-    /** Enter or leave the band. Both directions reconcile in one pass. */
+    /** Open or close the projection. A toggle, not a zoom band. */
     const applyBand = (next: boolean): void => {
       if (next === bandOn) return;
       bandOn = next;
-      setGraphBand(next);
-      if (next) {
-        syncGraph();
-        reconcileCards();
-      } else {
-        clearGraph();
-        reconcileCards();
-      }
-    };
-
-    /** The camera a commit flies to: the graph's own bounds, framed past the lid. */
-    const graphCamera = (): FlightCamera | null => {
-      const viewport = cameraApi?.viewportOf() ?? null;
-      if (viewport === null) return null;
-      const bounds = graphBounds ?? contentBounds();
-      if (bounds !== null) return graphCameraFor(bounds, viewport, ceilingRef.current);
-      const camera = cameraApi?.cameraOf() ?? null;
-      if (camera === null) return null;
-      return {
-        ...camera,
-        zoom: Math.max(GRAPH_MIN_ZOOM, ceilingRef.current * GRAPH_PAST_LID),
-      };
+      setGraphOverlay(next);
+      // The shell's inspector reads this to show the Types table instead of a
+      // card: while the projection is open the subject is a type, not a card.
+      useUiStore.getState().setGraphBandActive(next);
+      // The overlay draws over the canvas, so the card projection is untouched
+      // in both directions: cards stay where they are, which is what makes the
+      // graph feel like weather over the board rather than a different place.
+      if (next) syncGraph();
+      else clearGraph();
     };
 
     /**
-     * The Dock's Graph view, `g`, and the membrane's commit are one transition:
-     * a flight past the lid, and the band that follows the camera.
+     * The camera the overlay opens on: the graph's own bounds, framed.
+     *
+     * There is no "lid" to cross any more. The overlay is a projection of the
+     * layout, so opening it frames that projection the way Fit View frames the
+     * canvas — the same camera vocabulary, one layer up.
      */
-    const enterGraph = (from: "gesture" | "command"): void => {
-      refreshCeiling();
+    const graphCamera = (): FlightCamera | null => {
+      const viewport = cameraApi?.viewportOf() ?? null;
+      if (viewport === null) return null;
+      return frameCameraFor(graphBounds ?? contentBounds(), viewport);
+    };
+
+    /** Open the projection over the canvas. A camera flight, nothing else. */
+    const enterGraph = (): void => {
+      refreshContent();
       // Remember where the user was. The exit flies back to *this* camera, so
-      // panning or zooming inside the graph never strands them; entering again
+      // panning or zooming inside the graph never strands them; opening again
       // overwrites it.
       if (!bandOn) returnCameraRef.current = cameraApi?.cameraOf() ?? null;
-      membraneRef.current = {
-        pull: 1,
-        committed: true,
-        // A command is a one-shot intent, so nothing decays it and the band
-        // waits for an explicit exit. A gesture *is* a pull, and the membrane's
-        // settle is what lets go of it — which is why only a gesture may be
-        // released by letting go of the wheel.
-        lastInputAt: from === "command" ? Number.POSITIVE_INFINITY : performance.now(),
-      };
       applyBand(true);
       flyTo(graphCamera(), "enter");
     };
 
-    /**
-     * The way back: the ceiling when the ceiling is outside the band, and the
-     * least zoom that leaves it when the whole View fits *inside* the band (at
-     * that zoom the graph is what the canvas is, so returning to the ceiling
-     * would not return at all).
-     */
+    /** Close it: back to exactly where they were, or the View's fit if unrecorded. */
     const exitGraph = (): void => {
-      membraneRef.current = RESTING_MEMBRANE;
-      // The stored camera is the honest destination; the ceiling is only the
-      // fallback for an entry whose origin was never recorded.
+      // Closing is the projection's own business; the camera then travels back
+      // underneath it, so the cards are there when the veil lifts.
+      applyBand(false);
       const remembered = returnCameraRef.current;
       if (remembered !== null) {
         flyTo(remembered, "return");
         return;
       }
       const viewport = cameraApi?.viewportOf() ?? null;
-      if (viewport === null) {
-        applyBand(false);
-        return;
-      }
-      flyTo(returnCameraFor(contentBounds(), viewport, ceilingRef.current), "return");
+      if (viewport === null) return;
+      flyTo(cameraForBounds(contentBounds(), viewport), "return");
     };
 
     /** Frame one type's instances: the user named a destination, so it may come. */
@@ -1737,12 +1693,25 @@ export function IceSurface({
       flyTo(frameCameraFor(bounds, viewport));
     };
 
-    /** One notch of the zoom cluster: a camera flight about the viewport centre. */
+    /**
+     * One notch of the zoom cluster.
+     *
+     * This is *not* a flight. A flight is for travelling somewhere (a card, a
+     * type, the ceiling); a zoom step is a continuous adjustment, and animating
+     * each one made a held button hop and lag behind the pointer. The camera is
+     * written at once, so clicks and holds both feel like the wheel they stand
+     * in for. The anchor is the viewport centre, so the step keeps whatever is
+     * in the middle of the screen in the middle of the screen.
+     */
     const zoomBy = (factor: number): void => {
       const camera = cameraApi?.cameraOf() ?? null;
       const viewport = cameraApi?.viewportOf() ?? null;
       if (camera === null || viewport === null) return;
-      flyTo(
+      if (!Number.isFinite(factor) || factor <= 0) return;
+      // A step interrupts a flight: the user is steering, and the flight was
+      // taking them elsewhere.
+      flightRef.current = null;
+      cameraApi?.write(
         zoomedCamera(camera, camera.zoom * factor, {
           x: viewport.width / 2,
           y: viewport.height / 2,
@@ -1750,19 +1719,21 @@ export function IceSurface({
       );
     };
 
-    /** Fit the View's content — a flight to the ceiling, never `zoomToFit`. */
+    /**
+     * Fit the View's content. The View is the frame, so this frames its cards
+     * and its sections — never the whole workspace, and never a fixed scale.
+     */
     const fitView = (): void => {
       const viewport = cameraApi?.viewportOf() ?? null;
       if (viewport === null) return;
-      refreshCeiling();
-      const bounds = contentBounds();
-      flyTo(cameraForBounds(bounds, viewport, ceilingZoomFor(bounds, viewport)));
+      refreshContent();
+      flyTo(cameraForBounds(contentBounds(), viewport));
     };
 
-    /** The cluster's one graph control: in while out of the band, out while in it. */
+    /** The cluster's one graph control: open the projection, or close it. */
     const toggleGraph = (): void => {
       if (bandOn) exitGraph();
-      else enterGraph("command");
+      else enterGraph();
     };
 
     /** Select every card of one type. Selection is UI state; nothing is written. */
@@ -1838,23 +1809,13 @@ export function IceSurface({
         }
         engine.ops.cancelActiveGestures();
       },
-      enterGraph: () => enterGraph("command"),
+      enterGraph: () => enterGraph(),
       exitGraph,
       toggleGraph,
       zoomBy,
       fitView,
       frameType,
       selectType,
-      /**
-       * The band follows the camera. Called once per frame by the motion loop,
-       * which only ever compares a zoom — the aggregation itself runs on the
-       * crossing, not on the frame.
-       */
-      syncBand: (zoom, committed) => {
-        const next = committed || isGraphBand(zoom, bandOn);
-        if (next !== bandOn) applyBand(next);
-        if (!next && membraneRef.current.committed) membraneRef.current = RESTING_MEMBRANE;
-      },
     };
 
     const detach = attachIcePointerEditing(root, controller);
@@ -1874,16 +1835,53 @@ export function IceSurface({
       if (picked === null) return;
       const entity = picked;
       const mat = seed.portalMats.get(entity);
-      if (mat === undefined) return;
-      try {
-        engine.ops.enterContainer(entity);
-        portalDepth.current += 1;
-        setPortalPath((path) => [...path, mat.title]);
-      } catch {
-        // A refused entry leaves the camera where it is.
+      if (mat !== undefined) {
+        try {
+          engine.ops.enterContainer(entity);
+          portalDepth.current += 1;
+          setPortalPath((path) => [...path, mat.title]);
+        } catch {
+          // A refused entry leaves the camera where it is.
+        }
+        return;
       }
+      // A whiteboard card opens its editor on a double click. Hover is not
+      // consent: mounting the drawing surface because the pointer rested on a
+      // card covers the board with Excalidraw's chrome, which is not what a
+      // reader asked for.
+      const slot = seed.entitySlots.get(entity);
+      const card = slot === undefined ? undefined : liveWorkspace.getCard(slot.cardId);
+      if (slot === undefined || card === undefined || !isWhiteboardCard(card)) return;
+      const geometry = desk.geometryOf(entity) as
+        | { centre?: readonly [number, number]; half?: readonly [number, number] }
+        | undefined;
+      const view = engine.world.getResource(core.Camera);
+      if (geometry?.centre === undefined || geometry.half === undefined || view === undefined)
+        return;
+      const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
+      const worldWidth = Math.abs(geometry.half[0]) * 2;
+      const worldHeight = Math.abs(geometry.half[1]) * 2;
+      setWhiteboard({
+        cardId: slot.cardId,
+        box: {
+          left: (geometry.centre[0] - view.x) * zoom - (worldWidth * zoom) / 2,
+          top: (geometry.centre[1] - view.y) * zoom - (worldHeight * zoom) / 2,
+          width: worldWidth * zoom,
+          height: worldHeight * zoom,
+          scale: zoom,
+        },
+      });
     };
     root.addEventListener("dblclick", onDouble);
+
+    // While a pointer is down the canvas is being driven, not read: the inline
+    // whiteboard suspends its paint instead of being unmounted, so its editor
+    // keeps its caret and Excalidraw keeps its own camera.
+    const suspendOn = (): void => setSuspendedStage(true);
+    const suspendOff = (): void => setSuspendedStage(false);
+    root.addEventListener("pointerdown", suspendOn, true);
+    root.addEventListener("pointerup", suspendOff, true);
+    root.addEventListener("pointercancel", suspendOff, true);
 
     // A right-click is the shell's menu, opened on whatever the pick found. The
     // mapping lives in `iceContextMenu`; this only supplies the pick, the
@@ -1956,74 +1954,28 @@ export function IceSurface({
     };
     root.addEventListener("contextmenu", onContextMenu);
 
-    /**
-     * The membrane's input. The wheel is the engine's until the camera reaches
-     * the ceiling; from there on it accumulates a pull, and only the share the
-     * membrane allows survives the frame (the engine has already applied its
-     * own step, so this damps the difference rather than re-implementing zoom).
-     *
-     * Capture phase, but no `preventDefault`: the engine must keep its step —
-     * the point of the membrane is that the gesture still moves the camera,
-     * just less and less.
-     */
-    const onWheel = (event: WheelEvent): void => {
-      if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
-      const camera = cameraApi?.cameraOf() ?? null;
-      if (camera === null) return;
-      const state = membraneRef.current;
-      const atLid = atCeiling(camera.zoom, ceilingRef.current);
-      // Away from the lid, with no pull and no commit, the wheel is the
-      // engine's alone.
-      if (!atLid && !state.committed && state.pull === 0) return;
-      if (flightRef.current !== null) flightRef.current = null;
-      const result = stepMembrane({
-        state,
-        deltaY: event.deltaY,
-        now: performance.now(),
-        // Pushing holds the camera at the lid: the residual creep the membrane
-        // allows must not read as having left it.
-        zoom: atLid ? camera.zoom : ceilingRef.current,
-        ceilingZoom: ceilingRef.current,
-      });
-      membraneRef.current = result.state;
-      if (result.action === "commit") {
-        enterGraph("gesture");
-        return;
-      }
-      if (result.action === "release") {
-        exitGraph();
-        return;
-      }
-      if (result.cameraShare < 1) {
-        const bounds = root.getBoundingClientRect();
-        dampRef.current = {
-          before: camera,
-          share: result.cameraShare,
-          anchor: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
-        };
-      }
-    };
-    root.addEventListener("wheel", onWheel, { capture: true, passive: true });
-
-    // A revision moves cards, so it moves the ceiling with them; while the
-    // graph is the representation it is also rebuilt. Per change, not per frame.
+    // A revision can move cards and add types; while the projection is open it
+    // is rebuilt too. Per change, never per frame.
     const stopObserving = liveWorkspace.observe(() => {
-      refreshCeiling();
+      refreshContent();
       if (bandOn) syncGraph();
     });
-    refreshCeiling();
+    refreshContent();
 
     return () => {
       root.removeEventListener("dblclick", onDouble);
+      root.removeEventListener("pointerdown", suspendOn, true);
+      root.removeEventListener("pointerup", suspendOff, true);
+      root.removeEventListener("pointercancel", suspendOff, true);
       root.removeEventListener("contextmenu", onContextMenu);
-      root.removeEventListener("wheel", onWheel, { capture: true });
       stopObserving();
       detach();
       controller.cancel();
       clearGraph();
       commandsRef.current = null;
       portalDepth.current = 0;
-      setGraphBand(false);
+      setGraphOverlay(false);
+      useUiStore.getState().setGraphBandActive(false);
       setPortalPath([]);
     };
   }, [
@@ -2039,44 +1991,15 @@ export function IceSurface({
   ]);
 
   /**
-   * One per-frame pass over the *camera*: advance a flight, damp the engine's
-   * own wheel step while the membrane is holding, settle the pull, and let the
-   * band follow the resulting zoom. Nothing here aggregates a document — a band
-   * crossing is the only thing that rebuilds the graph — so this is a handful
-   * of comparisons per frame and O(1) work.
+   * One per-frame pass over the *camera*: advance a flight and publish the zoom.
+   * Nothing here aggregates a document, so it is a handful of comparisons per
+   * frame and O(1) work.
    */
   useEffect(() => {
     if (phase.kind !== "ready" || !workspaceMode || liveWorkspace === null) return;
     if (rootBoardId === null || layerReady === 0 || cameraApi === null) return;
     let handle = 0;
     let active = true;
-    let published: { pull: number; phase: CuePhase } | null = null;
-    let publishedZoom = -1;
-
-    const publishCue = (state: MembraneState, returning: boolean): void => {
-      const visible = returning || state.pull > 0.02;
-      const next = visible
-        ? {
-            pull: returning ? 1 : Math.round(state.pull * 100) / 100,
-            phase: returning
-              ? ("returning" as const)
-              : state.committed
-                ? ("graph" as const)
-                : ("pulling" as const),
-          }
-        : null;
-      if (next === null && published === null) return;
-      if (
-        next !== null &&
-        published !== null &&
-        next.pull === published.pull &&
-        next.phase === published.phase
-      ) {
-        return;
-      }
-      published = next;
-      setCue(next);
-    };
 
     const tick = (now: number): void => {
       if (!active) return;
@@ -2094,54 +2017,17 @@ export function IceSurface({
           if (flight.kind === "return") returnCameraRef.current = null;
         }
       }
-
-      // The engine zoomed; keep only the share the membrane allowed, anchored
-      // under the pointer so the frame does not slide.
-      const damp = dampRef.current;
-      if (damp !== null && flightRef.current === null) {
-        dampRef.current = null;
-        const after = cameraApi.cameraOf();
-        if (after !== null) {
-          const damped = dampedZoom(damp.before, after, damp.share, damp.anchor);
-          if (Math.abs(damped.zoom - after.zoom) > 1e-6) cameraApi.write(damped);
-        }
-      }
-
-      // A flight is the commit (or the return); letting the pull decay under it
-      // would cancel the motion halfway.
-      if (flightRef.current === null) {
-        const settled = settleMembrane(membraneRef.current, now);
-        if (settled.state !== membraneRef.current) membraneRef.current = settled.state;
-        if (settled.action === "release") {
-          membraneRef.current = RESTING_MEMBRANE;
-          commandsRef.current?.exitGraph();
-        }
-      }
-
-      const camera = cameraApi.cameraOf();
-      if (camera !== null) {
-        commandsRef.current?.syncBand(camera.zoom, membraneRef.current.committed);
-        const percent = Math.round(camera.zoom * 100);
-        if (percent !== publishedZoom) {
-          publishedZoom = percent;
-          setZoomPercent(percent);
-        }
-      }
-      // The cue holds a "Returning" state until the descent lands, so the exit
-      // is narrated rather than silent.
-      publishCue(membraneRef.current, flightRef.current?.kind === "return");
     };
 
     handle = requestAnimationFrame(tick);
     return () => {
       active = false;
       cancelAnimationFrame(handle);
-      setCue(null);
     };
   }, [phase, cameraApi, workspaceMode, liveWorkspace, rootBoardId, layerReady]);
 
-  // The Dock's Graph view control is the same transition as the gesture: a
-  // camera action, never a mode toggle (ADR-0037 §3).
+  // A shell control asking for the ceiling is the same transition as the
+  // gesture: a camera action, never a mode toggle (ADR-0037 §3).
   useEffect(() => {
     if (graphViewRequest === 0) return;
     if (phase.kind !== "ready" || !workspaceMode || liveWorkspace === null) return;
@@ -2149,101 +2035,14 @@ export function IceSurface({
     commandsRef.current?.enterGraph();
   }, [graphViewRequest, phase, workspaceMode, liveWorkspace, rootBoardId]);
 
-  /**
-   * The inline whiteboard is intent-gated: the pointer must rest over a
-   * whiteboard for a moment, at a readable zoom, before the editor mounts. One
-   * editor exists at a time; every other whiteboard keeps its SVG preview.
-   */
+  // The inspector's Types table flies the camera to a type's instances. A
+  // request, not a call: the panel does not own a camera, and the flight is the
+  // only way to get there (ADR-0037: navigation is movement).
   useEffect(() => {
-    if (phase.kind !== "ready" || seed === null || layerReady === 0) return;
-    if (!workspaceMode || liveWorkspace === null) return;
-    const root = surfaceRef.current;
-    const desk = deskLayerRef.current;
-    if (root === null || desk === null) return;
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const clearTimer = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      timer = undefined;
-    };
-
-    const onMove = (event: PointerEvent): void => {
-      clearTimer();
-      timer = setTimeout(() => {
-        timer = undefined;
-        const bounds = root.getBoundingClientRect();
-        const screen = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-        let entity: Entity | null = null;
-        try {
-          entity = desk.pick(screen)?.entity ?? null;
-        } catch {
-          entity = null;
-        }
-        const slot = entity === null ? undefined : seed.entitySlots.get(entity);
-        if (slot === undefined || !liveWorkspace.getCard(slot.cardId)) {
-          setWhiteboard(null);
-          return;
-        }
-        if (!isWhiteboardCard(liveWorkspace.getCard(slot.cardId))) {
-          setWhiteboard(null);
-          return;
-        }
-        const rect = entity === null ? null : desk.geometryOf(entity);
-        const view = phase.engine.world.getResource(phase.core.Camera);
-        if (rect === null || view === undefined) {
-          setWhiteboard(null);
-          return;
-        }
-        const geometry = rect as {
-          centre?: readonly [number, number];
-          half?: readonly [number, number];
-        };
-        if (geometry.centre === undefined || geometry.half === undefined) {
-          setWhiteboard(null);
-          return;
-        }
-        const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
-        const worldWidth = Math.abs(geometry.half[0]) * 2;
-        const worldHeight = Math.abs(geometry.half[1]) * 2;
-        // Below the readable width the preview is the better face.
-        if (worldWidth * zoom < 180) {
-          setWhiteboard(null);
-          return;
-        }
-        setWhiteboard({
-          cardId: slot.cardId,
-          box: {
-            left: (geometry.centre[0] - view.x) * zoom - (worldWidth * zoom) / 2,
-            top: (geometry.centre[1] - view.y) * zoom - (worldHeight * zoom) / 2,
-            width: worldWidth * zoom,
-            height: worldHeight * zoom,
-            scale: zoom,
-          },
-        });
-      }, 200);
-    };
-
-    const onLeave = (): void => {
-      clearTimer();
-      setWhiteboard(null);
-    };
-
-    const onDown = (): void => setCameraMoving(true);
-    const onUp = (): void => setCameraMoving(false);
-
-    root.addEventListener("pointermove", onMove);
-    root.addEventListener("pointerleave", onLeave);
-    root.addEventListener("pointerdown", onDown, true);
-    root.addEventListener("pointerup", onUp, true);
-    return () => {
-      clearTimer();
-      root.removeEventListener("pointermove", onMove);
-      root.removeEventListener("pointerleave", onLeave);
-      root.removeEventListener("pointerdown", onDown, true);
-      root.removeEventListener("pointerup", onUp, true);
-      setWhiteboard(null);
-    };
-  }, [phase, seed, layerReady, workspaceMode, liveWorkspace]);
+    if (graphFrameTypeRequest === null) return;
+    if (phase.kind !== "ready") return;
+    commandsRef.current?.frameType(graphFrameTypeRequest.typeId);
+  }, [graphFrameTypeRequest, phase.kind]);
 
   // A pin click is navigation: centre the camera on the marked point.
   useEffect(() => {
@@ -2374,47 +2173,20 @@ export function IceSurface({
         </ready.EngineProvider>
       )}
 
-      {cue === null ? null : (
-        <div
-          className="ice-surface__cue"
-          data-testid="ice-membrane-cue"
-          data-cue-state={cue.phase}
-          data-pull={cue.pull.toFixed(2)}
-          role="status"
-          aria-live="polite"
-        >
-          <span
-            className="ice-surface__cue-ring"
-            aria-hidden="true"
-            style={{
-              background: `conic-gradient(var(--ink) ${Math.round(cue.pull * 100)}%, transparent 0)`,
-            }}
-          />
-          <span className="ice-surface__cue-label">
-            {cue.phase === "returning"
-              ? "Returning"
-              : cue.phase === "graph"
-                ? "Graph"
-                : "Keep pulling for the graph"}
-          </span>
-        </div>
-      )}
-
       {workspaceMode && ready !== null ? (
         <div className="ice-surface__zoom">
           <CanvasZoomControls
-            zoom={zoomPercent / 100}
-            graphActive={graphBand}
+            graphActive={graphOverlay}
             canGraphView={hasContent}
-            onZoomIn={() => commandsRef.current?.zoomBy(ZOOM_STEP)}
-            onZoomOut={() => commandsRef.current?.zoomBy(1 / ZOOM_STEP)}
+            onZoomIn={(factor: number) => commandsRef.current?.zoomBy(factor)}
+            onZoomOut={(factor: number) => commandsRef.current?.zoomBy(factor)}
             onFitView={() => commandsRef.current?.fitView()}
             onGraphView={() => commandsRef.current?.toggleGraph()}
           />
         </div>
       ) : null}
 
-      {graphBand && liveWorkspace !== null && rootBoardId !== null ? (
+      {graphOverlay && !inspectorOpen && liveWorkspace !== null && rootBoardId !== null ? (
         <div className="ice-surface__types" data-testid="ice-band-types">
           <TypeTable
             rows={bandTypeRows}
@@ -2461,7 +2233,7 @@ export function IceSurface({
           activeCardId={whiteboard.cardId}
           box={whiteboard.box}
           readOnly={!caps.canWriteLayout}
-          suspended={cameraMoving}
+          suspended={suspendedStage}
           onCommit={(cardId, commit) => {
             if (liveWorkspace === null) return;
             try {
@@ -2634,7 +2406,7 @@ export function IceSurface({
             Inside {portalPath.join(" › ")} · Escape to return
           </span>
         ) : null}
-        {graphBand ? (
+        {graphOverlay ? (
           <button
             type="button"
             className="ice-surface__crumb"
@@ -2642,13 +2414,13 @@ export function IceSurface({
             onClick={() => commandsRef.current?.exitGraph()}
           >
             <span aria-hidden="true">{"\u2b21"}</span>
-            <span>Graph</span>
+            <span>Graph view</span>
             <span className="ice-surface__crumb-hint">Escape or click to return</span>
           </button>
         ) : null}
         <span className="ice-surface__badge-hint">
           {workspaceMode
-            ? "Select and drag a card · drag a handle to resize · double-click a mat to enter · g for the graph · Escape returns"
+            ? "Select and drag a card · drag a handle to resize · double-click a mat to enter, a whiteboard to draw · g for the graph view · Escape returns"
             : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
         <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>

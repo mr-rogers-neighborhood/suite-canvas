@@ -494,7 +494,6 @@ high effective scale but an unreadable footprint
 | `full` | scale ≥ 0.75 **and** screen width ≥ 180 px | live `NodeCard` (Tiptap title/body) + whiteboard preview | live child board | fill + header (+ handles when selected) | full path + label |
 | `compact` | scale 0.35–0.75, or full scale with a narrow footprint | static title + glyph + chips | live miniature | title chip | simplified path |
 | `icon` | scale 0.12–0.35 | type glyph + layout badge | layout-encoded icon | colour band | hidden |
-| `graph` | zoom < 0.12 | none — the type graph takes over | container proxy | board node | containment only |
 | `hidden` | culled by the viewport, at any zoom | none | aggregate proxy | none | none |
 
 Downgrade immediately; upgrade only after the higher threshold is crossed and the state has held for
@@ -514,12 +513,11 @@ the gesture ends.
 - **Far zoom:** a spatial icon field — type glyphs at exact positions and footprints, container
   glyphs encoding layout mode — with no invented reference edges. Pins and selection chrome remain
   counter-scaled.
-- **Ceiling:** at the top of the range the same projection aggregates. A `graph` band below `icon`
-  draws one node per (container, type) inside its container plus an unfiled bucket, counts and glyphs
-  only, containment edges only, with positions derived from members' own positions — the same layout
-  at a coarser resolution, never a second one. Reaching it is a camera move: the membrane resists,
-  commits past a threshold and returns by the same gesture, and every navigation is a flight whose
-  duration grows with distance ([ADR-0037](./decisions/0037-the-ceiling-and-the-graph-band.md)).
+- **Graph projection:** the canvas can also be *read* as a type graph — a `Graph view` control (also
+  `g`) draws one node per (container, type) inside its container plus an unfiled bucket, counts and
+  glyphs only, containment edges only, with positions derived from members' own positions. It is an
+  overlay: the cards stay drawn underneath, closing it restores the exact camera, and nothing is
+  authored in it. There is no zoom band and no ceiling. Every navigation is a flight whose duration grows with distance ([ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md)).
   The camera only moves; nothing switches.
 - **Evidence:** `?perf=1` render counters and a `buildScene` perf smoke exist. ICE frame time, GPU
   memory and mounted-editor count are not measured yet and are P0 gate evidence.

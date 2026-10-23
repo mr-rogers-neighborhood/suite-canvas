@@ -22,7 +22,7 @@
  * No DOM, no engine, no clock, no document.
  */
 
-import { GRAPH_BAND, type TypeGraphNode } from "@suite/scene";
+import { EMPTY_VIEW_ZOOM, type TypeGraphNode } from "@suite/scene";
 import type { FlightCamera, FlightViewport } from "./iceCameraFlight";
 
 /** A world rect: the shape bounds arrive in from `@suite/scene`. */
@@ -55,7 +55,7 @@ export const GRAPH_PAST_LID = 0.9;
  * The least zoom that leaves the graph band, with margin over the exit
  * threshold so a return never lands on the hysteresis edge.
  */
-export const GRAPH_RETURN_ZOOM = GRAPH_BAND.exit * 1.25;
+export const GRAPH_RETURN_ZOOM = EMPTY_VIEW_ZOOM * 1.25;
 
 /** Framing one type's instances is a reading move, so it stops here. */
 export const GRAPH_FRAME_MAX_ZOOM = 2;
@@ -146,11 +146,11 @@ export function fitZoom(
   viewport: FlightViewport | null,
   padding: number = GRAPH_FIT_PADDING,
 ): number {
-  if (bounds === null || viewport === null) return GRAPH_BAND.exit;
+  if (bounds === null || viewport === null) return EMPTY_VIEW_ZOOM;
   const pad = finite(padding) ? clamp(padding, 0, 0.4) : GRAPH_FIT_PADDING;
   const width = viewport.width * (1 - pad * 2);
   const height = viewport.height * (1 - pad * 2);
-  if (!usableZoom(width) || !usableZoom(height)) return GRAPH_BAND.exit;
+  if (!usableZoom(width) || !usableZoom(height)) return EMPTY_VIEW_ZOOM;
   const zoom = Math.min(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height));
   return clamp(zoom, GRAPH_MIN_ZOOM, GRAPH_MAX_ZOOM);
 }
@@ -177,7 +177,7 @@ export function cameraForBounds(
  * there still commits, which is what an empty View should do.
  */
 export function ceilingZoomFor(bounds: BandRect | null, viewport: FlightViewport | null): number {
-  return bounds === null ? GRAPH_BAND.exit : fitZoom(bounds, viewport);
+  return bounds === null ? EMPTY_VIEW_ZOOM : fitZoom(bounds, viewport);
 }
 
 /**
@@ -190,7 +190,7 @@ export function graphZoomFor(
   viewport: FlightViewport | null,
   ceilingZoom: number,
 ): number {
-  const lid = usableZoom(ceilingZoom) ? ceilingZoom : GRAPH_BAND.exit;
+  const lid = usableZoom(ceilingZoom) ? ceilingZoom : EMPTY_VIEW_ZOOM;
   const fit = fitZoom(bounds, viewport);
   return clamp(Math.min(fit, lid * GRAPH_PAST_LID), GRAPH_MIN_ZOOM, GRAPH_MAX_ZOOM);
 }
@@ -211,8 +211,8 @@ export function graphCameraFor(
  * return at all.
  */
 export function returnZoom(ceilingZoom: number): number {
-  const lid = usableZoom(ceilingZoom) ? ceilingZoom : GRAPH_BAND.exit;
-  return lid > GRAPH_BAND.exit ? lid : GRAPH_RETURN_ZOOM;
+  const lid = usableZoom(ceilingZoom) ? ceilingZoom : EMPTY_VIEW_ZOOM;
+  return lid > EMPTY_VIEW_ZOOM ? lid : GRAPH_RETURN_ZOOM;
 }
 
 /** The camera a release, Escape or the breadcrumb flies back to. */

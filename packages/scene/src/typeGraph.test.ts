@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TypeGraph, TypeGraphCardInput, TypeGraphInput, TypeGraphNode } from "./typeGraph.js";
 import {
   buildTypeGraph,
-  GRAPH_BAND,
-  isGraphBand,
+  EMPTY_VIEW_ZOOM,
   LOOSE_CONTAINER_LABEL,
   looseContainerKey,
 } from "./typeGraph.js";
@@ -456,38 +455,12 @@ describe("buildTypeGraph layout", () => {
   });
 });
 
-describe("isGraphBand", () => {
-  const cases: readonly { zoom: number; was: boolean; expected: boolean; label: string }[] = [
-    { zoom: 0.04, was: false, expected: true, label: "well inside on a cold camera" },
-    { zoom: GRAPH_BAND.enter, was: false, expected: true, label: "enters at the enter threshold" },
-    { zoom: 0.1201, was: false, expected: false, label: "just above enter, cold" },
-    { zoom: 0.125, was: false, expected: false, label: "between the thresholds, cold" },
-    { zoom: GRAPH_BAND.exit, was: true, expected: true, label: "stays at the exit threshold" },
-    { zoom: 0.1301, was: true, expected: false, label: "leaves just past exit" },
-    { zoom: 0.125, was: true, expected: true, label: "between the thresholds, warm" },
-    { zoom: Number.NaN, was: true, expected: true, label: "NaN keeps the previous state" },
-    { zoom: Number.NaN, was: false, expected: false, label: "NaN does not enter" },
-    {
-      zoom: Number.POSITIVE_INFINITY,
-      was: true,
-      expected: true,
-      label: "infinite zoom keeps the previous state",
-    },
-    { zoom: 0, was: true, expected: true, label: "zero zoom keeps the previous state" },
-    { zoom: -1, was: false, expected: false, label: "negative zoom does not enter" },
-  ];
-
-  it.each(cases)("should resolve $label ($zoom, was=$was)", ({ zoom, was, expected }) => {
-    expect(isGraphBand(zoom, was)).toBe(expected);
+describe("EMPTY_VIEW_ZOOM", () => {
+  it("is the icon floor, used only where a camera number is needed and there is no content", () => {
+    expect(EMPTY_VIEW_ZOOM).toBe(0.12);
   });
 
-  it("should expose the documented thresholds", () => {
-    expect(GRAPH_BAND).toEqual({ enter: 0.12, exit: 0.13 });
-    // The enter threshold is the card cull threshold: no zoom range shows nothing.
-    expect(GRAPH_BAND.enter).toBe(0.12);
-  });
-
-  it("should build the loose key per board", () => {
+  it("builds the loose key per board", () => {
     expect(looseContainerKey("abc")).toBe("container:__loose__:abc");
   });
 });

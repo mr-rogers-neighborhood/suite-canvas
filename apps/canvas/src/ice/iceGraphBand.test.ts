@@ -1,4 +1,4 @@
-import { GRAPH_BAND, type TypeGraphNode } from "@suite/scene";
+import { EMPTY_VIEW_ZOOM, type TypeGraphNode } from "@suite/scene";
 import { describe, expect, it } from "vitest";
 import type { FlightCamera } from "./iceCameraFlight";
 import {
@@ -101,8 +101,8 @@ describe("fitZoom", () => {
   });
 
   it("falls back to the band's exit threshold without bounds or a viewport", () => {
-    expect(fitZoom(null, VIEWPORT)).toBe(GRAPH_BAND.exit);
-    expect(fitZoom({ x: 0, y: 0, width: 10, height: 10 }, null)).toBe(GRAPH_BAND.exit);
+    expect(fitZoom(null, VIEWPORT)).toBe(EMPTY_VIEW_ZOOM);
+    expect(fitZoom({ x: 0, y: 0, width: 10, height: 10 }, null)).toBe(EMPTY_VIEW_ZOOM);
   });
 });
 
@@ -122,7 +122,7 @@ describe("cameraForBounds", () => {
 describe("ceilingZoomFor", () => {
   it("is the fit of the content, and the band's entry without content", () => {
     expect(ceilingZoomFor({ x: 0, y: 0, width: 600, height: 200 }, VIEWPORT)).toBeCloseTo(1.76);
-    expect(ceilingZoomFor(null, VIEWPORT)).toBe(GRAPH_BAND.exit);
+    expect(ceilingZoomFor(null, VIEWPORT)).toBe(EMPTY_VIEW_ZOOM);
   });
 });
 
@@ -150,7 +150,7 @@ describe("returnZoom", () => {
 
   it("returns just above the band when the whole View fits inside it", () => {
     expect(returnZoom(0.05)).toBeCloseTo(GRAPH_RETURN_ZOOM);
-    expect(GRAPH_RETURN_ZOOM).toBeGreaterThan(GRAPH_BAND.exit);
+    expect(GRAPH_RETURN_ZOOM).toBeGreaterThan(EMPTY_VIEW_ZOOM);
   });
 
   it("centres the return on the same content", () => {

@@ -6,7 +6,6 @@ const meta = {
   component: CanvasZoomControls,
   parameters: { layout: "centered" },
   args: {
-    zoom: 1,
     onZoomIn: () => {},
     onZoomOut: () => {},
     onFitView: () => {},
@@ -19,8 +18,6 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
-export const ZoomedOut: Story = { args: { zoom: 0.34 } };
-
-export const GraphActive: Story = { args: { zoom: 0.1, graphActive: true } };
+export const GraphActive: Story = { args: { graphActive: true } };
 
 export const NoGraph: Story = { args: { canGraphView: false } };

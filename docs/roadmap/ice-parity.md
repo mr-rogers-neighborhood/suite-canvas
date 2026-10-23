@@ -267,41 +267,47 @@ Goal: a default that fails honestly.
 **Exit evidence:** the P0 table in ADR-0034 is green; unsupported browsers see the right screen;
 accessibility checks pass; the perf artifact is linked; the default opens ICE.
 
-### Phase 11 — The ceiling and the graph band
+### Phase 11 — The graph projection (and the ambient layer)
 
-Goal: the far end of the zoom range has a top with a behaviour, not an empty field.
+Goal: the canvas can be read as a type graph, without becoming a second layout.
 
-- Add the `graph` band below `icon` and the type-graph projection from
-  [ADR-0037](../decisions/0037-the-ceiling-and-the-graph-band.md): one node per (container, type)
+- Add the type-graph projection from
+  [ADR-0037](../decisions/0037-graph-projection-and-ambient-layer.md): one node per (container, type)
   inside its container, one unfiled bucket, deterministic grid positions derived from member bounds,
   counts and glyphs only, containment edges only. The projection writes nothing.
-- Add the membrane: rubber-band `pull` at `z_ceiling`, a cue from the first frame, commit past a
-  sustained threshold, return by the same gesture, `Escape` or the canvas zoom cluster, with hysteresis and
-  a settle so wheel wobble never flaps.
+- The projection is an **overlay**, opened and closed by a control (`g`): cards stay drawn underneath,
+  and closing restores the camera the user came from. There is no zoom band and no ceiling.
 - Route every navigation through the camera flight helper — duration grows with pan distance and
   log zoom ratio, clamped at both ends. No teleporting camera ops; the one exception is clicking a
   card in the library, a drawer or the Types table.
-- Draw derived depth in the graph band only: nesting depth becomes offset, scale and shadow on flat
-  quads. No perspective camera, no authored Z.
-- Add the inspector's **Types in view** table: count and share per type, selectable, scoping the
-  library by type and container, framing the instances as a camera action. Read-only for viewers.
+- Draw derived depth inside the projection only: nesting depth becomes offset, scale and shadow on
+  flat quads. No perspective camera, no authored Z.
+- The canvas zoom cluster keeps the traditional controls — zoom in, zoom out, fit the View, graph —
+  and no scale or percentage: the extent has no ends, so it has nothing honest to put on a track.
+  Holding either zoom button repeats, accelerating.
+- Add the inspector's **Types in view** table while the projection is open: count and share per type,
+  selectable, scoping the library by type and container, framing the instances as a camera action.
+  Read-only for viewers.
+- **Pinned:** the ambient layer — soft masses derived from the same projection, behind the cards,
+  giving way to the projection's nodes. Rules are in the plan: never competes with text, one model,
+  hand-over rather than layering, no animation, honest names.
 
 | Lane | Work | Owner artifact |
 | --- | --- | --- |
 | A | Pure projection: aggregate into (container, type) nodes, deterministic layout, containment edges | `packages/scene/src/typeGraph.ts` + tests |
-| B | Two ICE kinds for the band: `suite.typeNode` (glyph + count) and `suite.containerNode` (frame + label) | `apps/canvas/src/ice/suiteTypeNodeKind.ts`, `suiteContainerNodeKind.ts` + tests |
-| C | Surface integration: membrane, camera flights, band spawn/despawn, keymap, HUD, reconcile — single owner of `IceSurface.tsx` | `apps/canvas/src/ice/iceMembrane.ts`, `iceCameraFlight.ts` + `IceSurface.tsx` |
-| D | Canvas zoom cluster (traditional zoom in/out/fit + graph), Types table, library scoping, frame-instances action | `apps/canvas/src/components/CanvasZoomControls.tsx`, `TypeTable.tsx`, `ice/useTypeTable.ts` |
+| B | Two ICE kinds for the projection: `suite.typeNode` (glyph + count) and `suite.containerNode` (frame + label), plus derived depth | `apps/canvas/src/ice/suiteTypeNodeKind.ts`, `suiteContainerNodeKind.ts`, `suiteGraphDepth.ts` + tests |
+| C | Surface integration: open/close flight with the camera remembered, spawn/despawn, keymap, crumb, reconcile — single owner of `IceSurface.tsx` | `apps/canvas/src/ice/iceCameraFlight.ts` + `IceSurface.tsx` |
+| D | Canvas zoom cluster (zoom in/out with hold-repeat, fit, graph), Types table, library scoping, frame-instances action | `apps/canvas/src/components/CanvasZoomControls.tsx`, `TypeTable.tsx`, `ice/useTypeTable.ts` |
 | E | ADR-0037, this phase, the architecture paragraph, the research note | `docs/` |
-| F | Verification: unit coverage, headed e2e (membrane commit returns, graph labels render, table scopes the library), `?perf=1` sample at the ceiling | `e2e/tests/ice-graph.spec.ts` |
+| F | Verification: unit coverage, headed e2e (open/close restores the camera, labels render, table scopes the library), `?perf=1` sample with the projection open | `e2e/tests/ice-graph.spec.ts` |
 
-**Exit evidence:** pushing past the ceiling with the wheel shows a cue, commits at the threshold, and
-the same gesture (or `Escape`) returns; wheel wobble at either boundary does not flap. The graph band
-shows one node per (container, type) with a count at stable positions across renders and clients, and
-nested containers read as a stack through derived depth. The canvas zoom cluster's Graph control and the
-gesture produce the identical camera result, and both are flights. Selecting a type in the table
-scopes the library and frames its instances without writing. Nothing in the graph band writes to
-Loro, references never appear as edges, and a viewer sees the same graph read-only.
+**Exit evidence:** the Graph control (and `g`) opens the projection; every (container, type) has one
+node with a count at a stable position across renders and clients; nested containers read as a stack
+through derived depth; closing — by the control, the crumb or `Escape` — removes the nodes and returns
+to the exact camera it was opened from, even after panning inside it. Selecting a type in the table
+scopes the library and frames its instances without writing. Nothing in the projection writes to Loro,
+references never appear as edges, a viewer sees the same projection read-only, and zoom has no floor
+or ceiling of ours.
 
 ## 4. Dependency order
 
@@ -316,7 +322,7 @@ Phase 1 read-only real workspace
                           └── Phase 8 views/pins/navigation
                                 └── Phase 9 fractal LOD/budget
                                       └── Phase 10 failure/accessibility/rollout
-                                      └── Phase 11 ceiling/graph band
+                                      └── Phase 11 graph projection
 ```
 
 Phase 11 depends on Phase 9's bands and on nothing in Phase 10; it can overlap the rollout work once
@@ -466,9 +472,11 @@ draws one.
 | Presence/shares | pending | two-browser artifact |
 | Views/Pins | done — pins tab, drop action, markers, drag and click-to-focus | Views switcher rename (ADR-0035) |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
-| Ceiling graph projection | landing with this fleet — pure aggregation in `@suite/scene`, deterministic positions, containment edges | band wiring + story |
-| Graph-band kinds | landing with this fleet — `suite.typeNode` glyph + count, `suite.containerNode` frame + label | spawn/despawn on band cross |
-| Membrane and camera flights | landing with this fleet — rubber-band pull, commit/return, distance-scaled flight planner | headed e2e: commit and return |
-| Types table | landing with this fleet — count and share per type, scopes the library, frames instances | viewer read-only artifact |
-| Ceiling docs | done with this fleet — ADR-0037, architecture paragraph, Phase 11, research note | — |
+| Graph projection | done — pure aggregation in `@suite/scene`, deterministic positions, containment edges, 42 tests | — |
+| Projection kinds | done — `suite.typeNode` glyph + count, `suite.containerNode` frame + label, derived depth | story |
+| Camera flights | done — distance-scaled planner; zoom buttons repeat and accelerate; no teleporting ops | headed e2e |
+| Graph overlay wiring | landing with this fleet — control and `g` open it over the canvas, the camera is remembered and restored on close | headed e2e: open, pan inside, close |
+| Types table | done — count and share per type, scopes the library, frames instances; shown in the inspector while the projection is open | viewer read-only artifact |
+| Ambient layer | pinned — soft masses derived from the same projection, behind the cards | lane after this fleet |
+| Projection docs | done — ADR-0037, architecture paragraph, Phase 11, research note | — |
 | Failure/accessibility/rollout | pending | P0 table + unsupported screen |

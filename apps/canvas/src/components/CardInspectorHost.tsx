@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import { useTypeTable } from "../ice/useTypeTable";
 import { isShareSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { CardInspector } from "./CardInspector";
+import { TypeTable } from "./TypeTable";
 import { useCardPanelModel } from "./useCardPanelModel";
 
 /**
@@ -21,8 +23,15 @@ export function CardInspectorHost() {
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageSchema = useUiStore((state) => state.canManageSchema);
+  const graphBandActive = useUiStore((state) => state.graphBandActive);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  const requestGraphFrameType = useUiStore((state) => state.requestGraphFrameType);
 
   const model = useCardPanelModel(inspectorNodeId, "panel");
+  // At the ceiling the subject is a type, not a placement, so the panel becomes
+  // the Types table — the same scoped library the graph band shows, in the place
+  // the user already reads things. It reads the snapshot and writes nothing.
+  const typeRows = useTypeTable(graphBandActive ? activeBoardId : null);
 
   useEffect(() => {
     if (inspectorNodeId && !model) closeInspector();
@@ -39,6 +48,44 @@ export function CardInspectorHost() {
       state.stopEditing();
     }
   }, [inspectorNodeId]);
+
+  if (graphBandActive) {
+    return (
+      <aside
+        aria-label="Types in view"
+        data-testid="inspector-types"
+        className="card-inspector flex h-full w-full flex-col overflow-hidden"
+      >
+        <header className="card-inspector__header flex shrink-0 items-center justify-between px-4 py-3">
+          <div>
+            <h2 className="m-0 text-[15px] font-semibold text-[var(--ink)]">Types in view</h2>
+            <p className="m-0 text-[11px] text-[var(--ink-muted)]">
+              Graph view. Pick a type to scope the library.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            data-testid="inspector-types-close"
+            className="rounded px-1 text-[var(--ink-muted)] hover:text-[var(--ink)]"
+            onClick={closeInspector}
+          >
+            {"\u00d7"}
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+          <TypeTable
+            rows={typeRows}
+            boardId={activeBoardId}
+            onFrameType={(typeId) => requestGraphFrameType(typeId)}
+            readOnly={readOnly}
+            canEditContent={canEditContent}
+            canEditLayout={canEditLayout}
+          />
+        </div>
+      </aside>
+    );
+  }
 
   if (!model) return null;
 

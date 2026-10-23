@@ -4,7 +4,7 @@
 - **Scope:** zoomable user interfaces (ZUI), semantic zoom, focus+context, portal navigation,
   level-of-detail transitions, icon legibility and DOM-over-WebGPU budgets.
 - **Use:** informs [ADR-0036](./decisions/0036-fractal-lod-and-icon-graph.md) and
-  [ADR-0037](./decisions/0037-the-ceiling-and-the-graph-band.md), and the LOD experiments in
+  [ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md), and the LOD experiments in
   [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md).
 - **Caveat:** the ZUI canon is lab work from 1993–2004 on much smaller displays. There is no
   peer-reviewed field study of Miro/Figma-class infinite canvases, and no literature on a
@@ -180,9 +180,9 @@ decision in the parity roadmap.
 | E5 | **Threshold crossing.** Hysteresis 0 / 80 / 160 ms × slow/flick sweep × text/image card. | Band flips, layout shift, object constancy, edit-entry latency, dropped frames. | 0 flips with hysteresis; ≥ 95% constancy; p95 edit-entry < 150 ms; < 2 px shift; ≥ 55 fps. |
 | E6 | **Two-phase settle.** Motion frame vs settle mount with 6 ms deadline and 6 editors/frame. | Time to first readable card, settle time, long tasks. | First readable card ≤ 100 ms; settle ≤ 250 ms at 40 editors; no long task > 100 ms. |
 
-## 5. Ceiling and membrane
+## 5. The far end: projection, and the ceiling idea that was withdrawn
 
-This section backs [ADR-0037](./decisions/0037-the-ceiling-and-the-graph-band.md). It is thinner than
+This section backs [ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md). It is thinner than
 §1, and deliberately so: the ceiling is mostly a *gap* in the literature that we are filling by
 design, not a finding we are applying.
 
@@ -241,10 +241,11 @@ Two shipping systems change what the top of their zoom range *is*:
   ([globe](https://docs.mapbox.com/mapbox-gl-js/guides/globe/),
   [root spec](https://docs.mapbox.com/style-spec/reference/root/)).
 
-Both are *representation change on scale*, which supports the band. Both also **clamp**, which is the
-alternative ADR-0037 rejects: the precedent for a soft top comes from touch, and the precedent for a
-hard top comes from maps. Combining them — a band at the top, entered through a membrane — is our
-synthesis, not a documented pattern.
+Both are *representation change on scale*, and both **clamp**. The precedent for a soft top comes
+from touch, the precedent for a hard top from maps, and nobody's precedent is for an *explicitly
+opened* projection — which is what ADR-0037 settled on. That is the honest reading of this section:
+the ceiling/membrane synthesis was implemented, then withdrawn because the canvas has no top to put a
+membrane on (see §5.6).
 
 ### 5.4 Movement, not teleporting
 
@@ -279,6 +280,13 @@ long flight cannot become a cutscene.
   "readable or don't bother", not measured.
 - Not that derived depth reads as depth. It is a shading convention on flat quads; the experiment is
   whether users read nesting from it without a legend.
+- **Not a ceiling.** An earlier draft took §5.2–5.3 as licence for a membrane at the top of the zoom
+  range: resistance, a cue, a commit threshold, a gesture to return. It was built and tested, then
+  withdrawn ([ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md), "pinned, not
+  adopted") because the canvas has no top, so the boundary had to be invented and taught, and damping
+  wheel events near it read as lag. The citations above support *representation change at a boundary*;
+  they do not support inventing the boundary. The projection is now an explicit overlay, and if the
+  canvas ever grows a genuine top the membrane grammar is the right way to reach it.
 
 ## 6. Sources
 

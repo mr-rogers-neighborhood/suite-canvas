@@ -130,8 +130,7 @@ export type {
 } from "./typeGraph.js";
 export {
   buildTypeGraph,
-  GRAPH_BAND,
-  isGraphBand,
+  EMPTY_VIEW_ZOOM,
   LOOSE_CONTAINER_LABEL,
   looseContainerKey,
 } from "./typeGraph.js";

@@ -184,6 +184,16 @@ interface UiState extends SessionCapabilities {
   focusPinAt: (point: { x: number; y: number } | null) => void;
   /** Bumped by the pins list to ask the canvas to drop a pin; the canvas owns the point. */
   dropPinRequest: number;
+  /** True while the canvas is showing the graph band (the ceiling). */
+  graphBandActive: boolean;
+  setGraphBandActive: (active: boolean) => void;
+  /**
+   * A request from the shell (the Types table in the inspector) to fly the camera
+   * to one type's instances. A counter, like `dropPinRequest`, so the surface
+   * consumes each request exactly once without a second store.
+   */
+  graphFrameTypeRequest: { typeId: string; seq: number } | null;
+  requestGraphFrameType: (typeId: string) => void;
   requestDropPin: () => void;
   /**
    * Bumped by the Dock's Graph view control. The ceiling is a camera, not a
@@ -271,6 +281,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryTab: "inbox",
   pendingPinFocus: null,
   dropPinRequest: 0,
+  graphBandActive: false,
+  graphFrameTypeRequest: null,
   graphViewRequest: 0,
   selectedNodeIds: [],
   selectedEdgeIds: [],
@@ -401,6 +413,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   focusPinAt: (pendingPinFocus) => set({ pendingPinFocus }),
   requestDropPin: () => set((state) => ({ dropPinRequest: state.dropPinRequest + 1 })),
+  setGraphBandActive: (graphBandActive) => set({ graphBandActive }),
+  requestGraphFrameType: (typeId) =>
+    set((state) => ({
+      graphFrameTypeRequest: { typeId, seq: (state.graphFrameTypeRequest?.seq ?? 0) + 1 },
+    })),
   requestGraphView: () => set((state) => ({ graphViewRequest: state.graphViewRequest + 1 })),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),

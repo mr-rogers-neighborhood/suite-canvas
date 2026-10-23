@@ -15,6 +15,9 @@ export const SHARE_API_PATH = "/api/shares";
 /** Trades a link token for the short-lived session cookie. */
 export const SHARE_SESSION_PATH = `${SHARE_API_PATH}/session`;
 
+/** Reports how a new link is created by default: hosted links expire on their own. */
+export const SHARE_DEFAULTS_PATH = `${SHARE_API_PATH}/defaults`;
+
 /**
  * Sentinel `resolveShareToken` returns when the address bar no longer carries a
  * token but this tab may still hold a share session cookie. It is never a
@@ -43,6 +46,13 @@ export interface Share {
   /** Epoch milliseconds; null means the link does not expire. */
   expiresAt: number | null;
   /**
+   * Epoch milliseconds of the last time the link was opened, or null when it was
+   * never used. Coarse to the minute, and only moved by a real resolve — never by
+   * a listing. Metadata for the owner, not a credential. Absent on a response
+   * from a server older than the column, which reads as never used.
+   */
+  lastUsedAt?: number | null;
+  /**
    * Sync room this share opens. Workspace shares open the workspace room;
    * board, card and selection shares open `share-<token>`. The server keeps only
    * the token hash, so this is null when a share is read back by id.
@@ -66,8 +76,19 @@ export interface CreateShareInput {
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];
-  /** Epoch milliseconds; omit or null for a link that does not expire. */
+  /**
+   * Epoch milliseconds, or null (or 0) for a link that never expires. Omit it to
+   * accept the server's default: no expiry on a self-host, 30 days when hosted.
+   */
   expiresAt?: number | null;
+}
+
+/** How a new link is created when the owner does not choose an expiry. */
+export interface ShareDefaults {
+  /** True on the hosted relay (`SUITE_HOSTED=1`), where a new link expires by default. */
+  hosted: boolean;
+  /** Days a new link lasts by default, or 0 for a link that never expires. */
+  defaultExpiryDays: number;
 }
 
 export interface CreatedShare {
@@ -198,6 +219,22 @@ export async function createShare(
     body: JSON.stringify(input),
   });
   return createdShare(body);
+}
+
+/**
+ * The create defaults of this relay. Public and token-free: the dialog needs it
+ * to preselect the expiry the server would apply anyway, so the two agree.
+ */
+export async function shareDefaults(): Promise<ShareDefaults> {
+  const body = await request<unknown>(SHARE_DEFAULTS_PATH);
+  if (!isRecord(body) || typeof body.hosted !== "boolean") {
+    throw new ShareApiError("The share server sent an unexpected response.");
+  }
+  const days = body.defaultExpiryDays;
+  return {
+    hosted: body.hosted,
+    defaultExpiryDays: typeof days === "number" && Number.isFinite(days) && days > 0 ? days : 0,
+  };
 }
 
 /** Active shares of a workspace, newest first. Tokens are not included. Owner only. */

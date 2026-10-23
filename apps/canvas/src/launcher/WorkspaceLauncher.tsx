@@ -1,15 +1,18 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
+import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "../session/ownerKey";
 import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
+import { isShareSession } from "../session/session";
 import {
   downloadWorkspaceById,
   forgetWorkspace,
   importWorkspaceFile,
   navigateTo,
+  newWorkspaceId,
   openNewWorkspace,
   openWorkspace,
   type RecentWorkspace,
   readRecentWorkspaces,
+  rememberWorkspace,
   workspaceUrl,
 } from "../session/workspaceTransfer";
 
@@ -18,6 +21,12 @@ interface RecoveryPrompt {
   workspaceId: string;
   ownerKey: string;
   title: string;
+}
+
+/** A new workspace whose passphrase choice has not been answered yet. */
+interface CreationChoice {
+  workspaceId: string;
+  ownerKey: string;
 }
 
 function openedAt(timestamp: number): string {
@@ -49,6 +58,7 @@ export function WorkspaceLauncher() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
+  const [choice, setChoice] = useState<CreationChoice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RecentWorkspace | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const recoveryInput = useRef<HTMLInputElement | null>(null);
@@ -56,6 +66,34 @@ export function WorkspaceLauncher() {
   useEffect(() => {
     setRecents(readRecentWorkspaces());
   }, []);
+
+  /**
+   * A passphrase only helps where the relay can own the workspace from any
+   * device, and it is the owner's decision: a share session or a viewer gets the
+   * plain new workspace, with no choice to make.
+   */
+  const offerPassphrase = import.meta.env.VITE_SUITE_MODE !== "standalone" && !isShareSession();
+
+  /**
+   * The id and the key are made here but written only when the choice is
+   * answered, so closing the dialog leaves no half-made workspace behind.
+   */
+  const startNew = () => {
+    if (!offerPassphrase) {
+      openNewWorkspace();
+      return;
+    }
+    setChoice({ workspaceId: newWorkspaceId(), ownerKey: generateOwnerKey() });
+  };
+
+  /** The one place a new workspace is written, whichever key was chosen. */
+  const openCreated = (workspaceId: string, ownerKey: string) => {
+    writeOwnerKey(workspaceId, ownerKey);
+    rememberWorkspace({ id: workspaceId, title: "Untitled workspace" });
+    const url = new URL(workspaceUrl(workspaceId, null, ownerKey));
+    url.searchParams.set("fresh", "1");
+    navigateTo(url.toString());
+  };
 
   const importFile = async (file: File | undefined) => {
     if (!file) return;
@@ -137,7 +175,7 @@ export function WorkspaceLauncher() {
               type="button"
               data-testid="launcher-new"
               className="rounded-lg bg-[var(--ink)] px-4 py-2 text-[13px] font-medium text-[var(--surface)] transition-opacity hover:opacity-90"
-              onClick={openNewWorkspace}
+              onClick={startNew}
               disabled={busy}
             >
               New workspace
@@ -271,6 +309,19 @@ export function WorkspaceLauncher() {
           the file is the only import path.
         </footer>
       </div>
+      {choice ? (
+        <Suspense fallback={null}>
+          <RecoveryKeyDialog
+            mode="creation-prompt"
+            workspaceId={choice.workspaceId}
+            ownerKey={choice.ownerKey}
+            title="Untitled workspace"
+            onClose={() => setChoice(null)}
+            onSkip={() => openCreated(choice.workspaceId, choice.ownerKey)}
+            onSetPassphrase={(derivedKey) => openCreated(choice.workspaceId, derivedKey)}
+          />
+        </Suspense>
+      ) : null}
       {prompt ? (
         <Suspense fallback={null}>
           <RecoveryKeyDialog

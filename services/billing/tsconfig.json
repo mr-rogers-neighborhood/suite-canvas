@@ -3,9 +3,9 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["node"],
-    // This lane adds no dependency of its own, so reuse the hoisted Node types
-    // the collab-server workspace already installs.
-    "typeRoots": ["../../node_modules/@types", "../../apps/collab-server/node_modules/@types"],
+    // A workspace package installs its own dev dependencies, so the Node types
+    // live next to this tsconfig; keep the hoisted root as a fallback.
+    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
     // Node runs these files with type stripping, which requires the real `.ts`
     // extension when importing the shared licence module.
     "allowImportingTsExtensions": true

@@ -8,6 +8,10 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // CRDT convergence tests move whole documents between peers and run in
+    // parallel with the canvas project; the 5 s default produced a load-induced
+    // timeout (9.7 s, passed on rerun). 15 s still fails a genuine hang.
+    testTimeout: 15_000,
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "lcov"],

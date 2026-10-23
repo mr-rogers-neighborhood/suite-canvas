@@ -42,6 +42,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Billing service tests (payment path)
+        run: pnpm turbo run test --filter=@suite/billing
+
       - name: Coverage (reported, graph thresholds enforced)
         run: pnpm coverage
 
@@ -52,6 +55,14 @@ jobs:
           name: coverage
           path: coverage
           retention-days: 7
+
+      # Stories as tests: an a11y or interaction regression in a story fails here,
+      # in a real Chromium, before the build.
+      - name: Install Playwright browser
+        run: pnpm --filter @suite/e2e exec playwright install --with-deps chromium
+
+      - name: Story tests (a11y, browser)
+        run: pnpm test:stories
 
       - name: Build
         run: pnpm build

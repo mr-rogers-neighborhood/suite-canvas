@@ -23,6 +23,15 @@ export const MAX_SELECTION_CARDS = 200;
  */
 export const SHARE_SESSION_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * How stale a share's last-used timestamp may get. A resolve is a real use, but
+ * a viewer reloads and re-resolves often, so the column is written at most once
+ * per share per minute; a busy link therefore costs at most one small UPDATE a
+ * minute instead of one per request. The value is metadata, never a credential:
+ * it tells the owner whether a link was ever opened, nothing about who did.
+ */
+export const SHARE_LAST_USED_GRANULARITY_MS = 60 * 1000;
+
 export interface Share {
   id: string;
   scope: ShareScope;
@@ -34,6 +43,13 @@ export interface Share {
   revokedAt: number | null;
   /** Epoch milliseconds; null means the link does not expire. */
   expiresAt: number | null;
+  /**
+   * Epoch milliseconds of the last time the link was resolved, or null when it
+   * was never used. Coarse to the minute: see `SHARE_LAST_USED_GRANULARITY_MS`.
+   * A listing never touches it, so this only moves when someone actually opened
+   * the link.
+   */
+  lastUsedAt: number | null;
   /**
    * Sync room this share opens. Workspace shares open the workspace room. Board,
    * card and selection shares open `share-<token>`; because only the token hash
@@ -59,6 +75,11 @@ export interface CreateShareInput {
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];
+  /**
+   * Epoch milliseconds, or null (or 0) for a link that never expires. Leaving it
+   * out asks the server for its default: no expiry on a self-host, 30 days on
+   * the hosted relay.
+   */
   expiresAt?: number | null;
 }
 
@@ -77,7 +98,11 @@ export interface ShareSession {
 
 export interface ShareStore {
   create: (input: CreateShareInput) => CreatedShare;
-  /** Active share for a raw token, or null when unknown or revoked. */
+  /**
+   * Active share for a raw token, or null when unknown or revoked. A success is
+   * a real use, so it records `lastUsedAt` — at most once per share per
+   * `SHARE_LAST_USED_GRANULARITY_MS`.
+   */
   resolve: (token: string) => Share | null;
   /**
    * Mints a session credential for a share that was just resolved. The caller
@@ -87,7 +112,8 @@ export interface ShareStore {
   /**
    * Active share behind a session credential, or null when the session is
    * unknown, expired, or its share was revoked or expired. A successful lookup
-   * slides the session expiry by `SHARE_SESSION_TTL_MS`.
+   * slides the session expiry by `SHARE_SESSION_TTL_MS` and records
+   * `lastUsedAt`, subject to the same once-a-minute granularity as `resolve`.
    */
   resolveSession: (session: string) => Share | null;
   /** Drops one session credential, for the sign-out route. */
@@ -142,6 +168,8 @@ interface ShareRow {
   room_id: string | null;
   /** JSON array of card ids; null or unparseable reads as an empty selection. */
   card_ids: string | null;
+  /** Epoch milliseconds of the last resolve; null on rows never used. */
+  last_used_at: number | null;
 }
 
 interface ShareSessionRow {
@@ -222,7 +250,7 @@ export function validateShareInput(input: {
   const cards = normalizeCardIds(input.cardIds);
   if (input.boardId != null && !boardId) return "The board id must be a non-empty string.";
   if (input.cardId != null && !cardId) return "The card id must be a non-empty string.";
-  if (input.expiresAt != null) {
+  if (input.expiresAt != null && input.expiresAt !== 0) {
     if (
       typeof input.expiresAt !== "number" ||
       !Number.isSafeInteger(input.expiresAt) ||
@@ -288,6 +316,7 @@ function toShare(row: ShareRow, token: string | null): Share {
     createdAt: row.created_at,
     revokedAt: row.revoked_at ?? null,
     expiresAt: row.expires_at ?? null,
+    lastUsedAt: row.last_used_at ?? null,
     roomId,
     cardIds,
     cardCount: cardIds.length > 0 ? cardIds.length : cardId ? 1 : 0,
@@ -314,6 +343,9 @@ function migrateShareColumns(db: DatabaseSync): void {
   if (!columns.some((column) => column.name === "card_ids")) {
     db.exec("ALTER TABLE shares ADD COLUMN card_ids TEXT");
   }
+  if (!columns.some((column) => column.name === "last_used_at")) {
+    db.exec("ALTER TABLE shares ADD COLUMN last_used_at INTEGER");
+  }
 }
 
 export function createShareStore(path: string): ShareStore {
@@ -331,7 +363,8 @@ export function createShareStore(path: string): ShareStore {
        revoked_at INTEGER,
        expires_at INTEGER,
        room_id TEXT,
-       card_ids TEXT
+       card_ids TEXT,
+       last_used_at INTEGER
      );
      CREATE INDEX IF NOT EXISTS shares_by_workspace ON shares (workspace_id, created_at);
      CREATE TABLE IF NOT EXISTS share_baselines (
@@ -383,6 +416,7 @@ export function createShareStore(path: string): ShareStore {
   const revokeById = db.prepare(
     "UPDATE shares SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
   );
+  const touchLastUsed = db.prepare("UPDATE shares SET last_used_at = ? WHERE id = ?");
   const selectBaseline = db.prepare("SELECT snapshot FROM share_baselines WHERE share_id = ?");
   const upsertBaseline = db.prepare(
     `INSERT INTO share_baselines (share_id, snapshot, updated_at) VALUES (?, ?, ?)
@@ -406,6 +440,19 @@ export function createShareStore(path: string): ShareStore {
   const get = (id: string): Share | null => {
     const row = selectById.get(id) as ShareRow | undefined;
     return row ? toShare(row, null) : null;
+  };
+
+  /**
+   * Records a real use, at most once per share per `SHARE_LAST_USED_GRANULARITY_MS`.
+   * Returns the timestamp the share should carry: the freshly written one, or
+   * the recent one the throttle kept. The caller folds it back into the row, so
+   * the resolved share reports exactly what the next listing will.
+   */
+  const recordUse = (row: ShareRow, now: number): number => {
+    const previous = row.last_used_at ?? null;
+    if (previous !== null && now - previous < SHARE_LAST_USED_GRANULARITY_MS) return previous;
+    touchLastUsed.run(now, row.id);
+    return now;
   };
 
   return {
@@ -441,6 +488,7 @@ export function createShareStore(path: string): ShareStore {
       const row = selectByHash.get(hashShareToken(token)) as ShareRow | undefined;
       if (!row || row.revoked_at != null) return null;
       if (row.expires_at != null && row.expires_at <= Date.now()) return null;
+      row.last_used_at = recordUse(row, Date.now());
       return toShare(row, token);
     },
 
@@ -480,6 +528,8 @@ export function createShareStore(path: string): ShareStore {
       }
 
       touchSession.run(now + SHARE_SESSION_TTL_MS, hash);
+      // Resuming a session is a real use of the link, not a listing.
+      shareRow.last_used_at = recordUse(shareRow, now);
       return toShare(shareRow, null);
     },
 

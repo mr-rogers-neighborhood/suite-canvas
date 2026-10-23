@@ -1,9 +1,16 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "services/*"
   - "e2e"
 allowBuilds:
   esbuild: true
+# `services/billing` declares the SES SDK as an optional dependency for the
+# Lambda bundle, but the repository install stays AWS-free on purpose: the
+# emailer loads it by name only when SES_FROM_ADDRESS is set, and its tests
+# assert the missing-SDK path. Install it for a deployment, not here.
+ignoredOptionalDependencies:
+  - "@aws-sdk/client-ses"
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.11.10"
   - "@turbo/darwin-arm64@2.11.10"

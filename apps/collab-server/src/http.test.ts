@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleShareRequest } from "./http.js";
 import type { SharePublishResult } from "./projectionWorker.js";
 import { resetRateLimits } from "./rateLimit.js";
@@ -29,6 +29,11 @@ let publishedOverwrites: (readonly string[] | undefined)[];
 let statuses: Share[];
 let statusResult: { dirty: boolean; hasBaseline: boolean };
 let reloaded: Share[];
+let flushes: string[];
+/** Holds the create request inside its forced save until the test releases it. */
+let flushGate: Promise<void> | null;
+let flushError: boolean;
+let order: string[];
 
 beforeEach(async () => {
   resetRateLimits();
@@ -47,11 +52,22 @@ beforeEach(async () => {
   statuses = [];
   statusResult = { dirty: true, hasBaseline: true };
   reloaded = [];
+  flushes = [];
+  flushGate = null;
+  flushError = false;
+  order = [];
 
   server = createServer((request, response) => {
     void handleShareRequest(request, response, store, workspaces, {
+      flush: async (workspaceId) => {
+        flushes.push(workspaceId);
+        order.push(`flush:${workspaceId}`);
+        if (flushGate) await flushGate;
+        if (flushError) throw new Error("save failed");
+      },
       onSharesChanged: (workspaceId) => {
         changes.push(workspaceId);
+        order.push(`changed:${workspaceId}`);
         if (hookError) throw new Error("projection hook failed");
       },
       onShareRemoved: (share) => {
@@ -85,6 +101,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   store.close();
   workspaces.close();
@@ -922,6 +939,145 @@ describe("share expiry", () => {
       expiresAt: Date.now() - 1,
     });
     expect(past.status).toBe(400);
+  });
+});
+
+describe("share creation hygiene", () => {
+  it("saves the workspace before it creates the link", async () => {
+    let release: () => void = () => {};
+    flushGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    let settled = false;
+    const pending = post({ workspaceId: "ws-1", scope: "board", role: "viewer", boardId: "b" })
+      .then((response) => {
+        settled = true;
+        return response;
+      })
+      .catch(() => {
+        settled = true;
+        return null;
+      });
+
+    // The handler is parked in the save: nothing is created and no projection is
+    // scheduled until the save reports back.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(flushes).toEqual(["ws-1"]);
+    expect(settled).toBe(false);
+    expect(changes).toEqual([]);
+
+    release();
+    const created = await pending;
+    expect(created?.status).toBe(201);
+    // The save finishes first, then the link exists, then the projection runs.
+    expect(order).toEqual(["flush:ws-1", "changed:ws-1"]);
+  });
+
+  it("still creates the link when the forced save fails", async () => {
+    flushError = true;
+
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "b",
+    });
+
+    expect(created.status).toBe(201);
+    expect(flushes).toEqual(["ws-1"]);
+    expect(changes).toEqual(["ws-1"]);
+  });
+
+  it("defaults a hosted link to 30 days", async () => {
+    vi.stubEnv("SUITE_HOSTED", "1");
+    const before = Date.now();
+
+    const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { share: { expiresAt: number | null } };
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    expect(body.share.expiresAt).toBeGreaterThanOrEqual(before + thirtyDays);
+    expect(body.share.expiresAt).toBeLessThanOrEqual(Date.now() + thirtyDays);
+  });
+
+  it("lets an explicit expiry win over the hosted default", async () => {
+    vi.stubEnv("SUITE_HOSTED", "1");
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "workspace",
+      role: "viewer",
+      expiresAt,
+    });
+
+    const body = (await created.json()) as { share: { expiresAt: number | null } };
+    expect(body.share.expiresAt).toBe(expiresAt);
+  });
+
+  it("lets the owner choose Never on a hosted relay", async () => {
+    vi.stubEnv("SUITE_HOSTED", "1");
+
+    for (const expiresAt of [null, 0]) {
+      const created = await post({
+        workspaceId: "ws-1",
+        scope: "workspace",
+        role: "viewer",
+        expiresAt,
+      });
+      expect(created.status).toBe(201);
+      const body = (await created.json()) as { share: { expiresAt: number | null } };
+      expect(body.share.expiresAt).toBeNull();
+    }
+  });
+
+  it("keeps the no-expiry default on a self-host", async () => {
+    const created = await post({ workspaceId: "ws-1", scope: "workspace", role: "viewer" });
+
+    const body = (await created.json()) as { share: { expiresAt: number | null } };
+    expect(body.share.expiresAt).toBeNull();
+  });
+
+  it("reports the create defaults the dialog preselects from", async () => {
+    const selfHosted = await fetch(`${baseUrl}/api/shares/defaults`);
+    expect(selfHosted.status).toBe(200);
+    expect(await selfHosted.json()).toEqual({ hosted: false, defaultExpiryDays: 0 });
+
+    vi.stubEnv("SUITE_HOSTED", "1");
+    const hosted = await fetch(`${baseUrl}/api/shares/defaults`);
+    expect(hosted.status).toBe(200);
+    expect(await hosted.json()).toEqual({ hosted: true, defaultExpiryDays: 30 });
+
+    const wrongMethod = await fetch(`${baseUrl}/api/shares/defaults`, { method: "POST" });
+    expect(wrongMethod.status).toBe(405);
+  });
+
+  it("lists a last-used timestamp that a resolve sets and a listing keeps", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "b",
+    });
+    const { token, share } = (await created.json()) as {
+      token: string;
+      share: { id: string; lastUsedAt: number | null };
+    };
+    expect(share.lastUsedAt).toBeNull();
+
+    await fetch(`${baseUrl}/api/shares/${token}`);
+    const listed = (await (await list("ws-1")).json()) as {
+      shares: { id: string; lastUsedAt: number | null }[];
+    };
+    const first = listed.shares.find((entry) => entry.id === share.id);
+    expect(first?.lastUsedAt).toBeTypeOf("number");
+
+    // Listing again does not count as a use.
+    const again = (await (await list("ws-1")).json()) as {
+      shares: { id: string; lastUsedAt: number | null }[];
+    };
+    expect(again.shares.find((entry) => entry.id === share.id)?.lastUsedAt).toBe(first?.lastUsedAt);
   });
 });
 

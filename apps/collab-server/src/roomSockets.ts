@@ -69,3 +69,22 @@ export function disconnectWorkspaceShares(
 export function disconnectAuthSessions(server: KickServer, auth: string): number {
   return server.disconnectAuth(auth);
 }
+
+/**
+ * Writes every dirty room document to the store now, instead of waiting for the
+ * coalescing `saveInterval`.
+ *
+ * A share's first projection is built from the *saved* workspace, and saves are
+ * coalesced (2 s), so a link created moments after an edit could capture a stale
+ * board. This is the same seam style as the patched disconnect helpers: the
+ * method exists on the server but is not part of its declared public API, so it
+ * is reached through a small check rather than an unchecked cast — a rename in
+ * an upgrade returns `false` (and the caller logs) instead of silently skipping
+ * the flush forever.
+ */
+export async function flushDirtyDocuments(server: unknown): Promise<boolean> {
+  const flush = (server as { saveAllDirtyDocuments?: unknown } | null)?.saveAllDirtyDocuments;
+  if (typeof flush !== "function") return false;
+  await flush.call(server);
+  return true;
+}

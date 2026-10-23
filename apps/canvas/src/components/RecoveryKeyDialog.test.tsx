@@ -409,3 +409,139 @@ describe("RecoveryKeyDialog passphrase", () => {
     expect(screen.getByTestId("recovery-passphrase-confirm")).toBeInTheDocument();
   });
 });
+
+describe("RecoveryKeyDialog creation choice", () => {
+  it("offers one decision and says what each answer survives", () => {
+    render(
+      <RecoveryKeyDialog
+        mode="creation-prompt"
+        workspaceId="ws-new"
+        ownerKey="generated-key"
+        onClose={() => {}}
+      />,
+    );
+
+    const dialog = screen.getByTestId("recovery-creation");
+    expect(dialog).toHaveTextContent("Set a passphrase?");
+    expect(dialog).toHaveTextContent(
+      "A passphrase survives a lost device and opens this workspace on any device with the URL",
+    );
+    expect(dialog).toHaveTextContent("a recovery file survives a lost browser");
+    expect(dialog).toHaveTextContent(
+      "if the browser and the device are both lost, the workspace is gone",
+    );
+    expect(dialog).toHaveTextContent("You can set a passphrase later from File");
+    expect(screen.getByTestId("recovery-creation-set")).toHaveTextContent("Set passphrase");
+    expect(screen.getByTestId("recovery-creation-skip")).toHaveTextContent("Skip for now");
+  });
+
+  it("hands over the derived key without rotating or marking anything saved", async () => {
+    writeOwnerKey("ws-new", "generated-key");
+    const rotate = vi.fn(async () => {});
+    const choose = vi.fn();
+    render(
+      <RecoveryKeyDialog
+        mode="creation-prompt"
+        workspaceId="ws-new"
+        ownerKey="generated-key"
+        rotate={rotate}
+        onSetPassphrase={choose}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    expect(screen.getByTestId("recovery-passphrase-problem")).toHaveTextContent(
+      "Suite never stores the passphrase.",
+    );
+    fireEvent.click(screen.getByTestId("recovery-creation-set"));
+
+    await waitFor(() => expect(choose).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    expect(choose).toHaveBeenCalledWith(await deriveOwnerKey(PASSPHRASE, "ws-new"));
+
+    // Creation has nothing to rotate: no key has claimed the workspace yet.
+    expect(rotate).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+    expect(readOwnerKey("ws-new")).toBe("generated-key");
+    expect(window.localStorage.getItem("suite.recoverySaved.ws-new")).toBeNull();
+  });
+
+  it("leaves the generated key and the saved state alone on skip", () => {
+    writeOwnerKey("ws-new", "generated-key");
+    const rotate = vi.fn(async () => {});
+    const skip = vi.fn();
+    render(
+      <RecoveryKeyDialog
+        mode="creation-prompt"
+        workspaceId="ws-new"
+        ownerKey="generated-key"
+        rotate={rotate}
+        onSkip={skip}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-creation-skip"));
+
+    expect(skip).toHaveBeenCalledTimes(1);
+    expect(rotate).not.toHaveBeenCalled();
+    expect(readOwnerKey("ws-new")).toBe("generated-key");
+    expect(window.localStorage.getItem("suite.recoverySaved.ws-new")).toBeNull();
+  });
+
+  it("refuses a weak passphrase with the reason and keeps the button usable", async () => {
+    const choose = vi.fn();
+    render(
+      <RecoveryKeyDialog
+        mode="creation-prompt"
+        workspaceId="ws-new"
+        ownerKey="generated-key"
+        onSetPassphrase={choose}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: "cat dog" },
+    });
+    expect(screen.getByTestId("recovery-passphrase-problem")).toHaveTextContent(
+      "at least 4 words and 16 characters",
+    );
+
+    const set = screen.getByTestId("recovery-creation-set");
+    expect(set).toBeEnabled();
+    fireEvent.click(set);
+
+    expect(await screen.findByTestId("recovery-error")).toHaveTextContent(
+      "at least 4 words and 16 characters",
+    );
+    expect(choose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("recovery-saved")).not.toBeInTheDocument();
+  });
+
+  it("closes on Escape and on the backdrop without changing anything", () => {
+    writeOwnerKey("ws-new", "generated-key");
+    const onClose = vi.fn();
+    render(
+      <RecoveryKeyDialog
+        mode="creation-prompt"
+        workspaceId="ws-new"
+        ownerKey="generated-key"
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    onClose.mockClear();
+    fireEvent.click(screen.getAllByLabelText("Close passphrase choice")[0] as HTMLElement);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    expect(readOwnerKey("ws-new")).toBe("generated-key");
+    expect(window.localStorage.getItem("suite.recoverySaved.ws-new")).toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+});

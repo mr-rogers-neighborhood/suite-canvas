@@ -20,7 +20,7 @@ import { revokeAllShares } from "../session/shares";
 import { downloadText, fileStem, workspaceUrl } from "../session/workspaceTransfer";
 import { useCanvasStore } from "../store/useCanvasStore";
 
-export type RecoveryKeyMode = "manage" | "backup-prompt";
+export type RecoveryKeyMode = "manage" | "backup-prompt" | "creation-prompt";
 
 export interface RecoveryKeyDialogProps {
   workspaceId: string;
@@ -32,9 +32,15 @@ export interface RecoveryKeyDialogProps {
   /**
    * `manage` is the File-menu dialog. `backup-prompt` is the one contextual
    * offer after a backup export: save a separate key, or decline.
+   * `creation-prompt` is the one first-run choice for a new workspace: a
+   * passphrase, or skip and keep the generated key.
    */
   mode?: RecoveryKeyMode;
   onClose: () => void;
+  /** Creation: continue with the key this browser generated. */
+  onSkip?: () => void;
+  /** Creation: the key derived from the chosen passphrase. */
+  onSetPassphrase?: (ownerKey: string) => void;
   /** Tests replace the network call. */
   rotate?: typeof rotateOwnerKey;
   /** Tests replace the link revocation call. */
@@ -65,6 +71,9 @@ const PASSPHRASE_WARNING =
   "Existing editor links and old .suitekey recovery files will stop working, because this workspace will accept only the key derived from the passphrase.";
 const PASSPHRASE_HINT =
   "Use at least four words and 16 characters. Suite never stores the passphrase.";
+const CREATION_COPY =
+  "A passphrase survives a lost device and opens this workspace on any device with the URL; a recovery file survives a lost browser; skip both, and if the browser and the device are both lost, the workspace is gone.";
+const CREATION_LATER = "You can set a passphrase later from File \u2192 Recovery key.";
 
 function savedLabel(saved: SavedRecoveryKey): string {
   if (saved.savedAt === null) return "Saved on this device";
@@ -87,6 +96,8 @@ export function RecoveryKeyDialog({
   title = "workspace",
   mode = "manage",
   onClose,
+  onSkip,
+  onSetPassphrase,
   rotate = rotateOwnerKey,
   revokeShares = revokeAllShares,
   leave = () => window.location.assign("/"),
@@ -105,6 +116,7 @@ export function RecoveryKeyDialog({
   const [wordsCopied, setWordsCopied] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [passStage, setPassStage] = useState<PassphraseStage>("idle");
+  const [deriving, setDeriving] = useState(false);
 
   const activeKey = newKey ?? ownerKey;
   const passphraseIssue = passphrase.trim().length === 0 ? null : passphraseProblem(passphrase);
@@ -294,6 +306,124 @@ export function RecoveryKeyDialog({
     if (!newKey) return;
     reloadWithOwnerKey(newKey);
   };
+
+  /**
+   * Creation has nothing to rotate: no key has claimed the new workspace yet, so
+   * the derived key is simply its first key — the same end state `replace`
+   * reaches later, where only the derived key can claim the workspace. The
+   * button stays enabled on purpose: a weak passphrase gets the reason here.
+   */
+  const choosePassphrase = async () => {
+    const problem = passphraseProblem(passphrase);
+    if (problem !== null) {
+      setError(problem);
+      return;
+    }
+    setError(null);
+    setDeriving(true);
+    try {
+      onSetPassphrase?.(await deriveOwnerKey(passphrase, workspaceId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The passphrase key could not be derived.");
+      setDeriving(false);
+    }
+  };
+
+  if (mode === "creation-prompt") {
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center">
+        <button
+          type="button"
+          aria-label="Close passphrase choice"
+          className="absolute inset-0 cursor-default border-0 bg-black/25 backdrop-blur-[2px]"
+          onClick={onClose}
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Set a passphrase for this workspace"
+          data-testid="recovery-creation"
+          className="relative w-[min(420px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-sm font-semibold">Set a passphrase?</h2>
+            <button
+              type="button"
+              aria-label="Close passphrase choice"
+              className="rounded-md px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+              onClick={onClose}
+            >
+              {"\u00d7"}
+            </button>
+          </div>
+
+          <p
+            className="mt-1 text-[11px] leading-relaxed text-[var(--ink-muted)]"
+            data-testid="recovery-creation-copy"
+          >
+            {CREATION_COPY}
+          </p>
+
+          <input
+            type="password"
+            aria-label="Passphrase"
+            autoComplete="new-password"
+            spellCheck={false}
+            data-testid="recovery-passphrase-input"
+            className="mt-2 w-full rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)] outline-none"
+            value={passphrase}
+            onChange={(event) => {
+              setPassphrase(event.currentTarget.value);
+              setError(null);
+            }}
+          />
+          <p
+            data-testid="recovery-passphrase-problem"
+            className={`mt-1 text-[10px] leading-relaxed ${
+              passphraseIssue ? "text-amber-700 dark:text-amber-300" : "text-[var(--ink-muted)]"
+            }`}
+          >
+            {passphraseIssue ?? PASSPHRASE_HINT}
+          </p>
+
+          {error ? (
+            <p
+              role="alert"
+              data-testid="recovery-error"
+              className="mt-2 text-[11px] leading-relaxed text-red-600 dark:text-red-300"
+            >
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-3 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              data-testid="recovery-creation-skip"
+              disabled={deriving}
+              className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:opacity-40 dark:hover:bg-white/10"
+              onClick={onSkip}
+            >
+              Skip for now
+            </button>
+            <button
+              type="button"
+              data-testid="recovery-creation-set"
+              disabled={deriving}
+              className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-[11px] text-[var(--surface)] transition-opacity hover:opacity-90 disabled:opacity-40"
+              onClick={() => void choosePassphrase()}
+            >
+              {deriving ? "Setting\u2026" : "Set passphrase"}
+            </button>
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-muted)]">
+            {CREATION_LATER}
+          </p>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   const closing = mode === "backup-prompt";
 

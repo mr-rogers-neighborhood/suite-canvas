@@ -202,10 +202,13 @@ pnpm biome check --write services/billing     # from the repo root
 cd services/billing && node --test "*.test.ts"
 ```
 
-`services/billing` is not a pnpm workspace member. That is intentional: its tests run on Node's
-built-in runner through type stripping, so adding it to the workspace would only add it to
-`pnpm install`, `pnpm test` and the Stripe-free promise above. The root workspace files are not
-touched to test this service.
+`services/billing` **is** a pnpm workspace member (`services/*` in `pnpm-workspace.yaml`), so
+`pnpm typecheck` and CI reach it like any other package; `pnpm verify` runs its tests through
+`turbo run test --filter=@suite/billing`. Its tests still use Node's built-in runner via type
+stripping, so the Stripe- and AWS-free install is preserved by `ignoredOptionalDependencies`:
+`@aws-sdk/client-ses` stays declared as an optional dependency for the Lambda bundle and is simply
+not installed here. That distinction is load-bearing — installing the SDK flips the test that
+asserts the missing-SDK path, which is how the constraint was found.
 
 What is not covered by the tests, because neither Stripe nor SES is reachable from them: the real
 webhook handshake, SES delivery (including sandbox restrictions), and the deployed DynamoDB store.

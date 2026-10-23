@@ -6,6 +6,16 @@ import { defineConfig, devices } from "@playwright/test";
 const trace: "on" | "retain-on-failure" =
   process.env.SUITE_TRACE === "on" ? "on" : "retain-on-failure";
 
+// UI mode (`--ui`, or `--ui-host`/`--ui-port`, which imply it) runs the same
+// webServer entries as `pnpm e2e`. It is an interactive, single-operator window
+// and never a CI gate, so it always reuses whatever is already listening on
+// :5173 and :1235: a second Vite or relay on those fixed ports can only fail
+// with EADDRINUSE and take the window down. `reuseExistingServer` only decides
+// what happens when the URL is *already* up — with nothing running, UI mode
+// still starts the servers itself.
+const uiMode = process.argv.some((arg) => /^--ui(-host|-port)?(=|$)/.test(arg));
+const reuseExistingServer = uiMode || !process.env.CI;
+
 export default defineConfig({
   testDir: "./tests",
   // Playwright's default, spelled out so `pnpm e2e:trace` can rely on it.
@@ -30,7 +40,7 @@ export default defineConfig({
     {
       command: "pnpm --filter @suite/canvas dev",
       url: "http://localhost:5173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 60_000,
     },
     {
@@ -38,7 +48,7 @@ export default defineConfig({
       // Loro's sync endpoint is a WebSocket, so probe a small HTTP health
       // endpoint on the adjacent port instead.
       url: "http://localhost:1235/health",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 30_000,
       env: {
         // The suite creates hundreds of workspaces from one address.

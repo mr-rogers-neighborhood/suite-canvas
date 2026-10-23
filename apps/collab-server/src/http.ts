@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { licenceRequired } from "./licence.js";
 import { createLogger } from "./logging.js";
 import type { SharePublishResult, ShareStatus } from "./projectionWorker.js";
 import {
@@ -25,8 +26,30 @@ export const SHARE_API_PATH = "/api/shares";
 /** Last segment of `SHARE_SESSION_PATH`; reserved so no token can shadow it. */
 const SESSION_SEGMENT = "session";
 
+/** Reserved segment reporting the create defaults, so a token can never shadow it. */
+const DEFAULTS_SEGMENT = "defaults";
+
 /** Route that trades a link token for a short-lived session. Never takes the token in the URL. */
 export const SHARE_SESSION_PATH = `${SHARE_API_PATH}/session`;
+
+/**
+ * Route that reports how a new link is created by default. The dialog needs it
+ * to preselect the expiry the server will apply; it exposes only the hosted
+ * switch, never a token or a share.
+ */
+export const SHARE_DEFAULTS_PATH = `${SHARE_API_PATH}/defaults`;
+
+/**
+ * Default lifetime of a new link on the hosted relay. A hosted workspace has a
+ * quota and a projection room per link, so a link nobody remembers to revoke
+ * should not live forever; 30 days is long enough for a review cycle and short
+ * enough that an abandoned link stops being a credential. The owner may still
+ * pick **Never** (`expiresAt: null` or `0`), and a self-host keeps today's
+ * default of no expiry.
+ */
+export const HOSTED_SHARE_EXPIRY_DAYS = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Cookie that carries the exchanged share session. HttpOnly keeps it out of
@@ -41,6 +64,13 @@ export interface ShareRequestHooks {
    * follow. Optional: the share API works without a projection worker.
    */
   onSharesChanged?: (workspaceId: string) => void;
+  /**
+   * Saves the workspace before its first projection is built, and is awaited by
+   * the create handler. Saves are coalesced (2 s), so without this a link made
+   * moments after an edit would project the board as of the previous save. The
+   * hook is best-effort: a failure is logged and the link is still created.
+   */
+  flush?: (workspaceId: string) => Promise<void> | void;
   /** A share was revoked; close its live rooms and delete its projection. */
   onShareRemoved?: (share: Share) => void;
   /**
@@ -74,6 +104,25 @@ function notifyRemoved(hooks: ShareRequestHooks | undefined, share: Share): void
     hooks?.onShareRemoved?.(share);
   } catch (error) {
     logger.error("removal hook failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Asks the server to save the workspace before the share is created. Awaiting
+ * the save is the whole point: the projection that follows reads the *saved*
+ * document, so the write has to land first. A save that fails or is unavailable
+ * must not cost the owner their link, so it only logs.
+ */
+async function flushWorkspace(
+  hooks: ShareRequestHooks | undefined,
+  workspaceId: string,
+): Promise<void> {
+  try {
+    await hooks?.flush?.(workspaceId);
+  } catch (error) {
+    logger.error("save before share failed", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -310,20 +359,34 @@ function parseCreateInput(body: unknown): CreateShareInput {
     role: record.role as ShareRole,
     boardId: (record.boardId as string | null | undefined) ?? null,
     cardId: (record.cardId as string | null | undefined) ?? null,
-    expiresAt: (record.expiresAt as number | null | undefined) ?? null,
   };
+  // `undefined` and "never" are different answers: leaving the key out asks the
+  // server for its default, while `null` (or `0`) says the link never expires.
+  const expiresAt = record.expiresAt;
+  if (expiresAt !== undefined) {
+    input.expiresAt = expiresAt === 0 ? null : (expiresAt as number | null);
+  }
   if (Array.isArray(record.cardIds)) input.cardIds = record.cardIds as readonly string[];
   return input;
 }
 
-function createShare(
+/**
+ * The expiry a new link gets when the caller did not name one. Hosted links last
+ * 30 days; a self-host keeps today's no-expiry default. An explicit timestamp,
+ * or an explicit null, always wins over this.
+ */
+export function defaultShareExpiry(now: number = Date.now()): number | null {
+  return licenceRequired() ? now + HOSTED_SHARE_EXPIRY_DAYS * DAY_MS : null;
+}
+
+async function createShare(
   request: IncomingMessage,
   store: ShareStore,
   workspaces: Pick<WorkspaceRegistry, "verify">,
   response: ServerResponse,
   body: unknown,
   hooks: ShareRequestHooks | undefined,
-): void {
+): Promise<void> {
   const input = parseCreateInput(body);
   requireOwner(request, workspaces, input.workspaceId);
   enforceRateLimit(
@@ -338,6 +401,11 @@ function createShare(
       `This workspace already has ${MAX_ACTIVE_SHARES} active links. Revoke one before creating another.`,
     );
   }
+
+  // The projection that follows a create reads the saved workspace, so make the
+  // owner's latest edits part of that save before the share exists.
+  await flushWorkspace(hooks, input.workspaceId);
+  if (input.expiresAt === undefined) input.expiresAt = defaultShareExpiry();
 
   const { token, share } = store.create(input);
   sendJson(response, 201, { token, share: publicShare(share) });
@@ -511,6 +579,19 @@ function readSessionShare(
 
   setSessionCookie(response, session, Date.now() + SHARE_SESSION_TTL_MS);
   sendJson(response, 200, { share: publicShare(share), session });
+}
+
+/**
+ * `GET /api/shares/defaults`: how a new link is created when the caller does not
+ * choose. Only the hosted switch and a day count; no token, no share, no owner
+ * key needed, so the dialog can preselect before it creates anything.
+ */
+function readDefaults(response: ServerResponse): void {
+  const hosted = licenceRequired();
+  sendJson(response, 200, {
+    hosted,
+    defaultExpiryDays: hosted ? HOSTED_SHARE_EXPIRY_DAYS : 0,
+  });
 }
 
 /** `DELETE /api/shares/session`: drops the session and clears the cookie. */
@@ -717,9 +798,19 @@ export async function handleShareRequest(
       return true;
     }
 
+    // Reserved before the token routes for the same reason as `session`.
+    if (segment === DEFAULTS_SEGMENT) {
+      if (method === "GET") {
+        readDefaults(response);
+      } else {
+        methodNotAllowed(response, "GET, OPTIONS");
+      }
+      return true;
+    }
+
     if (segment.length === 0) {
       if (method === "POST") {
-        createShare(request, store, workspaces, response, await readJsonBody(request), hooks);
+        await createShare(request, store, workspaces, response, await readJsonBody(request), hooks);
       } else if (method === "GET") {
         listShares(request, store, workspaces, response, url);
       } else if (method === "DELETE") {

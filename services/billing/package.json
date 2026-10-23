@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda and deliberately kept out of the pnpm workspace, so the main install stays Stripe-free.",
+  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda; a workspace package so `turbo run typecheck` and `turbo run test` gate the payment path. Its Stripe and SES dependencies are optional, so the main install stays Stripe-free.",
   "scripts": {
     "test": "node --test \"*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -595,6 +595,18 @@ uncheckpointed `-wal` file (4 KB main file) restored all 50 rows from the snapsh
 
 ## Tune it
 
+### Links: hosted expiry and last used
+
+`SUITE_HOSTED=1` gives every new share link a **30-day** expiry unless its creator picks one.
+A hosted workspace pays for a projection room per link, so a link nobody remembers to revoke is a
+credential with no end; the share dialog preselects those 30 days so the UI and the server agree,
+and **Never** stays a choice (an explicit `expiresAt: null` or `0`), as does any timestamp the
+owner names. A self-host keeps today's default of no expiry. Each row also carries `last_used_at`:
+a resolve records when a link was last opened, at most once a minute per link, so a busy viewer
+costs at most one small `UPDATE` a minute instead of one per request — and listing links never
+touches it. Last-used is metadata the owner uses to spot a link nobody opened; it is not a
+secret and never a credential.
+
 ### Limits in force
 
 Quotas degrade a workspace; they never drop a save. The rule is deliberate: losing an edit to

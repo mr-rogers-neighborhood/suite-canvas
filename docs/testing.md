@@ -39,16 +39,32 @@ pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 132 tests 
 
 ## Watching a run
 
+**While a UI server is running, run individual specs from it rather than launching another.**
+
 ### `pnpm e2e:ui`
 
-Opens Playwright UI mode (`playwright test --ui`): a test tree, a live browser pane, per-step
-screenshots and a timeline. This is the one a person uses while developing. UI mode runs the same
-`webServer` entries and the same config as `pnpm e2e`.
+Opens a persistent Playwright UI window on <http://127.0.0.1:8181> (`playwright test --ui
+--ui-host=127.0.0.1 --ui-port=8181`): a test tree, a live browser pane, per-step screenshots and a
+timeline. This is the one a person uses while developing — step through a failing test, inspect the
+DOM at each action, and scrub the timeline. The port is fixed, so the window keeps its URL between
+runs. UI mode runs the same `webServer` entries and the same config as `pnpm e2e`.
 
 ```sh
-pnpm e2e:ui
+pnpm e2e:ui                                 # persistent window on 127.0.0.1:8181
 pnpm e2e:ui app.spec.ts                     # filter files (extra args are forwarded)
+pnpm e2e:ui:stop                            # free 8181 when you are done
 ```
+
+### One UI server at a time
+
+The port is pinned, so a second `pnpm e2e:ui` fails with `EADDRINUSE` instead of opening a window.
+That is not a fault — the server is already up. Just open
+<http://127.0.0.1:8181/trace/uiMode.html> and click the spec in the tree, and free the port with
+`pnpm e2e:ui:stop` when you are finished rather than restarting it.
+
+UI mode also never starts a second set of servers: it reuses a canvas (`:5173`) or relay (`:1235`)
+that is already listening even when `CI` is set, because spawning one on a taken port can only fail
+and take the open window down. With nothing running it starts them as usual.
 
 ### `pnpm e2e:headed`
 
@@ -74,13 +90,14 @@ written for failing tests by default; to get one for every test, see `SUITE_TRAC
 
 ```sh
 pnpm e2e:trace
+SUITE_TRACE=on pnpm e2e && pnpm e2e:trace   # record every test, then open the newest trace
 ```
 
 ### Environment variables
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CI` | unset | Selects the `github` reporter and stops server reuse. |
+| `CI` | unset | Selects the `github` reporter and stops server reuse. UI mode is exempt: it always reuses a server that is already listening. |
 | `SUITE_TRACE` | unset | `on` records a trace for every test. Anything else keeps `retain-on-failure`. |
 
 `trace: "on"` is opt-in because it is the one setting that turns a fast run into a slow, disk-filling

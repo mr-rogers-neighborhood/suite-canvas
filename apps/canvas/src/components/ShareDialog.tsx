@@ -5,6 +5,7 @@ import type {
   CreatedShare,
   CreateShareInput,
   Share,
+  ShareDefaults,
   ShareRole,
   ShareScope,
 } from "../session/shares";
@@ -17,6 +18,8 @@ export interface ShareClient {
   listShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
   revokeShare: (id: string, ownerKey: string | null) => Promise<Share>;
   revokeAllShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
+  /** Hosted relays expire a new link by default; the dialog preselects that. */
+  defaults: () => Promise<ShareDefaults>;
 }
 
 const defaultClient: ShareClient = {
@@ -24,6 +27,7 @@ const defaultClient: ShareClient = {
   listShares: sharesApi.listShares,
   revokeShare: sharesApi.revokeShare,
   revokeAllShares: sharesApi.revokeAllShares,
+  defaults: sharesApi.shareDefaults,
 };
 
 export interface ShareDialogProps {
@@ -61,6 +65,12 @@ const COPIED_MS = 1600;
 const EXPIRY_DAYS = [0, 7, 30] as const;
 type ExpiryDays = (typeof EXPIRY_DAYS)[number];
 
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const MONTH_MS = 30 * DAY_MS;
+const YEAR_MS = 365 * DAY_MS;
+
 interface ShownLink {
   url: string;
   /** Share the link came from; null for the plain workspace editor URL. */
@@ -73,6 +83,35 @@ function createdLabel(createdAt: number): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/**
+ * When a link was last opened, in the owner's words. Null is "Never used" — the
+ * share has existed but nobody resolved it — and anything under a minute reads
+ * as "just now" because the store only records use to the minute.
+ */
+export function lastUsedLabel(lastUsedAt: number | null, now: number = Date.now()): string {
+  if (lastUsedAt === null) return "Never used";
+  const elapsed = Math.max(0, now - lastUsedAt);
+  if (elapsed < MINUTE_MS) return "Last used just now";
+
+  const [unit, span] =
+    elapsed >= YEAR_MS
+      ? (["year", YEAR_MS] as const)
+      : elapsed >= MONTH_MS
+        ? (["month", MONTH_MS] as const)
+        : elapsed >= DAY_MS
+          ? (["day", DAY_MS] as const)
+          : elapsed >= HOUR_MS
+            ? (["hour", HOUR_MS] as const)
+            : (["minute", MINUTE_MS] as const);
+  const amount = Math.floor(elapsed / span);
+  // `auto` reads "yesterday" for one day instead of "1 day ago".
+  const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+    -amount,
+    unit,
+  );
+  return `Last used ${relative}`;
 }
 
 /**
@@ -109,6 +148,8 @@ export function ShareDialog({
   const tokens = useRef(new Map<string, string>());
   const copiedTimer = useRef<number | null>(null);
   const loadId = useRef(0);
+  /** Once the owner picks an expiry, the hosted default must not overwrite it. */
+  const expiryChosen = useRef(false);
 
   const boardAvailable = Boolean(boardId);
   const cardAvailable = Boolean(cardId);
@@ -157,6 +198,28 @@ export function ShareDialog({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Hosted relays expire a new link by default, so start on the expiry the
+  // server would apply on its own. A self-host keeps "Never" preselected, and a
+  // choice the owner already made always wins.
+  useEffect(() => {
+    let live = true;
+    void api
+      .defaults()
+      .then((defaults) => {
+        if (!live || expiryChosen.current || !defaults.hosted) return;
+        const days = EXPIRY_DAYS.find(
+          (value) => value !== 0 && value === defaults.defaultExpiryDays,
+        );
+        if (days !== undefined) setExpiryDays(days);
+      })
+      .catch(() => {
+        // The server still applies its own default; leave "Never" on screen.
+      });
+    return () => {
+      live = false;
+    };
+  }, [api]);
 
   // A scope that lost its target cannot stay selected.
   useEffect(() => {
@@ -399,6 +462,7 @@ export function ShareDialog({
             className="rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)]"
             value={expiryDays}
             onChange={(event) => {
+              expiryChosen.current = true;
               setExpiryDays(Number(event.target.value) as ExpiryDays);
               resetOutput();
             }}
@@ -502,8 +566,12 @@ export function ShareDialog({
                       </p>
                       <p className="text-[10px] text-[var(--ink-muted)]">
                         Created {createdLabel(share.createdAt)}
+                        {" \u00b7 "}
+                        <span data-testid={`share-last-used-${share.id}`}>
+                          {lastUsedLabel(share.lastUsedAt ?? null)}
+                        </span>
                         {share.expiresAt !== null
-                          ? ` · Expires ${createdLabel(share.expiresAt)}`
+                          ? ` \u00b7 Expires ${createdLabel(share.expiresAt)}`
                           : ""}
                       </p>
                     </div>

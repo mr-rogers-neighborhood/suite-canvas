@@ -16,6 +16,7 @@ const links: Share[] = [
     createdAt: created,
     revokedAt: null,
     expiresAt: null,
+    lastUsedAt: created + 2 * 60 * 60 * 1000,
     roomId: "ws-demo",
     cardIds: [],
     cardCount: 0,
@@ -30,6 +31,7 @@ const links: Share[] = [
     createdAt: created - 60_000,
     revokedAt: null,
     expiresAt: null,
+    lastUsedAt: null,
     roomId: "ws-demo",
     cardIds: [],
     cardCount: 0,
@@ -44,6 +46,7 @@ const links: Share[] = [
     createdAt: created - 90_000,
     revokedAt: null,
     expiresAt: null,
+    lastUsedAt: created - 30 * 60 * 1000,
     roomId: null,
     cardIds: [],
     cardCount: 0,
@@ -64,6 +67,7 @@ function demoClient(shares: Share[]): ShareClient {
         createdAt: created,
         revokedAt: null,
         expiresAt: null,
+        lastUsedAt: null,
         roomId: "share-demo-token",
         cardIds: input.cardIds ? [...input.cardIds] : [],
         cardCount:
@@ -75,6 +79,7 @@ function demoClient(shares: Share[]): ShareClient {
       },
     }),
     listShares: async (_workspaceId, _ownerKey) => shares,
+    defaults: async () => ({ hosted: false, defaultExpiryDays: 0 }),
     revokeAllShares: async () => shares.map((entry) => ({ ...entry, revokedAt: created })),
     revokeShare: async (id, _ownerKey) => {
       const base: Share = shares.find((entry) => entry.id === id) ?? {
@@ -87,6 +92,7 @@ function demoClient(shares: Share[]): ShareClient {
         createdAt: created,
         revokedAt: null,
         expiresAt: null,
+        lastUsedAt: null,
         roomId: "ws-demo",
         cardIds: [],
         cardCount: 0,

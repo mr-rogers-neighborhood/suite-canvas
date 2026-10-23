@@ -583,6 +583,147 @@ describe("share expiry and bulk revoke", () => {
   });
 });
 
+describe("share last used", () => {
+  const T0 = new Date("2026-01-01T00:00:00.000Z").getTime();
+
+  function boardShare() {
+    return store.create({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+    });
+  }
+
+  it("starts at never used and records the first resolve", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const { token, share } = boardShare();
+      expect(share.lastUsedAt).toBeNull();
+      expect(store.get(share.id)?.lastUsedAt).toBeNull();
+
+      vi.setSystemTime(T0 + 5_000);
+      const resolved = store.resolve(token);
+      expect(resolved?.lastUsedAt).toBe(T0 + 5_000);
+      expect(store.get(share.id)?.lastUsedAt).toBe(T0 + 5_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never writes a timestamp for a listing", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const { token, share } = boardShare();
+      store.resolve(token);
+
+      // Hours and days later the link is only being listed, never opened.
+      vi.setSystemTime(T0 + 26 * 60 * 60 * 1000);
+      expect(store.list("ws-1")[0]?.lastUsedAt).toBe(T0);
+      expect(store.listAllActive()[0]?.lastUsedAt).toBe(T0);
+      expect(store.get(share.id)?.lastUsedAt).toBe(T0);
+      expect(store.countActive("ws-1")).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes at most once a minute per share", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const { token } = boardShare();
+      expect(store.resolve(token)?.lastUsedAt).toBe(T0);
+
+      // Inside the minute the resolve still succeeds, but the column stays put.
+      vi.setSystemTime(T0 + 30_000);
+      expect(store.resolve(token)?.lastUsedAt).toBe(T0);
+      vi.setSystemTime(T0 + 59_999);
+      expect(store.resolve(token)?.lastUsedAt).toBe(T0);
+      expect(store.list("ws-1")[0]?.lastUsedAt).toBe(T0);
+
+      // The next minute is a new use and moves it.
+      vi.setSystemTime(T0 + 60_000);
+      expect(store.resolve(token)?.lastUsedAt).toBe(T0 + 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the throttle per share", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const first = boardShare();
+      const second = boardShare();
+      store.resolve(first.token);
+
+      vi.setSystemTime(T0 + 10_000);
+      expect(store.resolve(second.token)?.lastUsedAt).toBe(T0 + 10_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts resuming a session as a use", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(T0);
+      const { share } = boardShare();
+      const { session } = store.createSession(share);
+      expect(store.get(share.id)?.lastUsedAt).toBeNull();
+
+      vi.setSystemTime(T0 + 60_000);
+      expect(store.resolveSession(session)?.lastUsedAt).toBe(T0 + 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("adds the column to a store created before it existed", () => {
+    store.close();
+    const legacy = new DatabaseSync(path);
+    legacy.exec("DROP TABLE shares");
+    legacy.exec(
+      `CREATE TABLE shares (
+         id TEXT PRIMARY KEY,
+         token_hash TEXT NOT NULL UNIQUE,
+         scope TEXT NOT NULL,
+         role TEXT NOT NULL,
+         workspace_id TEXT NOT NULL,
+         board_id TEXT,
+         card_id TEXT,
+         created_at INTEGER NOT NULL,
+         revoked_at INTEGER,
+         expires_at INTEGER,
+         room_id TEXT,
+         card_ids TEXT
+       )`,
+    );
+    legacy
+      .prepare(
+        `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+      )
+      .run("legacy", "hash", "board", "viewer", "ws-1", "board-1", null, 1, "share-legacy", "[]");
+    legacy.close();
+
+    store = createShareStore(path);
+
+    // A legacy row has never recorded a use.
+    expect(store.get("legacy")?.lastUsedAt).toBeNull();
+    const created = store.create({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "c",
+    });
+    expect(store.resolve(created.token)?.lastUsedAt).toBeTypeOf("number");
+  });
+});
+
 describe("share sessions", () => {
   function boardShare() {
     return store.create({

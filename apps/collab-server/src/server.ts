@@ -30,6 +30,7 @@ import {
   disconnectAuthSessions,
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
+  flushDirtyDocuments,
 } from "./roomSockets.js";
 import { createSettingsStore } from "./settings.js";
 import { createShareStore, SHARE_ROOM_PREFIX, type Share, type ShareStore } from "./shares.js";
@@ -287,6 +288,16 @@ const health = createServer((request, response) => {
       scheduleProjection(workspaceId, { immediate: true });
     },
     onShareRemoved: removeShare,
+    // A link's first projection reads the *saved* workspace and saves are
+    // coalesced, so a share created moments after an edit would otherwise show a
+    // stale board until the next save tick.
+    flush: async () => {
+      if (!(await flushDirtyDocuments(server))) {
+        logger.warn(
+          "dirty-document flush is unavailable; a new share may project a slightly stale board",
+        );
+      }
+    },
     publish: async (share, version, overwrite) => {
       processMetrics.publishAttempted();
       const result = await worker.publish(share, version, overwrite);

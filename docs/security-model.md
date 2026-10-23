@@ -56,8 +56,10 @@ boards, schema, trash or links.
 - **No accounts means no attribution.** The relay cannot say who created or edited a card. Presence
   (names, pointers, carets) is ephemeral and is not written to the document. Every editor using a
   link shares that link's identity.
-- **Metadata exists.** Workspace ids, board/card ids in share rows, creation and revocation
-  timestamps, and the IP addresses seen by the server or its proxy are visible to the operator.
+- **Metadata exists.** Workspace ids, board/card ids in share rows, creation, last-use and
+  revocation timestamps, and the IP addresses seen by the server or its proxy are visible to the
+  operator. Last-used is coarse (one write a minute at most) and only says a link was opened, not
+  by whom.
 - **Backups are unencrypted.** The three SQLite files and `.suite` exports contain the same
   plaintext documents and are not encrypted by Suite.
 

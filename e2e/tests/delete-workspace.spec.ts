@@ -85,16 +85,12 @@ test("requires the exact name, then forgets the workspace in this browser", asyn
  * instead of being refused, which is what "deleted" means for a workspace with
  * no accounts to notify.
  *
- * Known product bug, 2026-10-22, deliberately not asserted here: the relay does
- * not close the live room after the owner DELETE (`WorkspaceRequestHooks.
- * onDeleted` is declared for it and `apps/collab-server/src/server.ts` never
- * passes it), so the room rewrites the deleted document into SQLite seconds
- * later. Verified against the relay's database: the documents row is gone right
- * after the 200 response and back with a fresh `updated_at` a few seconds
- * later, and a brand-new browser then opens the old cards. Whether the latest
- * edit made it into that write varies with sync timing, which is why a
- * content-based assertion here is flaky rather than red. Fix belongs in the
- * server; this test pins the half that is deterministic.
+ * Owning the id is only half of it. The relay used to keep the live room open
+ * after the owner DELETE, and because a room saves every `saveInterval` (2 s)
+ * the deleted document came back with its content seconds later: a brand-new
+ * browser then opened the old cards. `server.ts` now passes `onDeleted`, which
+ * disconnects the room and forgets its document, so this test also waits out
+ * that save interval and then checks the content is gone and stays gone.
  */
 test("after deleting, another browser can claim the workspace id", async ({ page, browser }) => {
   const workspace = id("gone");
@@ -113,6 +109,12 @@ test("after deleting, another browser can claim the workspace id", async ({ page
   await confirmDelete(page);
   await expect(page.getByTestId(`launcher-recent-${workspace}`)).toHaveCount(0);
 
+  // Deliberately waiting on a server-side interval, which is the point of this
+  // test: the relay's room saves every 2 s, so a room that outlived the delete
+  // has had its chance to write the document back before we look. Opening the
+  // fresh browser immediately would pass even with the bug.
+  await page.waitForTimeout(4_000);
+
   // After it, the owner row is gone, so the same different key claims the id.
   const fresh = await browser.newContext();
   try {
@@ -122,6 +124,25 @@ test("after deleting, another browser can claim the workspace id", async ({ page
       timeout: 15_000,
     });
     await expect(freshPage.getByTestId("workspace-protected")).toHaveCount(0);
+
+    // And it claims an empty document, not the deleted one: the deleted note is
+    // nowhere, and the only cards are the two starters a new workspace seeds.
+    await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);
+    await expect(cards(freshPage)).toHaveCount(2);
+
+    // Give a stale room another save interval to reintroduce the note. Same
+    // deliberate server-side wait as above.
+    await freshPage.waitForTimeout(3_000);
+    await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);
+
+    // A reload re-reads whatever the relay holds now; it must not resurrect it
+    // either.
+    await freshPage.reload();
+    await expect(freshPage.locator('.app-canvas[data-ready="true"]')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);
+    await expect(cards(freshPage)).toHaveCount(2);
   } finally {
     await fresh.close();
   }

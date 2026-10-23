@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { configureSession, getSession } from "../session/session";
 import type { CreateShareInput, Share } from "../session/shares";
-import { type ShareClient, ShareDialog } from "./ShareDialog";
+import { lastUsedLabel, type ShareClient, ShareDialog } from "./ShareDialog";
 
 const OWNER_KEY = "owner-key-1";
 
@@ -17,6 +17,7 @@ function shareAt(overrides: Partial<Share> = {}): Share {
     createdAt: Date.UTC(2026, 0, 15),
     revokedAt: null,
     expiresAt: null,
+    lastUsedAt: null,
     roomId: "ws-1",
     cardIds: [],
     cardCount: 0,
@@ -33,6 +34,7 @@ function fakeClient(shares: Share[] = []) {
     listShares: vi.fn(async () => shares),
     revokeShare: vi.fn(async (id: string) => shareAt({ id, revokedAt: Date.now() })),
     revokeAllShares: vi.fn(async () => [shareAt({ revokedAt: Date.now() })]),
+    defaults: vi.fn(async () => ({ hosted: false, defaultExpiryDays: 0 })),
   };
 }
 
@@ -404,5 +406,92 @@ describe("ShareDialog limits", () => {
 
     fireEvent.click(await screen.findByTestId("share-revoke-all"));
     await waitFor(() => expect(client.revokeAllShares).toHaveBeenCalledWith("ws-1", OWNER_KEY));
+  });
+});
+
+describe("ShareDialog last used", () => {
+  const now = Date.UTC(2026, 2, 1, 12, 0, 0);
+
+  it("labels a link nobody opened as never used", () => {
+    expect(lastUsedLabel(null, now)).toBe("Never used");
+  });
+
+  it("labels a use inside the minute as just now", () => {
+    expect(lastUsedLabel(now - 20_000, now)).toBe("Last used just now");
+    // A clock that went backwards must not read as a future use.
+    expect(lastUsedLabel(now + 5_000, now)).toBe("Last used just now");
+  });
+
+  it("labels an older use in relative time", () => {
+    expect(lastUsedLabel(now - 2 * 60 * 60 * 1000, now)).toMatch(/^Last used .*2.*ago$/);
+    expect(lastUsedLabel(now - 3 * 24 * 60 * 60 * 1000, now)).toMatch(/^Last used .*3.*ago$/);
+  });
+
+  it("renders never, just-now and older in the active-link rows", async () => {
+    const stamp = Date.now();
+    const client = fakeClient([
+      shareAt({ id: "share-never", lastUsedAt: null }),
+      shareAt({ id: "share-fresh", lastUsedAt: stamp - 5_000 }),
+      shareAt({ id: "share-old", lastUsedAt: stamp - 2 * 60 * 60 * 1000 }),
+    ]);
+    renderDialog(client);
+
+    expect(await screen.findByTestId("share-last-used-share-never")).toHaveTextContent(
+      "Never used",
+    );
+    expect(screen.getByTestId("share-last-used-share-fresh")).toHaveTextContent(
+      "Last used just now",
+    );
+    expect(screen.getByTestId("share-last-used-share-old").textContent).toMatch(
+      /^Last used .*2.*ago$/,
+    );
+  });
+});
+
+describe("ShareDialog hosted expiry default", () => {
+  const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+  it("preselects the hosted 30-day default and sends it", async () => {
+    const client = fakeClient();
+    client.defaults.mockResolvedValue({ hosted: true, defaultExpiryDays: 30 });
+    renderDialog(client);
+
+    await waitFor(() => expect(screen.getByTestId("share-expiry")).toHaveValue("30"));
+    fireEvent.click(screen.getByTestId("share-create"));
+    await screen.findByLabelText("Share link");
+
+    const input = client.createShare.mock.calls[0]?.[0] as { expiresAt?: number | null };
+    expect(input.expiresAt).toBeGreaterThan(Date.now() + THIRTY_DAYS - 60_000);
+    expect(input.expiresAt).toBeLessThanOrEqual(Date.now() + THIRTY_DAYS + 60_000);
+  });
+
+  it("keeps Never when the relay is self-hosted", async () => {
+    const client = fakeClient();
+    renderDialog(client);
+
+    await waitFor(() => expect(client.defaults).toHaveBeenCalled());
+    expect(screen.getByTestId("share-expiry")).toHaveValue("0");
+
+    fireEvent.click(screen.getByTestId("share-create"));
+    await screen.findByLabelText("Share link");
+    const input = client.createShare.mock.calls[0]?.[0] as { expiresAt?: number | null };
+    expect(input.expiresAt).toBeNull();
+  });
+
+  it("keeps an expiry the owner picked before the defaults arrived", async () => {
+    const client = fakeClient();
+    let resolveDefaults: (value: { hosted: boolean; defaultExpiryDays: number }) => void = () => {};
+    client.defaults.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDefaults = resolve;
+      }),
+    );
+    renderDialog(client);
+
+    fireEvent.change(screen.getByTestId("share-expiry"), { target: { value: "7" } });
+    resolveDefaults({ hosted: true, defaultExpiryDays: 30 });
+
+    await waitFor(() => expect(client.defaults).toHaveBeenCalled());
+    expect(screen.getByTestId("share-expiry")).toHaveValue("7");
   });
 });

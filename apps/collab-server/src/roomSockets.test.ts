@@ -20,6 +20,7 @@ import {
   disconnectAuthSessions,
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
+  flushDirtyDocuments,
   type KickServer,
 } from "./roomSockets.js";
 import { createShareStore, type Share, type ShareStore } from "./shares.js";
@@ -291,5 +292,33 @@ describe("live kick against a real server", () => {
 
     await expectDisconnected(previous);
     expect(current.getStatus()).toBe("connected");
+  });
+});
+
+describe("flushDirtyDocuments", () => {
+  it("calls the server's flush and reports success", async () => {
+    const calls: number[] = [];
+    const server = { saveAllDirtyDocuments: async () => void calls.push(1) };
+    await expect(flushDirtyDocuments(server)).resolves.toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  /**
+   * The method is not part of the server's declared API, so an upgrade could
+   * rename it. The failure must be visible: `false` makes the caller log, rather
+   * than a cast that silently does nothing forever.
+   */
+  it("reports false when the server has no flush", async () => {
+    await expect(flushDirtyDocuments({})).resolves.toBe(false);
+    await expect(flushDirtyDocuments(null)).resolves.toBe(false);
+  });
+
+  it("surfaces a real flush error to the caller", async () => {
+    const server = {
+      saveAllDirtyDocuments: async () => {
+        throw new Error("disk full");
+      },
+    };
+    await expect(flushDirtyDocuments(server)).rejects.toThrow("disk full");
   });
 });

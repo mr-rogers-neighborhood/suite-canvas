@@ -639,7 +639,7 @@ scope, data model, and acceptance are sketched in §7.4.
 
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
-| **A1** | Attachments, settings, and licence state are durable | Container-recreate test for all three; backup/restore drill with an attachment; manifest count + checksum; `SUITE_ATTACHMENTS_DB`, `SUITE_SETTINGS_DB`, and `SUITE_LICENCE_DB` all point at `/data` in `compose.yaml` and `.env.example`; ops/security/limits docs corrected | — |
+| **A1** | Attachments, settings, and licence state are durable | Container-recreate test for all three; backup/restore drill with an attachment; manifest count + checksum; `SUITE_ATTACHMENTS_DB`, `SUITE_SETTINGS_DB`, and `SUITE_LICENCE_DB` all point at `/data` in `compose.yaml` and `.env.example`; **boot refuses a mixed layout** (attachments on CWD while other stores are `/data`, or `:memory:` settings/licences in a composed deployment); ops/security/limits docs corrected | — |
 | **A2** | Multi-tab persistence cannot delete a peer's work | Two-instance `fake-indexeddb` test (compact in A, reload B, both survive); leader-election test; two-tab offline drill record | — |
 | **A3** | CI actually gates `main` | A green `quality` + `e2e` run on `main`, visible in Actions; branch protection with required checks; a deliberately failing commit demonstrated to be blocked | — |
 | **A4** | The product has an identity | `LICENSE`; `SECURITY.md`; `CHANGELOG.md`; semver tag on the released commit; version reported by `/health` or admin status; images pinned by digest | A3 |
@@ -662,6 +662,12 @@ volume mapping regresses.
 survive a restart. A1 closes only when all three stores (attachments, settings, licences) point at
 `/data` and survive a container recreate. Closing attachments alone leaves a paid customer's
 entitlement as volatile as the attachment bytes.
+
+**A1 hardening for the next planning phase.** Refuse the ambiguous deployment at boot instead of
+documenting the trap: if the document/shares/workspaces stores are under `/data` and attachments is
+not, or settings/licences are `:memory:` in a composed deployment, the server should fail with a
+named error. This is cheaper than a runbook warning and is not yet implemented; A1 is not fully
+closed until it is.
 
 **A2 — why two instances in one process.** `fake-indexeddb` gives a shared database across two
 `LoroIndexeddbPersistence` objects, which is exactly the browser's situation. A single-instance test
@@ -717,7 +723,7 @@ owner is the maintainer/operator; no separate review board is implied.
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| A1 | `open` | `compose.yaml:45-47`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `apps/collab-server/src/attachmentDurability.test.ts` |
+| A1 | `measuring` | Store paths, backup/restore, drill, and recreate test are in. The boot-time refusal of a mixed `:memory:`/CWD layout is the remaining A1 hardening. Evidence: `compose.yaml:45-47`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `attachmentDurability.test.ts` |
 | A2 | `open` | `apps/canvas/src/collab/loroPersistence.ts`; `loroPersistence.test.ts` (two-instance and leader-takeover); ADR-0024 |
 | A3 | `failed` | See the A3 note in §7.1. Actions returns `startup_failure` with zero jobs; branch protection is unavailable on the private free repo. |
 | A4 | `open` | `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |

@@ -1,7 +1,7 @@
 # Beta — strangers can use it with known limits
 
 - **Status:** living document. It records the Beta contract and the evidence required to claim it.
-- **Stage:** entry requires Alpha gates A1–A10; exit requires Beta gates B1–B10.
+- **Stage:** entry requires Alpha gates A1–A11; exit requires Beta gates B1–B11.
 - **Provenance:** the 2,544-line audit and design discussion, re-checked against the tree containing
   [ADR-0019](../decisions/0019-references-not-typed-links.md) through
   [ADR-0023](../decisions/0023-selection-projections.md). ✅ claims were checked against this tree;
@@ -113,6 +113,7 @@ documents refer to it rather than renumbering.
 | — | B8 — observability and support | V1-13, V1-23, V1-24, V1-25 |
 | — | B9 — scale evidence | V1-18, V1-19, V1-20, V1-21, V1-22 |
 | — | B10 — security and docs | V1-26, V1-27, V1-28, V1-29, V1-30, V1-31, V1-32, V1-35 |
+| — | B11 — operator transferability | V1-37 |
 
 ### 1.4 What Beta does *not* mean
 
@@ -506,6 +507,7 @@ durability first, because everything else assumes data survives.
 | 4.7 | Scale evidence | P0-5, B9 | 4.1 |
 | 4.8 | Security review | B10 | 4.3, 4.7 |
 | 4.9 | Support and docs | B10 | all of the above |
+| 4.10 | Operator transferability | B11 | 4.1, 4.2, 4.9 |
 
 ---
 
@@ -1094,6 +1096,32 @@ emailing the operator to read SQLite.
 fixture; a delete flow test (workspace gone, attachments gone, share links dead, backup caveat
 stated); a green docs link check in CI; the drift table above empty.
 
+### 4.10 Operator transferability (B11)
+
+**Goal.** A second person can restore the release from the docs and scripts without asking the
+primary operator. This is a release property, not a one-time event: it is scoped to the drill the
+current release actually requires and re-run when the deployment changes (for example, when accounts
+add a Postgres restore path).
+
+| Item | What must exist |
+| --- | --- |
+| **Named backup operator** | A role and an escalation path in `SECURITY.md` and `docs/operations.md`, even if it is one named person. |
+| **`deploy/drills/operator.sh`** | Compose up, restore from a backup, verify the restored workspace and attachment, print pass/fail, tear down. Exit non-zero on any failure. |
+| **Recipes with exit codes** | Restore, revoke admin, rotate licence, roll back image, disable signups, drain a room: numbered command blocks, each ending in a verification command. Prose stays for explanation; the recipe is executable. |
+| **"Operator unavailable" page** | What can wait (shares resolve, saved work stays local, existing rooms continue) and what cannot (compromised admin token, failed disk, data-loss report). Names the escalation. |
+| **Docs-only command check** | Every command block in operations/AWS docs is either executed by `operator.sh` or marked `<!-- not-drilled: reason -->`. This is the operator-facing drift ledger. |
+| **Questions ledger** | `deploy/drills/questions.md` records what the second operator wanted to ask; each question closes by editing the docs in the same change. |
+| **Release transcript** | The second operator runs the drill before a tag and the transcript is linked from the release notes. If they cannot run it, the release is not ready. |
+
+**Why this is separate from accounts.** Better Auth makes identity and support coherent, but it adds
+a seventh store (Postgres) and a second restore path. It does not remove the operator surface; it
+makes transferability more valuable. B11 is therefore scoped to the current architecture and must be
+re-run if accounts change the drill.
+
+**Acceptance evidence.** `operator.sh` transcript naming the second operator; every command block
+executed or explicitly not-drilled; an empty questions ledger; a green docs-only check; the
+unavailable-operator page linked from the runbook.
+
 ---
 ## 5. Free backup options
 
@@ -1226,10 +1254,10 @@ why "just add a replica" is not a Beta answer.
 
 ---
 
-## 7. Beta exit gates (B1–B10)
+## 7. Beta exit gates (B1–B11)
 
-Beta ends when all ten gates have evidence artifacts — not when the list feels done. Each artifact is
-a URL, a committed file, or a test that runs in CI.
+Beta ends when all eleven gates have evidence artifacts, not when the list feels done. Each artifact
+is a URL, a committed file, or a test that runs in CI.
 
 | Gate | Claim | Evidence artifact | Workstream |
 | --- | --- | --- | --- |
@@ -1243,12 +1271,13 @@ a URL, a committed file, or a test that runs in CI.
 | **B8** | Observability a stranger can use | Diagnostics bundle fixture (redacted); crash toggle default-off payload test; status page or an explicit statement; support contact in-app | 4.5, 4.9 |
 | **B9** | Scale evidence and published limits | Load-test artifact naming hardware and recording event-loop lag/RSS/rebuild time; limits page whose every number appears in the artifact | 4.7 |
 | **B10** | Security and docs truth | Threat model + data inventory + incident response + accepted risks merged; CORS deny-by-default test; non-root container proof; admin scope test; `pnpm audit` + SBOM; docs link check green and the drift table empty | 4.8, 4.9 |
+| **B11** | A second operator can restore the release from the docs alone | `deploy/drills/operator.sh` transcript naming the second operator; every command block executed or marked not-drilled; empty `questions.md` ledger; unavailable-operator page; docs-only check green | 4.10 |
 
-**How to use the gates.** B1 gates everything; B2–B9 can run in parallel once B1 is green; B10 is last
-because it must describe the system the other gates produced. A gate is open only when its artifact is
-linked from the Beta declaration — a verbal "we did that" reopens the stage.
+**How to use the gates.** B1 gates everything; B2–B10 can run in parallel once B1 is green; B11 is the
+release-readiness check because it exercises the system the other gates produced. A gate is open only
+when its artifact is linked from the Beta declaration — a verbal "we did that" reopens the stage.
 
-**Beta declaration (○).** A tagged commit plus a single page: the ten gate links, the published
+**Beta declaration (○).** A tagged commit plus a single page: the eleven gate links, the published
 limits, the known limitations, and the exact command to self-host the same build.
 
 ### 7.1 Gate review

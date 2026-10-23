@@ -94,6 +94,13 @@ vi.mock("@vibecook/ice/react", async () => {
     EngineProvider: (props: { children?: unknown }) => props.children,
   };
 });
+vi.mock("./suiteCardKind", () => ({
+  SuiteCard: { type: "suite.card" },
+  setSuiteCardSlotRenderer: vi.fn(),
+}));
+vi.mock("./suiteCardWorkspace", () => ({
+  createWorkspaceCardSlotRenderer: vi.fn(() => ({ mount: vi.fn() })),
+}));
 
 const ADAPTER = {
   info: {
@@ -227,7 +234,7 @@ describe("IceSurface", () => {
 
     expect(await screen.findByTestId("ice-desk-mock")).toBeInTheDocument();
     expect(ice.spawnWidget).toHaveBeenCalledTimes(1);
-    expect(ice.spawnWidget.mock.calls[0]?.[0]).toBe("desk.note");
+    expect(ice.spawnWidget.mock.calls[0]?.[0]).toBe("suite.card");
     expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
       "Workspace: 1 objects / 1 boards",
     );

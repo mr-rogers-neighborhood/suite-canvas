@@ -46,6 +46,8 @@ import { seedExampleWorkspace } from "../demo/seedExample";
 export const SUITE_NOTE_TYPE = "desk.note";
 /** The ICE mini-mat kind that stands for a child board. */
 export const SUITE_MINIMAT_TYPE = "desk.minimat";
+/** The custom Suite card kind, once the DOM overlay is wired. */
+export const SUITE_CARD_TYPE = "suite.card";
 /** Characters of card body kept in a note; the rest is inspection-only. */
 export const SUITE_BODY_SNIPPET_LENGTH = 120;
 /** Boards below the root that may open, i.e. the root is depth 0. */
@@ -58,9 +60,17 @@ const MINIMAT_VINYLS: Readonly<Record<number, string>> = { 1: "charcoal", 2: "sl
 /** A portal without a stored size is the seed's own portal size (see `demo/seedExample`). */
 const DEFAULT_MINIMAT_SIZE = { width: 288, height: 256 } as const;
 
-export type IceSuiteObjectKind = "note" | "minimat";
+export type IceSuiteObjectKind = "note" | "card" | "minimat";
 export type IceSuiteSkipKind = "portal" | "section";
 export type IceSuiteSkipReason = "cycle" | "depth" | "section" | "missing";
+
+/** How a non-portal card is projected: a native note, or the real Suite card kind. */
+export type IceSuiteCardKind = "note" | "card";
+
+export interface IceSuiteProjectionOptions {
+  /** Defaults to `note`; `card` is used once the `suite.card` overlay is wired. */
+  readonly cardKind?: IceSuiteCardKind;
+}
 
 /** A note planned from one non-portal card. */
 export interface IceSuiteNote {
@@ -81,6 +91,33 @@ export interface IceSuiteNote {
   /** The mini mat this note sits inside; absent on the root board. */
   readonly parentId?: string;
   readonly props: Readonly<{ text: string; pen: string; seed: number }>;
+}
+
+/** A real Suite card overlay planned from one non-portal card. */
+export interface IceSuiteCardObject {
+  readonly kind: "card";
+  readonly id: string;
+  readonly type: typeof SUITE_CARD_TYPE;
+  readonly boardId: string;
+  readonly cardId: string;
+  readonly title: string;
+  /** Flattened excerpt for the GPU/fallback face; the DOM reads the real card. */
+  readonly snippet: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width?: number;
+  readonly height?: number;
+  /** The mini mat this card sits inside; absent on the root board. */
+  readonly parentId?: string;
+  readonly props: Readonly<{
+    cardId: string;
+    boardId: string;
+    title: string;
+    body: string;
+    paper: "yellow";
+    pen: string;
+    seed: number;
+  }>;
 }
 
 /** A mini mat planned from one portal card. */
@@ -106,7 +143,7 @@ export interface IceSuiteMiniMat {
   readonly props: Readonly<{ name: string; vinyl: string }>;
 }
 
-export type IceSuiteObject = IceSuiteNote | IceSuiteMiniMat;
+export type IceSuiteObject = IceSuiteNote | IceSuiteCardObject | IceSuiteMiniMat;
 
 /** One board the projection walked, root first. */
 export interface IceSuiteBoard {
@@ -123,7 +160,7 @@ export interface IceSuiteCard {
   readonly cardId: string;
   readonly objectId: string;
   readonly boardId: string;
-  readonly kind: "note";
+  readonly kind: IceSuiteCardKind;
 }
 
 /** Something the projection refused to invent an ICE object for. */
@@ -207,6 +244,12 @@ function portalTarget(card: Card): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function placementSize(placement: Placement): { width?: number; height?: number } {
+  return placement.width !== undefined && placement.height !== undefined
+    ? { width: placement.width, height: placement.height }
+    : {};
+}
+
 function noteFrom(
   workspace: WorkspaceDocument,
   placement: Placement,
@@ -217,10 +260,6 @@ function noteFrom(
 ): IceSuiteNote {
   const title = workspace.displayTitle(card.id);
   const snippet = snippetOf(workspace.cardText(card.id));
-  const size =
-    placement.width !== undefined && placement.height !== undefined
-      ? { width: placement.width, height: placement.height }
-      : {};
   return {
     kind: "note",
     id: objectId(parent, "note", card.id),
@@ -231,13 +270,47 @@ function noteFrom(
     snippet,
     x: placement.x,
     y: placement.y,
-    ...size,
+    ...placementSize(placement),
     ...(parent === undefined ? {} : { parentId: parent.objectId }),
     props: {
       text: snippet.length === 0 ? title : `${title}\n\n${snippet}`,
       pen: NOTE_PENS[index % NOTE_PENS.length] ?? "felt",
       // The seed is cosmetic (handwriting wobble), so it only has to be stable.
       seed: 1000 + index,
+    },
+  };
+}
+
+function suiteCardFrom(
+  workspace: WorkspaceDocument,
+  placement: Placement,
+  card: Card,
+  boardId: string,
+  parent: ParentMat | undefined,
+  index: number,
+): IceSuiteCardObject {
+  const title = workspace.displayTitle(card.id);
+  const snippet = snippetOf(workspace.cardText(card.id));
+  return {
+    kind: "card",
+    id: objectId(parent, "card", card.id),
+    type: SUITE_CARD_TYPE,
+    boardId,
+    cardId: card.id,
+    title,
+    snippet,
+    x: placement.x,
+    y: placement.y,
+    ...placementSize(placement),
+    ...(parent === undefined ? {} : { parentId: parent.objectId }),
+    props: {
+      cardId: card.id,
+      boardId,
+      title,
+      body: snippet,
+      paper: "yellow",
+      pen: "fountain",
+      seed: 2000 + index,
     },
   };
 }
@@ -278,12 +351,14 @@ function minimatFrom(
 export function projectWorkspaceToIce(
   workspace: WorkspaceDocument,
   rootBoardId: string,
+  options: IceSuiteProjectionOptions = {},
 ): IceSuiteSeed {
   const root = workspace.getBoard(rootBoardId);
   const objects: IceSuiteObject[] = [];
   const boards: IceSuiteBoard[] = [];
   const cards: IceSuiteCard[] = [];
   const skipped: IceSuiteSkip[] = [];
+  const cardKind: IceSuiteCardKind = options.cardKind ?? "note";
   let noteIndex = 0;
 
   const visit = (
@@ -331,9 +406,15 @@ export function projectWorkspaceToIce(
       const title = workspace.displayTitle(card.id);
 
       if (targetBoardId === undefined) {
-        const note = noteFrom(workspace, placement, card, boardId, parent, noteIndex);
-        objects.push(note);
-        cards.push({ cardId: card.id, objectId: note.id, boardId, kind: "note" });
+        if (cardKind === "card") {
+          const image = suiteCardFrom(workspace, placement, card, boardId, parent, noteIndex);
+          objects.push(image);
+          cards.push({ cardId: card.id, objectId: image.id, boardId, kind: "card" });
+        } else {
+          const note = noteFrom(workspace, placement, card, boardId, parent, noteIndex);
+          objects.push(note);
+          cards.push({ cardId: card.id, objectId: note.id, boardId, kind: "note" });
+        }
         noteIndex += 1;
         continue;
       }
@@ -455,7 +536,9 @@ export function spawnIceSuite<TEntity>(
       seeded += 1;
       kinds.push(object.type);
       objects.set(object.id, entity);
-      if (object.kind === "note" && !cards.has(object.cardId)) cards.set(object.cardId, entity);
+      if ((object.kind === "note" || object.kind === "card") && !cards.has(object.cardId)) {
+        cards.set(object.cardId, entity);
+      }
       if (object.kind === "minimat") {
         if (!boards.has(object.boardId)) boards.set(object.boardId, entity);
         // A mat's inside frame is compiled before anything is put in it.

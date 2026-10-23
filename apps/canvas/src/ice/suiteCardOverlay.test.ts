@@ -110,6 +110,50 @@ describe("createSuiteCardOverlay", () => {
     container.remove();
   });
 
+  it("passes the card's ids to the slot renderer, defaulting them when absent", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const seen: Array<{ entity: number; cardId: string; boardId: string }> = [];
+
+    const withIds = createSuiteCardOverlay({
+      container,
+      entities: () => [7],
+      geometryOf: () => geometry(),
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      infoOf: () => ({ title: "T", body: "B", cardId: "card-7", boardId: "board-3" }),
+      renderer: {
+        mount: (_content, info) => {
+          seen.push({ entity: info.entity, cardId: info.cardId, boardId: info.boardId });
+          return undefined;
+        },
+      },
+    });
+    withIds.sync();
+    expect(seen).toEqual([{ entity: 7, cardId: "card-7", boardId: "board-3" }]);
+    withIds.dispose();
+    seen.length = 0;
+
+    // A face without ids (the lab's string-only card) reports empty strings, so
+    // a production renderer can tell it has nothing to bind.
+    const withoutIds = createSuiteCardOverlay({
+      container,
+      entities: () => [8],
+      geometryOf: () => geometry(),
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      infoOf: () => ({ title: "T", body: "B" }),
+      renderer: {
+        mount: (_content, info) => {
+          seen.push({ entity: info.entity, cardId: info.cardId, boardId: info.boardId });
+          return undefined;
+        },
+      },
+    });
+    withoutIds.sync();
+    expect(seen).toEqual([{ entity: 8, cardId: "", boardId: "" }]);
+    withoutIds.dispose();
+    container.remove();
+  });
+
   it("renders the minimal card as text when no React renderer is registered", () => {
     const container = document.createElement("div");
     document.body.append(container);

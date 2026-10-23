@@ -189,6 +189,24 @@ describe("SceneCardView", () => {
     expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
   });
 
+  it("should go read-only when the caller overrides it in an editable session", () => {
+    // The session itself may edit; the ICE overlay's twin must not. Both gates
+    // are on, so only the prop can be doing the work.
+    const { container } = renderView({ readOnly: true });
+
+    expect(screen.queryByLabelText("Edit card title")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("card-menu")).not.toBeInTheDocument();
+    expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
+  });
+
+  it("should keep editing when the override is off", () => {
+    const { container } = renderView({ readOnly: false });
+
+    expect(screen.getByLabelText("Edit card title")).toBeInTheDocument();
+    expect(screen.getByTestId("card-menu")).toBeInTheDocument();
+    expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
+  });
+
   it("should not write to the document on mount", () => {
     // A card with no text containers yet is the risky case: mounting must not
     // create them, because a full-LOD instance can appear without a gesture.

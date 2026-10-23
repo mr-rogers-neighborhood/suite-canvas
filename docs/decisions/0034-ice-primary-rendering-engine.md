@@ -79,7 +79,20 @@ implementation and a temporary development escape hatch, not the product target.
    editing. Excalidraw's internal camera is local to the card and never becomes the workspace
    camera. The Suite property inspector and card chrome stay DOM.
 
-7. **Rollout is flag-first, then default.** `?canvas=ice` is the alpha proving ground. ICE becomes
+7. **ICE's native spatial affordances are kept.** Snap guides, equal-spacing bars, auto-alignment,
+   `arrange`, `frameContent`, container entry/exit, `setLocked` and `reorder` are product assets,
+   not implementation details to replace with a React Flow clone. Parity means the Suite behaviour
+   — typed cards, portals, sections, edges, shares, undo — on top of ICE's spatial model. The bridge
+   commits the **final, snapped ICE rect** inverse-transformed into canonical board coordinates; it
+   does not derive a position from the raw pointer delta and does not add a second alignment system.
+
+8. **The Suite shell stays exact.** ICE is the canvas layer, not the product shell. The launcher,
+   title bar, library, drawers, property inspector, card menus, share dialogs, settings, theme and
+   routing remain the Suite components. Do not adopt ICE's tray, drawer, board chrome or HUD as the
+   product UI; the ICE HUD is a development affordance only. The shell is already the product; the
+   port replaces what is under the canvas, not what surrounds it.
+
+9. **Rollout is flag-first, then default.** `?canvas=ice` is the alpha proving ground. ICE becomes
    the default only after the P0 gate below has evidence. The React Flow scene and flow surfaces may
    remain behind development-only flags during the port, but they are not a user-facing fallback.
    Once P0 passes, the default and all share links open ICE; React Flow code is removed in a
@@ -113,6 +126,10 @@ polish and a minimap. These are specified in
 
 - **The product gains a true topology.** Nesting, portals, zoom and pan are one world; no camera
   trick is needed to make a board look infinite.
+- **Parity is behavioural, not a pixel replica.** Suite keeps its cards, portals, sections, edges,
+  shares and undo, but ICE keeps the spatial model it already solved better: snapping, equal
+  spacing, auto-alignment, arrange, frame-content and container navigation. A React Flow-shaped
+  clone of those would be a regression.
 - **Version skew is recorded.** The installed `@vibecook/ice@0.16.0` does not expose
   `renderSubtreeTo` or a virtual-child-source API. Upstream ICE documentation describes those
   features in a different line, so do not assume upstream docs apply to this pin. The port uses
@@ -128,6 +145,9 @@ polish and a minimap. These are specified in
   the default flips.
 - **The React Flow code is temporary.** Keeping two interactive surfaces in sync is not a long-term
   architecture. The reference surface is deleted once P0 passes.
+- **The shell is not part of the bet.** The launcher, title bar, library, drawers, inspector, menus,
+  shares and theme stay exactly as they are. ICE replaces the canvas substrate, not the product
+  around it; adopting ICE's tray or drawer would throw away the part that already works.
 - **The alpha is explicitly experimental.** ICE is pre-1.0 and WebGPU support varies by platform.
   The docs, launcher and diagnostics must say so without making the product feel unfinished.
 

@@ -68,6 +68,7 @@ now; the target index/card-doc split is described in
 | `drawings` | whiteboard scenes ([ADR-0031](./decisions/0031-whiteboard-cards-and-loro-binding.md)), one key per whiteboard card: `elements` (a map of element id → element field map with per-element `deletedAt` tombstones), `order` (a movable list of element ids for z-order), `version`, `updatedAt` |
 | `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
 | `views` | `LoroMap`, one key per saved view: `id`, `name`, `position`, plus a `query` sub-map: `text?`, `scope`, `groupBySection`, `order` and the `types`/`tags`/`sections` facet maps (`id -> true`). No card id is ever stored |
+| `pins` | `LoroMap`, one key per field: `id`, `boardId`, `x`, `y`, `label`, `color`, `createdBy`, `createdAt`, plus an optional `target` sub-map (`kind`: `card`/`section`/`view`, `id`) |
 
 **Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
 `GraphEdge`/`CardType`/`Tag` objects for reads, but stores each field as its own `LoroMap` key. A
@@ -96,6 +97,18 @@ tie-breaks. Nesting is derived by full containment. Dragging a section writes on
 member placement; nothing is written while the gesture runs. Dropping a card whose anchor is inside
 a section but whose measured rectangle hangs outside expands that section and its ancestors, again
 as geometry writes. Membership is recomputed on read, so no drag ever rewrites card state.
+
+**Pins are bookmarks, not content.** `pins` stores a board-scoped point with a label (trimmed,
+80 characters at most), a marker colour and the creator's actor id; an optional `target` names a
+card, section or saved view and is a navigation action, not an anchor, so moving or deleting the
+target leaves the marker where it was dropped. A pin creates no card, placement, section, reference
+or board membership — `listPins` is the only surface that reads them. Writes are field-granular
+(`createPin`, `updatePin`, `movePin`, `deletePin`, with `target` as its own mergeable sub-map), so a
+rename and a drag of one pin converge; `observePins`/`pinsRevision` publish the change outside the
+board snapshot stream, exactly as saved views do. The map is additive: a document written before
+pins existed opens unchanged and gains the map on the first pin, with no schema bump, and a
+hand-edited pin that fails `pinSchema` (or names a missing board) is skipped on read rather than
+thrown on.
 
 **Whiteboard scenes are element maps.** A `whiteboard` card keeps its Excalidraw scene under
 `drawings.<cardId>`: one field map per element, a movable `order` list for z-order, and a
@@ -391,6 +404,13 @@ ICE owns the world, spatial index, camera and pointer input. It does not own doc
 - Selection, drag, resize, create, delete, section and edge gestures report intent through one
   bridge. Live motion is ephemeral; pointer-up calls one `WorkspaceDocument` method per gesture.
   ICE's native history is disabled for document objects; Loro undo is the only user-visible history.
+- ICE's snap guides, equal-spacing bars, auto-alignment, `arrange`, `frameContent`, container
+  entry/exit, lock and reorder stay. The bridge commits the final snapped ICE rect inverse-
+  transformed into canonical board coordinates; it does not derive a position from the raw pointer
+  delta or add a second alignment system.
+- The Suite shell is unchanged: launcher, title bar, library, drawers, inspector, card menus,
+  share dialogs, settings and theme remain Suite components. ICE is the canvas layer, not the shell;
+  its tray/drawer/board chrome and HUD are development affordances.
 - The DOM overlay is budgeted. It mounts full cards only at readable width (24 by default), hides
   and unmounts below the band, and no card has two mounted editors even when several portal
   instances show it.

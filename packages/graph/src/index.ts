@@ -44,6 +44,7 @@ export type {
   CreateCardInput,
   CreateEdgeInput,
   CreateFieldInput,
+  CreatePinInput,
   CreatePortalCardInput,
   CreateSectionInput,
   CreateTypeInput,
@@ -51,6 +52,7 @@ export type {
   DuplicateCardOptions,
   LayerAction,
   PlacementMoveInput,
+  UpdatePinPatch,
   WorkspaceAction,
   WorkspaceChange,
   WorkspaceSection,
@@ -88,6 +90,18 @@ export type {
   RichTextTextSnapshot,
 } from "./merge.js";
 export { applyPublish, PUBLISH_ORIGIN, planPublish } from "./merge.js";
+export type { Pin, PinColor, PinTarget, PinTargetKind } from "./pins.js";
+export {
+  DEFAULT_PIN_COLOR,
+  PIN_LABEL_MAX_LENGTH,
+  pinColorSchema,
+  pinColors,
+  pinSchema,
+  pinTargetKindSchema,
+  pinTargetKinds,
+  pinTargetSchema,
+  sortPins,
+} from "./pins.js";
 export type {
   PortableCard,
   PortableNode,

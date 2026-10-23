@@ -6,8 +6,12 @@
   rendering engine; [ADR-0035](../decisions/0035-views-pins-and-portals.md) defines Views, Pins and
   shared board views; [ADR-0036](../decisions/0036-fractal-lod-and-icon-graph.md) defines the
   fractal LOD and navigation.
-- **Current stage:** the spike is proven and the live workspace can be projected read-only into
-  ICE in the app. The default surface is still the React Flow scene until the P0 gate is met.
+- **Current stage:** the live workspace projects into ICE and the app path mounts the real Suite
+  `NodeCard` read-only through `suite.card`. The bridge contract, the portal/section/edge plan and
+  the pins model are landed as pure modules. The default surface is still the React Flow scene until
+  the P0 gate is met.
+- **Shell:** the launcher, title bar, library, drawers, inspector, menus, shares and theme stay the
+  Suite components. ICE is the canvas layer; do not adopt its tray/drawer/board chrome.
 - **Rule:** no phase is complete without an artifact a reviewer can open. A demo is not parity.
 - **Research:** [`docs/fractal-interface-research.md`](../fractal-interface-research.md) records the
   ZUI/semantic-zoom evidence, what not to borrow and the LOD experiments.
@@ -20,6 +24,10 @@
 | Native ICE desk seeds and runs on hardware | `/ice.html`; gated `e2e/tests/ice.spec.ts` |
 | Suite graph can be projected read-only | `/ice.html?demo=suite`; `suiteProjection.ts` + tests |
 | The app projects the live workspace read-only | `?canvas=ice` in a workspace; `IceSurface` waits for hydration, then projects the real graph with no writes |
+| Real `NodeCard` overlay in the app | `suiteCardWorkspace.tsx`; `?canvas=ice` workspace mode mounts `SceneCardView` read-only |
+| Bridge/undo contract | `iceBridge.ts` + 45 tests; not yet wired to gestures |
+| Portal/section/edge plan | `icePortals.ts` + 11 tests; not yet wired to the ICE surface |
+| Pins model | `packages/graph/src/pins.ts` + `WorkspaceDocument` tests; no library UI yet |
 | A custom kind can mount the real `NodeCard` | `/src/ice/suite-card-lab.html`; `suiteCardKind.ts`, `suiteCardOverlay.ts`, `suiteCardNodeCard.tsx` |
 | Selection, drag, pan and zoom work with the DOM overlay | headed smoke; overlay is `pointer-events:none` |
 | Device loss is diagnosable | fallback state, `Reset demo`, `Copy diagnostics` |
@@ -96,6 +104,8 @@ Goal: the real card, not a note impostor.
   coordinates, selection or identity map, stop and fix the projection instead.
 - Render read-only first: title/body, type glyph, tags, property chips, menu affordances disabled.
 - Wire the property inspector to the same canonical card.
+- **Shell unchanged:** the card uses the existing `SceneCardView`/`NodeCard`/global CSS; no card
+  restyle, no replacement inspector, no ICE tray or drawer. ICE supplies geometry only.
 - Keep one DOM root per visible card; release it on LOD unmount; free the local doc only when it is
   a lab doc (never the workspace doc).
 - Add the pointer-mode switch: `pointer-events:none` by default; text editing enters an explicit
@@ -111,6 +121,9 @@ Goal: gestures are canonical and undoable once.
 
 - **Write funnel:** every write goes `ICE intent → bridge → WorkspaceDocument → Loro → projection`.
   The projection is downstream and never writes back; no ICE ECS record becomes document truth.
+- **Snapped geometry is authoritative:** ICE's snap guides/equal spacing/auto-alignment may move the
+  object after the pointer delta. The bridge commits the final ICE rect inverse-transformed into
+  canonical coordinates, not the raw pointer position. Do not rebuild alignment in the bridge.
 - Define `SuiteIceBridge` interfaces: `instanceOf`, `placementOf`, `cardOf`, `selection`,
   `moveIntent`, `resizeIntent`, `createIntent`, `deleteIntent`.
 - Map ICE screen/world coordinates through the instance transform to canonical board coordinates.
@@ -148,6 +161,8 @@ Goal: parity for the non-card objects.
 
 - Implement `suite.section` as a GPU frame with DOM header/handles; selection, drag, corner resize;
   members move as one canonical batch.
+- Use ICE's native snap guides, equal-spacing bars, auto-alignment and `arrange`; do not build a
+  second alignment system or a React Flow-style layout clone.
 - Implement `suite.edge` as a GPU path with a DOM label; select, highlight, open the shared edge menu,
   edit the description.
 - Connector handles come from the selection overlay for the single selected card; drag-to-connect
@@ -311,13 +326,13 @@ the reference machine; a software adapter is correctness-only.
 | Workstream | Status | Next artifact |
 | --- | --- | --- |
 | Decisions and docs | done | ADR-0034/0035/0036 |
-| Read-only real workspace | partial — live projection in `?canvas=ice`; no DOM cards, camera restore or 5k fixture yet | `SuiteIceProjection` reload + 5k e2e |
-| `suite.card` production | pending | real card + inspector in `/ice.html` |
-| Interaction bridge | pending | one-commit drag/resize + Loro undo test |
+| Read-only real workspace | done — live graph + real `SceneCardView` overlays; no writes | 5k fixture + reload/camera restore |
+| `suite.card` production | partial — real card, inspector, read-only | pointer-mode switch for editing |
+| Interaction bridge | contract landed; integration pending | wire `IceGestureSession` + Loro undo |
 | Whiteboard | pending | preview + focus-surface round trip |
-| Sections/edges/connectors | pending | section move + edge create e2e |
-| Portals/shared views | pending | depth-2 + cycle + two-portal selection |
+| Sections/edges/connectors | plan landed; integration pending | custom kinds/overlays + e2e |
+| Portals/shared views | plan landed; integration pending | spawn from `icePortals` + camera entry |
 | Presence/shares | pending | two-browser artifact |
-| Views/Pins | pending | `pins` map + drop-pin flow |
+| Views/Pins | model landed; UI pending | Views switcher + Pins list + drop-pin |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
 | Failure/accessibility/rollout | pending | P0 table + unsupported screen |

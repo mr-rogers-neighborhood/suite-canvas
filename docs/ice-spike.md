@@ -17,8 +17,9 @@ The desk seeds one of two demos, chosen in the HUD or with `?demo=suite`:
 
 When the surface is mounted inside the app (`?canvas=ice` in a real workspace), it does **not** use
 a demo: it waits for the workspace to hydrate, then projects the live graph read-only. The HUD says
-`ICE workspace` and `Read-only projection — not document truth`. Cards are still native notes in
-this phase; the real `NodeCard` overlay is the next phase in the parity roadmap.
+`ICE workspace` and `Read-only projection — not document truth`. Real cards mount the existing
+`SceneCardView`/`NodeCard` in a screen-space overlay; the shell and property inspector are the Suite
+ones. Editing, canonical writes and Loro undo are the next phase in the parity roadmap.
 
 ## Diagnosis: the machine is capable, the launch mode is the blocker
 
@@ -158,11 +159,12 @@ The **Suite demo** is the first parity step, and it is deliberately one-way
   route disposes the document, the engine and the device.
 - **Fonts.** The app does not host Caveat/Kalam and the spike must not fetch a third-party font, so
   notes show their paper, ink strokes and layout, not lettered glyphs.
-- **Custom kinds and DOM in the projection.** The Suite demo uses only `desk.note` and
-  `desk.minimat`. A separate lab (`/src/ice/suite-card-lab.html`) proves a custom `suite.card`
-  kind can mount the real `NodeCard` in a screen-space overlay; it is not wired into `/ice.html`
-  yet. Typed fields, tags, edges, permissions, mention chips and editing are still absent, and the
-  React Flow scene is untouched.
+- **Custom kinds and DOM in the projection.** The standalone Suite demo still uses only
+  `desk.note` and `desk.minimat`. The app workspace path mounts the real Suite card through the
+  custom `suite.card` kind (`SceneCardView`/`NodeCard`) read-only; the lab
+  (`/src/ice/suite-card-lab.html`) remains the isolated proof. Editing, typed-field writes, edges,
+  permissions, mention chips and canonical undo are still absent, and the React Flow scene is
+  untouched.
 
 The P0 parity gate is in [ADR-0034](./decisions/0034-ice-primary-rendering-engine.md); this guide
 does not claim any of it.

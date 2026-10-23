@@ -37,6 +37,14 @@ import {
   MIN_LAYOUT_SECTION_WIDTH,
   parseLayoutPlan,
 } from "../layoutPlan.js";
+import {
+  DEFAULT_PIN_COLOR,
+  type Pin,
+  type PinColor,
+  type PinTarget,
+  pinSchema,
+  sortPins,
+} from "../pins.js";
 import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
@@ -181,6 +189,32 @@ export interface CreateSectionInput {
   width?: number;
   height?: number;
   color?: Section["color"];
+}
+
+/**
+ * A pin the caller wants dropped on a board. `label` is trimmed and capped by
+ * `pinSchema`; `color` defaults to `DEFAULT_PIN_COLOR`; `target` is optional
+ * navigation metadata and never creates the record it names.
+ */
+export interface CreatePinInput {
+  id?: string;
+  /** Must name an existing board; an unknown id is refused. */
+  boardId: string;
+  x: number;
+  y: number;
+  label: string;
+  color?: PinColor;
+  /** Actor id of the creator, for attribution only. */
+  createdBy: string;
+  target?: PinTarget;
+}
+
+/** What `updatePin` may change: the label, the colour and the target. */
+export interface UpdatePinPatch {
+  label?: string;
+  color?: PinColor;
+  /** `null` removes the target and leaves the marker where it is. */
+  target?: PinTarget | null;
 }
 
 /** A saved query, plus where it sits in the Views menu. */
@@ -763,6 +797,7 @@ export class WorkspaceDocument {
   static readonly META_KEY = "meta";
   static readonly VIEWS_KEY = "views";
   static readonly DRAWINGS_KEY = "drawings";
+  static readonly PINS_KEY = "pins";
 
   readonly doc: LoroDoc;
   private readonly boards: LoroMap;
@@ -778,6 +813,7 @@ export class WorkspaceDocument {
   private readonly meta: LoroMap;
   private readonly viewsMap: LoroMap;
   private readonly drawings: LoroMap;
+  private readonly pins: LoroMap;
   private readonly cardCache = new Map<string, Card>();
   private readonly placementCache = new Map<string, Placement>();
   private readonly edgeCache = new Map<string, GraphEdge>();
@@ -785,6 +821,7 @@ export class WorkspaceDocument {
   private readonly typeCache = new Map<string, CardType>();
   private readonly tagCache = new Map<string, Tag>();
   private readonly sectionCache = new Map<string, Section>();
+  private readonly pinCache = new Map<string, Pin>();
   private readonly viewCache = new Map<string, SavedView>();
   private readonly referenceCache = new Map<string, string[]>();
   private readonly pendingReferences = new Set<string>();
@@ -796,6 +833,8 @@ export class WorkspaceDocument {
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
   private readonly viewListeners = new Set<() => void>();
   private viewRevision = 0;
+  private readonly pinListeners = new Set<() => void>();
+  private pinRevision = 0;
   private readonly containerCache = new Map<string, CardContainers>();
   private readonly containerListeners = new Map<string, Set<() => void>>();
   private readonly titleListeners = new Map<string, Set<() => void>>();
@@ -815,6 +854,7 @@ export class WorkspaceDocument {
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
     this.viewsMap = doc.getMap(WorkspaceDocument.VIEWS_KEY);
     this.drawings = doc.getMap(WorkspaceDocument.DRAWINGS_KEY);
+    this.pins = doc.getMap(WorkspaceDocument.PINS_KEY);
     this.known = {
       boards: new Set(this.boards.keys()),
       cards: new Set(this.cards.keys()),
@@ -830,6 +870,7 @@ export class WorkspaceDocument {
       const touched = new Map<WorkspaceSection, Set<string>>();
       const containers = new Set<string>();
       const savedViews = new Set<string>();
+      const changedPins = new Set<string>();
       for (const event of batch.events) {
         const root = event.path[0];
         if (typeof root !== "string") continue;
@@ -844,6 +885,13 @@ export class WorkspaceDocument {
           if (typeof event.path[1] === "string") savedViews.add(event.path[1]);
           else if (event.diff.type === "map") {
             for (const key of Object.keys(event.diff.updated)) savedViews.add(key);
+          }
+          continue;
+        }
+        if (root === WorkspaceDocument.PINS_KEY) {
+          if (typeof event.path[1] === "string") changedPins.add(event.path[1]);
+          else if (event.diff.type === "map") {
+            for (const key of Object.keys(event.diff.updated)) changedPins.add(key);
           }
           continue;
         }
@@ -893,6 +941,11 @@ export class WorkspaceDocument {
         for (const viewId of savedViews) this.viewCache.delete(viewId);
         this.viewRevision += 1;
         for (const listener of this.viewListeners) listener();
+      }
+      if (changedPins.size > 0) {
+        for (const pinId of changedPins) this.pinCache.delete(pinId);
+        this.pinRevision += 1;
+        for (const listener of this.pinListeners) listener();
       }
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {
@@ -1121,6 +1174,10 @@ export class WorkspaceDocument {
     for (const sectionId of [...this.sections.keys()]) {
       const fields = this.sections.get(sectionId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.sections.delete(sectionId);
+    }
+    for (const pinId of [...this.pins.keys()]) {
+      const fields = this.pins.get(pinId);
+      if (isMap(fields) && readString(fields, "boardId") === id) this.pins.delete(pinId);
     }
     this.boards.delete(id);
 
@@ -1799,6 +1856,178 @@ export class WorkspaceDocument {
     fields.set("createdAt", section.createdAt);
     fields.set("updatedAt", section.updatedAt);
     if (section.color) fields.set("color", section.color);
+  }
+
+  // ----------------------------------------------------------------- pins
+
+  /**
+   * Reads one pin, or `undefined` when it is unusable. A pin whose label,
+   * coordinates, colour, target or board was hand-edited into something
+   * invalid is skipped rather than thrown on, exactly like a corrupt saved
+   * view: the rest of the document still opens and the marker is not drawn.
+   */
+  private cachedPin(id: string): Pin | undefined {
+    const cached = this.pinCache.get(id);
+    if (cached) return cached;
+    const fields = this.pins.get(id);
+    if (!isMap(fields)) return undefined;
+    const target = fields.get("target");
+    const parsed = pinSchema.safeParse({
+      id,
+      boardId: readString(fields, "boardId") ?? "",
+      x: readNumber(fields, "x"),
+      y: readNumber(fields, "y"),
+      label: readString(fields, "label"),
+      color: readString(fields, "color"),
+      createdBy: readString(fields, "createdBy") ?? "",
+      // A missing timestamp fails the schema instead of sorting as "now".
+      createdAt: readNumber(fields, "createdAt"),
+      ...(isMap(target)
+        ? { target: { kind: target.get("kind"), id: readString(target, "id") } }
+        : {}),
+    });
+    if (!parsed.success) return undefined;
+    // A pin on a board that no longer exists has nowhere to render.
+    if (this.boards.get(parsed.data.boardId) === undefined) return undefined;
+    this.pinCache.set(id, parsed.data);
+    return parsed.data;
+  }
+
+  /** Pins in creation order, optionally only those on one board. */
+  listPins(boardId?: string): Pin[] {
+    return sortPins(
+      this.pins
+        .keys()
+        .map((id) => this.cachedPin(id))
+        .filter((pin): pin is Pin => pin !== undefined)
+        .filter((pin) => boardId === undefined || pin.boardId === boardId),
+    );
+  }
+
+  getPin(id: string): Pin | undefined {
+    return this.cachedPin(id);
+  }
+
+  /**
+   * Drops a pin on an existing board. The label is trimmed and length-checked
+   * by `pinSchema`; an empty label, a non-finite point, an unknown colour or
+   * an unknown board throws, because these are caller bugs, not stored data.
+   */
+  createPin(input: CreatePinInput): Pin {
+    if (this.boards.get(input.boardId) === undefined) {
+      throw new Error(`Unknown board: ${input.boardId}`);
+    }
+    const pin = pinSchema.parse({
+      id: input.id ?? crypto.randomUUID(),
+      boardId: input.boardId,
+      x: input.x,
+      y: input.y,
+      label: input.label,
+      color: input.color ?? DEFAULT_PIN_COLOR,
+      createdBy: input.createdBy,
+      createdAt: Date.now(),
+      ...(input.target ? { target: input.target } : {}),
+    });
+    if (this.pins.get(pin.id) !== undefined) throw new Error(`Pin already exists: ${pin.id}`);
+    this.writePin(pin);
+    this.commit(`${STRUCT_ORIGIN}create-pin`);
+    return pin;
+  }
+
+  /**
+   * Renames, recolours or retargets a pin. `target: null` removes the
+   * navigation action; the marker keeps its place either way.
+   */
+  updatePin(id: string, patch: UpdatePinPatch): Pin | undefined {
+    const current = this.getPin(id);
+    if (!current) return undefined;
+    const target = patch.target === undefined ? current.target : (patch.target ?? undefined);
+    // Built field by field rather than by spreading the record, so clearing
+    // `target` really removes it instead of inheriting the old one.
+    const next = pinSchema.parse({
+      id: current.id,
+      boardId: current.boardId,
+      x: current.x,
+      y: current.y,
+      label: patch.label ?? current.label,
+      color: patch.color ?? current.color,
+      createdBy: current.createdBy,
+      createdAt: current.createdAt,
+      ...(target === undefined ? {} : { target }),
+    });
+    const fields = this.pins.get(id);
+    if (!isMap(fields)) return undefined;
+    // Only the fields the caller named are written, so a rename never
+    // overwrites a concurrent drag of the same pin.
+    if (next.label !== current.label) fields.set("label", next.label);
+    if (next.color !== current.color) fields.set("color", next.color);
+    if (target === undefined) {
+      if (fields.get("target") !== undefined) fields.delete("target");
+    } else if (current.target?.kind !== target.kind || current.target.id !== target.id) {
+      const targetFields = fields.ensureMergeableMap("target");
+      targetFields.set("kind", target.kind);
+      targetFields.set("id", target.id);
+    }
+    this.commit(`${STRUCT_ORIGIN}update-pin`);
+    return next;
+  }
+
+  /**
+   * Writes only x and y, so a concurrent rename or retarget survives. A
+   * non-finite release is ignored rather than stored, like a view reorder with
+   * an out-of-range index.
+   */
+  movePin(id: string, point: { x: number; y: number }): Pin | undefined {
+    const current = this.getPin(id);
+    if (!current) return undefined;
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return current;
+    const fields = this.pins.get(id);
+    if (!isMap(fields)) return current;
+    fields.set("x", point.x);
+    fields.set("y", point.y);
+    this.commit(`${STRUCT_ORIGIN}move-pin`);
+    return { ...current, x: point.x, y: point.y };
+  }
+
+  /** Removes the marker; no card, section, view or placement is touched. */
+  deletePin(id: string): void {
+    if (this.pins.get(id) === undefined) return;
+    this.pins.delete(id);
+    this.commit(`${STRUCT_ORIGIN}delete-pin`);
+  }
+
+  /** One key per field, with `target` as its own mergeable sub-map. */
+  private writePin(pin: Pin): void {
+    const fields = this.pins.ensureMergeableMap(pin.id);
+    fields.set("boardId", pin.boardId);
+    fields.set("x", pin.x);
+    fields.set("y", pin.y);
+    fields.set("label", pin.label);
+    fields.set("color", pin.color);
+    fields.set("createdBy", pin.createdBy);
+    fields.set("createdAt", pin.createdAt);
+    if (pin.target) {
+      const target = fields.ensureMergeableMap("target");
+      target.set("kind", pin.target.kind);
+      target.set("id", pin.target.id);
+    }
+  }
+
+  /**
+   * Pins live outside `WorkspaceSection` for the same reason saved views do:
+   * the board/card snapshot stream is content, and a marker write must not
+   * repaint it. Subscribers read `listPins()` again when this fires.
+   */
+  observePins(listener: () => void): () => void {
+    this.pinListeners.add(listener);
+    return () => {
+      this.pinListeners.delete(listener);
+    };
+  }
+
+  /** Monotonic count of pins-map changes, the snapshot for `useSyncExternalStore`. */
+  get pinsRevision(): number {
+    return this.pinRevision;
   }
 
   // ----------------------------------------------------------------- cards

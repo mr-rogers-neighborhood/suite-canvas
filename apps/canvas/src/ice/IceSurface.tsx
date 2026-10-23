@@ -510,7 +510,7 @@ function seedWorkspaceDocument(
 ): SeedReport {
   let seed: ReturnType<typeof projectWorkspaceToIce>;
   try {
-    seed = projectWorkspaceToIce(workspace, rootBoardId);
+    seed = projectWorkspaceToIce(workspace, rootBoardId, { cardKind: "card" });
   } catch (error) {
     return {
       mode: "workspace",
@@ -605,7 +605,12 @@ export function IceSurface({
   const [copyState, setCopyState] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
   const sceneHref = useMemo(() => sceneHrefProp ?? sceneSurfaceHref(), [sceneHrefProp]);
-  const owned = useRef<{ engine?: CanvasEngine; doc?: DocSession; gpu?: EngineGpu }>({});
+  const owned = useRef<{
+    engine?: CanvasEngine;
+    doc?: DocSession;
+    gpu?: EngineGpu;
+    clearCardRenderer?: (() => void) | undefined;
+  }>({});
   const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seededEntities = useRef<readonly Entity[]>([]);
@@ -625,8 +630,9 @@ export function IceSurface({
   const teardown = useCallback(() => {
     clearPendingFailure();
     clearPendingFit();
-    const { engine, doc, gpu } = owned.current;
+    const { engine, doc, gpu, clearCardRenderer } = owned.current;
     owned.current = {};
+    clearCardRenderer?.();
     if (doc !== undefined) quietly(() => doc.close());
     if (engine !== undefined) quietly(() => engine.dispose());
     if (gpu !== undefined) quietly(() => gpu.destroy());
@@ -692,6 +698,15 @@ export function IceSurface({
         ]);
         if (cancelled) return;
 
+        const live = liveWorkspace !== null && rootBoardId !== null;
+        const suiteCardModules = live
+          ? await Promise.all([import("./suiteCardKind"), import("./suiteCardWorkspace")])
+          : null;
+        if (cancelled) return;
+        const widgets = suiteCardModules
+          ? [...objects.DESK_OBJECTS, suiteCardModules[0].SuiteCard]
+          : [...objects.DESK_OBJECTS];
+
         // ONE device per engine (D7): the desk adopts this one instead of
         // acquiring its own, so a discarded StrictMode mount cannot destroy
         // the device the retained mount is drawing with. The app owns its end
@@ -721,10 +736,18 @@ export function IceSurface({
 
         const engine = core.createCanvasEngine({
           ...objects.DESK_ENGINE,
+          widgets,
           compositorDevice: gpu,
         });
         const doc = engine.docs.create();
-        owned.current = { engine, doc, gpu };
+        let clearCardRenderer: (() => void) | undefined;
+        if (suiteCardModules !== null) {
+          suiteCardModules[0].setSuiteCardSlotRenderer(
+            suiteCardModules[1].createWorkspaceCardSlotRenderer(),
+          );
+          clearCardRenderer = () => suiteCardModules[0].setSuiteCardSlotRenderer(undefined);
+        }
+        owned.current = { engine, doc, gpu, clearCardRenderer };
 
         const report =
           liveWorkspace !== null && rootBoardId !== null
@@ -736,7 +759,7 @@ export function IceSurface({
         const layer = desk.deskLayer({
           theme: objects.deskTheme("light"),
           palette: objects.deskPalette("light"),
-          objects: [...objects.DESK_OBJECTS],
+          objects: widgets,
           docs: engine.docs,
           name: `ice-demo-${runId + 1}`,
         });

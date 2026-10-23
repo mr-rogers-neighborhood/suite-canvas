@@ -1,11 +1,8 @@
 /**
  * Lab-only renderer: mounts the REAL Suite `NodeCard` into each `suite.card`
- * overlay slot. This is the feasibility question answered end to end — the kind
- * provides geometry, this seam provides React, a local LoroDoc and the card UI.
- *
- * Nothing here is production wiring. A real bridge would take the card's Loro
- * document, cursor store and presence from the workspace, not mint a local doc
- * per mount, and would lift/select/drag through ICE's interaction stack.
+ * overlay slot from a local LoroDoc. This is the feasibility harness; production
+ * cards go through `createWorkspaceCardSlotRenderer` (`suiteCardWorkspace.tsx`),
+ * which binds the live workspace document instead.
  *
  * What a real `NodeCard` needed (all satisfied here):
  * - a `Card` record, its primary `CardType`, and a `CardMeta` (empty is fine);

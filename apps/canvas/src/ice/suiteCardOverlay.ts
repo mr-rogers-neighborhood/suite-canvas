@@ -98,8 +98,25 @@ export interface SuiteCardInfo {
   readonly entity: number;
   readonly title: string;
   readonly body: string;
+  /**
+   * The workspace card this object stands for. "" when the kind carries none,
+   * which is the lab's case; a production renderer then mounts nothing.
+   */
+  readonly cardId: string;
+  /** The board the card sits on; "" when the kind carries none. */
+  readonly boardId: string;
   readonly worldWidth: number;
   readonly worldHeight: number;
+}
+
+/** The kind's display face, as `infoOf` reports it (`faceOf` in the kind). */
+export interface SuiteCardFace {
+  readonly title: string;
+  readonly body: string;
+  /** The card's id in the workspace document; absent in the lab. */
+  readonly cardId?: string | undefined;
+  /** The board the card is placed on; absent in the lab. */
+  readonly boardId?: string | undefined;
 }
 
 /**
@@ -118,10 +135,8 @@ export interface SuiteCardOverlayOptions {
   readonly entities: () => Iterable<number>;
   readonly geometryOf: (entity: number) => SuiteCardGeometry | null | undefined;
   readonly camera: () => SuiteCardCamera | null | undefined;
-  /** Title/body for the default minimal card; the React renderer may ignore it. */
-  readonly infoOf?: (
-    entity: number,
-  ) => { readonly title: string; readonly body: string } | undefined;
+  /** Title/body (and, in production, the card's ids) for the slot's content. */
+  readonly infoOf?: (entity: number) => SuiteCardFace | undefined;
   readonly renderer?: SuiteCardSlotRenderer | undefined;
   readonly minScreenWidth?: number | undefined;
 }
@@ -238,6 +253,8 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
         entity,
         title: face?.title ?? "Suite card",
         body: face?.body ?? "suite.card — screen-space DOM half",
+        cardId: face?.cardId ?? "",
+        boardId: face?.boardId ?? "",
         worldWidth: box.worldWidth,
         worldHeight: box.worldHeight,
       };

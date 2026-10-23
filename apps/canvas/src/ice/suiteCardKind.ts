@@ -1,10 +1,5 @@
 /**
- * `suite.card` — a LAB object kind: a real Suite card face drawn by ICE.
- *
- * GO/NO-GO SCOPE, NOT PRODUCT CODE. It exists to answer one question: can a
- * custom `defineObject` kind own a screen-space DOM half that renders a real
- * `NodeCard` over the GPU object ICE draws? It is registered only by the lab
- * (`suite-card-lab.html`), never by the production ICE surface.
+ * `suite.card` — a real Suite card face drawn by ICE.
  *
  * GPU backing: the built-in paper program (`paperKind()`), reused under this
  * kind's own name so the ground compiles a paper pass for `suite.card` beside
@@ -18,26 +13,32 @@
  * nothing moves. The overlay unmounts card content below the readable width,
  * which is where the screen-space editor budget lives.
  *
+ * The DOM half's *content* is a pluggable slot renderer (`setSuiteCardSlotRenderer`):
+ * - `createWorkspaceCardSlotRenderer()` (production) mounts the existing
+ *   `SceneCardView`/`NodeCard` shell for the live card named by this object's
+ *   `cardId` prop, read-only. It reads the workspace document and writes
+ *   nothing; ICE supplies geometry only.
+ * - `createNodeCardSlotRenderer()` (the `suite-card-lab.html` harness) mints a
+ *   local document per mount and is never used for a real card.
+ *
  * What works with no extra bridge (verified in the headed smoke): selection,
  * drag, camera pan and wheel zoom. The overlay is `pointer-events:none`, so all
  * pointer input reaches ICE's one interaction stack and picks the GPU rect; the
  * overlay only follows `geometryOf()`.
  *
- * What a product bridge would still need:
+ * What a product bridge still needs:
  * - INTERACTION: a mode switch that gives the overlay `pointer-events:auto`
  *   while an ICE selection is the card and the camera is readable, then routes
  *   pointerdown to ICE for drag/selection and to the card for text. Today the
  *   card is read-only and every press drags the object.
- * - DOCUMENT: pass the card's real LoroDoc, `contentId`, `titleId`, cursor
- *   store, local user and presence from the workspace. The lab mints a local
- *   doc per mount (`suiteCardNodeCard.tsx`); NodeCard itself is unblocked.
  * - LOD/PICK: hide below a readable width (done). A far card needs a chip
  *   impostor or the GPU paper alone; ICE's pick still needs the GPU rect while
  *   the DOM half is hidden, which the paper record provides.
  * - FOCUS: route keyboard focus and Escape between the DOM editor and ICE's
  *   keymap; a focused text field must stop ICE's shortcuts.
  * - WRITES: all edits must go through `@suite/graph`/Loro, never into ICE's
- *   document. This kind's props are display-only.
+ *   document. This kind's props are display-only: `title`/`body` are the lab's
+ *   face, `cardId`/`boardId` are the production card's coordinates.
  */
 
 import {
@@ -59,6 +60,7 @@ import {
 import { PENS, paperKind } from "@vibecook/ice/desk/objects";
 import {
   createSuiteCardOverlay,
+  type SuiteCardFace,
   type SuiteCardOverlayHandle,
   type SuiteCardSlotRenderer,
 } from "./suiteCardOverlay";
@@ -77,15 +79,11 @@ const WIDGETS = defineQuery([PrefabId]);
 type PaperKindOf = ReturnType<typeof paperKind>;
 type PaperGeometry = Parameters<PaperKindOf["record"]>[0];
 
-interface SuiteCardFace {
-  readonly title: string;
-  readonly body: string;
-}
-
 /**
  * The screen-space renderer registry. Empty by default so the kind renders a
- * minimal DOM card with no React/Loro dependency; the lab sets a real
- * `NodeCard` renderer before the desk mounts.
+ * minimal DOM card with no React/Loro dependency; the production ICE surface
+ * registers `createWorkspaceCardSlotRenderer()` and the lab registers its own
+ * local-document renderer before the desk mounts.
  */
 let slotRenderer: SuiteCardSlotRenderer | undefined;
 
@@ -151,12 +149,17 @@ export const SuiteCard = defineObject({
   props: {
     title: p.string({ default: "" }),
     body: p.string({ default: "" }),
+    // Which workspace card this object stands for. Empty in the lab, whose
+    // objects carry a title/body string instead of a live document.
+    cardId: p.string({ default: "" }),
+    // The board the card is placed on; scopes the card's presence and menus.
+    boardId: p.string({ default: "" }),
     // Read by the reused paper kind for the GPU sheet's colour and edge.
     paper: p.enum(["yellow"] as const, { default: "yellow" }),
     pen: p.enum(PENS, { default: "fountain" }),
     seed: p.number({ default: 0 }),
   },
-  groups: { face: ["title", "body"] },
+  groups: { face: ["title", "body", "cardId", "boardId"] },
   size: SUITE_CARD_SIZE,
   kind: suiteCardKind,
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
@@ -215,5 +218,5 @@ function suiteCardEntities(world: World): Entity[] {
 function faceOf(world: World, entity: Entity): SuiteCardFace | undefined {
   if (!world.isAlive(entity) || !world.has(entity, SUITE_CARD_FACE)) return undefined;
   const face = world.read(entity, SUITE_CARD_FACE);
-  return { title: face.title, body: face.body };
+  return { title: face.title, body: face.body, cardId: face.cardId, boardId: face.boardId };
 }

@@ -38,6 +38,13 @@ export interface SceneCardViewProps {
   height?: number | null;
   selected?: boolean;
   className?: string;
+  /**
+   * Force this face read-only even when the session could edit. A second,
+   * non-interactive twin of a card (the ICE `suite.card` screen-space overlay)
+   * mounts over a workspace the user may be editing elsewhere; it must never
+   * offer an edit gesture or a menu action that writes.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -54,6 +61,10 @@ export interface SceneCardViewProps {
  * Hovering, dragging and resizing belong to `SceneLayer`; a card rendered here
  * still owns its own clicks (open info, start editing, connector menus).
  *
+ * The ICE surface mounts this same view as a read-only twin of a card in its
+ * `suite.card` DOM overlay: same shell, same global CSS, `readOnly` set so the
+ * twin offers no editing or menu that would write from two places.
+ *
  * Whiteboard cards render a read-only `WhiteboardPreview` with a double-click
  * that opens the existing focus surface, because a drawing has no Tiptap body to
  * mount. `SceneLayer` may keep routing whiteboards to its own preview instead;
@@ -68,6 +79,7 @@ export function SceneCardView({
   height = null,
   selected = false,
   className,
+  readOnly = false,
 }: SceneCardViewProps) {
   countRender("scene-card");
 
@@ -78,7 +90,9 @@ export function SceneCardView({
   const localUser = usePresenceStore((state) => state.localUser);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
 
-  const readOnly = useUiStore((state) => state.readOnly);
+  // The session's own flag ORs with the caller's override: a face mounted as a
+  // read-only twin (the ICE overlay) is read-only in an editable session too.
+  const sessionReadOnly = useUiStore((state) => state.readOnly);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
@@ -97,11 +111,13 @@ export function SceneCardView({
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
   // A viewer shorthand and the capability matrix are separate gates; the card
-  // face only receives the actions both of them allow.
-  const editContent = canEditContent && !readOnly;
-  const editLayout = canEditLayout && !readOnly;
-  const canTrash = canManageTrash && !readOnly;
-  const canCreate = canCreateContent && !readOnly;
+  // face only receives the actions both of them allow. A read-only override is
+  // the caller's shorthand for this face specifically, so it ORs in here.
+  const locked = readOnly || sessionReadOnly;
+  const editContent = canEditContent && !locked;
+  const editLayout = canEditLayout && !locked;
+  const canTrash = canManageTrash && !locked;
+  const canCreate = canCreateContent && !locked;
   // Connectors are workspace structure, not draft objects: moving or removing
   // one follows the trash row of the matrix, so a board or card draft cannot.
   const canManageStructure = canTrash;
@@ -277,7 +293,9 @@ export function SceneCardView({
         width={width}
         height={height}
         selected={selected}
-        editing={editingNodeId === card.id && editingSurface === "canvas" ? editingField : null}
+        editing={
+          !locked && editingNodeId === card.id && editingSurface === "canvas" ? editingField : null
+        }
         presence={presence}
         draggingPeers={draggingPeers}
         showDragLabel={!draggingGroup}

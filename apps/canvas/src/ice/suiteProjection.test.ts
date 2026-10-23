@@ -8,6 +8,7 @@ import {
   type IceSuiteSpawnOptions,
   projectWorkspaceToIce,
   SUITE_BODY_SNIPPET_LENGTH,
+  SUITE_CARD_TYPE,
   SUITE_MAX_DEPTH,
   snippetOf,
   spawnIceSuite,
@@ -26,6 +27,10 @@ function notesOf(objects: readonly IceSuiteObject[]) {
 
 function matsOf(objects: readonly IceSuiteObject[]) {
   return objects.filter((object) => object.kind === "minimat");
+}
+
+function cardsOf(objects: readonly IceSuiteObject[]) {
+  return objects.filter((object) => object.kind === "card");
 }
 
 describe("suiteProjection", () => {
@@ -70,6 +75,29 @@ describe("suiteProjection", () => {
     expect(welcome?.props.text).toBe(`Welcome to Atlas\n\n${welcome?.snippet ?? ""}`);
     // The seed's portal cards keep their stored size; plain notes have none.
     expect(welcome).not.toHaveProperty("width");
+  });
+
+  it("should project real suite.card objects when asked", () => {
+    const workspace = new WorkspaceDocument(new LoroDoc());
+    workspace.ensureDefaultTypes();
+    const summary = seedExampleWorkspace(workspace);
+    const cardSeed = projectWorkspaceToIce(workspace, summary.rootBoardId, { cardKind: "card" });
+    const cards = cardsOf(cardSeed.objects);
+
+    expect(cards).toHaveLength(17);
+    expect(cardSeed.cards).toHaveLength(17);
+    expect(cardSeed.cards.every((card) => card.kind === "card")).toBe(true);
+    expect(cards[0]).toMatchObject({
+      type: SUITE_CARD_TYPE,
+      boardId: "board-1",
+      props: {
+        cardId: "demo-card-atlas-welcome",
+        boardId: "board-1",
+        title: "Welcome to Atlas",
+        paper: "yellow",
+      },
+    });
+    expect(cards[0]?.id).toBe("card:demo-card-atlas-welcome");
   });
 
   it("should stand a mini mat at each portal and keep child coordinates board-local", () => {

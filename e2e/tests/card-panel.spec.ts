@@ -113,12 +113,17 @@ test("splits the inspector into Details and Content tabs", async ({ page }) => {
   await expect(page.getByTestId("type-picker")).toBeVisible();
   await expect(page.getByTestId("card-panel-body")).toHaveCount(0);
 
-  // Edit is the shortcut back to the body.
+  // Edit opens the card full-canvas, which lands on the body with the caret in it.
   await page.getByTestId("inspector-edit").click();
-  await expect(contentTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("card-focus")).toBeVisible();
   await expect(
-    page.locator(".card-inspector .card-panel-body .node-card-editor.ProseMirror-focused"),
+    page.locator(".card-focus .card-panel-body .node-card-editor.ProseMirror-focused"),
   ).toHaveCount(1);
+  // The drawer is gone; the same tabs now live on the focus surface.
+  await expect(page.getByTestId("card-inspector")).toHaveCount(0);
+
+  await page.getByTestId("card-focus-back").click();
+  await expect(page.getByTestId("card-focus")).toHaveCount(0);
 });
 
 test("shows the empty-body placeholder on the card and in the inspector", async ({ page }) => {

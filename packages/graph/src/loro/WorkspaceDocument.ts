@@ -92,6 +92,12 @@ export interface CreatePortalCardInput {
   targetBoardId: string;
   /** Placement on `boardId`; defaults to the top-left corner. */
   position?: { x: number; y: number };
+  /**
+   * Card size in flow units. A portal opens a real board, so its card is sized
+   * to that board's shape when the caller can measure it; omitting this leaves
+   * the card at its natural size, exactly like any other card.
+   */
+  size?: { width: number; height: number };
   id?: string;
 }
 
@@ -1892,6 +1898,13 @@ export class WorkspaceDocument {
         position: input.position ?? { x: 0, y: 0 },
       });
       this.setProperty(id, PORTAL_BOARD_FIELD_ID, input.targetBoardId);
+      if (input.size) {
+        this.updatePlacementGeometry(input.boardId, id, {
+          ...(input.position ?? { x: 0, y: 0 }),
+          width: input.size.width,
+          height: input.size.height,
+        });
+      }
     });
     const card = this.getCard(id);
     if (!card) throw new Error(`Unknown card: ${id}`);

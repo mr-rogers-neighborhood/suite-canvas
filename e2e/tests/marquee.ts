@@ -157,16 +157,28 @@ function gridSlots(board: Box, count: number, card: { width: number; height: num
   const insetTop = 71;
   const insetBottom = 96;
   const gap = 24;
-  const columns = Math.max(
-    1,
-    Math.min(count, Math.floor((board.width - insetX * 2 + gap) / (card.width + gap))),
-  );
+  const usableWidth = board.width - insetX * 2;
+  const usableHeight = board.height - insetTop - insetBottom;
+  const fitColumns = Math.max(1, Math.floor((usableWidth + gap) / (card.width + gap)));
+
+  // Columns are chosen so the rows also fit: overlapping cards would make a
+  // later drag start on whichever card happens to be on top, which measures the
+  // fixture rather than the behaviour. A tall card needs more columns than the
+  // width alone suggests.
+  let columns = Math.min(count, fitColumns);
+  while (columns < count && Math.ceil(count / columns) * (card.height + gap) - gap > usableHeight) {
+    if (columns >= count) break;
+    if (Math.floor((usableWidth + gap) / (card.width + gap)) < columns + 1) {
+      // No room for another column; accept the overlap and let the caller's
+      // assertions fail loudly rather than loop forever.
+      break;
+    }
+    columns += 1;
+  }
+
   const rows = Math.ceil(count / columns);
-  const stepX = (board.width - insetX * 2 - card.width) / Math.max(columns - 1, 1);
-  const stepY = Math.min(
-    220,
-    (board.height - insetTop - insetBottom - card.height) / Math.max(rows - 1, 1),
-  );
+  const stepX = (usableWidth - card.width) / Math.max(columns - 1, 1);
+  const stepY = (usableHeight - card.height) / Math.max(rows - 1, 1);
   return Array.from({ length: count }, (_, index) => ({
     x: Math.round(board.x + insetX + stepX * (index % columns)),
     y: Math.round(board.y + insetTop + stepY * Math.floor(index / columns)),

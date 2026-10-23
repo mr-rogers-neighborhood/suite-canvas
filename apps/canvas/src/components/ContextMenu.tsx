@@ -25,6 +25,15 @@ const itemClass = (danger?: boolean) =>
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
+  const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
+  // The menu is portalled at the pointer, which can be at the bottom-right of a
+  // narrow pane. Clamp it to the viewport instead of opening off-screen.
+  const menuLeft = Math.max(8, Math.min(x, viewportWidth - 208));
+  const menuTop = Math.max(8, Math.min(y, viewportHeight - (items.length * 32 + 16)));
+  // A submenu that always opens rightward disappears off a narrow window. Flip
+  // it to the left of its parent when the menu was opened near the right edge.
+  const flipSubmenu = x + 360 > viewportWidth;
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -50,7 +59,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         data-testid="context-menu"
         role="menu"
         className="fixed z-50 min-w-[180px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
-        style={{ left: x, top: y }}
+        style={{ left: menuLeft, top: menuTop }}
         onContextMenu={(event) => event.preventDefault()}
       >
         {items.map((item) =>
@@ -64,7 +73,9 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                 className={itemClass(item.danger)}
                 onMouseEnter={() => setOpenSubmenu(item.label)}
                 onFocus={() => setOpenSubmenu(item.label)}
-                onClick={() => setOpenSubmenu(openSubmenu === item.label ? null : item.label)}
+                // Pointer hover already opened it; a click must not toggle it
+                // shut again. Escape or an outside click closes the menu.
+                onClick={() => setOpenSubmenu(item.label)}
               >
                 {item.label}
                 <span aria-hidden="true" className="text-xs opacity-60">
@@ -76,7 +87,9 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                   role="menu"
                   aria-label={item.label}
                   data-testid="context-submenu"
-                  className="absolute left-full top-0 ml-1 min-w-[170px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+                  className={`absolute top-0 min-w-[170px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl ${
+                    flipSubmenu ? "right-full mr-1" : "left-full ml-1"
+                  }`}
                 >
                   {item.items.map((subItem) => (
                     <button

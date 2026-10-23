@@ -338,7 +338,11 @@ describe("WorkspaceLauncher passphrase choice at creation", () => {
 
     await waitFor(() => expect(screen.getByTestId("recovery-prompt")).toBeVisible());
     fireEvent.click(screen.getByTestId("recovery-prompt-save"));
-    expect(download).toHaveBeenCalledWith(workspaceId, generated, "Untitled workspace");
+    expect(download).toHaveBeenCalledWith(
+      workspaceId,
+      generated,
+      expect.stringMatching(/^[A-Z][a-z]+ [A-Z][a-z]+$/),
+    );
   });
 
   it("refuses a weak passphrase with the reason instead of only disabling the button", async () => {

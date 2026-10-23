@@ -49,9 +49,11 @@ import {
 import { nodeTypes } from "./NoteNode";
 import type { CardNodeData } from "./nodeData";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
+import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
 import { PortalTransitionLayer } from "./PortalTransitionLayer";
 import { PresenceLayer } from "./PresenceLayer";
+import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
 
@@ -1157,12 +1159,20 @@ export function CanvasBoard() {
         boardId: activeBoardId,
         targetBoardId,
         position,
+        // Shaped like the board it opens, measured from the same snapshot the
+        // miniature draws from, so the card and its picture agree.
+        size: portalSizeForBounds(
+          boardBounds(
+            snapshot.sections.filter((section) => section.boardId === targetBoardId),
+            snapshot.placements.filter((placement) => placement.boardId === targetBoardId),
+          ),
+        ),
       });
       store.getState().unselectNodesAndEdges();
       store.getState().addSelectedNodes([card.id]);
       setSelectedNodeIds([card.id]);
     },
-    [workspace, activeBoardId, setSelectedNodeIds, store, canCreateContent],
+    [workspace, activeBoardId, setSelectedNodeIds, store, canCreateContent, snapshot],
   );
 
   /** "New board and portal": stay here and open the new board from the card. */
@@ -2170,7 +2180,6 @@ export function CanvasBoard() {
             enterPortal(node.id, targetBoardId);
             return;
           }
-          if (isEditorTarget(event)) return;
           openCardFocus(node.id);
         }}
         onMoveStart={(_event, viewport) => {

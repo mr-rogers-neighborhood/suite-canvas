@@ -6,6 +6,7 @@ import {
   sectionLineage,
   unionRect,
 } from "@suite/graph";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 
 export interface SectionOffset {
   dx: number;
@@ -26,9 +27,6 @@ export interface SectionRectUpdate {
   height: number;
 }
 
-/** A card with no stored size keeps the same default the canvas renders. */
-const DEFAULT_CARD_WIDTH = 224;
-const DEFAULT_CARD_HEIGHT = 160;
 /** Breathing room a section keeps around the cards it grows to fit. */
 const EXPAND_PADDING = 24;
 /** Overflow a section tolerates before it is grown. */

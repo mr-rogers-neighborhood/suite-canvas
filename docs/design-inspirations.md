@@ -176,7 +176,7 @@ remain single-document operations.
 navigation need. Loading a board must not require loading every body. The card doc is where the
 bytes are, where carets and per-card undo live, and — critically — where a card-level ACL can apply.
 The split also gives a natural share boundary: one card document is the unit that can be shared
-"like a Notion page" without handing over the workspace index.
+like a Notion page without handing over the workspace index.
 
 **What belongs in the index summary:**
 

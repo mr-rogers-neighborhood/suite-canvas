@@ -1,5 +1,6 @@
 import { useReactFlow, type Viewport } from "@xyflow/react";
 import { useCallback, useEffect, useRef } from "react";
+import { prefersReducedMotion } from "../canvas/localEasing";
 import { isShareSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { CardFocusSurface } from "./CardFocusSurface";
@@ -18,7 +19,6 @@ const FOCUS_RETRY_FRAMES = 60;
 export function CardFocusHost() {
   const cardFocusId = useUiStore((state) => state.cardFocusId);
   const closeCardFocus = useUiStore((state) => state.closeCardFocus);
-  const inspectorOpen = useUiStore((state) => state.inspectorNodeId !== null);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const editingSurface = useUiStore((state) => state.editingSurface);
@@ -66,6 +66,32 @@ export function CardFocusHost() {
     return () => cancelAnimationFrame(frame);
   }, [cardId, startEditing]);
 
+  // The zoom trick: the sheet grows out of the card's own rectangle, the same
+  // way a portal grows its target board. The card is still mounted under the
+  // surface, so its rect is read from the DOM instead of threaded through state.
+  useEffect(() => {
+    if (!cardId) return;
+    const sheet = document.querySelector<HTMLElement>(".card-focus__sheet");
+    if (!sheet || typeof sheet.animate !== "function" || prefersReducedMotion()) return;
+    const card = document.querySelector<HTMLElement>(
+      `[data-testid="node-card"][data-node-id="${cardId}"]`,
+    );
+    const from = card?.getBoundingClientRect();
+    if (!from || from.width === 0) return;
+    const to = sheet.getBoundingClientRect();
+    const dx = from.x + from.width / 2 - (to.x + to.width / 2);
+    const dy = from.y + from.height / 2 - (to.y + to.height / 2);
+    const scale = Math.max(0.12, Math.min(1, from.width / to.width));
+    const animation = sheet.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: 0.4 },
+        { transform: "translate(0, 0) scale(1)", opacity: 1 },
+      ],
+      { duration: 260, easing: "cubic-bezier(0.32, 0.72, 0, 1)" },
+    );
+    return () => animation.cancel();
+  }, [cardId]);
+
   const close = useCallback(() => closeCardFocus(), [closeCardFocus]);
 
   if (!model) return null;
@@ -74,7 +100,7 @@ export function CardFocusHost() {
     editingNodeId === model.card.id && editingSurface === "focus" ? editingField : null;
 
   return (
-    <CardFocusSurface title={model.title} onClose={close} insetRight={inspectorOpen ? 344 : 0}>
+    <CardFocusSurface title={model.title} onClose={close}>
       <CardPanel
         card={model.card}
         title={model.title}
@@ -85,7 +111,7 @@ export function CardFocusHost() {
         where={model.where}
         cards={model.cards}
         links={model.links}
-        variant="embedded"
+        variant="inspector"
         bodyEmpty={model.bodyEmpty}
         editing={focusEditing}
         cardDoc={model.cardDoc}

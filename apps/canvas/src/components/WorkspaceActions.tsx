@@ -137,7 +137,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           Share
         </button>
       ) : null}
-      <div className="relative" ref={menu}>
+      <div className="relative flex h-6 items-center" ref={menu}>
         <button
           type="button"
           aria-haspopup="menu"

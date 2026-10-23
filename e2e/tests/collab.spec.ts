@@ -488,13 +488,15 @@ test("switches and persists the color theme", async ({ page }) => {
   await page.goto(docUrl("theme"));
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
+  await page.getByTestId("theme-toggle").click();
   await page.getByTestId("theme-dark").click();
   await expect(page.locator("html")).toHaveClass(/dark/);
 
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect(page.getByTestId("theme-dark")).toHaveAttribute("data-checked", "true");
+  await expect(page.getByTestId("theme-toggle")).toHaveAttribute("data-mode", "dark");
 
+  await page.getByTestId("theme-toggle").click();
   await page.getByTestId("theme-light").click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });

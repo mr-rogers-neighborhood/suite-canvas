@@ -13,8 +13,13 @@ export interface DraggedNode {
 }
 
 /** Card box assumed until React Flow has measured it, matching the canvas default. */
-export const DEFAULT_CARD_WIDTH = 224;
-export const DEFAULT_CARD_HEIGHT = 160;
+/**
+ * Default card box in flow units. Deliberately large and close to square: a
+ * card is a place to read and write, not a label, and a squarer box keeps the
+ * title and the first lines of the body visible at the default zoom.
+ */
+export const DEFAULT_CARD_WIDTH = 288;
+export const DEFAULT_CARD_HEIGHT = 240;
 
 export interface SelectionSummary {
   /** Distinct card ids, in the order given. */

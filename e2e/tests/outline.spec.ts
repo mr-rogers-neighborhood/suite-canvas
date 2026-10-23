@@ -53,9 +53,15 @@ test("lists nested sections in reading order with member counts", async ({ page 
 
   // Grow the outer region, then drop the inner one inside it.
   const outerRegion = regionFor(page, "Outer");
+  // Fit first: a section is at least a card plus padding, and the bottom-right
+  // corner is where the selection click used to land. Off-screen there means no
+  // selection, no handle, and a silent zero.
+  await page.locator(".react-flow__controls-fitview").click();
+  await page.waitForTimeout(400);
   const before = await outerRegion.boundingBox();
   if (!before) throw new Error("outer section not visible");
-  await page.mouse.click(before.x + before.width - 12, before.y + before.height - 12);
+  // The padding band on the left edge is region, not card.
+  await page.mouse.click(before.x + 6, before.y + before.height / 2);
 
   const handle = await page.getByTestId("section-handle-se").boundingBox();
   if (!handle) throw new Error("resize handle not visible");

@@ -3,8 +3,30 @@ import { PresenceAvatars } from "../components/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
 
-/** Fallback frame for a portal that has never been resized. */
-export const DEFAULT_PORTAL_SIZE = { width: 288, height: 208 } as const;
+/** Fallback frame for a portal that has never been resized, or whose board is empty. */
+export const DEFAULT_PORTAL_SIZE = { width: 288, height: 256 } as const;
+/** Longest side of a new portal's frame, and the clamps on the shorter one. */
+const PORTAL_LONG_SIDE = 300;
+const PORTAL_MIN_SIDE = 168;
+const PORTAL_MAX_SIDE = 340;
+
+/**
+ * A new portal is shaped like the board it opens, so its miniature reads as a
+ * scaled picture of that board instead of a drawing floating in a mismatched
+ * frame. An empty or missing board gets the neutral square default.
+ */
+export function portalSizeForBounds(bounds: { width: number; height: number } | null): {
+  width: number;
+  height: number;
+} {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return { ...DEFAULT_PORTAL_SIZE };
+  const ratio = bounds.width / bounds.height;
+  const clamp = (value: number) => Math.min(PORTAL_MAX_SIDE, Math.max(PORTAL_MIN_SIDE, value));
+  if (ratio >= 1) {
+    return { width: PORTAL_LONG_SIDE, height: clamp(PORTAL_LONG_SIDE / ratio) };
+  }
+  return { width: clamp(PORTAL_LONG_SIDE * ratio), height: PORTAL_LONG_SIDE };
+}
 
 export interface PortalCardProps {
   /** Target board's name, or null when the stored id no longer resolves. */
@@ -86,7 +108,14 @@ export function PortalCard({
         <PresenceAvatars users={[...peers]} max={3} />
       </header>
 
-      <div className="portal-card__frame">
+      {/* The frame takes the target board's shape, so the drawing fills it rather
+          than letterboxing inside a box chosen for its own sake. */}
+      <div
+        className="portal-card__frame"
+        style={{
+          aspectRatio: `${model.viewBox.width} / ${model.viewBox.height}`,
+        }}
+      >
         {unavailable ? (
           <p className="portal-card__missing" data-testid="portal-unavailable">
             Unavailable board

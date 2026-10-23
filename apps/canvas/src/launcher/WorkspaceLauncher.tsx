@@ -4,6 +4,7 @@ import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
 import { isShareSession } from "../session/session";
 import {
   forgetWorkspaceName,
+  friendlyWorkspaceName,
   readWorkspaceNames,
   refreshWorkspaceNames,
   rememberWorkspaceName,
@@ -130,7 +131,7 @@ export function WorkspaceLauncher() {
   /** The one place a new workspace is written, whichever key was chosen. */
   const openCreated = (workspaceId: string, ownerKey: string) => {
     writeOwnerKey(workspaceId, ownerKey);
-    rememberWorkspace({ id: workspaceId, title: "Untitled workspace" });
+    rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
     const url = new URL(workspaceUrl(workspaceId, null, ownerKey));
     url.searchParams.set("fresh", "1");
     navigateTo(url.toString());

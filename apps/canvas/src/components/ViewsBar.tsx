@@ -172,11 +172,11 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
         data-testid="views-menu-button"
         data-active={activeView ? "true" : undefined}
         title={activeView ? `View: ${activeView.name}` : "Saved views"}
-        className="max-w-[160px] truncate rounded px-2 py-1 text-[12px] text-[var(--ink-muted)] transition-colors hover:bg-black/[0.04] dark:hover:bg-white/10"
+        className="views-bar__button inline-flex h-6 max-w-[160px] items-center truncate px-0 text-[12px] leading-none text-[var(--ink-muted)] transition-colors hover:text-[var(--ink)]"
         onClick={() => (open ? close() : setOpen(true))}
       >
         {activeView ? activeView.name : "Views"}
-        <span aria-hidden="true" className="ml-1 text-[10px] opacity-70">
+        <span aria-hidden="true" className="ml-1.5 text-[12px] leading-none opacity-80">
           {"\u25b8"}
         </span>
       </button>

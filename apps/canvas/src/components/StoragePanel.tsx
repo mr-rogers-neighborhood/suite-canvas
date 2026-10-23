@@ -95,7 +95,7 @@ export function StoragePanel({ workspaceId }: { workspaceId: string }) {
   const atRisk = persist === "denied" || persist === "unsupported";
 
   return (
-    <div className="pointer-events-auto relative" data-testid="storage-panel-host">
+    <div className="storage-host pointer-events-auto relative" data-testid="storage-panel-host">
       <button
         type="button"
         data-testid="storage-status"

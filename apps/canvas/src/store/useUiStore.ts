@@ -332,7 +332,10 @@ export const useUiStore = create<UiState>((set) => ({
     // stack overlays and write a second board switch.
     set((state) => (state.portalEntry ? state : { portalEntry: request })),
   clearPortalEntry: () => set({ portalEntry: null }),
-  openCardFocus: (cardFocusId) => set({ cardFocusId, inspectorFieldId: null }),
+  openCardFocus: (cardFocusId) =>
+    // Focus owns the canvas: the drawer would duplicate the same card and
+    // reserve a strip of the focus surface.
+    set({ cardFocusId, inspectorNodeId: null, inspectorFieldId: null }),
   closeCardFocus: () =>
     set((state) => ({
       cardFocusId: null,

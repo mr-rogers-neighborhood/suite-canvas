@@ -26,9 +26,9 @@ export const Reconnecting: Story = {
 
 /** A share link names what the reader can do where a live session says Live. */
 export const ViewerShare: Story = {
-  args: { status: "connected", role: "viewer", documentId: "Board share" },
+  args: { status: "connected", role: "viewer", workspaceName: "Board share" },
 };
 
 export const EditorShare: Story = {
-  args: { status: "connected", role: "editor", documentId: "workspace-notes" },
+  args: { status: "connected", role: "editor", workspaceName: "Quiet Harbor" },
 };

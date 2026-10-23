@@ -1,9 +1,9 @@
 import { sectionForCard, sectionMembership } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
+import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { TAB_ID } from "./collab/tabId";
@@ -26,15 +26,20 @@ import { countRender } from "./dev/perf";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
+import {
+  friendlyWorkspaceName,
+  readWorkspaceNames,
+  rememberWorkspaceName,
+} from "./session/workspaceName";
 import { rememberWorkspace } from "./session/workspaceTransfer";
 import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme } from "./theme/useThemeStore";
 
-/** Card glyph box in flow units: `w-56` wide, tall enough for a header + one line. */
-const CARD_HALF_WIDTH = 112;
-const CARD_HALF_HEIGHT = 40;
+/** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
+const CARD_HALF_WIDTH = 144;
+const CARD_HALF_HEIGHT = 60;
 
 /** What the app bar calls this document. A share never names its owner's workspace. */
 function documentLabel(share: ShareSession, workspaceId: string): string {
@@ -76,6 +81,7 @@ function WorkspaceShell({
   share: ShareSession | null;
 }) {
   const workspace = useCanvasStore((state) => state.workspace);
+  const [workspaceName, setWorkspaceName] = useState(() => workspace.workspaceName());
   const connect = useCanvasStore((state) => state.connect);
   const provider = useCanvasStore((state) => state.provider);
   const presence = useCanvasStore((state) => state.presence);
@@ -107,6 +113,7 @@ function WorkspaceShell({
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
+  const cardFocusId = useUiStore((state) => state.cardFocusId);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const readOnly = useUiStore((state) => state.readOnly);
@@ -119,29 +126,29 @@ function WorkspaceShell({
   const setBoard = usePresenceStore((state) => state.setBoard);
   const bindPresence = usePresenceStore((state) => state.bind);
   const peerCount = usePresenceStore((state) => Object.keys(state.peers).length);
-  // One dot per board with company; the value is primitives so a pointer tick
-  // on the same board does not re-render the shell.
-  const peersByBoard = usePresenceStore(
-    useShallow((state) => {
-      const names = new Map<string, Set<string>>();
-      const colors = new Map<string, string>();
-      for (const peer of Object.values(state.peers)) {
-        if (!peer.board) continue;
-        const set = names.get(peer.board) ?? new Set<string>();
-        set.add(peer.user.name);
-        names.set(peer.board, set);
-        if (!colors.has(peer.board)) colors.set(peer.board, peer.user.color);
-      }
-      const map: Record<string, BoardPresence> = {};
-      for (const [boardId, set] of names) {
-        map[boardId] = {
-          label: [...set].sort().join(", "),
-          color: colors.get(boardId) ?? "var(--section-violet)",
-        };
-      }
-      return map;
-    }),
-  );
+  // One dot per board with company. The store's peer map is replaced only when
+  // presence changes, so this memo is stable between pointer ticks; `useShallow`
+  // is not enough because each board's label/colour pair is a new object.
+  const peers = usePresenceStore((state) => state.peers);
+  const peersByBoard = useMemo(() => {
+    const names = new Map<string, Set<string>>();
+    const colors = new Map<string, string>();
+    for (const peer of Object.values(peers)) {
+      if (!peer.board) continue;
+      const set = names.get(peer.board) ?? new Set<string>();
+      set.add(peer.user.name);
+      names.set(peer.board, set);
+      if (!colors.has(peer.board)) colors.set(peer.board, peer.user.color);
+    }
+    const map: Record<string, BoardPresence> = {};
+    for (const [boardId, set] of names) {
+      map[boardId] = {
+        label: [...set].sort().join(", "),
+        color: colors.get(boardId) ?? "var(--section-violet)",
+      };
+    }
+    return map;
+  }, [peers]);
   const activateBoard = useUiStore((state) => state.activateBoard);
   const goBackBoard = useUiStore((state) => state.goBackBoard);
   const boardHistory = useUiStore((state) => state.boardHistory);
@@ -187,12 +194,24 @@ function WorkspaceShell({
     workspace.ensureDefaultTypes();
     if (!workspace.hasSeeded()) {
       const board = workspace.ensureBoard();
+      // A direct URL can create the first document without the launcher, so
+      // the friendly default is applied here too; an existing name always wins.
+      if (!workspace.hasWorkspaceName()) {
+        workspace.renameWorkspace(friendlyWorkspaceName());
+        setWorkspaceName(workspace.workspaceName());
+      }
       // A workspace created from the launcher starts blank; older workspaces
       // keep the two-card demo they were seeded with.
       const fresh = new URLSearchParams(window.location.search).get("fresh") === "1";
       if (!fresh && workspace.listCards().length === 0) {
         workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
-        workspace.createCard({ id: "starter-2", boardId: board.id, position: { x: 320, y: 0 } });
+        // One card width plus a gap, so the two starters read as two cards and a
+        // section drawn around the first does not reach into the second.
+        workspace.createCard({
+          id: "starter-2",
+          boardId: board.id,
+          position: { x: DEFAULT_CARD_WIDTH + 192, y: 0 },
+        });
       }
       workspace.markSeeded();
     }
@@ -200,6 +219,25 @@ function WorkspaceShell({
     // runs after the first sync so mentions that arrived offline are indexed too.
     workspace.ensureReferences();
   }, [ready, synced, workspace, readOnly, share]);
+
+  useEffect(() => {
+    document.title = `${workspaceName} — Suite`;
+  }, [workspaceName]);
+
+  // The launcher may have named this workspace before its document existed.
+  // Adopt that mirror once, and only when the document has no name of its own.
+  useEffect(() => {
+    if (!ready || !synced || share || readOnly || workspace.hasWorkspaceName()) return;
+    const mirror = readWorkspaceNames()[workspaceId]?.trim();
+    if (!mirror) return;
+    try {
+      workspace.renameWorkspace(mirror);
+      setWorkspaceName(workspace.workspaceName());
+    } catch {
+      // A name that no longer validates stays in the mirror; the document keeps
+      // its derived label rather than failing the boot.
+    }
+  }, [ready, synced, share, readOnly, workspace, workspaceId]);
 
   // Resolve the board from the URL, falling back to the first one.
   useEffect(() => {
@@ -440,7 +478,18 @@ function WorkspaceShell({
         status={standalone ? "disconnected" : status}
         {...(share ? { role: share.role } : {})}
         peerCount={standalone ? 0 : peerCount}
-        documentId={share ? documentLabel(share, workspaceId) : workspaceId}
+        workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
+        canRenameWorkspace={!share && !readOnly}
+        onRenameWorkspace={(name) => {
+          try {
+            workspace.renameWorkspace(name);
+            rememberWorkspaceName(workspaceId, workspace.workspaceName());
+            setWorkspaceName(workspace.workspaceName());
+            return null;
+          } catch (cause) {
+            return cause instanceof Error ? cause.message : "Could not rename the workspace.";
+          }
+        }}
         actions={
           // Share sessions only exist on a relay. The literal is inlined by Vite,
           // so a standalone build drops this branch — and the publish button and
@@ -473,7 +522,16 @@ function WorkspaceShell({
       >
         {workspaceSurface ? (
           <>
-            {boardHistory.length > 0 && activeBoardId ? (
+            <div className="views-bar">
+              <ViewsBar canManage={canManageSchema} />
+            </div>
+            {/*
+              A way back exists only where the reader was *taken* somewhere: a
+              portal entry. Tab clicks already leave every board one click away,
+              so a chevron for those was a second, single-direction control in
+              the busiest corner of the bar.
+            */}
+            {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
               <button
                 type="button"
                 data-testid="portal-back"
@@ -512,7 +570,6 @@ function WorkspaceShell({
                 setBoardToDelete(boardId);
               }}
             />
-            <ViewsBar canManage={canManageSchema} />
           </>
         ) : null}
       </TitleBar>
@@ -557,7 +614,7 @@ function WorkspaceShell({
         <CardFocusHost />
       </main>
 
-      {workspaceSurface && !readOnly ? (
+      {workspaceSurface && !readOnly && !cardFocusId ? (
         <Dock
           inboxCount={unplaced.length}
           libraryOpen={libraryOpen}

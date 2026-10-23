@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -11,10 +12,14 @@ export interface TitleBarProps {
    */
   role?: TitleBarRole;
   peerCount?: number;
-  documentId?: string;
-  /** Board switcher, rendered between the document id and the status. */
+  /** The workspace's own label; a share passes its scope label instead. */
+  workspaceName?: string;
+  canRenameWorkspace?: boolean;
+  /** Returns a readable error, or null when the rename was accepted. */
+  onRenameWorkspace?: (name: string) => string | null;
+  /** Board switcher and saved views, rendered after the workspace name. */
   children?: React.ReactNode;
-  /** Workspace-level actions (share, export), rendered before the status. */
+  /** Workspace-level actions (share, export), rendered before the theme. */
   actions?: React.ReactNode;
 }
 
@@ -38,35 +43,90 @@ export function TitleBar({
   status,
   role,
   peerCount = 0,
-  documentId,
+  workspaceName,
+  canRenameWorkspace = false,
+  onRenameWorkspace,
   children,
   actions,
 }: TitleBarProps) {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(workspaceName ?? "");
+  const [error, setError] = useState<string | null>(null);
   const statusLabel =
     status === "connected" && role
       ? role === "viewer"
         ? "Viewer"
         : "Editor"
       : STATUS_LABEL[status];
+
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
       <a
         href="/"
         aria-label="Back to workspace launcher"
-        className="flex items-center hover:opacity-70"
+        className="flex shrink-0 items-center hover:opacity-70"
       >
         <img src="/suite-logo-black.svg" alt="" className="h-6 w-auto dark:hidden" />
         <img src="/suite-logo-white.svg" alt="" className="hidden h-6 w-auto dark:block" />
       </a>
 
-      {documentId ? (
-        <span className="truncate text-[11px] text-[var(--ink-muted)]">{documentId}</span>
+      {workspaceName ? (
+        renaming ? (
+          <input
+            // biome-ignore lint/a11y/noAutofocus: the label is an explicit rename gesture
+            autoFocus
+            value={draft}
+            aria-label="Workspace name"
+            data-testid="workspace-name-input"
+            className="workspace-name-input"
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setError(null);
+            }}
+            onBlur={() => {
+              const problem = onRenameWorkspace?.(draft) ?? null;
+              if (problem) {
+                setError(problem);
+                return;
+              }
+              setRenaming(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                setRenaming(false);
+                setDraft(workspaceName);
+                setError(null);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            data-testid="workspace-name"
+            title={canRenameWorkspace ? "Rename workspace" : workspaceName}
+            className="workspace-name"
+            onClick={() => {
+              if (!canRenameWorkspace) return;
+              setDraft(workspaceName);
+              setError(null);
+              setRenaming(true);
+            }}
+          >
+            {workspaceName}
+          </button>
+        )
+      ) : null}
+      {error ? (
+        <span role="alert" className="workspace-name-error">
+          {error}
+        </span>
       ) : null}
 
-      {children ? <div className="ml-2 flex min-w-0 items-center">{children}</div> : null}
+      {children ? <div className="ml-2 flex min-w-0 flex-1 items-center">{children}</div> : null}
 
-      <div className="ml-auto flex items-center gap-3">
-        {actions}
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         <span
           data-testid="sync-status"
           data-role={role}
@@ -76,6 +136,7 @@ export function TitleBar({
           {statusLabel}
           {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
         </span>
+        {actions}
         <ThemeToggle />
       </div>
     </header>

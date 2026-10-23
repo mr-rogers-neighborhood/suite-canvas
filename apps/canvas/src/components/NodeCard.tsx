@@ -2,6 +2,7 @@ import type { Card, CardType, Connector as ConnectorModel } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
@@ -72,6 +73,8 @@ export interface NodeCardProps {
   linkCount?: number;
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
+  /** Double-clicking the card opens the full-canvas focus surface. */
+  onFocusCard?: () => void;
   onTrash?: () => void;
   /** Copies the card; a session that may not create content never passes it. */
   onDuplicate?: () => void;
@@ -123,6 +126,7 @@ export function NodeCard({
   onRemoveFromBoard,
   linkCount = 0,
   onOpenInfo,
+  onFocusCard,
   onTrash,
   onDuplicate,
   moveTargets = [],
@@ -190,7 +194,7 @@ export function NodeCard({
           : {};
 
   const cardClass = [
-    "node-card relative flex w-56 flex-col rounded-md border border-[var(--hairline)]",
+    "node-card relative flex flex-col rounded-md border border-[var(--hairline)]",
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
@@ -220,6 +224,7 @@ export function NodeCard({
           },
         ]
       : []),
+    ...(onFocusCard ? [{ label: "Open in focus", onSelect: () => onFocusCard() }] : []),
     ...(editContent
       ? [
           { label: "Edit title", onSelect: () => onStartEditing?.("title") },
@@ -241,10 +246,13 @@ export function NodeCard({
       data-resizing-by-peer={resizingPeer ? "true" : undefined}
       data-board-id={boardId}
       className={cardClass}
+      // The default box comes from the shared constants, so an unstored card
+      // measures exactly what the canvas, the section fit and the drop offset
+      // assume. A resized card overrides both from its placement.
       style={{
         ...presenceStyle,
-        ...(width ? { width } : {}),
-        ...(height ? { height } : {}),
+        width: width ?? DEFAULT_CARD_WIDTH,
+        height: height ?? DEFAULT_CARD_HEIGHT,
       }}
       onPointerDown={(event) => {
         pointerOrigin.current = { x: event.clientX, y: event.clientY };

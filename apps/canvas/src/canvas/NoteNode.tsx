@@ -13,9 +13,15 @@ import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 
-/** A duplicate lands slightly down-right of its source, like a paper copy. */
-const DUPLICATE_OFFSET = { x: 24, y: 24 };
+/**
+ * A duplicate lands down-right of its source, like a paper copy. The offset is
+ * a tenth of the card box rather than a fixed number of pixels: at the default
+ * size a copy must step clear of the original, and at a small zoom a fixed 24
+ * put it almost exactly on top, so a click aimed at the copy hit the original.
+ */
+const DUPLICATE_OFFSET = { x: DEFAULT_CARD_WIDTH / 10, y: DEFAULT_CARD_HEIGHT / 10 };
 
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
@@ -245,6 +251,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
+        onFocusCard={() => useUiStore.getState().openCardFocus(id)}
         {...(canCreateContent ? { onDuplicate: duplicate } : {})}
         {...(canEditLayout ? { moveTargets, onMoveToBoard: moveToBoard } : {})}
         {...(canManageTrash ? { onTrash: () => workspace.trashCard(id) } : {})}

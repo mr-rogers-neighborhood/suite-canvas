@@ -1133,9 +1133,11 @@ title bar, the board tabs, and the two menus that change what they see.
 | **Workspace name in the title bar** | The workspace name sits next to the logo and is editable in place. Rename persists in the workspace document, updates the document title, and survives reload. |
 | **Friendly default names** | A new workspace gets a human name (for example an adjective-noun pair), not a UUID or "Untitled" repeated forever. The id remains stable and hidden. |
 | **Board tabs as objects** | Right-click a board tab for Rename, Duplicate, Move left/right, and Delete. Keyboard equivalents work; a tab is not renamed by an accidental double-click alone. |
+| **Close is not delete** | Closing a board tab files the board into Views instead of destroying it (see §4.12). Delete stays a separate, confirmed action. |
 | **One theme control** | Replace the three-segment control with one icon button and a menu (Light, Dark, Auto). The icon morphs sun↔moon on change, and the morph is skipped under `prefers-reduced-motion`. |
-| **Views in the right cluster** | Views moves next to the theme/account controls, leaving the centre for board identity. It stays reachable on a narrow window through the overflow menu. |
+| **Views beside the name** | Views sits between the workspace name and the board tabs as a text menu with a divider, so it reads as a scope switch rather than a button crowded against the first tab. |
 | **One control height** | Share, File, Live, Views and the theme control share a single 24 px row height and baseline. Report any surface that cannot meet it. |
+| **No orphan navigation** | The only back affordance is the one out of a portal entry. Tab clicks leave every board one click away, so a second single-direction chevron next to Views is removed; see §4.13 for the replacement. |
 | **Menus follow the keyboard** | Arrow navigation scrolls the active row into view in `/`, `@`, and every menu with a scrollport. A selection never disappears past the end of the list. |
 
 **Why it belongs in Beta.** These are the surfaces a stranger touches before they understand the
@@ -1145,6 +1147,70 @@ good the canvas is.
 **Acceptance evidence.** A first-run workspace opens with a friendly name; rename survives reload;
 board-tab menu operations are covered by e2e; the theme control has one focus stop and a
 reduced-motion path; the menu-scroll regression is covered by a keyboard e2e case.
+
+### 4.12 A board is a view — closing files it into Views (pinned for discussion)
+
+**The idea.** A board tab is the *primary view* of a board. Closing that tab should therefore not
+be a destructive or a library trip: it should **put the board into Views**, where it can be reopened.
+Delete stays a separate action, and unplacing or trashing the board's cards belongs under the
+right-click menu plus a row inside the Views dropdown while the board is filed there.
+
+This makes three things true at once, which is why it is worth deciding deliberately rather than
+implementing as a UI shortcut:
+
+1. **Navigation becomes reversible.** Close is a filing gesture, so a mis-click costs a reopen, not
+   a board.
+2. **Views becomes a container, not just a filter.** Today a saved view is a stored query. If boards
+   can be filed into it, Views is a place with contents — boards, saved queries, and (later) scenes.
+   That is a real model change and needs its own answer for ordering, nesting, and projection.
+3. **It raises the board/view question.** If a board is a view, then a saved view that selects cards
+   and a board that places them are two presentations of the same idea. That is exactly the §5.1
+   `D7` decision in [V2](./v2.md) (does a saved view store its presentation?) arriving early.
+
+**Questions to settle before building.**
+- Is "closed" a per-user UI state or a workspace fact? A board another client is viewing must not
+  vanish because one person closed their tab.
+- Does a closed board keep its portal cards live? A portal to a filed board must still read as
+  available, not *Unavailable board*.
+- Where do closed boards sort, and can they be grouped with saved views in one list?
+- Does the Views dropdown show contents (boards, views) or only queries?
+- What is the difference, in the UI, between *close*, *delete*, and *unplace the cards*?
+
+**Not in Beta scope until decided.** Recorded here so the two candidate designs stay visible and the
+Alpha tab behaviour is not mistaken for a commitment.
+
+### 4.13 Navigation menu and integrated command bar (pinned)
+
+Raised after the portal back control turned up beside Views: the bar has no single place for "where
+can I go" and "do a thing", and what it has is a chevron that only moves one direction.
+
+**The idea.** One **navigation control** in the app bar, replacing ad-hoc navigation buttons:
+
+1. **A nav menu** opening from it: Home (the workspace launcher), the board list with its ordering,
+   recent boards, and the closed/filed boards from §4.12. Not a second tab strip — a list that can
+   carry grouping, history and labels the strip cannot.
+2. **A Home button** as the first row of that menu, so "get me out of here" is one predictable target.
+3. **An integrated command bar.** The control shows a shortcut hint (for example `⌘K`, which the
+   dock already uses for library search) until activated; activation **expands the control into the
+   tab strip's space**, takes a query, and collapses back to an icon on commit or Escape. One
+   surface that is a label at rest and an input when wanted, instead of a permanent search field.
+
+**Why it is worth its own discussion.** Three things collide here: the tab strip's width budget, the
+existing `⌘K` library search, and §4.12's proposal that Views becomes a container. If boards, filed
+boards and saved views all live in one nav surface, the *tab strip* narrows to "what I am using right
+now" and everything else moves into the menu. That is a real information-architecture decision, not
+chrome.
+
+**Questions to settle.**
+- Does the command bar search *everything* (boards, cards, views, commands) or only navigate?
+- Does expanding over the tab strip hide the tabs, or shift them?
+- What happens to the dock's `⌘K` if the command bar claims it? One shortcut must own it.
+- Is Home the launcher, or the workspace's first board?
+- Does the nav menu replace the tab strip at narrow widths, or scroll with it?
+
+**Not in Beta scope until decided.** The interim change is smaller and honest: remove the
+single-direction chevron, keep the portal back control, and leave the tab strip as the only board
+navigation.
 
 ---
 ## 5. Free backup options

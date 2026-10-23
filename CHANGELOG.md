@@ -36,6 +36,17 @@ not open.
 - Dependabot for `npm` and `github-actions`, weekly and grouped.
 - A tag-driven release workflow that pushes the runtime image to GHCR and
   opens a GitHub release with the changelog section and image digest.
+- Portals: a portal card points at another board, renders a snapshot miniature,
+  and enters it through a 320 ms camera transition with a back stack. Peer dots
+  appear on portal cards and board tabs.
+- Card focus: double-clicking a card, or choosing Edit in the inspector, opens
+  the same card surface over the canvas; Escape restores the board.
+- Workspace identity: the title bar shows an editable workspace name, new
+  workspaces get a friendly default, and the browser title follows the name.
+- A single-icon theme menu (Light, Dark, Auto) with a reduced-motion-aware
+  sun/moon transition; Views is a text menu beside the workspace name.
+- The `/`, `@`, and context menus scroll/flip to keep the active row and
+  submenu visible, and app-bar controls share one 24 px row.
 - The build version is reported by `/api/admin/status` and `/metrics`
   (`suite_build_info`).
 
@@ -52,7 +63,10 @@ not open.
 ### Fixed
 
 - Settings, licence claims and attachments were lost when a container was
-  recreated; all six stores are configured on the `suite-data` volume.
+  recreated; all six stores are configured on the `suite-data` volume, and
+  `SUITE_REQUIRE_DURABLE_STORES=1` refuses a disposable layout at boot.
+- Opening a second client could loop on an uncached board-presence object; the
+  map is now memoised on the peer set.
 - A deleted workspace could be written back by its live room seconds later; the
   room is closed on delete.
 - The stale light preview asset, which showed the retired sync engine, is

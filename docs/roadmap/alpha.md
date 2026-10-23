@@ -686,13 +686,26 @@ would pass today.
 commit proves the check is *required*. Branch protection is the difference between "we have CI" and
 "CI gates us".
 
-**A3 status: blocked externally (2026-10-23).** Actions is enabled, the workflow passes
-`actionlint` v1.7.12, and the remote file matches the local file. Every run, including
-`workflow_dispatch` and a one-line smoke workflow on a throwaway branch, ends in
-`startup_failure` with 0 jobs and 0 check runs. Branch protection and rulesets return
-`403: Upgrade to GitHub Pro or make this repository public`. A3 is therefore `failed` until Actions
-executes and the repository can require checks. The local gate is `pnpm verify` plus `pnpm e2e`; it
-does not close A3.
+**A3 status: `blocked` — account entitlement, not a code defect (re-verified 2026-10-23).** Actions is
+enabled (`enabled: true`, `allowed_actions: all`), the workflows pass `actionlint` v1.7.12, and the
+remote files match the local files. Every run, including `workflow_dispatch` and a one-line smoke
+workflow on a throwaway branch, ends in `startup_failure` with 0 jobs and 0 check runs. The same
+signature appears in a second private repository on this account (169 runs, none successful), and no
+run in either repository has ever produced a job, so this is not a regression in the YAML. Branch
+protection and rulesets return `403: Upgrade to GitHub Pro or make this repository public`.
+
+The cause is an account-level entitlement for hosted runners on private repositories — most likely
+exhausted included minutes or a zero spending limit. Nothing in this tree can change it.
+
+**What stands in for A3.** `pnpm verify` plus `pnpm e2e`, recorded with commands and output in
+[`docs/release.md`](../../docs/release.md) so the claim is reproducible by hand instead of taken on
+trust. That is weaker than a required check — a stranger cannot see it run — and A3 stays `blocked`
+rather than `open` until Actions executes and the repository can require checks.
+
+**What unlocks it, cheapest first.** Make the repository public (free, unmetered, and enables branch
+protection on the free plan); add a payment method or raise the spending limit (keeps it private);
+or attach a self-hosted runner on the operator's machine (no metered minutes, unverified against an
+admission block). The workflow files stay in place and correct so any of these needs no code change.
 
 **A4 — why a tag and not a version field.** `package.json` says `0.1.0` and `git tag` is empty ✅, so
 "which build are you running?" has no answer and no artifact to roll back to. The tag is the artifact.
@@ -734,7 +747,7 @@ owner is the maintainer/operator; no separate review board is implied.
 | --- | --- | --- |
 | A1 | `open` | Six stores on `/data`, backup/restore with attachments, and a recreate drill. `SUITE_REQUIRE_DURABLE_STORES=1` (set in `compose.yaml`) makes boot refuse an unset, `:memory:`, relative, or split store layout and names every offending variable. Evidence: `compose.yaml`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `apps/collab-server/src/config.ts` + `config.test.ts` (store-durability suite); `attachmentDurability.test.ts` |
 | A2 | `open` | `apps/canvas/src/collab/loroPersistence.ts`; `loroPersistence.test.ts` (two-instance and leader-takeover); ADR-0024 |
-| A3 | `failed` | See the A3 note in §7.1. Actions returns `startup_failure` with zero jobs; branch protection is unavailable on the private free repo. |
+| A3 | `blocked` | Account entitlement, not code: every run is `startup_failure` with zero jobs, in this repo and a second private one, with no successful run ever. The local gate (`pnpm verify` + `pnpm e2e`) is published in `docs/release.md`. Unlock by public repo, billing, or a self-hosted runner. See §7.1. |
 | A4 | `open` | `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |
 | A5 | `open` | `services/billing/handler.ts` (closed by default, `503` before signature), `docs/billing.md`, `.env.example` |
 | A6 | `open` | `apps/canvas/src/shell/ErrorBoundary.tsx`, `storage/durability.ts`, `components/StoragePanel.tsx`, `crash/*`, `compose.crash.yaml`; ADR-0025, ADR-0027 |
@@ -742,7 +755,7 @@ owner is the maintainer/operator; no separate review board is implied.
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
-| A11 | `measuring` | Data model merged: `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029. Canvas slice (portal card, miniature, transition, presence, card focus) is in progress; acceptance checklist in §7.4. |
+| A11 | `open` | `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029; portal card + miniature + camera transition + back stack + cross-board presence + card focus. Evidence: `apps/canvas/src/canvas/Portal*.tsx`, `BoardMiniature.tsx`, `portalMiniature.ts`, `components/CardFocus*.tsx`; `useUiStore.ts`; `e2e/tests/portals.spec.ts` (enter, back, cycle, focus, missing target). |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -800,6 +813,9 @@ The card remains the same object; no second editor model.
   a non-goal for this slice.
 - The first slice is one level of nesting plus a back stack, not arbitrary depth.
 - Tab grouping and cross-board edges are follow-ons, not part of the first slice.
+
+**Status:** `open` (first slice). Portal retargeting in the inspector and arbitrary nesting are
+follow-ons.
 
 **Acceptance for the first slice.**
 - A portal can be created from the right-click menu and the Add card/type menu.
@@ -1133,7 +1149,7 @@ only**, not the document plane. **Topology** is single-node with published limit
 
 | # | Question | Why it is open | Who decides | Marker |
 | --- | --- | --- | --- | --- |
-| Q1 | Is the Actions `startup_failure` an account/repo setting, an org policy, or a billing state? | The audit could not distinguish cause from symptom; it affects A3 directly | Operator | ◐ |
+| Q1 | Is the Actions `startup_failure` an account/repo setting, an org policy, or a billing state? | Answered as far as evidence allows: it reproduces in two private repos with no successful run ever, which points at account entitlement rather than a policy or YAML. The billing page itself needs the `user` token scope to read, so the exact number is unconfirmed | Operator | ◐ |
 | Q2 | Does Alpha require a service worker, or is "offline means the tab stays open" an acceptable Alpha/Beta scope? | Both are defensible; the second is smaller in scope and must then be written down and shown in the UI | Product | ○ |
 | Q3 | Is `navigator.storage.persist()` enough, or is a visible "your browser may evict this" state required? | Persistence is requested, not guaranteed; silent eviction is a data-loss path | Product | ○ |
 | Q4 | Does A5 close by building a durable billing store or by turning hosted checkout off? | Both make the billing state accurate; they differ significantly in cost | Operator | ○ |

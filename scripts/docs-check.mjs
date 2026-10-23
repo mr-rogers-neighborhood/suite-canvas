@@ -113,7 +113,12 @@ function relativePath(path) {
   return relative(root, path).split(sep).join("/");
 }
 
-/** GitHub's heading anchor: lowercase, punctuation dropped, spaces to dashes. */
+/**
+ * GitHub's heading anchor: lowercase, punctuation dropped, spaces to dashes.
+ * Each space becomes its own dash, so a heading such as "7.4 A11 — Portals"
+ * anchors as `74-a11--portals`: dropping the em dash leaves two spaces, and
+ * collapsing them would produce a link GitHub does not serve.
+ */
 function slugify(heading) {
   return heading
     .trim()
@@ -121,7 +126,7 @@ function slugify(heading) {
     .replace(/`/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s+/g, "-");
+    .replace(/\s/g, "-");
 }
 
 function anchorsOf(path) {

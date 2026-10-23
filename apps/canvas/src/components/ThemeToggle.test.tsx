@@ -8,16 +8,21 @@ describe("ThemeToggle", () => {
     useThemeStore.setState({ mode: "system" });
   });
 
-  it("should mark the active mode as checked", () => {
+  it("should open one menu from a single control", () => {
     render(<ThemeToggle />);
+    expect(screen.queryByTestId("theme-menu")).toBeNull();
+    fireEvent.click(screen.getByTestId("theme-toggle"));
+    expect(screen.getByTestId("theme-menu")).toBeInTheDocument();
     expect(screen.getByTestId("theme-system")).toHaveAttribute("data-checked", "true");
     expect(screen.getByTestId("theme-light")).toHaveAttribute("data-checked", "false");
   });
 
-  it("should switch mode when an option is chosen", () => {
+  it("should switch mode and close the menu when an option is chosen", () => {
     render(<ThemeToggle />);
+    fireEvent.click(screen.getByTestId("theme-toggle"));
     fireEvent.click(screen.getByTestId("theme-dark"));
     expect(useThemeStore.getState().mode).toBe("dark");
-    expect(screen.getByTestId("theme-dark")).toHaveAttribute("data-checked", "true");
+    expect(screen.queryByTestId("theme-menu")).toBeNull();
+    expect(screen.getByTestId("theme-toggle")).toHaveAttribute("data-mode", "dark");
   });
 });

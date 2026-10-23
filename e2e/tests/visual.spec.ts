@@ -42,6 +42,8 @@ const STABILITY = {
 
 interface StableOptions {
   maxDiffPixels?: number;
+  /** Regions whose text changes per run (names, ids, peers) are painted over. */
+  mask?: Locator[];
 }
 
 async function expectStable(
@@ -52,6 +54,7 @@ async function expectStable(
   await expect(target).toHaveScreenshot(name, {
     ...STABILITY,
     maxDiffPixels: options.maxDiffPixels ?? COMPONENT_MAX_DIFF_PIXELS,
+    ...(options.mask ? { mask: options.mask } : {}),
   });
 }
 
@@ -258,13 +261,21 @@ test.describe("visual: app", () => {
   test("app bar at rest", async ({ page }) => {
     await openWorkspace(page);
 
-    // The document id names the per-run workspace and is not part of the bar's
-    // layout contract. Hiding it (rather than masking it) removes both its
-    // changing text and the reflow it causes in the board tab and Views menu.
-    await page.addStyleTag({
-      content: "header.app-bar > span.truncate { display: none; }",
+    // The workspace name is generated per workspace and the board name is per
+    // run; neither is part of the bar's layout contract, but a screenshot
+    // compares pixels, so both are replaced with a fixed label and then masked
+    // out. Renaming instead would also reflow the tabs and Views menu.
+    await page.evaluate(() => {
+      const name = document.querySelector('[data-testid="workspace-name"]');
+      if (name) name.textContent = "Workspace name";
     });
 
-    await expectStable("app-bar.png", page.locator("header.app-bar"));
+    await expectStable("app-bar.png", page.locator("header.app-bar"), {
+      mask: [
+        page.getByTestId("workspace-name"),
+        page.getByRole("tab").first(),
+        page.getByTestId("sync-status"),
+      ],
+    });
   });
 });

@@ -37,13 +37,80 @@ in a workstream pushes a tag.
 `:<tag>` and `:latest`, and opens a GitHub release whose body is the changelog
 section for that version plus the pushed image digest.
 
-> **Alpha caveat.** GitHub Actions currently ends every workflow in
-> `startup_failure` with zero jobs on this account (see
-> [testing.md](testing.md#the-local-gate) and the Phase 0 findings). If that is
-> still true when the tag is pushed, run the same steps by hand — `docker build
-> --target runtime --build-arg SUITE_VERSION=v0.2.0-alpha.1 -t <image> .`,
-> `docker push`, then `gh release create` — and record the digest in the release
-> notes. Do not tag unless the local gate is green.
+> **Alpha caveat — the account cannot run hosted runners.** Every workflow on
+> this account ends in `startup_failure` with zero jobs: 100 runs in this
+> repository and 169 in a second private one, with no successful run ever and no
+> check suite created. That is an account entitlement for private repositories,
+> not a defect in the workflow files, which stay in place and correct. Read it as
+> [roadmap/alpha.md](roadmap/alpha.md) gate A3, state `blocked`.
+>
+> So the image is built and published by hand. Do not tag unless the local gate
+> in the next section is green on the exact commit being tagged.
+
+## The gate, and how to reproduce it
+
+The gate is four commands, run from the repository root on the commit that will
+be tagged. Every claim in the release notes about "tests pass" means this
+transcript.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm verify                      # lint, typecheck, unit tests, billing tests, stories, build
+pnpm e2e                         # Playwright: boots its own Vite and relay
+node scripts/docs-check.mjs      # version, links, code fences, retired terms
+node scripts/generate-limits.mjs --check   # docs/limits.md matches the enforcement code
+```
+
+What each covers, so a reader can judge the claim rather than accept it:
+
+| Command | Claims it supports |
+| --- | --- |
+| `pnpm verify` | The tree lints, type-checks, and builds; unit and property tests pass; the story suite renders with axe clean in both themes; billing tests pass |
+| `pnpm e2e` | The app boots, two clients sync, shares and selections project, portals and card focus work, and the marquee and drag regressions stay fixed |
+| `docs-check` | The version, links, fences and retired vocabulary are consistent, so the docs describe this commit |
+| `limits --check` | Every published number in `docs/limits.md` still exists in the code that enforces it |
+
+**Isolated e2e.** `pnpm e2e` reuses servers already listening on `:5173` and
+`:1235`. For a release run, stop anything you have running first and let
+Playwright boot both, or the run is not against this commit. `docs/testing.md`
+has the isolation recipe, including a temporary data directory.
+
+### Recorded run
+
+| Field | Value |
+| --- | --- |
+| Commit | fill in at the tag |
+| Node / pnpm | Node 22, pnpm 12.13.0 |
+| `pnpm verify` | fill in at the tag |
+| `pnpm e2e` | fill in at the tag |
+| `docs-check` | fill in at the tag |
+| `limits --check` | fill in at the tag |
+
+### Publishing the image by hand
+
+The steps `release.yml` would have run, in order:
+
+```sh
+# 1. Build. SUITE_VERSION is what the running container reports.
+docker build --target runtime \
+  --build-arg SUITE_VERSION=v0.2.0-alpha.1 \
+  -t ghcr.io/<owner>/suite:v0.2.0-alpha.1 \
+  -t ghcr.io/<owner>/suite:latest .
+
+# 2. Push both tags.
+docker push ghcr.io/<owner>/suite:v0.2.0-alpha.1
+docker push ghcr.io/<owner>/suite:latest
+
+# 3. Record the digest. This line is the artefact to roll back to.
+docker inspect --format='{{index .RepoDigests 0}}' \
+  ghcr.io/<owner>/suite:v0.2.0-alpha.1
+
+# 4. Open the release with the changelog section and that digest.
+gh release create v0.2.0-alpha.1 --title "Suite 0.2.0-alpha.1" --notes-file <(sed -n '/^## \[0.2.0-alpha.1\]/,/^## \[/p' CHANGELOG.md)
+```
+
+The release notes must say the image was built manually, and why, so the next
+person does not assume `release.yml` produced it.
 
 ## Smoke test a release
 

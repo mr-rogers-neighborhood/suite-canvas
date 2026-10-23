@@ -48,7 +48,11 @@ export function BoardTabs({
     // The tablist owns the tabs and nothing else; the per-board delete and the
     // "new board" button live beside it instead of inside it.
     <div className="group flex min-w-0 items-center gap-1">
-      <div className="flex min-w-0 items-center gap-1" role="tablist" aria-label="Boards">
+      <div
+        className="board-tabs flex min-w-0 items-center gap-1"
+        role="tablist"
+        aria-label="Boards"
+      >
         {boards.map((board) => {
           const active = board.id === activeBoardId;
           const presence = peersByBoard?.[board.id];
@@ -108,7 +112,7 @@ export function BoardTabs({
         <button
           type="button"
           aria-label={`Delete ${activeBoard.name}`}
-          className="rounded px-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-white/10"
+          className="shrink-0 rounded px-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-white/10"
           onClick={() => onDeleteRequest(activeBoard.id)}
         >
           {"\u00d7"}
@@ -120,7 +124,7 @@ export function BoardTabs({
           type="button"
           aria-label="New board"
           data-testid="board-create"
-          className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          className="shrink-0 rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
           onClick={onCreate}
         >
           +

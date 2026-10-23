@@ -14,6 +14,7 @@ import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { SharePublishButton } from "./components/SharePublishButton";
+import { StoragePanel } from "./components/StoragePanel";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { ViewsBar } from "./components/ViewsBar";
@@ -408,6 +409,7 @@ function WorkspaceShell({
                   Local only
                 </span>
               ) : null}
+              <StoragePanel workspaceId={workspaceId} />
             </>
           )
         }

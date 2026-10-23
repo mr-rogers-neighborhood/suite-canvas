@@ -368,6 +368,19 @@ export function CanvasBoard() {
     boardCardIds.current = boardOrder;
   }, [boardOrder]);
 
+  /**
+   * The selection React Flow holds right now. While a marquee is in flight this
+   * is the only authority: the store echo arrives a frame late, and painting
+   * that echo back over the pane is what cleared the box mid-gesture.
+   */
+  const liveSelectedIds = useCallback((): Set<string> => {
+    const ids = new Set<string>();
+    for (const node of store.getState().nodeLookup.values()) {
+      if (node.selected) ids.add(node.id);
+    }
+    return ids;
+  }, [store]);
+
   const onNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
       for (const change of changes) {
@@ -400,6 +413,16 @@ export function CanvasBoard() {
         if (!settled) moving = true;
       }
 
+      // Smoothing rebuilds node objects, and a rebuild that carries a stale
+      // `selected` clears React Flow's live marquee selection. While the box is
+      // open, paint the selection React Flow reports instead of the old value.
+      // A marquee is React Flow's gesture: a rebuild here replaces its live
+      // `selected` with ours and empties the box under the pointer. Peer motion
+      // pauses for the length of the gesture and lands when it closes.
+      if (marqueeActive.current) {
+        smoothingFrame.current = moving ? requestAnimationFrame(tick) : null;
+        return;
+      }
       setNodes((current) =>
         current.map((node) => {
           const position = smoothPositions.current.get(node.id);
@@ -418,71 +441,129 @@ export function CanvasBoard() {
 
   // React Flow owns transient state (drag position, selection), the CRDT owns
   // the truth. Re-derive flow nodes whenever either side changes.
-  const applyBoardNodes = useCallback(() => {
-    // Computed once per pass: an unchanged key means React Flow's live selection
-    // is the truth, a changed one means a surface asked for a different set.
-    const repaintSelection = !marqueeActive.current && selectedKey !== paintedSelection.current;
-    if (!marqueeActive.current) paintedSelection.current = selectedKey;
-    setNodes((current) => {
-      const byId = new Map(current.map((node) => [node.id, node]));
-      // Paint order comes from the sorted board list; ranks are fractional, so
-      // they cannot be used as CSS z-index values directly.
-      return boardCards.flatMap((card: Card, layer) => {
-        const placement = boardPlacements.get(card.id);
-        if (!placement) return [];
-        const existing = byId.get(card.id);
-        const sectionOffset = cardOffsetsMap.get(card.id);
-        const storedPosition = sectionOffset
-          ? { x: placement.x + sectionOffset.dx, y: placement.y + sectionOffset.dy }
-          : { x: placement.x, y: placement.y };
-        const position =
-          existing &&
-          (locallyDraggingIds.current.has(card.id) || locallyResizing.current.has(card.id))
-            ? existing.position
-            : (smoothPositions.current.get(card.id) ?? storedPosition);
-        const selected = repaintSelection
-          ? selectedKey.split(",").includes(card.id)
-          : existing?.selected === true;
-        const type = resolveCardType(typeMap, card.primaryTypeId);
-        const meta = metaByCard.get(card.id) ?? EMPTY_META;
-        const previous = existing?.data as CardNodeData | undefined;
-        // Reuse the data object (and the node when nothing visible changed), so
-        // a card that did not change does not re-render on a peer's edit.
-        const data: CardNodeData =
-          previous &&
-          previous.card === card &&
-          previous.placement === placement &&
-          previous.type === type &&
-          previous.meta === meta
-            ? previous
-            : { card, placement, type, meta };
-        if (
-          existing &&
-          existing.data === data &&
-          existing.selected === selected &&
-          existing.zIndex === layer &&
-          existing.position.x === position.x &&
-          existing.position.y === position.y
-        ) {
-          return [existing];
-        }
-        return [
-          {
-            id: card.id,
-            type: "note",
-            position: { x: position.x, y: position.y },
-            selected,
-            zIndex: layer,
-            data,
-          } satisfies Node,
-        ];
+  const applyBoardNodes = useCallback(
+    (reconciled?: readonly string[]) => {
+      // React Flow owns the board for the length of a marquee. Rebuilding the flow
+      // nodes mid-gesture hands it a stale `selected` set and clears the box, so
+      // the paint waits for the gesture to close and reconciles once, in `endMarquee`.
+      if (marqueeActive.current) return;
+      // Computed once per pass: an unchanged key means React Flow's live selection
+      // is the truth, a changed one means a surface asked for a different set.
+      const explicit = reconciled ? new Set(reconciled) : null;
+      const repaintSelection = !explicit && selectedKey !== paintedSelection.current;
+      if (!explicit) paintedSelection.current = selectedKey;
+      setNodes((current) => {
+        const byId = new Map(current.map((node) => [node.id, node]));
+        // Paint order comes from the sorted board list; ranks are fractional, so
+        // they cannot be used as CSS z-index values directly.
+        return boardCards.flatMap((card: Card, layer) => {
+          const placement = boardPlacements.get(card.id);
+          if (!placement) return [];
+          const existing = byId.get(card.id);
+          const sectionOffset = cardOffsetsMap.get(card.id);
+          const storedPosition = sectionOffset
+            ? { x: placement.x + sectionOffset.dx, y: placement.y + sectionOffset.dy }
+            : { x: placement.x, y: placement.y };
+          const position =
+            existing &&
+            (locallyDraggingIds.current.has(card.id) || locallyResizing.current.has(card.id))
+              ? existing.position
+              : (smoothPositions.current.get(card.id) ?? storedPosition);
+          const selected = explicit
+            ? explicit.has(card.id)
+            : repaintSelection
+              ? selectedKey.split(",").includes(card.id)
+              : existing?.selected === true;
+          const type = resolveCardType(typeMap, card.primaryTypeId);
+          const meta = metaByCard.get(card.id) ?? EMPTY_META;
+          const previous = existing?.data as CardNodeData | undefined;
+          // Reuse the data object (and the node when nothing visible changed), so
+          // a card that did not change does not re-render on a peer's edit.
+          const data: CardNodeData =
+            previous &&
+            previous.card === card &&
+            previous.placement === placement &&
+            previous.type === type &&
+            previous.meta === meta
+              ? previous
+              : { card, placement, type, meta };
+          if (
+            existing &&
+            existing.data === data &&
+            existing.selected === selected &&
+            existing.zIndex === layer &&
+            existing.position.x === position.x &&
+            existing.position.y === position.y
+          ) {
+            return [existing];
+          }
+          return [
+            {
+              id: card.id,
+              type: "note",
+              position: { x: position.x, y: position.y },
+              selected,
+              zIndex: layer,
+              data,
+            } satisfies Node,
+          ];
+        });
       });
-    });
-  }, [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes]);
+    },
+    [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes],
+  );
 
   useEffect(() => {
     applyBoardNodes();
   }, [applyBoardNodes]);
+
+  /**
+   * Releases the marquee guard on every termination path, not just the happy
+   * one. React Flow reports `onSelectionEnd` when the box closes on its own; a
+   * pointer released outside the pane or an Escape mid-gesture leaves the guard
+   * up, and a stale guard freezes selection painting for the rest of the session.
+   *
+   * The final selection is React Flow's, so the store is reconciled once, here,
+   * instead of on every pointer frame the box reports.
+   */
+  const endMarquee = useCallback(() => {
+    if (!marqueeActive.current) return;
+    marqueeActive.current = false;
+    // React Flow clears its own selection state in the pane's pointerup handler,
+    // which never runs when the pointer is released outside the pane or over a
+    // panel. Left set, `userSelectionActive` keeps the pane in selection mode and
+    // every later marquee neither paints nor selects, which is the "the page
+    // broke" half of the report. This mirrors that handler for the paths it
+    // cannot see.
+    store.setState((state) =>
+      state.userSelectionRect || state.userSelectionActive
+        ? { userSelectionRect: null, userSelectionActive: false }
+        : state,
+    );
+    const ids = [...liveSelectedIds()];
+    // Set before the store write, so the repaint it causes sees an unchanged key
+    // and keeps the selection this pass painted.
+    paintedSelection.current = ids.join(",");
+    setSelectedNodeIds(ids);
+    applyBoardNodes(ids);
+  }, [applyBoardNodes, liveSelectedIds, setSelectedNodeIds, store]);
+
+  useEffect(() => {
+    const onPointerEnd = () => endMarquee();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") endMarquee();
+    };
+    // Bubble phase, so React Flow has finalised its selection on the same event.
+    window.addEventListener("pointerup", onPointerEnd);
+    window.addEventListener("pointercancel", onPointerEnd);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerup", onPointerEnd);
+      window.removeEventListener("pointercancel", onPointerEnd);
+      window.removeEventListener("keydown", onKeyDown);
+      marqueeActive.current = false;
+    };
+  }, [endMarquee]);
 
   useEffect(() => {
     const next = new Map<string, { x: number; y: number }>();
@@ -701,6 +782,10 @@ export function CanvasBoard() {
   // so the callback has to stay stable.
   const onSelectionChanged = useCallback(
     ({ nodes: nextNodes, edges: nextEdges }: { nodes: Node[]; edges: Edge[] }) => {
+      // A marquee reports every card it touches, frame by frame. Reconciling the
+      // store on each echo re-renders the shell per pointer sample and
+      // republishes presence mid-gesture; `endMarquee` reconciles once instead.
+      if (marqueeActive.current) return;
       setSelectedNodeIds(nextNodes.map((node) => node.id));
       setSelectedEdgeIds(nextEdges.map((edge) => edge.id));
     },
@@ -712,6 +797,9 @@ export function CanvasBoard() {
   // One publisher for everything a peer has selected, including the connector
   // they clicked, so no component has to reason about who else is selected.
   useEffect(() => {
+    // A gesture publishes its selection once, when the box closes; the box
+    // itself travels through `setSelectionBox` below.
+    if (marqueeActive.current) return;
     const connector = selectedConnector
       ? { nodeId: selectedConnector.nodeId, connectorId: selectedConnector.connectorId }
       : undefined;
@@ -1756,10 +1844,9 @@ export function CanvasBoard() {
           marqueeActive.current = true;
         }}
         onSelectionEnd={() => {
-          marqueeActive.current = false;
-          // React Flow's final selection is authoritative; this re-aligns the
-          // store echo with what is on screen after the box closes.
-          applyBoardNodes();
+          // React Flow's final selection is authoritative; `endMarquee` releases
+          // the guard and reconciles the store with it.
+          endMarquee();
         }}
         connectionMode={ConnectionMode.Loose}
         onConnect={onConnect}

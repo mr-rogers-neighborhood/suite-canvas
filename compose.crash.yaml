@@ -1,0 +1,76 @@
+# Optional crash-reporting sink for self-hosted Suite. Off by default.
+#
+#   docker compose -f compose.yaml -f compose.crash.yaml --profile crash up -d
+#
+# Then build the canvas with the DSN GlitchTip prints for the project:
+#
+#   VITE_SUITE_CRASH_DSN=<dsn> pnpm --filter @suite/canvas build
+#
+# Two independent gates stand between a browser and this service: the DSN must be
+# compiled into the build, and the person using the app must tick "send crash
+# reports" in the storage panel. A build without a DSN never loads the SDK at all.
+#
+# What arrives here is an allowlist built by `apps/canvas/src/crash/scrub.ts`:
+# build version, route, browser/OS, stack frames and a hashed workspace id. Card
+# titles and bodies, attachment names, document bytes, share tokens and the owner
+# key are never part of the payload; the client drops the whole event if the
+# owner key appears anywhere in it.
+#
+# Retention is GlitchTip's own setting (default: 90 days) — see ADR-0027. Nothing
+# in this file forwards data to a third party: the events stay in the
+# `glitchtip-data` volume on this host.
+name: suite
+
+services:
+  glitchtip:
+    image: glitchtip/glitchtip:latest
+    profiles: ["crash"]
+    restart: unless-stopped
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      SECRET_KEY: ${SUITE_GLITCHTIP_SECRET:-change-me-before-exposing-this}
+      PORT: "8000"
+      EMAIL_URL: ${SUITE_GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: ${SUITE_GLITCHTIP_DOMAIN:-http://localhost:8080}
+      DEFAULT_FROM_EMAIL: ${SUITE_GLITCHTIP_FROM_EMAIL:-crash@example.invalid}
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+    ports:
+      # Loopback by default: a crash sink is not a public surface. Put it behind
+      # the same reverse proxy as the app if it must be reachable from outside.
+      - "${SUITE_GLITCHTIP_PORT:-8080}:8000"
+    volumes:
+      - glitchtip-uploads:/code/uploads
+
+  glitchtip-postgres:
+    image: postgres:16-alpine
+    profiles: ["crash"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+      POSTGRES_DB: glitchtip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - glitchtip-data:/var/lib/postgresql/data
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    profiles: ["crash"]
+    restart: unless-stopped
+    volumes:
+      - glitchtip-redis-data:/data
+
+volumes:
+  glitchtip-data:
+  glitchtip-redis-data:
+  glitchtip-uploads:

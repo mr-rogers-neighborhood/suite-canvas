@@ -2,6 +2,8 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ShareUnavailable } from "./components/ShareUnavailable";
+import { crashReportingWanted } from "./crash/consent";
+import { startCrashReporting } from "./crash/report";
 import {
   type BootPlan,
   bootPlan,
@@ -16,6 +18,13 @@ import {
   sessionForShare,
   standaloneSession,
 } from "./session/session";
+import { installErrorRecorder, safeRoute } from "./shell/diagnostics";
+import { CanvasErrorBoundary } from "./shell/ErrorBoundary";
+import {
+  installIndexedDbQuotaGuard,
+  persistAfterFirstEdit,
+  refreshEstimate,
+} from "./storage/durability";
 import { initTheme } from "./theme/useThemeStore";
 import "./styles/global.css";
 
@@ -29,9 +38,24 @@ if (!container) {
 
 const root = createRoot(container);
 
+/**
+ * Every page the entry point renders is behind the boundary: a share link, a
+ * protected workspace and the local-only notice can throw too, and a blank page
+ * is exactly what gate A6 exists to remove.
+ */
 function render(element: ReactNode) {
-  root.render(<StrictMode>{element}</StrictMode>);
+  root.render(
+    <StrictMode>
+      <CanvasErrorBoundary>{element}</CanvasErrorBoundary>
+    </StrictMode>,
+  );
 }
+
+// A refused IndexedDB write becomes visible state rather than a silent save, and
+// the last uncaught error is kept for the diagnostics block.
+installIndexedDbQuotaGuard();
+installErrorRecorder();
+void refreshEstimate();
 
 /**
  * A `?share=` link opened in a standalone build. The relay that link belongs to
@@ -150,6 +174,21 @@ async function boot() {
   }
 
   const { default: App } = await import("./App");
+  // The document store is loaded by now, so persistence can be requested after
+  // the first real change instead of on a page that may never be edited.
+  const { useCanvasStore } = await import("./store/useCanvasStore");
+  persistAfterFirstEdit(useCanvasStore.getState().workspace.doc);
+
+  if (crashReportingWanted()) {
+    void startCrashReporting({
+      workspaceId: getSession().workspaceId,
+      route: safeRoute(window.location.href),
+      ownerKey: getSession().ownerKey,
+      mode: import.meta.env.MODE,
+      version: import.meta.env.VITE_SUITE_VERSION ?? "dev",
+    });
+  }
+
   render(
     <ReactFlowProvider>
       <App />

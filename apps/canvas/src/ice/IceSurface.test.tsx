@@ -240,7 +240,7 @@ describe("IceSurface", () => {
       "Workspace: 1 objects / 1 boards",
     );
     expect(screen.queryByTestId("ice-demo-modes")).not.toBeInTheDocument();
-    expect(screen.getByTestId("ice-hud")).toHaveTextContent("Read-only projection");
+    expect(screen.getByTestId("ice-hud")).toHaveTextContent("Live workspace");
   });
 
   it("should wait for a live workspace instead of showing a demo", () => {

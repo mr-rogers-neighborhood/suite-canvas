@@ -4,10 +4,11 @@
  * EXPERIMENTAL, NOT DOCUMENT TRUTH. This surface mounts a private, in-memory
  * `@vibecook/ice` desk. It has three seed sources:
  *
- * - **Live workspace** (app only): a one-way, read-only projection of the real
- *   Suite graph. It waits for hydration, projects every board/card/portal into
- *   native notes and mini mats, and never writes. The HUD says
- *   `Read-only projection`.
+ * - **Live workspace** (app only): the real Suite graph, projected into cards
+ *   and mini mats. It waits for hydration, then keeps the projection in step
+ *   with the document: a drag or resize commits once through the bridge, and
+ *   undo/redo re-derives the entities from the canonical placements. The HUD
+ *   says `Live workspace`.
  * - **Native demo** (standalone `/ice.html`): ten ICE-native objects — six notes
  *   (four loose, one inside each mini mat), two mini mats, a whiteboard and a
  *   notebook.
@@ -139,13 +140,27 @@ interface SeedReport {
   readonly failures: readonly string[];
   /** The entities that did spawn — what the camera frames on the first mount. */
   readonly entities: readonly Entity[];
-  /** Entity → canonical card id, for selection and later the write bridge. */
-  /** Mutable on purpose: a re-spawned card replaces its entity in place. */
+  /**
+   * Entity → canonical card id. Mutable on purpose: a re-spawned card replaces
+   * its entity in place.
+   */
   readonly entitySlots: Map<Entity, { cardId: string; boardId: string }>;
+  /** Mini-mat entity → the portal that opened it, for camera entry. */
+  readonly portalMats: Map<Entity, PortalMat>;
+  /** Cycle/depth/missing portal stubs drawn as labelled markers. */
+  readonly stubs: number;
   /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
   readonly boards: number;
   /** Things the seed deliberately did not map (cycles, depth caps, sections). */
   readonly skipped: readonly SeedSkip[];
+}
+
+/** A portal's mini mat: what it opens and where it was placed. */
+interface PortalMat {
+  readonly portalCardId: string;
+  readonly boardId: string;
+  readonly parentBoardId: string;
+  readonly title: string;
 }
 
 /** One omitted entity, kept as a reason plus a human-readable detail. */
@@ -467,6 +482,8 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
     failures,
     entities,
     entitySlots: new Map(),
+    portalMats: new Map(),
+    stubs: 0,
     boards: 0,
     skipped: [],
   };
@@ -491,6 +508,8 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
       failures: [`suite projection: ${describeError(error)}`],
       entities: [],
       entitySlots: new Map(),
+      portalMats: new Map(),
+      stubs: 0,
       boards: 0,
       skipped: [],
     };
@@ -502,10 +521,19 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
   const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
+  const portalMats = new Map<Entity, PortalMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
     if (object?.kind === "card" || object?.kind === "note") {
       entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
+    }
+    if (object?.kind === "minimat") {
+      portalMats.set(entity, {
+        portalCardId: object.portalCardId,
+        boardId: object.boardId,
+        parentBoardId: object.parentBoardId,
+        title: object.title,
+      });
     }
   }
 
@@ -518,6 +546,8 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     failures: report.failures,
     entities: [...report.objects.values()],
     entitySlots,
+    portalMats,
+    stubs: 0,
     // Boards are counted by identity: the same board can open in several mats.
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
@@ -546,6 +576,8 @@ function seedWorkspaceDocument(
       failures: [`workspace projection: ${describeError(error)}`],
       entities: [],
       entitySlots: new Map(),
+      portalMats: new Map(),
+      stubs: 0,
       boards: 0,
       skipped: [],
     };
@@ -557,10 +589,49 @@ function seedWorkspaceDocument(
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
   const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
+  const portalMats = new Map<Entity, PortalMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
     if (object?.kind === "card" || object?.kind === "note") {
       entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
+    }
+    if (object?.kind === "minimat") {
+      portalMats.set(entity, {
+        portalCardId: object.portalCardId,
+        boardId: object.boardId,
+        parentBoardId: object.parentBoardId,
+        title: object.title,
+      });
+    }
+  }
+
+  // A portal the projection refused to open is still a place on the canvas: a
+  // labelled stub keeps it visible and focusable instead of silently missing.
+  let stubs = 0;
+  const stubEntities: Entity[] = [];
+  const stubFailures: string[] = [];
+  for (const skip of seed.skipped) {
+    if (skip.kind !== "portal") continue;
+    const placement = workspace
+      .listBoardPlacements(skip.boardId)
+      .find((entry) => entry.cardId === skip.id);
+    if (placement === undefined) continue;
+    const title = workspace.displayTitle(skip.id);
+    try {
+      const entity = engine.ops.spawnWidget(NOTE_TYPE, {
+        x: placement.x,
+        y: placement.y,
+        undoable: false,
+        props: {
+          text: `${skip.reason === "cycle" ? "Cycle" : skip.reason === "depth" ? "Nested too deep" : "Missing view"} — ${title}`,
+          pen: "red",
+          seed: 4000 + stubs,
+        },
+      });
+      stubEntities.push(entity);
+      stubs += 1;
+    } catch (error) {
+      stubFailures.push(`stub ${skip.id}: ${describeError(error)}`);
     }
   }
 
@@ -569,10 +640,12 @@ function seedWorkspaceDocument(
     label: "Workspace",
     seeded: report.seeded,
     total: seed.objects.length,
-    kinds: report.kinds,
-    failures: report.failures,
-    entities: [...report.objects.values()],
+    kinds: [...report.kinds, ...(stubs > 0 ? [NOTE_TYPE] : [])],
+    failures: [...report.failures, ...stubFailures],
+    entities: [...report.objects.values(), ...stubEntities],
     entitySlots,
+    portalMats,
+    stubs,
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
   };
@@ -973,7 +1046,10 @@ export function IceSurface({
     redo(): void;
     deleteSelection(): void;
     reconcile(): void;
+    escape(): void;
   } | null>(null);
+  const [portalPath, setPortalPath] = useState<readonly string[]>([]);
+  const portalDepth = useRef(0);
   const [layerReady, setLayerReady] = useState(0);
 
   // The editable root board: drag and resize commit once per gesture, delete is
@@ -1116,13 +1192,55 @@ export function IceSurface({
         controller.deleteSelection(useUiStore.getState().selectedNodeIds);
       },
       reconcile,
+      escape: () => {
+        if (portalDepth.current > 0) {
+          try {
+            engine.ops.exitContainer();
+            portalDepth.current -= 1;
+            setPortalPath((path) => path.slice(0, -1));
+          } catch {
+            // A refused exit leaves the camera where it is.
+          }
+          return;
+        }
+        engine.ops.cancelActiveGestures();
+      },
     };
 
     const detach = attachIcePointerEditing(root, controller);
+
+    // A mini mat is a doorway: a double click moves the camera inside it rather
+    // than swapping boards. ICE owns the flight and the frame; this only routes
+    // the press and remembers the path for Escape and the breadcrumb.
+    const onDouble = (event: MouseEvent): void => {
+      const bounds = root.getBoundingClientRect();
+      const screen = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+      let picked: Entity | null = null;
+      try {
+        picked = desk.pick(screen)?.entity ?? null;
+      } catch {
+        picked = null;
+      }
+      if (picked === null) return;
+      const entity = picked;
+      const mat = seed.portalMats.get(entity);
+      if (mat === undefined) return;
+      try {
+        engine.ops.enterContainer(entity);
+        portalDepth.current += 1;
+        setPortalPath((path) => [...path, mat.title]);
+      } catch {
+        // A refused entry leaves the camera where it is.
+      }
+    };
+    root.addEventListener("dblclick", onDouble);
     return () => {
+      root.removeEventListener("dblclick", onDouble);
       detach();
       controller.cancel();
       commandsRef.current = null;
+      portalDepth.current = 0;
+      setPortalPath([]);
     };
   }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, canWriteLayout]);
 
@@ -1142,6 +1260,12 @@ export function IceSurface({
         shift: true,
         run: () => {
           commandsRef.current?.redo();
+        },
+      },
+      {
+        key: "Escape",
+        run: () => {
+          commandsRef.current?.escape();
         },
       },
       {
@@ -1236,7 +1360,7 @@ export function IceSurface({
         </span>
         <span className="ice-surface__badge-note">
           {workspaceMode
-            ? "Read-only projection — not document truth"
+            ? "Live workspace · writes go through Loro"
             : "Experimental — not document truth"}
         </span>
         <span className="ice-surface__badge-status" data-testid="ice-status" aria-live="polite">
@@ -1339,9 +1463,14 @@ export function IceSurface({
             {copyState}
           </span>
         )}
+        {portalPath.length > 0 ? (
+          <span className="ice-surface__badge-meta" data-testid="ice-portal-path">
+            Inside {portalPath.join(" › ")} · Escape to return
+          </span>
+        ) : null}
         <span className="ice-surface__badge-hint">
           {workspaceMode
-            ? "Read-only projection · select a card (mirrors the shell) · pan/zoom · drag is not saved yet"
+            ? "Select and drag a card · drag a handle to resize · double-click a mat to enter · Escape returns"
             : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
         <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>

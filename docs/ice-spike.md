@@ -101,7 +101,7 @@ a whiteboard and a notebook.
 - Selection: click, marquee, and shift-click to add. Drag a note to move it.
 - Undo and redo through ICE's own history (`Ctrl/Cmd+Z`, `Shift+Ctrl/Cmd+Z`). This history is the
   ICE document's, not Suite's.
-- Whiteboard ink (the demo seeds an empty board, so draw on it), notebook cover/ruling, dark desk
+- Whiteboard ink (the demo seeds an empty board, so draw on it), notebook cover/ruling, light desk
   theme, and the fallback cards for every adapter state.
 - Per-object isolation: one object type that refuses to spawn is reported in the seed failures and
   the rest of the desk still draws.

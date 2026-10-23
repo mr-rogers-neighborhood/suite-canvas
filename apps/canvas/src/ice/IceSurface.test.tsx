@@ -157,7 +157,7 @@ describe("IceSurface", () => {
     expect(ice.createCanvasEngine).not.toHaveBeenCalled();
   });
 
-  it("should seed the rich desk on a dark palette and report the adapter", async () => {
+  it("should seed the rich desk on the paper palette and report the adapter", async () => {
     stubGpu({ requestAdapter: async () => ADAPTER });
 
     render(<IceSurface />);
@@ -195,8 +195,8 @@ describe("IceSurface", () => {
       ),
     ).toBe(true);
 
-    expect(ice.deskTheme).toHaveBeenCalledWith("dark");
-    expect(ice.deskPalette).toHaveBeenCalledWith("dark");
+    expect(ice.deskTheme).toHaveBeenCalledWith("light");
+    expect(ice.deskPalette).toHaveBeenCalledWith("light");
     expect(ice.deskLayer).toHaveBeenCalledWith(
       expect.objectContaining({ name: "ice-demo-1", theme: {}, palette: {} }),
     );

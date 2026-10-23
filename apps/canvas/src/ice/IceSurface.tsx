@@ -22,7 +22,7 @@
  * board (blue marker, bullet tip) and leaves drawing to the pointer, rather
  * than reaching into engine internals to fabricate strokes.
  *
- * The desk wears the shipped dark theme and palette (ICE's moonlit skin), and
+ * The desk wears the shipped light theme and palette (paper/sketch skin), and
  * frames its seeded content on the first mount so the demo never opens on an
  * empty patch of mat.
  *
@@ -545,8 +545,8 @@ export function IceSurface() {
         const report = seedDemoDocument(engine);
         seededEntities.current = report.entities;
         const layer = desk.deskLayer({
-          theme: objects.deskTheme("dark"),
-          palette: objects.deskPalette("dark"),
+          theme: objects.deskTheme("light"),
+          palette: objects.deskPalette("light"),
           objects: [...objects.DESK_OBJECTS],
           docs: engine.docs,
           name: `ice-demo-${runId + 1}`,

@@ -1,5 +1,9 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { ExcalidrawImperativeAPI, ExcalidrawProps } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  ExcalidrawProps,
+  NormalizedZoomValue,
+} from "@excalidraw/excalidraw/types";
 import type { Drawing, DrawingElement } from "@suite/graph";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import { useThemeStore } from "../theme/useThemeStore";
@@ -34,6 +38,15 @@ export interface WhiteboardCommit {
 export interface WhiteboardSurfaceProps {
   drawing: Drawing;
   readOnly?: boolean;
+  /**
+   * Identifies the drawing this editor instance is showing. Defaults to `""`,
+   * which is the "one surface, one drawing for its lifetime" case. When it
+   * changes the same Excalidraw instance is re-pointed at the new drawing: the
+   * echo guards are re-based, a pending debounced commit is dropped without
+   * emitting, and the scene, camera and undo history are reset so nothing
+   * leaks between the two drawings. The surface is never remounted.
+   */
+  sceneIdentity?: string;
   /** Called after the last change settles; one commit per pause/gesture. */
   onCommit: (commit: WhiteboardCommit) => void;
 }
@@ -42,13 +55,19 @@ export interface WhiteboardSurfaceProps {
  * The Excalidraw editing surface is lazy: the board face never pays for it, and
  * the focus surface mounts it only when a whiteboard is actually opened.
  */
-export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: WhiteboardSurfaceProps) {
+export function WhiteboardSurface({
+  drawing,
+  readOnly = false,
+  sceneIdentity = "",
+  onCommit,
+}: WhiteboardSurfaceProps) {
   const theme = useThemeStore((state) => state.theme);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const pending = useRef<WhiteboardCommit | null>(null);
   const commitTimer = useRef<number | null>(null);
   const lastEmitted = useRef<string>(drawingSignature(drawing.elements));
   const lastApplied = useRef<string>(drawingSignature(drawing.elements));
+  const identity = useRef<string>(sceneIdentity);
 
   const flush = useCallback(() => {
     if (commitTimer.current !== null) {
@@ -89,6 +108,43 @@ export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: White
   );
 
   const incoming = useMemo(() => drawingSignature(drawing.elements), [drawing.elements]);
+
+  // Repointing the same editor at another drawing is a scene reset, not an
+  // edit: the new scene, its signature and its fresh camera/history replace the
+  // old one wholesale. Declared before the incoming-drawing effect so
+  // `lastApplied` is already re-based when that effect runs in the same commit.
+  useEffect(() => {
+    if (identity.current === sceneIdentity) return;
+    identity.current = sceneIdentity;
+    if (commitTimer.current !== null) {
+      window.clearTimeout(commitTimer.current);
+      commitTimer.current = null;
+    }
+    pending.current = null;
+    const signature = drawingSignature(drawing.elements);
+    lastEmitted.current = signature;
+    lastApplied.current = signature;
+    const api = apiRef.current;
+    if (!api) return;
+    api.resetScene();
+    api.updateScene({
+      elements: drawing.elements as unknown as ExcalidrawElement[],
+      appState: {
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 as NormalizedZoomValue },
+        selectedElementIds: {},
+        selectedGroupIds: {},
+        editingTextElement: null,
+        viewBackgroundColor: "transparent",
+        theme,
+      },
+      // Initialization, not an edit: never undoable.
+      captureUpdate: "NEVER",
+    });
+    api.history.clear();
+  }, [sceneIdentity, drawing.elements, theme]);
+
   useEffect(() => {
     const api = apiRef.current;
     if (!api || incoming === lastApplied.current || incoming === lastEmitted.current) return;

@@ -70,7 +70,7 @@ export function TitleBar({
         <span
           data-testid="sync-status"
           data-role={role}
-          className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]"
+          className="inline-flex h-6 items-center gap-1.5 text-[11px] leading-none text-[var(--ink-muted)]"
         >
           <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
           {statusLabel}

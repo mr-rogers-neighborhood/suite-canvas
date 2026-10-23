@@ -1,6 +1,6 @@
 import type { PluginKey } from "@tiptap/pm/state";
 import { exitSuggestion, type SuggestionProps } from "@tiptap/suggestion";
-import { type CSSProperties, createElement } from "react";
+import { type CSSProperties, createElement, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { SlashItem } from "./SlashCommands";
 
@@ -48,8 +48,30 @@ function optionClass(active: boolean): string {
  * suggestion plugin drives, so the list can be mounted outside the React tree.
  */
 export function SlashMenu({ items, query, activeIndex, rect, onHover, onSelect }: SlashMenuProps) {
+  const list = useRef<HTMLDivElement | null>(null);
+
+  // Keyboard navigation is driven outside React, so the active row must be
+  // brought into view here; otherwise the highlight walks past the scrollport
+  // and the list looks like it stopped responding.
+  useEffect(() => {
+    if (activeIndex < 0 || items.length === 0) return;
+    const option = list.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    const menu = list.current;
+    if (!option || !menu) return;
+    const optionRect = option.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    if (optionRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - optionRect.top;
+    } else if (optionRect.bottom > menuRect.bottom) {
+      menu.scrollTop += optionRect.bottom - menuRect.bottom;
+    }
+  }, [activeIndex, items]);
+
   return (
     <div
+      ref={list}
       role="listbox"
       aria-label="Insert block"
       data-testid="slash-menu"

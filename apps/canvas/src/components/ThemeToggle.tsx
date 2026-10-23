@@ -16,7 +16,7 @@ export function ThemeToggle() {
       aria-label="Color theme"
       data-testid="theme-toggle"
       data-mode={mode}
-      className="segmented"
+      className="segmented h-6"
     >
       {OPTIONS.map((option) => (
         <label

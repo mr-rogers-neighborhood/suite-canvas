@@ -502,7 +502,10 @@ was the recovery mechanism and it was deleted.
 ### 6.3 Reported UX bug — marquee multi-select breaks the page
 
 **Report.** "Multi-select via marquee breaks the page as soon as any item is selected/contacted."
-◐ (user report; not yet reproduced by us)
+✅ Reproduced in both shapes (peer drag during the box; cancel mid-gesture) and fixed. The root cause
+was selection ownership: the window listener effect was keyed on a callback that changed whenever a
+peer tick rebuilt the board, so its cleanup released `marqueeActive` mid-gesture and the next repaint
+wrote the store's stale selection over React Flow's live one.
 
 **Where.** `apps/canvas/src/canvas/CanvasBoard.tsx`:
 
@@ -550,7 +553,10 @@ throws, there is no error boundary (§6.5), so the user sees a blank page. The r
   once per animation frame.
 - A regression note in the changelog once releases exist.
 
-**Status:** `open/needs-repro`.
+**Status:** `open` — fixed. Both former `test.fixme` cases are real specs in
+`e2e/tests/marquee.spec.ts`; listeners register once and call through a ref, and every termination
+path clears the selection overlay. The specs re-fit and re-measure between gestures so they assert
+selection ownership, not auto-pan or a moved viewport.
 
 ### 6.4 Reported UX bug — local interaction has no smoothing, remote drags do
 
@@ -591,7 +597,10 @@ frame-droppy under load. Users judge a canvas by their own drag first.
 - A test asserting exactly one CRDT commit per gesture regardless of smoothing.
 - A test asserting remote smoothing behaviour is unchanged (`0.22` settle path).
 
-**Status:** `open/needs-repro`.
+**Status:** `open` — implemented in `apps/canvas/src/canvas/localEasing.ts`. It is a time-based
+render-only ease (`tau` 12 ms) on the delta; pointer samples only set the target, one rAF paints,
+drop snaps to the pointer and commits once. `prefers-reduced-motion` skips it; remote smoothing is
+unchanged. Unit tests cover the one-commit contract and the reduced-motion path.
 
 ### 6.5 P1 — Important, not Alpha-blocking
 
@@ -723,7 +732,7 @@ owner is the maintainer/operator; no separate review board is implied.
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| A1 | `measuring` | Store paths, backup/restore, drill, and recreate test are in. The boot-time refusal of a mixed `:memory:`/CWD layout is the remaining A1 hardening. Evidence: `compose.yaml:45-47`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `attachmentDurability.test.ts` |
+| A1 | `open` | Six stores on `/data`, backup/restore with attachments, and a recreate drill. `SUITE_REQUIRE_DURABLE_STORES=1` (set in `compose.yaml`) makes boot refuse an unset, `:memory:`, relative, or split store layout and names every offending variable. Evidence: `compose.yaml`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `apps/collab-server/src/config.ts` + `config.test.ts` (store-durability suite); `attachmentDurability.test.ts` |
 | A2 | `open` | `apps/canvas/src/collab/loroPersistence.ts`; `loroPersistence.test.ts` (two-instance and leader-takeover); ADR-0024 |
 | A3 | `failed` | See the A3 note in §7.1. Actions returns `startup_failure` with zero jobs; branch protection is unavailable on the private free repo. |
 | A4 | `open` | `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |
@@ -732,8 +741,8 @@ owner is the maintainer/operator; no separate review board is implied.
 | A7 | `open` | `apps/collab-server/src/persistence.ts` (`loro-snapshot-v1`), `fixtures/n-1/`, `storeUpgrade.test.ts` |
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
-| A10 | `measuring` | Marquee regression spec and the duplicate-selection fix are in; two React Flow cancel/peer cases and local drag easing are tracked in the A10 follow-up. |
-| A11 | `unopened` | Pinned for the next planning phase; design sketch in §7.4. |
+| A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
+| A11 | `measuring` | Data model merged: `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029. Canvas slice (portal card, miniature, transition, presence, card focus) is in progress; acceptance checklist in §7.4. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -751,13 +760,15 @@ The same trick applies to a single card. The inspector's **Edit** action and a d
 gesture open a full-canvas card editor; Escape or zoom-out returns to the previous board and
 viewport.
 
-**Data model (decision for the planning phase).**
-- Recommended: a built-in `portal` card type with a `board` field kind. A board reference then
-  participates in views, publish redaction, and backlinks like any other reference value.
-- Alternative: a reserved `portalBoardId` text property. Smaller schema change, weaker validation
-  and no first-class view predicate.
+**Data model (accepted, ADR-0029).**
+- A built-in `portal` card type with a `board` field kind. A board reference participates in views,
+  publish redaction, and backlinks like any other reference value. `packages/graph` exports
+  `PORTAL_TYPE_ID`, `PORTAL_BOARD_FIELD_ID`, and `createPortalCard`.
 - A portal is a *card*, not a new object class. Cards already have multiple placements, so the same
   target board can be reached from several boards.
+- A portal **references** its target board; it never owns or deletes it. A deleted target leaves the
+  portal readable as *Unavailable board*. `deleteType("portal")` and removal of the board field are
+  refused.
 
 **Rendering.**
 - `PortalNode` draws a static miniature of the target board: section bands, card rectangles, and
@@ -781,12 +792,13 @@ viewport.
 the card to the canvas, focuses the title/body editor, and restores the previous viewport on exit.
 The card remains the same object; no second editor model.
 
-**Open decisions.**
-- Does a portal *own* the target board (create/delete semantics), or only reference it?
-- How are cycles represented (A portals to B, B portals to A) and navigated? A back stack is enough
-  for the first slice.
-- Do portals appear in publish/projections as inert links, stubs, or redacted rows?
-- Is the first slice one level deep, or arbitrary nesting? Recommend one level plus a back stack.
+**Resolved decisions.**
+- A portal references the target; it never creates or deletes it (ADR-0029).
+- Cycles are a navigation problem: A→B→A is legal, and the back stack returns to the exact previous
+  board and viewport.
+- In a share, a portal is an ordinary card with an inert board value. Portal-aware publish/export is
+  a non-goal for this slice.
+- The first slice is one level of nesting plus a back stack, not arbitrary depth.
 - Tab grouping and cross-board edges are follow-ons, not part of the first slice.
 
 **Acceptance for the first slice.**

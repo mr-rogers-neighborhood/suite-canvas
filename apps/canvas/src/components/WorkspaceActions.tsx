@@ -127,7 +127,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
         <button
           type="button"
           data-testid="workspace-share"
-          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
           onClick={() => {
             setShareScope("workspace");
             setShareOpen(true);
@@ -143,7 +143,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           data-testid="workspace-file"
-          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
           onClick={() => {
             setSavedOnDevice(readSavedRecoveryKey(workspaceId));
             setMenuOpen((open) => !open);

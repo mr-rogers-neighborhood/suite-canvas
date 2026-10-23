@@ -1,6 +1,6 @@
 import type { Card } from "@suite/graph";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
-import { type CSSProperties, createElement } from "react";
+import { type CSSProperties, createElement, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { workspaceSnapshotStore } from "../store/workspaceSnapshotStore";
@@ -86,8 +86,30 @@ export function SuggestionList({
   onHover,
   onSelect,
 }: SuggestionListProps) {
+  const list = useRef<HTMLDivElement | null>(null);
+
+  // The suggestion plugin owns arrow keys outside React, so the highlighted
+  // row has to be scrolled into view here. Without this the active row can sit
+  // below the menu's max-height with no visible sign that it moved.
+  useEffect(() => {
+    if (activeIndex < 0 || items.length === 0) return;
+    const option = list.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    const menu = list.current;
+    if (!option || !menu) return;
+    const optionRect = option.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    if (optionRect.top < menuRect.top) {
+      menu.scrollTop -= menuRect.top - optionRect.top;
+    } else if (optionRect.bottom > menuRect.bottom) {
+      menu.scrollTop += optionRect.bottom - menuRect.bottom;
+    }
+  }, [activeIndex, items]);
+
   return (
     <div
+      ref={list}
       role="listbox"
       aria-label="Mention a card"
       data-testid="mention-picker"

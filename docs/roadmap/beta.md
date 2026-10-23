@@ -508,6 +508,7 @@ durability first, because everything else assumes data survives.
 | 4.8 | Security review | B10 | 4.3, 4.7 |
 | 4.9 | Support and docs | B10 | all of the above |
 | 4.10 | Operator transferability | B11 | 4.1, 4.2, 4.9 |
+| 4.11 | Shell navigation and workspace identity | first-run polish (not a gate) | 4.3, 4.9 |
 
 ---
 
@@ -1121,6 +1122,29 @@ re-run if accounts change the drill.
 **Acceptance evidence.** `operator.sh` transcript naming the second operator; every command block
 executed or explicitly not-drilled; an empty questions ledger; a green docs-only check; the
 unavailable-operator page linked from the runbook.
+
+### 4.11 Shell navigation and workspace identity
+
+Not a gate. This is the first-run and everyday-use polish a stranger meets before any feature: the
+title bar, the board tabs, and the two menus that change what they see.
+
+| Item | What must exist |
+| --- | --- |
+| **Workspace name in the title bar** | The workspace name sits next to the logo and is editable in place. Rename persists in the workspace document, updates the document title, and survives reload. |
+| **Friendly default names** | A new workspace gets a human name (for example an adjective-noun pair), not a UUID or "Untitled" repeated forever. The id remains stable and hidden. |
+| **Board tabs as objects** | Right-click a board tab for Rename, Duplicate, Move left/right, and Delete. Keyboard equivalents work; a tab is not renamed by an accidental double-click alone. |
+| **One theme control** | Replace the three-segment control with one icon button and a menu (Light, Dark, Auto). The icon morphs sun↔moon on change, and the morph is skipped under `prefers-reduced-motion`. |
+| **Views in the right cluster** | Views moves next to the theme/account controls, leaving the centre for board identity. It stays reachable on a narrow window through the overflow menu. |
+| **One control height** | Share, File, Live, Views and the theme control share a single 24 px row height and baseline. Report any surface that cannot meet it. |
+| **Menus follow the keyboard** | Arrow navigation scrolls the active row into view in `/`, `@`, and every menu with a scrollport. A selection never disappears past the end of the list. |
+
+**Why it belongs in Beta.** These are the surfaces a stranger touches before they understand the
+product. A UUID title and a tab strip that cannot be renamed read as an internal tool, no matter how
+good the canvas is.
+
+**Acceptance evidence.** A first-run workspace opens with a friendly name; rename survives reload;
+board-tab menu operations are covered by e2e; the theme control has one focus stop and a
+reduced-motion path; the menu-scroll regression is covered by a keyboard e2e case.
 
 ---
 ## 5. Free backup options

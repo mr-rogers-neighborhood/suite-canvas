@@ -153,6 +153,35 @@ describe("useCanvasMenuItems canvas menu", () => {
     expect(patterns.length).toBeGreaterThan(0);
   });
 
+  it("declines the section entries on a surface with no section layer", () => {
+    const items = renderMenu(makeInput(canvasMenu({ x: 1, y: 2 }), { supportsSections: false }));
+    expect(labels(items)).toEqual([
+      "New note",
+      "New whiteboard",
+      "Arrange fractally",
+      "New portal",
+    ]);
+
+    // A selection on a sectionless surface offers no "new section from …" either.
+    const selected = renderMenu(
+      makeInput(
+        { ...canvasMenu({ x: 1, y: 2 }), kind: "node", nodeId: "card-1" },
+        { selectedNodeIds: ["card-1"], supportsSections: false, supportsConnectors: false },
+      ),
+    );
+    expect(labels(selected)).not.toContain("Add connector");
+  });
+
+  it("offers sections and connectors by default, so the scene surface is unchanged", () => {
+    const canvasItems = renderMenu(makeInput(canvasMenu({ x: 1, y: 2 })));
+    expect(labels(canvasItems)).toContain("New section");
+
+    const nodeItems = renderMenu(
+      makeInput({ ...canvasMenu({ x: 1, y: 2 }), kind: "node", nodeId: "card-1" }),
+    );
+    expect(labels(nodeItems)).toContain("Add connector");
+  });
+
   it("drops the fractal layout for a capability without layout rights", () => {
     const items = renderMenu(makeInput(canvasMenu(), { canEditLayout: false }));
     expect(labels(items)).not.toContain("Arrange fractally");

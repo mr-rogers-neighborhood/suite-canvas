@@ -54,6 +54,17 @@ export interface CanvasMenuItemsInput {
    * it to keep node highlighting in step; a scene surface without one omits it.
    */
   syncCardSelection?: ((ids: string[]) => void) | undefined;
+  /**
+   * Whether this surface draws sections. The ICE canvas has no section layer
+   * yet, so it declines the entries rather than offering actions whose result
+   * it cannot show. Absent means yes, which is the scene surface's answer.
+   */
+  supportsSections?: boolean | undefined;
+  /**
+   * Whether this surface draws connectors. Same rule as `supportsSections`: a
+   * surface that cannot show a connector must not offer to add one.
+   */
+  supportsConnectors?: boolean | undefined;
 }
 
 /**
@@ -77,6 +88,8 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
     canCreateBoards,
     canEditLayout,
     canManageStructure,
+    supportsSections = true,
+    supportsConnectors = true,
     canManageTrash,
     canManageLinks,
     createNoteAt,
@@ -149,10 +162,14 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
         label: "New whiteboard",
         onSelect: () => createWhiteboardAt(flowPosition),
       },
-      {
-        label: "New section",
-        onSelect: () => createSectionAt(flowPosition),
-      },
+      ...(supportsSections
+        ? [
+            {
+              label: "New section",
+              onSelect: () => createSectionAt(flowPosition),
+            },
+          ]
+        : []),
       ...(canEditLayout
         ? [
             {
@@ -172,7 +189,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             },
           ]
         : []),
-      ...(selectedNodeIds.length > 0
+      ...(supportsSections && selectedNodeIds.length > 0
         ? [
             {
               label: `New section from ${selectedNodeIds.length} card${
@@ -321,7 +338,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             },
           ]
         : []),
-      ...(canCreateContent
+      ...(canCreateContent && supportsSections
         ? [
             {
               label: `New section from ${selection.noun}`,
@@ -419,7 +436,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
           },
         ]
       : []),
-    ...(canManageStructure
+    ...(canManageStructure && supportsConnectors
       ? [
           {
             label: "Add connector",
@@ -517,6 +534,8 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
     changeLayerBulk,
     requestShare,
     syncCardSelection,
+    supportsSections,
+    supportsConnectors,
   } = input;
 
   return useMemo(
@@ -539,6 +558,8 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
         canManageStructure,
         canManageTrash,
         canManageLinks,
+        supportsSections,
+        supportsConnectors,
         createNoteAt,
         createWhiteboardAt,
         createSectionAt,
@@ -573,6 +594,8 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
       canManageStructure,
       canManageTrash,
       canManageLinks,
+      supportsSections,
+      supportsConnectors,
       createNoteAt,
       createWhiteboardAt,
       createSectionAt,

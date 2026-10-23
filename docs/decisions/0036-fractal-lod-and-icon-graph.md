@@ -332,3 +332,19 @@ Two consequences worth stating:
 
 Rungs are data (`SUITE_TYPE_LADDER`), so adding one is a line — at the cost of one more GPU paper
 pass, which is the real budget this decision spends.
+
+## Amendment (2026-10-23): the canvas menu is the shell's menu
+
+The right-click menu on ICE is the same builder the scene surface uses
+(`buildCanvasMenuItems`), opened from a pick instead of a React Flow event. The join is
+`iceContextMenu.ts` (pick → target → `ContextMenuState`), and `IceContextMenu.tsx` supplies the
+actions.
+
+- **A surface declines what it cannot draw.** `supportsSections` and `supportsConnectors` are inputs
+  to the shared builder, defaulting to `true`. ICE passes `false` for both, so it offers no "New
+  section" and no "Add connector" — an action whose result the surface cannot show is worse than a
+  missing entry. The scene surface passes neither and is unchanged.
+- **Every menu entry reconciles.** ICE entities are a projection, so the menu closes through one
+  `reconcile()` call rather than wrapping each action. That also covers entries the shared builder
+  runs on the workspace directly, which this surface never sees. Reconcile is idempotent: a dismissal
+  costs one comparison pass and writes nothing.

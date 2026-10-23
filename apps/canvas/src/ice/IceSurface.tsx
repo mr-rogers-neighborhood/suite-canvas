@@ -57,10 +57,15 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { isWhiteboardCard } from "../cards/whiteboard";
+import { getSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
+import { IceContextMenu } from "./IceContextMenu";
 import { workspaceWriter } from "./iceBridge";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
+import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
 import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
+import { planCardLanding } from "./iceSelectionLanding";
+import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
 import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
@@ -755,7 +760,23 @@ export function IceSurface({
   const [seed, setSeed] = useState<SeedReport | null>(null);
   const [fps, setFps] = useState<number | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
-  const canWriteLayout = useUiStore((state) => state.canEditLayout && !state.readOnly);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
+  const canEditContent = useUiStore((state) => state.canEditContent);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
+  const canManageTrash = useUiStore((state) => state.canManageTrash);
+  const readOnly = useUiStore((state) => state.readOnly);
+  // One capability row for everything the surface does. The session matrix in
+  // the store says what this seat may do; `iceShareCaps` narrows it to the
+  // share's scope, so a board share cannot write a card on another board and a
+  // card share can edit that card's text but never its placement.
+  const caps = useMemo(
+    () =>
+      iceShareCaps({
+        share: getSession().share,
+        ui: { readOnly, canEditLayout, canEditContent, canManageSchema, canManageTrash },
+      }),
+    [readOnly, canEditLayout, canEditContent, canManageSchema, canManageTrash],
+  );
   const pendingPinFocus = useUiStore((state) => state.pendingPinFocus);
   const dropPinRequest = useUiStore((state) => state.dropPinRequest);
   const actorId = useRef(`local-${Math.random().toString(36).slice(2, 10)}`);
@@ -991,13 +1012,26 @@ export function IceSurface({
         // keeps its subject until the user closes it or the card goes away,
         // which is how the shell already behaved.
         const only = selected.length === 1 ? selected[0] : undefined;
-        if (only !== undefined && store.inspectorNodeId !== only) store.openInspector(only);
+        if (only !== undefined && store.inspectorNodeId !== only) {
+          // The shared landing plan decides whether a pick may open a reading
+          // surface at all, and the share decides whether this seat may see this
+          // card. A viewer keeps the selection; the panel just does not open.
+          const landing = planCardLanding({
+            cardId: only,
+            created: false,
+            canEditContent: caps.canEditContent,
+            readOnly:
+              !caps.canOpenInspector || !withinShareScope({ cardId: only }, getSession().share),
+            hasPlacement: true,
+          });
+          if (landing.openInspector) store.openInspector(only);
+        }
       }
       handle = requestAnimationFrame(tick);
     };
     handle = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(handle);
-  }, [phase, seed]);
+  }, [phase, seed, caps.canEditContent, caps.canOpenInspector]);
 
   // FPS is sampled in a rAF counter and published once per second, never per
   // frame: the HUD must not make React the desk's frame loop.
@@ -1266,7 +1300,7 @@ export function IceSurface({
       pick: pickEntity,
       rectOf,
       writer: workspaceWriter(liveWorkspace),
-      role: canWriteLayout ? "editor" : "viewer",
+      role: caps.controllerRole,
       removeCards: (cardIds) => {
         const entities = [...slots]
           .filter(([, slot]) => cardIds.includes(slot.cardId))
@@ -1344,15 +1378,88 @@ export function IceSurface({
       }
     };
     root.addEventListener("dblclick", onDouble);
+
+    // A right-click is the shell's menu, opened on whatever the pick found. The
+    // mapping lives in `iceContextMenu`; this only supplies the pick, the
+    // camera and the entity maps the surface already keeps.
+    const pinSlots = new Map([...seed.pinEntities].map(([pinId, entity]) => [entity, pinId]));
+    const onContextMenu = (event: MouseEvent): void => {
+      event.preventDefault();
+      const bounds = root.getBoundingClientRect();
+      let pick: MenuPick | null = null;
+      try {
+        pick = desk.pick({ x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+      } catch {
+        pick = null;
+      }
+      const target = menuTargetFromPick({
+        pick:
+          pick === null
+            ? null
+            : {
+                entity: pick.entity,
+                type: pick.type,
+                ...(pick.part === undefined ? {} : { part: pick.part }),
+              },
+        slots,
+        pins: pinSlots,
+        portals: seed.portalMats,
+        sections: new Map(),
+        edges: new Map(),
+      });
+      const store = useUiStore.getState();
+      // The menu acts on the selection, so a right-click selects what it hit.
+      if (target?.kind === "node" || target?.kind === "portal") {
+        const cardId = target.cardId;
+        if (cardId !== undefined && !store.selectedNodeIds.includes(cardId)) {
+          store.selectSection(null);
+          store.setSelectedNodeIds([cardId]);
+        }
+      } else if (target?.kind === "section") {
+        store.selectSection(target.sectionId ?? null);
+      } else if (target?.kind === "edge") {
+        store.selectSection(null);
+        store.setSelectedNodeIds([]);
+        store.setSelectedEdgeIds(target.edgeId === undefined ? [] : [target.edgeId]);
+      } else {
+        store.selectSection(null);
+        store.setSelectedNodeIds([]);
+        store.setSelectedEdgeIds([]);
+      }
+      const view = engine.world.getResource(core.Camera);
+      store.openContextMenu(
+        contextMenuStateFor({
+          client: { x: event.clientX, y: event.clientY },
+          container: {
+            left: bounds.left,
+            top: bounds.top,
+            width: bounds.width,
+            height: bounds.height,
+          },
+          camera:
+            view === undefined
+              ? { x: 0, y: 0, zoom: 1 }
+              : {
+                  x: -view.x * (view.zoom || 1),
+                  y: -view.y * (view.zoom || 1),
+                  zoom: view.zoom || 1,
+                },
+          target,
+        }),
+      );
+    };
+    root.addEventListener("contextmenu", onContextMenu);
+
     return () => {
       root.removeEventListener("dblclick", onDouble);
+      root.removeEventListener("contextmenu", onContextMenu);
       detach();
       controller.cancel();
       commandsRef.current = null;
       portalDepth.current = 0;
       setPortalPath([]);
     };
-  }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, canWriteLayout]);
+  }, [phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, caps.controllerRole]);
 
   /**
    * The inline whiteboard is intent-gated: the pointer must rest over a
@@ -1472,6 +1579,9 @@ export function IceSurface({
     if (dropPinRequest === 0) return;
     if (phase.kind !== "ready" || !workspaceMode) return;
     if (liveWorkspace === null || rootBoardId === null) return;
+    // A viewer, or a share that does not cover this board, cannot leave a marker
+    // on someone else's canvas.
+    if (!caps.canDropPin || !withinShareScope({ boardId: rootBoardId }, getSession().share)) return;
     const viewport = phase.engine.world.getResource(phase.core.Viewport);
     const camera = phase.engine.world.getResource(phase.core.Camera);
     if (viewport === undefined || camera === undefined) return;
@@ -1504,7 +1614,7 @@ export function IceSurface({
     } catch (error) {
       console.warn("[ice] could not drop a pin", error);
     }
-  }, [dropPinRequest, phase, workspaceMode, liveWorkspace, rootBoardId, seed]);
+  }, [dropPinRequest, phase, workspaceMode, liveWorkspace, rootBoardId, seed, caps.canDropPin]);
 
   const keymapOverrides = useMemo(() => {
     if (!workspaceMode) return undefined;
@@ -1570,11 +1680,39 @@ export function IceSurface({
         </ready.EngineProvider>
       )}
 
+      {liveWorkspace !== null && rootBoardId !== null ? (
+        <IceContextMenu
+          workspace={liveWorkspace}
+          rootBoardId={rootBoardId}
+          canCreateContent={caps.canCreateCards}
+          canCreateBoards={canManageSchema}
+          canEditContent={caps.canEditContent}
+          canEditLayout={caps.canWriteLayout}
+          canManageStructure={canEditLayout}
+          canManageTrash={canManageTrash && caps.canWriteLayout}
+          canManageLinks={canManageSchema}
+          reconcile={() => commandsRef.current?.reconcile()}
+          enterPortal={(cardId) => {
+            const entity = [...(seed?.portalMats.keys() ?? [])].find(
+              (candidate) => seed?.entitySlots.get(candidate)?.cardId === cardId,
+            );
+            if (entity === undefined || phase.kind !== "ready") return;
+            try {
+              phase.engine.ops.enterContainer(entity);
+              portalDepth.current += 1;
+              setPortalPath((path) => [...path, seed?.portalMats.get(entity)?.title ?? "Board"]);
+            } catch {
+              // A refused entry leaves the camera where it is.
+            }
+          }}
+        />
+      ) : null}
+
       {whiteboard !== null ? (
         <SuiteWhiteboardStage
           activeCardId={whiteboard.cardId}
           box={whiteboard.box}
-          readOnly={!canWriteLayout}
+          readOnly={!caps.canWriteLayout}
           suspended={cameraMoving}
           onCommit={(cardId, commit) => {
             if (liveWorkspace === null) return;

@@ -321,6 +321,23 @@ the reference machine; a software adapter is correctness-only.
 - Live reflow or an auto-layout daemon.
 - Migrating server rooms or deleting old local databases.
 
+## 7.1 Next fleet deployment
+
+Must land:
+
+1. **Root editing** — drag/resize/delete with one Loro commit per gesture, Loro undo/redo, final
+   snapped rect, ICE history disabled.
+2. **Portals** — nested board views from `icePortals`, depth 2+, multi-placement, cycle stubs,
+   `enterContainer`/`exitContainer` camera entry.
+3. **Pins** — drop, list in the existing library/Views shell, click to navigate; one pin move per
+   commit.
+4. **Whiteboard** — inline Excalidraw at full LOD plus the existing focus surface; preview below.
+5. **Shell editing path** — inspector/focus remain the text editors; the ICE overlay stays read-only
+   for text.
+
+Deferred: presence/shares, inline Tiptap editing on the overlay, crossfade/editor-budget polish.
+Stretch only if the must-land set is green: LOD crossfade and the mounted-editor cap.
+
 ## 8. Status board
 
 | Workstream | Status | Next artifact |

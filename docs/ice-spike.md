@@ -1,6 +1,6 @@
 # The ICE spike: operator guide
 
-`?canvas=ice` mounts an experimental, in-memory `@vibecook/ice` desk. It is a rendering spike,
+`/ice.html` (also reachable as `?canvas=ice`) mounts an experimental, in-memory `@vibecook/ice` desk. It is a rendering spike,
 not a Suite surface: it reads and writes no workspace, share or presence data, and the React Flow
 scene remains the default surface and the only document truth. The decision record is
 [ADR-0032](./decisions/0032-ice-engine-deferral.md); the scene contract it is measured against is
@@ -54,7 +54,7 @@ The launcher (`scripts/ice-chrome.mjs`) does four things:
 4. Opens a fresh workspace with the ICE surface mounted:
 
    ```text
-   http://localhost:5173/?workspace=suite-ice-<timestamp>&fresh=1&canvas=ice#owner=<uuid>
+   http://localhost:5173/ice.html
    ```
 
    Every launch uses a new workspace id, so you never have to clear state to get the demo back.
@@ -146,7 +146,7 @@ SUITE_ICE_E2E=1 pnpm --filter @suite/e2e e2e ice.spec.ts
 ```
 
 That spec launches the system Chrome **headed** with the flags above, opens a fresh
-`?canvas=ice` workspace, waits for `engine: ready` and `10/10 objects seeded`, asserts the desk
+`/ice.html` page, waits for `engine: ready` and `10/10 objects seeded`, asserts the desk
 canvas exists, and writes a screenshot only when it fails (under `e2e/test-results/`, so no
 baseline PNG is committed). Without `SUITE_ICE_E2E` the file skips, and the default
 `pnpm e2e` run still needs no GPU. See [testing.md](./testing.md) for the rest of the e2e commands.

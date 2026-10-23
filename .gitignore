@@ -37,4 +37,4 @@ stryker.log
 .worktrees/
 
 # Chrome profile the ICE launcher (`pnpm dev:ice`) owns.
-.ice-chrome-profile/
+.ice-chrome-profile*/

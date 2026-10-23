@@ -19,6 +19,10 @@ const CHROME_ARGS = [
   "--enable-features=Vulkan",
   "--use-angle=vulkan",
   "--enable-unsafe-swiftshader",
+  "--ozone-platform=x11",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-background-timer-throttling",
 ];
 
 function messageOf(error: unknown): string {
@@ -48,7 +52,7 @@ test.describe("ICE demo surface", () => {
     const testInfo = test.info();
 
     const origin = testInfo.project.use.baseURL ?? "http://localhost:5173";
-    const url = `/?workspace=e2e-ice-${Date.now()}&fresh=1&canvas=ice#owner=${crypto.randomUUID()}`;
+    const url = "/ice.html";
 
     const browser = await launchChrome();
     const context = await browser.newContext({

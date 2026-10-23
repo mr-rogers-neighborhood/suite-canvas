@@ -420,14 +420,19 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
 }
 
 /** The ICE demo mount. The routing agent renders this only for `?canvas=ice`. */
-export function IceSurface() {
+export interface IceSurfaceProps {
+  /** Where the fallback/HUD returns; the standalone demo overrides it to `/`. */
+  readonly sceneHref?: string;
+}
+
+export function IceSurface({ sceneHref: sceneHrefProp }: IceSurfaceProps = {}) {
   const [phase, setPhase] = useState<Phase>({ kind: "checking" });
   const [engineState, setEngineState] = useState<EngineState | null>(null);
   const [seed, setSeed] = useState<SeedReport | null>(null);
   const [fps, setFps] = useState<number | null>(null);
   const [copyState, setCopyState] = useState<string | null>(null);
   const [runId, setRunId] = useState(0);
-  const sceneHref = useMemo(sceneSurfaceHref, []);
+  const sceneHref = useMemo(() => sceneHrefProp ?? sceneSurfaceHref(), [sceneHrefProp]);
   const owned = useRef<{ engine?: CanvasEngine; doc?: DocSession; gpu?: EngineGpu }>({});
   const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

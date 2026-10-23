@@ -71,9 +71,10 @@ status above or answer any of the gates.
 
 - **Not default, not document truth.** The routing agent may mount it only when
   `currentCanvasSurface()` is `ice`, behind `lazy(() => import("./ice/IceSurface"))`. The desk is a
-  private, in-memory `@vibecook/ice` document: the spike seeds two notes and one mini mat (a note
-  inside a container, so the nested face and far-LOD chips are visible), and it never reads or
-  writes Suite's graph, session or stores. Closing the route disposes the document and the engine.
+  private, in-memory `@vibecook/ice` document. The standalone `/ice.html` entry (the launcher's
+  target) seeds a richer 10-object desk: six notes, two mini mats with nested notes, a whiteboard
+  and a notebook, so the nested face and far-LOD chips are visible. It never reads or writes
+  Suite's graph, session or stores. Closing the route disposes the document and the engine.
 - **Lazy by construction.** The surface checks `navigator.gpu` and asks for an adapter before it
   imports anything. `@vibecook/ice`, `/desk`, `/desk/objects` and `/react` are dynamic imports, so
   the default canvas and the scene surface load no ICE code. A production `vite build` of the app

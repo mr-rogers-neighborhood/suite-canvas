@@ -14,7 +14,6 @@
 // biome-ignore-all lint/suspicious/noUndeclaredEnvVars: a root-level launcher, not a turbo task, so
 // SUITE_CHROME / SUITE_DEV_URL / SUITE_ICE_* never enter turbo's cache key.
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
@@ -22,7 +21,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PROFILE_DIR = join(root, ".ice-chrome-profile");
+const PROFILE_ROOT = join(root, ".ice-chrome-profile");
 const DEFAULT_DEV_URL = "http://localhost:5173";
 const DEV_READY_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 25_000;
@@ -36,8 +35,8 @@ Usage:
 
 Launch:
   Ensures a dev server answers on SUITE_DEV_URL, then opens
-  <dev-url>/?workspace=suite-ice-<timestamp>&fresh=1&canvas=ice#owner=<uuid>
-  in headed Chrome with a dedicated profile at .ice-chrome-profile/.
+  <dev-url>/ice.html
+  in headed Chrome with a fresh per-launch profile under .ice-chrome-profile/.
 
 Chrome flags:
   --enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan
@@ -186,6 +185,9 @@ function chromeBaseArgs(profileDir) {
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
+    // NVIDIA compositing is steadier on X11 here; Wayland is still available
+    // by overriding SUITE_ICE_CHROME_ARGS with --ozone-platform=wayland.
+    ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
     ...extraArgs(),
   ];
 }
@@ -458,7 +460,7 @@ function reportProbe(report) {
  * of that accuracy.
  */
 async function runProbe(chrome) {
-  const profile = join(PROFILE_DIR, `probe-${process.pid}`);
+  const profile = join(PROFILE_ROOT, `probe-${process.pid}`);
   const page = await startProbePage();
   let child = null;
   let cdp = null;
@@ -510,8 +512,10 @@ async function runProbe(chrome) {
 
 /** Starts Chrome detached so the window outlives this command. */
 async function launchHeaded(chrome, url) {
-  mkdirSync(PROFILE_DIR, { recursive: true });
-  const args = [...chromeBaseArgs(PROFILE_DIR), url];
+  mkdirSync(PROFILE_ROOT, { recursive: true });
+  const profile = join(PROFILE_ROOT, `launch-${Date.now()}`);
+  mkdirSync(profile, { recursive: true });
+  const args = [...chromeBaseArgs(profile), url];
   const child = spawn(chrome, args, { cwd: root, detached: true, stdio: "ignore" });
 
   await new Promise((resolve, reject) => {
@@ -526,24 +530,23 @@ async function launchHeaded(chrome, url) {
     });
   });
   child.unref();
+  return profile;
 }
 
 async function runLaunch(chrome) {
   const devUrl = devUrlFromEnv();
   await ensureDevServer(devUrl);
 
-  const workspaceId = `suite-ice-${Date.now()}`;
-  const ownerKey = randomUUID();
-  const url = `${devUrl}/?workspace=${workspaceId}&fresh=1&canvas=ice#owner=${ownerKey}`;
+  const url = `${devUrl}/ice.html`;
 
-  await launchHeaded(chrome, url);
+  const profile = await launchHeaded(chrome, url);
 
   console.log("");
   console.log("URL:");
   console.log(`  ${url}`);
   console.log("");
   console.log(`Chrome:  ${chrome}`);
-  console.log(`Profile: ${PROFILE_DIR}`);
+  console.log(`Profile: ${profile}`);
   console.log("");
   console.log('The integrated browser cannot run ICE: the HUD stalls on "engine: degraded".');
   console.log("Headless Chrome only reaches a software adapter, so it cannot stand in for");

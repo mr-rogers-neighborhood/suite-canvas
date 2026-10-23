@@ -53,6 +53,14 @@ export interface BillingEnvironment {
   SUITE_SELF_HOST_URL: string | undefined;
   SES_FROM_ADDRESS: string | undefined;
   SUITE_SES_REGION: string | undefined;
+  /**
+   * `dynamodb` makes the event claims and customer records durable across
+   * containers. Unset — the alpha default — keeps the in-memory store, which
+   * is right for tests and dry runs and wrong for real money.
+   */
+  SUITE_BILLING_STORE: string | undefined;
+  /** Table the DynamoDB store reads and writes; required by that backend only. */
+  SUITE_BILLING_TABLE: string | undefined;
 }
 
 export const DEFAULT_SELF_HOST_URL =
@@ -71,6 +79,8 @@ export function environment(
     SUITE_SELF_HOST_URL: source.SUITE_SELF_HOST_URL,
     SES_FROM_ADDRESS: source.SES_FROM_ADDRESS,
     SUITE_SES_REGION: source.SUITE_SES_REGION,
+    SUITE_BILLING_STORE: source.SUITE_BILLING_STORE,
+    SUITE_BILLING_TABLE: source.SUITE_BILLING_TABLE,
   };
 }
 
@@ -81,6 +91,32 @@ export function environment(
 export function billingEnabled(env: BillingEnvironment): boolean {
   const raw = env.SUITE_BILLING_ENABLED?.trim().toLowerCase();
   return raw === "1" || raw === "true";
+}
+
+export type BillingStoreBackend = "memory" | "dynamodb";
+
+/**
+ * Only the one deliberate spelling selects DynamoDB; everything else — unset,
+ * `memory`, a typo — keeps the in-memory store, which is the alpha default.
+ */
+export function billingStoreBackend(env: BillingEnvironment): BillingStoreBackend {
+  return env.SUITE_BILLING_STORE?.trim().toLowerCase() === "dynamodb" ? "dynamodb" : "memory";
+}
+
+/**
+ * The adapter is imported only when it is selected, so a deployment on the
+ * in-memory store never loads the AWS SDK (and never needs it installed).
+ * A construction failure is thrown, not swallowed: answering 500 keeps Stripe
+ * retrying instead of silently falling back to a store that cannot remember a
+ * claim between containers.
+ */
+export async function billingStoreFor(
+  env: BillingEnvironment,
+  log: Logger = jsonLogger,
+): Promise<BillingStore> {
+  if (billingStoreBackend(env) === "memory") return memoryStore();
+  const { dynamoDbStoreFromEnvironment } = await import("./store-dynamodb.ts");
+  return dynamoDbStoreFromEnvironment({ table: env.SUITE_BILLING_TABLE, log });
 }
 
 /** API Gateway (REST or HTTP API) proxy event, narrowed to what we read. */
@@ -293,11 +329,26 @@ export function createHandler(deps: HandlerDeps): BillingHandler {
 }
 
 /**
- * Warm-container store: enough for a retry that lands on the same Lambda
- * instance, not enough to be correct. The deployed function must swap this for
- * DynamoDB before the endpoint takes real money; see docs/billing.md.
+ * Warm-container store. The in-memory default is enough for a retry that lands
+ * on the same Lambda instance, not enough to be correct; set
+ * `SUITE_BILLING_STORE=dynamodb` before the endpoint takes real money. See
+ * docs/billing.md.
+ *
+ * The promise is cached so concurrent invocations share one client, and a
+ * failed construction is dropped so the next invocation can try again.
  */
-const sharedStore = memoryStore();
+let storePromise: Promise<BillingStore> | null = null;
+
+function sharedStore(env: BillingEnvironment): Promise<BillingStore> {
+  if (storePromise === null) {
+    const pending = billingStoreFor(env);
+    storePromise = pending;
+    pending.catch(() => {
+      storePromise = null;
+    });
+  }
+  return storePromise;
+}
 
 let emailerPromise: Promise<Emailer> | null = null;
 
@@ -323,6 +374,21 @@ export async function handler(event: LambdaHttpEvent): Promise<LambdaHttpRespons
     return json(503, { ok: false, error: "billing-disabled" });
   }
 
+  let store: BillingStore;
+  try {
+    store = await sharedStore(env);
+  } catch (error) {
+    // A misconfigured durable store must fail loudly: falling back to memory
+    // would process the event and lose the claim, so the retry could mint twice.
+    const failure = failureOf(error);
+    jsonLogger("error", "billing store unavailable", {
+      backend: billingStoreBackend(env),
+      code: failure.code,
+      problem: failure.problem,
+    });
+    return json(500, { ok: false, error: "processing-failed", code: "store-unavailable" });
+  }
+
   let emailer: Emailer;
   try {
     emailer = await sharedEmailer(env);
@@ -338,5 +404,5 @@ export async function handler(event: LambdaHttpEvent): Promise<LambdaHttpRespons
     return json(500, { ok: false, error: "processing-failed", code: "email-transport" });
   }
 
-  return createHandler({ store: sharedStore, emailer, env, log: jsonLogger })(event);
+  return createHandler({ store, emailer, env, log: jsonLogger })(event);
 }

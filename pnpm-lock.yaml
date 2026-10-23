@@ -3759,7 +3759,9 @@ packages:
         optional: true
 
 ignoredOptionalDependencies:
+  - '@aws-sdk/client-dynamodb'
   - '@aws-sdk/client-ses'
+  - '@aws-sdk/lib-dynamodb'
 
 snapshots:
 

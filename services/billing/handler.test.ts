@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   type BillingEnvironment,
   billingEnabled,
+  billingStoreBackend,
+  billingStoreFor,
   createHandler,
   environment,
   type LambdaHttpEvent,
@@ -39,6 +41,8 @@ function testEnv(overrides: Partial<BillingEnvironment> = {}): BillingEnvironmen
     SUITE_SELF_HOST_URL: SELF_HOST,
     SES_FROM_ADDRESS: undefined,
     SUITE_SES_REGION: undefined,
+    SUITE_BILLING_STORE: undefined,
+    SUITE_BILLING_TABLE: undefined,
     ...overrides,
   };
 }
@@ -357,5 +361,27 @@ describe("billing switch", () => {
     for (const value of ["0", "false", "", "  ", "yes", "on"]) {
       assert.equal(billingEnabled(environment({ SUITE_BILLING_ENABLED: value })), false, value);
     }
+  });
+});
+
+describe("store selection", () => {
+  it("keeps the in-memory store unless the flag names dynamodb", () => {
+    assert.equal(billingStoreBackend(testEnv()), "memory");
+    for (const value of [undefined, "", "memory", "postgres", "dynamo"]) {
+      assert.equal(
+        billingStoreBackend(testEnv({ SUITE_BILLING_STORE: value })),
+        "memory",
+        String(value),
+      );
+    }
+    for (const value of ["dynamodb", " DynamoDB ", "DYNAMODB"]) {
+      assert.equal(billingStoreBackend(testEnv({ SUITE_BILLING_STORE: value })), "dynamodb", value);
+    }
+  });
+
+  it("answers with a working store on the default path, without the SDK", async () => {
+    const store = await billingStoreFor(testEnv());
+    assert.equal(await store.claimEvent("evt_selection_1"), true);
+    assert.equal(await store.claimEvent("evt_selection_1"), false);
   });
 });

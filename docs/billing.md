@@ -5,7 +5,9 @@ the Stripe webhook is not deployed. `SUITE_BILLING_ENABLED` defaults to `0` and 
 every delivery while it is off, so a function deployed by mistake cannot mint a licence. What stays
 documented is the part that is real today: the licence token format, the self-host path, and the
 design of the service that will take money when billing opens. The payment path is V1 work; the
-alpha closes A5 by being explicitly closed rather than by being durable.
+alpha closes A5 by being explicitly closed rather than by being durable. A DynamoDB adapter
+(`SUITE_BILLING_STORE=dynamodb`) exists behind the same interface but is not deployed for the
+alpha either — see [DynamoDB store](#dynamodb-store).
 
 Nothing in the app asks for payment. A licence key is a signed token you paste into the workspace
 when you run a hosted relay; local editing never consults it. Self-hosting needs no key at all.
@@ -80,13 +82,68 @@ Two layers, because one is not enough:
   day is reported as `unchanged` — no second token, no second email.
 
 The in-process store is not atomic across concurrent invocations: two *different* event ids for one
-invoice arriving in the same instant could both mint. The DynamoDB replacement should make the
-customer write conditional on `lastInvoiceId` and the claim a conditional put on the event id. The
-ordered retries Stripe actually performs are already covered.
+invoice arriving in the same instant could both mint. That is the reason the DynamoDB adapter exists:
+it makes the claim a conditional put on the event id and the customer write conditional on
+`updatedAt`, so the second writer loses instead of overwriting. The ordered retries Stripe actually
+performs are already covered by the in-process store. The default stays the in-process store — see
+[DynamoDB store](#dynamodb-store).
 
 The licence id is derived from the Stripe customer id (`lic-` + 16 hex chars of SHA-256), not
 random. A retry, or a lost store entry, therefore re-issues under the same id, and the relay — which
 records claims per licence id — cannot grant one subscription two workspace quotas.
+
+## DynamoDB store
+
+`services/billing/store-dynamodb.ts` implements the same `BillingStore` on one DynamoDB table.
+Selection is one variable, and unset is the in-process default:
+
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `SUITE_BILLING_STORE` | no | `dynamodb` selects the table below. Unset, empty, `memory` or any other spelling keeps the in-process store. |
+| `SUITE_BILLING_TABLE` | with `SUITE_BILLING_STORE=dynamodb` | Table name. Missing is a `500`, never a silent fall back to memory: a Lambda that forgot its claims would mint twice. |
+
+One table, string partition key `pk`, no sort key, two prefixes:
+
+| Row | Key | Value |
+| --- | --- | --- |
+| Event claim | `event#<stripe event id>` | `claimedAt` and `ttl` (30 days). The row existing *is* the claim. |
+| Customer | `customer#<stripe customer id>` | The `LicenceRecord` from `store.ts`, unchanged in shape, flattened beside `pk`. |
+
+Every write is conditional. A read followed by a write is two round trips with a window in between,
+and two deliveries of one event routinely land in different containers:
+
+- `claimEvent` is `PutItem` with `attribute_not_exists(pk)`. A `ConditionalCheckFailedException`
+  means "already processed" and returns `false`; every other error propagates. `releaseEvent`
+  deletes the row, so a retry after a `500` is not mistaken for a duplicate.
+- `putCustomer` is `PutItem` with `attribute_not_exists(updatedAt) OR updatedAt <= :updatedAt`. A
+  slow retry carrying an older `updatedAt` is refused rather than rolling a customer back to a
+  shorter expiry; an equal timestamp still writes, so replaying the same record is harmless.
+- TTL only tidies the table, and DynamoDB deletes on its own schedule. Correctness rests on the
+  conditional write, not on the deletion.
+
+IAM for the function role — one table, three actions, no query:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DeleteItem"],
+  "Resource": "arn:aws:dynamodb:<region>:<account>:table/<table>"
+}
+```
+
+Every access is one item by key (`GetItem`, `PutItem`, `DeleteItem`); the adapter never queries or
+scans, and TTL expiry is performed by DynamoDB itself. `dynamodb:DescribeTable` is not needed at
+runtime.
+
+`@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` are optional dependencies of the service and
+are imported by name only when the flag selects them, so a deployment on the in-process store neither
+installs nor initializes them; put them in the Lambda bundle (or a layer) for a DynamoDB deployment.
+The adapter is tested against a fake client (`store-dynamodb.test.ts`); there is no live AWS test.
+
+> **Not deployed for the alpha.** This is code and tests only: the flag is unset wherever the alpha
+> ships, no table exists, and `SUITE_BILLING_ENABLED=0` still closes the endpoint before the store is
+> touched. A5 closes by public closure, not by this adapter. Creating the table, the IAM policy and
+> the flag is V1 work.
 
 ## Environment
 
@@ -99,6 +156,8 @@ records claims per licence id — cannot grant one subscription two workspace qu
 | `SUITE_SELF_HOST_URL` | no | Link in the email for the self-hosted path. Defaults to this repo's deployment section. |
 | `SES_FROM_ADDRESS` | no | Verified SES identity. Unset ⇒ the console transport logs "email sent" without sending or printing the token. |
 | `SUITE_SES_REGION` | no | SES region; defaults to the Lambda's region. |
+| `SUITE_BILLING_STORE` | no | `dynamodb` selects the durable store; unset keeps the in-process store. See [DynamoDB store](#dynamodb-store). |
+| `SUITE_BILLING_TABLE` | with `SUITE_BILLING_STORE=dynamodb` | DynamoDB table name; the default table has key `pk`. |
 
 `STRIPE_PRICE_TIERS` is what makes a tier configuration instead of code:
 
@@ -208,7 +267,7 @@ There is no server to patch:
 | API Gateway (HTTP API) | `POST /stripe/webhook`, no auth beyond the signature, payload limit ≥ 1 MiB, integration timeout 30 s. |
 | Lambda (Node 24+, ESM) | handler `handler.handler`, 256 MB, 10 s timeout, env from the table above. `STRIPE_WEBHOOK_SECRET` and `SUITE_LICENCE_PRIVATE_KEY` from SSM SecureString. Node 22.18+ also runs these files, since they rely on built-in type stripping. |
 | SES | Verified domain or address; `SES_FROM_ADDRESS` is that identity. Request production access before selling. |
-| DynamoDB | `pk` key on one table: `EVENT#<event id>` rows for claims (TTL 30 days), `CUSTOMER#<customer id>` rows for `LicenceRecord`. The in-process store in `store.ts` only survives a warm container and **must** be replaced before the endpoint takes real money. |
+| DynamoDB | One table, `pk` string key: `event#<event id>` claims (TTL 30 days) and `customer#<customer id>` for the `LicenceRecord`. The adapter is selected by `SUITE_BILLING_STORE=dynamodb`; see [DynamoDB store](#dynamodb-store). The default in-process store in `store.ts` only survives a warm container and **must** not take real money. |
 | CloudWatch | The handler logs `{ts, level, msg, component:"billing", eventId, licenceId, tier, expiresAt}`. It never logs the token, the private key or the webhook secret. |
 
 Deploy steps, when billing opens: create the SES identity first (verification takes time), then the

@@ -345,6 +345,73 @@ Must land:
 Deferred: presence/shares, inline Tiptap editing on the overlay, crossfade/editor-budget polish.
 Stretch only if the must-land set is green: LOD crossfade and the mounted-editor cap.
 
+## 7.2 Pinned for the next planning stage: the vocabulary
+
+The infinite canvas added a dimension the old vocabulary no longer describes. Nothing here is
+decided; it is recorded so the next planning pass starts from the same questions rather than
+rediscovering them.
+
+**The proposal under discussion**
+
+| Today | Proposed | Why |
+| --- | --- | --- |
+| Section (a titled region on a board) | **Board** | A section is already a bounded region with a title and membership — structurally what ICE draws as a mat/board on the desk. |
+| Board (a named set of placements) | **View** | A board is a *subset of the canvas*, which is what a view is: the same objects, framed differently. |
+| Tab open on a board | **View or Board** | Opening a view restores a frame; opening a board restores the mat. Same gesture, two subjects. |
+
+**Why the rename is attractive**
+
+- It matches what the user sees. The desk literally draws boards; calling a titled region a
+  "section" asks people to translate at every mention.
+- It matches the stronger claim in ADR-0035: several placements of one card already means the
+  "board" is a projection, not a container. "View" says that honestly.
+- It retires a word collision that has cost real time: "board" currently means both the tab's
+  content and the canvas page, and the code has to disambiguate in every comment.
+
+**Why it is more than a rename**
+
+- `Placement.boardId` is in the schema, in Loro history, in share scopes, in URLs
+  (`?board=`), in the pins model and in every test fixture. Renaming is a migration, not a find and
+  replace: an additive alias field plus a read-both/write-new window, or a one-shot migration on
+  load with a schema bump.
+- Three name pairs would coexist during that window (old section/board, new board/view), which is
+  the worst possible moment to be writing docs.
+- `View` collides with the existing *saved query* meaning (`views`, `activeViewId`,
+  `libraryScope`). If `View` means a canvas frame, a saved query needs another word — `Saved query`
+  or `Filter` — and that is a second rename.
+
+**The dimension worth deciding first**
+
+The canvas gives us two axes that the current model conflates: **where an object is** (one spatial
+layout, ADR-0036) and **what a tab is looking at** (a frame over that layout). A clean model needs
+three nouns, not two:
+
+1. **Object** — a card, a whiteboard, a portal. One position per placement; never two layouts.
+2. **Board** (proposed; today's section) — a titled region of the canvas, drawn as a mat. Belongs to
+   the spatial model.
+3. **View** (proposed; today's board) — a framing: which mat, which zoom, which filter. Belongs to
+   the camera/session model, not the document.
+
+If that split holds, `Placement` should eventually carry a **board** (the mat) and a tab should
+carry a **view** (the frame), which is exactly the split `sectionLayout`/`boardViewports` already
+half-implements in code. The rename then follows the model instead of preceding it.
+
+**Questions for planning**
+
+1. Does "Board" replace "Section" *and* keep the mat as the spatial container, or does a Board become
+   a first-class canvas object (spawnable, resizable, nestable) that sections are promoted into?
+2. Is a View persisted (a saved frame, shareable) or ephemeral (a tab's camera)? Today's boards are
+   persisted; a "view" that is only a camera would lose the multi-placement model.
+3. What happens to `?board=` URLs, share scopes (`share.scope === "board"`), pins (`pin.boardId`) and
+   the card-share model during a rename window? One migration, or a long alias?
+4. If "View" is taken by saved queries, which noun wins: canvas frames or saved queries?
+5. Does the library's "Views" tab become "Filters" or stay, and does the Pins tab follow?
+
+**Recommendation to take into planning:** decide question 1 first. Everything else (URLs, shares,
+schema field names, docs) is downstream of whether a Board is a *region* or an *object*, and that is
+also the decision that determines whether ICE's native mat becomes the Board primitive or merely
+draws one.
+
 ## 8. Status board
 
 | Workstream | Status | Next artifact |

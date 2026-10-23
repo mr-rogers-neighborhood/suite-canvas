@@ -5,7 +5,7 @@ import {
   LoroDoc,
   LoroList,
   LoroMap,
-  type LoroText,
+  LoroText,
   UndoManager,
   type Value,
 } from "loro-crdt";
@@ -41,6 +41,8 @@ import {
   tagSchema,
 } from "../schema.js";
 import { normalizeTemplate } from "../template.js";
+import type { SavedView, ViewQuery } from "../views.js";
+import { savedViewSchema } from "../views.js";
 
 export type WorkspaceSection =
   | "boards"
@@ -79,6 +81,13 @@ export interface CreateCardInput {
   connectors?: Connector[];
 }
 
+export interface DuplicateCardOptions {
+  /** Board for the copy's placement; omit to create the copy in the inbox. */
+  boardId?: string;
+  /** Offset from the source card's position on that board; defaults to 24, 24. */
+  offset?: { x: number; y: number };
+}
+
 export interface CreateTypeInput {
   id?: string;
   name: string;
@@ -109,7 +118,6 @@ export interface CreateEdgeInput {
   kind?: GraphEdge["kind"];
 }
 
-/** One placement in a multi-card move; only geometry is written. */
 export interface PlacementMoveInput {
   cardId: string;
   x: number;
@@ -130,6 +138,15 @@ export interface CreateSectionInput {
   width?: number;
   height?: number;
   color?: Section["color"];
+}
+
+/** A saved query, plus where it sits in the Views menu. */
+export interface CreateViewInput {
+  id?: string;
+  name: string;
+  /** Defaults to the end of the list. */
+  position?: number;
+  query: ViewQuery;
 }
 
 /** Deterministic id so every client seeds the same default board. */
@@ -250,6 +267,73 @@ function readNumber(map: LoroMap, key: string): number | undefined {
 function readBoolean(map: LoroMap, key: string): boolean | undefined {
   const value = map.get(key);
   return typeof value === "boolean" ? value : undefined;
+}
+
+/** Sorted ids of a membership map (`id -> true`), so reads are deterministic. */
+function readIdSet(value: unknown): string[] {
+  return isMap(value) ? value.keys().sort() : [];
+}
+
+/** Rewrites a membership map to exactly `ids`, leaving shared keys untouched. */
+function writeIdSet(target: LoroMap, ids: readonly string[]): void {
+  const wanted = new Set(ids);
+  for (const key of [...target.keys()]) {
+    if (!wanted.has(key)) target.delete(key);
+  }
+  for (const id of wanted) target.set(id, true);
+}
+
+/**
+ * Deep-copies a rich-text container tree into a fresh one. This mirrors the
+ * share projection's copy (`projection.ts`): maps become mergeable children so
+ * a repeat copy lands on the same container instead of forking it, list items
+ * are inserted as new containers to keep their order, and text goes through
+ * `toDelta`/`applyDelta` so marks survive.
+ */
+function copyContainerTree(source: LoroMap, target: LoroMap): void {
+  for (const [key, value] of source.entries()) {
+    if (isMap(value)) {
+      copyContainerTree(value, target.ensureMergeableMap(key));
+      continue;
+    }
+    if (isList(value)) {
+      copyContainerList(value, target.ensureMergeableList(key));
+      continue;
+    }
+    if (isText(value)) {
+      copyContainerText(value, target.ensureMergeableText(key));
+      continue;
+    }
+    // Plain JSON values travel as-is; other container kinds are not card content.
+    if (value === undefined || isContainer(value)) continue;
+    target.set(key, value);
+  }
+}
+
+/** Lists copy through new containers; scalars keep their position. */
+function copyContainerList(source: LoroList, target: LoroList): void {
+  source.toArray().forEach((value, index) => {
+    if (isMap(value)) {
+      copyContainerTree(value, target.insertContainer(index, new LoroMap()));
+      return;
+    }
+    if (isList(value)) {
+      copyContainerList(value, target.insertContainer(index, new LoroList()));
+      return;
+    }
+    if (isText(value)) {
+      copyContainerText(value, target.insertContainer(index, new LoroText()));
+      return;
+    }
+    if (value === undefined || isContainer(value)) return;
+    target.insert(index, value);
+  });
+}
+
+/** Marks live in the delta, so copying text is a delta round trip. */
+function copyContainerText(source: LoroText, target: LoroText): void {
+  const delta = source.toDelta();
+  if (delta.length > 0) target.applyDelta(delta);
 }
 
 /** Text of a `loro-prosemirror` tree, a text container, or a list of nodes. */
@@ -562,6 +646,7 @@ export class WorkspaceDocument {
   static readonly TITLES_KEY = "titles";
   static readonly REFERENCES_KEY = "references";
   static readonly META_KEY = "meta";
+  static readonly VIEWS_KEY = "views";
 
   readonly doc: LoroDoc;
   private readonly boards: LoroMap;
@@ -575,6 +660,7 @@ export class WorkspaceDocument {
   private readonly titles: LoroMap;
   private readonly references: LoroMap;
   private readonly meta: LoroMap;
+  private readonly viewsMap: LoroMap;
   private readonly cardCache = new Map<string, Card>();
   private readonly placementCache = new Map<string, Placement>();
   private readonly edgeCache = new Map<string, GraphEdge>();
@@ -582,6 +668,7 @@ export class WorkspaceDocument {
   private readonly typeCache = new Map<string, CardType>();
   private readonly tagCache = new Map<string, Tag>();
   private readonly sectionCache = new Map<string, Section>();
+  private readonly viewCache = new Map<string, SavedView>();
   private readonly referenceCache = new Map<string, string[]>();
   private readonly pendingReferences = new Set<string>();
   private referencesScheduled = false;
@@ -590,6 +677,8 @@ export class WorkspaceDocument {
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
+  private readonly viewListeners = new Set<() => void>();
+  private viewRevision = 0;
   private readonly containerCache = new Map<string, CardContainers>();
   private readonly containerListeners = new Map<string, Set<() => void>>();
   private readonly titleListeners = new Map<string, Set<() => void>>();
@@ -607,6 +696,7 @@ export class WorkspaceDocument {
     this.titles = doc.getMap(WorkspaceDocument.TITLES_KEY);
     this.references = doc.getMap(WorkspaceDocument.REFERENCES_KEY);
     this.meta = doc.getMap(WorkspaceDocument.META_KEY);
+    this.viewsMap = doc.getMap(WorkspaceDocument.VIEWS_KEY);
     this.known = {
       boards: new Set(this.boards.keys()),
       cards: new Set(this.cards.keys()),
@@ -621,6 +711,7 @@ export class WorkspaceDocument {
     doc.subscribe((batch) => {
       const touched = new Map<WorkspaceSection, Set<string>>();
       const containers = new Set<string>();
+      const savedViews = new Set<string>();
       for (const event of batch.events) {
         const root = event.path[0];
         if (typeof root !== "string") continue;
@@ -628,6 +719,13 @@ export class WorkspaceDocument {
           if (typeof event.path[1] === "string") containers.add(event.path[1]);
           else if (event.diff.type === "map") {
             for (const key of Object.keys(event.diff.updated)) containers.add(key);
+          }
+          continue;
+        }
+        if (root === WorkspaceDocument.VIEWS_KEY) {
+          if (typeof event.path[1] === "string") savedViews.add(event.path[1]);
+          else if (event.diff.type === "map") {
+            for (const key of Object.keys(event.diff.updated)) savedViews.add(key);
           }
           continue;
         }
@@ -672,6 +770,11 @@ export class WorkspaceDocument {
       if (containers.size > 0 && batch.origin !== INDEX_ORIGIN) {
         for (const cardId of containers) this.pendingReferences.add(cardId);
         this.scheduleReferences();
+      }
+      if (savedViews.size > 0) {
+        for (const viewId of savedViews) this.viewCache.delete(viewId);
+        this.viewRevision += 1;
+        for (const listener of this.viewListeners) listener();
       }
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {
@@ -887,6 +990,142 @@ export class WorkspaceDocument {
     const [first] = this.listBoards();
     if (first) return first;
     return this.createBoard({ id: DEFAULT_BOARD_ID, name: "Board 1" });
+  }
+
+  // ---------------------------------------------------------------- views
+
+  private cachedView(id: string): SavedView | undefined {
+    const cached = this.viewCache.get(id);
+    if (cached) return cached;
+    const fields = this.viewsMap.get(id);
+    if (!isMap(fields)) return undefined;
+    const query = fields.get("query");
+    const text = isMap(query) ? readString(query, "text") : undefined;
+    const parsed = savedViewSchema.safeParse({
+      id,
+      name: readString(fields, "name") ?? "",
+      position: readNumber(fields, "position") ?? 0,
+      query: {
+        ...(text !== undefined ? { text } : {}),
+        typeIds: isMap(query) ? readIdSet(query.get("typeIds")) : [],
+        tagIds: isMap(query) ? readIdSet(query.get("tagIds")) : [],
+        sectionIds: isMap(query) ? readIdSet(query.get("sectionIds")) : [],
+        scope: isMap(query) ? query.get("scope") : undefined,
+        groupBySection: isMap(query) ? query.get("groupBySection") : undefined,
+        order: isMap(query) ? query.get("order") : undefined,
+      },
+    });
+    // A hand-edited or corrupt view is skipped, not thrown on: the rest of the
+    // document still opens.
+    if (!parsed.success) return undefined;
+    this.viewCache.set(id, parsed.data);
+    return parsed.data;
+  }
+
+  /** Saved views in menu order: position, then id so every client agrees. */
+  listViews(): SavedView[] {
+    return this.viewsMap
+      .keys()
+      .map((id) => this.cachedView(id))
+      .filter((view): view is SavedView => view !== undefined)
+      .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+  }
+
+  getView(id: string): SavedView | undefined {
+    return this.cachedView(id);
+  }
+
+  createView(input: CreateViewInput): SavedView {
+    const name = input.name.trim();
+    if (!name) throw new Error("A view needs a name");
+    const id = input.id ?? crypto.randomUUID();
+    if (this.viewsMap.get(id) !== undefined) throw new Error(`View already exists: ${id}`);
+    const existing = this.listViews();
+    const last = existing.at(-1);
+    const view = savedViewSchema.parse({
+      id,
+      name,
+      position: input.position ?? (last ? last.position + 1 : 0),
+      query: input.query,
+    });
+    this.writeView(view);
+    this.commit(`${STRUCT_ORIGIN}create-view`);
+    return view;
+  }
+
+  /**
+   * Renames a view and/or replaces its query. The query is a whole record: a
+   * view is one saved query, so a facet edit is a new query, not a merge.
+   */
+  updateView(id: string, patch: { name?: string; query?: ViewQuery }): SavedView | undefined {
+    const current = this.getView(id);
+    if (!current) return undefined;
+    const name = patch.name === undefined ? current.name : patch.name.trim();
+    if (!name) throw new Error("A view needs a name");
+    const view = savedViewSchema.parse({
+      ...current,
+      name,
+      query: patch.query ?? current.query,
+    });
+    this.writeView(view);
+    this.commit(`${STRUCT_ORIGIN}update-view`);
+    return view;
+  }
+
+  /** Removes the saved query; no card is touched. */
+  deleteView(id: string): void {
+    if (this.viewsMap.get(id) === undefined) return;
+    this.viewsMap.delete(id);
+    this.commit(`${STRUCT_ORIGIN}delete-view`);
+  }
+
+  /** Moves a view to `position` in the menu, renumbering the rest in one commit. */
+  moveView(id: string, position: number): void {
+    if (!Number.isFinite(position)) return;
+    const views = this.listViews();
+    const from = views.findIndex((view) => view.id === id);
+    const moving = views[from];
+    if (!moving) return;
+    views.splice(from, 1);
+    views.splice(Math.max(0, Math.min(Math.trunc(position), views.length)), 0, moving);
+    views.forEach((view, index) => {
+      if (view.position === index) return;
+      const fields = this.viewsMap.get(view.id);
+      if (isMap(fields)) fields.set("position", index);
+    });
+    this.commit(`${STRUCT_ORIGIN}move-view`);
+  }
+
+  private writeView(view: SavedView): void {
+    const fields = this.viewsMap.ensureMergeableMap(view.id);
+    fields.set("name", view.name);
+    fields.set("position", view.position);
+    const query = fields.ensureMergeableMap("query");
+    if (view.query.text === undefined) query.delete("text");
+    else query.set("text", view.query.text);
+    query.set("scope", view.query.scope);
+    query.set("groupBySection", view.query.groupBySection);
+    query.set("order", view.query.order);
+    writeIdSet(query.ensureMergeableMap("typeIds"), view.query.typeIds);
+    writeIdSet(query.ensureMergeableMap("tagIds"), view.query.tagIds);
+    writeIdSet(query.ensureMergeableMap("sectionIds"), view.query.sectionIds);
+  }
+
+  /**
+   * Saved views live outside `WorkspaceSection` on purpose: they are workspace
+   * configuration that no board, card or paragraph mutation touches, so the
+   * snapshot stream and every content subscriber stay as they were.
+   */
+  observeViews(listener: () => void): () => void {
+    this.viewListeners.add(listener);
+    return () => {
+      this.viewListeners.delete(listener);
+    };
+  }
+
+  /** Monotonic count of views-map changes, the snapshot for `useSyncExternalStore`. */
+  get viewsRevision(): number {
+    return this.viewRevision;
   }
 
   // ----------------------------------------------------------------- types
@@ -1501,6 +1740,94 @@ export class WorkspaceDocument {
     }
     this.commit(`${STRUCT_ORIGIN}create-card`);
     return card;
+  }
+
+  /**
+   * Copies a card into a new object with a fresh id. Type, tags, properties and
+   * the title/body rich-text trees come along — the containers are deep-copied,
+   * marks included — while connectors and the original's placements stay behind
+   * because they are per-board chrome, not card content. The copy can land on a
+   * board, offset from where the source sits there.
+   */
+  duplicateCard(cardId: string, options: DuplicateCardOptions = {}): Card {
+    const source = this.getCard(cardId);
+    if (!source) throw new Error(`Unknown card: ${cardId}`);
+    if (source.deletedAt) throw new Error(`Cannot duplicate a trashed card: ${cardId}`);
+    if (options.boardId && !this.getBoard(options.boardId)) {
+      throw new Error(`Unknown board: ${options.boardId}`);
+    }
+
+    const now = Date.now();
+    // `cardSchema.parse` rebuilds every array and record, so the copy shares no
+    // mutable structure with the source.
+    const card = cardSchema.parse({
+      ...source,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      connectors: defaultConnectors(),
+    });
+
+    return this.batch(`${STRUCT_ORIGIN}duplicate-card`, () => {
+      this.applyCard(card);
+      const content = this.content.ensureMergeableMap(card.id);
+      const title = this.titles.ensureMergeableMap(card.id);
+      const sourceContent = this.peekContent(cardId);
+      const sourceTitle = this.peekTitle(cardId);
+      if (sourceContent) copyContainerTree(sourceContent, content);
+      if (sourceTitle) copyContainerTree(sourceTitle, title);
+
+      const boardId = options.boardId;
+      if (boardId) {
+        // Offset from the source on the target board, else from its home board.
+        const origin = this.getPlacement(boardId, cardId) ?? this.listCardPlacements(cardId)[0];
+        const offset = options.offset ?? { x: 24, y: 24 };
+        this.placeCardInternal(boardId, card.id, {
+          x: (origin?.x ?? 0) + offset.x,
+          y: (origin?.y ?? 0) + offset.y,
+        });
+      }
+      return card;
+    });
+  }
+
+  /**
+   * Moves a card onto another board by rewriting placements only: the card keeps
+   * its identity, title, body, tags and properties, and every placement it held
+   * on another board is removed. Without a position it keeps the coordinates it
+   * had there (or on its home board).
+   *
+   * Links are board-scoped and never deleted here. An edge whose other endpoint
+   * only lives on the old board goes dormant — `listBoardEdges` stops returning
+   * it while the endpoint is elsewhere — and revives when that card returns,
+   * exactly like the trash rule. Deleting it instead would lose a link the user
+   * can still restore by moving the card back.
+   */
+  moveCardToBoard(cardId: string, boardId: string, position?: { x: number; y: number }): Placement {
+    if (!this.getCard(cardId)) throw new Error(`Unknown card: ${cardId}`);
+    if (!this.getBoard(boardId)) throw new Error(`Unknown board: ${boardId}`);
+
+    const existing = this.getPlacement(boardId, cardId);
+    const home = this.listCardPlacements(cardId)[0];
+    const target = position ?? {
+      x: existing?.x ?? home?.x ?? 0,
+      y: existing?.y ?? home?.y ?? 0,
+    };
+    const others = this.listCardPlacements(cardId).filter(
+      (placement) => placement.boardId !== boardId,
+    );
+    const moved =
+      others.length > 0 || !existing || existing.x !== target.x || existing.y !== target.y;
+    if (!moved) return existing;
+
+    for (const placement of others) {
+      this.placements.delete(placementKey(placement.boardId, placement.cardId));
+    }
+    const placed = this.placeCardInternal(boardId, cardId, target);
+    if (!placed) throw new Error(`Cannot place card ${cardId} on board ${boardId}`);
+    this.commit(`${STRUCT_ORIGIN}move-card-to-board`);
+    return placed;
   }
 
   isTrashed(cardId: string): boolean {

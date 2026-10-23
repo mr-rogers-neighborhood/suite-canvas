@@ -1,6 +1,45 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { WorkspaceDocument } from "@suite/graph";
+import { LoroMap, LoroText } from "loro-crdt";
 import { LibraryDrawer } from "./LibraryDrawer";
 import { UNSORTED_SECTION } from "./libraryFilters";
+
+function addNode(parent: LoroMap, name: string): LoroMap {
+  const children = parent.ensureMergeableList("children");
+  const node = children.insertContainer(children.length, new LoroMap());
+  node.set("nodeName", name);
+  return node;
+}
+
+function addText(parent: LoroMap, text: string): void {
+  const children = parent.ensureMergeableList("children");
+  const value = children.insertContainer(children.length, new LoroText());
+  value.insert(0, text);
+}
+
+/**
+ * Bodies for the search story: the drawer indexes the live document, so the
+ * seeded cards carry the text the query matches.
+ */
+const searchWorkspace = (() => {
+  const workspace = new WorkspaceDocument();
+  workspace.ensureDefaultTypes();
+  const board = workspace.ensureBoard();
+  workspace.renameBoard(board.id, "Research");
+
+  workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
+  addText(workspace.getTitle("c1"), "Mastering the timeline");
+  addText(addNode(workspace.getContent("c1"), "paragraph"), "A pacing note about the second pass.");
+
+  workspace.createCard({ id: "c2", boardId: board.id, position: { x: 320, y: 0 } });
+  addText(workspace.getTitle("c2"), "Interview notes");
+  addText(
+    addNode(workspace.getContent("c2"), "paragraph"),
+    "The editor talked about timeline structure and colour grading.",
+  );
+  workspace.doc.commit({ origin: "story" });
+  return workspace;
+})();
 
 const items = [
   {
@@ -14,7 +53,7 @@ const items = [
   },
   {
     id: "c2",
-    title: "Untitled",
+    title: "Interview notes",
     boards: [{ id: "b1", name: "Research" }],
     typeIds: ["note"],
     tagIds: [],
@@ -99,6 +138,19 @@ export const GroupedBySection: Story = {
 };
 
 export const Trash: Story = { args: { tab: "trash" } };
+
+export const SearchQuery: Story = {
+  args: {
+    tab: "cards",
+    workspace: searchWorkspace,
+    initialQuery: "timeline",
+    counts: { inbox: 2, cards: 2, trash: 1 },
+  },
+};
+
+export const SearchEmpty: Story = {
+  args: { tab: "cards", workspace: searchWorkspace, initialQuery: "storyboard" },
+};
 
 export const Empty: Story = {
   args: { tab: "inbox", inbox: [], counts: { inbox: 0, cards: 6, trash: 0 }, trash: [] },

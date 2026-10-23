@@ -125,3 +125,37 @@ describe("NodeCard", () => {
     expect(screen.getByTestId("card-meta")).toHaveTextContent("#Research");
   });
 });
+
+describe("NodeCard organization actions", () => {
+  it("lists duplicate and move-to-board before the editing actions", () => {
+    renderCard({
+      canEditContent: true,
+      canEditLayout: true,
+      canManageTrash: true,
+      onDuplicate: () => {},
+      moveTargets: [{ id: "board-2", name: "Ideas" }],
+      onMoveToBoard: () => {},
+      onTrash: () => {},
+    });
+
+    fireEvent.click(screen.getByTestId("card-menu"));
+    const labels = screen.getAllByRole("menuitem").map((item) => item.textContent ?? "");
+
+    const duplicate = labels.findIndex((label) => label.includes("Duplicate"));
+    const move = labels.findIndex((label) => label.includes("Move to board"));
+    expect(duplicate).toBeGreaterThanOrEqual(0);
+    expect(move).toBe(duplicate + 1);
+    expect(move).toBeLessThan(labels.findIndex((label) => label.includes("Edit title")));
+    // Destructive work stays last.
+    expect(labels.at(-1)).toContain("Delete card");
+  });
+
+  it("hides both entries without the callbacks a capability gate would pass", () => {
+    renderCard({ canEditContent: true, canEditLayout: true });
+
+    fireEvent.click(screen.getByTestId("card-menu"));
+
+    expect(screen.queryByRole("menuitem", { name: "Duplicate" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Move to board" })).not.toBeInTheDocument();
+  });
+});

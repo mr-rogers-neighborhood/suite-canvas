@@ -7,13 +7,19 @@ import {
   type ClaimState,
   claimOutcome,
   claimWorkspace,
+  deriveOwnerKey,
   generateOwnerKey,
   isClaimRetryable,
   isClaimSettled,
   mayWriteWorkspace,
   nextClaimState,
+  normalizePassphrase,
   OWNER_KEY_PREFIX,
   ownerKeyFromFragment,
+  PASSPHRASE_ITERATIONS,
+  PASSPHRASE_MIN_CHARS,
+  PASSPHRASE_MIN_WORDS,
+  passphraseProblem,
   prepareOwnerSession,
   readClaimRecord,
   readOwnerKey,
@@ -478,5 +484,121 @@ describe("rotateOwnerKey", () => {
     await expect(rotateOwnerKey("ws-1", "old-key", "new-key")).rejects.toThrow(
       "Could not reach the workspace server",
     );
+  });
+});
+
+const PASSPHRASE = "velvet otter lantern meadow";
+
+function hexOf(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256(value: string): Promise<string> {
+  return hexOf(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+}
+
+describe("deriveOwnerKey", () => {
+  it("derives the same key from the same passphrase and workspace on any device", async () => {
+    const first = await deriveOwnerKey(PASSPHRASE, "ws-1");
+    const again = await deriveOwnerKey(`  ${PASSPHRASE.toUpperCase()}  `, "ws-1");
+
+    expect(again).toBe(first);
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    // The relay only ever sees the hash of this shape of key.
+    expect(await sha256(first)).toHaveLength(64);
+  });
+
+  it("derives a different key for a different workspace", async () => {
+    const here = await deriveOwnerKey(PASSPHRASE, "ws-1");
+    const elsewhere = await deriveOwnerKey(PASSPHRASE, "ws-2");
+
+    expect(elsewhere).not.toBe(here);
+  });
+
+  it("uses at least the 600 000 iteration PBKDF2 floor", () => {
+    expect(PASSPHRASE_ITERATIONS).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it("normalizes case and spacing so a retyped passphrase still opens the workspace", () => {
+    expect(normalizePassphrase("  Red   Otter\nLantern  ")).toBe("red otter lantern");
+  });
+
+  it("refuses to derive from nothing", async () => {
+    await expect(deriveOwnerKey("   ", "ws-1")).rejects.toThrow("Enter a passphrase");
+    await expect(deriveOwnerKey(PASSPHRASE, "  ")).rejects.toThrow("workspace id");
+  });
+});
+
+describe("passphraseProblem", () => {
+  it("accepts four unrelated words", () => {
+    expect(passphraseProblem(PASSPHRASE)).toBeNull();
+    expect(passphraseProblem("Otto builds tiny rockets at midnight")).toBeNull();
+  });
+
+  it("explains an empty passphrase", () => {
+    expect(passphraseProblem("")).toContain("at least four words");
+  });
+
+  it("explains a passphrase that is short in both words and characters", () => {
+    expect(passphraseProblem("cat dog")).toContain(
+      `at least ${PASSPHRASE_MIN_WORDS} words and ${PASSPHRASE_MIN_CHARS} characters`,
+    );
+    expect(passphraseProblem("cat dog")).toContain("2 words and 7 characters");
+  });
+
+  it("explains a long passphrase with too few words", () => {
+    expect(passphraseProblem("extraordinarily complicated")).toContain("Add 2 more words");
+  });
+
+  it("explains a four-word passphrase that is still too short", () => {
+    expect(passphraseProblem("ant bee cow dog")).toContain("That is 15 characters");
+  });
+
+  it("refuses a word repeated four times", () => {
+    expect(passphraseProblem("word word word word")).toContain("4 different words");
+  });
+
+  it("refuses a famous first guess", () => {
+    expect(passphraseProblem("correct horse battery staple")).toContain(
+      "first passphrases anyone guessing would try",
+    );
+  });
+
+  it("refuses digits alone", () => {
+    expect(passphraseProblem("1234 5678 9012 3456")).toContain("Use words, not only digits");
+  });
+
+  it("refuses one character hammered out", () => {
+    expect(passphraseProblem("aaaaaa bbbbbb cccccc dddddd")).toContain("repeated many times");
+  });
+});
+
+describe("a passphrase key through the existing rotation helpers", () => {
+  it("replaces the old key, so only the derived key can still claim the workspace", async () => {
+    const oldKey = generateOwnerKey();
+    let storedHash = await sha256(oldKey);
+
+    const fetchMock = stubFetch(async (url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, string>;
+      if (url.endsWith("/rotate")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const presented = (headers.authorization ?? "").split(" ").at(-1) ?? "";
+        if ((await sha256(presented)) !== storedHash) return reply(403);
+        storedHash = await sha256(body.newOwnerKey ?? "");
+        return reply(200);
+      }
+      return reply((await sha256(body.ownerKey ?? "")) === storedHash ? 200 : 409);
+    });
+
+    expect(await claimWorkspace("ws-1", oldKey)).toBe("claimed");
+
+    const derived = await deriveOwnerKey(PASSPHRASE, "ws-1");
+    expect(derived).not.toBe(oldKey);
+    await rotateOwnerKey("ws-1", oldKey, derived);
+
+    // The derived key is the owner now; the old key and its old file are not.
+    expect(await claimWorkspace("ws-1", derived)).toBe("claimed");
+    expect(await claimWorkspace("ws-1", oldKey)).toBe("conflict");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/rotate"))).toBe(true);
   });
 });

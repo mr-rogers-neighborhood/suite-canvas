@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
+import { deriveOwnerKey, readOwnerKey, writeOwnerKey } from "../session/ownerKey";
 import { downloadOwnerKit, forgetBrowserWorkspace } from "../session/ownerKit";
+import { decodeWords } from "../session/recoveryWords";
+import { downloadText } from "../session/workspaceTransfer";
 import { RecoveryKeyDialog } from "./RecoveryKeyDialog";
 
 const { forgetLocal } = vi.hoisted(() => ({ forgetLocal: vi.fn() }));
@@ -9,6 +11,11 @@ const { forgetLocal } = vi.hoisted(() => ({ forgetLocal: vi.fn() }));
 vi.mock("../store/useCanvasStore", () => ({
   useCanvasStore: { getState: () => ({ forgetLocal }) },
 }));
+
+vi.mock("../session/workspaceTransfer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../session/workspaceTransfer")>();
+  return { ...actual, downloadText: vi.fn() };
+});
 
 vi.mock("../session/ownerKit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/ownerKit")>();
@@ -20,11 +27,13 @@ vi.mock("../session/ownerKit", async (importOriginal) => {
 });
 
 const download = vi.mocked(downloadOwnerKit);
+const saveText = vi.mocked(downloadText);
 const forgetBrowser = vi.mocked(forgetBrowserWorkspace);
 
 beforeEach(() => {
   window.localStorage.clear();
   download.mockClear();
+  saveText.mockClear();
   forgetBrowser.mockClear();
   forgetLocal.mockClear();
 });
@@ -246,5 +255,157 @@ describe("RecoveryKeyDialog rotation links", () => {
     await waitFor(() => expect(screen.getByTestId("recovery-reload")).toBeInTheDocument());
     expect(rotate).toHaveBeenCalledTimes(1);
     expect(revokeShares).not.toHaveBeenCalled();
+  });
+});
+
+/** Bytes 0..31 as base64url, the same key the word tests use. */
+const OWNER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+const PASSPHRASE = "velvet otter lantern meadow";
+
+describe("RecoveryKeyDialog recovery words", () => {
+  it("reveals the 24 words, copies them and downloads them as text", async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey={OWNER_KEY}
+        title="Research"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-words-open"));
+    expect(screen.getByTestId("recovery-words-copy")).toHaveTextContent(
+      "Recovery words survive a lost browser and a lost file",
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-words-reveal"));
+    const list = await screen.findByTestId("recovery-words");
+    expect(list.querySelectorAll("li")).toHaveLength(24);
+
+    fireEvent.click(screen.getByTestId("recovery-words-copy-button"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const phrase = String(writeText.mock.calls[0]?.[0] ?? "");
+    expect(phrase.split(" ")).toHaveLength(24);
+    await expect(decodeWords(phrase)).resolves.toEqual({ ok: true, key: OWNER_KEY });
+
+    fireEvent.click(screen.getByTestId("recovery-words-download"));
+    expect(saveText).toHaveBeenCalledWith(
+      "research-recovery-words.txt",
+      expect.stringContaining("Workspace: ws-1"),
+      "text/plain",
+    );
+  });
+});
+
+describe("RecoveryKeyDialog passphrase", () => {
+  it("says why a weak passphrase cannot be set instead of only disabling the button", () => {
+    render(<RecoveryKeyDialog workspaceId="ws-1" ownerKey="old-key" onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
+    expect(screen.getByTestId("recovery-passphrase-copy")).toHaveTextContent(
+      "A passphrase survives a lost browser, a lost file and a new device",
+    );
+
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: "cat dog" },
+    });
+    expect(screen.getByTestId("recovery-passphrase-problem")).toHaveTextContent(
+      "at least 4 words and 16 characters",
+    );
+    expect(screen.getByTestId("recovery-passphrase-continue")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    expect(screen.getByTestId("recovery-passphrase-problem")).toHaveTextContent(
+      "Suite never stores the passphrase.",
+    );
+    expect(screen.getByTestId("recovery-passphrase-continue")).toBeEnabled();
+  });
+
+  it("replaces the stored key with the derived key through the rotation path", async () => {
+    writeOwnerKey("ws-1", "old-key");
+    const rotate = vi.fn(async (_workspaceId: string, _currentKey: string, _nextKey: string) => {});
+    const revokeShares = vi.fn(async () => []);
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey="old-key"
+        title="Research"
+        rotate={rotate}
+        revokeShares={revokeShares}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    fireEvent.click(screen.getByTestId("recovery-passphrase-continue"));
+    expect(screen.getByTestId("recovery-passphrase-warning")).toHaveTextContent(
+      "Existing editor links and old .suitekey recovery files will stop working",
+    );
+    expect(rotate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-confirm"));
+
+    await waitFor(() => expect(screen.getByTestId("recovery-reload")).toBeInTheDocument(), {
+      timeout: 10_000,
+    });
+    const [, current, next] = rotate.mock.calls[0] ?? [];
+    expect(current).toBe("old-key");
+    expect(next).toBe(await deriveOwnerKey(PASSPHRASE, "ws-1"));
+
+    // The stored key is the derived one; the old key (and its file) is useless.
+    expect(readOwnerKey("ws-1")).toBe(next);
+    expect(readOwnerKey("ws-1")).not.toBe("old-key");
+    expect(revokeShares).toHaveBeenCalledWith("ws-1", next);
+
+    expect(screen.getByTestId("recovery-saved")).toHaveTextContent("Passphrase set.");
+    expect(screen.getByTestId("recovery-passphrase-stale")).toHaveTextContent(
+      "Old editor links and old .suitekey files no longer open this workspace.",
+    );
+    // The passphrase is the backup, so no replacement .suitekey is offered.
+    expect(screen.queryByTestId("recovery-rotate-download")).toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("keeps the old key when the passphrase rotation is refused", async () => {
+    writeOwnerKey("ws-1", "old-key");
+    const rotate = vi.fn(async () => {
+      throw new Error("This browser no longer holds the current owner key.");
+    });
+    render(
+      <RecoveryKeyDialog
+        workspaceId="ws-1"
+        ownerKey="old-key"
+        rotate={rotate}
+        revokeShares={vi.fn(async () => [])}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    fireEvent.click(screen.getByTestId("recovery-passphrase-continue"));
+    fireEvent.click(screen.getByTestId("recovery-passphrase-confirm"));
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("recovery-error")).toHaveTextContent(
+          "This browser no longer holds the current owner key.",
+        ),
+      { timeout: 10_000 },
+    );
+    expect(readOwnerKey("ws-1")).toBe("old-key");
+    expect(screen.getByTestId("recovery-passphrase-confirm")).toBeInTheDocument();
   });
 });

@@ -13,6 +13,8 @@ export type {
   CreateFieldInput,
   CreateSectionInput,
   CreateTypeInput,
+  CreateViewInput,
+  DuplicateCardOptions,
   LayerAction,
   PlacementMoveInput,
   WorkspaceAction,
@@ -164,6 +166,15 @@ export {
   tagSchema,
   typePluralName,
 } from "./schema.js";
+export type { SearchField, SearchHit, SearchOptions, SearchRange } from "./search.js";
+export {
+  buildSearchText,
+  cardSearchText,
+  highlightRanges,
+  normalizeSearchText,
+  searchCards,
+  searchTerms,
+} from "./search.js";
 export type { Point, Rect } from "./sections.js";
 export {
   CARD_ANCHOR_INSET,
@@ -197,6 +208,26 @@ export {
   TEMPLATE_TOKENS,
   templateSegments,
 } from "./template.js";
+export type {
+  SavedView,
+  ViewContext,
+  ViewOrder,
+  ViewQuery,
+  ViewResult,
+  ViewScope,
+} from "./views.js";
+export {
+  emptyViewQuery,
+  runView,
+  runViewQuery,
+  savedViewSchema,
+  VIEW_UNSORTED_SECTION,
+  viewOrderSchema,
+  viewOrders,
+  viewQuerySchema,
+  viewScopeSchema,
+  viewScopes,
+} from "./views.js";
 export type {
   WorkspaceFile,
   WorkspaceFileExport,

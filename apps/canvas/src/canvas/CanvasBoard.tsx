@@ -36,6 +36,8 @@ import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import {
+  DEFAULT_CARD_HEIGHT,
+  DEFAULT_CARD_WIDTH,
   dragMoves,
   dragRects,
   layerActions,
@@ -196,6 +198,7 @@ export function CanvasBoard() {
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
+  const stopEditing = useUiStore((state) => state.stopEditing);
   const contextMenu = useUiStore((state) => state.contextMenu);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
@@ -970,12 +973,45 @@ export function CanvasBoard() {
     [activeBoardId, boardSections, workspace, canEditLayout],
   );
 
+  const createNoteAt = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!canCreateContent || !activeBoardId) return;
+      const card = workspace.createCard({ boardId: activeBoardId, position });
+      setSelectedNodeIds([card.id]);
+      startEditing(card.id, "title");
+    },
+    [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping =
         target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
       const state = useUiStore.getState();
+
+      // Quick capture: Cmd/Ctrl+Enter adds a card at the viewport centre and
+      // opens its title. A text surface keeps the browser's own chord, so the
+      // shortcut never steals a key inside an editor body or a field.
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key === "Enter" &&
+        !isTyping &&
+        !(target instanceof HTMLElement && target.closest(".ProseMirror"))
+      ) {
+        if (!canCreateContent || !activeBoardId) return;
+        event.preventDefault();
+        const centre = screenToFlowPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+        // Place the card's centre, not its top-left corner, under the cursor.
+        createNoteAt({
+          x: centre.x - DEFAULT_CARD_WIDTH / 2,
+          y: centre.y - DEFAULT_CARD_HEIGHT / 2,
+        });
+        return;
+      }
 
       if (event.key === "Escape" && state.editingSectionId) {
         state.setEditingSection(null);
@@ -1085,8 +1121,10 @@ export function CanvasBoard() {
     unplaceSelected,
     workspace,
     createSectionAt,
+    createNoteAt,
     screenToFlowPosition,
     store,
+    activeBoardId,
     canCreateContent,
     canEditContent,
     canEditLayout,
@@ -1281,14 +1319,47 @@ export function CanvasBoard() {
     [workspace, canEditLayout],
   );
 
-  const createNoteAt = useCallback(
-    (position: { x: number; y: number }) => {
-      if (!canCreateContent || !activeBoardId) return;
-      const card = workspace.createCard({ boardId: activeBoardId, position });
-      setSelectedNodeIds([card.id]);
-      startEditing(card.id, "title");
+  /**
+   * Copies cards onto the active board. Each copy steps a little further out so
+   * a batch does not stack on one spot, and the copies become the selection.
+   */
+  const duplicateCards = useCallback(
+    (ids: string[]) => {
+      if (!canCreateContent || !activeBoardId || ids.length === 0) return;
+      const copies = ids.flatMap((id, index) => {
+        const card = workspace.getCard(id);
+        if (!card || card.deletedAt) return [];
+        const step = 16 * index;
+        return [
+          workspace.duplicateCard(id, {
+            boardId: activeBoardId,
+            offset: { x: 24 + step, y: 24 + step },
+          }),
+        ];
+      });
+      if (copies.length === 0) return;
+      setSelectedNodeIds(copies.map((copy) => copy.id));
+      setPresenceSelection(null);
     },
-    [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
+    [workspace, activeBoardId, canCreateContent, setSelectedNodeIds, setPresenceSelection],
+  );
+
+  const moveCardToBoard = useCallback(
+    (cardId: string, boardId: string) => {
+      if (!canEditLayout) return;
+      workspace.moveCardToBoard(cardId, boardId);
+      setSelectedNodeIds([]);
+      stopEditing();
+    },
+    [workspace, canEditLayout, setSelectedNodeIds, stopEditing],
+  );
+
+  const otherBoards = useCallback(
+    (boardId: string | null) =>
+      snapshot.boards
+        .filter((board) => board.id !== boardId)
+        .map((board) => ({ id: board.id, name: board.name })),
+    [snapshot.boards],
   );
 
   const commitEdgeDescription = useCallback(
@@ -1465,6 +1536,14 @@ export function CanvasBoard() {
         ...(canCreateContent
           ? [
               {
+                label: `Duplicate ${selection.noun}`,
+                onSelect: () => duplicateCards(selection.ids),
+              },
+            ]
+          : []),
+        ...(canCreateContent
+          ? [
+              {
                 label: `New section from ${selection.noun}`,
                 onSelect: () => createSectionAt(anchor, true),
               },
@@ -1499,15 +1578,6 @@ export function CanvasBoard() {
               },
             ]
           : []),
-        ...(canManageTrash
-          ? [
-              {
-                label: "Delete cards",
-                danger: true,
-                onSelect: () => trashSelected(),
-              },
-            ]
-          : []),
         // Sharing is a link owner's right, and only a subset with two or more
         // cards is worth a link; the dialog opens on the selection scope.
         ...(canManageLinks
@@ -1518,10 +1588,44 @@ export function CanvasBoard() {
               },
             ]
           : []),
+        // Destructive entries stay last.
+        ...(canManageTrash
+          ? [
+              {
+                label: "Delete cards",
+                danger: true,
+                onSelect: () => trashSelected(),
+              },
+            ]
+          : []),
       ];
     }
 
+    const moveTargets = otherBoards(activeBoardId);
     return [
+      ...(canCreateContent
+        ? [
+            {
+              label: "Duplicate",
+              onSelect: () => {
+                if (nodeId) duplicateCards([nodeId]);
+              },
+            },
+          ]
+        : []),
+      ...(canEditLayout && moveTargets.length > 0
+        ? [
+            {
+              label: "Move to board",
+              items: moveTargets.map((board) => ({
+                label: board.name,
+                onSelect: () => {
+                  if (nodeId) moveCardToBoard(nodeId, board.id);
+                },
+              })),
+            },
+          ]
+        : []),
       ...(canManageStructure
         ? [
             {
@@ -1589,6 +1693,9 @@ export function CanvasBoard() {
     activeBoardId,
     createNoteAt,
     createSectionAt,
+    duplicateCards,
+    moveCardToBoard,
+    otherBoards,
     changeLayer,
     changeLayerBulk,
     unplaceSelected,

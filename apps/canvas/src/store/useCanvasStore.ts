@@ -6,6 +6,7 @@ import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
 import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
 import { collabWsUrl } from "../session/endpoints";
+import { isStandalone } from "../session/mode";
 import { getSession } from "../session/session";
 
 export type ConnectionStatus = LoroConnectionStatus;
@@ -79,12 +80,17 @@ interface CanvasState {
   forgetLocal: () => void;
 }
 
-/** Unit tests mount components without a sync server; a socket there only adds noise. */
-const TEST_MODE = import.meta.env.MODE === "test";
+/**
+ * A socket is pointless without a relay: unit tests mount components with no
+ * server, and the standalone profile is a static build with no relay at all.
+ * `LoroProvider` opens its socket in the constructor, so this has to be decided
+ * before the provider is constructed at module load.
+ */
+const NO_TRANSPORT = import.meta.env.MODE === "test" || isStandalone();
 
 export const useCanvasStore = create<CanvasState>((set) => {
   const provider =
-    !ROOM_ID || typeof window === "undefined" || TEST_MODE
+    !ROOM_ID || typeof window === "undefined" || NO_TRANSPORT
       ? null
       : new LoroProvider({
           url: collabWsUrl(),

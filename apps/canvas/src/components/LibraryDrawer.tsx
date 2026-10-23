@@ -1,8 +1,19 @@
-import type { CardType, PropertyValue, Tag } from "@suite/graph";
-import { typePluralName } from "@suite/graph";
-import { useEffect, useRef, useState } from "react";
+import type { CardType, PropertyValue, SearchHit, Tag, WorkspaceDocument } from "@suite/graph";
+import { highlightRanges, typePluralName } from "@suite/graph";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
+import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrarySearch";
+import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
+import { useUiStore } from "../store/useUiStore";
 import {
   facetCounts,
   filterItems,
@@ -10,6 +21,7 @@ import {
   type SectionOrderEntry,
   UNSORTED_SECTION,
 } from "./libraryFilters";
+import { useSavedViews } from "./ViewsBar";
 
 export interface LibraryItem {
   id: string;
@@ -62,6 +74,10 @@ export interface LibraryDrawerProps {
   onOpenCard: (cardId: string) => void;
   /** Trash, restore, purge and empty the trash; owner and workspace editor. */
   canManageTrash?: boolean;
+  /** Search source; defaults to the live document in the canvas store. */
+  workspace?: WorkspaceDocument | null;
+  /** Seeds the query box. Stories and tests only. */
+  initialQuery?: string;
 }
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -71,6 +87,30 @@ const TABS: Array<{ id: LibraryTab; label: string }> = [
 ];
 
 const HOLD_THRESHOLD = 4;
+
+/** Highlighted runs of a result title or snippet, straight from the index terms. */
+function Highlighted({ text, terms }: { text: string; terms: readonly string[] }) {
+  const ranges = terms.length === 0 ? [] : highlightRanges(text, terms);
+  if (ranges.length === 0) return <>{text}</>;
+
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start > cursor) parts.push(text.slice(cursor, range.start));
+    parts.push(
+      <mark
+        key={`${range.start}-${range.end}`}
+        data-testid="library-match"
+        className="library-match rounded-sm bg-yellow-200/70 px-0.5 text-inherit dark:bg-yellow-400/25"
+      >
+        {text.slice(range.start, range.end)}
+      </mark>,
+    );
+    cursor = range.end;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
 
 export function LibraryDrawer({
   open,
@@ -107,8 +147,21 @@ export function LibraryDrawer({
   onToggleGroup,
   onOpenCard,
   canManageTrash = true,
+  workspace: workspaceProp = null,
+  initialQuery = "",
 }: LibraryDrawerProps) {
+  const storeWorkspace = useCanvasStore((state) => state.workspace);
+  const workspace = workspaceProp ?? storeWorkspace;
+  const activeViewId = useUiStore((state) => state.activeViewId);
+  const exitView = useUiStore((state) => state.exitView);
+  const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
+  const views = useSavedViews(workspace);
+  const activeView = views.find((view) => view.id === activeViewId);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
+  const [activeResult, setActiveResult] = useState(0);
+  const searchInput = useRef<HTMLInputElement | null>(null);
+  const activeRow = useRef<HTMLLIElement | null>(null);
+  const focusPending = useRef(false);
   const holdRef = useRef<{
     cardId: string;
     startX: number;
@@ -116,14 +169,94 @@ export function LibraryDrawer({
     dragging: boolean;
   } | null>(null);
 
+  const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
+  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
+  const scopedItems = boardScope
+    ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
+    : items;
+  const activeSectionFilter = boardScope ? sectionFilter : [];
+  const {
+    query,
+    setQuery,
+    active: searching,
+    terms,
+    hits,
+    ids: rankedIds,
+  } = useLibrarySearch(workspace, scopedItems, initialQuery);
+
+  // The app bar offers "save current search"; it reads the live text through
+  // the store rather than reaching into this component.
+  const updateQuery = useCallback(
+    (next: string) => {
+      setQuery(next);
+      setLibraryQuery(next);
+    },
+    [setQuery, setLibraryQuery],
+  );
+
+  // Opening a view fills the box once, from the stored query. Typing afterwards
+  // belongs to the reader and is never written back to the view.
+  const appliedView = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeViewId === null) {
+      if (appliedView.current === null) return;
+      appliedView.current = null;
+      updateQuery("");
+      return;
+    }
+    if (appliedView.current === activeViewId) return;
+    appliedView.current = activeViewId;
+    updateQuery(workspace?.getView(activeViewId)?.query.text ?? "");
+  }, [activeViewId, workspace, updateQuery]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      // The first Escape clears the query; only the next one closes the drawer.
+      if (query.trim().length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        updateQuery("");
+        return;
+      }
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, query, updateQuery]);
+
+  useEffect(() => {
+    const focus = () => {
+      const input = searchInput.current;
+      if (!input) {
+        // Still closed; the drawer focuses the box once it mounts.
+        focusPending.current = true;
+        return;
+      }
+      input.focus();
+      input.select();
+    };
+    window.addEventListener(LIBRARY_SEARCH_FOCUS_EVENT, focus);
+    return () => window.removeEventListener(LIBRARY_SEARCH_FOCUS_EVENT, focus);
+  }, []);
+
+  useEffect(() => {
+    if (!open || !focusPending.current) return;
+    focusPending.current = false;
+    searchInput.current?.focus();
+    searchInput.current?.select();
+  }, [open]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new query resets the keyboard cursor.
+  useEffect(() => {
+    setActiveResult(0);
+  }, [query]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the cursor is the trigger; the row is a ref.
+  useEffect(() => {
+    activeRow.current?.scrollIntoView?.({ block: "nearest" });
+  }, [activeResult]);
 
   useEffect(() => {
     if (!open) setHold(null);
@@ -171,20 +304,56 @@ export function LibraryDrawer({
     };
   }, [onDropAt, onOpenCard]);
 
-  const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
-  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
-  const scopedItems = boardScope
-    ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
-    : items;
-  const activeSectionFilter = boardScope ? sectionFilter : [];
   const countsByFacet = facetCounts(scopedItems, typeFilter, tagFilter, activeSectionFilter);
-  const visible = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);
+  const facetFiltered = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);
+  // A query replaces the facet-filtered list but never bypasses it: facets keep
+  // narrowing the ranked hits, and the ranking order wins.
+  const itemsById = new Map(scopedItems.map((item) => [item.id, item]));
+  const facetIds = new Set(facetFiltered.map((item) => item.id));
+  const searched = searching
+    ? rankedIds.flatMap((id) => {
+        const item = itemsById.get(id);
+        return item !== undefined && facetIds.has(id) ? [item] : [];
+      })
+    : null;
+  const visible = searched ?? facetFiltered;
+  // An applied view carries its own order, the same rule `runView` uses:
+  // relevance needs text, otherwise it reads like title.
+  const ordered = useMemo(() => {
+    const order = activeView?.query.order;
+    if (!order || (order === "relevance" && searching)) return visible;
+    const byTitle = (a: LibraryItem, b: LibraryItem) =>
+      a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
+    if (order === "updated") {
+      const updatedAt = (item: LibraryItem) => workspace?.getCard(item.id)?.updatedAt ?? 0;
+      return [...visible].sort((a, b) => updatedAt(b) - updatedAt(a) || byTitle(a, b));
+    }
+    return [...visible].sort(byTitle);
+  }, [visible, activeView, searching, workspace]);
   const filtering = typeFilter.length > 0 || tagFilter.length > 0 || activeSectionFilter.length > 0;
-  const grouped = boardScope && groupBySection ? groupSections(visible, sectionOrder) : null;
+  const grouped =
+    boardScope && groupBySection && !searching ? groupSections(ordered, sectionOrder) : null;
   const wide = boardScope;
   const sectionsById = new Map(sectionOrder.map((section) => [section.id, section]));
+  const activeId = searching ? ordered[Math.min(activeResult, ordered.length - 1)]?.id : undefined;
 
   if (!open) return null;
+
+  const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (!searching || ordered.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveResult((current) => (current + step + ordered.length) % ordered.length);
+      return;
+    }
+    if (event.key === "Enter") {
+      const target = ordered[Math.min(activeResult, ordered.length - 1)];
+      if (target === undefined) return;
+      event.preventDefault();
+      onOpenCard(target.id);
+    }
+  };
 
   const sectionLabel = (item: LibraryItem): string => {
     const owner = item.sectionIds.find((id) => sectionsById.has(id));
@@ -192,8 +361,17 @@ export function LibraryDrawer({
   };
 
   const renderRow = (item: LibraryItem) => {
+    const hit: SearchHit | undefined = searching ? hits.get(item.id) : undefined;
+    const current = activeId === item.id;
     return (
-      <li key={item.id} className="library-entry" data-row-id={item.id}>
+      <li
+        key={item.id}
+        className="library-entry"
+        data-row-id={item.id}
+        data-active={current ? "true" : undefined}
+        aria-current={current ? "true" : undefined}
+        ref={current ? activeRow : undefined}
+      >
         <div
           data-testid={`library-item-${item.id}`}
           className="library-row"
@@ -218,7 +396,17 @@ export function LibraryDrawer({
           }}
         >
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[12px]">{item.title}</p>
+            <p className="truncate text-[12px]" data-testid={`library-title-${item.id}`}>
+              <Highlighted text={item.title} terms={searching ? terms : []} />
+            </p>
+            {hit?.field === "body" ? (
+              <p
+                className="truncate text-[10px] text-[var(--ink-muted)]"
+                data-testid={`library-snippet-${item.id}`}
+              >
+                <Highlighted text={hit.snippet} terms={terms} />
+              </p>
+            ) : null}
             {item.tagIds.length > 0 ? (
               <p className="truncate text-[10px] text-[var(--ink-muted)]">
                 {item.tagIds
@@ -312,7 +500,7 @@ export function LibraryDrawer({
       ))}
     </div>
   ) : (
-    <ul className="space-y-0.5">{visible.map(renderRow)}</ul>
+    <ul className="space-y-0.5">{ordered.map(renderRow)}</ul>
   );
 
   return createPortal(
@@ -341,6 +529,29 @@ export function LibraryDrawer({
             </button>
           ))}
         </div>
+
+        {activeView ? (
+          <span
+            className="library-tab"
+            data-active="true"
+            data-testid="library-active-view"
+            title="This list is filtered by a saved view"
+          >
+            <span aria-hidden="true" className="opacity-70">
+              {"\u25c7"}
+            </span>
+            <span className="max-w-[10rem] truncate">{activeView.name}</span>
+            <button
+              type="button"
+              aria-label={`Exit view ${activeView.name}`}
+              data-testid="library-exit-view"
+              className="-mr-1 ml-0.5 rounded px-0.5 hover:bg-black/10 dark:hover:bg-white/15"
+              onClick={() => exitView()}
+            >
+              {"\u00d7"}
+            </button>
+          </span>
+        ) : null}
 
         {tab === "cards" ? (
           <div className="library-scope" data-testid="library-scope">
@@ -399,6 +610,35 @@ export function LibraryDrawer({
             {"\u00d7"}
           </button>
         </div>
+      </div>
+
+      <div className="library-search flex items-center gap-1.5 border-b border-[var(--hairline)] px-2 py-1.5">
+        <span aria-hidden="true" className="text-[12px] text-[var(--ink-muted)]">
+          {"\u2315"}
+        </span>
+        <input
+          ref={searchInput}
+          type="search"
+          value={query}
+          data-testid="library-search"
+          aria-label="Search cards"
+          placeholder="Search titles and notes"
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--ink-muted)]"
+          onChange={(event) => updateQuery(event.target.value)}
+          onKeyDown={onSearchKey}
+        />
+        {query.length > 0 ? (
+          <button
+            type="button"
+            aria-label="Clear search"
+            data-testid="library-search-clear"
+            className="library-action"
+            onClick={() => updateQuery("")}
+          >
+            {"\u00d7"}
+          </button>
+        ) : null}
       </div>
 
       <div
@@ -508,17 +748,22 @@ export function LibraryDrawer({
       </div>
 
       <div className="library-list overflow-y-auto p-1.5">
-        {visible.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]">
-            {filtering
-              ? "No cards match these filters."
-              : tab === "inbox"
-                ? "Nothing in the inbox. Cards you take off a board land here."
-                : tab === "cards"
-                  ? boardScope
-                    ? "No cards on this board."
-                    : "No cards yet."
-                  : "Trash is empty."}
+        {ordered.length === 0 ? (
+          <p
+            className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]"
+            {...(searching ? { "data-testid": "library-search-empty" } : {})}
+          >
+            {searching
+              ? `No cards match \u201c${query.trim()}\u201d.`
+              : filtering
+                ? "No cards match these filters."
+                : tab === "inbox"
+                  ? "Nothing in the inbox. Cards you take off a board land here."
+                  : tab === "cards"
+                    ? boardScope
+                      ? "No cards on this board."
+                      : "No cards yet."
+                    : "Trash is empty."}
           </p>
         ) : (
           rows

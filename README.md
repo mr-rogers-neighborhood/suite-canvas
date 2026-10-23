@@ -24,6 +24,23 @@ The dock at the bottom of the canvas opens the **library**: cards taken off a bo
 **Inbox**, the **Cards** tab lists everything in the workspace, and the **Trash** tab restores or
 purges what you deleted. Clicking a card type creates a card on the current board.
 
+## Editions
+
+One codebase ships three profiles. The mode is a **build-time** value, so a
+local-only bundle carries no relay code and no server URL, and no control can
+appear that this build cannot honour:
+
+| Edition | Build | What you get |
+| --- | --- | --- |
+| Hosted free | `VITE_SUITE_MODE=standalone` | Local-only: cards, boards, sections, connectors, mentions, types/fields/tags, library, trash, undo, export/import and multiple local workspaces, all in this browser. No sync, presence, sharing or publishing. |
+| Self-host | `VITE_SUITE_MODE=relay` (default) | Full parity: sync, presence, every share scope and publish. |
+| Hosted paid | `VITE_SUITE_MODE=relay` (default) | Full parity, same as self-host; the licence gates the relay, never a feature. |
+
+`pnpm --filter @suite/canvas build:standalone` writes the local-only bundle;
+`pnpm build` (or `pnpm --filter @suite/canvas build`) is the relay build. A
+`?share=` link opened in a standalone build says the build is local-only instead
+of attempting a request to a relay that is not there.
+
 ## Commands
 
 | Command | What it does |
@@ -130,6 +147,15 @@ the browser only ever talks to one origin.
 cp .env.example .env        # set SUITE_DOMAIN, optionally tokens
 docker compose up -d --build
 ```
+
+- **Released images.** CI pushes `ghcr.io/<owner>/suite:<tag>` and `:latest` on every git tag; a
+  host with no checkout runs `SUITE_IMAGE=ghcr.io/<owner>/suite:<tag> docker compose pull` and then
+  `docker compose up -d`. The tag is baked into the image as `SUITE_VERSION`, so `/metrics`,
+  `/api/admin/status` and the `server ready` log line name the release that is running.
+- **Bad configuration is a startup error.** Ports, database paths, tokens, `SUITE_HOSTED` (which
+  needs `SUITE_LICENCE_PUBLIC_KEY`) and every `SUITE_*` quota are validated before the process
+  opens a socket; a bad value logs the variable and the reason and exits `1`. See
+  [docs/operations.md](./docs/operations.md#boot-time-validation).
 
 - **TLS is required.** Caddy obtains and renews a certificate for `SUITE_DOMAIN` and redirects
   HTTP to HTTPS. Collaboration needs `wss://`; a plain-HTTP deployment cannot sync.

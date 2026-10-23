@@ -1,6 +1,6 @@
 import { sectionForCard, sectionMembership } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { outlineRows } from "./canvas/outlineTree";
@@ -16,10 +16,11 @@ import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { SharePublishButton } from "./components/SharePublishButton";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
-import { WorkspaceActions } from "./components/WorkspaceActions";
+import { ViewsBar } from "./components/ViewsBar";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
+import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
 import { rememberWorkspace } from "./session/workspaceTransfer";
 import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
@@ -38,6 +39,16 @@ function documentLabel(share: ShareSession, workspaceId: string): string {
   if (share.scope === "selection") return "Selection share";
   return workspaceId;
 }
+
+/**
+ * The workspace actions pull in the share dialog, the recovery dialog and the
+ * relay clients. Loading them on demand keeps `/api` out of the standalone
+ * build's app chunk entirely, rather than relying on a runtime guard.
+ */
+const WorkspaceActions = lazy(async () => {
+  const module = await import("./components/WorkspaceActions");
+  return { default: module.WorkspaceActions };
+});
 
 export default function App() {
   useEffect(() => initTheme(), []);
@@ -113,14 +124,24 @@ function WorkspaceShell({
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
   const stagger = useRef(0);
   const shareCardOpened = useRef(false);
+  // A standalone build renders from IndexedDB alone: no socket, no presence and
+  // no sharing, all decided once at build time.
+  const standalone = isStandalone();
 
   useEffect(() => {
+    if (standalone) return;
     connect();
-  }, [connect]);
+  }, [connect, standalone]);
 
   useEffect(() => {
+    if (standalone) {
+      // Nothing will sync in this build, so the relay's 5 s grace period would
+      // only delay the first seed of a local workspace.
+      if (!useCanvasStore.getState().synced) useCanvasStore.setState({ synced: true });
+      return;
+    }
     if (provider) bindPresence(presence, TAB_ID);
-  }, [bindPresence, presence, provider]);
+  }, [bindPresence, presence, provider, standalone]);
 
   // Seeding is once per workspace, so deleting every card stays deleted. It also
   // waits for the first server sync: seeding an empty local doc would resurrect
@@ -356,43 +377,65 @@ function WorkspaceShell({
   return (
     <div className="app-canvas flex h-screen w-screen flex-col" data-ready={ready && synced}>
       <TitleBar
-        status={status}
+        // A standalone build never opens a socket, so "Syncing" would be a lie;
+        // the status slot reports the connection it has (none) beside the note.
+        status={standalone ? "disconnected" : status}
         {...(share ? { role: share.role } : {})}
-        peerCount={peerCount}
+        peerCount={standalone ? 0 : peerCount}
         documentId={share ? documentLabel(share, workspaceId) : workspaceId}
         actions={
-          share ? (
+          // Share sessions only exist on a relay. The literal is inlined by Vite,
+          // so a standalone build drops this branch — and the publish button and
+          // `/api/shares` client behind it — instead of shipping dead relay UI.
+          // A constant or `isStandalone()` call would be opaque to the bundler.
+          share && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
             <SharePublishButton />
           ) : (
-            <WorkspaceActions
-              workspaceId={workspaceId}
-              boardId={activeBoardId}
-              title={activeBoardName ?? "Workspace"}
-            />
+            <>
+              <Suspense fallback={null}>
+                <WorkspaceActions
+                  workspaceId={workspaceId}
+                  boardId={activeBoardId}
+                  title={activeBoardName ?? "Workspace"}
+                />
+              </Suspense>
+              {standalone ? (
+                <span
+                  data-testid="local-only"
+                  title="This build keeps every workspace in this browser: no sync, no sharing."
+                  className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)]"
+                >
+                  Local only
+                </span>
+              ) : null}
+            </>
           )
         }
       >
         {workspaceSurface ? (
-          <BoardTabs
-            boards={snapshot.boards}
-            activeBoardId={activeBoardId}
-            onSelect={setActiveBoardId}
-            canCreateBoards={canCreateBoards}
-            canManageBoards={canManageBoards}
-            onCreate={() => {
-              const board = workspace.createBoard();
-              setActiveBoardId(board.id);
-            }}
-            onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-            onDeleteRequest={(boardId) => {
-              // Nothing to lose on an empty board, so skip the dialog.
-              if (workspace.listBoardCards(boardId).length === 0) {
-                workspace.deleteBoard(boardId);
-                return;
-              }
-              setBoardToDelete(boardId);
-            }}
-          />
+          <>
+            <BoardTabs
+              boards={snapshot.boards}
+              activeBoardId={activeBoardId}
+              onSelect={setActiveBoardId}
+              canCreateBoards={canCreateBoards}
+              canManageBoards={canManageBoards}
+              onCreate={() => {
+                const board = workspace.createBoard();
+                setActiveBoardId(board.id);
+              }}
+              onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
+              onDeleteRequest={(boardId) => {
+                // Nothing to lose on an empty board, so skip the dialog.
+                if (workspace.listBoardCards(boardId).length === 0) {
+                  workspace.deleteBoard(boardId);
+                  return;
+                }
+                setBoardToDelete(boardId);
+              }}
+            />
+            <ViewsBar canManage={canManageSchema} />
+          </>
         ) : null}
       </TitleBar>
 

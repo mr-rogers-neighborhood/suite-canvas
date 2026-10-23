@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { RecoveryKeyDialog } from "../components/RecoveryKeyDialog";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
 import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
 import {
@@ -35,11 +34,22 @@ function openedAt(timestamp: number): string {
  * workspaces are local metadata; opening one navigates to that workspace's
  * ordinary canvas route.
  */
+const RecoveryKeyDialog = lazy(async () => {
+  const module = await import("../components/RecoveryKeyDialog");
+  return { default: module.RecoveryKeyDialog };
+});
+
+const DeleteWorkspaceDialog = lazy(async () => {
+  const module = await import("../components/DeleteWorkspaceDialog");
+  return { default: module.DeleteWorkspaceDialog };
+});
+
 export function WorkspaceLauncher() {
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RecentWorkspace | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const recoveryInput = useRef<HTMLInputElement | null>(null);
 
@@ -225,6 +235,19 @@ export function WorkspaceLauncher() {
                   >
                     Export
                   </button>
+                  {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
+                    <button
+                      type="button"
+                      data-testid={`launcher-delete-${entry.id}`}
+                      aria-label="Delete this workspace…"
+                      title="Delete this workspace…"
+                      className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
+                      onClick={() => setDeleteTarget(entry)}
+                      disabled={busy}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     aria-label="Remove from this list (does not delete the workspace)"
@@ -249,13 +272,30 @@ export function WorkspaceLauncher() {
         </footer>
       </div>
       {prompt ? (
-        <RecoveryKeyDialog
-          mode="backup-prompt"
-          workspaceId={prompt.workspaceId}
-          ownerKey={prompt.ownerKey}
-          title={prompt.title}
-          onClose={() => setPrompt(null)}
-        />
+        <Suspense fallback={null}>
+          <RecoveryKeyDialog
+            mode="backup-prompt"
+            workspaceId={prompt.workspaceId}
+            ownerKey={prompt.ownerKey}
+            title={prompt.title}
+            onClose={() => setPrompt(null)}
+          />
+        </Suspense>
+      ) : null}
+      {deleteTarget ? (
+        <Suspense fallback={null}>
+          <DeleteWorkspaceDialog
+            mode="standalone"
+            workspaceId={deleteTarget.id}
+            title={deleteTarget.title}
+            onClose={() => setDeleteTarget(null)}
+            onDeleted={() => {
+              setDeleteTarget(null);
+              setRecents(readRecentWorkspaces());
+              navigateTo("/");
+            }}
+          />
+        </Suspense>
       ) : null}
     </main>
   );

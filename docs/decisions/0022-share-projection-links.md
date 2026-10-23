@@ -56,6 +56,18 @@ returned `"write"` for every unauthenticated non-share room.
    all-or-nothing: one invalid or conflicting creation leaves the draft intact and names every
    rejected object in “Can’t publish yet”; there is no partial publish. Editing a published
    object remains field-granular.
+   *Revised for block-level body conflicts:* a card body is no longer one key. Each top-level block
+   of the body gets `card:<cardId>:body:<blockKey>`, so two editors who edit different paragraphs
+   of the same card both publish. A block's identity prefers its Loro container id; two projections
+   copy the body into fresh containers and share no ids, so the fallback is a structural key (node
+   name, a hash of the block's subtree, the occurrence of that content), and a block the draft
+   changed keeps the baseline block's key so both-sided edits collide on purpose. Apply rewrites
+   only the changed blocks, still in one `share:publish` commit, so an untouched block keeps its
+   containers and a peer's caret there. The dialogue accepts both a block key and the legacy
+   `card:<cardId>:body` key; a one-block body keeps the legacy key and the whole-body write.
+   When the blocks cannot be aligned — a reorder, or a structure where no key means the same block
+   — the card deliberately degrades to one whole-body conflict. Guessing which block moved where
+   silently loses text, and a visible conflict is always cheaper than a lost paragraph.
 7. **Workspace viewer links are deferred.** A token that joins the workspace room necessarily
    learns the id that share management uses, and with no accounts that id is also write access.
    Minting a workspace viewer token would therefore allow an editor link. It waits for a separate
@@ -82,4 +94,6 @@ workspace. `projectWorkspace` accepts it beside `board` and `card`; see
 - Cross-document merge-back is a publish step, not a live loop: the worker diffs the draft
   against a per-share baseline, applies one `share:publish` commit to the workspace, and rebuilds
   the projection. Conflicting fields reject the publish unless the editor selects them in the
-  conflict dialog; there is no automatic share-wins fallback.
+  conflict dialog; there is no automatic share-wins fallback. A body conflicts per block, and a
+  body whose blocks cannot be aligned degrades to one whole-body conflict rather than an inferred
+  merge — the merge never rewrites blocks the draft did not change.

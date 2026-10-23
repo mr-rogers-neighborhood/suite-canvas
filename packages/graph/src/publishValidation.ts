@@ -98,6 +98,7 @@ export const RICH_TEXT_NODE_NAMES = [
   "text",
   "mention",
   "propertyBlock",
+  "attachment",
 ] as const;
 
 /** Marks the editor schema produces. */
@@ -125,6 +126,8 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   text: [],
   mention: ["cardId", "display", "fieldId"],
   propertyBlock: ["fieldId", "display"],
+  // Metadata only: the pixels are bytes beside the document, never in it.
+  attachment: ["id", "mime", "width", "height", "name", "bytes"],
 } as const satisfies Record<string, readonly string[]>;
 
 const ALLOWED_NODES = new Set<string>(RICH_TEXT_NODE_NAMES);
@@ -223,6 +226,46 @@ function validateTextDelta(delta: unknown, limits: PublishLimits, path: string):
   return null;
 }
 
+/**
+ * The attachment node's attributes are metadata for bytes held elsewhere, so a
+ * publish checks their shape: an id the relay could have issued, a type it
+ * serves, sizes that are whole numbers, and a name short enough to be alt text.
+ * Anything else would project a node no reader could ever resolve.
+ */
+const ATTACHMENT_ID = /^[0-9a-f]{32}$/u;
+const ATTACHMENT_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
+const ATTACHMENT_MAX_NAME_BYTES = 200;
+
+function validateAttachmentAttribute(key: string, value: string | number | boolean): string | null {
+  if (key === "id") {
+    return typeof value === "string" && ATTACHMENT_ID.test(value)
+      ? null
+      : `is not an attachment id ("${clip(String(value))}")`;
+  }
+  if (key === "mime") {
+    return typeof value === "string" && ATTACHMENT_MIME_TYPES.has(value)
+      ? null
+      : `is not an image type the relay serves ("${clip(String(value))}")`;
+  }
+  if (key === "width" || key === "height" || key === "bytes") {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? null
+      : "is not a non-negative whole number";
+  }
+  if (key === "name") {
+    return typeof value === "string" && utf8ByteLength(value) <= ATTACHMENT_MAX_NAME_BYTES
+      ? null
+      : `is longer than ${ATTACHMENT_MAX_NAME_BYTES} bytes`;
+  }
+  return null;
+}
+
 function validateAttributes(nodeName: string, attributes: unknown, path: string): string | null {
   if (!isRecord(attributes) || isTextSnapshot(attributes)) {
     return `${path}.attributes is not a plain object`;
@@ -238,6 +281,10 @@ function validateAttributes(nodeName: string, attributes: unknown, path: string)
           ? true
           : typeof value === "number" && Number.isFinite(value);
     if (!ok) return `${path}.${key} is not a plain value`;
+    if (nodeName === "attachment") {
+      const issue = validateAttachmentAttribute(key, value as string | number | boolean);
+      if (issue !== null) return `${path}.${key} ${issue}`;
+    }
   }
   return null;
 }

@@ -1,5 +1,7 @@
 import type { CardType } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
+import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
+import { useUiStore } from "../store/useUiStore";
 
 export interface DockProps {
   inboxCount: number;
@@ -28,6 +30,25 @@ export function Dock({
 }: DockProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
+
+  // Ctrl/Cmd+K is the one shortcut that reaches across the whole app: it opens
+  // the library on Cards and asks the drawer to focus its search box.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // The editor owns Mod-K while it is focused.
+      if (event.defaultPrevented) return;
+      if (event.key.toLowerCase() !== "k") return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      const ui = useUiStore.getState();
+      ui.setLibraryOpen(true);
+      ui.setLibraryTab("cards");
+      window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;

@@ -1,3 +1,4 @@
+import { isStandalone } from "./mode";
 import type { Share, ShareRole, ShareScope } from "./shares";
 import {
   activeShareCredential,
@@ -120,6 +121,25 @@ const BOARD_EDITOR_CAPABILITIES: SessionCapabilities = {
   canManageLinks: false,
 };
 
+/**
+ * A standalone build edits the one document this browser holds. It is owner of
+ * everything local — content, layout, creation, boards, schema and trash — but
+ * there is no relay, so nothing to publish and no link to manage. The sharing
+ * surfaces read these flags, so `Share`/`Publish` never render rather than
+ * rendering disabled.
+ */
+export const STANDALONE_CAPABILITIES: SessionCapabilities = {
+  canEditContent: true,
+  canEditLayout: true,
+  canPublish: false,
+  canCreateContent: true,
+  canCreateBoards: true,
+  canManageBoards: true,
+  canManageSchema: true,
+  canManageTrash: true,
+  canManageLinks: false,
+};
+
 /** A card editor only touches one card's content. */
 const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
   canEditContent: true,
@@ -135,6 +155,7 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
 
 /**
  * Capability matrix:
+ * - standalone: everything local, nothing that needs a relay (no links, no publish);
  * - no share (owner): everything, including links and ownership;
  * - a selection: nothing — the server only ever issues viewer links for it;
  * - any viewer: nothing;
@@ -143,6 +164,9 @@ const CARD_EDITOR_CAPABILITIES: SessionCapabilities = {
  * - card editor: content and publish for one card.
  */
 export function sessionCapabilities(session: SessionConfig): SessionCapabilities {
+  // The build profile outranks any URL: a standalone bundle never resolves a
+  // share, so it can never hand out a share's narrower capability row either.
+  if (isStandalone()) return STANDALONE_CAPABILITIES;
   const { share } = session;
   if (!share) return OWNER_CAPABILITIES;
   // A selection is viewer-only server-side: never grant write access, even if a
@@ -247,4 +271,13 @@ export function getSession(): SessionConfig {
 /** True for any `?share=` session, viewer or (workspace-only) editor. */
 export function isShareSession(): boolean {
   return current.share !== null;
+}
+
+/**
+ * The session a standalone build boots: the local document the URL names, with
+ * no relay identity at all — there is no owner key to claim and no share to
+ * read, so both stay null whatever the URL says.
+ */
+export function standaloneSession(base: SessionConfig = current): SessionConfig {
+  return { ...base, share: null, ownerKey: null };
 }

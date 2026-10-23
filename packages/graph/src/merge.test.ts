@@ -1,7 +1,13 @@
 import { getType, isContainer, type LoroList, LoroMap, LoroText } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { placementKey, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
-import { applyPublish, PUBLISH_ORIGIN, type PublishScope, planPublish } from "./merge.js";
+import {
+  applyPublish,
+  PUBLISH_ORIGIN,
+  type PublishScope,
+  planPublish,
+  readBodyBlocks,
+} from "./merge.js";
 import { projectWorkspace } from "./projection.js";
 import { mentionTargets } from "./references.js";
 
@@ -656,8 +662,11 @@ describe("applyPublish", () => {
     const { source, baseline, draft, options, owner } = setup();
     writeRichBody(draft, "c1", owner.id);
     const plan = planPublish(draft, baseline, source, options);
-    expect(plan.changes.map((change) => change.key)).toContain("card:c1:body");
-
+    // The draft replaced one block with three, so the changes are per block.
+    expect(
+      plan.changes.map((change) => change.key).every((key) => key.startsWith("card:c1:body:")),
+    ).toBe(true);
+    expect(plan.changes.length).toBeGreaterThan(0);
     expect(applyPublish(source, draft, plan)).toBeGreaterThan(0);
 
     const first = scanBody(source, "c1");
@@ -868,5 +877,343 @@ describe("planPublish creations", () => {
 
     expect(plan.unsupported.map((entry) => entry.key)).toContain(`card:${id}:create`);
     expect(applyPublish(source, draft, plan)).toBe(0);
+  });
+});
+
+// --------------------------------------------------------------- body blocks
+
+/** The body's block list, without creating anything. */
+function bodyBlocksOf(workspace: WorkspaceDocument, cardId: string): LoroList {
+  const children = containerChildren(workspace.peekContent(cardId));
+  if (!children) throw new Error(`no body for ${cardId}`);
+  return children;
+}
+
+function plainText(value: unknown): string {
+  if (!isContainer(value)) return "";
+  const type = getType(value);
+  if (type === "Text") {
+    return (value as LoroText)
+      .toDelta()
+      .map((op) => (typeof op.insert === "string" ? op.insert : ""))
+      .join("");
+  }
+  if (type === "List") return (value as LoroList).toArray().map(plainText).join("");
+  if (type === "Map") {
+    return [...(value as LoroMap).entries()]
+      .filter(([key]) => key !== "nodeName")
+      .map(([, child]) => plainText(child))
+      .join("");
+  }
+  return "";
+}
+
+/** One string per top-level block, in document order. */
+function bodyTexts(workspace: WorkspaceDocument, cardId: string): string[] {
+  return bodyBlocksOf(workspace, cardId)
+    .toArray()
+    .map((block) => plainText(block).trim());
+}
+
+/** Replaces a card's body with one paragraph per entry. */
+function writeBlocks(
+  workspace: WorkspaceDocument,
+  cardId: string,
+  paragraphs: readonly string[],
+): void {
+  const root = workspace.getContent(cardId);
+  root.set("nodeName", "doc");
+  root.ensureMergeableMap("attributes");
+  const blocks = root.ensureMergeableList("children");
+  blocks.clear();
+  paragraphs.forEach((text, index) => {
+    const paragraph = blocks.insertContainer(index, new LoroMap());
+    paragraph.set("nodeName", "paragraph");
+    paragraph.ensureMergeableMap("attributes");
+    const inline = paragraph.ensureMergeableList("children");
+    inline.insertContainer(0, new LoroText()).insert(0, text);
+  });
+  commit(workspace);
+}
+
+function blockAt(workspace: WorkspaceDocument, cardId: string, index: number): LoroMap {
+  const block = bodyBlocksOf(workspace, cardId).get(index);
+  if (!isContainer(block) || getType(block) !== "Map") throw new Error(`no block ${index}`);
+  return block as LoroMap;
+}
+
+/** Edits one paragraph's text in place, like a keystroke in that block. */
+function editBlock(
+  workspace: WorkspaceDocument,
+  cardId: string,
+  index: number,
+  text: string,
+): void {
+  const inline = blockAt(workspace, cardId, index).ensureMergeableList("children");
+  inline.clear();
+  inline.insertContainer(0, new LoroText()).insert(0, text);
+  commit(workspace);
+}
+
+function insertBlock(
+  workspace: WorkspaceDocument,
+  cardId: string,
+  index: number,
+  text: string,
+): void {
+  const paragraph = bodyBlocksOf(workspace, cardId).insertContainer(index, new LoroMap());
+  paragraph.set("nodeName", "paragraph");
+  paragraph.ensureMergeableMap("attributes");
+  paragraph.ensureMergeableList("children").insertContainer(0, new LoroText()).insert(0, text);
+  commit(workspace);
+}
+
+function removeBlock(workspace: WorkspaceDocument, cardId: string, index: number): void {
+  bodyBlocksOf(workspace, cardId).delete(index, 1);
+  commit(workspace);
+}
+
+/** Moves a block by rewriting it elsewhere, which is what an editor's drag does. */
+function moveBlock(workspace: WorkspaceDocument, cardId: string, from: number, to: number): void {
+  const text = bodyTexts(workspace, cardId)[from] ?? "";
+  removeBlock(workspace, cardId, from);
+  insertBlock(workspace, cardId, to, text);
+}
+
+/** A workspace whose card `c1` has several blocks, plus matching projections. */
+function multiBlock(paragraphs: readonly string[]) {
+  const { source, options } = setup();
+  writeBlocks(source, "c1", paragraphs);
+  const baseline = projectWorkspace(source, options).workspace;
+  const draft = projectWorkspace(source, options).workspace;
+  return { source, baseline, draft, options };
+}
+
+describe("readBodyBlocks", () => {
+  it("should key a block structurally when two projections copy it", () => {
+    const { source, options } = multiBlock(["Intro", "Body"]);
+    const other = projectWorkspace(source, options).workspace;
+
+    const left = readBodyBlocks(source, "c1");
+    const right = readBodyBlocks(other, "c1");
+
+    // A projection copies the body into fresh containers, so the Loro ids
+    // differ; the structural key is the only identity both sides share.
+    expect(left.map((block) => block.id)).not.toEqual(right.map((block) => block.id));
+    expect(left.map((block) => block.key)).toEqual(right.map((block) => block.key));
+    expect(left.map((block) => block.nodeName)).toEqual(["paragraph", "paragraph"]);
+  });
+
+  it("should change a block's key when its text changes and keep duplicates apart", () => {
+    const { source } = multiBlock(["Same", "Same"]);
+
+    const before = readBodyBlocks(source, "c1");
+    expect(before[0]?.key).not.toBe(before[1]?.key);
+
+    editBlock(source, "c1", 1, "Different");
+
+    const after = readBodyBlocks(source, "c1");
+    expect(after[0]?.key).toBe(before[0]?.key);
+    expect(after[1]?.key).not.toBe(before[1]?.key);
+  });
+});
+
+describe("planPublish body blocks", () => {
+  it("should publish two editors' changes to different paragraphs", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    editBlock(draft, "c1", 1, "Editor middle");
+    editBlock(source, "c1", 2, "Owner outro");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.unsupported).toEqual([]);
+    expect(plan.changes).toHaveLength(1);
+    expect(plan.changes[0]?.key).toMatch(/^card:c1:body:paragraph:/);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Editor middle", "Owner outro"]);
+  });
+
+  it("should conflict on the same paragraph and label the block", () => {
+    const { source, baseline, draft, options } = multiBlock([
+      "Intro",
+      "the deadline slipped twice",
+      "Outro",
+    ]);
+    editBlock(draft, "c1", 1, "Draft deadline");
+    editBlock(source, "c1", 1, "Owner deadline");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.conflicts).toHaveLength(1);
+    const conflict = plan.conflicts[0];
+    expect(conflict?.key).toMatch(/^card:c1:body:paragraph:/);
+    expect(conflict?.kind).toBe("body");
+    expect(conflict?.label).toContain("Alpha");
+    expect(conflict?.label).toContain("paragraph: the deadline slipped twice");
+    expect(conflict?.label).not.toContain(conflict?.key ?? "");
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(bodyTexts(source, "c1")[1]).toBe("Owner deadline");
+  });
+
+  it("should shorten a long block label without losing the start", () => {
+    const long = "Launch plan. ".repeat(8);
+    const { source, baseline, draft, options } = multiBlock(["Intro", long, "Outro"]);
+    editBlock(draft, "c1", 1, "Draft plan");
+    editBlock(source, "c1", 1, "Owner plan");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    const label = plan.conflicts[0]?.label ?? "";
+    expect(label).toContain("\u2026");
+    expect(label).toContain("Launch plan. Launch plan.");
+    expect(label.length).toBeLessThan(80);
+  });
+
+  it("should publish a block the draft inserted above an untouched source", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    insertBlock(draft, "c1", 1, "Inserted");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toHaveLength(1);
+    expect(plan.values[plan.changes[0]?.key ?? ""]).toMatchObject({
+      kind: "body-block",
+      op: "insert",
+    });
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Inserted", "Body", "Outro"]);
+    // A second apply is a no-op, not a duplicate block.
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(bodyTexts(source, "c1")).toHaveLength(4);
+  });
+
+  it("should publish a block only the draft removed", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    removeBlock(draft, "c1", 1);
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.values[plan.changes[0]?.key ?? ""]).toEqual({
+      kind: "body-block",
+      op: "remove",
+    });
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Outro"]);
+  });
+
+  it("should conflict when one side removed the block the other edited", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    removeBlock(draft, "c1", 1);
+    editBlock(source, "c1", 1, "Owner kept this");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.conflicts).toHaveLength(1);
+    expect(plan.conflicts[0]?.label).toContain("paragraph: Body");
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Owner kept this", "Outro"]);
+  });
+
+  it("should degrade a reordered draft to one whole-body conflict", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    moveBlock(draft, "c1", 0, 1);
+    editBlock(source, "c1", 2, "Owner outro");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.changes).toEqual([]);
+    expect(plan.conflicts).toHaveLength(1);
+    expect(plan.conflicts[0]).toMatchObject({ key: "card:c1:body", kind: "body" });
+    expect(plan.conflicts[0]?.label).toContain("body");
+    expect(plan.values["card:c1:body"]).toMatchObject({ kind: "text" });
+    expect(applyPublish(source, draft, plan)).toBe(0);
+    // Nothing was guessed: the workspace keeps every paragraph and its order.
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Body", "Owner outro"]);
+  });
+
+  it("should keep the legacy whole-body key for a one-block body", () => {
+    const { source, baseline, draft, options } = setup();
+    editBlock(draft, "c1", 0, "Drafted body");
+
+    const plan = planPublish(draft, baseline, source, options);
+
+    expect(plan.changes).toMatchObject([{ key: "card:c1:body", kind: "body" }]);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(bodyTexts(source, "c1")).toEqual(["Drafted body"]);
+
+    editBlock(draft, "c1", 0, "Drafted again");
+    editBlock(source, "c1", 0, "Owner body");
+    const conflicted = planPublish(draft, baseline, source, options);
+    expect(conflicted.conflicts).toMatchObject([{ key: "card:c1:body", kind: "body" }]);
+  });
+
+  it("should still let the legacy whole-body key overwrite every block", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    editBlock(draft, "c1", 1, "Draft middle");
+    editBlock(source, "c1", 1, "Owner middle");
+    editBlock(draft, "c1", 2, "Draft outro");
+    editBlock(source, "c1", 2, "Owner outro");
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set(["card:c1:body"]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toHaveLength(2);
+    expect(applyPublish(source, draft, plan)).toBe(2);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Draft middle", "Draft outro"]);
+  });
+
+  it("should overwrite one block by its own key and keep the rest of the workspace", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    editBlock(draft, "c1", 1, "Draft middle");
+    editBlock(source, "c1", 1, "Owner middle");
+    editBlock(draft, "c1", 2, "Draft outro");
+    editBlock(source, "c1", 2, "Owner outro");
+
+    const first = planPublish(draft, baseline, source, options);
+    expect(first.conflicts).toHaveLength(2);
+    const selected = first.conflicts.map((conflict) => conflict.key)[0] ?? "";
+
+    const plan = planPublish(draft, baseline, source, options, {
+      overwrite: new Set([selected]),
+    });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.changes).toHaveLength(1);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Draft middle", "Owner outro"]);
+  });
+
+  it("should leave untouched blocks and their containers alone", () => {
+    const { source, baseline, draft, options } = multiBlock(["Intro", "Body", "Outro"]);
+    editBlock(draft, "c1", 1, "Editor middle");
+
+    const keptBlock = blockAt(source, "c1", 2);
+    const keptText = keptBlock.ensureMergeableList("children").get(0);
+    if (!isContainer(keptText)) throw new Error("no text container");
+    const keptBlockId = String(keptBlock.id);
+    const keptTextId = String(keptText.id);
+    const introId = String(blockAt(source, "c1", 0).id);
+
+    const touched = new Set<string>();
+    const unsubscribe = source.doc.subscribe((batch) => {
+      for (const event of batch.events) touched.add(String(event.target));
+    });
+    const plan = planPublish(draft, baseline, source, options);
+    expect(applyPublish(source, draft, plan)).toBe(1);
+    unsubscribe();
+
+    // The peer's caret lives in a container, so an unchanged block must keep
+    // its own container and see no op at all.
+    expect(String(blockAt(source, "c1", 2).id)).toBe(keptBlockId);
+    expect(touched.has(keptBlockId)).toBe(false);
+    expect(touched.has(keptTextId)).toBe(false);
+    expect(touched.has(introId)).toBe(false);
+    expect(bodyTexts(source, "c1")).toEqual(["Intro", "Editor middle", "Outro"]);
   });
 });

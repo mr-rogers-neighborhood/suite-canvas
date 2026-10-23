@@ -14,15 +14,19 @@ import { useRef, useState } from "react";
 import {
   type ClaimRecord,
   claimWorkspace,
+  deriveOwnerKey,
   readClaimRecord,
   reloadWithOwnerKey,
   writeOwnerKey,
 } from "../session/ownerKey";
 import { OWNER_KIT_MISMATCH, readOwnerKit } from "../session/ownerKit";
+import { decodeWords } from "../session/recoveryWords";
 
 export interface WorkspaceProtectedProps {
   /** Workspace the page is trying to open; an imported key must belong to it. */
   workspaceId?: string | null;
+  /** Tests replace the navigation after a key is verified. */
+  applyKey?: (ownerKey: string) => void;
 }
 
 export interface ConflictCopy {
@@ -35,7 +39,21 @@ export interface ConflictCopy {
   keepsLocalCopy: boolean;
 }
 
-const EXITS = "Open a recovery key file, or the editor link that includes the current owner key.";
+const EXITS =
+  "Open a recovery key file, or the editor link that includes the current owner key. Recovery words and a passphrase also work here.";
+
+const OFFLINE_KEY_NOTE =
+  "The server could not be reached, so this key is not verified yet. Your edits on this device are kept — try again when you are back online.";
+const PASSPHRASE_MISMATCH =
+  "That passphrase does not open this workspace. Check the words and try again; nothing on this device was changed.";
+const WORDS_MISMATCH =
+  "Those recovery words do not open this workspace. Check each word against your copy; nothing on this device was changed.";
+const FILE_COPY =
+  "A recovery key file survives a lost browser and restores owner access on a new device.";
+const WORDS_COPY =
+  "Recovery words survive a lost browser and a lost file: read them back in order to restore this key.";
+const PASSPHRASE_COPY =
+  "A passphrase survives a lost browser, a lost file and a new device: the same words derive the same key.";
 
 /**
  * The two 409s read differently even though they are the same outcome. The
@@ -71,12 +89,51 @@ function protectedCopy(record: ClaimRecord | null): string {
     : `${detail} ${EXITS}`;
 }
 
-export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedProps) {
+export function WorkspaceProtected({
+  workspaceId = null,
+  applyKey = reloadWithOwnerKey,
+}: WorkspaceProtectedProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paste, setPaste] = useState("");
+  const [wordsInput, setWordsInput] = useState("");
+  const [passphrase, setPassphrase] = useState("");
   const fileInput = useRef<HTMLInputElement | null>(null);
   const record = readClaimRecord(workspaceId ?? "");
+
+  /**
+   * Verifies a candidate key against the relay and installs it only when the
+   * relay says this key owns the workspace. `refusal` is the one readable line
+   * for a key that does not match; nothing is ever written on that path, so a
+   * wrong passphrase cannot leave an unauthenticated key behind.
+   */
+  const install = async (candidate: string, refusal: string) => {
+    setError(null);
+    if (!workspaceId) {
+      setError("This page does not name a workspace, so a key cannot be applied.");
+      return;
+    }
+    setBusy(true);
+    try {
+      // The claim is the real verification: a wrong key is refused here instead
+      // of after a reload that would land back on this screen. A key that could
+      // not be verified is not installed either, but the local document is
+      // never touched, so nothing is lost by waiting for the relay.
+      const claim = await claimWorkspace(workspaceId, candidate);
+      if (claim === "conflict") {
+        setError(refusal);
+        return;
+      }
+      if (claim !== "claimed") {
+        setError(OFFLINE_KEY_NOTE);
+        return;
+      }
+      writeOwnerKey(workspaceId, candidate);
+      applyKey(candidate);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const open = async (text: string, name?: string) => {
     setError(null);
@@ -91,29 +148,40 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
       setError(cause instanceof Error ? cause.message : `Could not read ${name ?? "that file"}.`);
       return;
     }
+    await install(parsed.ownerKey, OWNER_KIT_MISMATCH);
+  };
 
+  const recoverWithWords = async () => {
+    setError(null);
+    const decoded = await decodeWords(wordsInput);
+    if (!decoded.ok) {
+      setError(decoded.problem);
+      return;
+    }
+    await install(decoded.key, WORDS_MISMATCH);
+  };
+
+  const recoverWithPassphrase = async () => {
+    setError(null);
+    if (!workspaceId) {
+      setError("This page does not name a workspace, so a passphrase cannot be used.");
+      return;
+    }
+    if (passphrase.trim().length === 0) {
+      setError("Type the passphrase you set for this workspace.");
+      return;
+    }
     setBusy(true);
+    let derived: string;
     try {
-      // The claim is the real verification: a wrong key is refused here instead
-      // of after a reload that would land back on this screen. A key that could
-      // not be verified is not installed either, but the local document is
-      // never touched, so nothing is lost by waiting for the relay.
-      const claim = await claimWorkspace(workspaceId, parsed.ownerKey);
-      if (claim === "conflict") {
-        setError(OWNER_KIT_MISMATCH);
-        return;
-      }
-      if (claim !== "claimed") {
-        setError(
-          "The server could not be reached, so this key is not verified yet. Your edits on this device are kept — try again when you are back online.",
-        );
-        return;
-      }
-      writeOwnerKey(workspaceId, parsed.ownerKey);
-      reloadWithOwnerKey(parsed.ownerKey);
+      derived = await deriveOwnerKey(passphrase, workspaceId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The passphrase key could not be derived.");
+      return;
     } finally {
       setBusy(false);
     }
+    await install(derived, PASSPHRASE_MISMATCH);
   };
 
   const onFile = async (file: File | undefined) => {
@@ -155,6 +223,12 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
         >
           Open recovery key file…
         </button>
+        <p
+          data-testid="recovery-file-copy"
+          className="max-w-[280px] text-[10px] leading-relaxed text-[var(--ink-muted)]"
+        >
+          {FILE_COPY}
+        </p>
         <input
           ref={fileInput}
           type="file"
@@ -191,6 +265,77 @@ export function WorkspaceProtected({ workspaceId = null }: WorkspaceProtectedPro
               onClick={() => void open(paste, "the pasted key")}
             >
               {busy ? "Opening\u2026" : "Use key"}
+            </button>
+          </div>
+        </details>
+
+        <details className="w-[280px] text-left">
+          <summary
+            data-testid="recovery-words-open"
+            className="cursor-pointer text-center text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
+          >
+            Recover with recovery words
+          </summary>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <p
+              className="text-[10px] leading-relaxed text-[var(--ink-muted)]"
+              data-testid="recovery-words-copy"
+            >
+              {WORDS_COPY}
+            </p>
+            <textarea
+              aria-label="Recovery words"
+              data-testid="recovery-words-input"
+              rows={3}
+              spellCheck={false}
+              placeholder="word one two three…"
+              className="w-full resize-none rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 font-mono text-[10px] text-[var(--ink)] outline-none"
+              value={wordsInput}
+              onChange={(event) => setWordsInput(event.currentTarget.value)}
+            />
+            <button
+              type="button"
+              data-testid="recovery-words-apply"
+              disabled={busy || wordsInput.trim().length === 0}
+              className="self-end rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] text-[var(--surface)] disabled:opacity-40"
+              onClick={() => void recoverWithWords()}
+            >
+              {busy ? "Opening\u2026" : "Use words"}
+            </button>
+          </div>
+        </details>
+
+        <details className="w-[280px] text-left">
+          <summary
+            data-testid="recovery-passphrase-open"
+            className="cursor-pointer text-center text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
+          >
+            Recover with passphrase
+          </summary>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <p
+              data-testid="recovery-passphrase-copy"
+              className="text-[10px] leading-relaxed text-[var(--ink-muted)]"
+            >
+              {PASSPHRASE_COPY}
+            </p>
+            <input
+              type="password"
+              aria-label="Passphrase"
+              data-testid="recovery-passphrase-input"
+              spellCheck={false}
+              className="w-full rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)] outline-none"
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.currentTarget.value)}
+            />
+            <button
+              type="button"
+              data-testid="recovery-passphrase-apply"
+              disabled={busy || passphrase.trim().length === 0}
+              className="self-end rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] text-[var(--surface)] disabled:opacity-40"
+              onClick={() => void recoverWithPassphrase()}
+            >
+              {busy ? "Opening\u2026" : "Use passphrase"}
             </button>
           </div>
         </details>

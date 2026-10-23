@@ -1,0 +1,19 @@
+{
+  "name": "@suite/billing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda and deliberately kept out of the pnpm workspace, so the main install stays Stripe-free.",
+  "scripts": {
+    "test": "node --test \"*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dry-run": "node dev.ts --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-ses": "^3.0.0"
+  }
+}

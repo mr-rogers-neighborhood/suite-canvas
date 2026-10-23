@@ -234,6 +234,56 @@ describe("SharePublishButton", () => {
     expect(publishShare).toHaveBeenCalledTimes(1);
   });
 
+  it("groups several block conflicts on one card under the card name", async () => {
+    const publishShare = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new SharePublishConflictError({
+          conflicts: [
+            {
+              key: "card:c1:body:paragraph:8f2:0",
+              kind: "body",
+              label: "Launch plan \u00b7 paragraph: \u2026the deadline slipped\u2026",
+              message: "This paragraph changed in the workspace after this draft was taken.",
+            },
+            {
+              key: "card:c1:body:paragraph:4a1:0",
+              kind: "body",
+              label: "Launch plan \u00b7 paragraph: Scope grew.",
+              message: "This paragraph changed in the workspace after this draft was taken.",
+            },
+            { key: "card:c1:field:owner", kind: "property", message: "Field changed." },
+          ],
+          unsupported: [],
+          reason: null,
+        }),
+      )
+      .mockResolvedValueOnce({ applied: 2 });
+    const client = fakeClient({ publishShare });
+
+    render(<SharePublishButton client={client} />);
+    fireEvent.click(screen.getByTestId("share-publish"));
+
+    const dialog = await screen.findByTestId("publish-conflict");
+    const group = screen.getByTestId("publish-conflict-group");
+    expect(group).toHaveTextContent("Launch plan");
+    expect(group).toHaveTextContent("2 blocks");
+    expect(dialog).toHaveTextContent("paragraph: \u2026the deadline slipped\u2026");
+    expect(dialog).toHaveTextContent("paragraph: Scope grew.");
+    // The group heading carries the card name, so rows never show a raw key.
+    expect(dialog).not.toHaveTextContent("card:c1:body:paragraph:8f2:0");
+
+    const boxes = screen.getAllByTestId("publish-keep");
+    expect(boxes).toHaveLength(3);
+    fireEvent.click(boxes[1] as HTMLElement);
+    fireEvent.click(screen.getByTestId("publish-selected"));
+
+    await waitFor(() => expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument());
+    expect(publishShare).toHaveBeenLastCalledWith("tok-1", expect.any(Object), [
+      "card:c1:body:paragraph:4a1:0",
+    ]);
+  });
+
   it("shows a readable publish error", async () => {
     const client = fakeClient({
       publishShare: vi.fn(async () => {

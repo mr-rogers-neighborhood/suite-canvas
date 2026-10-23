@@ -29,9 +29,14 @@ RUN pnpm --filter @suite/graph build && pnpm --filter @suite/canvas build
 # development dependencies stay installed; that keeps this image to one build
 # step instead of a second compile pipeline.
 FROM base AS runtime
+# The version stamp reported by /metrics, /api/admin/status and the startup log.
+# CI passes the git tag; a local build falls back to this value, and
+# apps/collab-server/package.json is the last resort inside the image.
+ARG SUITE_VERSION=0.0.0
 ENV NODE_ENV=production \
     PORT=1234 \
-    HEALTH_PORT=1235
+    HEALTH_PORT=1235 \
+    SUITE_VERSION=${SUITE_VERSION}
 WORKDIR /app
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 # The runtime image is a subset of the workspace, so the pre-run dependency

@@ -53,6 +53,22 @@ export interface PublishConflict {
   label?: string;
 }
 
+/** Where one block of a card body lives, so apply can find it again. */
+export interface BlockTarget {
+  /**
+   * Structural key of the block in the baseline body. The source still holds
+   * that block while only the draft changed it, so the key is the reliable
+   * lookup; the fields below are the conservative fallback.
+   */
+  key: string;
+  /** Position in the baseline body; used only when `key` no longer resolves. */
+  index: number;
+  /** Node name, so the index fallback never rewrites a different block kind. */
+  nodeName: string;
+  /** Structural key of the preceding block, for an insertion anchor. */
+  after: string | null;
+}
+
 export interface PublishChange {
   key: string;
   kind: PublishFieldKind;
@@ -63,6 +79,8 @@ export interface PublishChange {
   boardId?: string;
   sectionId?: string;
   edgeId?: string;
+  /** Set on a `body` change that publishes one block instead of the body. */
+  block?: BlockTarget;
 }
 
 /** A `LoroText` container serialized to its delta, marks included. */
@@ -110,6 +128,9 @@ export interface CreatedCardSnapshot {
 /** The value a change carries, captured from the draft at planning time. */
 export type PublishValue =
   | { kind: "text"; tree: RichTextSnapshot }
+  | { kind: "body-block"; op: "replace"; block: RichTextSnapshot }
+  | { kind: "body-block"; op: "insert"; block: RichTextSnapshot }
+  | { kind: "body-block"; op: "remove" }
   | { kind: "property"; value: PropertyValue | null }
   | { kind: "tag"; present: boolean }
   | { kind: "placement"; placement: PlacementSnapshot }
@@ -286,6 +307,204 @@ function edgeFields(edge: GraphEdge | undefined): EdgeFields | undefined {
   };
 }
 
+// -------------------------------------------------------------- body blocks
+
+/**
+ * One top-level block of a card body (a direct child of the ProseMirror `doc`),
+ * identified well enough to tell "the same block" from "another block" across
+ * the draft, the baseline and the workspace.
+ */
+export interface BodyBlock {
+  /** Loro container id, when the body exposes one. */
+  id: string | null;
+  nodeName: string;
+  /** The block's subtree, as a snapshot; writing it rewrites only this block. */
+  tree: RichTextSnapshot;
+  /** Plain text of the block, for conflict labels. */
+  text: string;
+  /**
+   * Structural key, unique inside one body: node name, a hash of the block's
+   * subtree and the occurrence of that same content. It is content-addressed
+   * rather than positional on purpose: a block inserted above shifts positions
+   * but not keys, a duplicated block still gets its own key, and a changed
+   * block simply has no key match, which is how an edit is told from a move.
+   */
+  key: string;
+}
+
+/** FNV-1a, twice with different offsets, as a short stable digest. */
+function digest(value: string): string {
+  let forward = 0x811c9dc5;
+  let backward = 0x01000193;
+  for (let index = 0; index < value.length; index += 1) {
+    forward ^= value.charCodeAt(index);
+    forward = Math.imul(forward, 0x01000193) >>> 0;
+    backward ^= value.charCodeAt(value.length - 1 - index);
+    backward = Math.imul(backward, 0x01000193) >>> 0;
+  }
+  return `${forward.toString(36)}${backward.toString(36)}`;
+}
+
+/** Every insert of a subtree, joined; enough to show a conflict label. */
+function blockText(value: RichTextSnapshot): string {
+  if (isTextSnapshot(value)) {
+    return value.$text.map((op) => (typeof op.insert === "string" ? op.insert : "")).join("");
+  }
+  if (Array.isArray(value)) return value.map(blockText).join(" ").trim();
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).map(blockText).join(" ").trim();
+  }
+  return "";
+}
+
+/**
+ * The blocks of a card body, in document order.
+ *
+ * A block's identity is, in order of preference: its Loro container id (which
+ * survives a fork or a baseline snapshot of the same document), then the
+ * structural key. The structural key is the conservative fallback the merge
+ * relies on when two projections hold copies of the same block in different
+ * containers: it never guesses, so a block inserted above shifts positions but
+ * not keys, and a block whose content changed simply has no key match — the
+ * caller pairs those by position only when the counts and node names agree.
+ */
+export function readBodyBlocks(workspace: WorkspaceDocument, cardId: string): BodyBlock[] {
+  const root = workspace.peekContent(cardId);
+  if (!root) return [];
+  const children = root.get("children");
+  if (!isList(children)) return [];
+  const blocks: BodyBlock[] = [];
+  const occurrences = new Map<string, number>();
+  for (const value of children.toArray()) {
+    const nodeName = isMap(value) ? nodeNameOf(value) : "text";
+    const tree = snapshotValue(value);
+    const stem = `${nodeName}:${digest(canonical(tree))}`;
+    const occurrence = occurrences.get(stem) ?? 0;
+    occurrences.set(stem, occurrence + 1);
+    blocks.push({
+      id: isMap(value) ? String(value.id) : null,
+      nodeName,
+      tree,
+      text: blockText(tree),
+      key: `${stem}:${occurrence}`,
+    });
+  }
+  return blocks;
+}
+
+function nodeNameOf(map: LoroMap): string {
+  const name = map.get("nodeName");
+  return typeof name === "string" && name.length > 0 ? name : "block";
+}
+
+interface BlockAlignment {
+  /** Baseline index → the other body's index, or -1 when it is gone. */
+  matches: number[];
+  /** Other-body indices with no baseline counterpart. */
+  added: number[];
+  /**
+   * True when matched blocks come back in a different order. Content moved, and
+   * no per-block write can express that, so the caller degrades.
+   */
+  reordered: boolean;
+}
+
+/**
+ * Aligns one body against the baseline, in three passes:
+ *
+ * 1. Loro node id, but only when at least one id is shared. Two documents in
+ *    the same lineage (a draft and the baseline taken from it) share container
+ *    ids; a projection copied into a fresh document does not, and pairing by id
+ *    there would report every block as removed and re-added.
+ * 2. The structural key, which is the normal path between projections.
+ * 3. Position, only for the leftovers of both sides at once, and only when the
+ *    counts and the node names agree. That is what makes "the same paragraph,
+ *    edited" one key instead of a removal plus an addition.
+ */
+function alignBlocks(baseline: readonly BodyBlock[], other: readonly BodyBlock[]): BlockAlignment {
+  const matches = baseline.map(() => -1);
+  const taken = new Set<number>();
+
+  const byId = new Map<string, number>();
+  other.forEach((block, index) => {
+    if (block.id) byId.set(block.id, index);
+  });
+  const sharedId = baseline.some((block) => block.id !== null && byId.has(block.id));
+  if (sharedId) {
+    baseline.forEach((block, index) => {
+      const found = block.id === null ? undefined : byId.get(block.id);
+      if (found === undefined || taken.has(found)) return;
+      matches[index] = found;
+      taken.add(found);
+    });
+  }
+
+  const byKey = new Map<string, number[]>();
+  other.forEach((block, index) => {
+    const list = byKey.get(block.key);
+    if (list) list.push(index);
+    else byKey.set(block.key, [index]);
+  });
+  baseline.forEach((block, index) => {
+    if (matches[index] !== -1) return;
+    const candidates = byKey.get(block.key);
+    while (candidates && candidates.length > 0) {
+      const found = candidates.shift() as number;
+      if (taken.has(found)) continue;
+      matches[index] = found;
+      taken.add(found);
+      return;
+    }
+  });
+
+  const baseLeft = matches.flatMap((match, index) => (match === -1 ? [index] : []));
+  const otherLeft = other.flatMap((_, index) => (taken.has(index) ? [] : [index]));
+  if (
+    baseLeft.length > 0 &&
+    baseLeft.length === otherLeft.length &&
+    baseLeft.every((index, position) => {
+      const candidate = other[otherLeft[position] as number];
+      return candidate !== undefined && candidate.nodeName === baseline[index]?.nodeName;
+    })
+  ) {
+    baseLeft.forEach((index, position) => {
+      const found = otherLeft[position] as number;
+      matches[index] = found;
+      taken.add(found);
+    });
+  }
+
+  const order = matches.filter((match) => match !== -1);
+  const reordered = order.some((match, position) => {
+    const previous = position > 0 ? order[position - 1] : undefined;
+    return previous !== undefined && match <= previous;
+  });
+  return {
+    matches,
+    added: other.flatMap((_, index) => (taken.has(index) ? [] : [index])),
+    reordered,
+  };
+}
+
+/** At most 40 characters of a block, marks dropped, ellipses when cut. */
+function blockSnippet(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length === 0) return "";
+  return clean.length <= 40 ? clean : `\u2026${clean.slice(0, 40)}\u2026`;
+}
+
+/** `Launch plan · paragraph: …the deadline slipped…`, never a raw key. */
+function blockLabel(cardTitle: string, nodeName: string, text: string): string {
+  const snippet = blockSnippet(text);
+  return snippet
+    ? `${cardTitle} \u00b7 ${nodeName}: ${snippet}`
+    : `${cardTitle} \u00b7 ${nodeName}`;
+}
+
+function bodyBlockKey(cardId: string, block: BodyBlock): string {
+  return `card:${cardId}:body:${block.key}`;
+}
+
 /** The field definition a card's type owns; the writer's own resolution rule. */
 function fieldForCard(
   workspace: WorkspaceDocument,
@@ -344,8 +563,9 @@ function addConflict(
   key: string,
   kind: PublishFieldKind,
   message: string,
+  label?: string,
 ): void {
-  plan.conflicts.push({ key, kind, message });
+  plan.conflicts.push({ key, kind, message, ...(label ? { label } : {}) });
 }
 
 function record(plan: PublishPlan, change: PublishChange, value: PublishValue): void {
@@ -357,6 +577,9 @@ function record(plan: PublishPlan, change: PublishChange, value: PublishValue): 
  * Records a key the draft and the workspace both changed. The draft value is
  * captured even when the key is not selected, so planning stays deterministic;
  * the change itself is only planned when `overwrite` selects the key.
+ *
+ * A per-block body key also honours the legacy whole-body key: a dialog that
+ * still sends `card:<id>:body` keeps every block of that card.
  */
 function resolveConflict(
   plan: PublishPlan,
@@ -364,13 +587,20 @@ function resolveConflict(
   change: PublishChange,
   value: PublishValue,
   message: string,
+  label?: string,
 ): void {
   plan.values[change.key] = value;
   if (options?.overwrite === undefined) {
-    addConflict(plan, change.key, change.kind, message);
+    addConflict(plan, change.key, change.kind, message, label);
     return;
   }
-  if (options.overwrite.has(change.key)) plan.changes.push(change);
+  if (options.overwrite.has(change.key)) {
+    plan.changes.push(change);
+    return;
+  }
+  if (change.block && change.cardId && options.overwrite.has(`card:${change.cardId}:body`)) {
+    plan.changes.push(change);
+  }
 }
 
 function byId<T extends { id: string }>(left: T, right: T): number {
@@ -458,6 +688,140 @@ function checkStructure(
   return ok;
 }
 
+/**
+ * Plans a card body block by block.
+ *
+ * The baseline is the reference: a block the draft changed keeps the baseline
+ * block's key, so a peer that changed the same block lands on the same key and
+ * conflicts. Blocks only one side touched are applied as that side left them,
+ * and blocks only one side has are inserted or removed.
+ *
+ * When the blocks cannot be lined up at all — a reorder, or two changes that
+ * would need the same key — the card degrades to one whole-body conflict. That
+ * is deliberate: guessing which block moved where silently loses text, and a
+ * conflict the editor can see is always cheaper than a lost paragraph.
+ */
+function planBody(
+  plan: PublishPlan,
+  cardId: string,
+  cardTitle: string,
+  draftBody: RichTextSnapshot,
+  baselineBody: RichTextSnapshot,
+  sourceBody: RichTextSnapshot | undefined,
+  baseline: WorkspaceDocument,
+  draft: WorkspaceDocument,
+  source: WorkspaceDocument,
+  options: PublishPlanOptions | undefined,
+): void {
+  const draftBlocks = readBodyBlocks(draft, cardId);
+  const baselineBlocks = readBodyBlocks(baseline, cardId);
+  const sourceBlocks = sourceBody === undefined ? null : readBodyBlocks(source, cardId);
+
+  const wholeKey = `card:${cardId}:body`;
+  const whole: PublishChange = { key: wholeKey, kind: "body", cardId };
+  const wholeValue: PublishValue = { kind: "text", tree: draftBody };
+  const wholeMessage = `The body of card ${cardId} changed in the workspace after this draft was taken.`;
+  const wholeLabel = `${cardTitle} \u00b7 body`;
+
+  const blocks = Math.max(draftBlocks.length, baselineBlocks.length, sourceBlocks?.length ?? 0);
+  // A body of one block is the whole body: keep the legacy key and the legacy
+  // whole-body write, so a single-paragraph card publishes exactly as before.
+  if (sourceBlocks === null || blocks <= 1) {
+    if (sourceBody !== undefined && same(sourceBody, baselineBody)) {
+      record(plan, whole, wholeValue);
+      return;
+    }
+    resolveConflict(plan, options, whole, wholeValue, wholeMessage, wholeLabel);
+    return;
+  }
+
+  const draftAlign = alignBlocks(baselineBlocks, draftBlocks);
+  const sourceAlign = alignBlocks(baselineBlocks, sourceBlocks);
+
+  interface PlannedBlock {
+    change: PublishChange;
+    value: PublishValue;
+    label: string;
+    message: string;
+    /** Whether the workspace changed the same block since the baseline. */
+    conflicting: boolean;
+  }
+
+  const planned: PlannedBlock[] = [];
+
+  for (let index = 0; index < baselineBlocks.length; index += 1) {
+    const base = baselineBlocks[index];
+    if (!base) continue;
+    const draftIndex = draftAlign.matches[index] ?? -1;
+    const sourceIndex = sourceAlign.matches[index] ?? -1;
+    const draftBlock = draftIndex >= 0 ? draftBlocks[draftIndex] : undefined;
+    const sourceBlock = sourceIndex >= 0 ? sourceBlocks[sourceIndex] : undefined;
+    if (draftBlock && same(draftBlock.tree, base.tree)) continue;
+    const label = blockLabel(cardTitle, base.nodeName, base.text);
+    planned.push({
+      change: {
+        key: bodyBlockKey(cardId, base),
+        kind: "body",
+        cardId,
+        block: { key: base.key, index, nodeName: base.nodeName, after: null },
+      },
+      value: draftBlock
+        ? { kind: "body-block", op: "replace", block: draftBlock.tree }
+        : { kind: "body-block", op: "remove" },
+      label,
+      message: `This ${base.nodeName} changed in the workspace after this draft was taken.`,
+      conflicting: !sourceBlock || !same(sourceBlock.tree, base.tree),
+    });
+  }
+
+  for (const draftIndex of draftAlign.added) {
+    const block = draftBlocks[draftIndex];
+    if (!block) continue;
+    // The workspace already holds this exact block: both sides added it, and a
+    // second insert would duplicate it.
+    if (sourceBlocks.some((candidate) => candidate.key === block.key)) continue;
+    const previous = draftIndex > 0 ? draftBlocks[draftIndex - 1] : undefined;
+    planned.push({
+      change: {
+        key: bodyBlockKey(cardId, block),
+        kind: "body",
+        cardId,
+        block: {
+          key: block.key,
+          index: draftIndex,
+          nodeName: block.nodeName,
+          after: previous?.key ?? null,
+        },
+      },
+      value: { kind: "body-block", op: "insert", block: block.tree },
+      label: blockLabel(cardTitle, block.nodeName, block.text),
+      message: `This ${block.nodeName} is new in the draft.`,
+      conflicting: false,
+    });
+  }
+
+  const keys = new Set(planned.map((entry) => entry.change.key));
+  if (draftAlign.reordered || sourceAlign.reordered || keys.size !== planned.length) {
+    resolveConflict(
+      plan,
+      options,
+      whole,
+      wholeValue,
+      `The body of card ${cardId} changed in the workspace after this draft was taken and its blocks no longer line up; publishing keeps one whole version of the body.`,
+      wholeLabel,
+    );
+    return;
+  }
+
+  for (const entry of planned) {
+    if (!entry.conflicting) {
+      record(plan, entry.change, entry.value);
+      continue;
+    }
+    resolveConflict(plan, options, entry.change, entry.value, entry.message, entry.label);
+  }
+}
+
 function planCard(
   plan: PublishPlan,
   draft: WorkspaceDocument,
@@ -508,29 +872,52 @@ function planCard(
   if (!draftSnapshot || !baselineSnapshot) return;
 
   let textChanged = false;
-  for (const kind of ["title", "body"] as const) {
-    const key = `card:${cardId}:${kind}`;
-    const draftValue = draftSnapshot[kind];
-    const baselineValue = baselineSnapshot[kind];
-    if (same(draftValue, baselineValue)) continue;
-    // A draft can be written past the editor schema; a publish may not replay it.
-    const issue = validateRichTextTree(draftValue, limits);
+  {
+    const key = `card:${cardId}:title`;
+    const draftValue = draftSnapshot.title;
+    const baselineValue = baselineSnapshot.title;
+    if (!same(draftValue, baselineValue)) {
+      // A draft can be written past the editor schema; a publish may not replay it.
+      const issue = validateRichTextTree(draftValue, limits);
+      if (issue) {
+        addUnsupported(plan, key, `The title of card ${cardId} cannot be published: ${issue}.`);
+      } else {
+        textChanged = true;
+        if (sourceSnapshot && same(sourceSnapshot.title, baselineValue)) {
+          record(plan, { key, kind: "title", cardId }, { kind: "text", tree: draftValue });
+        } else {
+          resolveConflict(
+            plan,
+            options,
+            { key, kind: "title", cardId },
+            { kind: "text", tree: draftValue },
+            `The title of card ${cardId} changed in the workspace after this draft was taken.`,
+          );
+        }
+      }
+    }
+  }
+
+  const bodyKey = `card:${cardId}:body`;
+  if (!same(draftSnapshot.body, baselineSnapshot.body)) {
+    const issue = validateRichTextTree(draftSnapshot.body, limits);
     if (issue) {
-      addUnsupported(plan, key, `The ${kind} of card ${cardId} cannot be published: ${issue}.`);
-      continue;
+      addUnsupported(plan, bodyKey, `The body of card ${cardId} cannot be published: ${issue}.`);
+    } else {
+      textChanged = true;
+      planBody(
+        plan,
+        cardId,
+        baseline.displayTitle(cardId),
+        draftSnapshot.body,
+        baselineSnapshot.body,
+        sourceSnapshot?.body,
+        baseline,
+        draft,
+        source,
+        options,
+      );
     }
-    textChanged = true;
-    if (sourceSnapshot && same(sourceSnapshot[kind], baselineValue)) {
-      record(plan, { key, kind, cardId }, { kind: "text", tree: draftValue });
-      continue;
-    }
-    resolveConflict(
-      plan,
-      options,
-      { key, kind, cardId },
-      { kind: "text", tree: draftValue },
-      `The ${kind} of card ${cardId} changed in the workspace after this draft was taken.`,
-    );
   }
   if (textChanged) {
     const bytes = richTextBytes(draftSnapshot.title) + richTextBytes(draftSnapshot.body);
@@ -1246,6 +1633,70 @@ function writeRichText(target: LoroMap, snapshot: RichTextSnapshot): void {
   target.clear();
 }
 
+/** The block list of a card body, without creating anything. */
+function bodyChildren(source: WorkspaceDocument, cardId: string): LoroList | null {
+  const content = source.peekContent(cardId);
+  if (!content) return null;
+  const children = content.get("children");
+  return isList(children) ? children : null;
+}
+
+/**
+ * Where a planned block is now. The structural key is the reliable answer while
+ * only the draft changed the block; the baseline index is the fallback for a
+ * block the workspace also rewrote, and it only counts when the node name still
+ * matches, so a fallback can never rewrite a different kind of block.
+ *
+ * A removal never falls back: content that is already gone is exactly what the
+ * removal asked for, and deleting whoever sits at that index now would be a
+ * silent loss.
+ */
+function resolveBlockIndex(
+  blocks: readonly BodyBlock[],
+  target: BlockTarget,
+  allowFallback: boolean,
+): number {
+  const exact = blocks.findIndex((block) => block.key === target.key);
+  if (exact >= 0 || !allowFallback) return exact;
+  const candidate = blocks[target.index];
+  return candidate && candidate.nodeName === target.nodeName ? target.index : -1;
+}
+
+function applyBodyBlock(
+  source: WorkspaceDocument,
+  cardId: string,
+  target: BlockTarget,
+  value: Extract<PublishValue, { kind: "body-block" }>,
+): boolean {
+  if (!source.getCard(cardId)) return false;
+  const children = bodyChildren(source, cardId);
+  if (!children) return false;
+  const blocks = readBodyBlocks(source, cardId);
+
+  if (value.op === "insert") {
+    // Already there: the same block can arrive from a second apply, or from a
+    // peer that added it independently.
+    if (blocks.some((block) => block.key === target.key)) return false;
+    const anchor = target.after ? blocks.findIndex((block) => block.key === target.after) : -1;
+    const position = anchor >= 0 ? anchor + 1 : Math.min(Math.max(target.index, 0), blocks.length);
+    const inserted = children.insertContainer(position, new LoroMap());
+    writeRichText(inserted, value.block);
+    return true;
+  }
+
+  const index = resolveBlockIndex(blocks, target, value.op !== "remove");
+  if (index < 0) return false;
+  if (value.op === "remove") {
+    children.delete(index, 1);
+    return true;
+  }
+  const node = children.get(index);
+  if (!isMap(node)) return false;
+  if (same(snapshotValue(node), value.block)) return false;
+  writeRichText(node, value.block);
+  return true;
+}
+
 function placementFields(
   source: WorkspaceDocument,
   boardId: string,
@@ -1265,6 +1716,10 @@ function applyChange(
   switch (change.kind) {
     case "title":
     case "body": {
+      if (value.kind === "body-block") {
+        if (!change.cardId || !change.block) return false;
+        return applyBodyBlock(source, change.cardId, change.block, value);
+      }
       if (value.kind !== "text" || !change.cardId) return false;
       const cardId = change.cardId;
       if (!source.getCard(cardId)) return false;

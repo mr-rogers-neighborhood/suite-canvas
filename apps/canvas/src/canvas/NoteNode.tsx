@@ -12,6 +12,10 @@ import { useReferenceCount } from "../hooks/useReferenceCounts";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { useBoards } from "../store/workspaceStore";
+
+/** A duplicate lands slightly down-right of its source, like a paper copy. */
+const DUPLICATE_OFFSET = { x: 24, y: 24 };
 
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
@@ -24,6 +28,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   };
   const workspace = useCanvasStore((state) => state.workspace);
   const cursorStore = useCanvasStore((state) => state.cursors);
+  const boards = useBoards();
   const peers = useBoardPeers(placement.boardId);
   const localUser = usePresenceStore((state) => state.localUser);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
@@ -38,9 +43,11 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const openInspector = useUiStore((state) => state.openInspector);
+  const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
+  const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   // Connectors are workspace structure, not draft objects: moving or removing
   // one follows the trash row of the matrix, so a board or card draft cannot.
   const canManageStructure = canManageTrash;
@@ -161,6 +168,33 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
   const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
 
+  // Duplicating is creating content, moving is a placement change; the menu
+  // only ever receives the callbacks this session's capabilities allow.
+  const duplicate = useCallback(() => {
+    const copy = workspace.duplicateCard(id, {
+      boardId: placement.boardId,
+      offset: DUPLICATE_OFFSET,
+    });
+    setSelectedNodeIds([copy.id]);
+  }, [workspace, id, placement.boardId, setSelectedNodeIds]);
+
+  const moveToBoard = useCallback(
+    (boardId: string) => {
+      workspace.moveCardToBoard(id, boardId);
+      setSelectedNodeIds([]);
+      stopEditing();
+    },
+    [workspace, id, setSelectedNodeIds, stopEditing],
+  );
+
+  const moveTargets = useMemo(
+    () =>
+      boards
+        .filter((board) => board.id !== placement.boardId)
+        .map((board) => ({ id: board.id, name: board.name })),
+    [boards, placement.boardId],
+  );
+
   return (
     <div>
       <NodeResizer
@@ -211,6 +245,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
+        {...(canCreateContent ? { onDuplicate: duplicate } : {})}
+        {...(canEditLayout ? { moveTargets, onMoveToBoard: moveToBoard } : {})}
         {...(canManageTrash ? { onTrash: () => workspace.trashCard(id) } : {})}
         onConnectorMoveStart={(connectorId) => {
           if (!canManageStructure) return;

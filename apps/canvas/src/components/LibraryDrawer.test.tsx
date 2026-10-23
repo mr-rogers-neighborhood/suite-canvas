@@ -1,0 +1,304 @@
+import type { WorkspaceDocument } from "@suite/graph";
+import { WorkspaceDocument as Document } from "@suite/graph";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { LoroMap, LoroText } from "loro-crdt";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useUiStore } from "../store/useUiStore";
+import { Dock } from "./Dock";
+import { LibraryDrawer, type LibraryDrawerProps, type LibraryItem } from "./LibraryDrawer";
+
+function addNode(parent: LoroMap, name: string): LoroMap {
+  const children = parent.ensureMergeableList("children");
+  const node = children.insertContainer(children.length, new LoroMap());
+  node.set("nodeName", name);
+  return node;
+}
+
+function addText(parent: LoroMap, text: string): void {
+  const children = parent.ensureMergeableList("children");
+  const value = children.insertContainer(children.length, new LoroText());
+  value.insert(0, text);
+}
+
+interface Fixture {
+  workspace: WorkspaceDocument;
+  items: LibraryItem[];
+}
+
+function fixture(): Fixture {
+  const workspace = new Document();
+  workspace.ensureDefaultTypes();
+  const board = workspace.ensureBoard();
+
+  workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
+  addText(workspace.getTitle("c1"), "Mastering the timeline");
+  addText(addNode(workspace.getContent("c1"), "paragraph"), "Pacing notes for the second pass.");
+
+  workspace.createCard({ id: "c2", boardId: board.id, position: { x: 320, y: 0 } });
+  addText(workspace.getTitle("c2"), "Interview notes");
+  addText(addNode(workspace.getContent("c2"), "paragraph"), "The editor mentioned colour grading.");
+
+  workspace.doc.commit({ origin: "test" });
+
+  const items: LibraryItem[] = ["c1", "c2"].map((id) => ({
+    id,
+    title: workspace.displayTitle(id),
+    boards: [{ id: board.id, name: board.name }],
+    typeIds: workspace.getCard(id)?.typeIds ?? [],
+    tagIds: [],
+    sectionIds: [],
+    properties: {},
+  }));
+
+  return { workspace, items };
+}
+
+interface Rendered {
+  props: LibraryDrawerProps;
+  onOpenCard: ReturnType<typeof vi.fn>;
+}
+
+function renderDrawer(
+  workspace: WorkspaceDocument,
+  items: LibraryItem[],
+  overrides: Partial<LibraryDrawerProps> = {},
+): Rendered {
+  const onOpenCard = vi.fn();
+  const props: LibraryDrawerProps = {
+    open: true,
+    tab: "cards",
+    counts: { inbox: 0, cards: items.length, trash: 0 },
+    inbox: [],
+    cards: items,
+    trash: [],
+    onTab: () => {},
+    onClose: () => {},
+    onPlace: () => {},
+    onCreateInInbox: () => {},
+    onTrash: () => {},
+    onRestore: () => {},
+    onDeleteForever: () => {},
+    onEmptyTrash: () => {},
+    onGoToBoard: () => {},
+    onDropAt: () => {},
+    types: [],
+    tags: [],
+    typeFilter: [],
+    tagFilter: [],
+    onToggleType: () => {},
+    onToggleTag: () => {},
+    onClearFilters: () => {},
+    activeBoardId: null,
+    activeBoardName: null,
+    scope: "all",
+    onScope: () => {},
+    sectionFilter: [],
+    onToggleSection: () => {},
+    sectionOrder: [],
+    groupBySection: false,
+    onToggleGroup: () => {},
+    onOpenCard,
+    workspace,
+    ...overrides,
+  };
+  render(<LibraryDrawer {...props} />);
+  return { props, onOpenCard };
+}
+
+function type(text: string): void {
+  fireEvent.change(screen.getByTestId("library-search"), { target: { value: text } });
+}
+
+beforeEach(() => {
+  useUiStore.setState({ libraryOpen: false, libraryTab: "inbox" });
+});
+
+describe("LibraryDrawer search", () => {
+  it("should filter the list while a query is present", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
+    expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+
+    type("grading");
+
+    expect(screen.queryByTestId("library-item-c1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+  });
+
+  it("should rank title matches above body matches", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    // "notes" is a body word on c1 and the first title word on c2.
+    type("notes");
+
+    const rows = screen.getAllByRole("listitem").map((row) => row.getAttribute("data-row-id"));
+    expect(rows).toEqual(["c2", "c1"]);
+  });
+
+  it("should highlight the matched text in the title and the snippet", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    type("timeline");
+    const title = screen.getByTestId("library-title-c1");
+    expect(title.querySelector("mark")?.textContent).toBe("timeline");
+
+    type("grading");
+    const snippet = screen.getByTestId("library-snippet-c2");
+    expect(snippet.querySelector("mark")?.textContent).toBe("grading");
+  });
+
+  it("should restore the facet list when the query is cleared", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    type("grading");
+    expect(screen.queryByTestId("library-item-c1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("library-search-clear"));
+
+    expect(screen.getByTestId("library-search")).toHaveValue("");
+    expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
+    expect(screen.getByTestId("library-item-c2")).toBeInTheDocument();
+  });
+
+  it("should say so when nothing matches", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    type("nothing matches this");
+
+    expect(screen.getByTestId("library-search-empty")).toHaveTextContent(
+      "No cards match \u201cnothing matches this\u201d.",
+    );
+    expect(screen.queryByTestId("library-item-c1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("library-item-c2")).not.toBeInTheDocument();
+  });
+
+  it("should keep facets narrowing the ranked hits", () => {
+    const { workspace, items } = fixture();
+    // Both cards index "notes", but the active type facet matches neither.
+    renderDrawer(workspace, items, { typeFilter: ["other-type"] });
+
+    type("notes");
+
+    expect(screen.queryByTestId("library-item-c1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("library-item-c2")).not.toBeInTheDocument();
+    expect(screen.getByTestId("library-search-empty")).toBeInTheDocument();
+  });
+
+  it("should move through results with the arrow keys and open the inspector", () => {
+    const { workspace, items } = fixture();
+    const { onOpenCard } = renderDrawer(workspace, items);
+
+    type("notes");
+    const input = screen.getByTestId("library-search");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onOpenCard).toHaveBeenCalledWith("c1");
+  });
+
+  it("should pick up a body edit when the index refreshes", async () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    type("zebra");
+    expect(screen.getByTestId("library-search-empty")).toBeInTheDocument();
+
+    addText(addNode(workspace.getContent("c1"), "paragraph"), "A zebra crosses the frame.");
+    workspace.doc.commit({ origin: "test" });
+
+    await waitFor(() => expect(screen.getByTestId("library-item-c1")).toBeInTheDocument());
+  });
+
+  it("should clear the query on Escape before closing", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    type("grading");
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("library-search")).toHaveValue("");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Library shortcut", () => {
+  function renderShell(workspace: WorkspaceDocument, items: LibraryItem[]): void {
+    function Shell() {
+      const open = useUiStore((state) => state.libraryOpen);
+      const tab = useUiStore((state) => state.libraryTab);
+      return (
+        <>
+          <Dock
+            inboxCount={0}
+            libraryOpen={open}
+            types={[]}
+            onToggleLibrary={() => useUiStore.getState().setLibraryOpen(!open)}
+            onCreateCard={() => {}}
+            onManageTypes={() => {}}
+          />
+          <LibraryDrawer
+            open={open}
+            tab={tab}
+            counts={{ inbox: 0, cards: items.length, trash: 0 }}
+            inbox={[]}
+            cards={items}
+            trash={[]}
+            onTab={() => {}}
+            onClose={() => {}}
+            onPlace={() => {}}
+            onCreateInInbox={() => {}}
+            onTrash={() => {}}
+            onRestore={() => {}}
+            onDeleteForever={() => {}}
+            onEmptyTrash={() => {}}
+            onGoToBoard={() => {}}
+            onDropAt={() => {}}
+            types={[]}
+            tags={[]}
+            typeFilter={[]}
+            tagFilter={[]}
+            onToggleType={() => {}}
+            onToggleTag={() => {}}
+            onClearFilters={() => {}}
+            activeBoardId={null}
+            activeBoardName={null}
+            scope="all"
+            onScope={() => {}}
+            sectionFilter={[]}
+            onToggleSection={() => {}}
+            sectionOrder={[]}
+            groupBySection={false}
+            onToggleGroup={() => {}}
+            onOpenCard={() => {}}
+            workspace={workspace}
+          />
+        </>
+      );
+    }
+    render(<Shell />);
+  }
+
+  it("should open the library on Cards and focus the search box from Cmd+K", () => {
+    const { workspace, items } = fixture();
+    renderShell(workspace, items);
+
+    expect(screen.queryByTestId("library-search")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(useUiStore.getState().libraryOpen).toBe(true);
+    expect(useUiStore.getState().libraryTab).toBe("cards");
+    expect(screen.getByTestId("library-search")).toHaveFocus();
+  });
+});

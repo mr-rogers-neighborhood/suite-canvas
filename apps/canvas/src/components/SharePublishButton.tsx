@@ -5,6 +5,7 @@ import {
   publishShare,
   reloadShare,
   type SharePublishConflict,
+  type SharePublishConflictEntry,
   SharePublishConflictError,
   type ShareStatus,
   sharePublishErrorMessage,
@@ -174,6 +175,57 @@ export function SharePublishButton({ token: tokenProp, client }: SharePublishBut
   );
 }
 
+/** One card's block conflicts, or a single unrelated conflict. */
+interface ConflictGroup {
+  key: string;
+  /** The card name a block group shares, when it has several entries. */
+  title: string | null;
+  entries: SharePublishConflictEntry[];
+}
+
+/** `card:<id>:body:<block>`; the legacy whole-body key has no block suffix. */
+const BODY_BLOCK_KEY = /^card:[^:]+:body:.+$/;
+
+/**
+ * Groups the conflict list by object. Per-block body keys arrive one per block,
+ * so a card with three changed paragraphs would otherwise read as three
+ * unrelated rows: they share a heading instead, and each row keeps only its
+ * block label.
+ */
+export function groupConflicts(entries: readonly SharePublishConflictEntry[]): ConflictGroup[] {
+  const groups = new Map<string, ConflictGroup>();
+  for (const entry of entries) {
+    const groupKey = BODY_BLOCK_KEY.test(entry.key)
+      ? entry.key.slice(0, entry.key.indexOf(":body:") + ":body".length)
+      : entry.key;
+    const existing = groups.get(groupKey);
+    if (existing) existing.entries.push(entry);
+    else groups.set(groupKey, { key: groupKey, title: null, entries: [entry] });
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    title: group.entries.length > 1 ? blockGroupTitle(group.entries) : null,
+  }));
+}
+
+/** The card name in `Alpha · paragraph: …`, without the block part. */
+function blockGroupTitle(entries: readonly SharePublishConflictEntry[]): string {
+  for (const entry of entries) {
+    const cut = (entry.label ?? "").indexOf(" \u00b7 ");
+    if (cut > 0) return (entry.label as string).slice(0, cut);
+  }
+  return "Card body";
+}
+
+/** A row inside a group drops the name the group already shows. */
+function entryText(entry: SharePublishConflictEntry, group: ConflictGroup): string {
+  const label = entry.label ?? entry.key;
+  if (group.title && entry.label?.startsWith(`${group.title} \u00b7 `)) {
+    return entry.label.slice(group.title.length + 3);
+  }
+  return label;
+}
+
 function ConflictDialog({
   conflict,
   publishing,
@@ -194,6 +246,7 @@ function ConflictDialog({
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const blocked = conflict.unsupported.length > 0;
   const onlyUnsupported = blocked && conflict.conflicts.length === 0;
+  const groups = groupConflicts(conflict.conflicts);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -243,30 +296,47 @@ function ConflictDialog({
         ) : null}
         {conflict.conflicts.length > 0 ? (
           <ul className="mt-2 space-y-1" data-testid="publish-conflict-keys">
-            {conflict.conflicts.map((entry) => (
-              <li key={`${entry.key}:${entry.kind ?? ""}`} data-key={entry.key}>
-                <label
-                  data-key={entry.key}
-                  className="flex cursor-pointer items-start gap-2 text-[11px] leading-5"
-                >
-                  <input
-                    type="checkbox"
-                    data-testid="publish-keep"
-                    data-key={entry.key}
-                    checked={selected.has(entry.key)}
-                    onChange={() => toggle(entry.key)}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    <span className="font-medium text-[var(--ink)]">
-                      {entry.label ?? entry.key}
+            {groups.map((group) => (
+              <li key={group.key} data-key={group.key}>
+                {group.title ? (
+                  <p
+                    data-testid="publish-conflict-group"
+                    className="text-[11px] font-medium text-[var(--ink)]"
+                  >
+                    {group.title}
+                    <span className="ml-1 font-normal text-[var(--ink-muted)]">
+                      {group.entries.length} blocks
                     </span>
-                    <span className="ml-1 text-[var(--ink-muted)]">{entry.message}</span>
-                    <span className="block text-[10px] text-[var(--ink-muted)]">
-                      Keep my version
-                    </span>
-                  </span>
-                </label>
+                  </p>
+                ) : null}
+                <ul className={group.title ? "mt-0.5 space-y-1 pl-2" : "space-y-1"}>
+                  {group.entries.map((entry) => (
+                    <li key={`${entry.key}:${entry.kind ?? ""}`} data-key={entry.key}>
+                      <label
+                        data-key={entry.key}
+                        className="flex cursor-pointer items-start gap-2 text-[11px] leading-5"
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid="publish-keep"
+                          data-key={entry.key}
+                          checked={selected.has(entry.key)}
+                          onChange={() => toggle(entry.key)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="font-medium text-[var(--ink)]">
+                            {entryText(entry, group)}
+                          </span>
+                          <span className="ml-1 text-[var(--ink-muted)]">{entry.message}</span>
+                          <span className="block text-[10px] text-[var(--ink-muted)]">
+                            Keep my version
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

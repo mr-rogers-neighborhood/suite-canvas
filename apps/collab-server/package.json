@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "admin": "tsx src/admin.ts"
+    "admin": "tsx src/admin.ts",
+    "licence": "tsx src/licenceCli.ts"
   },
   "dependencies": {
     "@loro-dev/flock": "^4.5.2",

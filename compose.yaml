@@ -3,24 +3,71 @@
 # the built canvas and proxies the API and WebSocket to `app`.
 #
 # Run with: cp .env.example .env && docker compose up -d --build
+# A real deployment (instance sizing, EBS, Cloudflare, backups) is
+# documented in docs/deploy-aws.md. Every setting the server validates is in
+# .env.example; empty means "use the built-in default".
+#
+# Single replica by design: rooms, presence, projection state and rate-limit
+# counters live in the `app` process and SQLite is a local file. Never run two
+# `app` containers against one volume (or two volumes behind one hostname).
 name: suite
 
 services:
   app:
+    # A deployed host can `docker compose pull` this tag instead of building;
+    # `build:` stays so local dev still works and only needs the checkout.
+    # Set SUITE_IMAGE=ghcr.io/<owner>/suite:<tag> in `.env` to pin a release.
+    image: ${SUITE_IMAGE:-ghcr.io/mr-rogers-neighborhood/suite:latest}
     build:
       context: .
       target: runtime
     restart: unless-stopped
+    # Sized for a 1 vCPU / 2 GB instance (see docs/deploy-aws.md). Every open
+    # room stays in memory while a client is connected, so a hard cap turns a
+    # leak or one huge board into a container restart instead of an OOM kill
+    # of the whole box. Uncomment on a real deployment.
+    # mem_limit: 1536m
+    # cpus: "1.0"
     environment:
       NODE_ENV: production
       PORT: "1234"
       HEALTH_PORT: "1235"
+      # The three stores that must survive; the two optional stores default to
+      # memory and are set only when the operator wants them on disk.
       SUITE_DB: /data/documents.sqlite
       SUITE_SHARES_DB: /data/shares.sqlite
       SUITE_WORKSPACES_DB: /data/workspaces.sqlite
+      SUITE_SETTINGS_DB: "${SUITE_SETTINGS_DB:-:memory:}"
+      SUITE_LICENCE_DB: "${SUITE_LICENCE_DB:-:memory:}"
+      # Credentials and switches. Empty tokens are the documented defaults:
+      # admin API off, worker tokens generated per start, self-host mode.
       SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}
       SUITE_SOURCE_TOKEN: ${SUITE_SOURCE_TOKEN:-}
+      SUITE_ADMIN_TOKEN: ${SUITE_ADMIN_TOKEN:-}
       SUITE_ALLOWED_ORIGINS: ${SUITE_ALLOWED_ORIGINS:-}
+      SUITE_PUBLIC_URL: ${SUITE_PUBLIC_URL:-}
+      SUITE_HOSTED: ${SUITE_HOSTED:-0}
+      SUITE_LICENCE_PUBLIC_KEY: ${SUITE_LICENCE_PUBLIC_KEY:-}
+      SUITE_TRUST_PROXY: ${SUITE_TRUST_PROXY:-0}
+      SUITE_LOG_LEVEL: ${SUITE_LOG_LEVEL:-info}
+      # Quotas. Empty means the built-in default for the mode (unlimited for a
+      # self-host, the hosted set when SUITE_HOSTED=1). Sizes are bytes;
+      # "unlimited" is also accepted.
+      SUITE_MAX_WORKSPACES: ${SUITE_MAX_WORKSPACES:-}
+      SUITE_DOCUMENT_BYTES_PER_WORKSPACE: ${SUITE_DOCUMENT_BYTES_PER_WORKSPACE:-}
+      SUITE_PROJECTION_BYTES_PER_WORKSPACE: ${SUITE_PROJECTION_BYTES_PER_WORKSPACE:-}
+      SUITE_ATTACHMENT_BYTES_PER_WORKSPACE: ${SUITE_ATTACHMENT_BYTES_PER_WORKSPACE:-}
+      SUITE_MAX_SHARES_PER_WORKSPACE: ${SUITE_MAX_SHARES_PER_WORKSPACE:-}
+      SUITE_MAX_SELECTION_CARDS: ${SUITE_MAX_SELECTION_CARDS:-}
+      SUITE_DISK_SOFT_BYTES: ${SUITE_DISK_SOFT_BYTES:-}
+      SUITE_DISK_HARD_BYTES: ${SUITE_DISK_HARD_BYTES:-}
+      # Per-minute rate limits; empty keeps the default.
+      SUITE_CLAIM_RATE_LIMIT: ${SUITE_CLAIM_RATE_LIMIT:-}
+      SUITE_ROTATE_RATE_LIMIT: ${SUITE_ROTATE_RATE_LIMIT:-}
+      SUITE_SHARE_RESOLVE_RATE_LIMIT: ${SUITE_SHARE_RESOLVE_RATE_LIMIT:-}
+      SUITE_SHARE_CREATE_RATE_LIMIT: ${SUITE_SHARE_CREATE_RATE_LIMIT:-}
+      SUITE_PUBLISH_RATE_LIMIT: ${SUITE_PUBLISH_RATE_LIMIT:-}
+      SUITE_ADMIN_RATE_LIMIT: ${SUITE_ADMIN_RATE_LIMIT:-}
     expose:
       - "1234"
       - "1235"
@@ -47,6 +94,9 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    # Caddy holds one certificate, a TLS session cache and the built canvas.
+    # mem_limit: 256m
+    # cpus: "0.5"
     environment:
       SUITE_DOMAIN: ${SUITE_DOMAIN:-localhost}
       SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}
@@ -54,8 +104,15 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-    # Caddy keeps certificates in the container. A single instance re-issues
-    # them on recreate; add a caddy-data volume if that rate limit matters.
+    # Certificates and the ACME account live inside the container. If the
+    # service is recreated often, that means a new certificate each time; Let's
+    # Encrypt allows five duplicate certificates per week and then refuses, so
+    # a host that redeploys by recreate should keep them in a volume. Enable
+    # both this mount and the `caddy-data` volume at the bottom together.
+    # volumes:
+    #   - caddy-data:/data
 
 volumes:
   suite-data:
+  # Uncomment with the mount above to persist certificates across recreates.
+  # caddy-data:

@@ -73,6 +73,11 @@ export interface NodeCardProps {
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
   onTrash?: () => void;
+  /** Copies the card; a session that may not create content never passes it. */
+  onDuplicate?: () => void;
+  /** Boards the card may move to, excluding the one it is on now. */
+  moveTargets?: Array<{ id: string; name: string }>;
+  onMoveToBoard?: (boardId: string) => void;
   /** Title and body editing; the card editor role owns this. */
   canEditContent?: boolean;
   /** Placement-level actions such as removing the card from the board. */
@@ -119,6 +124,9 @@ export function NodeCard({
   linkCount = 0,
   onOpenInfo,
   onTrash,
+  onDuplicate,
+  moveTargets = [],
+  onMoveToBoard,
   canEditContent,
   canEditLayout,
   canManageTrash,
@@ -127,7 +135,7 @@ export function NodeCard({
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
   const canTrash = canManageTrash ?? !readOnly;
-  const hasMenu = editContent || editLayout || canTrash;
+  const hasMenu = Boolean(onDuplicate || onMoveToBoard) || editContent || editLayout || canTrash;
   countRender("card");
 
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
@@ -197,6 +205,18 @@ export function NodeCard({
           {
             label: `${metaExpanded ? "Hide" : "Show"} details`,
             onSelect: onToggleMeta,
+          },
+        ]
+      : []),
+    ...(onDuplicate ? [{ label: "Duplicate", onSelect: () => onDuplicate() }] : []),
+    ...(onMoveToBoard && moveTargets.length > 0
+      ? [
+          {
+            label: "Move to board",
+            items: moveTargets.map((board) => ({
+              label: board.name,
+              onSelect: () => onMoveToBoard(board.id),
+            })),
           },
         ]
       : []),
@@ -424,7 +444,15 @@ export function NodeCard({
         />
       ))}
 
-      {menu ? <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} /> : null}
+      {menu ? (
+        // The menu is portalled, but React still bubbles its clicks through this
+        // tree; without the guard picking an item would also "click" the card.
+        // biome-ignore lint/a11y/noStaticElementInteractions: the wrapper only stops menu clicks reaching the card.
+        // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation of a menu item is a click too.
+        <div className="contents" onClick={(event) => event.stopPropagation()}>
+          <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={closeMenu} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -66,6 +66,7 @@ now; the target index/card-doc split is described in
 | `content` | card body rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `titles` | card title rich text (`LoroMap` shaped by `loro-prosemirror`, keyed by card id) |
 | `meta` | `{ schemaVersion, seeded }` (schema version 4 introduces spatial sections) |
+| `views` | `LoroMap`, one key per saved view: `id`, `name`, `position`, plus a `query` sub-map: `text?`, `scope`, `groupBySection`, `order` and the `types`/`tags`/`sections` facet maps (`id -> true`). No card id is ever stored |
 
 **Records are field maps, not values.** `WorkspaceDocument` materialises typed `Card`/`Placement`/
 `GraphEdge`/`CardType`/`Tag` objects for reads, but stores each field as its own `LoroMap` key. A
@@ -100,6 +101,15 @@ removing a tag hides the stored value without deleting it; restoring the definit
 Queries (`listCardsOfType`, `listCardsWithTag`) filter by existing records, so a deleted type or tag
 simply stops matching. Type deletion is the one explicit bulk command: it reassigns affected cards
 in a single commit and reports the count, and the built-in `note` type cannot be deleted.
+
+**Saved views are queries, not results.** A view stores a name, a position and a query; a view's
+results are recomputed on every read, exactly as section membership and references are. `runView`
+in `views.ts` builds `{ cardIds, hits }` from the live cards, section geometry and search index, so
+a body edit, a trashed card or a newly created card changes what a view shows without the view ever
+being edited, and no card, trash or publish write touches `views`. Facets use the library's own
+semantics (OR within a group, AND across groups, a section includes its subtree, board scope limits
+to the active board); a facet id whose type, tag or section was deleted is dropped rather than
+matched, so a view cannot strand itself on a filter the library no longer offers.
 
 Derived views keep the filtering in one place: `listBoardCards(boardId)` (placed, alive, back to
 front), `listBoardEdges(boardId)` (both endpoints placed, alive, and still owning the connectors the
@@ -205,6 +215,24 @@ client UUID, rejects an id that already exists in the workspace, and requires a 
 placed on the shared board only. Publishing is all-or-nothing: an invalid or conflicting creation
 keeps the draft and lists every rejected object in the “Can’t publish yet” dialog. Editing a
 published object still resolves conflicts field by field.
+
+A card body is published **block by block**, not as one field. Each top-level block of the body
+(a direct child of the ProseMirror `doc`) gets its own conflict key,
+`card:<cardId>:body:<blockKey>`, so two editors who touch different paragraphs of one card both
+publish. A block's identity prefers its Loro container id; between two projections, which copy the
+body into fresh containers and so share no ids, the fallback is the structural key — node name, a
+hash of the block's subtree and the occurrence of that same content. The fallback never guesses: an
+insert above shifts positions but not keys, an edit changes the hash, and a changed block is paired
+with its baseline counterpart by position only when the leftover counts and node names agree on
+both sides. A block the draft changed keeps the *baseline* block's
+key, so the same paragraph changed on both sides lands on one key and conflicts, labelled with the
+card name and the start of the block's text (“Launch plan · paragraph: …the deadline slipped…”).
+Apply rewrites only the blocks that changed, in the same single `share:publish` commit, so a peer's
+caret in an untouched block is not disturbed. When the blocks cannot be lined up — a reorder, or a
+structure where no key means the same block — the card **degrades to one whole-body conflict**
+instead of guessing which block moved where; that dialog entry still accepts the legacy
+`card:<cardId>:body` key. A body of a single block keeps that legacy key and the whole-body write
+exactly as before. See [ADR-0022](./decisions/0022-share-projection-links.md).
 
 ### Owner key
 
@@ -547,6 +575,14 @@ and links follow when the footer expands.
   dropping anywhere else cancels. The pointer-down is prevented from selecting text across the board.
 - **Trash** offers Restore and Delete forever, plus Empty trash; deleting a *board* asks first and
   offers keeping the cards (they fall into the Inbox) or trashing them.
+- **Views** — `Views ▸` sits beside the board tabs and lists saved queries. A view is exactly what
+  the drawer's own controls express, so opening one fills its search, facets, scope and grouping;
+  the drawer shows the view's name (with an exit) so a filtered list is never mistaken for a
+  hand-filtered one. Saving is `Save current search as view…` with an inline name; rename and delete
+  live in the same menu, delete confirmed inline. `canManageSchema` gates saving, renaming and
+  deleting: a view is workspace configuration, not content, so a board or card share editor — who
+  holds `canEditContent` but must not publish configuration into the owner's workspace — never sees
+  those actions, while still being able to open a view.
 
 ## Layers
 
@@ -652,6 +688,46 @@ revoking a workspace link closes only share credentials that no longer resolve (
 source worker and other active links stay), and rotating the owner key closes the sessions that
 hold the previous key.
 
+### Build profile: standalone and relay
+
+`session/mode.ts` owns the deployment profile. `suiteMode()` reads
+`VITE_SUITE_MODE` (default `relay`), and `bootPlan(mode, url)` is a pure function
+of the profile and the page URL returning `{ resolveShare, claimOwner,
+connectProvider, showSharing }`:
+
+- **relay** — a `?share=` link resolves, an ordinary `?workspace=` link claims
+  its owner key, the provider connects, and sharing renders.
+- **standalone** — all four are false whatever the URL says. `?share=abc` in a
+  local-only build resolves nothing and claims nothing: `main.tsx` renders a
+  short "this build is local-only" notice instead of a fetch that could only
+  fail as a network error.
+
+The profile outranks the session, so it cannot be negotiated at runtime.
+`sessionCapabilities` returns `STANDALONE_CAPABILITIES` before it looks at a
+share: local editing, layout, creation, boards, schema and trash, but
+`canManageLinks` and `canPublish` false. `main.tsx` boots a standalone session
+with no `ownerKey` and no `share`, never calls `prepareOwnerSession`, and imports
+the share client and the owner-key claim on demand only inside the relay branch
+— the build-time check lets a standalone bundle drop that branch, so no `/api`
+path or socket URL is compiled in.
+
+`useCanvasStore` builds its provider at module load, and `LoroProvider` opens its
+socket in the constructor, so a standalone build must not take that path at all:
+`vite.config.ts` flips the store's existing no-transport switch
+(`import.meta.env.MODE`, the one unit tests already use) for the standalone
+profile. The cleaner follow-up is `isStandalone()` in the store's provider
+condition, after which that define can go.
+
+`App` skips `connect()` and presence binding in a standalone build, marks `synced`
+itself (there is no first sync to wait 5 s for), and shows a small "Local only"
+note in the status slot. `WorkspaceActions` splits link management from export:
+`Share` and the recovery-key item are relay-only, while the `File` menu — export
+backup/JSON/Markdown and back to the launcher — stays, and import remains on the
+launcher. `session/mode.test.ts` guards this: a direct `fetch(`/`WebSocket`/
+`collabHttpBase()` call may only live in a listed relay module, that module must
+still be gated by the profile, and `main.tsx` may not statically import the share
+client or the owner key.
+
 ### Opening a share link
 
 `main.tsx` resolves `?share=<token>` through the share API before it imports `App`, then
@@ -674,3 +750,51 @@ unchanged.
   on the document. A card share opens the inspector on its card once the projection has it.
 - **Failure:** a revoked or unknown token renders `ShareUnavailable` ("This link is no longer
   available.") instead of the shell.
+
+## Attachments
+
+Images are **nodes that name bytes stored beside the document**, never bytes inside it.
+
+- **Node.** A card body can hold an `attachment` inline atom with
+  `{ id, mime, width, height, name, bytes }`: a 128-bit id, the image's type, its intrinsic size, its
+  name (used as alt text) and its byte count. Nothing else. The same node name and attributes are
+  allowlisted in `publishValidation.ts`, so a publish accepts it and `editorSchemaContract.test.ts`
+  keeps the editor schema and the allowlist from drifting apart.
+- **Why no bytes in the document.** A share projection copies the *document*. Bytes in a node would
+  therefore put a private copy of every image in every share link, in every exported backup and in
+  every peer's CRDT state. With metadata only, a projection carries ids and a viewer fetches each
+  image once from the relay.
+- **Storage.** `attachments.ts` owns the bytes: `put`/`get`/`delete`/`usage` over one SQLite table
+  (`attachments`: id, workspace_id, mime, bytes, size, created_at) in the file named by
+  `SUITE_ATTACHMENTS_DB`. The interface is the seam for object storage; a signed-read S3 backend is
+  described there and not implemented — the disk store is the only one that ships.
+- **HTTP.** `attachmentHttp.ts` serves `/api/attachments`: `POST /api/attachments/<workspaceId>`
+  (owner key in `Authorization`, the same rule the claim path uses — a share token is never accepted),
+  `GET /api/attachments/<id>` (the id *is* the read capability, so a projected node resolves for a
+  viewer without exposing the workspace) and `DELETE /api/attachments/<id>` (owner key of the owning
+  workspace, for GC).
+- **What a GET may serve.** Only the allowlisted image types (PNG, JPEG, GIF, WebP, AVIF), always with
+  `x-content-type-options: nosniff`, `content-disposition: inline`, immutable cache headers and
+  `content-security-policy: default-src 'none'; sandbox`. An SVG is refused at upload *and* at read
+  time: it is markup that can carry script, and the relay will not host markup. HTML is refused for
+  the same reason.
+- **Cap.** `attachmentBytesPerWorkspace` from `limits.ts` is enforced inside `put`, in the same write
+  transaction that inserts the row, so two racing uploads cannot both slip under it. The refusal is
+  readable and names the way out: what the workspace uses, what the cap is, and
+  `SUITE_ATTACHMENT_BYTES_PER_WORKSPACE`. A hosted licence's `attachmentBytes` caps one image on top
+  of that. A refused upload writes nothing and leaves the editor's paste as a local-only node rather
+  than losing it.
+- **Paste.** Images pasted from the clipboard become attachment nodes. With a relay configured the
+  bytes are uploaded under the node's id; offline, in a standalone build, or from a share session
+  (which holds no owner key) they are written to this browser's IndexedDB under that same id, and the
+  card renders them from there. Such a node is **local-only**: a share viewer has no way to fetch
+  those bytes until the image is uploaded under the same id, and sees the node's placeholder.
+- **Placeholder.** A node whose bytes are unreachable — offline viewer, GC'd row, a local-only node on
+  another device — renders a placeholder with its name. Rendering never throws: it runs inside a
+  replicated editor.
+- **GC.** Nothing expires attachments on a timer; a timer would delete bytes while an editor still
+  holds a paste in flight. `gcAttachments(workspaceId, referencedIds)` deletes every row of that
+  workspace whose id the document no longer references. It is exported from `attachments.ts` for the
+  operator (the admin HTTP surface has no route for it yet, so adding one would be a new admin
+  module): call it after a document edit that removed images, passing the ids still present in card
+  bodies. `DELETE /api/attachments/<id>` removes one row by hand.

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkspaceFile, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADMIN_API_PATH,
   type AdminRequestDeps,
@@ -12,10 +12,15 @@ import {
   FIXTURE_CAPS,
   handleAdminRequest,
   MAX_ADMIN_PAGE,
+  METRICS_PATH,
 } from "./adminHttp.js";
+import { serverVersion } from "./config.js";
+import { readLimitOverrides, resolveLimits, writeLimitOverrides } from "./limits.js";
 import { createLogger } from "./logging.js";
+import { MetricsCollector } from "./metrics.js";
 import { createDocumentStore } from "./persistence.js";
 import { loroDocumentKey } from "./projectionWorker.js";
+import { createSettingsStore } from "./settings.js";
 import { createShareStore, hashShareToken, type Share, type ShareStore } from "./shares.js";
 import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
 
@@ -960,5 +965,288 @@ describe("document store inventory", () => {
     } finally {
       store.close();
     }
+  });
+});
+
+describe("limit tuning", () => {
+  let docs: ReturnType<typeof createDocumentStore>;
+  let shareStore: ShareStore;
+  let otherRegistry: WorkspaceRegistry;
+  let settings: ReturnType<typeof createSettingsStore>;
+  let lines: string[];
+  let local: Server | null = null;
+
+  beforeEach(() => {
+    docs = createDocumentStore(":memory:");
+    shareStore = createShareStore(":memory:");
+    otherRegistry = createWorkspaceRegistry(":memory:");
+    settings = createSettingsStore();
+    lines = [];
+    local = null;
+  });
+
+  afterEach(async () => {
+    if (local) await new Promise<void>((resolve) => local?.close(() => resolve()));
+    docs.close();
+    shareStore.close();
+    otherRegistry.close();
+    settings.close();
+    vi.unstubAllEnvs();
+  });
+
+  async function serve(withSettings = true, extra: Partial<AdminRequestDeps> = {}): Promise<void> {
+    const logger = createLogger({ level: "debug", write: (line) => lines.push(line) });
+    const deps: AdminRequestDeps = {
+      documents: docs,
+      shares: shareStore,
+      workspaces: otherRegistry,
+      limits: () => resolveLimits(process.env, readLimitOverrides(settings)),
+      diskBytes: () => 4096,
+      logger,
+      ...extra,
+    };
+    if (withSettings) deps.settings = settings;
+    const server = createServer((request, response) => {
+      void handleAdminRequest(request, response, deps).then((handled) => {
+        if (handled || response.writableEnded) return;
+        response.writeHead(404, { "content-type": "text/plain" });
+        response.end("not found");
+      });
+    });
+    local = server;
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  }
+
+  function putLimits(body: unknown, token: string | null = ADMIN_TOKEN): Promise<Response> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (token !== null) headers.authorization = ["Bearer", token].join(" ");
+    return fetch(`${baseUrl}${ADMIN_API_PATH}/limits`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  function auditLines(): { msg: string; action?: string; outcome?: string; details?: unknown }[] {
+    return lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { msg: string };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { msg: string } => entry !== null);
+  }
+
+  it("reports the effective limits with their source", async () => {
+    vi.stubEnv("SUITE_MAX_WORKSPACES", "9");
+    await serve();
+
+    const response = await get(`${ADMIN_API_PATH}/limits`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      ok: boolean;
+      hosted: boolean;
+      limits: Record<string, number | null>;
+      sources: Record<string, string>;
+      env: Record<string, string>;
+      overrides: Record<string, number | null>;
+      diskBytes: number;
+      problems: string[];
+    };
+
+    expect(body.ok).toBe(true);
+    expect(body.hosted).toBe(false);
+    expect(body.limits.maxWorkspaces).toBe(9);
+    expect(body.limits.documentBytesPerWorkspace).toBeNull();
+    expect(body.limits.sharesPerWorkspace).toBe(100);
+    expect(body.sources.maxWorkspaces).toBe("env");
+    expect(body.sources.documentBytesPerWorkspace).toBe("default");
+    expect(body.env.maxWorkspaces).toBe("SUITE_MAX_WORKSPACES");
+    expect(body.overrides).toEqual({});
+    expect(body.diskBytes).toBe(4096);
+    expect(body.problems).toEqual([]);
+  });
+
+  it("stores a validated override, applies it at once and audits it", async () => {
+    await serve();
+
+    const response = await putLimits({ maxWorkspaces: 4, documentBytesPerWorkspace: 2048 });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      limits: Record<string, number | null>;
+      sources: Record<string, string>;
+      overrides: Record<string, number | null>;
+    };
+    expect(body.limits.maxWorkspaces).toBe(4);
+    expect(body.limits.documentBytesPerWorkspace).toBe(2048);
+    expect(body.sources.maxWorkspaces).toBe("override");
+    expect(body.overrides).toEqual({ maxWorkspaces: 4, documentBytesPerWorkspace: 2048 });
+
+    expect(readLimitOverrides(settings)).toEqual({
+      maxWorkspaces: 4,
+      documentBytesPerWorkspace: 2048,
+    });
+
+    const reread = (await (await get(`${ADMIN_API_PATH}/limits`)).json()) as {
+      limits: Record<string, number | null>;
+    };
+    expect(reread.limits.maxWorkspaces).toBe(4);
+
+    const line = auditLines().find(
+      (entry) => entry.msg === "admin.mutation" && entry.action === "limits.update",
+    );
+    expect(line).toBeDefined();
+    expect(line?.outcome).toBe("updated");
+  });
+
+  it("accepts null to clear an override and the word unlimited", async () => {
+    writeLimitOverrides(settings, { maxWorkspaces: 4, diskHardBytes: 1 });
+    await serve();
+
+    const cleared = await putLimits({ maxWorkspaces: null, diskHardBytes: "unlimited" });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as { overrides: Record<string, number | null> };
+    expect(body.overrides).toEqual({ diskHardBytes: null });
+    expect(readLimitOverrides(settings)).toEqual({ diskHardBytes: Number.POSITIVE_INFINITY });
+  });
+
+  it("refuses an unknown key and a contradictory pair, and audits both", async () => {
+    await serve();
+
+    const unknown = await putLimits({ diskHardByte: 10 });
+    expect(unknown.status).toBe(400);
+    expect(((await unknown.json()) as { error: string }).error).toContain(
+      'Unknown limit "diskHardByte"',
+    );
+
+    const contradictory = await putLimits({ diskSoftBytes: 10, diskHardBytes: 5 });
+    expect(contradictory.status).toBe(400);
+    expect(((await contradictory.json()) as { error: string }).error).toContain("soft watermark");
+
+    const rejected = auditLines().filter(
+      (entry) => entry.action === "limits.update" && entry.outcome === "rejected",
+    );
+    expect(rejected).toHaveLength(2);
+    expect(readLimitOverrides(settings)).toEqual({});
+  });
+
+  it("refuses a body with no known limit", async () => {
+    await serve();
+    const empty = await putLimits({});
+    expect(empty.status).toBe(400);
+    expect(((await empty.json()) as { error: string }).error).toContain("No limits were given");
+  });
+
+  it("requires the admin token", async () => {
+    await serve();
+    expect((await putLimits({ maxWorkspaces: 2 }, null)).status).toBe(401);
+    expect(readLimitOverrides(settings)).toEqual({});
+  });
+
+  it("answers 501 when the server has no settings store", async () => {
+    await serve(false);
+    const response = await putLimits({ maxWorkspaces: 2 });
+    expect(response.status).toBe(501);
+    expect(((await response.json()) as { error: string }).error).toContain("SUITE_SETTINGS_DB");
+  });
+
+  it("marks an over-quota workspace in the list and reports the disk reading", async () => {
+    writeLimitOverrides(settings, { documentBytesPerWorkspace: 1024 });
+    docs.save(loroDocumentKey("ws-big"), new Uint8Array(2048));
+    docs.save(loroDocumentKey("ws-small"), new Uint8Array(10));
+    await serve();
+
+    const response = await get(`${ADMIN_API_PATH}/workspaces`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      workspaces: { id: string; documentBytes: number; overQuota: boolean }[];
+      total: number;
+      diskBytes: number;
+    };
+    expect(body.diskBytes).toBe(4096);
+    const big = body.workspaces.find((row) => row.id === "ws-big");
+    const small = body.workspaces.find((row) => row.id === "ws-small");
+    expect(big).toMatchObject({ documentBytes: 2048, overQuota: true });
+    expect(small).toMatchObject({ documentBytes: 10, overQuota: false });
+  });
+
+  it("shows over-quota on a workspace detail too", async () => {
+    writeLimitOverrides(settings, { documentBytesPerWorkspace: 1024 });
+    docs.save(loroDocumentKey("ws-big"), new Uint8Array(2048));
+    await serve();
+
+    const response = await get(`${ADMIN_API_PATH}/workspaces/ws-big`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { overQuota: boolean; documentBytes: number };
+    expect(body.overQuota).toBe(true);
+    expect(body.documentBytes).toBe(2048);
+  });
+});
+
+describe("metrics endpoint", () => {
+  it("404s when SUITE_ADMIN_TOKEN is unset, so the route does not advertise itself", async () => {
+    await startServer();
+
+    process.env.SUITE_ADMIN_TOKEN = "";
+    expect((await get(METRICS_PATH)).status).toBe(404);
+
+    delete process.env.SUITE_ADMIN_TOKEN;
+    expect((await get(METRICS_PATH)).status).toBe(404);
+  });
+
+  it("401s without a token and with a wrong one", async () => {
+    await startServer();
+
+    const missing = await get(METRICS_PATH, null);
+    expect(missing.status).toBe(401);
+    expect(await missing.text()).not.toContain("suite_http_requests_total");
+
+    const wrong = await get(METRICS_PATH, "not-the-admin-token");
+    expect(wrong.status).toBe(401);
+    expect(await wrong.text()).not.toContain("not-the-admin-token");
+  });
+
+  it("serves Prometheus text to the configured token", async () => {
+    const collector = new MetricsCollector({
+      version: "9.9.9",
+      gauges: {
+        databaseBytes: () => 2048,
+        diskSoftBytes: () => 1024,
+        openRooms: () => 3,
+        projectionRooms: () => 2,
+        documents: () => 9,
+      },
+    });
+    collector.observeHttp(200);
+    collector.shareCreated();
+    await startServer({ metrics: collector });
+
+    const response = await get(METRICS_PATH);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+
+    const body = await response.text();
+    expect(body).toContain('suite_http_requests_total{class="2xx"} 1');
+    expect(body).toContain("suite_share_creates_total 1");
+    expect(body).toContain("suite_disk_above_soft 1");
+    expect(body).toContain('suite_build_info{version="9.9.9"} 1');
+    expect(body).not.toContain(ADMIN_TOKEN);
+    expect(body).not.toContain("ws-a");
+  });
+
+  it("reports the version stamp in the admin status", async () => {
+    await startServer();
+
+    const response = await get(`${ADMIN_API_PATH}/status`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { version: string };
+    expect(body.version).toBe(serverVersion());
+    expect(body.version.length).toBeGreaterThan(0);
   });
 });

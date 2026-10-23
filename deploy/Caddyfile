@@ -2,6 +2,9 @@
 # the same origin. Set SUITE_DOMAIN to the public hostname (e.g. via .env);
 # Caddy obtains a certificate for it automatically. A real domain needs ports
 # 80/443 reachable and a DNS A/AAAA record. `localhost` uses Caddy's local CA.
+#
+# One host, one instance, one `app` replica: rooms, presence and rate limits
+# live in that process and the databases are local files. See docs/deploy-aws.md.
 {
 	# Uncomment to register the ACME account with an email from the environment.
 	# email {$SUITE_ACME_EMAIL}
@@ -23,6 +26,24 @@
 		-Server
 	}
 
+	# Caching, in one place. Vite content-hashes the bundles under /assets/*, so
+	# those never change and may be cached for a year. Everything else is JSON
+	# on /api/*, a token-gated scrape, a WebSocket upgrade, one of the two HTML
+	# entry points, or the SPA fallback -- all of it must be revalidated, so a
+	# deploy or a revoked link is visible on the next request.
+	@hashed path /assets/*
+	@uncached not path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	header @uncached Cache-Control "no-store"
+
+	# Loro sync. No special directive is needed: reverse_proxy forwards the
+	# Upgrade/Connection handshake and switches to a raw tunnel on 101 by
+	# default. Keep the route free of buffering handlers, and do not run two
+	# `app` containers behind it.
+	handle /ws* {
+		reverse_proxy app:1234
+	}
+
 	# The HTTP API (shares, workspaces) and the health probe share port 1235.
 	handle /api/* {
 		reverse_proxy app:1235
@@ -32,22 +53,37 @@
 		reverse_proxy app:1235
 	}
 
-	# Loro sync. reverse_proxy forwards the Upgrade handshake for WebSockets.
-	handle /ws* {
-		reverse_proxy app:1234
+	# Prometheus scrape. The endpoint is token-gated by the server itself: 404
+	# when SUITE_ADMIN_TOKEN is unset, 401 without the bearer token, 429 above
+	# the admin rate limit. It is proxied for a scraper but never published or
+	# listed anywhere -- an external monitor should call /health instead.
+	handle /metrics {
+		reverse_proxy app:1235
 	}
 
-	# Operator panel: a separate Vite entry point, never linked from the app.
-	# Restrict this route to an allowlist where possible, for example:
-	#   @admin_allowed remote_ip 203.0.113.4/32
-	#   respond @admin_not_allowed 403
-	handle /admin {
+	# Hashed bundles. A missing file is a 404, not the SPA fallback: serving
+	# index.html under a .js URL with a one-year immutable header is a mistake
+	# that cannot be corrected remotely.
+	handle /assets/* {
+		root * /srv
+		file_server
+	}
+
+	# Operator panel: its own Vite entry point, never linked from the app.
+	# Not being linked is obscurity, not access control -- the token behind it
+	# can read every workspace and delete any of them. Uncomment the two lines
+	# to restrict the panel to an allowlist of office/VPN addresses; the first
+	# one names every source that is *not* allowed:
+	#   @admin_denied not remote_ip 203.0.113.4/32 10.0.0.0/8
+	#   respond @admin_denied "Not found" 403
+	handle /admin* {
 		rewrite * /admin.html
 		root * /srv
 		file_server
 	}
 
 	# Static app with the SPA fallback: every unknown path is a client route.
+	# Directory listings stay off (`browse`), so /srv is never indexable.
 	handle {
 		root * /srv
 		try_files {path} /index.html

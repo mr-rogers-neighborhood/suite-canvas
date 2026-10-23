@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recordClaimOutcome } from "../session/ownerKey";
+import { deriveOwnerKey, readOwnerKey, recordClaimOutcome } from "../session/ownerKey";
 import { createOwnerKit } from "../session/ownerKit";
+import { encodeKey } from "../session/recoveryWords";
 import { WorkspaceProtected } from "./WorkspaceProtected";
 
 const upload = (text: string) => {
@@ -123,5 +124,115 @@ describe("WorkspaceProtected", () => {
     fireEvent.click(screen.getByTestId("recovery-paste-apply"));
 
     expect(screen.getByTestId("recovery-error")).toHaveTextContent("workspace backup");
+  });
+});
+
+/** Bytes 0..31 as base64url, the same fixed key the word tests use. */
+const OWNER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+const PASSPHRASE = "velvet otter lantern meadow";
+
+function reply(status: number): Response {
+  return { ok: status >= 200 && status < 300, status, json: async () => ({}) } as Response;
+}
+
+describe("WorkspaceProtected passphrase recovery", () => {
+  it("derives the key from the passphrase in the URL and claims with it", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => reply(200));
+    vi.stubGlobal("fetch", fetchMock);
+    const applyKey = vi.fn();
+    render(<WorkspaceProtected workspaceId="ws-1" applyKey={applyKey} />);
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
+    expect(screen.getByTestId("recovery-passphrase-copy")).toHaveTextContent(
+      "A passphrase survives a lost browser, a lost file and a new device",
+    );
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    fireEvent.click(screen.getByTestId("recovery-passphrase-apply"));
+
+    await waitFor(() => expect(applyKey).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    const derived = await deriveOwnerKey(PASSPHRASE, "ws-1");
+    expect(applyKey).toHaveBeenCalledWith(derived);
+    expect(readOwnerKey("ws-1")).toBe(derived);
+    expect(screen.queryByTestId("recovery-error")).toBeNull();
+
+    // The workspace id comes from the page; the derived key is the only secret.
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe("http://localhost:1235/api/workspaces/ws-1/claim");
+    expect(JSON.parse(String(init?.body))).toEqual({ ownerKey: derived });
+  });
+
+  it("shows one readable error for a wrong passphrase and writes nothing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => reply(409)),
+    );
+    const applyKey = vi.fn();
+    render(<WorkspaceProtected workspaceId="ws-1" applyKey={applyKey} />);
+
+    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
+    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
+      target: { value: PASSPHRASE },
+    });
+    fireEvent.click(screen.getByTestId("recovery-passphrase-apply"));
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("recovery-error")).toHaveTextContent(
+          "That passphrase does not open this workspace.",
+        ),
+      { timeout: 10_000 },
+    );
+    expect(screen.getByTestId("recovery-error")).toHaveTextContent(
+      "nothing on this device was changed",
+    );
+    expect(readOwnerKey("ws-1")).toBeNull();
+    expect(applyKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkspaceProtected recovery words", () => {
+  it("restores the key from words typed off paper", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => reply(200)),
+    );
+    const applyKey = vi.fn();
+    render(<WorkspaceProtected workspaceId="ws-1" applyKey={applyKey} />);
+
+    fireEvent.click(screen.getByTestId("recovery-words-open"));
+    expect(screen.getByTestId("recovery-words-copy")).toHaveTextContent(
+      "Recovery words survive a lost browser and a lost file",
+    );
+    fireEvent.change(screen.getByTestId("recovery-words-input"), {
+      target: { value: await encodeKey(OWNER_KEY) },
+    });
+    fireEvent.click(screen.getByTestId("recovery-words-apply"));
+
+    await waitFor(() => expect(applyKey).toHaveBeenCalledWith(OWNER_KEY));
+    expect(readOwnerKey("ws-1")).toBe(OWNER_KEY);
+  });
+
+  it("reports a mistyped word without trying the relay", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<WorkspaceProtected workspaceId="ws-1" />);
+
+    const words = (await encodeKey(OWNER_KEY)).split(" ");
+    words[3] = "zzzz";
+    fireEvent.click(screen.getByTestId("recovery-words-open"));
+    fireEvent.change(screen.getByTestId("recovery-words-input"), {
+      target: { value: words.join(" ") },
+    });
+    fireEvent.click(screen.getByTestId("recovery-words-apply"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("recovery-error")).toHaveTextContent(
+        '"zzzz" is not a recovery word (word 4)',
+      ),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(readOwnerKey("ws-1")).toBeNull();
   });
 });

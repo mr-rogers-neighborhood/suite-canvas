@@ -111,3 +111,22 @@ export const WithPresence: Story = {
     ],
   },
 };
+
+export const WithOrganizeActions: Story = {
+  args: {
+    ...base,
+    canEditContent: true,
+    canEditLayout: true,
+    canManageTrash: true,
+    onDuplicate: () => {},
+    moveTargets: [
+      { id: "board-2", name: "Ideas" },
+      { id: "board-3", name: "Reading list" },
+    ],
+    onMoveToBoard: () => {},
+    onRemoveFromBoard: () => {},
+    onTrash: () => {},
+    onOpenInfo: () => {},
+    onStartEditing: () => {},
+  },
+};

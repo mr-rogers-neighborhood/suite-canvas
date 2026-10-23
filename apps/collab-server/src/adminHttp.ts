@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createWorkspaceFile, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { type AdminPaths, adminPaths, deleteWorkspace, resetOwner } from "./admin.js";
+import { serverVersion } from "./config.js";
 import {
   applyCors,
   CORS_HEADERS,
@@ -12,14 +13,36 @@ import {
   sendEmpty,
   sendJson,
 } from "./http.js";
+import {
+  LIMIT_ENV,
+  LIMIT_KEYS,
+  type LimitKey,
+  limitsProblem,
+  parseLimitOverrides,
+  publicLimits,
+  type QuotaService,
+  type ResolvedLimits,
+  readLimitOverrides,
+  resolveLimits,
+  writeLimitOverrides,
+} from "./limits.js";
 import { createLogger, type Logger } from "./logging.js";
+import { type MetricsCollector, metrics as processMetrics } from "./metrics.js";
 import type { DocumentInventory, DocumentStore } from "./persistence.js";
 import { loadLoroDocument, loroDocumentKey, type ProjectionRoomInfo } from "./projectionWorker.js";
 import { clientAddress, createRateLimiter } from "./rateLimit.js";
+import type { SettingsStore } from "./settings.js";
 import { MAX_SELECTION_CARDS, SHARE_ROOM_PREFIX, type Share, type ShareStore } from "./shares.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
 
 export const ADMIN_API_PATH = "/api/admin";
+
+/**
+ * Prometheus scrape path. It sits beside `/api/admin/*` rather than under it
+ * because a scraper is configured with one URL, but it is gated by exactly the
+ * same token: unset means 404, a wrong token means 401.
+ */
+export const METRICS_PATH = "/metrics";
 
 /** Largest page `/api/admin/workspaces` will return, whatever `limit` asks. */
 export const MAX_ADMIN_PAGE = 200;
@@ -117,6 +140,16 @@ export interface AdminRequestDeps {
   disconnectRoom?: (roomId: string) => number;
   /** Structured log destination; the audit line never carries a credential. */
   logger?: Logger;
+  /** Effective limits; resolved fresh per call so an override applies at once. */
+  limits?: () => ResolvedLimits;
+  /** Runtime override store; without it `PUT /api/admin/limits` answers 501. */
+  settings?: SettingsStore;
+  /** Per-workspace budgets, including a hosted licence's cap. */
+  quotas?: QuotaService;
+  /** Current document-store bytes, shared with the quota service's cache. */
+  diskBytes?: () => number;
+  /** Collector rendered by `GET /metrics`; defaults to the process-wide one. */
+  metrics?: MetricsCollector;
 }
 
 interface AdminDatabaseRow {
@@ -129,6 +162,8 @@ interface AdminWorkspaceRow {
   id: string;
   claimed: boolean;
   documentBytes: number;
+  /** True when the document exceeds its budget; saves are still accepted. */
+  overQuota: boolean;
   cards: number;
   boards: number;
   sections: number;
@@ -269,14 +304,75 @@ function sharesOf(deps: AdminRequestDeps, id: string): number {
 
 function workspaceRow(deps: AdminRequestDeps, stored: StoredWorkspace): AdminWorkspaceRow {
   const loaded = loadWorkspace(deps.documents, stored.id);
+  const documentBytes = loaded?.bytes ?? 0;
+  const budget =
+    deps.quotas?.documentBudget(stored.id) ??
+    effectiveLimits(deps).limits.documentBytesPerWorkspace;
   return {
     id: stored.id,
     claimed: claimedOf(deps, stored.id),
-    documentBytes: loaded?.bytes ?? 0,
+    documentBytes,
+    overQuota: documentBytes > budget,
     ...countersOf(loaded?.workspace ?? null),
     shares: sharesOf(deps, stored.id),
     lastSavedAt: stored.lastSavedAt,
   };
+}
+
+/** Effective limits: the server's resolver when wired, else defaults plus env. */
+function effectiveLimits(deps: AdminRequestDeps): ResolvedLimits {
+  return deps.limits?.() ?? resolveLimits(process.env, null);
+}
+
+/** Overrides as JSON: `Infinity` is "unlimited" on disk and null in a response. */
+function publicOverrides(
+  overrides: Partial<Record<LimitKey, number>>,
+): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const key of LIMIT_KEYS) {
+    const value = overrides[key];
+    if (value === undefined) continue;
+    out[key] = Number.isFinite(value) ? value : null;
+  }
+  return out;
+}
+
+/** Effective limits, their source, the disk reading and the overrides in force. */
+function limitsBody(deps: AdminRequestDeps) {
+  const resolved = effectiveLimits(deps);
+  const contradiction = limitsProblem(resolved.limits);
+  const problems = [...resolved.problems];
+  if (contradiction !== null) problems.push(contradiction);
+  let overrides: Record<string, number | null> = {};
+  if (deps.settings) {
+    try {
+      overrides = publicOverrides(readLimitOverrides(deps.settings));
+    } catch {
+      overrides = {};
+    }
+  }
+  return {
+    ok: true,
+    hosted: process.env.SUITE_HOSTED === "1",
+    limits: publicLimits(resolved.limits),
+    sources: resolved.sources,
+    env: LIMIT_ENV,
+    overrides,
+    diskBytes: deps.diskBytes?.() ?? deps.documents.size?.() ?? 0,
+    problems,
+  };
+}
+
+/** The limits route answers `PUT` too, so its CORS methods differ from the rest. */
+function sendLimits(response: ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  response.writeHead(status, {
+    ...CORS_HEADERS,
+    "access-control-allow-methods": "GET, PUT, OPTIONS",
+    "content-type": "application/json; charset=utf-8",
+    "content-length": String(Buffer.byteLength(json)),
+  });
+  response.end(json);
 }
 
 /**
@@ -375,6 +471,7 @@ function statusBody(deps: AdminRequestDeps) {
     Number.isFinite(value) ? Math.max(0, Math.floor(value ?? 0)) : 0;
   return {
     ok: true,
+    version: serverVersion(),
     uptimeMs: Math.max(0, Date.now() - (deps.startedAt ?? processStartedAt)),
     node: process.version,
     pid: process.pid,
@@ -398,6 +495,79 @@ function statusBody(deps: AdminRequestDeps) {
   };
 }
 
+/**
+ * Validates and stores runtime overrides. Unknown keys, non-numeric values and
+ * a configuration that contradicts itself are all refused with the reason, so a
+ * typo cannot silently stop a quota from firing. Every attempt is audited.
+ */
+async function updateLimits(
+  request: IncomingMessage,
+  response: ServerResponse,
+  deps: AdminRequestDeps,
+  url: URL,
+): Promise<void> {
+  if (!deps.settings) {
+    throw new HttpError(
+      501,
+      "Runtime limit overrides need a settings store; set SUITE_SETTINGS_DB.",
+    );
+  }
+  const body = await readBody(request);
+  const envelope = body?.overrides;
+  const raw =
+    typeof envelope === "object" && envelope !== null && !Array.isArray(envelope) ? envelope : body;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new HttpError(400, "The request body must be a JSON object of limits.");
+  }
+
+  const parsed = parseLimitOverrides(raw);
+  if (parsed.problem !== null) {
+    audit(deps, {
+      path: url.pathname,
+      target: "limits",
+      action: "limits.update",
+      outcome: "rejected",
+      details: { reason: parsed.problem },
+    });
+    throw new HttpError(400, parsed.problem);
+  }
+
+  const changes = Object.keys(parsed.changes) as LimitKey[];
+  if (changes.length === 0) {
+    throw new HttpError(400, "No limits were given. Send at least one known limit key.");
+  }
+
+  const next = { ...readLimitOverrides(deps.settings) };
+  for (const key of changes) {
+    const value = parsed.changes[key];
+    if (value === null || value === undefined) delete next[key];
+    else next[key] = value;
+  }
+
+  const check = resolveLimits(process.env, next);
+  const problem = limitsProblem(check.limits) ?? check.problems[0] ?? null;
+  if (problem !== null) {
+    audit(deps, {
+      path: url.pathname,
+      target: "limits",
+      action: "limits.update",
+      outcome: "rejected",
+      details: { reason: problem },
+    });
+    throw new HttpError(400, problem);
+  }
+
+  writeLimitOverrides(deps.settings, next);
+  audit(deps, {
+    path: url.pathname,
+    target: "limits",
+    action: "limits.update",
+    outcome: "updated",
+    details: { changed: publicOverrides(next) },
+  });
+  sendLimits(response, 200, { ...limitsBody(deps), overrides: publicOverrides(next) });
+}
+
 function listWorkspaces(response: ServerResponse, deps: AdminRequestDeps, url: URL): void {
   const limit = pageNumber(url.searchParams.get("limit"), DEFAULT_ADMIN_PAGE, MAX_ADMIN_PAGE);
   const offset = pageNumber(url.searchParams.get("offset"), 0);
@@ -406,6 +576,7 @@ function listWorkspaces(response: ServerResponse, deps: AdminRequestDeps, url: U
   sendJson(response, 200, {
     workspaces: page.map((entry) => workspaceRow(deps, entry)),
     total: stored.length,
+    diskBytes: deps.diskBytes?.() ?? deps.documents.size?.() ?? 0,
   });
 }
 
@@ -421,6 +592,7 @@ function workspaceDetail(
       id: workspaceId,
       claimed: true,
       documentBytes: 0,
+      overQuota: false,
       cards: 0,
       boards: 0,
       sections: 0,
@@ -1002,12 +1174,25 @@ function exportWorkspace(
   response.end(json);
 }
 
+/** The Prometheus text body, never cached: a stale scrape is worse than no scrape. */
+function sendMetrics(response: ServerResponse, collector: MetricsCollector): void {
+  const body = collector.prometheus();
+  response.writeHead(200, {
+    ...CORS_HEADERS,
+    "content-type": "text/plain; version=0.0.4; charset=utf-8",
+    "cache-control": "no-store",
+    "content-length": String(Buffer.byteLength(body)),
+  });
+  response.end(body);
+}
+
 /**
- * Read-only operator API plus the controlled mutations behind the same token.
- * Like the share and workspace handlers, it returns false when the path is not
- * its own. The route only exists while `SUITE_ADMIN_TOKEN` is set: an
- * unconfigured server answers 404, never 401. There is no owner-key path to a
- * mutation: only the bearer token above reaches any of them.
+ * Read-only operator API plus the controlled mutations behind the same token,
+ * and the Prometheus scrape at `GET /metrics`. Like the share and workspace
+ * handlers, it returns false when the path is not its own. Both routes only
+ * exist while `SUITE_ADMIN_TOKEN` is set: an unconfigured server answers 404,
+ * never 401. There is no owner-key path to a mutation or to a scrape: only the
+ * bearer token above reaches any of them.
  */
 export async function handleAdminRequest(
   request: IncomingMessage,
@@ -1015,7 +1200,12 @@ export async function handleAdminRequest(
   deps: AdminRequestDeps,
 ): Promise<boolean> {
   const url = new URL(request.url ?? "/", "http://localhost");
-  if (url.pathname !== ADMIN_API_PATH && !url.pathname.startsWith(`${ADMIN_API_PATH}/`)) {
+  const isMetrics = url.pathname === METRICS_PATH;
+  if (
+    !isMetrics &&
+    url.pathname !== ADMIN_API_PATH &&
+    !url.pathname.startsWith(`${ADMIN_API_PATH}/`)
+  ) {
     return false;
   }
 
@@ -1041,6 +1231,12 @@ export async function handleAdminRequest(
       throw new HttpError(401, "A valid admin token is required.");
     }
 
+    if (isMetrics) {
+      requireMethod(response, method, "GET");
+      sendMetrics(response, deps.metrics ?? processMetrics);
+      return true;
+    }
+
     const segment = url.pathname.slice(ADMIN_API_PATH.length).replace(/^\//, "");
     if (segment.length === 0) throw new HttpError(404, "Not found.");
     const parts = segment.split("/").map(decodeSegment);
@@ -1057,6 +1253,17 @@ export async function handleAdminRequest(
       if (parts.length !== 1) throw new HttpError(404, "Not found.");
       requireMethod(response, method, "POST");
       await createFixtures(request, response, deps, url);
+      return true;
+    }
+
+    if (route === "limits") {
+      if (parts.length !== 1) throw new HttpError(404, "Not found.");
+      requireMethod(response, method, "GET", "PUT");
+      if (method === "PUT") {
+        await updateLimits(request, response, deps, url);
+        return true;
+      }
+      sendLimits(response, 200, limitsBody(deps));
       return true;
     }
 

@@ -75,6 +75,11 @@ function encodeBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
 }
 
+/** The base64url form used by stored, shared and passphrase-derived keys. */
+export function ownerKeyFromBytes(bytes: Uint8Array): string {
+  return encodeBase64Url(bytes);
+}
+
 /** 32 random bytes as base64url; the server only ever sees the hash. */
 export function generateOwnerKey(): string {
   const bytes = new Uint8Array(OWNER_KEY_BYTES);
@@ -475,4 +480,118 @@ export async function rotateOwnerKey(
   if (response.ok) return;
   const body = await response.json().catch(() => null);
   throw new Error(rotateError(response.status, body));
+}
+
+/**
+ * A passphrase-derived owner key.
+ *
+ * Why PBKDF2-HMAC-SHA-256 rather than argon2id: Suite takes no new dependency
+ * for this, and WebCrypto offers PBKDF2 everywhere it offers SHA-256, while
+ * argon2 needs a native or WASM library. PBKDF2 is the weaker choice — it uses
+ * almost no memory, so GPUs and ASICs can test far more guesses per second than
+ * they could against a memory-hard function — and 600 000 iterations is the
+ * OWASP figure for PBKDF2-HMAC-SHA-256, about a third of a second on a laptop.
+ * The cost is that the passphrase has to carry the entropy itself, which is why
+ * the strength floor below is four words rather than four characters.
+ *
+ * The salt is SHA-256("suite.owner.v1:" + workspaceId). The workspace id is
+ * public already, and hashing it fixes one 32-byte salt per workspace, so the
+ * same passphrase in two workspaces derives two unrelated keys.
+ */
+export const PASSPHRASE_ITERATIONS = 600_000;
+export const PASSPHRASE_MIN_CHARS = 16;
+export const PASSPHRASE_MIN_WORDS = 4;
+const PASSPHRASE_SALT_PREFIX = "suite.owner.v1:";
+
+/**
+ * Casing, accents and spacing are forgiven: a person retyping a passphrase on
+ * another device must not be locked out by a capital letter or a double space.
+ */
+export function normalizePassphrase(passphrase: string): string {
+  return passphrase.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+/**
+ * The same passphrase and workspace id always produce the same owner key, on
+ * every device, with no file and no account. The derived key is an ordinary
+ * owner key: it is stored and claimed exactly like a random one, so the relay
+ * needs no change and sees only its hash.
+ */
+export async function deriveOwnerKey(passphrase: string, workspaceId: string): Promise<string> {
+  const normalized = normalizePassphrase(passphrase);
+  if (normalized.length === 0) throw new Error("Enter a passphrase to derive a key.");
+  const workspace = workspaceId.trim();
+  if (workspace.length === 0) throw new Error("A workspace id is needed to derive a key.");
+
+  const encoder = new TextEncoder();
+  const salt = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`${PASSPHRASE_SALT_PREFIX}${workspace}`),
+  );
+  const material = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(normalized),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: PASSPHRASE_ITERATIONS },
+    material,
+    OWNER_KEY_BYTES * 8,
+  );
+  return ownerKeyFromBytes(new Uint8Array(bits));
+}
+
+/** Passphrases that are common enough to be tried first by anyone guessing. */
+const WEAK_PASSPHRASES = new Set([
+  "correct horse battery staple",
+  "iloveyou",
+  "letmein",
+  "password",
+  "password123",
+  "qwerty",
+  "qwertyuiop",
+  "secret",
+  "suite",
+  "welcome",
+  "welcome123",
+]);
+
+/**
+ * Why this passphrase is too weak, or `null` when it is usable. Every message
+ * names the rule it broke and how to fix it, because the dialog shows the
+ * reason instead of only disabling its button.
+ */
+export function passphraseProblem(passphrase: string): string | null {
+  const normalized = normalizePassphrase(passphrase);
+  const words = normalized.length === 0 ? [] : normalized.split(" ");
+  const characters = [...normalized].length;
+
+  if (characters === 0) {
+    return "Enter a passphrase of at least four words. Four unrelated words are easy to remember and hard to guess, and Suite never stores them.";
+  }
+  if (words.length < PASSPHRASE_MIN_WORDS && characters < PASSPHRASE_MIN_CHARS) {
+    return `Use at least ${PASSPHRASE_MIN_WORDS} words and ${PASSPHRASE_MIN_CHARS} characters: that is ${words.length} word${words.length === 1 ? "" : "s"} and ${characters} characters.`;
+  }
+  if (words.length < PASSPHRASE_MIN_WORDS) {
+    const missing = PASSPHRASE_MIN_WORDS - words.length;
+    return `Add ${missing} more word${missing === 1 ? "" : "s"}: a passphrase needs ${PASSPHRASE_MIN_WORDS} words, because a short one can be guessed offline.`;
+  }
+  if (characters < PASSPHRASE_MIN_CHARS) {
+    return `That is ${characters} characters. Use at least ${PASSPHRASE_MIN_CHARS}, so the phrase is not just four short words.`;
+  }
+  if (new Set(words).size < PASSPHRASE_MIN_WORDS) {
+    return `Use ${PASSPHRASE_MIN_WORDS} different words: repeating a word adds nothing to guess.`;
+  }
+  if (WEAK_PASSPHRASES.has(normalized)) {
+    return "That is one of the first passphrases anyone guessing would try. Choose four unrelated words of your own.";
+  }
+  if (/^[^a-z]+$/u.test(normalized)) {
+    return "Use words, not only digits or symbols: those are guessed first.";
+  }
+  if (/(.)\1{5,}/u.test(normalized)) {
+    return "One character is repeated many times. Use four separate words instead.";
+  }
+  return null;
 }

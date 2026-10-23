@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { applyProjection, projectWorkspace, WorkspaceDocument } from "@suite/graph";
 import { LoroAdaptor } from "loro-adaptors/loro";
-import { LoroDoc, LoroMap, LoroText } from "loro-crdt";
+import { getType, isContainer, LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { LoroWebsocketClient } from "loro-websocket";
 import { SimpleServer } from "loro-websocket/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -79,6 +79,21 @@ function appendText(container: LoroMap, text: string): void {
   paragraph.set("nodeName", "paragraph");
   paragraph.ensureMergeableMap("attributes");
   paragraph.ensureMergeableList("children").insertContainer(0, new LoroText()).insert(0, text);
+}
+
+/**
+ * Appends text to the card's **first** paragraph instead of a new one. Two
+ * editors changing the same block is a genuine conflict; appending separate
+ * paragraphs is not, because publish now keys body changes per block.
+ */
+function editFirstParagraph(container: LoroMap, text: string): void {
+  const children = container.ensureMergeableList("children");
+  const first = children.get(0);
+  if (!first || !isContainer(first)) throw new Error("no first paragraph to edit");
+  const inline = (first as LoroMap).ensureMergeableList("children");
+  const target = inline.get(0);
+  if (!target || getType(target as never) !== "Text") throw new Error("no text run to edit");
+  (target as LoroText).insert((target as LoroText).length, text);
 }
 
 function seedSource(): WorkspaceDocument {
@@ -801,7 +816,7 @@ describe("editor shares", () => {
   it("rejects a conflicting publish and leaves the source untouched", async () => {
     const { state, share, roomId, owner, editor } = await editorHarness();
     try {
-      appendText(owner.workspace().getContent("a"), "Owner text");
+      editFirstParagraph(owner.workspace().getContent("a"), " Owner text");
       owner.doc.commit({ origin: "owner:edit" });
       await waitForSaved(
         state,
@@ -810,7 +825,7 @@ describe("editor shares", () => {
         "the owner write on the server",
       );
 
-      appendText(editor.workspace().getContent("a"), "Editor text");
+      editFirstParagraph(editor.workspace().getContent("a"), " Editor text");
       editor.doc.commit({ origin: "editor:edit" });
       await waitForSaved(
         state,
@@ -822,7 +837,10 @@ describe("editor shares", () => {
       const result = await state.worker.publish(share);
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error("expected a rejected publish");
-      expect(result.conflicts.map((conflict) => conflict.key)).toContain("card:a:body");
+      // The key names the block, not the whole body: a per-block conflict.
+      const keys = result.conflicts.map((conflict) => conflict.key);
+      expect(keys.some((key) => key.startsWith("card:a:body"))).toBe(true);
+      expect(result.conflicts[0]?.label).toBeTruthy();
       expect(result.unsupported).toEqual([]);
 
       expect(textOf(owner.workspace(), "a")).toContain("Owner text");
@@ -906,7 +924,7 @@ describe("editor shares", () => {
     try {
       const draft = editor.workspace();
       draft.placeCard(BOARD_ID, "a", { x: 500, y: 600 });
-      appendText(draft.getContent("a"), "Editor text");
+      editFirstParagraph(draft.getContent("a"), " Editor text");
       editor.doc.commit({ origin: "editor:edit" });
       await waitForSaved(
         state,
@@ -918,7 +936,7 @@ describe("editor shares", () => {
       );
 
       owner.workspace().placeCard(BOARD_ID, "a", { x: 700, y: 800 });
-      appendText(owner.workspace().getContent("a"), "Owner text");
+      editFirstParagraph(owner.workspace().getContent("a"), " Owner text");
       owner.doc.commit({ origin: "owner:edit" });
       await waitForSaved(
         state,

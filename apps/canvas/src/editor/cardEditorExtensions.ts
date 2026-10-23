@@ -1,8 +1,10 @@
 import { Placeholder } from "@tiptap/extensions";
 import type { Extensions } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { Attachment } from "./attachmentNode";
 import { Mention } from "./Mention";
 import { PropertyBlock } from "./PropertyBlock";
+import { PasteImages } from "./pasteImages";
 import { SlashCommands } from "./SlashCommands";
 
 export interface CardBodySchemaOptions {
@@ -37,6 +39,10 @@ export function cardBodySchemaExtensions({
     // owner id is what adds this card's fields to the picker.
     Mention.configure({ cardId }),
     SlashCommands,
+    // Images are nodes that name their bytes by id; the bytes live beside the
+    // document, so a share projection copies metadata only.
+    Attachment,
+    PasteImages,
     PropertyBlock.configure({
       cardId,
       openPanel: (id: string) => openPanel?.(id),

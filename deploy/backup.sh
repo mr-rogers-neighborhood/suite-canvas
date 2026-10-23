@@ -9,6 +9,13 @@
 # (`share_baselines`); the document database holds the workspace snapshots and
 # the projected share documents (`share-*` rooms). All of it is captured.
 #
+# With SUITE_BACKUP_BUCKET set the snapshot is also uploaded off-host as one
+# tar.gz (manifest included) through `aws s3 cp`: every run to
+# <bucket>/<prefix>/daily/, and Sunday's run additionally to
+# <bucket>/<prefix>/weekly/. Retention is a bucket lifecycle rule, not this
+# script -- expire daily/ after 7 days and weekly/ after 35 days, which keeps
+# the last 7 daily and 4 weekly copies. Nothing is deleted locally.
+#
 # Usage:
 #   deploy/backup.sh [destination-directory]
 #
@@ -18,12 +25,17 @@
 #   SUITE_DB              document database (default: $SUITE_DATA_DIR/suite.documents.sqlite)
 #   SUITE_SHARES_DB       share database    (default: $SUITE_DATA_DIR/suite.shares.sqlite)
 #   SUITE_WORKSPACES_DB   owner database    (default: $SUITE_DATA_DIR/suite.workspaces.sqlite)
+#   SUITE_SETTINGS_DB     runtime limit overrides (default: $SUITE_DATA_DIR/suite.settings.sqlite)
+#   SUITE_LICENCE_DB      hosted licence claims   (default: $SUITE_DATA_DIR/suite.licences.sqlite)
+#   SUITE_BACKUP_BUCKET   optional s3://bucket/ to upload to; unset = local only
+#   SUITE_BACKUP_PREFIX   key prefix inside the bucket (default: suite)
+#   SUITE_BACKUP_ENDPOINT S3-compatible endpoint for R2/MinIO, passed to aws
 #
-# Restore with the server stopped; see docs/operations.md.
+# Restore with the server stopped: deploy/restore.sh (or docs/operations.md).
 set -euo pipefail
 
 usage() {
-  sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^set -euo/{/^set -euo/d;p}' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 case "${1:-}" in
@@ -58,6 +70,16 @@ DEST="$DEST_ROOT/suite-$STAMP"
 DOCUMENTS_DB=${SUITE_DB:-"$DATA_DIR/suite.documents.sqlite"}
 SHARES_DB=${SUITE_SHARES_DB:-"$DATA_DIR/suite.shares.sqlite"}
 WORKSPACES_DB=${SUITE_WORKSPACES_DB:-"$DATA_DIR/suite.workspaces.sqlite"}
+# Restoring without these loses the operator's runtime limit overrides and every
+# hosted licence claim: the app still starts, but quotas silently revert and paid
+# workspaces are no longer linked to their licence.
+SETTINGS_DB=${SUITE_SETTINGS_DB:-"$DATA_DIR/suite.settings.sqlite"}
+LICENCES_DB=${SUITE_LICENCE_DB:-"$DATA_DIR/suite.licences.sqlite"}
+
+BUCKET=${SUITE_BACKUP_BUCKET:-}
+PREFIX=${SUITE_BACKUP_PREFIX:-suite}
+ENDPOINT=${SUITE_BACKUP_ENDPOINT:-}
+ARCHIVE=""
 
 mkdir -p "$DEST"
 MANIFEST="$DEST/manifest.txt"
@@ -112,6 +134,50 @@ snapshot() {
     >>"$MANIFEST"
 }
 
+# One upload with or without a custom endpoint; `aws s3 cp` writes a single
+# object atomically, and the tar.gz carries the manifest and checksums.
+upload_one() {
+  local destination=$1
+  if [ -n "$ENDPOINT" ]; then
+    aws --endpoint-url "$ENDPOINT" s3 cp --only-show-errors "$ARCHIVE" "$destination"
+  else
+    aws s3 cp --only-show-errors "$ARCHIVE" "$destination"
+  fi
+}
+
+# Off-host copy. Unset bucket = the historical behaviour: snapshot stays local.
+upload() {
+  if [ -z "$BUCKET" ]; then
+    return 0
+  fi
+  if ! command -v aws >/dev/null 2>&1; then
+    # A configured bucket that silently stops uploading is worse than a failed
+    # backup: exit non-zero so cron/monitoring notices.
+    printf 'error: SUITE_BACKUP_BUCKET is set but the aws CLI is not installed.\n' >&2
+    printf 'Install awscli v2 (or unset SUITE_BACKUP_BUCKET for local-only backups).\n' >&2
+    exit 1
+  fi
+
+  ARCHIVE="$DEST_ROOT/suite-$STAMP.tar.gz"
+  tar -czf "$ARCHIVE" -C "$DEST_ROOT" "suite-$STAMP"
+
+  local base="${BUCKET%/}/${PREFIX}"
+  upload_one "$base/daily/suite-$STAMP.tar.gz"
+  printf 'uploaded %s to %s/daily/\n' "$(basename "$ARCHIVE")" "$base"
+
+  if [ "$(date -u +%u)" = "7" ]; then
+    upload_one "$base/weekly/suite-$STAMP.tar.gz"
+    printf 'uploaded %s to %s/weekly/ (Sunday copy)\n' "$(basename "$ARCHIVE")" "$base"
+  fi
+
+  cat <<EOF
+Retention is the bucket's job, not this script's. Keep a lifecycle rule that
+expires    $base/daily/   after 7 days
+and        $base/weekly/  after 35 days
+which leaves 7 daily and 4 weekly copies.
+EOF
+}
+
 {
   printf 'created_at\t%s\n' "$STAMP"
   printf 'host\t%s\n' "$(hostname 2>/dev/null || printf 'unknown')"
@@ -122,6 +188,8 @@ snapshot() {
 snapshot documents "$DOCUMENTS_DB"
 snapshot shares "$SHARES_DB"
 snapshot workspaces "$WORKSPACES_DB"
+snapshot settings "$SETTINGS_DB"
+snapshot licences "$LICENCES_DB"
 
 {
   printf '\ncounts\ttable\trows\n'
@@ -144,9 +212,13 @@ printf 'snapshot written to %s\n' "$DEST"
 sed -n '/^counts/,$p' "$MANIFEST" | tail -n +2 | while IFS=$'\t' read -r _ table rows; do
   printf '  %-26s %s rows\n' "$table" "$rows"
 done
+upload
+
 cat <<EOF
 
 Restore with the server stopped:
-  cp "$DEST"/*.sqlite <data-directory>/
+  deploy/restore.sh "$DEST"          # compose volume, verifies and restarts
+or, on a bare host:
   rm -f <data-directory>/*.sqlite-wal <data-directory>/*.sqlite-shm
+  cp "$DEST"/*.sqlite <data-directory>/
 EOF

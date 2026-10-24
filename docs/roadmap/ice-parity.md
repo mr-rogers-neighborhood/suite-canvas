@@ -532,7 +532,7 @@ draws one.
 | Workstream | Status | Next artifact |
 | --- | --- | --- |
 | Decisions and docs | done | ADR-0034/0035/0036 |
-| Real workspace on ICE | done — live graph, real `CardSurface` overlays, selection mirroring | 5k fixture + reload/camera restore |
+| Real workspace on ICE | done — live graph, GPU card faces (`SUITE_CARD_DOM_FACE` is off, so there is no DOM overlay), selection mirroring | 5k fixture + reload/camera restore |
 | `suite.card` production | done for text via the inspector; the overlay stays read-only | inline Tiptap (deferred) |
 | Interaction bridge | done — drag/resize/delete commit once, Loro undo re-derives the projection | 5k drag budget |
 | Whiteboard | done — inline Excalidraw after an intent dwell, one instance, preview underlay, focus surface retained | measure the mount cost and record the ladder rung |
@@ -542,10 +542,164 @@ draws one.
 | Views/Pins | done — pins tab, drop action, markers, drag and click-to-focus | Views switcher rename (ADR-0035) |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
 | Graph projection | done — pure aggregation in `@suite/scene`, deterministic positions, containment edges, 42 tests | — |
-| Projection kinds | done — `suite.typeNode` glyph + count, `suite.containerNode` frame + label, derived depth | story |
+| Projection kinds | withdrawn — ADR-0040 deleted `suite.typeNode` and `suite.containerNode` | — |
 | Camera flights | done — distance-scaled planner; zoom buttons repeat and accelerate; no teleporting ops | headed e2e |
-| Graph overlay wiring | landing with this fleet — control and `g` open it over the canvas, the camera is remembered and restored on close | headed e2e: open, pan inside, close |
-| Types table | done — count and share per type, scopes the library, frames instances; shown in the inspector while the projection is open | viewer read-only artifact |
-| Ambient layer | pinned — soft masses derived from the same projection, behind the cards | lane after this fleet |
+| Graph overlay wiring | withdrawn — ADR-0040 deleted the overlay and the `g` keybinding | — |
+| Types table | withdrawn — ADR-0040 deleted the table and its two store channels | — |
+| Ambient layer | withdrawn — ADR-0040 deleted the plate generator and its layer | — |
 | Projection docs | done — ADR-0037, architecture paragraph, Phase 11, research note | — |
 | Failure/accessibility/rollout | pending | P0 table + unsupported screen |
+
+## 9. Parity matrix
+
+One row per capability the React Flow surface had. `CanvasBoard.tsx` — the flow board itself — is the
+source of most rows: its handlers and their callbacks are the feature list. The "React Flow era"
+column names the module that implemented each capability as of `972431a^`, so every claim can be
+checked with `git show`; the "ICE today" column names the live module or says plainly that nothing
+does it. "Gap" is what a user loses today: `—` means the capability is present, `P0` marks a row that
+silently loses data or breaks a promise the document already makes. "Owner" is the phase-12
+workstream that closes the row, and `—` means there is nothing to close.
+
+Three groups of deleted files are not capabilities of their own. `apps/canvas/src/scene/*`
+(`SceneBoard`, `SceneLayer`, `SceneOutline`, `outlineAdapter`, `sceneSelection`, `scenePresence`,
+`useSceneInteraction`, `surfaceFlag`) was a second renderer of the same board, plus the engine switch
+that ICE made unnecessary. The portal machinery (`PortalCard`, `PortalNode`, `PortalTransitionLayer`,
+`BoardMiniature`, `cards/portal.ts`, `icePortals.ts`, `icePortalSpawn.ts`) described a card whose only
+job was to open a board; ADR-0039 deleted the card type, and the behaviour that survives — entering a
+nested board, a board's preview — has its own rows below. The type graph, the outline rail and the
+ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
+
+### Reading and writing
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Title and body on the card | `NoteNode` mounted `NodeCard`, which rendered the real Tiptap document read-only: bold, links, mentions, images | `suite.card` writes `faceText` — title, blank line, body — as one plain-text raster (`IceSurface.tsx`, `faceText`) | Formatting, mentions, links and inline images are invisible; only their characters survive | G polish |
+| Type, tags, properties | `NodeCard` header and frontmatter: type glyph, tag chips, property chips, reference count, expandable meta | GPU paper only; a card's props are `cardId`, `text`, `paper`, `pen` (`suiteCardKind.ts`) | No type, tags, properties or reference count on the canvas | G polish |
+| Card face affordances | `NodeCard` header: type chip, reference chip, meta toggle, and a `⋮` menu with info, duplicate, move, focus and delete | Right-click only (`IceContextMenu`) | Nothing on the face says a card can be opened, copied or moved | G polish |
+| Whiteboard preview | `WhiteboardNode` → `WhiteboardCardFace` drew the drawing and an affordance that opened it | The face is paper; a double click mounts `SuiteWhiteboardStage` | A whiteboard is blank until opened | G polish |
+| Edit a card's text | Double click focused the in-place editor (`editingSurface: "canvas"`) | `onDouble` handles mats and whiteboards only, so a note is a no-op; `CardInspectorHost` and `CardFocusHost` are the only editors | No in-place editing: every edit detours through the inspector | B editing |
+| One focused editor | `useUiStore.editingSurface` and `NodeCard`'s `panelOwnsCard` kept typing and carets in one surface | No canvas editor exists | The invariant has to be rebuilt with the in-place editor | B editing |
+| A new card opens its title | `createNoteAt` created at the point and called `startEditing(id, "title")` | `Dock` and `App.createCard` still call `startEditing`, but no canvas editor consumes it and no inspector opens | A card made from the Dock arrives without a title cursor | B editing |
+| Inspector and focus surface | Same shell components | Same shell components (`App.tsx`) | — | — |
+
+### Moving things
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Drag one card | `onNodeDragStop` → `commitDrop` → one `movePlacements` | `attachIcePointerEditing` → `planMoveCommit` → one Loro commit | — | — |
+| Drag a multi-card selection | `dragMoves(dragged)` committed every dragged card in one write | `iceEditingController` builds a one-instance index, so only the pressed card is written; the selection moves as one on screen only until the next reconcile | P0: all but one card of a multi-card drag is lost | G polish |
+| Resize a card | `NodeResizer`, minimum 160×80, geometry written on release | ICE handles plus `planResizeCommit`: type rung, Shift reflow, Alt fit; the bridge refuses a box under 48×32 | — (the rung rules are new) | — |
+| Layer order | `changeLayer` and `changeLayerBulk` in the card menu | The same entries, through the shared menu builder | — | — |
+| Move a card to another Board | "Move to board" submenu | The same submenu (`IceContextMenu`) | — | — |
+| Drop a card into a Board | `sectionLayout.ts` grew the region on a drop (`sectionsExpandPlan`) and membership was derived from geometry | ICE accepts the drop (`drop: "into"`), but the commit is a placement move; no re-parent is written | P0: a card can look nested and still belong to the View | D board tree |
+| Move a card inside a Board | One flat plane, so any card could be dragged | The controller refuses the press (`slot.boardId !== rootBoardId`) while ICE still moves the entity, and nothing writes | P0: the desk diverges from the document until the next change | D board tree |
+
+### Links
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Draw a link between cards | Connector drag → `onConnect` → `addEdge` | Connector hotspot drag → `planEdgeCreate` → one `addEdge` | — | — |
+| Draw a link to a Board | Not possible: a section was not an edge end | A mat offers the midpoints of its four walls (`boardAnchors`) | — (new) | — |
+| Read a link's description | `EdgeDescription` chip on the path, counter-scaled, with a halo gap in the line | `suite.edge` props carry `edgeId`, `kind`, `path`, `thickness` and `arrow` only | Descriptions are invisible | C links |
+| Add or edit a description | Double click the line or the chip opened `EdgeDescriptionInput` | `canvas/EdgeDescriptionInput.tsx` survives with no importer and no trigger | Unreachable | C links |
+| Slide a label along the path | Chip drag → one `setEdgeLabelOffset` per gesture, peers saw it move | Nothing | Unreachable | C links |
+| Select a link | Click selected it: `selectedEdgeIds`, peer colour, hidden while it was re-pointed | The pick map is built with `edges: new Map()` (`IceSurface.tsx`, `onContextMenu`) | Links cannot be selected | C links |
+| Link menu | Reverse, one-way or bidirectional, four path styles, remove description, delete | Every entry is in the shared builder and no edge target ever reaches it | Unreachable | C links |
+| Delete a link | Menu → `removeEdge` | `planEdgeDelete` exists and is never called | A link cannot be deleted from the canvas | C links |
+| Re-point a link end | `onReconnect` plus `PeerReconnectLayer` previews | No reconnect gesture | Ends are fixed once drawn | C links |
+| Manage connectors | `Connector` under `NodeCard`: add, drag, delete, with peer previews | Hover dots show connectors (`suiteConnectorLayer.ts`), but no `suite.card` part names a connector, so a connector is never a menu target; `supportsConnectors: false` hides "Add connector" | No add, move or delete | C links |
+| A peer's link drag | `PeerReconnectLayer` drew connect and reconnect previews | Connect preview only (`presence.setConnect`) | A peer's re-point is invisible | C links |
+| A link crossing a Board wall | Not applicable: sections were paint, not containers | The link is drawn on its frame's plane; nothing clips it at the wall or marks the crossing | E depth |
+
+### Boards and portals
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| A Board on the canvas | `SectionLayer` region with a header, colour dot and member count | `suite.board` mat, with a name pill, colour dot and count drawn for the selected Board | — | — |
+| A Board's name at rest | Header title, counter-scaled, always visible | The name is drawn only while the Board is selected (`suiteBoardFace.ts`, `paint`); at rest only the mat's printed name, unreadable below about 5× | An idle Board is unlabelled | G polish |
+| Rename a Board | Double click the header, then the inline title input | `setEditingSection` has no consumer on ICE; `renameSection` and `renameBoard` have no caller | A Board cannot be renamed from the canvas | D board tree |
+| Board colour | Color submenu → `setSectionColor`, exact | The same submenu works, but the mat's vinyl is a closed enum of three, so the colour is exact only on the selected pill | Six colours read as three on the mat | G polish |
+| Move or resize a Board | Header drag and eight handles, one `moveSectionsBatch` | ICE mat drag and handles → `planBoardRectCommit`, one write | — | — |
+| Move a Board with its contents | `sectionMovePlan` moved the region and every member placement in one batch | A Board's cards are frame-local children, so the mat carries them without a second write | — | — |
+| Select the cards in a Board | "Select N cards" from the derived `sectionMembership` | The menu is given an empty membership map, so it reads "Select 0 cards" | Board membership is not resolved | D board tree |
+| See what is inside a Board | `PortalCard` and `BoardMiniature` drew the target's placements as dots, with a card count and the peers inside | Name and count, and only while selected; no preview and no presence | You cannot see a Board's contents without entering it | G polish |
+| Enter a Board | Portal card → `PortalTransitionLayer` camera trick, `boardHistory`, Escape | Double click a mat → `enterContainer`, HUD path, Escape → `exitContainer` | — (the card type is replaced by nesting, ADR-0039) | — |
+| Create a Board | "New section", and "New board and portal" | Dock, canvas menu, `IceContextMenu.createBoardAt` | — | — |
+| A new Board appears | The section was in the snapshot, so it drew at once | The projection seeds mats once and `reconcile` only touches cards and links | P0: a new Board has no mat until "Reload workspace" | D board tree |
+| Nest an existing Board | "New board and portal" was the only child maker | `nestBoard` exists in `@suite/graph` with no caller; every new Board is a child of the View root | Boards cannot be nested after creation | D board tree |
+| Board structure converges | Sections were derived from the snapshot on every render | A peer's create, delete, rename or move is not re-projected | P0: the Board tree on screen is the one that loaded | D board tree |
+| Multi-placement and portal chains | One card on several boards; a portal whose target was missing, cyclic or too deep drew an unavailable frame | One Board per card; containment is a tree, and `SUITE_MAX_DEPTH` is only a projection budget | Withdrawn by design | — |
+
+### Selection and keyboard
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Click, shift-click, marquee | React Flow selection, `SelectionMode.Partial`, Shift or Cmd toggled membership | ICE's own selection; the marquee is mirrored to peers from `marqueeBuffer` | Additive and partial-touch selection is ICE's behaviour and no app test asserts it | G polish |
+| Select all | Cmd/Ctrl+A → `selectAllOnBoard(boardCardIds)` | Not bound; `keymapOverrides` has five entries | No select-all | G polish |
+| Delete and Backspace | Unplaced from the Board; Shift+Delete trashed | `deleteSelection` → `trashCards` | Delete is now destructive, and there is no keyboard "remove from Board" | G polish |
+| Undo and redo | Cmd+Z, Shift+Cmd+Z, Cmd+Y, selection cleared afterwards | Cmd+Z and Shift+Cmd+Z, Loro only | Cmd+Y missing; the selection survives an undo | G polish |
+| Escape | Seven-step ladder ending in clearing the selection | Link drag, then exit Board, then cancel gestures | The selection is never cleared | G polish |
+| Enter | Entered a portal, else opened the body editor | Not bound | Enter does nothing | B editing |
+| Cmd/Ctrl+G | New section at the centre, wrapping the selection | Not bound | No keyboard Board creation | D board tree |
+| Cmd/Ctrl+Enter | Quick capture at the centre with the title open | Not bound | No quick capture | B editing |
+| Copy and paste a selection | No card-level copy/paste in the flow era either | Absent | New work, not parity | G polish |
+| Reveal an object | `focusTarget` fitted the card or section and switched boards | `focusCard` and `focusSection` still write `focusTarget`; nothing reads it (`useUiStore.ts`) | The inspector's focus action does nothing, and no camera command can reveal a card | A persistence |
+
+### Library and creation
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Dock and library drawer | Same shell components | Same shell components (`App.tsx`) | — | — |
+| Drop a library card on the canvas | `canvasPoint` from the flow viewport | `canvasPoint` inverts the camera ICE publishes (`iceScreenToWorld.ts`) | — | — |
+| Create a card inside a Board | Board nesting did not exist | Every create uses the View root's id and world coordinates | A card made while inside a Board lands on the View | D board tree |
+| Pins | `PinsPanel` listed, grouped, renamed and focused pins; no marker on the canvas | The panel, plus a marker, a drop action at the camera centre, a drag that commits once, and click-to-focus from the list | — (markers and dragging are new) | — |
+| Click a pin's marker | — | The marker is drawn but not wired; focus comes from the list | Marker clicks do nothing | G polish |
+| Search on the canvas | None: the library drawer (Cmd/Ctrl+K) was the only search | None: the same drawer | New work, not parity: find a card and fly to it | G polish |
+| Arrange fractally | Canvas menu → `applyBoardFractal` | The same entry, the same command | — | — |
+
+### Collaboration
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Cursors and name tags | `PresenceLayer`, `PeerNameTag` | `icePresenceLayer` and `icePresence` | — | — |
+| Rings, drag ghosts, group outline, marquee | `PresenceLayer`, `NodeCard` rings, `peerDragGroup` | The same set, one ring or ghost per instance | — | — |
+| Peer resize preview | `resizingPeers` and `useSmoothedSize` | Nothing publishes `resizing` on ICE | A peer's resize jumps at the end | G polish |
+| Peer motion is smoothed | `LocalDragEase` for local drags and a 0.22 smoothing loop for peers | The layer repaints at 20 Hz from the latest sample, with a 60 ms transform transition (`icePresenceLayer.ts`) | — | — |
+| Board attribution on a pointer | Presence was per board | `boardOf` names the deepest Board under the pointer | — (new) | — |
+| Share capabilities | `canEdit*` from the session | `iceShareCaps` gates the same writes and pins | — | — |
+
+### Persistence and session
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| The View's camera is written | Recorded per board when leaving, restored on return within the session | `WorkspaceDocument.setViewCamera` has no caller | ADR-0039's "written when the user leaves it" is unimplemented | A persistence |
+| The camera comes back | `recordBoardViewport` and `viewportRequest` restored a board's framing | Both are dead (`useUiStore.ts`); every mount refits the View | Tab return and reload both jump | A persistence |
+| Switch Views | Re-projected the same graph and moved the camera | `rootBoardId` is a dependency of the seed effect: the desk tears down, the GPU device is destroyed and re-acquired, then fits | P0: a camera move costs a device | A persistence |
+| The entered Board survives | Entering a portal switched the active board, so the back stack lived in the store and the board id rode `?board=` | `portalPath` is component state, cleared by the View remount and absent from the URL | Entering is lost on a View switch and on reload | A persistence |
+| Shell UI across reload | Not persisted | `useUiStore` has no `persist`; library open, tab and filters reset | Library state and filters are lost on reload | A persistence |
+| View tabs | `BoardTabs` | `ViewTabs`: create, rename, delete | — | — |
+| Document, sync, undo | IndexedDB snapshot, Loro provider, `UndoManager` | Unchanged (`collab/`) | — | — |
+
+### Performance and failure
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Cull what is off screen | `onlyRenderVisibleElements` | ICE culls by object rect; cards are GPU faces | — | — |
+| Editor budget | One DOM editor per visible card | No DOM faces by default (`SUITE_CARD_DOM_FACE`) | Has to be re-answered when in-place editing lands | B editing |
+| The 1k/5k artifact | None measured | None measured | Phase 10's performance evidence is still missing | G polish |
+| No WebGPU, device loss | No engine to fail | Fallback screens, adapter line, diagnostics, reload | — (superset) | — |
+
+### Accessibility
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| The canvas in the accessibility tree | React Flow nodes were real DOM elements, so titles, chips and buttons were readable and tabbable | The overlay is `aria-hidden="true"`; the section carries only a label | P0: a screen reader finds an empty canvas | G polish |
+| Keyboard focus traversal | React Flow's own node focus order moved between cards | None | No keyboard route to any card | G polish |
+| Zoom and fit | React Flow `Controls` | `CanvasZoomControls`, real buttons | — | — |
+| Reduced motion | `prefersReducedMotion` on local easing and the portal transition | `flyTo` writes the target at once | — | — |
+
+### Cleanup
+
+| Capability | React Flow era | ICE today | Gap | Owner |
+| --- | --- | --- | --- | --- |
+| Dead state, orphaned components and stale prose | — | `boardViewports`, `recordBoardViewport`, `viewportRequest`, `focusTarget`, `sceneFocusPath`, `portalEntry`, `boardHistory`, `goBackBoard` and `outlineOpen` have no reader or caller (`useUiStore.ts`); `EdgeDescriptionInput.tsx` has no importer; the `IceSurface.tsx` docstring still calls the flow scene the reference surface and names `currentCanvasSurface()` | Stale code that reads as intent, and docs that contradict the tree | F cleanup |

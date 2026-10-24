@@ -45,7 +45,7 @@
  * the note bodies and diagnostics; the GPU shows their paper, the mini mats and
  * their chip LOD.
  */
-import type { WorkspaceDocument } from "@suite/graph";
+import { edgeFrameOf, type WorkspaceDocument } from "@suite/graph";
 import type {
   CanvasEngine,
   DocSession,
@@ -80,6 +80,7 @@ import {
 } from "./iceCameraFlight";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
+import { anchorWorld } from "./iceEdgeGeometry";
 import {
   attachIcePointerEditing,
   createIceEditingController,
@@ -94,6 +95,7 @@ import { cardFit } from "./suiteCardFit";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
 import { applySuiteDeskLight, type SuiteLightDesk } from "./suiteDeskLight";
 import { applySuiteDeskTheme, type SuiteDeskSurface } from "./suiteDeskTheme";
+import { type SuiteEdgeLink, suiteEdgeSpawn } from "./suiteEdgeKind";
 import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
 import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
@@ -771,6 +773,126 @@ function seedWorkspaceDocument(
  * Spawns one marker per pin on the root board. A pin is navigation metadata,
  * not content: the marker is presentational and the document keeps the record.
  */
+/**
+ * The spawned links and the table that keeps them live.
+ *
+ * A link is a drawing between two *places*, so each end is described as a
+ * placement plus its chain of Board rects (`anchorWorld` folds them into world
+ * space). The kind re-routes from that table whenever an endpoint moves, so a
+ * drag moves its links with no document write per frame.
+ */
+interface EdgeSpawns {
+  dispose(): void;
+}
+
+function spawnLinkEdges(
+  engine: CanvasEngine,
+  workspace: WorkspaceDocument,
+  rootBoardId: string,
+  _boardMats: ReadonlyMap<Entity, BoardMat>,
+  setLinkOf: (next: ((edgeId: string) => SuiteEdgeLink | undefined) | undefined) => void,
+): EdgeSpawns {
+  const boards = workspace.listBoards();
+  const framesOf = (boardId: string): { x: number; y: number; width: number; height: number }[] => {
+    const path: { x: number; y: number; width: number; height: number }[] = [];
+    let current = boards.find((board) => board.id === boardId);
+    while (current !== undefined) {
+      path.unshift(current.rect);
+      const parent = current.parentBoardId;
+      current = parent === undefined ? undefined : boards.find((board) => board.id === parent);
+    }
+    return path;
+  };
+  const placementOf = (cardId: string) =>
+    workspace.listPlacements().find((placement) => placement.cardId === cardId);
+
+  // The kind owns the link shape; this module only has to hand it back by id.
+  const links = new Map<string, SuiteEdgeLink>();
+  const spawned = new Map<string, Entity>();
+
+  const sync = (): void => {
+    for (const edge of workspace.listSubtreeEdges(rootBoardId)) {
+      if (spawned.has(edge.id) || links.has(edge.id)) continue;
+      const source = placementOf(edge.source);
+      const target = placementOf(edge.target);
+      if (source === undefined || target === undefined) continue;
+      const frame = edgeFrameOf(boards, source.boardId, target.boardId);
+      if (frame === undefined) continue;
+
+      const from = {
+        placement: {
+          x: source.x,
+          y: source.y,
+          ...(source.width === undefined ? {} : { width: source.width }),
+          ...(source.height === undefined ? {} : { height: source.height }),
+        },
+        frames: framesOf(source.boardId),
+        ...(edge.sourceConnector === undefined ? {} : { connectorId: edge.sourceConnector }),
+      };
+      const to = {
+        placement: {
+          x: target.x,
+          y: target.y,
+          ...(target.width === undefined ? {} : { width: target.width }),
+          ...(target.height === undefined ? {} : { height: target.height }),
+        },
+        frames: framesOf(target.boardId),
+        ...(edge.targetConnector === undefined ? {} : { connectorId: edge.targetConnector }),
+      };
+
+      const spawn = suiteEdgeSpawn({
+        edgeId: edge.id,
+        kind: edge.kind,
+        path: edge.path,
+        from: anchorWorld(from),
+        to: anchorWorld(to),
+        arrow: edge.bidirectional,
+      });
+      try {
+        // An edge is not a thing *inside* a Board — it is a line drawn across the
+        // desk, so it spawns on the root plane in world coordinates. `anchorWorld`
+        // already folded every frame into world, and the LCA is only the check
+        // that both ends belong to the same View (`frame` above).
+        spawned.set(
+          edge.id,
+          engine.ops.spawnWidget(spawn.type, {
+            x: spawn.x,
+            y: spawn.y,
+            w: spawn.w,
+            h: spawn.h,
+            props: spawn.props,
+            undoable: false,
+          }),
+        );
+        links.set(edge.id, { source: from, target: to } as SuiteEdgeLink);
+      } catch (error) {
+        // A refused link must not take the canvas with it: the sheet still draws,
+        // and the reason is said once so a broken kind is not silent.
+        console.warn(`[suite.edge] ${edge.id}: ${describeError(error)}`);
+      }
+    }
+  };
+
+  sync();
+  setLinkOf((edgeId) => links.get(edgeId));
+
+  return {
+    dispose() {
+      setLinkOf(undefined);
+      for (const entity of spawned.values()) {
+        try {
+          engine.ops.setSelection([entity]);
+          engine.ops.deleteSelection();
+        } catch {
+          // A refused removal is repaired by the next reconcile.
+        }
+      }
+      spawned.clear();
+      links.clear();
+    },
+  };
+}
+
 function spawnPins(
   engine: CanvasEngine,
   workspace: WorkspaceDocument,
@@ -879,6 +1001,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     doc?: DocSession;
     gpu?: EngineGpu;
     clearCardRenderer?: (() => void) | undefined;
+    edges?: { dispose(): void } | undefined;
   }>({});
   const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -899,8 +1022,9 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   const teardown = useCallback(() => {
     clearPendingFailure();
     clearPendingFit();
-    const { engine, doc, gpu, clearCardRenderer } = owned.current;
+    const { engine, doc, gpu, clearCardRenderer, edges } = owned.current;
     owned.current = {};
+    edges?.dispose();
     clearCardRenderer?.();
     if (doc !== undefined) quietly(() => doc.close());
     if (engine !== undefined) quietly(() => engine.dispose());
@@ -975,6 +1099,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               import("./suiteCardWorkspace"),
               import("./suitePinKind"),
               import("./suiteBoardKind"),
+              import("./suiteEdgeKind"),
             ])
           : null;
         if (cancelled) return;
@@ -987,6 +1112,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               ...suiteCardModules[0].SUITE_CARD_RUNGS.map((rung) => rung.object),
               suiteCardModules[2].SuitePin,
               suiteCardModules[3].SuiteBoard,
+              suiteCardModules[4].SuiteEdge,
             ]
           : [...objects.DESK_OBJECTS];
 
@@ -1039,6 +1165,22 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               ? seedSuiteDocument(engine)
               : seedDemoDocument(engine);
         seededEntities.current = report.entities;
+
+        // Links are drawn after the Boards and cards exist: an edge is a line
+        // between two *places*, and its frame is the lowest Board that holds
+        // both ends (`edgeFrameOf`). The table is what lets the kind re-route a
+        // link when a card moves, without reading the document per frame.
+        const edges: EdgeSpawns | undefined =
+          liveWorkspace !== null && rootBoardId !== null && suiteCardModules !== null
+            ? spawnLinkEdges(
+                engine,
+                liveWorkspace,
+                rootBoardId,
+                report.boardMats,
+                suiteCardModules[4].setSuiteEdgeLinkOf,
+              )
+            : undefined;
+        owned.current = { ...owned.current, edges };
         const layer = desk.deskLayer({
           theme: objects.deskTheme(theme),
           palette: suitePalette(objects.deskPalette(theme)),

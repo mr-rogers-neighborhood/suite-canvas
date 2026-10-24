@@ -174,6 +174,20 @@ vi.mock("./suiteCardKind", () => ({
 vi.mock("./suiteCardWorkspace", () => ({
   createWorkspaceCardSlotRenderer: vi.fn(() => ({ mount: vi.fn() })),
 }));
+vi.mock("./suiteEdgeKind", () => ({
+  SuiteEdge: { type: "suite.edge" },
+  SUITE_EDGE_TYPE: "suite.edge",
+  // The link table is a no-op here: the surface's own tests never draw a link.
+  setSuiteEdgeLinkOf: vi.fn(),
+  suiteEdgeSpawn: () => ({
+    type: "suite.edge",
+    x: 0,
+    y: 0,
+    w: 10,
+    h: 1,
+    props: { edgeId: "e", kind: "references", path: "straight", arrow: false },
+  }),
+}));
 vi.mock("./suiteBoardKind", () => ({
   SuiteBoard: { type: "suite.board" },
   SUITE_BOARD_TYPE: "suite.board",

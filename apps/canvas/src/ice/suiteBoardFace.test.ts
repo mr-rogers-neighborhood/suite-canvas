@@ -224,20 +224,36 @@ describe("boardFaceLayout", () => {
 });
 
 describe("createSuiteBoardFaceLayer", () => {
-  function mount(nodes: SuiteBoardFaceNode[], zoom = 1) {
+  function mount(nodes: SuiteBoardFaceNode[], zoom = 1, selected: readonly string[] = []) {
     const container = document.createElement("div");
     const current = { camera: { x: 0, y: 0, zoom } as { x: number; y: number; zoom: number } };
+    const selection = { ids: new Set(selected) };
     const layer = createSuiteBoardFaceLayer({
       container,
       nodes: () => nodes,
       camera: () => current.camera,
+      selected: (id) => selection.ids.has(id),
     });
-    return { container, layer, current };
+    return { container, layer, current, selection };
   }
 
-  it("should paint one mat, one name and one stripe per Board", () => {
+  it("should draw nothing at all for an unselected Board", () => {
+    // The GPU mat is the Board: an idle canvas carries no overlay.
+    const { container, layer } = mount([node(), node({ id: "board:2", name: "Actors" })]);
+    layer.sync();
+
+    const titles = container.querySelectorAll<HTMLElement>(
+      '[data-testid="suite-board-face__title"]',
+    );
+    for (const title of titles) expect(title.style.display).toBe("none");
+    expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(0);
+
+    layer.dispose();
+  });
+
+  it("should name a Board while it is selected, and only then", () => {
     const nodes = [node(), node({ id: "board:2", rect: { ...mat, x: 900 }, name: "Actors" })];
-    const { container, layer } = mount(nodes);
+    const { container, layer, selection } = mount(nodes, 1, ["board:1", "board:2"]);
     layer.sync();
     expect(layer.visibleCount()).toBe(2);
 
@@ -256,22 +272,29 @@ describe("createSuiteBoardFaceLayer", () => {
     expect(titles[0]?.textContent).toContain("Research");
     expect(titles[1]?.textContent).toContain("Actors");
 
+    // Deselect one: its name goes away, the other's stays.
+    selection.ids.delete("board:1");
+    layer.sync();
+    expect(titles[0]?.style.display).toBe("none");
+    expect(titles[1]?.style.display).toBe("flex");
+
     layer.dispose();
   });
 
-  it("should draw the name from the compact band but keep the chips for full", () => {
+  it("should draw the name from the compact band and never the chips", () => {
     const nodes = [node({ childCount: 2 })];
-    const { container, layer, current } = mount(nodes, 0.1);
+    const { container, layer, current } = mount(nodes, 0.1, ["board:1"]);
     layer.sync();
     expect(layer.visibleCount()).toBe(1);
     const title = container.querySelector<HTMLElement>('[data-testid="suite-board-face__title"]');
     expect(title?.dataset.band).toBe("compact");
     expect(title?.textContent).toContain("Research");
+    // Chips were the last overlay on an idle Board; the count lives in the pill.
     expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(0);
 
     current.camera = { x: 0, y: 0, zoom: 1 };
     layer.sync();
-    expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(0);
     layer.dispose();
   });
 
@@ -298,13 +321,14 @@ describe("createSuiteBoardFaceLayer", () => {
     layer.dispose();
   });
 
-  it("should mark a collapsed Board and drop its chips", () => {
+  it("should mark a collapsed Board, draw no frame and no chips", () => {
     const nodes = [node({ collapsed: true, childCount: 3 })];
-    const { container, layer } = mount(nodes);
+    const { container, layer } = mount(nodes, 1, ["board:1"]);
     layer.sync();
     const face = container.querySelector<HTMLElement>('[data-testid="suite-board-face"]');
     expect(face?.dataset.collapsed).toBe("true");
-    expect(face?.style.borderStyle).toBe("dashed");
+    // No frame at all any more: the mat underneath carries the Board's edge.
+    expect(face?.style.display).toBe("none");
     expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(0);
     layer.dispose();
   });

@@ -104,6 +104,9 @@ describe("suite.board kind", () => {
     const world = {
       entities: () => [7],
       isAlive: () => true,
+      // `selectedEntities` runs its own query, which walks `.each`; nothing is
+      // selected here.
+      query: () => ({ each: () => {} }),
       has: (_entity: unknown, component: unknown) => components.has(component),
       read: (_entity: unknown, component: unknown) => components.get(component),
       getResource: () => ({ x: 0, y: 0, zoom: 1 }),
@@ -116,9 +119,10 @@ describe("suite.board kind", () => {
     expect(painted?.style.left).toBe("10px");
     expect(painted?.style.width).toBe("640px");
     expect(painted?.style.getPropertyValue("--suite-board-accent")).toContain("--section-violet");
-    // An unnamed Board still says what it is.
-    expect(container.textContent).toContain("Board");
-    expect(container.textContent).toContain("5");
+    // Nothing is selected, so the face draws nothing: the mat is the Board, and
+    // its count only appears (in the name pill) once the Board is selected.
+    expect(painted?.style.display).toBe("none");
+    expect(container.textContent?.trim()).toBe("");
   });
 
   it("should spawn a Board with its rect in the parent's frame untouched", () => {

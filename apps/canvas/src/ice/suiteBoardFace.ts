@@ -373,6 +373,12 @@ export interface SuiteBoardFaceLayerOptions {
   readonly container: HTMLElement;
   /** Enumerate the kind's live Boards, once per `sync()`. */
   readonly nodes: () => Iterable<SuiteBoardFaceNode>;
+  /**
+   * Whether a Board is selected *right now*. The face draws nothing but a
+   * Board's name, and only while it is selected: everything else about a Board
+   * is the GPU mat, so an idle canvas has no overlay on it at all.
+   */
+  readonly selected?: ((id: string) => boolean) | undefined;
   readonly camera: () => SuiteBoardFaceCamera | null | undefined;
   /** The layer's stacking order against the desk's other screen-space halves. */
   readonly zIndex?: number | undefined;
@@ -565,7 +571,7 @@ export function createSuiteBoardFaceLayer(
     });
   };
 
-  const paintChips = (slot: BoardSlot, layout: BoardFaceLayout): void => {
+  const paintChips = (slot: BoardSlot, layout: BoardFaceLayout, visible = true): void => {
     while (slot.chips.length < layout.chips.length) {
       const chip = doc.createElement("div");
       chip.className = CHIP_CLASS;
@@ -576,6 +582,10 @@ export function createSuiteBoardFaceLayer(
       slot.chips.push(chip);
     }
     slot.chips.forEach((element, index) => {
+      if (!visible) {
+        element.style.display = "none";
+        return;
+      }
       const chip = layout.chips[index];
       if (chip === undefined) {
         element.style.display = "none";
@@ -597,6 +607,8 @@ export function createSuiteBoardFaceLayer(
   };
 
   const paint = (slot: BoardSlot, node: SuiteBoardFaceNode, layout: BoardFaceLayout): void => {
+    // Nothing but the name, and only when selected: the mat is the Board.
+    const isSelected = opts.selected?.(node.id) === true;
     const { mat } = layout;
     const level = mat.level;
     const cards = boardChildCount(node.cardCount);
@@ -614,18 +626,7 @@ export function createSuiteBoardFaceLayer(
     slot.mat.style.width = `${mat.width}px`;
     slot.mat.style.height = `${mat.height}px`;
     slot.mat.style.zIndex = `${Z.mat + level}`;
-    // The accent rides one custom property, so the border, the stripe, the chips
-    // and the name all repaint from a colour prop change without a re-parse.
     slot.mat.style.setProperty("--suite-board-accent", layout.accentColor);
-    // A mat, not a picture frame: a wash of its own colour and one hairline
-    // inside the edge. A saturated outline this size reads as a selection.
-    slot.mat.style.border =
-      "1px solid color-mix(in srgb, var(--suite-board-accent) 26%, transparent)";
-    slot.mat.style.background = "color-mix(in srgb, var(--suite-board-accent) 7%, transparent)";
-    // A collapsed Board reads as a closed stack: a dashed edge says "there is
-    // more under this" without printing anything.
-    slot.mat.style.borderStyle = node.collapsed ? "dashed" : "solid";
-    slot.mat.style.boxShadow = shadowOf(mat.shadow);
     slot.mat.title = `${layout.title?.text ?? node.name} — ${cards} ${noun}`;
 
     // The 2.5D plate stack is off with the frame: a pile of translucent sheets
@@ -645,9 +646,13 @@ export function createSuiteBoardFaceLayer(
       slot.accent.style.background = layout.accentColor;
     }
 
-    paintChips(slot, layout);
+    // No chips: they were the last overlay on an idle Board. The count rides the
+    // name pill, which only exists while the Board is selected.
+    paintChips(slot, { ...layout, chips: [] }, false);
 
-    const title = layout.title;
+    // The name is the whole face, and it is only there while the Board is
+    // selected — an idle canvas carries no overlay at all.
+    const title = isSelected ? layout.title : null;
     slot.title.style.display = title === null ? "none" : "flex";
     if (title !== null) {
       slot.title.style.left = `${title.left}px`;

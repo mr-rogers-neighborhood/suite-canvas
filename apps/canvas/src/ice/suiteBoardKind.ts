@@ -41,6 +41,7 @@ import {
   PrefabId,
   p,
   Size,
+  selectedEntities,
   type World,
 } from "@vibecook/ice";
 import type { KindLocal } from "@vibecook/ice/desk";
@@ -300,6 +301,13 @@ export const SuiteBoard = defineObject({
         container: host.container,
         nodes: () => boardFaces(host.world),
         camera: () => host.world.getResource(Camera),
+        // The face draws a Board's name only while that Board is selected: an
+        // idle canvas carries no overlay at all, and the GPU mat is the Board.
+        selected: (id) => {
+          const entity = Number(id.replace("board:", ""));
+          if (!Number.isFinite(entity)) return false;
+          return selectedEntities(host.world).includes(entity as Entity);
+        },
         zIndex: SUITE_BOARD_LAYER_Z,
       });
       layer.sync();

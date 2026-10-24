@@ -1,20 +1,16 @@
 import { writeFile } from "node:fs/promises";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  createTitledCard,
+  expectCardCount,
+  expectCardTitled,
+  libraryRows,
+  openLibrary,
+} from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   `/?workspace=e2e-launcher-${name}-${Date.now()}-${++sequence}`;
-
-const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-
-async function createNote(page: Page, title: string): Promise<void> {
-  await page.getByTestId("dock-new-card").click();
-  await page.getByTestId("dock-type-note").click();
-  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
-  await page.keyboard.type(title);
-  await page.keyboard.press("Escape");
-  await expect(cards(page).filter({ hasText: title })).toHaveCount(1);
-}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -38,28 +34,34 @@ test("seeds the example workspace from the launcher", async ({ page }) => {
   await expect(page).toHaveURL(/workspace=/);
   await expect(page.locator('.app-canvas[data-ready="true"]')).toBeVisible({ timeout: 15_000 });
 
-  // The example workspace, not an empty board: Atlas, Research and Sources.
+  // The example workspace, not an empty board: three Views (a View is a camera,
+  // and the tab ids kept their historical `board-tab-` prefix) named Atlas,
+  // Research and Sources, holding the seeded cards.
   await expect(page.getByTestId("empty-board")).toHaveCount(0);
   await expect(page.getByTestId("board-tab-board-1")).toBeVisible();
   await expect(page.getByTestId("board-tab-demo-board-research")).toBeVisible();
   await expect(page.getByTestId("board-tab-demo-board-sources")).toBeVisible();
-  await expect(page.getByText("Welcome to Atlas").first()).toBeVisible();
+
+  // The seeded content is document truth; the library lists it without a GPU.
+  await openLibrary(page, "cards");
+  await expect(libraryRows(page)).toHaveCount(14);
+  await expect(libraryRows(page).filter({ hasText: "Welcome to Atlas" })).toHaveCount(1);
 });
 
 test("starts a blank board when asked for one", async ({ page }) => {
   await page.goto(`/?blank=1&workspace=e2e-launcher-blank-${Date.now()}-${++sequence}`);
   await expect(page.getByTestId("empty-board")).toBeVisible();
-  await expect(cards(page)).toHaveCount(0);
+  await expectCardCount(page, 0);
 
   await page.getByTestId("empty-board").getByRole("button", { name: "New note" }).click();
-  await expect(cards(page)).toHaveCount(1);
+  await expectCardCount(page, 1);
   await expect(page.getByTestId("empty-board")).toHaveCount(0);
 });
 
 test("exports a workspace and imports it as a new workspace", async ({ page }) => {
   await page.goto(workspaceUrl("roundtrip"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Export me");
+  await expectCardCount(page, 2);
+  await createTitledCard(page, "Export me");
 
   await page.getByTestId("workspace-file").click();
   const downloadPromise = page.waitForEvent("download");
@@ -74,7 +76,7 @@ test("exports a workspace and imports it as a new workspace", async ({ page }) =
   await page.getByTestId("launcher-file").setInputFiles(path);
   await expect(page).toHaveURL(/workspace=/);
   expect(page.url()).not.toBe(original);
-  await expect(cards(page).filter({ hasText: "Export me" })).toHaveCount(1);
+  await expectCardTitled(page, "Export me");
 });
 
 test("refuses a backup from a newer Suite", async ({ page }, testInfo) => {
@@ -98,7 +100,7 @@ test("refuses a backup from a newer Suite", async ({ page }, testInfo) => {
 
 test("lists and exports a recent workspace from the launcher", async ({ page }) => {
   await page.goto(workspaceUrl("recent"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
   await page.getByTestId("workspace-file").click();
   await page.getByTestId("workspace-home").click();
   await expect(page).toHaveURL(/\/$/);
@@ -114,8 +116,8 @@ test("lists and exports a recent workspace from the launcher", async ({ page }) 
 
 test("exports portable JSON and Markdown from the workspace", async ({ page }) => {
   await page.goto(workspaceUrl("portable"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Portable note");
+  await expectCardCount(page, 2);
+  await createTitledCard(page, "Portable note");
 
   await page.getByTestId("workspace-file").click();
   const jsonPromise = page.waitForEvent("download");

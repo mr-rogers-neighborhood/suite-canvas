@@ -1,14 +1,21 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
 import {
-  cardByTitle,
-  cardId,
-  cards,
-  createNote,
+  createTitledCard,
+  inspector,
   libraryRows,
+  openCardInspector,
   openLibrary,
+  rowIdFor,
   workspaceIdFactory,
 } from "./support";
+
+/**
+ * Search is a library feature, so this file needs no GPU: cards are created and
+ * named through the inbox and the inspector, and every assertion reads rows.
+ * The body that used to be typed into the canvas card is written in the
+ * inspector's body editor, which is the only editable body left.
+ */
 
 const id = workspaceIdFactory("e2e-search");
 const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
@@ -17,11 +24,13 @@ const search = (page: Page) => page.getByTestId("library-search");
 
 test("finds a card by a title word and marks the match", async ({ page }) => {
   await page.goto(workspaceUrl("title-word"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Planning retro");
-  const noteId = await cardId(page, "Planning retro");
+  await expect(page.getByTestId("ice-surface")).toBeVisible();
+  await createTitledCard(page, "Planning retro");
 
   await openLibrary(page, "cards");
+  await expect(libraryRows(page)).toHaveCount(3);
+  const noteId = await rowIdFor(page, "Planning retro");
+
   await search(page).fill("retro");
 
   // Exactly one row, and it is the note: the two starter cards are untitled.
@@ -33,19 +42,23 @@ test("finds a card by a title word and marks the match", async ({ page }) => {
 
 test("finds a word that only appears in a card body", async ({ page }) => {
   await page.goto(workspaceUrl("body-word"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Team agenda");
+  await createTitledCard(page, "Team agenda");
 
-  const card = cardByTitle(page, "Team agenda");
-  await card.getByTestId("card-body").dblclick();
-  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
+  // The body is typed in the inspector; the panel owns the editable surface.
+  await openCardInspector(page, { title: "Team agenda" });
+  await inspector(page).getByTestId("card-panel-tab-content").click();
+  await inspector(page).getByTestId("card-panel-body").click();
+  await expect(inspector(page).getByTestId("card-panel-body")).toHaveAttribute(
+    "data-editing",
+    "true",
+  );
+  await page.waitForTimeout(250);
   await page.keyboard.type("The zebra crossing is closed");
-  await expect(card.getByTestId("card-body")).toContainText("zebra");
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
+  await expect(inspector(page).getByTestId("card-panel-body")).toContainText("zebra");
+  await inspector(page).getByTestId("inspector-close").click();
 
-  const noteId = await cardId(page, "Team agenda");
   await openLibrary(page, "cards");
+  const noteId = await rowIdFor(page, "Team agenda");
   await search(page).fill("zebra");
 
   await expect(libraryRows(page)).toHaveCount(1);
@@ -60,12 +73,11 @@ test("finds a word that only appears in a card body", async ({ page }) => {
 /**
  * Regression for the shipped bug: the index is built on the first query and
  * patched afterwards, so a card created after that first build used to be
- * invisible until a reload. The library stays open (and searched once) while
- * the card is written, which is exactly the state the bug needed.
+ * invisible until a reload. The library is searched once before the card is
+ * written, which is exactly the state the bug needed.
  */
 test("finds a card created after the index was built", async ({ page }) => {
   await page.goto(workspaceUrl("index-built"));
-  await expect(cards(page)).toHaveCount(2);
 
   await openLibrary(page, "cards");
   await search(page).fill("retro");
@@ -73,12 +85,12 @@ test("finds a card created after the index was built", async ({ page }) => {
   await search(page).fill("");
   await expect(libraryRows(page)).toHaveCount(2);
 
-  // Close the drawer, write something, and search again: no reload happens, so
-  // the cached index is the only thing that can find the new card.
-  await page.getByTestId("dock-library").click();
+  // Close the drawer, write a card, and search again: no reload happens, so the
+  // cached index is the only thing that can find the new card.
+  await page.getByLabel("Close library").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
-  await createNote(page, "Freshly written retrospective");
-  await expect(cards(page)).toHaveCount(3);
+  await createTitledCard(page, "Freshly written retrospective");
+  await expect(libraryRows(page)).toHaveCount(1);
 
   await openLibrary(page, "cards");
   await search(page).fill("retrospective");
@@ -88,8 +100,7 @@ test("finds a card created after the index was built", async ({ page }) => {
 
 test("shows the empty state for a miss and restores the list when cleared", async ({ page }) => {
   await page.goto(workspaceUrl("empty-state"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Planning retro");
+  await createTitledCard(page, "Planning retro");
 
   await openLibrary(page, "cards");
   await expect(libraryRows(page)).toHaveCount(3);

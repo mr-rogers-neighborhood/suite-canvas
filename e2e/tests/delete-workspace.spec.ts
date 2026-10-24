@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
-import { cardByTitle, cards, createNote, workspaceIdFactory } from "./support";
+import { createTitledCard, expectCardCount, expectCardTitled, workspaceIdFactory } from "./support";
 
 const id = workspaceIdFactory("e2e-delete-workspace");
 
@@ -55,9 +55,9 @@ async function cachedDocumentRows(page: Page, workspaceId: string): Promise<numb
 test("requires the exact name, then forgets the workspace in this browser", async ({ page }) => {
   const workspace = id("remove");
   await page.goto(withOwnerKey(`/?workspace=${workspace}`));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Doomed note");
-  await expect(cardByTitle(page, "Doomed note")).toHaveCount(1);
+  await expectCardCount(page, 2);
+  await createTitledCard(page, "Doomed note");
+  await expectCardTitled(page, "Doomed note");
 
   await openDeleteDialog(page);
   // The dev build talks to the relay, so this is the relay copy of the dialog:
@@ -95,8 +95,8 @@ test("requires the exact name, then forgets the workspace in this browser", asyn
 test("after deleting, another browser can claim the workspace id", async ({ page, browser }) => {
   const workspace = id("gone");
   await page.goto(withOwnerKey(`/?workspace=${workspace}`));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Vanishing note");
+  await expectCardCount(page, 2);
+  await createTitledCard(page, "Vanishing note");
 
   // Before the delete the id is owned: a different key is refused.
   const stranger = await browser.newContext();
@@ -128,7 +128,7 @@ test("after deleting, another browser can claim the workspace id", async ({ page
     // And it claims an empty document, not the deleted one: the deleted note is
     // nowhere, and the only cards are the two starters a new workspace seeds.
     await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);
-    await expect(cards(freshPage)).toHaveCount(2);
+    await expectCardCount(freshPage, 2);
 
     // Give a stale room another save interval to reintroduce the note. Same
     // deliberate server-side wait as above.
@@ -142,7 +142,7 @@ test("after deleting, another browser can claim the workspace id", async ({ page
       timeout: 15_000,
     });
     await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);
-    await expect(cards(freshPage)).toHaveCount(2);
+    await expectCardCount(freshPage, 2);
   } finally {
     await fresh.close();
   }

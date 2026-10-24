@@ -5,10 +5,10 @@
  * key to claim a workspace wins. Two browser contexts in one test are two
  * browsers, so they must present the same key or the second one is refused as
  * a different owner. Tests that open one context are unaffected.
+ *
+ * No `?canvas=` parameter is added: every workspace mounts ICE, and the old
+ * `flow`/`scene` values select nothing.
  */
-export function withOwnerKey(url: string, surface: "flow" | "scene" = "flow"): string {
-  const withSurface = url.includes("canvas=")
-    ? url
-    : `${url}${url.includes("?") ? "&" : "?"}canvas=${surface}`;
-  return `${withSurface}#owner=${crypto.randomUUID()}`;
+export function withOwnerKey(url: string): string {
+  return `${url}#owner=${crypto.randomUUID()}`;
 }

@@ -1,23 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { createTitledCard, expectCardCount, expectCardTitled } from "./support";
 
 let sequence = 0;
 const workspaceId = (name: string) => `e2e-owner-${name}-${Date.now()}-${++sequence}`;
-
-const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const cardByTitle = (page: Page, title: string): Locator => cards(page).filter({ hasText: title });
-
-async function createNote(page: Page, title: string): Promise<void> {
-  await page.getByTestId("dock-new-card").click();
-  await page.getByTestId("dock-type-note").click();
-  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
-  // Let the synced workspace settle before typing into the new card.
-  await page.waitForTimeout(250);
-  await page.keyboard.type(title);
-  await expect(page.locator(".card-title-editor.ProseMirror-focused")).toContainText(title);
-  await page.keyboard.press("Escape");
-  await expect(cardByTitle(page, title)).toHaveCount(1);
-}
 
 async function openRecoveryDialog(page: Page): Promise<void> {
   await page.getByTestId("workspace-file").click();
@@ -52,7 +38,7 @@ async function downloadText(
 test("saves a recovery key and restores ownership from it", async ({ page, browser }) => {
   const id = workspaceId("save");
   await page.goto(`/?workspace=${id}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
   // Recovery is one File item, not a banner or first-run prompt.
   await expect(page.getByTestId("recovery-dialog")).toHaveCount(0);
   await expect(page.getByTestId("recovery-prompt")).toHaveCount(0);
@@ -80,13 +66,13 @@ test("saves a recovery key and restores ownership from it", async ({ page, brows
     await expect(fresh.getByTestId("recovery-paste")).not.toBeVisible();
 
     await fresh.getByTestId("recovery-file").setInputFiles(kit.path);
-    await expect(cards(fresh)).toHaveCount(2, { timeout: 15_000 });
+    await expectCardCount(fresh, 2);
     await expect(fresh.locator('.app-canvas[data-ready="true"]')).toBeVisible({ timeout: 15_000 });
     await expect(fresh.getByTestId("workspace-protected")).toHaveCount(0);
 
     // And it is editable, not just readable.
-    await createNote(fresh, "Recovered note");
-    await expect(cardByTitle(fresh, "Recovered note")).toHaveCount(1);
+    await createTitledCard(fresh, "Recovered note");
+    await expectCardTitled(fresh, "Recovered note");
   } finally {
     await context.close();
   }
@@ -94,7 +80,7 @@ test("saves a recovery key and restores ownership from it", async ({ page, brows
 
 test("offers a separate recovery key right after a backup export", async ({ page }) => {
   await page.goto(`/?workspace=${workspaceId("backup")}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await page.getByTestId("workspace-file").click();
   const backup = await downloadText(page, () =>
@@ -126,7 +112,7 @@ test("replacing the recovery key retires the old fragment and old file", async (
   const id = workspaceId("rotate");
   const oldKey = crypto.randomUUID();
   await page.goto(`/?workspace=${id}#owner=${oldKey}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-replace").click();
@@ -142,7 +128,7 @@ test("replacing the recovery key retires the old fragment and old file", async (
 
   await expect(page.getByTestId("recovery-reload")).toBeVisible();
   await page.getByTestId("recovery-reload").click();
-  await expect(cards(page)).toHaveCount(2, { timeout: 15_000 });
+  await expectCardCount(page, 2);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe(`#owner=${newKey}`);
 
   const context = await browser.newContext();
@@ -156,8 +142,9 @@ test("replacing the recovery key retires the old fragment and old file", async (
     await other.goto(`/?workspace=${id}`);
     await expect(other.getByTestId("workspace-protected")).toBeVisible();
     await other.getByTestId("recovery-file").setInputFiles(kit.path);
-    await expect(cards(other)).toHaveCount(2, { timeout: 15_000 });
+    await expect(other.locator('.app-canvas[data-ready="true"]')).toBeVisible({ timeout: 15_000 });
     await expect(other.getByTestId("workspace-protected")).toHaveCount(0);
+    await expectCardCount(other, 2);
   } finally {
     await context.close();
   }
@@ -169,7 +156,7 @@ test("offers a recovery key after a launcher export and opens one from the launc
 }) => {
   const id = workspaceId("launcher");
   await page.goto(`/?workspace=${id}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await page.getByTestId("workspace-file").click();
   await page.getByTestId("workspace-home").click();
@@ -205,7 +192,7 @@ test("offers a recovery key after a launcher export and opens one from the launc
     const opened = new URL(fresh.url());
     expect(opened.searchParams.get("workspace")).toBe(id);
     expect(decodeURIComponent(opened.hash)).toBe(`#owner=${String(kit.json.ownerKey)}`);
-    await expect(cards(fresh)).toHaveCount(2);
+    await expectCardCount(fresh, 2);
     await expect(fresh.getByTestId("workspace-launcher")).toHaveCount(0);
   } finally {
     await context.close();
@@ -239,7 +226,7 @@ test("forget this browser removes the key and cached copy, and the workspace reo
 }) => {
   const id = workspaceId("forget");
   await page.goto(`/?workspace=${id}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-forget").click();
@@ -268,8 +255,8 @@ test("keeps the local edit while claims fail, then claims without losing it", as
 
   // Establish the workspace and a local edit while the relay is healthy.
   await page.goto(`/?workspace=${id}`);
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Offline note");
+  await expectCardCount(page, 2);
+  await createTitledCard(page, "Offline note");
   const ownerKey = decodeURIComponent(new URL(page.url()).hash.replace(/^#owner=/, ""));
   expect(ownerKey.length).toBeGreaterThan(0);
 
@@ -280,7 +267,7 @@ test("keeps the local edit while claims fail, then claims without losing it", as
     blocked ? route.abort("internetdisconnected") : route.continue(),
   );
   await page.reload();
-  await expect(cardByTitle(page, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+  await expectCardTitled(page, "Offline note");
   await expect(page.getByTestId("workspace-protected")).toHaveCount(0);
 
   // A reconnect retries immediately instead of waiting for the backoff.
@@ -309,13 +296,13 @@ test("keeps the local edit while claims fail, then claims without losing it", as
 
   // The edit survived the offline window: the owner sees it after a reload.
   await page.reload();
-  await expect(cardByTitle(page, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+  await expectCardTitled(page, "Offline note");
 
   const owner = await browser.newContext();
   try {
     const ownerPage = await owner.newPage();
     await ownerPage.goto(`/?workspace=${id}#owner=${ownerKey}`);
-    await expect(cardByTitle(ownerPage, "Offline note")).toHaveCount(1, { timeout: 15_000 });
+    await expectCardTitled(ownerPage, "Offline note");
   } finally {
     await owner.close();
   }

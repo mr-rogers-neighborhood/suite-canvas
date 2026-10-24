@@ -1,13 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
-import {
-  cardByTitle,
-  cards,
-  createNote,
-  libraryRows,
-  openLibrary,
-  workspaceIdFactory,
-} from "./support";
+import { libraryRows, openLibrary, workspaceIdFactory } from "./support";
 
 const id = workspaceIdFactory("e2e-views");
 const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
@@ -25,10 +18,28 @@ async function rowIds(page: Page): Promise<(string | null)[]> {
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
 }
 
+/**
+ * Names one starter card through the inspector. The canvas card face ICE draws
+ * is read-only (ICE owns the pointer), and its title editor is behind WebGPU, so
+ * the inspector is the one naming surface that works headless — and it writes
+ * the same document.
+ */
+async function renameFirstCard(page: Page, title: string): Promise<void> {
+  await openLibrary(page, "cards");
+  await libraryRows(page).first().click();
+  const inspector = page.getByTestId("card-inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByTestId("card-panel-tab-details").click();
+  await inspector.getByTestId("card-panel-title").click();
+  await page.locator(".card-inspector .card-title-editor.ProseMirror-focused").type(title);
+  await inspector.getByTestId("inspector-close").click();
+  await expect(libraryRows(page).filter({ hasText: title })).toHaveCount(1);
+}
+
 test("saves a search as a view, reapplies it, renames it and deletes it", async ({ page }) => {
   await page.goto(workspaceUrl("save-apply"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Planning retro");
+  await expect(page.getByTestId("ice-surface")).toBeVisible();
+  await renameFirstCard(page, "Planning retro");
 
   // The app bar's menu is the only entry point, and it is named "Views".
   await expect(page.getByRole("button", { name: "Views" })).toBeVisible();
@@ -57,7 +68,7 @@ test("saves a search as a view, reapplies it, renames it and deletes it", async 
   );
   await page.getByTestId("views-exit").click();
   await expect(search(page)).toHaveValue("");
-  await expect(libraryRows(page)).toHaveCount(3);
+  await expect(libraryRows(page)).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Views" })).toBeVisible();
 
   // Re-applying the stored query restores exactly the rows it was saved with.
@@ -85,8 +96,8 @@ test("saves a search as a view, reapplies it, renames it and deletes it", async 
 
 test("a saved view reopens the library on the Cards tab", async ({ page }) => {
   await page.goto(workspaceUrl("reopen"));
-  await expect(cards(page)).toHaveCount(2);
-  await createNote(page, "Grading pass");
+  await expect(page.getByTestId("ice-surface")).toBeVisible();
+  await renameFirstCard(page, "Grading pass");
 
   await openLibrary(page, "cards");
   await search(page).fill("grading");
@@ -106,5 +117,4 @@ test("a saved view reopens the library on the Cards tab", async ({ page }) => {
   await expect(search(page)).toHaveValue("grading");
   await expect(libraryRows(page)).toHaveCount(1);
   await expect(libraryRows(page)).toContainText("Grading pass");
-  await expect(cardByTitle(page, "Grading pass")).toHaveCount(1);
 });

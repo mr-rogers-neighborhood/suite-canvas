@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectCardCount } from "./support";
 
 const shareApi = process.env.VITE_COLLAB_HTTP_URL ?? "http://localhost:1235";
 
@@ -6,7 +7,9 @@ test("creates and revokes links from the Share dialog", async ({ page, request }
   // A fresh workspace per run: shares are stored per workspace id on the server.
   const workspaceId = `e2e-share-${Date.now()}`;
   await page.goto(`/?workspace=${workspaceId}`);
-  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+  // The workspace is hydrated and seeded; the desk itself needs WebGPU, the
+  // dialog does not.
+  await expectCardCount(page, 2);
 
   // Management needs the owner key the editor holds; a bare request is refused.
   const denied = await request.get(`${shareApi}/api/shares?workspaceId=${workspaceId}`);

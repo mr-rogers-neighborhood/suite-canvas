@@ -8,8 +8,12 @@ import { withOwnerKey } from "./ownerUrl";
 /**
  * Visual regression baselines for the surfaces where layout is the contract:
  * the mention/property chips that carry share-boundary state, the sharing and
- * library dialogs, the card shell, the recursive-portal scene projection, and
- * two real app states.
+ * library dialogs, the card shell, and the app bar.
+ *
+ * The React Flow board and the recursive-portal scene projection are gone (the
+ * canvas is ICE), so their baselines went with them; ICE draws on a GPU and a
+ * screenshot of it would encode one machine's adapter, which is why the ICE
+ * spec writes a failure screenshot under `test-results` instead of a baseline.
  *
  * Baselines live in `tests/visual/` (committed), not in Playwright's default
  * `tests/visual.spec.ts-snapshots/` sibling: this file sets the path template
@@ -32,14 +36,6 @@ const STORYBOOK_URL = `http://127.0.0.1:${STORYBOOK_PORT}`;
  * magnitude more pixels than these budgets.
  */
 const COMPONENT_MAX_DIFF_PIXELS = 60;
-const CANVAS_MAX_DIFF_PIXELS = 250;
-/**
- * The projected scene repaints cards, portal miniatures and connector curves
- * in page coordinates, so it carries more antialiased geometry than the DOM
- * board while still moving whole boxes on a real layout change. The extra
- * headroom is for glyph and edge hinting only.
- */
-const SCENE_MAX_DIFF_PIXELS = 350;
 
 const STABILITY = {
   animations: "disabled",
@@ -143,6 +139,12 @@ interface StoryCase {
   name: string;
   story: string;
   target: (page: Page) => Locator;
+  /**
+   * Regions whose copy is relative to "now" (a share's "Last used 9 months
+   * ago") change without any code changing, so they are painted over rather
+   * than frozen into a baseline that would rot.
+   */
+  mask?: (page: Page) => Locator[];
 }
 
 test.describe("visual: stories", () => {
@@ -172,6 +174,7 @@ test.describe("visual: stories", () => {
       name: "share-dialog-selection.png",
       story: "components-sharedialog--selection",
       target: (page) => page.getByTestId("share-dialog"),
+      mask: (page) => [page.locator('[data-testid^="share-last-used-"]')],
     },
     {
       name: "library-drawer-search-query.png",
@@ -199,7 +202,7 @@ test.describe("visual: stories", () => {
     test(entry.name, async ({ page }) => {
       const target = entry.target(page);
       await openStory(page, entry.story, target);
-      await expectStable(entry.name, target);
+      await expectStable(entry.name, target, entry.mask ? { mask: entry.mask(page) } : {});
     });
   }
 });
@@ -211,60 +214,17 @@ test.describe("visual: app", () => {
     colorScheme: "light",
   });
 
-  const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-
   async function openWorkspace(page: Page): Promise<void> {
     // A fresh workspace per run: the collab server keeps documents, so a fixed
     // id would inherit whatever a previous run (or a person) left behind.
     await page.goto(withOwnerKey(`/?workspace=visual-${Date.now()}-${crypto.randomUUID()}`));
-    await expect(page.getByTestId("canvas-board")).toBeVisible({ timeout: 30_000 });
-    await expect(cards(page)).toHaveCount(2, { timeout: 30_000 });
+    // The canvas is ICE and needs WebGPU, which headless Chromium has none of.
+    // The bar is shell, so the frame waits for the surface element and a synced
+    // document, never for a drawn card.
+    await expect(page.getByTestId("ice-surface")).toBeVisible({ timeout: 30_000 });
     await expect(page.locator(".app-canvas")).toHaveAttribute("data-ready", "true");
     await expect(page.getByTestId("sync-status")).toHaveText("Live");
   }
-
-  test("board with a section and a connector after Fit View", async ({ page }) => {
-    await openWorkspace(page);
-
-    const first = await cards(page).first().boundingBox();
-    if (!first) throw new Error("first card not visible");
-    await page.mouse.click(first.x + 40, first.y + 14);
-    await page.keyboard.press("Control+g");
-    await expect(page.locator(".section-header")).toHaveCount(1);
-    await page.keyboard.type("Research");
-    await page.keyboard.press("Enter");
-    await expect(page.locator(".section-header")).toContainText("Research");
-
-    // Link the two starters: right dot of the first card to the left dot of
-    // the second. React Flow re-renders handles while a link settles, so the
-    // drag is retried rather than trusted once.
-    const from = cards(page).nth(0).locator('[data-testid="connector-dot"]').nth(1);
-    const to = cards(page).nth(1).locator('[data-testid="connector-dot"]').nth(3);
-    await expect(async () => {
-      const source = await from.boundingBox();
-      const target = await to.boundingBox();
-      if (!source || !target) throw new Error("connector dots not measurable");
-      await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {
-        steps: 14,
-      });
-      await page.mouse.up();
-      await expect(page.locator(".react-flow__edge")).toHaveCount(1, { timeout: 2_000 });
-    }).toPass({ timeout: 15_000 });
-
-    // Leave no selection outline, hover ring or focus ring in the frame, then
-    // fit the deterministic geometry computed from the fixed viewport.
-    await page.mouse.click(1000, 700);
-    await page.keyboard.press("Escape");
-    await page.mouse.move(1270, 10);
-    await page.locator(".react-flow__controls-fitview").click();
-    await page.waitForTimeout(400);
-
-    await expectStable("board-fit-view.png", page.getByTestId("canvas-board"), {
-      maxDiffPixels: CANVAS_MAX_DIFF_PIXELS,
-    });
-  });
 
   test("app bar at rest", async ({ page }) => {
     await openWorkspace(page);
@@ -284,32 +244,6 @@ test.describe("visual: app", () => {
         page.getByRole("tab").first(),
         page.getByTestId("sync-status"),
       ],
-    });
-  });
-});
-
-test.describe("visual: scene", () => {
-  test.use({
-    // The scene story decorator is a fixed 1100x800 frame; a smaller viewport
-    // would clip the screenshot target.
-    viewport: { width: 1200, height: 900 },
-    deviceScaleFactor: 1,
-    colorScheme: "light",
-  });
-
-  test("recursive portals story", async ({ page }) => {
-    // `scene-layer` is an absolutely positioned overlay with no box of its
-    // own (every child is absolute), so Playwright sees it as hidden and cannot
-    // screenshot it. The decorator wrapper is the visible frame the projection
-    // is drawn into.
-    const target = page.locator("#storybook-root > div");
-    await openStory(page, "canvas-scenelayer--recursive-portals", target);
-    // The wrapper exists before the projection paints; wait for the cards and
-    // the expanded portal child so the frame is complete.
-    await expect(page.getByTestId("scene-card")).toHaveCount(6);
-    await expect(page.getByTestId("scene-portal-child")).toHaveCount(1);
-    await expectStable("scene-recursive-portals.png", target, {
-      maxDiffPixels: SCENE_MAX_DIFF_PIXELS,
     });
   });
 });

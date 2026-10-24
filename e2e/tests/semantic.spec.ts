@@ -1,17 +1,22 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
+import { expectCardCount, openCardInspector } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-sem-${name}-${Date.now()}-${++sequence}`);
 
-const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-
-async function openInspector(page: Page, card: Locator): Promise<void> {
-  await card.getByTestId("card-type").click();
-  await expect(page.getByTestId("card-inspector")).toBeVisible();
+/**
+ * Opens one card's inspector from the library and lands on Details.
+ *
+ * Types, tags and properties are inspector state; the canvas card that used to
+ * be clicked (its `card-type` button) is drawn by ICE and has no DOM.
+ */
+async function openInspector(page: Page, index = 0): Promise<void> {
+  await openCardInspector(page, { index });
   // Blank cards open on Content; types, tags and properties live on Details.
   await page.getByTestId("card-panel-tab-details").click();
+  await expect(page.getByTestId("card-panel-details")).toBeVisible();
 }
 
 async function addTextField(page: Page, name: string): Promise<void> {
@@ -32,9 +37,9 @@ async function setProperty(page: Page, name: string, value: string): Promise<voi
 
 test("adds a field, edits a property with a tag, and survives a reload", async ({ page }) => {
   await page.goto(workspaceUrl("persist"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
-  await openInspector(page, cards(page).first());
+  await openInspector(page);
   await addTextField(page, "Status");
   await setProperty(page, "Status", "active");
 
@@ -43,8 +48,8 @@ test("adds a field, edits a property with a tag, and survives a reload", async (
   await expect(page.getByTestId("tag-chip")).toContainText("research");
 
   await page.reload();
-  await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
-  await openInspector(page, cards(page).first());
+  await expectCardCount(page, 2);
+  await openInspector(page);
 
   await expect(page.getByLabel("Status").last()).toHaveValue("active");
   await expect(page.getByTestId("tag-chip")).toContainText("research");
@@ -52,9 +57,9 @@ test("adds a field, edits a property with a tag, and survives a reload", async (
 
 test("creates a type with a field and applies it from the inspector", async ({ page }) => {
   await page.goto(workspaceUrl("new-type"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
-  await openInspector(page, cards(page).first());
+  await openInspector(page);
   await page.getByTestId("manage-types").click();
   await page.getByLabel("New type name").fill("Initiative");
   await page.getByTestId("create-type").click();
@@ -65,17 +70,18 @@ test("creates a type with a field and applies it from the inspector", async ({ p
 
   await page.getByRole("button", { name: "Initiative", exact: true }).click();
   await expect(page.getByLabel("Stage").last()).toBeVisible();
-  await expect(cards(page).first().getByTestId("card-type")).toHaveAttribute(
-    "aria-label",
-    "Card type: Initiative",
-  );
+  // The type switch is where the applied type is readable now. The new type's
+  // id is generated, so the switch's own label is the stable handle.
+  await expect(
+    page.getByTestId("type-picker").getByRole("button", { name: "Initiative", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("shows a type switch and keeps the hidden property dormant", async ({ page }) => {
   await page.goto(workspaceUrl("switch"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
-  await openInspector(page, cards(page).first());
+  await openInspector(page);
   await addTextField(page, "Status");
   await setProperty(page, "Status", "active");
 
@@ -96,18 +102,17 @@ test("propagates a property and a tag to a collaborator", async ({ browser }) =>
 
   await pageA.goto(url);
   await pageB.goto(url);
-  await expect(cards(pageA)).toHaveCount(2);
-  await expect(cards(pageB)).toHaveCount(2);
+  await expectCardCount(pageA, 2);
+  await expectCardCount(pageB, 2);
 
-  await openInspector(pageA, cards(pageA).first());
+  await openInspector(pageA);
   await addTextField(pageA, "Status");
-  await expect(cards(pageB).first()).toBeVisible();
 
   await setProperty(pageA, "Status", "active");
   await pageA.getByTestId("tag-input").fill("research");
   await pageA.getByTestId("tag-input").press("Enter");
 
-  await openInspector(pageB, cards(pageB).first());
+  await openInspector(pageB);
   await expect(pageB.getByLabel("Status").last()).toHaveValue("active");
   await expect(pageB.getByTestId("tag-chip")).toContainText("research");
 
@@ -117,14 +122,15 @@ test("propagates a property and a tag to a collaborator", async ({ browser }) =>
 
 test("filters the library by type and tag, then clears", async ({ page }) => {
   await page.goto(workspaceUrl("facets"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
-  await openInspector(page, cards(page).first());
+  await openInspector(page);
   await page.getByTestId("tag-input").fill("research");
   await page.getByTestId("tag-input").press("Enter");
   await page.getByTestId("inspector-close").click();
 
-  await page.getByTestId("dock-library").click();
+  // The row that opened the inspector left the drawer open on Cards.
+  await expect(page.getByTestId("library-drawer")).toBeVisible();
   await page.getByTestId("library-tab-cards").click();
   await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(2);
 
@@ -140,9 +146,9 @@ test("filters the library by type and tag, then clears", async ({ page }) => {
 
 test("edits every scalar field kind and survives a reload", async ({ page }) => {
   await page.goto(workspaceUrl("kinds"));
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
-  await openInspector(page, cards(page).first());
+  await openInspector(page);
   await page.getByTestId("manage-types").click();
   await expect(page.getByTestId("type-settings")).toBeVisible();
 
@@ -177,8 +183,8 @@ test("edits every scalar field kind and survives a reload", async ({ page }) => 
   await panel.getByLabel("Done").click();
 
   await page.reload();
-  await expect(cards(page)).toHaveCount(2, { timeout: 20_000 });
-  await openInspector(page, cards(page).first());
+  await expectCardCount(page, 2);
+  await openInspector(page);
   const reloaded = page.getByTestId("card-panel");
   await expect(reloaded.getByLabel("Owner")).toHaveValue("Ada");
   await expect(reloaded.getByLabel("Estimate")).toHaveValue("5.5");

@@ -16,6 +16,28 @@ const trace: "on" | "retain-on-failure" =
 const uiMode = process.argv.some((arg) => /^--ui(-host|-port)?(=|$)/.test(arg));
 const reuseExistingServer = uiMode || !process.env.CI;
 
+/**
+ * The canvas is ICE, and ICE needs a real WebGPU adapter. Playwright's bundled
+ * headless Chromium has none, so the specs that read what the canvas draws skip
+ * unless `SUITE_ICE_E2E=1` (`./tests/support.ts` owns that gate). The same
+ * switch turns the one project into the harness those specs need: system
+ * Chrome, headed, with the WebGPU flags `./tests/ice.spec.ts` already uses. One
+ * knob, so "the ICE specs ran" and "the desk could start" can never disagree.
+ */
+const iceHarness = process.env.SUITE_ICE_E2E === "1";
+
+/** Mirrors `CHROME_ARGS` in `./tests/ice.spec.ts`; keep the two in step. */
+const ICE_CHROME_ARGS = [
+  "--enable-unsafe-webgpu",
+  "--enable-features=Vulkan",
+  "--use-angle=vulkan",
+  "--enable-unsafe-swiftshader",
+  "--ozone-platform=x11",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-background-timer-throttling",
+];
+
 export default defineConfig({
   testDir: "./tests",
   // Playwright's default, spelled out so `pnpm e2e:trace` can rely on it.
@@ -70,5 +92,19 @@ export default defineConfig({
       },
     },
   ],
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(iceHarness
+          ? {
+              channel: "chrome",
+              headless: false,
+              launchOptions: { args: ICE_CHROME_ARGS },
+            }
+          : {}),
+      },
+    },
+  ],
 });

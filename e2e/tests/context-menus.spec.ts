@@ -1,150 +1,144 @@
 import { expect, type Page, test } from "@playwright/test";
-import { startBodyEdit as editBody } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
+import { createTitledCard, libraryRows, openLibrary, requireIceDesk } from "./support";
 
-test.describe.configure({ timeout: 60_000 });
+/**
+ * Right-click is two different menus on ICE, and neither is React Flow's:
+ *
+ * - On the desk (empty canvas or a card), the ICE surface's own `contextmenu`
+ *   listener picks what is under the pointer and opens the *shell* menu — the
+ *   same `ContextMenu` the scene surface used, built by `useCanvasMenuItems`.
+ *   ICE has no section layer and no connector layer, so those entries are not
+ *   offered at all (`supportsSections`/`supportsConnectors` are false).
+ * - Inside a rich-text editor, the browser keeps its native menu. The card face
+ *   ICE draws is read-only, so the editable body lives in the inspector; the
+ *   guard is the same one, and the tests below exercise it there.
+ */
+
+// Serial on purpose: two of these tests drive the live desk, and Playwright's
+// full parallelism would open two headed Chrome windows that fight over the
+// pointer. The rest are a few seconds each.
+test.describe.configure({ timeout: 60_000, mode: "serial" });
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`);
 
-const cards = (page: Page) => page.locator('[data-testid="node-card"]');
+const menu = (page: Page) => page.getByTestId("context-menu");
+const panel = (page: Page) => page.getByTestId("card-inspector");
 
-async function emptyCanvasPoint(page: Page, variant = 0): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId("canvas-board").boundingBox();
-  if (!box) throw new Error("canvas board not found");
-
-  const point = await page.evaluate(
-    ({ width, height, offsetX, offsetY, variant }) => {
-      const candidates: { x: number; y: number }[] = [];
-      for (let fy = 0.12; fy < 0.95; fy += 0.08) {
-        for (let fx = 0.12; fx < 0.95; fx += 0.08) {
-          const x = Math.round(width * fx);
-          const y = Math.round(height * fy);
-          const element = document.elementFromPoint(offsetX + x, offsetY + y);
-          if (!element) continue;
-          if (element.closest('[data-testid="node-card"]')) continue;
-          if (element.closest(".react-flow__panel")) continue;
-          if (element.closest(".react-flow__pane"))
-            candidates.push({ x: offsetX + x, y: offsetY + y });
-        }
-      }
-      if (candidates.length === 0) return null;
-      return candidates[(variant * 17) % candidates.length];
-    },
-    { width: box.width, height: box.height, offsetX: box.x, offsetY: box.y, variant },
-  );
-
-  if (!point) throw new Error("no empty canvas point found");
-  return point;
+/** Waits until the ICE desk is drawing, which is what the shell menu needs. */
+async function awaitDesk(page: Page): Promise<void> {
+  await expect(page.getByTestId("ice-status")).toHaveText("engine: ready", { timeout: 90_000 });
+  await expect(page.locator('[data-testid="ice-surface"] canvas').first()).toBeVisible();
 }
 
-/** Creates a note and commits a title, leaving no editor focused. */
-async function createNote(page: Page, title: string): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const point = await emptyCanvasPoint(page, attempt);
-    await page.mouse.click(point.x, point.y, { button: "right" });
-    const newNote = page.getByRole("menuitem", { name: "New note" });
-    // A click can land on a card that mounted after the scan; try elsewhere.
-    if (!(await newNote.isVisible({ timeout: 800 }).catch(() => false))) {
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(150);
-      continue;
-    }
-    await newNote.click();
-    await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }),
-    );
-    await page.waitForTimeout(300);
-    await page.keyboard.type(title);
-    await page.keyboard.press("Escape");
-    await expect(cards(page).filter({ hasText: title })).toHaveCount(1);
-    return;
-  }
-  throw new Error("could not open the canvas menu");
+/** Opens a card's inspector from the library, without touching the desk. */
+async function openCard(page: Page, title: string): Promise<void> {
+  await openLibrary(page, "cards");
+  await libraryRows(page).filter({ hasText: title }).first().click();
+  await expect(panel(page)).toBeVisible();
 }
 
-/** Opens the inspector with a click on the card header, not the editors. */
-async function openCardInfo(page: Page, card = cards(page).first()): Promise<void> {
-  const inspector = page.getByTestId("card-inspector");
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await card.click({ position: { x: 80, y: 24 } });
-    if (await inspector.isVisible().catch(() => false)) return;
-    await page.waitForTimeout(150);
-  }
-  await expect(inspector).toBeVisible();
+/** Focuses the body editor in the inspector, which is the one editable body. */
+async function editBody(page: Page): Promise<void> {
+  await panel(page).getByTestId("card-panel-tab-content").click();
+  await panel(page).getByTestId("card-panel-body").click();
+  await expect(panel(page).getByTestId("card-panel-body")).toHaveAttribute("data-editing", "true");
+  // React StrictMode remounts the editor once in dev; let the focused instance settle.
+  await page.waitForTimeout(250);
 }
 
-/** Adds a `Status` text field to the shared note type and fills it on one card. */
-async function addStatusField(page: Page, card: ReturnType<typeof cards>): Promise<void> {
-  await openCardInfo(page, card);
-  const inspector = page.getByTestId("card-inspector");
-  // The inspector opens on Content for an empty card; fields live in Details.
-  const detailsTab = inspector.getByTestId("card-panel-tab-details");
-  if (await detailsTab.count()) await detailsTab.click();
-  await inspector.getByTestId("manage-types").click();
+/** Adds a `Status` text field to the shared note type and fills it on the card. */
+async function addStatusField(page: Page, value: string): Promise<void> {
+  await panel(page).getByTestId("card-panel-tab-details").click();
+  await panel(page).getByTestId("manage-types").click();
   const settings = page.getByTestId("type-settings");
   await settings.getByTestId("settings-type-note").click();
   await settings.getByLabel("New field name").fill("Status");
   await settings.getByTestId("create-field").click();
   await expect(settings.getByLabel("Field name Status")).toBeVisible();
   await settings.getByRole("button", { name: "Done" }).click();
-  await inspector.getByLabel("Status").fill("In progress");
-  await inspector.getByLabel("Status").blur();
-  await inspector.getByTestId("inspector-close").click();
+  await panel(page).getByLabel("Status").fill(value);
+  await panel(page).getByLabel("Status").blur();
 }
+
+test("opens the shell menu on the empty desk, without section or connector entries", async ({
+  page,
+}) => {
+  requireIceDesk();
+  await page.goto(workspaceUrl("canvas"));
+  await awaitDesk(page);
+
+  await page.mouse.click(780, 420, { button: "right" });
+  await expect(menu(page)).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "New note" })).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "New board" })).toBeVisible();
+
+  // ICE has no section layer, so the section entry cannot be offered.
+  await expect(menu(page).getByRole("menuitem", { name: "New section" })).toHaveCount(0);
+
+  // The entry writes through the document; the library is where a headless DOM
+  // can count the cards the desk is drawing.
+  await menu(page).getByRole("menuitem", { name: "New note" }).click();
+  await expect(menu(page)).toHaveCount(0);
+  await openLibrary(page, "cards");
+  await expect(libraryRows(page)).toHaveCount(3);
+});
+
+test("keeps the card menu on the read-only card face", async ({ page }) => {
+  requireIceDesk();
+  await page.goto(workspaceUrl("card"));
+  await awaitDesk(page);
+
+  // Put a card under a point we chose, so the pick below is deterministic.
+  await page.mouse.click(780, 420, { button: "right" });
+  await menu(page).getByRole("menuitem", { name: "New note" }).click();
+  await expect(menu(page)).toHaveCount(0);
+
+  // The card face is read-only (ICE owns the pointer), so nothing is being
+  // edited and the card menu is the right one. A note lands with its top-left at
+  // the click, so the pick has to aim inside the sheet.
+  await page.mouse.click(860, 470, { button: "right" });
+  await expect(menu(page)).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "Delete card" })).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "Position" })).toBeVisible();
+  // No connector layer on ICE, so no connector entry.
+  await expect(menu(page).getByRole("menuitem", { name: "Add connector" })).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(menu(page)).toHaveCount(0);
+});
 
 test("leaves ordinary body text to the browser's native menu", async ({ page }) => {
   await page.goto(workspaceUrl("native"));
-  await expect(page.getByTestId("canvas-board")).toBeVisible();
-  await expect(cards(page)).toHaveCount(2);
-
-  await createNote(page, "Body host");
-  const card = cards(page).filter({ hasText: "Body host" });
-  await editBody(page, card);
+  await openCard(page, "Untitled");
+  await editBody(page);
 
   await page.keyboard.type("Ordinary body text");
-  const body = card.getByTestId("card-body");
-  await expect(body).toContainText("Ordinary body text");
+  await expect(panel(page).getByTestId("card-panel-body")).toContainText("Ordinary body text");
 
-  // React Flow must not turn this into the card menu: the browser owns the
-  // menu here (copy, paste, spelling), so no app menu renders at all.
-  await body.locator(".node-card-editor p").first().click({ button: "right" });
-  await expect(page.getByTestId("context-menu")).toHaveCount(0);
-  await expect(page.getByRole("menuitem", { name: "Edit body" })).toHaveCount(0);
-});
-
-test("keeps the card menu on a read-only body", async ({ page }) => {
-  await page.goto(workspaceUrl("readonly"));
-  await expect(page.getByTestId("canvas-board")).toBeVisible();
-  await expect(cards(page)).toHaveCount(2);
-
-  await createNote(page, "Idle card");
-  const card = cards(page).filter({ hasText: "Idle card" });
-  await expect(card.getByTestId("card-body").locator(".ProseMirror-focused")).toHaveCount(0);
-
-  // Nothing is being edited, so the card menu is still the right one.
-  await card.click({ button: "right" });
-  const menu = page.getByTestId("context-menu");
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Add connector" })).toBeVisible();
+  // The editor owns its own selection menu (copy, paste, spelling): no app menu
+  // renders over it. The browser's menu itself cannot be asserted from here.
+  await panel(page).getByTestId("card-panel-body").locator(".ProseMirror p").first().click({
+    button: "right",
+  });
+  await expect(menu(page)).toHaveCount(0);
 });
 
 test("keeps the app menu on a field mention", async ({ page }) => {
   await page.goto(workspaceUrl("mention"));
-  await expect(page.getByTestId("canvas-board")).toBeVisible();
-  await expect(cards(page)).toHaveCount(2);
+  // The named card is the mention target; the starter cards stay untitled, so
+  // the row lookups stay unambiguous.
+  await createTitledCard(page, "Target card");
 
-  await createNote(page, "Target card");
-  await createNote(page, "Source card");
-  await addStatusField(page, cards(page).filter({ hasText: "Target card" }));
+  // The field belongs to the *target*: a mention offers the fields of the card
+  // it names, and the picker never offers the card being edited.
+  await openCard(page, "Target card");
+  await addStatusField(page, "In progress");
 
-  const source = cards(page).filter({ hasText: "Source card" });
-  await editBody(page, source);
+  await openCard(page, "Untitled");
+  await editBody(page);
   await page.keyboard.type("@Targ");
   const options = page.getByTestId("mention-option");
   await expect(options.first()).toBeVisible({ timeout: 10_000 });
@@ -154,26 +148,22 @@ test("keeps the app menu on a field mention", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
 
-  const chip = source.getByTestId("mention-chip");
+  const chip = panel(page).getByTestId("mention-chip");
   await expect(chip).toHaveAttribute("data-field-id", /[\w-]+/, { timeout: 10_000 });
 
-  // The chip stops propagation, so the app menu survives the rich-text guard.
+  // The chip stops propagation, so the app menu wins over the rich-text guard.
   await chip.click({ button: "right" });
-  const menu = page.getByTestId("context-menu");
-  await expect(menu).toBeVisible({ timeout: 10_000 });
-  await expect(menu.getByRole("menuitem", { name: "Open card" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Display…" })).toBeVisible();
+  await expect(menu(page)).toBeVisible({ timeout: 10_000 });
+  await expect(menu(page).getByRole("menuitem", { name: "Open card" })).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "Display\u2026" })).toBeVisible();
 });
 
 test("keeps the app menu on a property block", async ({ page }) => {
   await page.goto(workspaceUrl("property"));
-  await expect(page.getByTestId("canvas-board")).toBeVisible();
-  await expect(cards(page)).toHaveCount(2);
+  await openCard(page, "Untitled");
+  await addStatusField(page, "In progress");
+  await editBody(page);
 
-  const card = cards(page).first();
-  await addStatusField(page, card);
-
-  await editBody(page, card);
   await page.keyboard.type("/property");
   await expect(page.getByTestId("slash-menu")).toBeVisible();
   await page.getByTestId("slash-option").filter({ hasText: "Property" }).click();
@@ -181,15 +171,14 @@ test("keeps the app menu on a property block", async ({ page }) => {
   await expect(fieldOption).toContainText("Status");
   await fieldOption.click();
 
-  const block = card.getByTestId("property-block");
+  const block = panel(page).getByTestId("property-block");
   await expect(block).toHaveCount(1);
   const value = block.getByTestId("property-block-value");
   await expect(value).toHaveText("In progress");
 
-  // The chip stops propagation, so the app menu survives the rich-text guard.
+  // The chip stops propagation, so the app menu wins over the rich-text guard.
   await value.click({ button: "right" });
-  const menu = page.getByTestId("context-menu");
-  await expect(menu).toBeVisible({ timeout: 10_000 });
-  await expect(menu.getByRole("menuitem", { name: "Open card" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Display…" })).toBeVisible();
+  await expect(menu(page)).toBeVisible({ timeout: 10_000 });
+  await expect(menu(page).getByRole("menuitem", { name: "Open card" })).toBeVisible();
+  await expect(menu(page).getByRole("menuitem", { name: "Display…" })).toBeVisible();
 });

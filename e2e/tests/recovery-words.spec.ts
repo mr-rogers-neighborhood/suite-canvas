@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { cards, workspaceIdFactory } from "./support";
+import { expectCardCount, workspaceIdFactory } from "./support";
 
 /**
  * No owner fragment here: the app generates and claims a real 32-byte key on
@@ -32,7 +32,7 @@ test("shows 24 words, rejects a mistyped word, and restores access from the phra
 }) => {
   const workspace = id("words");
   await page.goto(`/?workspace=${workspace}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-words-open").click();
@@ -73,7 +73,7 @@ test("shows 24 words, rejects a mistyped word, and restores access from the phra
       timeout: 20_000,
     });
     await expect(freshPage.getByTestId("workspace-protected")).toHaveCount(0);
-    await expect(cards(freshPage)).toHaveCount(2);
+    await expectCardCount(freshPage, 2);
   } finally {
     await fresh.close();
   }
@@ -82,7 +82,7 @@ test("shows 24 words, rejects a mistyped word, and restores access from the phra
 test("recovers with a passphrase, and a wrong passphrase is refused", async ({ page, browser }) => {
   const workspace = id("passphrase");
   await page.goto(`/?workspace=${workspace}`);
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-passphrase-open").click();
@@ -106,7 +106,7 @@ test("recovers with a passphrase, and a wrong passphrase is refused", async ({ p
   );
   await page.getByTestId("recovery-reload").click();
   await expect(page.locator('.app-canvas[data-ready="true"]')).toBeVisible({ timeout: 20_000 });
-  await expect(cards(page)).toHaveCount(2);
+  await expectCardCount(page, 2);
 
   // A fresh browser has no stored key: the same phrase derives it again.
   const fresh = await browser.newContext();
@@ -130,7 +130,7 @@ test("recovers with a passphrase, and a wrong passphrase is refused", async ({ p
       timeout: 20_000,
     });
     await expect(freshPage.getByTestId("workspace-protected")).toHaveCount(0);
-    await expect(cards(freshPage)).toHaveCount(2);
+    await expectCardCount(freshPage, 2);
   } finally {
     await fresh.close();
   }

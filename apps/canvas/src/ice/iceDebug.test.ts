@@ -116,6 +116,7 @@ describe("buildIceDebugSnapshot", () => {
         "peer-a": peer({ clientId: "peer-a", user: { name: "Ada", color: "#fff" } }),
       },
       selection: [],
+      selectedEdges: [],
     });
     expect(snapshot.peers.map((entry) => entry.clientId)).toEqual(["peer-a", "peer-z"]);
   });
@@ -142,6 +143,7 @@ describe("buildIceDebugSnapshot", () => {
       overlays: EMPTY_OVERLAYS,
       peers: {},
       selection: [],
+      selectedEdges: [],
     });
     expect(snapshot.edges).toEqual([]);
   });
@@ -210,8 +212,19 @@ describe("publishIceDebug", () => {
       overlays: EMPTY_OVERLAYS,
       peers: {},
       selection: [],
+      selectedEdges: [],
     });
-    publishIceDebug(snapshot, target);
+    publishIceDebug(snapshot, undefined, target);
     expect(target[ICE_DEBUG_GLOBAL]).toBe(snapshot);
+
+    // A probe rides beside the snapshot, so the desk's own hit test can be
+    // asked what is under a point.
+    const probe = {
+      pick: (_x: number, _y: number) => ({ entity: 7, cardId: "card-a", boardId: null }),
+    };
+    publishIceDebug(snapshot, probe, target);
+    expect(target[ICE_DEBUG_GLOBAL]).toEqual({ ...snapshot, probe });
+    const published = target[ICE_DEBUG_GLOBAL] as { probe?: typeof probe };
+    expect(published.probe?.pick(0, 0)).toEqual({ entity: 7, cardId: "card-a", boardId: null });
   });
 });

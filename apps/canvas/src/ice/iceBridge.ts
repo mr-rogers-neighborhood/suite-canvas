@@ -688,6 +688,13 @@ export interface IcePlacementMove {
   readonly cardId: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * The Board the placement leaves. Absent means it already lives on the
+   * write's board, which is every plain drag; a move that names one is a
+   * cross-Board move (a drop into a Board) and the adapter unplaces it there
+   * in the same commit.
+   */
+  readonly fromBoardId?: string | undefined;
 }
 
 export interface IceCreateCardWrite {
@@ -740,6 +747,18 @@ export type CanonicalWrite =
       readonly boardId: string;
       readonly moves: readonly IcePlacementMove[];
     }
+  /**
+   * One drag that carries cards from more than one Board: each card moves on
+   * the Board it is placed on, and every group lands in one commit, because the
+   * gesture was one gesture.
+   */
+  | {
+      readonly kind: "movePlacementsMany";
+      readonly groups: readonly {
+        readonly boardId: string;
+        readonly moves: readonly IcePlacementMove[];
+      }[];
+    }
   | {
       readonly kind: "resizePlacement";
       readonly boardId: string;
@@ -759,6 +778,17 @@ export type CanonicalWrite =
   | { readonly kind: "resizeSection"; readonly sectionId: string; readonly geometry: Rect }
   /** One Board frame's rect: a move and a resize of the same mat, in one write. */
   | { readonly kind: "boardRect"; readonly boardId: string; readonly geometry: Rect }
+  /**
+   * One Board that moved into another: the new parent and the rect it landed
+   * at, in the new parent's frame. Both land in one commit, because a Board
+   * without its rect would jump back to where it used to be.
+   */
+  | {
+      readonly kind: "nestBoard";
+      readonly boardId: string;
+      readonly parentBoardId: string;
+      readonly geometry: Rect;
+    }
   | { readonly kind: "addEdge"; readonly input: IceAddEdgeWrite }
   | { readonly kind: "removeEdges"; readonly edgeIds: readonly string[] };
 
@@ -784,6 +814,8 @@ export interface CanonicalWriter {
   updateSectionGeometry(sectionId: string, geometry: Rect): void;
   /** A Board's frame: `x`/`y` are in its parent's frame. */
   updateBoardRect(boardId: string, geometry: Rect): void;
+  /** Re-parents a Board. The adapter translates the rect; the writer may then restate it. */
+  nestBoard(boardId: string, parentBoardId: string): void;
   deleteSections(sectionIds: readonly string[]): void;
   addEdge(input: IceAddEdgeWrite): void;
   removeEdges(edgeIds: readonly string[]): void;
@@ -801,6 +833,17 @@ export function applyCanonicalWrite(writer: CanonicalWriter, write: CanonicalWri
     case "movePlacements":
       writer.movePlacements(write.boardId, write.moves);
       return;
+    case "movePlacementsMany": {
+      const apply = () => {
+        for (const group of write.groups) writer.movePlacements(group.boardId, group.moves);
+      };
+      // One history step for the whole drag; without a batch the adapter can
+      // only offer one commit per group, so the caller sees the truth.
+      if (write.groups.length === 1) apply();
+      else if (writer.batch) writer.batch(`${ICE_WRITE_ORIGIN}:move-many`, apply);
+      else apply();
+      return;
+    }
     case "resizePlacement":
       writer.updatePlacementGeometry(write.boardId, write.cardId, write.geometry, write.typeScale);
       return;
@@ -826,6 +869,17 @@ export function applyCanonicalWrite(writer: CanonicalWriter, write: CanonicalWri
     case "boardRect":
       writer.updateBoardRect(write.boardId, write.geometry);
       return;
+    case "nestBoard": {
+      // The re-parent translates the stored rect to keep the Board's old place;
+      // the gesture's own box then wins, because ICE already dropped it there.
+      const apply = () => {
+        writer.nestBoard(write.boardId, write.parentBoardId);
+        writer.updateBoardRect(write.boardId, write.geometry);
+      };
+      if (writer.batch) writer.batch(`${ICE_WRITE_ORIGIN}:nest`, apply);
+      else apply();
+      return;
+    }
     case "addEdge":
       writer.addEdge(write.input);
       return;
@@ -1051,8 +1105,21 @@ export function planMoveCommit(intent: IceMoveIntent, context: IcePlanContext): 
     });
   }
 
-  if (boards.size > 1) return skipPlan("mixed-boards");
+  if (boards.size === 0) return skipPlan("no-instance");
   if (!moved) return skipPlan(snapped ? "no-change" : "sub-epsilon");
+
+  // A selection may span Boards — a card inside a Board next to one on the
+  // plane. Each card is placed on its own Board, and the gesture is still one
+  // write, so a mixed selection drags as a mixed selection.
+  if (boards.size > 1) {
+    const groups = [...boards].map((boardId) => ({
+      boardId,
+      moves: [...moves.entries()]
+        .filter(([key]) => key.startsWith(`${boardId}\u001f`))
+        .map(([, move]) => move),
+    }));
+    return commitPlan({ kind: "movePlacementsMany", groups });
+  }
 
   const [boardId] = boards;
   if (!boardId) return skipPlan("no-instance");
@@ -1134,6 +1201,85 @@ export function planBoardRectCommit(intent: IceBoardRectIntent, context: IcePlan
   });
   if (sameRect(geometry, start, planEpsilon(context))) return skipPlan("no-change");
   return commitPlan({ kind: "boardRect", boardId: intent.boardId, geometry });
+}
+
+export interface IceBoardNestIntent {
+  readonly boardId: string;
+  /** The Board the frame landed in. */
+  readonly parentBoardId: string;
+  /** The frame's box in the new parent's frame. */
+  readonly geometry: Rect;
+}
+
+/**
+ * Plans a Board dropped into another Board. ICE re-parented the mat and left it
+ * at a frame-local box; that box is what the document stores, so the re-parent
+ * and the rect land together. A cycle is refused by the document itself — the
+ * planner invents no rules of its own.
+ */
+export function planBoardNestCommit(intent: IceBoardNestIntent, context: IcePlanContext): IcePlan {
+  if (!context.capabilities.write) return deniedPlan();
+  const { geometry } = intent;
+  if (![geometry.x, geometry.y, geometry.width, geometry.height].every(Number.isFinite)) {
+    return skipPlan("invalid-transform");
+  }
+  return commitPlan({
+    kind: "nestBoard",
+    boardId: intent.boardId,
+    parentBoardId: intent.parentBoardId,
+    geometry: roundRectGeometry({
+      x: geometry.x,
+      y: geometry.y,
+      width: Math.max(ICE_MIN_SECTION_SIZE.width, geometry.width),
+      height: Math.max(ICE_MIN_SECTION_SIZE.height, geometry.height),
+    }),
+  });
+}
+
+/** One card a drop moves: the instance it paints and the box ICE left it at. */
+export interface IceDropMove {
+  readonly instance: IceCardInstance;
+  /** The snapped box, already in the target Board's frame. */
+  readonly geometry: Rect;
+}
+
+export interface IceDropIntent {
+  /** The Board ICE reports the drop entered. */
+  readonly targetBoardId: string;
+  /** Every card the drag carried into that Board. */
+  readonly items: readonly IceDropMove[];
+}
+
+/**
+ * Plans a drop into a Board. ICE has re-parented the entities and written their
+ * boxes in the new frame; the write is one `movePlacements` that also names the
+ * Board each card leaves, so a placement exists on exactly one Board
+ * afterwards. A drop is never "no change" when any card changed Boards, even if
+ * the two boxes coincide.
+ */
+export function planDropCommit(intent: IceDropIntent, context: IcePlanContext): IcePlan {
+  if (!context.capabilities.write) return deniedPlan();
+
+  const moves = new Map<string, IcePlacementMove>();
+  for (const item of intent.items) {
+    const { instance, geometry } = item;
+    if (instance.kind !== "card") continue;
+    if (instance.boardId === intent.targetBoardId) continue;
+    if (![geometry.x, geometry.y].every(Number.isFinite)) return skipPlan("invalid-transform");
+    moves.set(instance.cardId, {
+      cardId: instance.cardId,
+      x: roundCoordinate(geometry.x),
+      y: roundCoordinate(geometry.y),
+      fromBoardId: instance.boardId,
+    });
+  }
+
+  if (moves.size === 0) return skipPlan("no-change");
+  return commitPlan({
+    kind: "movePlacements",
+    boardId: intent.targetBoardId,
+    moves: [...moves.values()],
+  });
 }
 
 /**
@@ -1340,6 +1486,138 @@ export function planIntent(intent: IceIntent, context: IcePlanContext): IcePlan 
       return exhaustive;
     }
   }
+}
+
+/* ------------------------------------------------------------ link writes */
+
+/**
+ * A link's description, planned as one write.
+ *
+ * `current` is the label the document holds now, so a commit that would change
+ * nothing is a `skip` rather than a history step: the inline editor settles on
+ * blur as well as on Enter, and a reader who opens it, reads it and closes it
+ * must not leave an undoable no-op behind. The plan trims, and an empty string
+ * means "no description" — the same shape `setEdgeLabel` stores.
+ */
+export interface IceEdgeLabelIntent {
+  readonly kind: "edge-label";
+  readonly edgeId: string;
+  readonly label: string;
+  /** The document's label before this edit; absent means "none". */
+  readonly current?: string | null | undefined;
+}
+
+/** The one canonical write an edge label makes. */
+export interface IceEdgeLabelWrite {
+  readonly kind: "setEdgeLabel";
+  readonly edgeId: string;
+  readonly label: string | null;
+}
+
+export type IceEdgeLabelPlan =
+  | { readonly status: "commit"; readonly write: IceEdgeLabelWrite }
+  | IceRefusedPlan;
+
+/** The label a document write would store for `label`: trimmed, empty = null. */
+export function normaliseEdgeLabel(label: string | null | undefined): string | null {
+  const trimmed = (label ?? "").trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function planEdgeLabel(
+  intent: IceEdgeLabelIntent,
+  context: IcePlanContext,
+): IceEdgeLabelPlan {
+  if (!context.capabilities.write) return deniedPlan();
+  if (intent.edgeId.length === 0) return skipPlan("no-instance");
+  const label = normaliseEdgeLabel(intent.label);
+  if (label === normaliseEdgeLabel(intent.current)) return skipPlan("no-change");
+  return { status: "commit", write: { kind: "setEdgeLabel", edgeId: intent.edgeId, label } };
+}
+
+/** The document door a label write needs; `WorkspaceDocument` satisfies it. */
+export interface EdgeLabelWriter {
+  setEdgeLabel(edgeId: string, label: string | null): void;
+}
+
+/** Applies a label write: one `setEdgeLabel`, which is one Loro commit. */
+export function applyEdgeLabelWrite(writer: EdgeLabelWriter, write: IceEdgeLabelWrite): void {
+  writer.setEdgeLabel(write.edgeId, write.label);
+}
+
+/**
+ * A connector slid along its card's perimeter, planned as one write.
+ *
+ * A connector position is a 0..1 fraction of the card's box (`graphSchema`), so
+ * the plan clamps rather than refuses: a drag that overshoots the card still
+ * lands on the edge it was heading for, and a `NaN` never reaches the document.
+ */
+export interface IceConnectorMoveIntent {
+  readonly kind: "connector-move";
+  readonly cardId: string;
+  readonly connectorId: string;
+  /** The new position, in 0..1 fractions of the card's box. */
+  readonly position: Point;
+  /** Where the connector sits now; a move that lands there writes nothing. */
+  readonly current?: Point | undefined;
+}
+
+/** The one canonical write a connector move makes. */
+export interface IceConnectorMoveWrite {
+  readonly kind: "moveConnector";
+  readonly cardId: string;
+  readonly connectorId: string;
+  readonly position: Point;
+}
+
+export type IceConnectorMovePlan =
+  | { readonly status: "commit"; readonly write: IceConnectorMoveWrite }
+  | IceRefusedPlan;
+
+/** A fraction on the card, clamped to 0..1; a non-finite axis collapses to the middle. */
+function fractionOf(value: number): number {
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5;
+}
+
+export function planConnectorMove(
+  intent: IceConnectorMoveIntent,
+  context: IcePlanContext,
+): IceConnectorMovePlan {
+  if (!context.capabilities.write) return deniedPlan();
+  if (intent.cardId.length === 0 || intent.connectorId.length === 0) {
+    return skipPlan("no-instance");
+  }
+  const position = { x: fractionOf(intent.position.x), y: fractionOf(intent.position.y) };
+  const current = intent.current;
+  if (
+    current !== undefined &&
+    Math.abs(fractionOf(current.x) - position.x) < 1e-4 &&
+    Math.abs(fractionOf(current.y) - position.y) < 1e-4
+  ) {
+    return skipPlan("no-change");
+  }
+  return {
+    status: "commit",
+    write: {
+      kind: "moveConnector",
+      cardId: intent.cardId,
+      connectorId: intent.connectorId,
+      position,
+    },
+  };
+}
+
+/** The document door a connector move needs; `WorkspaceDocument` satisfies it. */
+export interface ConnectorMoveWriter {
+  moveConnector(cardId: string, connectorId: string, position: Point): void;
+}
+
+/** Applies a connector move: one `moveConnector`, which is one Loro commit. */
+export function applyConnectorMoveWrite(
+  writer: ConnectorMoveWriter,
+  write: IceConnectorMoveWrite,
+): void {
+  writer.moveConnector(write.cardId, write.connectorId, write.position);
 }
 
 /* --------------------------------------------------------- gesture session */
@@ -1639,6 +1917,10 @@ export interface WorkspaceDocumentLike {
     position?: { x: number; y: number };
   }): { id: string };
   trashCard(cardId: string): void;
+  /** Puts a card on a board; the placement is created (or moved) there. */
+  placeCard(boardId: string, cardId: string, position: { x: number; y: number }): unknown;
+  /** Takes a card off a board; the card itself stays in the workspace. */
+  unplaceCard(boardId: string, cardId: string): void;
   moveSectionsBatch(input: {
     sections: { id: string; x: number; y: number; width?: number; height?: number }[];
     placements?: { boardId: string; cardId: string; x: number; y: number }[];
@@ -1651,6 +1933,7 @@ export interface WorkspaceDocumentLike {
     boardId: string,
     rect: { x: number; y: number; width: number; height: number },
   ): void;
+  nestBoard(boardId: string, parentBoardId: string): void;
   deleteSection(sectionId: string): void;
   addEdge(input: {
     boardId: string;
@@ -1674,10 +1957,31 @@ export interface WorkspaceDocumentLike {
 export function workspaceWriter(doc: WorkspaceDocumentLike): CanonicalWriter {
   return {
     movePlacements(boardId, moves) {
-      doc.movePlacements(
-        boardId,
-        moves.map((move) => ({ cardId: move.cardId, x: move.x, y: move.y })),
+      const staying = moves.filter((move) => move.fromBoardId === undefined);
+      const crossing = moves.filter(
+        (move) => move.fromBoardId !== undefined && move.fromBoardId !== boardId,
       );
+      const apply = () => {
+        if (staying.length > 0) {
+          doc.movePlacements(
+            boardId,
+            staying.map((move) => ({ cardId: move.cardId, x: move.x, y: move.y })),
+          );
+        }
+        // `movePlacements` only touches a placement that already exists on the
+        // board, so a card that changes Boards is placed and then unplaced
+        // here, in the same commit: one gesture stays one history step. The old
+        // placement goes only once the new one exists, so a refused target can
+        // never take the card off the workspace.
+        for (const move of crossing) {
+          const fromBoardId = move.fromBoardId;
+          if (fromBoardId === undefined) continue;
+          const placed = doc.placeCard(boardId, move.cardId, { x: move.x, y: move.y });
+          if (placed !== null && placed !== undefined) doc.unplaceCard(fromBoardId, move.cardId);
+        }
+      };
+      if (crossing.length === 0) apply();
+      else doc.batch(ICE_WRITE_ORIGIN, apply);
     },
     updatePlacementGeometry(boardId, cardId, geometry, typeScale) {
       doc.updatePlacementGeometry(
@@ -1746,6 +2050,9 @@ export function workspaceWriter(doc: WorkspaceDocumentLike): CanonicalWriter {
         width: geometry.width,
         height: geometry.height,
       });
+    },
+    nestBoard(boardId, parentBoardId) {
+      doc.nestBoard(boardId, parentBoardId);
     },
     deleteSections(sectionIds) {
       doc.batch(ICE_WRITE_ORIGIN, () => {

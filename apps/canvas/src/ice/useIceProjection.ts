@@ -12,6 +12,7 @@
  * must appear without a reload and one they deleted must go.
  */
 
+import { boardWorldRect } from "@suite/graph";
 import type { Entity } from "@vibecook/ice";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 
@@ -85,6 +86,51 @@ export function useIceProjection(input: {
         return card !== undefined && !card.deletedAt;
       });
 
+    /**
+     * The View's live placements, in the shape the projection reconciles: the
+     * cards on the View's plane *and* the ones inside its Boards, in their own
+     * Board's coordinates. `listBoardPlacements` flattens a View into plane coordinates,
+     * which is what the fit wants; a card inside a Board is drawn in that
+     * Board's frame, and ICE stores its box there, so a comparison against the
+     * flattened coordinate would replace every nested card on every reconcile.
+     */
+    const canonicalPlacements = (): CanonicalPlacement[] => {
+      const boards = liveWorkspace.listBoards();
+      return livePlacements().map((placement) => {
+        // A flattened plane coordinate less the Board's own origin is exactly
+        // the frame-local coordinate ICE stores for a child of that Board.
+        const origin = boardWorldRect(boards, placement.boardId);
+        return {
+          boardId: placement.boardId,
+          cardId: placement.cardId,
+          x: placement.x - (origin?.x ?? 0),
+          y: placement.y - (origin?.y ?? 0),
+          text: faceText(placement.cardId),
+          ...(placement.width === undefined ? {} : { width: placement.width }),
+          ...(placement.height === undefined ? {} : { height: placement.height }),
+          ...(placement.typeScale === undefined ? {} : { typeScale: placement.typeScale }),
+        };
+      });
+    };
+
+    /**
+     * The frame a placement belongs to. A card inside a Board is spawned with
+     * that Board's mat as its parent, so ICE measures it in the Board's frame —
+     * and, just as important, a root card is spawned on the root frame even
+     * while the camera is inside a Board (the default parent is the nav frame).
+     */
+    const parentFor = (boardId: string): Entity | undefined => {
+      for (const [entity, mat] of seed.boardMats) {
+        if (mat.boardId === boardId) return entity;
+      }
+      if (boardId !== rootBoardId) return undefined;
+      try {
+        return engine.world.getResource(core.BoardRoot)?.root;
+      } catch {
+        return undefined;
+      }
+    };
+
     /** Fit View frames the whole View; a Board's frame counts as content. */
     const contentBounds = (): FitRect | null => {
       let minX = Number.POSITIVE_INFINITY;
@@ -125,6 +171,7 @@ export function useIceProjection(input: {
         // The rung is the card's own: a reflow resize stores one, and every
         // other card derives it from its extent. Same function either way, so a
         // freshly dropped card and a reflowed one cannot disagree.
+        const parent = parentFor(placement.boardId);
         const entity = engine.ops.spawnWidget(cardTypeForScale(cardScaleOf(placement)), {
           x: placement.x,
           y: placement.y,
@@ -132,6 +179,7 @@ export function useIceProjection(input: {
             ? { w: placement.width, h: placement.height }
             : {}),
           undoable: false,
+          ...(parent === undefined ? {} : { parent }),
           props: {
             cardId: placement.cardId,
             boardId: placement.boardId,
@@ -161,26 +209,17 @@ export function useIceProjection(input: {
       // Text and the type rung both need a replace rather than a move: a
       // resize that crosses a rung changes the *kind*, and a card cannot change
       // kind in place.
-      keyOf: (placement) => `${placement.text ?? ""}\u001f${cardScaleOf(placement)}`,
+      // Text, rung and the Board a placement sits on: a card dropped into a
+      // Board must come back with that Board in its props, or the face would
+      // keep saying it lives where it used to.
+      keyOf: (placement) =>
+        `${placement.text ?? ""}\u001f${cardScaleOf(placement)}\u001f${placement.boardId}`,
     });
-
-    /** The View's live placements, in the shape the projection reconciles. */
-    const canonicalPlacements = (): CanonicalPlacement[] =>
-      livePlacements().map((placement) => ({
-        boardId: placement.boardId,
-        cardId: placement.cardId,
-        x: placement.x,
-        y: placement.y,
-        text: faceText(placement.cardId),
-        ...(placement.width !== undefined ? { width: placement.width } : {}),
-        ...(placement.height !== undefined ? { height: placement.height } : {}),
-        ...(placement.typeScale !== undefined ? { typeScale: placement.typeScale } : {}),
-      }));
 
     // Seed the projection with the *same* render key a reconcile computes, or
     // the first reconcile would replace every card it was handed: the key is
-    // text plus rung, and a registration that carried only the text would not
-    // match itself.
+    // text, rung and Board, and a registration that carried only the text would
+    // not match itself.
     const seededPlacements = new Map(
       canonicalPlacements().map((placement) => [placement.cardId, placement]),
     );
@@ -191,7 +230,9 @@ export function useIceProjection(input: {
         entity,
         slot.cardId,
         slot.boardId,
-        placement === undefined ? text : `${text}\u001f${cardScaleOf(placement)}`,
+        placement === undefined
+          ? text
+          : `${text}\u001f${cardScaleOf(placement)}\u001f${slot.boardId}`,
       );
     }
 

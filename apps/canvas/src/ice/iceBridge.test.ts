@@ -23,8 +23,10 @@ import {
   type IceSectionInstance,
   instancesOfCard,
   invertInstanceTransform,
+  planBoardNestCommit,
   planCreate,
   planDelete,
+  planDropCommit,
   planEdgeCreate,
   planEdgeDelete,
   planIntent,
@@ -92,6 +94,7 @@ function createWriter() {
     moveSections: vi.fn(),
     updateSectionGeometry: vi.fn(),
     updateBoardRect: vi.fn(),
+    nestBoard: vi.fn(),
     deleteSections: vi.fn(),
     addEdge: vi.fn(),
     removeEdges: vi.fn(),
@@ -488,19 +491,42 @@ describe("iceBridge move planning and gesture sessions", () => {
     ]);
   });
 
-  it("should drop a drag that spans two boards instead of writing twice", () => {
-    const plan = planMoveCommit(
-      {
-        kind: "move",
-        items: [
-          { instance: cardRef({ instanceKey: "i1", cardId: "card-a", boardId: "board-1" }) },
-          { instance: cardRef({ instanceKey: "i2", cardId: "card-b", boardId: "board-2" }) },
-        ],
-        worldDelta: { x: 40, y: 40 },
-      },
-      { capabilities: ICE_EDIT_CAPABILITIES },
+  it("should carry a drag that spans two boards as one write, grouped by Board", () => {
+    // A selection may hold a card on the plane beside one inside a Board. Each
+    // card is placed on its own Board; the gesture is still one gesture, so it
+    // is one commit rather than a silent refusal.
+    const plan = expectCommit(
+      planMoveCommit(
+        {
+          kind: "move",
+          items: [
+            { instance: cardRef({ instanceKey: "i1", cardId: "card-a", boardId: "board-1" }) },
+            { instance: cardRef({ instanceKey: "i2", cardId: "card-b", boardId: "board-2" }) },
+          ],
+          worldDelta: { x: 40, y: 40 },
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
     );
-    expect(plan).toEqual({ status: "skip", reason: "mixed-boards" });
+    expect(plan.write).toEqual({
+      kind: "movePlacementsMany",
+      groups: [
+        { boardId: "board-1", moves: [{ cardId: "card-a", x: 40, y: 40 }] },
+        { boardId: "board-2", moves: [{ cardId: "card-b", x: 40, y: 40 }] },
+      ],
+    });
+
+    const { writer, batchOrigins } = createWriter();
+    applyCanonicalWrite(writer, plan.write);
+    // One history step, and each Board is written once.
+    expect(batchOrigins).toEqual([`${ICE_WRITE_ORIGIN}:move-many`]);
+    expect(writer.movePlacements).toHaveBeenCalledTimes(2);
+    expect(writer.movePlacements).toHaveBeenNthCalledWith(1, "board-1", [
+      { cardId: "card-a", x: 40, y: 40 },
+    ]);
+    expect(writer.movePlacements).toHaveBeenNthCalledWith(2, "board-2", [
+      { cardId: "card-b", x: 40, y: 40 },
+    ]);
   });
 
   it("should refuse to start when no instance resolved", () => {
@@ -737,6 +763,141 @@ describe("iceBridge sections", () => {
       { capabilities: ICE_EDIT_CAPABILITIES },
     );
     expect(plan).toEqual({ status: "skip", reason: "wrong-instance" });
+  });
+});
+
+describe("iceBridge drops between Boards", () => {
+  const source = cardRef({
+    instanceKey: "i1",
+    cardId: "card-a",
+    boardId: "board-1",
+    geometry: { x: 10, y: 20, width: 200, height: 120 },
+  });
+
+  it("should move a dropped card to the Board it entered, leaving the old one", () => {
+    const plan = expectCommit(
+      planDropCommit(
+        {
+          targetBoardId: "board-2",
+          items: [{ instance: source, geometry: { x: 64, y: 32, width: 200, height: 120 } }],
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    );
+
+    expect(plan.write).toEqual({
+      kind: "movePlacements",
+      boardId: "board-2",
+      moves: [{ cardId: "card-a", x: 64, y: 32, fromBoardId: "board-1" }],
+    });
+  });
+
+  it("should carry the whole selection into the Board in one write", () => {
+    const second = cardRef({
+      instanceKey: "i2",
+      cardId: "card-b",
+      boardId: "board-1",
+      geometry: { x: 400, y: 20, width: 200, height: 120 },
+    });
+    const plan = expectCommit(
+      planDropCommit(
+        {
+          targetBoardId: "board-2",
+          items: [
+            { instance: source, geometry: { x: 64, y: 32, width: 200, height: 120 } },
+            { instance: second, geometry: { x: 454, y: 32, width: 200, height: 120 } },
+          ],
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    );
+
+    expect(plan.write).toEqual({
+      kind: "movePlacements",
+      boardId: "board-2",
+      moves: [
+        { cardId: "card-a", x: 64, y: 32, fromBoardId: "board-1" },
+        { cardId: "card-b", x: 454, y: 32, fromBoardId: "board-1" },
+      ],
+    });
+  });
+
+  it("should commit a drop whose box happens to be unchanged", () => {
+    // The Board changed, so the placement is a change however equal the numbers
+    // look: a card dropped into the frame it was already pointing at by
+    // coincidence must still move.
+    const plan = expectCommit(
+      planDropCommit(
+        {
+          targetBoardId: "board-2",
+          items: [{ instance: source, geometry: { x: 10, y: 20, width: 200, height: 120 } }],
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    );
+    expect(plan.write).toMatchObject({ kind: "movePlacements", boardId: "board-2" });
+  });
+
+  it("should skip a drop that stayed on its own Board", () => {
+    expect(
+      planDropCommit(
+        {
+          targetBoardId: "board-1",
+          items: [{ instance: source, geometry: { x: 10, y: 20, width: 200, height: 120 } }],
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    ).toEqual({ status: "skip", reason: "no-change" });
+  });
+
+  it("should refuse a drop in a read-only session", () => {
+    expect(
+      planDropCommit(
+        {
+          targetBoardId: "board-2",
+          items: [{ instance: source, geometry: { x: 1, y: 2, width: 200, height: 120 } }],
+        },
+        { capabilities: ICE_VIEW_CAPABILITIES },
+      ),
+    ).toEqual({ status: "denied", reason: "read-only" });
+  });
+
+  it("should write a Board's new parent and its frame as one batch", () => {
+    const { writer, batchOrigins } = createWriter();
+    const plan = expectCommit(
+      planBoardNestCommit(
+        {
+          boardId: "board-a",
+          parentBoardId: "board-b",
+          geometry: { x: 24, y: 36, width: 816, height: 280 },
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    );
+    applyCanonicalWrite(writer, plan.write);
+
+    expect(batchOrigins).toEqual([`${ICE_WRITE_ORIGIN}:nest`]);
+    expect(writer.nestBoard).toHaveBeenCalledWith("board-a", "board-b");
+    expect(writer.updateBoardRect).toHaveBeenCalledWith("board-a", {
+      x: 24,
+      y: 36,
+      width: 816,
+      height: 280,
+    });
+  });
+
+  it("should keep a nested Board above the document's floor", () => {
+    const plan = expectCommit(
+      planBoardNestCommit(
+        {
+          boardId: "board-a",
+          parentBoardId: "board-b",
+          geometry: { x: 0, y: 0, width: 12, height: 8 },
+        },
+        { capabilities: ICE_EDIT_CAPABILITIES },
+      ),
+    );
+    expect(plan.write).toMatchObject({ geometry: { width: 80, height: 60 } });
   });
 });
 
@@ -1037,6 +1198,69 @@ describe("iceBridge workspace adapter", () => {
     expect(runIceHistory(doc, "undo")).toBe(true);
     expect(doc.getSection("section-a")).toMatchObject({ x: 100, y: 100 });
     expect(doc.getPlacement("board-1", "card-a")).toMatchObject({ x: 10, y: 10 });
+  });
+
+  it("should re-parent a Board and restate its frame in one undo step", () => {
+    const doc = createDoc();
+    doc.createView({ id: "board-2", name: "Inner" });
+    doc.createBoard({ id: "board-b", parentBoardId: "board-1", x: 100, y: 100 });
+    const writer = workspaceWriter(doc);
+
+    applyCanonicalWrite(writer, {
+      kind: "nestBoard",
+      boardId: "board-b",
+      parentBoardId: "board-2",
+      geometry: { x: 24, y: 36, width: 360, height: 260 },
+    });
+
+    // The gesture's own box wins over the re-parent's keep-my-place translate.
+    expect(doc.getBoard("board-b")).toMatchObject({
+      parentBoardId: "board-2",
+      rect: { x: 24, y: 36 },
+    });
+
+    expect(runIceHistory(doc, "undo")).toBe(true);
+    expect(doc.getBoard("board-b")).toMatchObject({
+      parentBoardId: "board-1",
+      rect: { x: 100, y: 100 },
+    });
+  });
+
+  it("should leave a card where it was when the target refuses the placement", () => {
+    const doc = createDoc();
+    const writer = workspaceWriter(doc);
+
+    applyCanonicalWrite(writer, {
+      kind: "movePlacements",
+      boardId: "board-missing",
+      moves: [{ cardId: "card-a", x: 4, y: 5, fromBoardId: "board-1" }],
+    });
+
+    // A Board the document does not have cannot take the card: the old
+    // placement is only released once the new one exists.
+    expect(doc.getPlacement("board-1", "card-a")).toMatchObject({ x: 10, y: 10 });
+    expect(doc.getPlacement("board-missing", "card-a")).toBeUndefined();
+  });
+
+  it("should move a placement to another Board in one undo step", () => {
+    const doc = createDoc();
+    doc.createView({ id: "board-2", name: "Inner" });
+    const writer = workspaceWriter(doc);
+
+    applyCanonicalWrite(writer, {
+      kind: "movePlacements",
+      boardId: "board-2",
+      moves: [{ cardId: "card-a", x: 40, y: 50, fromBoardId: "board-1" }],
+    });
+
+    expect(doc.getPlacement("board-1", "card-a")).toBeUndefined();
+    expect(doc.getPlacement("board-2", "card-a")).toMatchObject({ x: 40, y: 50 });
+
+    // One gesture is one history step: undo puts the card back on the Board it
+    // came from, not on both.
+    expect(runIceHistory(doc, "undo")).toBe(true);
+    expect(doc.getPlacement("board-1", "card-a")).toMatchObject({ x: 10, y: 10 });
+    expect(doc.getPlacement("board-2", "card-a")).toBeUndefined();
   });
 
   it("should report a viewer session as select-only", () => {

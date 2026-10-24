@@ -3,6 +3,7 @@ import type { CanonicalWriter } from "./iceBridge";
 import {
   attachIcePointerEditing,
   createIceEditingController,
+  currentFrameOf,
   type IceEditingOptions,
   instanceFor,
   type ScreenPoint,
@@ -36,6 +37,7 @@ function writer(): CanonicalWriter & { calls: unknown[] } {
     deleteSections: record("deleteSections"),
     addEdge: record("addEdge"),
     removeEdges: record("removeEdges"),
+    nestBoard: record("nestBoard"),
   } as CanonicalWriter & { calls: unknown[] };
 }
 
@@ -130,27 +132,23 @@ describe("iceEditingController", () => {
     ]);
   });
 
-  it("should commit a Board's frame once, in its parent's frame", () => {
+  it("should commit a Board's frame once, in the frame the camera is inside", () => {
     const { controller, canonical, boxes } = harness({
       pick: () => 7,
       boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
-      frameOriginOf: () => ({ x: 1000, y: 2000 }),
     });
-    boxes.set(7, { x: 1044, y: 2074, width: 816, height: 280 });
-    const start = inside({ x: 1044, y: 2074, width: 816, height: 280 });
+    // ICE reports a mat's box in its parent's frame, which is where the
+    // document stores the Board's rect: no origin is invented here.
+    boxes.set(7, { x: 44, y: 74, width: 816, height: 280 });
+    const start = inside({ x: 44, y: 74, width: 816, height: 280 });
 
     controller.pointerDown(1, start);
     // The mat was dragged and resized by the gesture: one frame, both parts.
-    boxes.set(7, { x: 1104, y: 2114, width: 936, height: 360 });
+    boxes.set(7, { x: 104, y: 114, width: 936, height: 360 });
     controller.pointerUp(1, start);
 
     expect(canonical.calls).toEqual([
-      [
-        "updateBoardRect",
-        "board-a",
-        // World less the parent frame's origin — where the Board stores its rect.
-        { x: 104, y: 114, width: 936, height: 360 },
-      ],
+      ["updateBoardRect", "board-a", { x: 104, y: 114, width: 936, height: 360 }],
     ]);
   });
 
@@ -214,9 +212,35 @@ describe("iceEditingController", () => {
     expect(canonical.calls).toHaveLength(0);
   });
 
-  it("should refuse a press inside a nested board until the transform is wired", () => {
-    const { controller, canonical } = harness({ pick: () => 1 });
-    const slots = new Map([[1, { cardId: "card-1", boardId: "nested-board" }]]);
+  it("should commit a drag inside an entered Board in that Board's coordinates", () => {
+    const boxes = new Map<number, Box>([[1, { x: 40, y: 60, width: 288, height: 240 }]]);
+    const canonical = writer();
+    const nested = createIceEditingController({
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      pick: () => 1,
+      rectOf: (entity) => boxes.get(entity) ?? null,
+      writer: canonical,
+      role: "editor",
+      removeCards: vi.fn(),
+      slots: new Map([[1, { cardId: "card-1", boardId: "board-a" }]]),
+      rootBoardId: ROOT,
+      // The camera is inside board-a, so ICE measures in board-a's own units.
+      currentFrame: () => ({ boardId: "board-a", path: [ROOT, "board-a"] }),
+    });
+
+    expect(nested.pointerDown(1, { x: 100, y: 120 })).toBe(true);
+    boxes.set(1, { x: 140, y: 220, width: 288, height: 240 });
+    expect(nested.pointerUp(1, { x: 200, y: 280 })).toBe(true);
+
+    expect(canonical.calls).toEqual([
+      ["movePlacements", "board-a", [{ cardId: "card-1", x: 140, y: 220 }]],
+    ]);
+  });
+
+  it("should refuse a press on a Board the camera is not inside", () => {
+    // A card the camera cannot measure is one ICE would move without a write:
+    // the press is refused instead, which is what makes it immovable.
+    const { canonical } = harness({ pick: () => 1 });
     const nested = createIceEditingController({
       camera: () => ({ x: 0, y: 0, zoom: 1 }),
       pick: () => 1,
@@ -224,12 +248,144 @@ describe("iceEditingController", () => {
       writer: canonical,
       role: "editor",
       removeCards: vi.fn(),
-      slots,
+      slots: new Map([[1, { cardId: "card-1", boardId: "board-b" }]]),
       rootBoardId: ROOT,
+      currentFrame: () => ({ boardId: "board-a", path: [ROOT, "board-a"] }),
     });
 
     expect(nested.pointerDown(1, { x: 5, y: 5 })).toBe(false);
-    expect(controller.pointerDown(1, { x: 110, y: 110 })).toBe(true);
+    expect(canonical.calls).toHaveLength(0);
+  });
+
+  it("should drag the whole selection as one write", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 1,
+      selection: () => ["card-1", "card-2"],
+    });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    expect(controller.pointerDown(1, start)).toBe(true);
+    // ICE moves every selected entity; the commit is the snapped boxes.
+    boxes.set(1, { x: 340, y: 260, width: 288, height: 240 });
+    boxes.set(2, { x: 740, y: 260, width: 288, height: 240 });
+
+    expect(controller.pointerUp(1, { x: start.x + 240, y: start.y + 160 })).toBe(true);
+    expect(canonical.calls).toEqual([
+      [
+        "movePlacements",
+        ROOT,
+        [
+          { cardId: "card-1", x: 340, y: 260 },
+          { cardId: "card-2", x: 740, y: 260 },
+        ],
+      ],
+    ]);
+  });
+
+  it("should drag only the pressed card when it is not selected", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 1,
+      selection: () => ["card-2"],
+    });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    controller.pointerDown(1, start);
+    boxes.set(1, { x: 340, y: 260, width: 288, height: 240 });
+    boxes.set(2, { x: 740, y: 260, width: 288, height: 240 });
+    controller.pointerUp(1, { x: start.x + 240, y: start.y + 160 });
+
+    expect(canonical.calls).toEqual([
+      ["movePlacements", ROOT, [{ cardId: "card-1", x: 340, y: 260 }]],
+    ]);
+  });
+
+  it("should move a card dropped into a Board onto that Board", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 1,
+      // ICE re-parented the card into Board A's frame.
+      containerOf: () => "board-a",
+    });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    controller.pointerDown(1, start);
+    // The box ICE left it at, already in the new Board's frame.
+    boxes.set(1, { x: 24, y: 32, width: 288, height: 240 });
+
+    expect(controller.pointerUp(1, { x: start.x + 240, y: start.y + 160 })).toBe(true);
+    expect(canonical.calls).toEqual([
+      ["movePlacements", "board-a", [{ cardId: "card-1", x: 24, y: 32, fromBoardId: ROOT }]],
+    ]);
+  });
+
+  it("should keep a drop that stayed on its own Board a plain move", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 1,
+      containerOf: () => ROOT,
+    });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    controller.pointerDown(1, start);
+    boxes.set(1, { x: 340, y: 260, width: 288, height: 240 });
+    controller.pointerUp(1, { x: start.x + 240, y: start.y + 160 });
+
+    expect(canonical.calls).toEqual([
+      ["movePlacements", ROOT, [{ cardId: "card-1", x: 340, y: 260 }]],
+    ]);
+  });
+
+  it("should carry the whole selection into the Board it was dropped in", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 1,
+      selection: () => ["card-1", "card-2"],
+      containerOf: () => "board-a",
+    });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    controller.pointerDown(1, start);
+    boxes.set(1, { x: 24, y: 32, width: 288, height: 240 });
+    boxes.set(2, { x: 414, y: 32, width: 288, height: 240 });
+
+    expect(controller.pointerUp(1, { x: start.x + 240, y: start.y + 160 })).toBe(true);
+    expect(canonical.calls).toEqual([
+      [
+        "movePlacements",
+        "board-a",
+        [
+          { cardId: "card-1", x: 24, y: 32, fromBoardId: ROOT },
+          { cardId: "card-2", x: 414, y: 32, fromBoardId: ROOT },
+        ],
+      ],
+    ]);
+  });
+
+  it("should not commit a drop for a press that never travelled", () => {
+    const { controller, canonical } = harness({ pick: () => 1, containerOf: () => "board-a" });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+
+    controller.pointerDown(1, start);
+
+    expect(controller.pointerUp(1, start)).toBe(false);
+    expect(canonical.calls).toHaveLength(0);
+  });
+
+  it("should re-parent a Board dropped into another Board", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 7,
+      boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
+      containerOf: () => "board-b",
+    });
+    boxes.set(7, { x: 44, y: 74, width: 816, height: 280 });
+    const start = inside({ x: 44, y: 74, width: 816, height: 280 });
+
+    controller.pointerDown(1, start);
+    // ICE re-parented the mat and left it at a box in the new Board's frame.
+    boxes.set(7, { x: 84, y: 94, width: 816, height: 280 });
+    expect(controller.pointerUp(1, { x: start.x + 40, y: start.y + 20 })).toBe(true);
+
+    expect(canonical.calls).toEqual([
+      ["nestBoard", "board-a", "board-b"],
+      ["updateBoardRect", "board-a", { x: 84, y: 94, width: 816, height: 280 }],
+    ]);
   });
 
   it("should delete the selection through one plan and remove the entities", () => {
@@ -344,7 +500,7 @@ describe("iceEditingController", () => {
   });
 
   it("should build an identity instance for the root board", () => {
-    const instance = instanceFor({ cardId: "c", boardId: ROOT }, ROOT, {
+    const instance = instanceFor({ cardId: "c", boardId: ROOT }, [ROOT], {
       x: 5,
       y: 6,
       width: 7,
@@ -359,6 +515,19 @@ describe("iceEditingController", () => {
       transform: { scale: 1, x: 0, y: 0 },
       geometry: { x: 5, y: 6, width: 7, height: 8 },
       cardId: "c",
+    });
+  });
+});
+
+describe("the frame the camera is inside", () => {
+  it("should name the root and its path when nothing is entered", () => {
+    expect(currentFrameOf(ROOT, [])).toEqual({ boardId: ROOT, path: [ROOT] });
+  });
+
+  it("should name the deepest entered Board and the whole path", () => {
+    expect(currentFrameOf(ROOT, [{ id: "board-a" }, { id: "board-b" }])).toEqual({
+      boardId: "board-b",
+      path: [ROOT, "board-a", "board-b"],
     });
   });
 });

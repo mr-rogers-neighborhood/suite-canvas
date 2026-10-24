@@ -30,8 +30,13 @@
  *
  * ## What is drawn from where
  *
- * - **Props are stable**: `edgeId`, `kind`, `path`, `thickness`, `arrow`. Nothing
- *   that changes per frame lives in props.
+ * - **Props are stable**: `edgeId`, `kind`, `path`, `thickness`, `arrow`, `label`.
+ *   Nothing that changes per frame lives in props. The label is the document's
+ *   text projected onto the object; the surface keeps it true (`useIceLinkGesture`
+ *   writes it through `setWidgetProps`) and draws it as a screen-space chip,
+ *   because a description has to be readable at every zoom and the desk's only
+ *   text path is the paper ink raster, which a link is not (see
+ *   `suiteEdgeLabelLayer.ts`).
  * - **The polyline is a per-driver side table** keyed by entity, refreshed in
  *   `drivers.follow()`. The driver reads each endpoint's live `Position`/`Size`
  *   from the world (so a drag moves the link with no write) plus that card's
@@ -45,6 +50,10 @@
  *   a 2-unit line has to stay grabbable. The slop is `SUITE_EDGE_HIT_PX` screen
  *   pixels taken back through the resolve frame's zoom, so it grows as the
  *   camera pulls away.
+ * - **`frame()` is a piece of the line, not the box**: the desk's marks draw
+ *   around the silhouette a kind reports, so a link reports its longest segment
+ *   turned to match it. A selection that brackets the whole bounding box would
+ *   read as a card's frame; one that hugs a run of ink reads as a line.
  *
  * Nothing here writes a document: the props are display-only, and the endpoint
  * truth is `graphEdgeSchema` in `@suite/graph`.
@@ -196,6 +205,8 @@ export type SuiteEdgeFace = {
   readonly path: EdgePath;
   readonly thickness: number;
   readonly arrow: boolean;
+  /** The document's description, as the surface last projected it; `""` for none. */
+  readonly label: string;
 };
 
 /** What the projection hands `suiteEdgeSpawn`. */
@@ -209,6 +220,8 @@ export interface SuiteEdgeSpawnInput {
   readonly to: Point;
   readonly thickness?: number;
   readonly arrow?: boolean;
+  /** The description to draw; the surface re-projects it when the document changes. */
+  readonly label?: string;
 }
 
 /** What `spawnWidget` takes for one link, with our type filled in. */
@@ -247,6 +260,7 @@ export function suiteEdgeSpawn(input: SuiteEdgeSpawnInput): SuiteEdgeSpawn {
       path: input.path,
       thickness,
       arrow: input.arrow === true,
+      label: input.label ?? "",
     },
   };
 }
@@ -376,6 +390,63 @@ export function distanceToPolyline(polyline: readonly Point[], x: number, y: num
   return best;
 }
 
+/** A run of the polyline: two neighbouring samples, the ones the marks bracket. */
+export interface PolylineSegment {
+  readonly from: Point;
+  readonly to: Point;
+}
+
+/**
+ * The polyline's longest single segment. A route is a run of samples — 24 of
+ * them for a curve, three legs for a `step` — so the longest one is a piece of
+ * ink the length of a leg at least, and the marks drawn around it are a line's
+ * marks. Null for a route with nothing to bracket.
+ */
+export function longestSegment(polyline: readonly Point[]): PolylineSegment | null {
+  let best: PolylineSegment | null = null;
+  let bestLength = 0;
+  for (let index = 0; index < polyline.length - 1; index += 1) {
+    const from = polyline[index];
+    const to = polyline[index + 1];
+    if (from === undefined || to === undefined) continue;
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    if (!(length > bestLength)) continue;
+    best = { from, to };
+    bestLength = length;
+  }
+  return best;
+}
+
+/** The point half way along the ink, measured along the route rather than across its box. */
+export function polylineMidpoint(polyline: readonly Point[]): Point | null {
+  const first = polyline[0];
+  if (first === undefined) return null;
+  let total = 0;
+  for (let index = 0; index < polyline.length - 1; index += 1) {
+    const from = polyline[index];
+    const to = polyline[index + 1];
+    if (from === undefined || to === undefined) continue;
+    total += Math.hypot(to.x - from.x, to.y - from.y);
+  }
+  if (!(total > 0)) return { x: first.x, y: first.y };
+  let walked = 0;
+  for (let index = 0; index < polyline.length - 1; index += 1) {
+    const from = polyline[index];
+    const to = polyline[index + 1];
+    if (from === undefined || to === undefined) continue;
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    if (walked + length >= total / 2) {
+      const t = length === 0 ? 0 : (total / 2 - walked) / length;
+      return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+    }
+    walked += length;
+  }
+  return {
+    x: polyline[polyline.length - 1]?.x ?? first.x,
+    y: polyline[polyline.length - 1]?.y ?? first.y,
+  };
+}
+
 /** The geometry a link resolves to this frame: what the pass draws and what the pick tests against. */
 export interface SuiteEdgeGeometry {
   readonly polyline: readonly Point[];
@@ -455,6 +526,30 @@ let linkOf: SuiteEdgeLinkOf | undefined;
  */
 export function setSuiteEdgeLinkOf(next: SuiteEdgeLinkOf | undefined): void {
   linkOf = next;
+}
+
+/**
+ * The kind's per-desk state, keyed by the world it belongs to. Two desks number
+ * their entities alike, so a bare entity key would let one surface's link answer
+ * for another's; the world is the scope everything here is true in.
+ */
+const localsOf = new WeakMap<World, SuiteEdgeLocal>();
+
+/**
+ * Where a link's description sits: the middle of its ink, off the polyline's own
+ * box, in the same units `entityRectOf` reports the object in. The surface's
+ * label layer adds this to the object's box origin and projects it with the
+ * camera, which is the one place that knows where the world is on screen.
+ *
+ * An empty label still has a point — the editor opens there — so this answers
+ * for every drawn link, not only the described ones.
+ */
+export function suiteEdgeLabelOffset(world: World, entity: Entity): Point | undefined {
+  const trace = localsOf.get(world)?.traceOf(entity);
+  if (trace === undefined) return undefined;
+  const middle = polylineMidpoint(trace.polyline);
+  if (middle === null) return undefined;
+  return { x: middle.x - trace.box.x, y: middle.y - trace.box.y };
 }
 
 /** Every widget carries `PrefabId`; the walk below filters it by our type id. */
@@ -683,16 +778,33 @@ const suiteEdgeKind: ObjectKind<SuiteEdgeGeometry, readonly PaperRecord[]> = {
   hit(geometry, wx, wy): ObjectHit | null {
     return suiteEdgeHitTest(geometry, wx, wy) ? "content" : null;
   },
-  // The marks go around the link's own bounds, not around a sheet's.
+  // The marks go around a piece of the link, never its bounding box: a bracket
+  // at the corners of a bent link's box is a card's frame, which is exactly what
+  // a selected line must not look like. The longest segment, turned to its own
+  // direction and no taller than the ink, is a run of the stroke.
   frame(geometry) {
-    const { x, y, width, height } = geometry.box;
+    const segment = longestSegment(geometry.polyline);
+    if (segment === null) {
+      const { x, y, width, height } = geometry.box;
+      return {
+        cx: x + width / 2,
+        cy: y + height / 2,
+        hx: width / 2,
+        hy: height / 2,
+        angle: 0,
+        r: 0,
+      };
+    }
+    const dx = segment.to.x - segment.from.x;
+    const dy = segment.to.y - segment.from.y;
+    const half = saneThickness(geometry.thickness) / 2;
     return {
-      cx: x + width / 2,
-      cy: y + height / 2,
-      hx: width / 2,
-      hy: height / 2,
-      angle: 0,
-      r: 0,
+      cx: (segment.from.x + segment.to.x) / 2,
+      cy: (segment.from.y + segment.to.y) / 2,
+      hx: Math.hypot(dx, dy) / 2,
+      hy: half,
+      angle: Math.atan2(dy, dx),
+      r: half,
     };
   },
   // A link never lives inside a container (`drop: "never"`), so it has no chip.
@@ -718,8 +830,12 @@ export const SuiteEdge = defineObject({
     thickness: p.number({ default: SUITE_EDGE_DEFAULT_THICKNESS }),
     // An arrowhead at the target end.
     arrow: p.boolean({ default: false }),
+    // The document's description of the relation. Empty means "no description";
+    // the surface keeps it in step with `edge.label` (one `setWidgetProps` per
+    // change, never per frame).
+    label: p.string({ default: "" }),
   },
-  groups: { edge: ["edgeId", "kind", "path", "thickness", "arrow"] },
+  groups: { edge: ["edgeId", "kind", "path", "thickness", "arrow", "label"] },
   size: SUITE_EDGE_SIZE,
   kind: suiteEdgeKind,
   interaction: SUITE_EDGE_INTERACTION,
@@ -730,6 +846,10 @@ export const SuiteEdge = defineObject({
   drivers: (host) => {
     const local = host.local as SuiteEdgeLocal | undefined;
     if (local === undefined) return undefined;
+    // A kind host always has a world; a unit test's stub may not, and a weak
+    // map refuses anything that is not an object.
+    const world: unknown = host.world;
+    if (typeof world === "object" && world !== null) localsOf.set(world as World, local);
     const driver: KindDriver = {
       // Always follow: an endpoint can move with no input on this object at all
       // (another client's drag arrives as a Position write), so the idle budget

@@ -86,6 +86,10 @@ function makeInput(
     createBoardAt: vi.fn(),
     duplicateCards: vi.fn(),
     startEdgeDescription: vi.fn(),
+    clearEdgeDescription: vi.fn(),
+    deleteEdge: vi.fn(),
+    setEdgePath: vi.fn(),
+    setEdgeBidirectional: vi.fn(),
     moveCardToBoard: vi.fn(),
     unplaceSelected: vi.fn(),
     trashSelected: vi.fn(),
@@ -260,52 +264,50 @@ describe("useCanvasMenuItems edge menu", () => {
   } as unknown as GraphEdge;
   const edgeMenu: ContextMenuState = { x: 5, y: 6, kind: "edge", edgeId: "edge-1" };
 
-  it("edits the description, direction, path and deletes the link", () => {
-    const workspace = makeWorkspace(edge);
-    const input = makeInput(edgeMenu, { workspace });
-    const items = renderMenu(input);
+  it("offers exactly the rows the surface can keep", () => {
+    const items = renderMenu(makeInput(edgeMenu, { workspace: makeWorkspace(edge) }));
 
+    // Every row here has a projection behind it. "Reverse direction" is absent:
+    // swapping a link's ends is not a prop the drawn link can take.
     expect(labels(items)).toEqual([
       "Edit description…",
       "Remove description",
-      "Reverse direction",
       "Make bidirectional",
       "Path",
       "Delete link",
     ]);
-
-    item(items, "Edit description…").onSelect?.();
-    expect(input.startEdgeDescription).toHaveBeenCalledWith("edge-1", { x: 5, y: 6 });
-
-    item(items, "Reverse direction").onSelect?.();
-    expect(workspace.reverseEdge).toHaveBeenCalledWith("edge-1");
-
-    item(items, "Make bidirectional").onSelect?.();
-    expect(workspace.setEdgeBidirectional).toHaveBeenCalledWith("edge-1", true);
-
-    const paths = item(items, "Path").items ?? [];
-    const straight = paths.find((entry) => entry.label === "Straight");
-    straight?.onSelect?.();
-    expect(workspace.setEdgePath).toHaveBeenCalledWith("edge-1", "straight");
-
-    item(items, "Delete link").onSelect?.();
-    expect(workspace.removeEdge).toHaveBeenCalledWith("edge-1");
-  });
-
-  it("marks the current path and offers to remove an existing description", () => {
-    const workspace = makeWorkspace(edge);
-    const items = renderMenu(makeInput(edgeMenu, { workspace }));
-
-    const paths = item(items, "Path").items ?? [];
-    expect(paths.map((entry) => entry.label)).toEqual([
+    expect(labels(item(items, "Path").items ?? [])).toEqual([
       "Curved ✓",
       "Straight",
       "Step",
       "Smooth step",
     ]);
+  });
+
+  it("re-projects direction and routing through the surface, not the document alone", () => {
+    const input = makeInput(edgeMenu, { workspace: makeWorkspace(edge) });
+    const items = renderMenu(input);
+
+    item(items, "Make bidirectional").onSelect?.();
+    expect(input.setEdgeBidirectional).toHaveBeenCalledWith("edge-1", true);
+
+    const straight = (item(items, "Path").items ?? []).find((entry) => entry.label === "Straight");
+    straight?.onSelect?.();
+    expect(input.setEdgePath).toHaveBeenCalledWith("edge-1", "straight");
+  });
+
+  it("opens the description editor and deletes through the planner callbacks", () => {
+    const input = makeInput(edgeMenu, { workspace: makeWorkspace(edge) });
+    const items = renderMenu(input);
+
+    item(items, "Edit description…").onSelect?.();
+    expect(input.startEdgeDescription).toHaveBeenCalledWith("edge-1", { x: 5, y: 6 });
 
     item(items, "Remove description").onSelect?.();
-    expect(workspace.setEdgeLabel).toHaveBeenCalledWith("edge-1", null);
+    expect(input.clearEdgeDescription).toHaveBeenCalledWith("edge-1");
+
+    item(items, "Delete link").onSelect?.();
+    expect(input.deleteEdge).toHaveBeenCalledWith("edge-1");
   });
 
   it("offers a plain description action for an unlabeled edge", () => {

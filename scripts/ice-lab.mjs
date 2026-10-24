@@ -122,6 +122,15 @@ async function release(page, at) {
   await page.waitForTimeout(400);
 }
 
+/**
+ * Where a card is, in the coordinates the camera currently speaks. On the plane
+ * that is its world box; inside a Board the camera is in that frame's units, so
+ * it is the card's own `local` box.
+ */
+function cardRect(state, card) {
+  return state.entered.length > 0 ? card.local : card.world;
+}
+
 function centre(rect) {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
@@ -213,6 +222,65 @@ async function run() {
       if (step.fit === true) {
         await page.getByTestId("canvas-zoom-fit").click();
         await page.waitForTimeout(400);
+      }
+      if (step.clickCard !== undefined) {
+        // A bare press selects; shift extends the selection, which is how a
+        // multi-card drag is reached without a marquee.
+        const card = slotOf(current, step.clickCard.card ?? step.clickCard);
+        if (card === undefined) throw new Error(`no card ${String(step.clickCard)}`);
+        const point = toClient(box, current.camera, centre(cardRect(current, card)));
+        await page.mouse.move(point.x, point.y, { steps: 3 });
+        if (step.clickCard.shift === true) await page.keyboard.down("Shift");
+        await page.mouse.click(point.x, point.y);
+        if (step.clickCard.shift === true) await page.keyboard.up("Shift");
+        await page.waitForTimeout(300);
+        report.steps.push({ step: label, clicked: card.cardId, at: point });
+      }
+      if (step.dragCard !== undefined) {
+        // A card drag in world units: the pointer must travel, or the controller
+        // (rightly) writes nothing.
+        const card = slotOf(current, step.dragCard.card);
+        if (card === undefined) throw new Error(`no card ${step.dragCard.card}`);
+        const rect = cardRect(current, card);
+        const from = toClient(box, current.camera, centre(rect));
+        const to = toClient(box, current.camera, {
+          x: rect.x + rect.width / 2 + step.dragCard.dx,
+          y: rect.y + rect.height / 2 + step.dragCard.dy,
+        });
+        await page.mouse.move(from.x, from.y, { steps: 3 });
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: step.steps ?? 14 });
+        await release(page, to);
+        report.steps.push({ step: label, dragged: card.cardId, dx: step.dragCard.dx });
+      }
+      if (step.dragCardTo !== undefined) {
+        // A drop onto a Board's face: the target is a point, so the drop lands
+        // inside the frame rather than where the card used to be.
+        const card = slotOf(current, step.dragCardTo.card);
+        const board = boardOf(current, step.dragCardTo.board);
+        if (card === undefined) throw new Error(`no card ${step.dragCardTo.card}`);
+        if (board === undefined) throw new Error(`no board ${step.dragCardTo.board}`);
+        const from = toClient(box, current.camera, centre(cardRect(current, card)));
+        const to = toClient(box, current.camera, centre(board.world));
+        await page.mouse.move(from.x, from.y, { steps: 3 });
+        await page.mouse.down();
+        await page.mouse.move(to.x, to.y, { steps: 18 });
+        await release(page, to);
+        report.steps.push({ step: label, dragged: card.cardId, into: board.id });
+      }
+      if (step.clickEdge !== undefined) {
+        // A link is hit-tested against its ink, so the press goes on the middle
+        // of the drawn line, not on its bounding box.
+        const index = typeof step.clickEdge === "number" ? step.clickEdge : 0;
+        const edge = current.edges[index];
+        if (edge === undefined) throw new Error(`no edge ${String(step.clickEdge)}`);
+        const mid = { x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2 };
+        // The edge's box is world; on a frame plane that is what the camera sees.
+        const point = toClient(box, current.camera, mid);
+        await page.mouse.move(point.x, point.y, { steps: 3 });
+        await page.mouse.click(point.x, point.y);
+        await page.waitForTimeout(300);
+        report.steps.push({ step: label, clickedEdge: edge.edgeId, at: point });
       }
       if (step.hover !== undefined) {
         await page.mouse.move(step.hover[0], step.hover[1], { steps: 4 });
@@ -376,9 +444,13 @@ async function run() {
         const [[ax, ay], [bx, by]] = step.dragWorld;
         const from = toClient(box, current.camera, { x: ax, y: ay });
         const to = toClient(box, current.camera, { x: bx, y: by });
+        // The select tool pans the bare mat and draws its marquee on Shift
+        // (`canvasDrag: "pan"`, `canvasDragShift: "marquee"`).
+        if (step.shift === true) await page.keyboard.down("Shift");
         await page.mouse.move(from.x, from.y);
         await page.mouse.down();
         await page.mouse.move(to.x, to.y, { steps: step.steps ?? 12 });
+        if (step.shift === true) await page.keyboard.up("Shift");
         await release(page, to);
       }
 

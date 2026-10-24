@@ -1,4 +1,9 @@
-import { type LayerAction, sectionColors, type WorkspaceDocument } from "@suite/graph";
+import {
+  type EdgePath,
+  type LayerAction,
+  sectionColors,
+  type WorkspaceDocument,
+} from "@suite/graph";
 import { DEFAULT_FRACTAL_RECIPE, LAYOUT_PATTERNS, type LayoutPattern } from "@suite/scene";
 import { useMemo } from "react";
 import type { ContextMenuItem } from "../components/ContextMenu";
@@ -40,7 +45,16 @@ export interface CanvasMenuItemsInput {
   /** Plants an empty Board on the plane at `position` (ADR-0039). */
   createBoardAt: (position: MenuPoint) => void;
   duplicateCards: (ids: string[]) => void;
+  /** Open the inline editor for a link's description, at a client point. */
   startEdgeDescription: (edgeId: string, point: MenuPoint) => void;
+  /** Clear a link's description: one document write, through the label planner. */
+  clearEdgeDescription: (edgeId: string) => void;
+  /** How a link is routed; the surface re-projects it onto the drawn link. */
+  setEdgePath: (edgeId: string, path: EdgePath) => void;
+  /** One-way or both ways; the surface re-projects the arrowhead. */
+  setEdgeBidirectional: (edgeId: string, bidirectional: boolean) => void;
+  /** Delete a link: one document write, through the edge-delete planner. */
+  deleteEdge: (edgeId: string) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
   unplaceSelected: () => void;
   trashSelected: () => void;
@@ -96,6 +110,10 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
     createBoardAt,
     duplicateCards,
     startEdgeDescription,
+    clearEdgeDescription,
+    deleteEdge,
+    setEdgePath,
+    setEdgeBidirectional,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,
@@ -227,6 +245,12 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
   if (contextMenu.kind === "edge" && edgeId) {
     if (!canEditLayout) return [];
     const edge = workspace.getEdge(edgeId);
+    // What a link can actually do on this canvas. Direction, path style and
+    // arrowheads are document fields, but the desk draws a link from the props
+    // it spawned with and nothing re-projects those, so a row for them would be
+    // a promise the surface cannot keep; it is removed rather than greyed. What
+    // is left is what works: the description (drawn from `edge.label`) and the
+    // delete (one planned `removeEdges`).
     return [
       {
         label: edge?.label ? "Edit description…" : "Add description…",
@@ -237,43 +261,42 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             {
               label: "Remove description",
               danger: true,
-              onSelect: () => workspace.setEdgeLabel(edgeId, null),
+              onSelect: () => clearEdgeDescription(edgeId),
             },
           ]
         : []),
-      {
-        label: "Reverse direction",
-        onSelect: () => workspace.reverseEdge(edgeId),
-      },
+      // No "Reverse direction": reversing swaps the document's ends, and the
+      // drawn link's ends are resolved once, when it is spawned — the desk has
+      // no way to re-point a link it is already drawing.
       {
         label: edge?.bidirectional ? "Make one-way" : "Make bidirectional",
-        onSelect: () => workspace.setEdgeBidirectional(edgeId, !edge?.bidirectional),
+        onSelect: () => setEdgeBidirectional(edgeId, !edge?.bidirectional),
       },
       {
         label: "Path",
         items: [
           {
             label: edge?.path === "bezier" ? "Curved ✓" : "Curved",
-            onSelect: () => workspace.setEdgePath(edgeId, "bezier"),
+            onSelect: () => setEdgePath(edgeId, "bezier"),
           },
           {
             label: edge?.path === "straight" ? "Straight ✓" : "Straight",
-            onSelect: () => workspace.setEdgePath(edgeId, "straight"),
+            onSelect: () => setEdgePath(edgeId, "straight"),
           },
           {
             label: edge?.path === "step" ? "Step ✓" : "Step",
-            onSelect: () => workspace.setEdgePath(edgeId, "step"),
+            onSelect: () => setEdgePath(edgeId, "step"),
           },
           {
             label: edge?.path === "smoothstep" ? "Smooth step ✓" : "Smooth step",
-            onSelect: () => workspace.setEdgePath(edgeId, "smoothstep"),
+            onSelect: () => setEdgePath(edgeId, "smoothstep"),
           },
         ],
       },
       {
         label: "Delete link",
         danger: true,
-        onSelect: () => workspace.removeEdge(edgeId),
+        onSelect: () => deleteEdge(edgeId),
       },
     ];
   }
@@ -492,6 +515,10 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
     createBoardAt,
     duplicateCards,
     startEdgeDescription,
+    clearEdgeDescription,
+    deleteEdge,
+    setEdgePath,
+    setEdgeBidirectional,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,
@@ -531,6 +558,10 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
         createBoardAt,
         duplicateCards,
         startEdgeDescription,
+        clearEdgeDescription,
+        deleteEdge,
+        setEdgePath,
+        setEdgeBidirectional,
         moveCardToBoard,
         unplaceSelected,
         trashSelected,
@@ -565,6 +596,10 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
       createBoardAt,
       duplicateCards,
       startEdgeDescription,
+      clearEdgeDescription,
+      deleteEdge,
+      setEdgePath,
+      setEdgeBidirectional,
       moveCardToBoard,
       unplaceSelected,
       trashSelected,

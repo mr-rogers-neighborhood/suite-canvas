@@ -237,6 +237,9 @@ export const MENU_SECTIONS: Readonly<Record<MenuTargetKind, readonly MenuSection
   // A Board is a frame, so it offers exactly what a section offered.
   board: ["rename", "color", "layer", "trash"],
   section: ["rename", "color", "layer", "trash"],
+  // A link offers two sections: its description (the label is drawn from
+  // `edge.label`) and its removal (one planned `removeEdges`). Direction and
+  // routing are entries inside those sections' menu, not sections of their own.
   edge: ["description", "delete"],
   connector: ["reposition", "delete"],
   pin: CANVAS_SECTIONS,

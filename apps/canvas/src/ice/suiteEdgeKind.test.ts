@@ -6,7 +6,9 @@ import type { Point } from "./iceEdgeGeometry";
 import {
   arrowQuads,
   distanceToPolyline,
+  longestSegment,
   polylineBounds,
+  polylineMidpoint,
   SUITE_EDGE_ARROW_LENGTH,
   SUITE_EDGE_DEFAULT_THICKNESS,
   SUITE_EDGE_FACE,
@@ -85,6 +87,7 @@ describe("suite.edge kind", () => {
       path: "edge",
       thickness: "edge",
       arrow: "edge",
+      label: "edge",
     });
   });
 
@@ -127,6 +130,7 @@ describe("suite.edge kind", () => {
       path: edgePaths[0],
       thickness: 2,
       arrow: true,
+      label: "supports",
     };
     expect(edgeKinds).toContain(face.kind);
     expect(edgePaths).toContain(face.path);
@@ -429,6 +433,7 @@ describe("suiteEdgeSpawn", () => {
       path: "straight",
       thickness: SUITE_EDGE_DEFAULT_THICKNESS,
       arrow: false,
+      label: "",
     });
   });
 
@@ -496,6 +501,7 @@ describe("the driver's recompute policy", () => {
     path: "straight",
     thickness: 2,
     arrow: false,
+    label: "",
   };
 
   /** A world holding one link: its props group plus a rect the writes land in. */
@@ -628,5 +634,89 @@ describe("suiteEdgeEntities", () => {
       read: () => undefined,
     };
     expect(suiteEdgeEntities(world as never)).toEqual([]);
+  });
+});
+
+describe("the selection frame hugs the ink", () => {
+  it("should turn the longest segment on its own axis, not the bounding box", () => {
+    const geometry = kind?.resolve(edgeContext({ polyline: elbow })) as SuiteEdgeGeometry;
+    const frame = kind?.frame?.(geometry);
+    // The `step` route's longest leg is the vertical run from (50, 0) to
+    // (50, 100): the marks stand along it, turned a quarter turn.
+    expect(frame?.cx).toBeCloseTo(50);
+    expect(frame?.cy).toBeCloseTo(50);
+    expect(frame?.hx).toBeCloseTo(50);
+    expect(frame?.angle).toBeCloseTo(Math.PI / 2);
+    // Never taller than the ink: a bracket around a box would read as a card.
+    expect(frame?.hy).toBeCloseTo(SUITE_EDGE_DEFAULT_THICKNESS / 2);
+    expect(frame?.r).toBeCloseTo(SUITE_EDGE_DEFAULT_THICKNESS / 2);
+  });
+
+  it("should follow a curve's own run rather than a corner of the box", () => {
+    const curve: readonly Point[] = [
+      { x: 0, y: 0 },
+      { x: 60, y: 60 },
+      { x: 200, y: 60 },
+    ];
+    const geometry = kind?.resolve(edgeContext({ polyline: curve })) as SuiteEdgeGeometry;
+    const frame = kind?.frame?.(geometry);
+    // The flat run home is the longest sample; its middle is not the box's
+    // corner, which is where a card's frame would sit.
+    expect(frame?.cx).toBeCloseTo(130);
+    expect(frame?.cy).toBeCloseTo(60);
+    expect(frame?.angle).toBeCloseTo(0);
+  });
+
+  it("should fall back to the box when there is no line to bracket", () => {
+    const geometry = kind?.resolve(edgeContext({})) as SuiteEdgeGeometry;
+    const frame = kind?.frame?.(geometry);
+    expect(frame).toEqual({
+      cx: geometry.box.x + geometry.box.width / 2,
+      cy: geometry.box.y + geometry.box.height / 2,
+      hx: geometry.box.width / 2,
+      hy: geometry.box.height / 2,
+      angle: 0,
+      r: 0,
+    });
+  });
+});
+
+describe("longestSegment and polylineMidpoint", () => {
+  it("should pick the longest run of a route", () => {
+    expect(longestSegment(elbow)).toEqual({ from: { x: 50, y: 0 }, to: { x: 50, y: 100 } });
+    expect(longestSegment([])).toBeNull();
+    expect(longestSegment([{ x: 1, y: 2 }])).toBeNull();
+  });
+
+  it("should measure the middle along the ink, not across its box", () => {
+    // The elbow is 200 units long; half of that is half way down the leg.
+    expect(polylineMidpoint(elbow)).toEqual({ x: 50, y: 50 });
+    expect(polylineMidpoint(flat)).toEqual({ x: 50, y: 0 });
+    expect(polylineMidpoint([])).toBeNull();
+    // A degenerate route still has a point: the editor opens somewhere.
+    expect(polylineMidpoint([{ x: 3, y: 4 }])).toEqual({ x: 3, y: 4 });
+  });
+});
+
+describe("the label prop", () => {
+  it("should default to no description and carry the one it is given", () => {
+    const bare = suiteEdgeSpawn({
+      edgeId: "edge-label-1",
+      kind: "references",
+      path: "straight",
+      from: { x: 0, y: 0 },
+      to: { x: 10, y: 0 },
+    });
+    expect(bare.props.label).toBe("");
+
+    const described = suiteEdgeSpawn({
+      edgeId: "edge-label-2",
+      kind: "references",
+      path: "straight",
+      from: { x: 0, y: 0 },
+      to: { x: 10, y: 0 },
+      label: "supports",
+    });
+    expect(described.props.label).toBe("supports");
   });
 });

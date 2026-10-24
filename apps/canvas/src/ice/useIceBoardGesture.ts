@@ -12,14 +12,19 @@
  * because it is the one piece of navigation state the HUD breadcrumb shows.
  */
 
-import { type Board, boardWorldRect } from "@suite/graph";
+import type { Board } from "@suite/graph";
 import type { Entity } from "@vibecook/ice";
 import { type Dispatch, type RefObject, type SetStateAction, useEffect } from "react";
 import { isWhiteboardCard } from "../cards/whiteboard";
 import { useUiStore } from "../store/useUiStore";
 import { workspaceWriter } from "./iceBridge";
 import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
-import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
+import {
+  attachIcePointerEditing,
+  createIceEditingController,
+  currentFrameOf,
+} from "./iceEditingController";
+import { identitySlots, matBoardOf } from "./iceEntityIdentity";
 import type { IceCamera } from "./iceSurfaceCamera";
 import { entityAt, entityRectOf } from "./iceSurfaceShared";
 import type { IceCommands, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
@@ -56,7 +61,11 @@ export function useIceBoardGesture(input: {
     const { root, desk } = dom;
 
     const { engine, core } = phase;
-    const slots = seed.entitySlots;
+    const world = engine.world;
+    // What this surface spawned, plus what a frame ICE built itself holds: a
+    // press inside an entered Board lands on the latter, and the entity's own
+    // face is what makes it a card there.
+    const slots = identitySlots(seed.entitySlots, world);
     const rectOf = (entity: Entity) => entityRectOf(engine, core, entity);
     const pickEntity = (screen: { x: number; y: number }) => entityAt(desk, screen);
 
@@ -80,16 +89,37 @@ export function useIceBoardGesture(input: {
       writer: workspaceWriter(liveWorkspace),
       role: caps.controllerRole,
       removeCards: (cardIds) => {
-        const entities = [...slots]
+        const entities = [...seed.entitySlots]
           .filter(([, slot]) => cardIds.includes(slot.cardId))
           .map(([entity]) => entity);
         removeEntities(entities);
-        for (const [entity, slot] of [...slots]) {
-          if (cardIds.includes(slot.cardId)) slots.delete(entity);
+        for (const [entity, slot] of [...seed.entitySlots]) {
+          if (cardIds.includes(slot.cardId)) seed.entitySlots.delete(entity);
         }
       },
       slots,
       rootBoardId,
+      // ICE measures every box in the frame the camera is inside, so a gesture
+      // inside an entered Board carries that Board and its path.
+      currentFrame: () => currentFrameOf(rootBoardId, portalFramesRef.current),
+      // A drop is the one gesture that changes which Board a placement belongs
+      // to: ICE re-parents the entity into the container's frame, and the
+      // container's `ChildOf` parent is the mat it landed on.
+      containerOf: (entity) => {
+        try {
+          // The controller carries an entity as a plain number; ICE brands the same id.
+          const parent = engine.world.getRelation(entity as Entity, core.ChildOf);
+          const landed =
+            parent === undefined
+              ? undefined
+              : (seed.boardMats.get(parent)?.boardId ?? matBoardOf(world, parent));
+          if (landed === undefined) return null;
+          // A mat for a Board the workspace no longer holds is not a target.
+          return boardsRef.current.some((board) => board.id === landed) ? landed : null;
+        } catch {
+          return null;
+        }
+      },
       selection: () => useUiStore.getState().selectedNodeIds,
       // A gesture commits into Loro, then reconcile brings the projection to
       // the new truth: a moved card is already where it was left (a no-op), and
@@ -106,10 +136,6 @@ export function useIceBoardGesture(input: {
           { boardId: mat.boardId, parentBoardId: mat.parentBoardId },
         ]),
       ),
-      frameOriginOf: (parentBoardId) => {
-        const rect = boardWorldRect(boardsRef.current, parentBoardId);
-        return rect === undefined ? { x: 0, y: 0 } : { x: rect.x, y: rect.y };
-      },
     });
 
     commands.current = {
@@ -181,7 +207,7 @@ export function useIceBoardGesture(input: {
       // consent: mounting the drawing surface because the pointer rested on a
       // card covers the board with Excalidraw's chrome, which is not what a
       // reader asked for.
-      const slot = seed.entitySlots.get(entity);
+      const slot = slots.get(entity);
       const card = slot === undefined ? undefined : liveWorkspace.getCard(slot.cardId);
       if (slot === undefined || card === undefined || !isWhiteboardCard(card)) return;
       const geometry = desk.geometryOf(entity) as

@@ -1,5 +1,6 @@
 /**
- * The canvas context menu on the ICE surface.
+ * The canvas context menu on the ICE surface — and the one inline editor the
+ * menu can open.
  *
  * ICE owns pointer input and picks; the shell owns the menu. This component is
  * the smaller half of that join: the surface's `contextmenu` listener has
@@ -9,21 +10,43 @@
  *
  * Every action writes through `WorkspaceDocument` and then asks the surface to
  * reconcile, because the ICE entities are a projection: nothing here touches
- * them directly.
+ * them directly. The link entries go further and go through the *planners*, so
+ * one gesture is one commit and a no-op edit is not a commit at all
+ * (`planEdgeLabel`, `planEdgeDelete`).
  *
- * Deliberately absent: sections and edges. ICE has no section layer and no edge
- * layer yet, so those menu sections never appear (their targets are never
- * produced by a pick) rather than appearing and doing nothing.
+ * ## Why the description editor lives here
+ *
+ * A link's description is edited in `EdgeDescriptionInput`, a React component
+ * anchored on a client point. Something mounted has to host it, and this is the
+ * component that is mounted for the whole session and already owns the link's
+ * menu. Both triggers land in the same state: the "Add/Edit description…" row,
+ * and a double click on the ink (the gesture dispatches `SUITE_EDGE_LABEL_EVENT`
+ * rather than opening a second editor).
+ *
+ * Deliberately absent: sections. The shared section entries never render on ICE
+ * because no pick produces a section target. Connectors are supported end to
+ * end — "Add connector" on a card, "Reposition Connector" and "Delete connector"
+ * on the dot's own menu (the gesture hit-tests the dot, because ICE's card
+ * carries no connector part), and the slide itself.
  */
-import type { LayerAction, WorkspaceDocument } from "@suite/graph";
-import { useCallback } from "react";
+import type { EdgePath, LayerAction, WorkspaceDocument } from "@suite/graph";
+import { useCallback, useEffect, useState } from "react";
 import { boardSizeForBounds } from "../canvas/boardSize";
+import { EdgeDescriptionInput } from "../canvas/EdgeDescriptionInput";
 import { boardBounds } from "../canvas/portalMiniature";
 import { useCanvasMenuItems } from "../canvas/useCanvasMenuItems";
 import { ensureWhiteboardType } from "../cards/whiteboard";
 import { ContextMenu } from "../components/ContextMenu";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import {
+  applyCanonicalWrite,
+  applyEdgeLabelWrite,
+  planEdgeDelete,
+  planEdgeLabel,
+  workspaceWriter,
+} from "../ice/iceBridge";
 import { menuTargetFromPick } from "../ice/iceContextMenu";
+import { edgeLabelRequestOf, SUITE_EDGE_LABEL_EVENT } from "../ice/suiteEdgeLabelLayer";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 
@@ -66,6 +89,7 @@ export function IceContextMenu({
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
+  const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const selectSection = useUiStore((state) => state.selectSection);
   const setEditingSection = useUiStore((state) => state.setEditingSection);
   const requestShare = useUiStore((state) => state.requestShare);
@@ -81,6 +105,106 @@ export function IceContextMenu({
     closeContextMenu();
     reconcile();
   }, [closeContextMenu, reconcile]);
+
+  /**
+   * The link's description being edited, and where the input sits. UI state, so
+   * it lives in this component and nowhere near the document; the value it
+   * commits is read back from the document at open time.
+   */
+  const [description, setDescription] = useState<{
+    readonly edgeId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly value: string;
+  } | null>(null);
+
+  /** Commit a label: one planned write, and no write at all when it is unchanged. */
+  const commitEdgeLabel = useCallback(
+    (edgeId: string, label: string) => {
+      const current = workspace.getEdge(edgeId)?.label ?? null;
+      const plan = planEdgeLabel(
+        { kind: "edge-label", edgeId, label, current },
+        { capabilities: { select: true, write: canEditLayout } },
+      );
+      if (plan.status !== "commit") return;
+      applyEdgeLabelWrite(workspace, plan.write);
+      setDescription(null);
+      reconcile();
+    },
+    [canEditLayout, reconcile, workspace],
+  );
+
+  /** The menu's description row: open the inline editor on the link's own text. */
+  const startEdgeDescription = useCallback(
+    (edgeId: string, point: { x: number; y: number }) => {
+      setDescription({
+        edgeId,
+        x: point.x,
+        y: point.y,
+        value: workspace.getEdge(edgeId)?.label ?? "",
+      });
+    },
+    [workspace],
+  );
+
+  /** "Remove description": the same write as an edit to nothing. */
+  const clearEdgeDescription = useCallback(
+    (edgeId: string) => commitEdgeLabel(edgeId, ""),
+    [commitEdgeLabel],
+  );
+
+  /**
+   * Routing and direction. The document is the truth and the surface re-projects
+   * the drawn link's props from it (`useIceLinkGesture.projectEdges`), so these
+   * are ordinary writes, not gestures. A row for *reversing* an edge is absent:
+   * swapping the ends is not a prop, and the desk resolves a link's ends once.
+   */
+  const setEdgePath = useCallback(
+    (edgeId: string, path: EdgePath) => {
+      if (!canEditLayout) return;
+      workspace.setEdgePath(edgeId, path);
+      reconcile();
+    },
+    [canEditLayout, reconcile, workspace],
+  );
+
+  const setEdgeBidirectional = useCallback(
+    (edgeId: string, bidirectional: boolean) => {
+      if (!canEditLayout) return;
+      workspace.setEdgeBidirectional(edgeId, bidirectional);
+      reconcile();
+    },
+    [canEditLayout, reconcile, workspace],
+  );
+
+  /** "Delete link": one planned `removeEdges`, then the projection re-derives. */
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      const plan = planEdgeDelete(
+        { kind: "edge-delete", edgeIds: [edgeId] },
+        { capabilities: { select: true, write: canEditLayout } },
+      );
+      if (plan.status !== "commit") return;
+      applyCanonicalWrite(workspaceWriter(workspace), plan.write);
+      setSelectedEdgeIds([]);
+      setDescription(null);
+      reconcile();
+    },
+    [canEditLayout, reconcile, setSelectedEdgeIds, workspace],
+  );
+
+  // A double click on the ink asks for the same editor. The request is one
+  // event, so the input stays in this component and the gesture never grows a
+  // second one.
+  useEffect(() => {
+    const onRequest = (event: Event): void => {
+      const request = edgeLabelRequestOf(event);
+      if (request === null) return;
+      startEdgeDescription(request.edgeId, { x: request.x, y: request.y });
+    };
+    document.addEventListener(SUITE_EDGE_LABEL_EVENT, onRequest);
+    return () => document.removeEventListener(SUITE_EDGE_LABEL_EVENT, onRequest);
+  }, [startEdgeDescription]);
 
   const createCardAt = useCallback(
     (position: { x: number; y: number }, typeId?: string) => {
@@ -208,26 +332,45 @@ export function IceContextMenu({
     createSectionAt: NOOP_POINT,
     createBoardAt,
     duplicateCards,
-    startEdgeDescription: NOOP_EDGE,
+    startEdgeDescription,
+    clearEdgeDescription,
+    deleteEdge,
+    setEdgePath,
+    setEdgeBidirectional,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,
     changeLayer,
     changeLayerBulk,
     requestShare,
-    // No section layer and no connector layer on ICE yet: decline the entries
-    // rather than offer actions whose result the surface cannot show.
+    // No section layer on ICE, so the section entries are declined rather than
+    // offered for an action the surface cannot show. Connectors *are* offered:
+    // the dots are read from the document on every hover, so an added connector
+    // appears at once, and the gesture can slide and delete one.
     supportsSections: false,
-    supportsConnectors: false,
+    supportsConnectors: true,
   });
 
-  if (contextMenu === null) return null;
-  return <ContextMenu x={contextMenu.x} y={contextMenu.y} items={items} onClose={close} />;
+  return (
+    <>
+      {contextMenu === null ? null : (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} items={items} onClose={close} />
+      )}
+      {description === null ? null : (
+        <EdgeDescriptionInput
+          x={description.x}
+          y={description.y}
+          value={description.value}
+          onCommit={(value) => commitEdgeLabel(description.edgeId, value)}
+          onCancel={() => setDescription(null)}
+        />
+      )}
+    </>
+  );
 }
 
 const EMPTY_MEMBERSHIP: ReadonlyMap<string, string> = new Map();
 const NOOP_POINT = (_point: { x: number; y: number }, _wrap?: boolean): void => {};
-const NOOP_EDGE = (_edgeId: string, _point: { x: number; y: number }): void => {};
 
 /** Re-exported for the surface's own listener, which needs the same mapping. */
 export { menuTargetFromPick };

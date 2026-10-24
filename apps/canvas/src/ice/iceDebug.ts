@@ -93,6 +93,8 @@ export interface IceDebugSnapshot {
   readonly overlays: IceDebugOverlays;
   readonly peers: readonly IceDebugPeer[];
   readonly selection: readonly string[];
+  /** The links the shell has selected — a link is an object, so it has its own list. */
+  readonly selectedEdges: readonly string[];
 }
 
 export interface IceDebugInput {
@@ -105,6 +107,7 @@ export interface IceDebugInput {
   readonly overlays: IceDebugOverlays;
   readonly peers: Readonly<Record<string, PeerPresence>>;
   readonly selection: readonly string[];
+  readonly selectedEdges?: readonly string[] | undefined;
 }
 
 export const EMPTY_OVERLAYS: IceDebugOverlays = Object.freeze({
@@ -210,6 +213,7 @@ export function buildIceDebugSnapshot(input: IceDebugInput): IceDebugSnapshot {
     overlays,
     peers,
     selection: [...input.selection],
+    selectedEdges: [...(input.selectedEdges ?? [])],
   };
 }
 
@@ -299,12 +303,33 @@ export function readIceOverlays(host: HTMLElement | null): IceDebugOverlays {
 /** Where the lab runner reads it. Absent on a page that is not in dev. */
 export const ICE_DEBUG_GLOBAL = "__suiteIce";
 
+/**
+ * What the desk itself answers for a point, injected beside the snapshot.
+ *
+ * The snapshot says where things are; this says what the engine thinks is under
+ * a press. The two together are how a "the drag does nothing" report becomes a
+ * specific answer: is the object there, or is the hit test looking elsewhere?
+ */
+export interface IceDebugProbe {
+  /**
+   * What the desk picks at a container-relative point: the entity, and what the
+   * surface's own tables say it stands for. A press that lands on a frame rather
+   * than a card is the difference between "the drag was refused" and "the drag
+   * never had a card to drag".
+   */
+  pick(
+    x: number,
+    y: number,
+  ): { entity: number; cardId: string | null; boardId: string | null } | null;
+}
+
 export function publishIceDebug(
   snapshot: IceDebugSnapshot,
+  probe?: IceDebugProbe | undefined,
   target: Record<string, unknown> | undefined = typeof window === "undefined"
     ? undefined
     : (window as unknown as Record<string, unknown>),
 ): void {
   if (target === undefined) return;
-  target[ICE_DEBUG_GLOBAL] = snapshot;
+  target[ICE_DEBUG_GLOBAL] = probe === undefined ? snapshot : { ...snapshot, probe };
 }

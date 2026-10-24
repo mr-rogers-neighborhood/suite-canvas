@@ -4,9 +4,11 @@
  *
  * The preflight (no `navigator.gpu` → no adapter → no device) is answered in
  * plain values so a lost device cannot invalidate it later; only then are the
- * ICE modules imported, the Suite kinds registered, the seed spawned and the
- * desk layer made. One `teardown` owns every exit — unmount, Reset, or a desk
- * that reported `failed` and was replaced by the fallback.
+ * ICE modules imported, the Suite kinds registered and the desk layer made. The
+ * seed is staged into that desk on every boot and re-staged, into the *same*
+ * engine, when the View changes: which View a desk frames is content, not
+ * lifecycle. One `teardown` owns every exit — unmount, Reset, or a desk that
+ * reported `failed` and was replaced by the fallback.
  *
  * Nothing here draws or decides: the phase, the seed report and the frame rate
  * are the HUD's data, and the engine they produced is handed to the surface's
@@ -14,7 +16,7 @@
  */
 
 import type { WorkspaceDocument } from "@suite/graph";
-import type { EngineGpu, Entity } from "@vibecook/ice";
+import type { CanvasEngine, EngineGpu, Entity } from "@vibecook/ice";
 import type { DeskLayerHandle, DeskLayerStatus } from "@vibecook/ice/desk";
 import type { DeskHandle } from "@vibecook/ice/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
@@ -73,6 +75,12 @@ export function useIceDeskBoot(input: {
   const { workspace, rootBoardId } = input;
   const workspaceMode = workspace !== undefined;
   const liveWorkspace = workspace ?? null;
+  /**
+   * Whether a root Board is known. The *presence* of a View is what a boot
+   * waits for; which View it is only decides what gets seeded, so switching
+   * Views keeps the engine, the device and the camera.
+   */
+  const hasRoot = rootBoardId !== null;
   const [mode, setMode] = useState<DemoMode>(() =>
     demoModeFromSearch(typeof window === "undefined" ? "" : window.location.search),
   );
@@ -89,6 +97,8 @@ export function useIceDeskBoot(input: {
   const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seededEntities = useRef<readonly Entity[]>([]);
+  /** The `suite.edge` kind's link table, so a re-seed can replace the links. */
+  const setEdgeLinkOf = useRef<Parameters<typeof spawnLinkEdges>[4] | null>(null);
   const deskLayerRef = useRef<DeskLayerHandle | null>(null);
   const [layerReady, setLayerReady] = useState(0);
 
@@ -102,6 +112,80 @@ export function useIceDeskBoot(input: {
     clearTimeout(pendingFit.current);
     pendingFit.current = undefined;
   }, []);
+  /**
+   * What the desk is currently showing, so a seed is not repeated for the same
+   * engine, View and demo. The stage survives a View switch (same engine, new
+   * root); it dies with the engine.
+   */
+  const staged = useRef<{
+    engine: CanvasEngine;
+    rootBoardId: string | null;
+    mode: DemoMode;
+  } | null>(null);
+
+  /**
+   * The desk's *contents*: the seed and the links, spawned into an engine. The
+   * boot calls this before it publishes `ready`, and the effect below calls it
+   * again when the View changes — into the same engine, which is what keeps the
+   * device and the camera across a View switch.
+   */
+  const stageSeed = useCallback(
+    (engine: CanvasEngine): void => {
+      const current = staged.current;
+      if (
+        current !== null &&
+        current.engine === engine &&
+        current.rootBoardId === rootBoardId &&
+        current.mode === mode
+      ) {
+        return;
+      }
+
+      // The previous stage goes first: a View switch replaces the desk's
+      // contents rather than stacking a second copy on top of them.
+      const previous = seededEntities.current;
+      seededEntities.current = [];
+      const previousEdges: EdgeSpawns | undefined = owned.current.edges;
+      owned.current = { ...owned.current, edges: undefined };
+      previousEdges?.dispose();
+      if (previous.length > 0) {
+        quietly(() => {
+          engine.ops.setSelection([...previous]);
+          engine.ops.deleteSelection();
+        });
+      }
+
+      const report =
+        liveWorkspace !== null && rootBoardId !== null
+          ? seedWorkspaceDocument(engine, liveWorkspace, rootBoardId)
+          : mode === "suite"
+            ? seedSuiteDocument(engine)
+            : seedDemoDocument(engine);
+      seededEntities.current = report.entities;
+
+      // Links are drawn after the Boards and cards exist: an edge is a line
+      // between two *places*, and its frame is the lowest Board that holds both
+      // ends (`edgeFrameOf`). The table is what lets the kind re-route a link
+      // when a card moves, without reading the document per frame.
+      const linkOf = setEdgeLinkOf.current;
+      const edges: EdgeSpawns | undefined =
+        liveWorkspace !== null && rootBoardId !== null && linkOf !== null
+          ? spawnLinkEdges(engine, liveWorkspace, rootBoardId, report.boardMats, linkOf)
+          : undefined;
+      owned.current = { ...owned.current, edges };
+
+      staged.current = { engine, rootBoardId, mode };
+      setSeed(report);
+    },
+    [liveWorkspace, mode, rootBoardId],
+  );
+  // The boot runs from an async continuation, so it reads the newest seeder
+  // rather than the one captured when it started.
+  const stageSeedRef = useRef(stageSeed);
+  useEffect(() => {
+    stageSeedRef.current = stageSeed;
+  }, [stageSeed]);
+
   // One teardown for every exit: unmount, a reset, or a desk that reported
   // `failed` and was replaced by the fallback. Emptying the ref makes it
   // idempotent.
@@ -110,6 +194,9 @@ export function useIceDeskBoot(input: {
     clearPendingFit();
     const { engine, doc, gpu, clearCardRenderer, edges } = owned.current;
     owned.current = {};
+    // The entities died with the engine; the next seed starts from nothing.
+    seededEntities.current = [];
+    staged.current = null;
     edges?.dispose();
     clearCardRenderer?.();
     if (doc !== undefined) quietly(() => doc.close());
@@ -134,7 +221,7 @@ export function useIceDeskBoot(input: {
 
       // In the app, a workspace that has not hydrated yet is not a reason to
       // show a demo. Wait for the real graph; the boot skeleton stays up.
-      if (workspaceMode && (liveWorkspace === null || rootBoardId === null)) {
+      if (workspaceMode && (liveWorkspace === null || !hasRoot)) {
         setPhase({ kind: "checking" });
         return;
       }
@@ -242,30 +329,10 @@ export function useIceDeskBoot(input: {
           clearCardRenderer = () => suiteCardModules[0].setSuiteCardSlotRenderer(undefined);
         }
         owned.current = { engine, doc, gpu, clearCardRenderer };
+        // The links are spawned by the seed effect, which also has to re-spawn
+        // them when the View changes; it reaches the kind's table through here.
+        setEdgeLinkOf.current = suiteCardModules[4].setSuiteEdgeLinkOf;
 
-        const report =
-          liveWorkspace !== null && rootBoardId !== null
-            ? seedWorkspaceDocument(engine, liveWorkspace, rootBoardId)
-            : mode === "suite"
-              ? seedSuiteDocument(engine)
-              : seedDemoDocument(engine);
-        seededEntities.current = report.entities;
-
-        // Links are drawn after the Boards and cards exist: an edge is a line
-        // between two *places*, and its frame is the lowest Board that holds
-        // both ends (`edgeFrameOf`). The table is what lets the kind re-route a
-        // link when a card moves, without reading the document per frame.
-        const edges: EdgeSpawns | undefined =
-          liveWorkspace !== null && rootBoardId !== null
-            ? spawnLinkEdges(
-                engine,
-                liveWorkspace,
-                rootBoardId,
-                report.boardMats,
-                suiteCardModules[4].setSuiteEdgeLinkOf,
-              )
-            : undefined;
-        owned.current = { ...owned.current, edges };
         const layer = desk.deskLayer({
           theme: objects.deskTheme(theme),
           palette: suitePalette(objects.deskPalette(theme)),
@@ -275,7 +342,10 @@ export function useIceDeskBoot(input: {
           name: `ice-demo-${runId + 1}`,
         });
 
-        setSeed(report);
+        // The contents exist before the desk is published, so `ready` never
+        // means "a desk with nothing on it".
+        stageSeedRef.current(engine);
+
         setPhase({
           kind: "ready",
           adapter: deviceAdapter ?? adapter,
@@ -304,7 +374,23 @@ export function useIceDeskBoot(input: {
       cancelled = true;
       teardown();
     };
-  }, [liveWorkspace, mode, rootBoardId, runId, teardown, workspaceMode]);
+    // The root Board is deliberately absent: switching a View must not tear the
+    // desk down (that costs the device and the camera). The seed effect below
+    // re-seeds the same engine instead.
+  }, [liveWorkspace, runId, teardown, workspaceMode, hasRoot]);
+
+  /**
+   * A View switch re-seeds the same engine: `stageSeed` is identity-stable per
+   * (engine, View, demo), so this is a no-op right after a boot and the actual
+   * re-seed when the root Board changes.
+   */
+  useEffect(() => {
+    if (phase.kind !== "ready") return;
+    // A boot that is restarting has already released its engine; nothing may be
+    // seeded into a desk that is on its way out.
+    if (owned.current.engine !== phase.engine) return;
+    stageSeed(phase.engine);
+  }, [phase, stageSeed]);
 
   // A desk that reported `failed` is replaced by the fallback, so its engine
   // is released here rather than held until the route changes.

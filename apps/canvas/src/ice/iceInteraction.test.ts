@@ -78,6 +78,7 @@ function createWriter() {
     moveSections: vi.fn(),
     updateSectionGeometry: vi.fn(),
     updateBoardRect: vi.fn(),
+    nestBoard: vi.fn(),
     deleteSections: vi.fn(),
     addEdge: vi.fn(),
     removeEdges: vi.fn(),

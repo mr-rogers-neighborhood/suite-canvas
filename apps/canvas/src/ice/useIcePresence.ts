@@ -15,6 +15,10 @@
  * The same pass paints the presence layer, repaints the connectors, and builds
  * the dev-only debug snapshot the lab reads. One clock, one projection, so what
  * this seat draws and what a peer draws cannot drift.
+ *
+ * What a peer's ring is drawn on comes from the frame, not from the surface's
+ * spawn table: a card inside an entered Board is an entity ICE built for that
+ * frame, and it says which card it is through its own face group.
  */
 
 import { type Board, boardDepth, boardWorldRect, ownerBoardAt } from "@suite/graph";
@@ -26,6 +30,7 @@ import { useUiStore } from "../store/useUiStore";
 import type { IceDebugSlot } from "./iceDebug";
 import { buildIceDebugSnapshot, publishIceDebug, readIceOverlays } from "./iceDebug";
 import { anchorWorld } from "./iceEdgeGeometry";
+import { cardIdOf, frameBoardOf, identityOf, identitySlots } from "./iceEntityIdentity";
 import type { IcePresenceInstance } from "./icePresence";
 import { marqueeSample, pointerSample, presenceRoleCaps, selectionSample } from "./icePresence";
 import { createIcePresenceLayer } from "./icePresenceLayer";
@@ -61,12 +66,53 @@ export function useIcePresence(input: {
     const { root, desk, overlays } = dom;
 
     const { engine, core } = phase;
-    const slots = seed.entitySlots;
+    const world = engine.world;
+    const slots = identitySlots(seed.entitySlots, world);
     const rectOf = (entity: Entity) => entityRectOf(engine, core, entity);
     const pickEntity = (screen: { x: number; y: number }) => entityAt(desk, screen);
     const localPoint = (event: PointerEvent) => screenPointOf(root, event);
     const presence = usePresenceStore.getState();
     const roleCaps = presenceRoleCaps(caps.role);
+
+    /** Every widget in the frame the camera is inside, or none on a bare desk. */
+    let activeWidgets: ReturnType<typeof core.defineQuery> | null = null;
+    const widgetsInFrame = (): readonly Entity[] => {
+      try {
+        activeWidgets ??= core.defineQuery([core.PrefabId, core.Active]);
+        return world.entities(activeWidgets);
+      } catch {
+        return [];
+      }
+    };
+
+    /**
+     * The cards ICE is drawing in this frame, read from the entities' own faces.
+     * A card inside an entered Board was not necessarily spawned by this
+     * surface (ICE builds the frame's inside), so iterating the seed's table
+     * would ring an empty seat: the frame is what is drawn, and each entity says
+     * which card it stands for.
+     */
+    const frameCards = (): {
+      readonly entity: Entity;
+      readonly cardId: string;
+      readonly boardId: string;
+      readonly rect: { x: number; y: number; width: number; height: number };
+    }[] => {
+      const cards: {
+        entity: Entity;
+        cardId: string;
+        boardId: string;
+        rect: { x: number; y: number; width: number; height: number };
+      }[] = [];
+      for (const entity of widgetsInFrame()) {
+        const identity = cardIdOf(world, entity);
+        if (identity === null) continue;
+        const rect = rectOf(entity);
+        if (rect === null) continue;
+        cards.push({ entity, cardId: identity.cardId, boardId: identity.boardId, rect });
+      }
+      return cards;
+    };
 
     const paintPointer = (event: PointerEvent): void => {
       if (!roleCaps.pointer) return;
@@ -231,14 +277,12 @@ export function useIcePresence(input: {
       camera: () => cameraApi?.cameraOf() ?? null,
       instances: () => {
         const list: IcePresenceInstance[] = [];
-        for (const [entity, slot] of slots) {
-          const rect = rectOf(entity);
-          if (rect === null) continue;
+        for (const card of frameCards()) {
           list.push({
-            instanceKey: `card:${slot.cardId}`,
-            cardId: slot.cardId,
+            instanceKey: `card:${card.cardId}`,
+            cardId: card.cardId,
             boardId: rootBoardId,
-            rect,
+            rect: card.rect,
           });
         }
         return list;
@@ -283,65 +327,91 @@ export function useIcePresence(input: {
       if (import.meta.env.DEV) {
         const boards = boardsRef.current;
         const slotStates: IceDebugSlot[] = [];
-        for (const [entity, slot] of slots) {
-          // ICE reports a widget's Position in world units, even for a child of
-          // a Board; the plane rect is what it is, and the local one is what a
-          // commit writes (the placement is frame-local).
-          const world = rectOf(entity);
-          if (world === null) continue;
-          const board = boardWorldRect(boards, slot.boardId);
+        const seen = new Set<Entity>();
+        /**
+         * A widget's Position is in the units of the frame that holds it: on the
+         * plane that is world, inside a Board that is the placement's own
+         * coordinates (`local`). `world` is the one the plane speaks, folded
+         * back through the Board chain, so a scenario can assert either.
+         */
+        const describe = (entity: Entity, cardId: string, boardId: string): void => {
+          if (seen.has(entity)) return;
+          seen.add(entity);
+          const rect = rectOf(entity);
+          if (rect === null) return;
+          const frame = boardWorldRect(boards, boardId);
+          const framed = frameBoardOf(world, entity) !== null;
           slotStates.push({
             entity,
-            cardId: slot.cardId,
-            boardId: slot.boardId,
+            cardId,
+            boardId,
             local:
-              board === undefined
-                ? world
-                : { ...world, x: world.x - board.x, y: world.y - board.y },
-            world,
+              framed || frame === undefined
+                ? rect
+                : { ...rect, x: rect.x - frame.x, y: rect.y - frame.y },
+            world:
+              framed && frame !== undefined
+                ? { ...rect, x: rect.x + frame.x, y: rect.y + frame.y }
+                : rect,
           });
-        }
-        publishIceDebug(
-          buildIceDebugSnapshot({
-            at: now,
-            camera: cameraApi?.cameraOf() ?? null,
-            entered: portalFramesRef.current,
-            boards: boards.flatMap((board) => {
-              const world = boardWorldRect(boards, board.id);
-              if (world === undefined) return [];
-              return [
-                {
-                  id: board.id,
-                  name: board.name,
-                  parentBoardId: board.parentBoardId ?? null,
-                  depth: boardDepth(boards, board.id),
-                  world,
-                  mat: (() => {
-                    for (const [entity, entry] of seed.boardMats) {
-                      if (entry.boardId === board.id) return rectOf(entity);
-                    }
-                    return null;
-                  })(),
-                },
-              ];
-            }),
-            slots: slotStates,
-            edges: (owned.current.edges?.debug() ?? []).map((edge) => ({
-              edgeId: edge.edgeId,
-              frame: edge.frame,
-              from: edge.from,
-              to: edge.to,
-              kind: edge.kind,
-              label: edge.label,
-              sourceKind: edge.sourceKind,
-              targetKind: edge.targetKind,
-              box: rectOf(edge.entity),
-            })),
-            overlays: readIceOverlays(overlays),
-            peers: usePresenceStore.getState().peers,
-            selection: useUiStore.getState().selectedNodeIds,
+        };
+        // The frame's own cards first (what the reader sees), then every card
+        // this surface holds — a card dropped into a Board is inside it, so it
+        // is no longer a member of the frame the camera is on.
+        for (const card of frameCards()) describe(card.entity, card.cardId, card.boardId);
+        for (const [entity, slot] of seed.entitySlots) describe(entity, slot.cardId, slot.boardId);
+        const snapshot = buildIceDebugSnapshot({
+          at: now,
+          camera: cameraApi?.cameraOf() ?? null,
+          entered: portalFramesRef.current,
+          boards: boards.flatMap((board) => {
+            const world = boardWorldRect(boards, board.id);
+            if (world === undefined) return [];
+            return [
+              {
+                id: board.id,
+                name: board.name,
+                parentBoardId: board.parentBoardId ?? null,
+                depth: boardDepth(boards, board.id),
+                world,
+                mat: (() => {
+                  for (const [entity, entry] of seed.boardMats) {
+                    if (entry.boardId === board.id) return rectOf(entity);
+                  }
+                  return null;
+                })(),
+              },
+            ];
           }),
-        );
+          slots: slotStates,
+          edges: (owned.current.edges?.debug() ?? []).map((edge) => ({
+            edgeId: edge.edgeId,
+            frame: edge.frame,
+            from: edge.from,
+            to: edge.to,
+            kind: edge.kind,
+            label: edge.label,
+            sourceKind: edge.sourceKind,
+            targetKind: edge.targetKind,
+            box: rectOf(edge.entity),
+          })),
+          overlays: readIceOverlays(overlays),
+          peers: usePresenceStore.getState().peers,
+          selection: useUiStore.getState().selectedNodeIds,
+          selectedEdges: useUiStore.getState().selectedEdgeIds ?? [],
+        });
+        publishIceDebug(snapshot, {
+          pick: (x, y) => {
+            const picked = pickEntity({ x, y });
+            if (picked === null) return null;
+            const identity = identityOf(world, picked);
+            return {
+              entity: picked,
+              cardId: identity.cardId,
+              boardId: identity.boardId,
+            };
+          },
+        });
       }
     };
     presenceSyncHandle = requestAnimationFrame(syncPresence);

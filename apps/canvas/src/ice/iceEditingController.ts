@@ -1,6 +1,7 @@
 /**
- * The editable-canvas controller: root-board drag, resize and delete, wired to
- * the canonical document through the bridge planners.
+ * The editable-canvas controller: drag, resize and delete on the frame the
+ * camera is inside, wired to the canonical document through the bridge
+ * planners.
  *
  * This module is deliberately free of ICE and React imports so the gesture
  * logic is testable in jsdom and cannot pull the engine into the default
@@ -9,10 +10,14 @@
  *
  * Contract, in order:
  * - pointer-down records the pressed entity and its start box; nothing writes.
+ *   A press on a member of the selection records every selected card on the
+ *   same frame, each with its own box, so one drag writes them as one commit.
  * - pointer-up reads the entity's box *after* ICE applied its snap, and ends the
  *   gesture with that final rect, so the commit is the snapped geometry.
  * - a press that never travelled, a cancelled pointer and a read-only session
  *   all end without a write.
+ * - a drop ICE reports as entering a Board is a cross-Board move: the placement
+ *   is moved to the new Board in one commit.
  * - a delete is one `planDelete` write plus the engine's own removal of the
  *   entity, which is projection state, not document state.
  */
@@ -24,14 +29,18 @@ import {
   capabilitiesForRole,
   type IceCapabilities,
   type IceCardInstance,
+  type IceDropMove,
   type IceInstanceIndex,
   type IcePlan,
   type IceUndoAdapter,
+  planBoardNestCommit,
   planBoardRectCommit,
+  planDropCommit,
   planResizeCommit,
 } from "./iceBridge";
 import {
   beginGesture,
+  ICE_POINTER_THRESHOLD,
   type IceGestureHandle,
   type IcePick,
   planDeleteGesture,
@@ -58,7 +67,7 @@ export interface IceEditingAdapters {
   camera(): { x: number; y: number; zoom: number } | null;
   /** The entity under a container-relative screen point, or null. */
   pick(screen: { x: number; y: number }): number | null;
-  /** The entity's box in board units (root board: world == board). */
+  /** The entity's box in its own frame's units, as ICE reports it. */
   rectOf(entity: number): Rect | null;
   /** One canonical commit per gesture. Null when no workspace is open. */
   writer: CanonicalWriter | null;
@@ -73,21 +82,29 @@ export interface IceEditingAdapters {
 export interface IceEditingOptions extends IceEditingAdapters {
   /** Entity -> canonical ids. Populated by the projection. */
   readonly slots: ReadonlyMap<number, IceEditableSlot>;
-  /** The root board whose placements are canonical; one board this phase. */
+  /** The root board whose placements are canonical. */
   readonly rootBoardId: string;
+  /**
+   * The Board frame the camera is inside, with the Board ids from the root down
+   * to it. Absent (or the root) means the camera is on the root plane. ICE
+   * reports every box in the *current* frame's coordinates, so this is what
+   * decides whether an entity's box is a box this controller can commit.
+   */
+  readonly currentFrame?: () => { readonly boardId: string; readonly path: readonly string[] };
+  /**
+   * The Board a drop landed in, when ICE re-parented the entity into a Board's
+   * frame. `null` means the entity stayed on the Board it was placed on.
+   */
+  readonly containerOf?: (entity: number) => string | null;
   /**
    * The canonical selection. Used to resolve a press on a resize handle, which
    * ICE does not report as an object pick: the handles only exist for the
    * selected card, so a null pick with one selected card is that card's resize.
+   * A press that lands on a member of the selection drags the whole selection.
    */
   readonly selection?: () => readonly string[];
   /** Marker entity → the Board it frames, so a drag or a handle writes one rect. */
   readonly boardSlots?: ReadonlyMap<number, IceBoardSlot>;
-  /**
-   * A Board's parent frame origin in world units — the frame's rect is stored
-   * in its parent's frame, while ICE reports the mat's box in the world.
-   */
-  readonly frameOriginOf?: (parentBoardId: string) => { x: number; y: number };
   /** Marker entity → pin id, so a dragged pin writes one `movePin`. */
   readonly pinSlots?: ReadonlyMap<number, string>;
   /** Writes the pin's new point; one call per gesture. */
@@ -102,16 +119,37 @@ export interface ScreenPoint {
 
 const IDENTITY = { scale: 1, x: 0, y: 0 } as const;
 
-/** The instance a root-board entity paints. Root board geometry *is* board geometry. */
+/**
+ * The Board frame the camera is inside: the deepest entered Board, or the root
+ * View when nothing is entered. The path is the chain of Boards from the root
+ * down, which is an instance's render identity.
+ */
+export function currentFrameOf(
+  rootBoardId: string,
+  frames: readonly { readonly id: string }[],
+): { boardId: string; path: readonly string[] } {
+  if (frames.length === 0) return { boardId: rootBoardId, path: [rootBoardId] };
+  return {
+    boardId: frames[frames.length - 1]?.id ?? rootBoardId,
+    path: [rootBoardId, ...frames.map((frame) => frame.id)],
+  };
+}
+
+/**
+ * The instance an entity paints on the frame the camera is inside. The frame's
+ * own coordinates are what ICE measures in (`world = board`), so the transform
+ * is the identity; `path` names the chain of Boards that produced the instance,
+ * because that is its render identity.
+ */
 export function instanceFor(
   slot: IceEditableSlot,
-  rootBoardId: string,
+  path: readonly string[],
   rect: Rect | null,
 ): IceCardInstance {
   return {
     kind: "card",
     instanceKey: `card:${slot.cardId}`,
-    path: [rootBoardId],
+    path,
     boardId: slot.boardId,
     transform: IDENTITY,
     geometry: rect ?? { x: 0, y: 0, width: 1, height: 1 },
@@ -124,12 +162,12 @@ function toCapabilities(role: IceEditingAdapters["role"]): IceCapabilities {
   return capabilitiesForRole(role);
 }
 
-/** The one-entity index a gesture resolves through. */
-function indexFor(instance: IceCardInstance): IceInstanceIndex {
+/** The index a gesture resolves through: every instance the gesture carries. */
+function indexFor(instances: readonly IceCardInstance[]): IceInstanceIndex {
   return {
-    instances: [instance],
-    byKey: new Map([[instance.instanceKey, instance]]),
-    byCardId: new Map([[instance.cardId, [instance]]]),
+    instances,
+    byKey: new Map(instances.map((instance) => [instance.instanceKey, instance])),
+    byCardId: new Map(instances.map((instance) => [instance.cardId, [instance]])),
     bySectionId: new Map(),
   };
 }
@@ -144,6 +182,38 @@ function selectedEntity(options: IceEditingOptions): number | null {
     if (slot.cardId === cardId) return entity;
   }
   return null;
+}
+
+/**
+ * Every card a move carries. A press on a member of the selection drags the
+ * whole selection — each card with its own start box — so the planner writes
+ * them as one `movePlacements`; a press on anything else drags that card alone.
+ */
+function gestureCards(
+  options: IceEditingOptions,
+  entity: number,
+  pressed: IceCardInstance,
+  rect: Rect,
+  boardId: string,
+): GestureCard[] {
+  const selected = options.selection?.() ?? [];
+  if (!selected.includes(pressed.cardId)) return [{ entity, instance: pressed }];
+  const wanted = new Set(selected);
+  const cards = new Map<string, GestureCard>();
+  for (const [candidate, slot] of options.slots) {
+    if (slot.boardId !== boardId || !wanted.has(slot.cardId)) continue;
+    const box = candidate === entity ? rect : options.rectOf(candidate);
+    if (box === null) continue;
+    if (!cards.has(slot.cardId)) {
+      cards.set(slot.cardId, { entity: candidate, instance: instanceFor(slot, pressed.path, box) });
+    }
+  }
+  return cards.size > 0 ? [...cards.values()] : [{ entity, instance: pressed }];
+}
+
+/** A press that never travelled writes nothing, whatever ICE may have done. */
+function travelled(from: ScreenPoint, to: ScreenPoint): boolean {
+  return Math.hypot(to.x - from.x, to.y - from.y) > ICE_POINTER_THRESHOLD;
 }
 
 function finitePoint(point: { x: number; y: number }): boolean {
@@ -172,11 +242,18 @@ export interface IceEditingController {
   cancel(): void;
 }
 
+interface GestureCard {
+  readonly entity: number;
+  readonly instance: IceCardInstance;
+}
+
 interface Pending {
   readonly pointerId: number;
   readonly entity: number;
   readonly gesture: IceGestureHandle;
   readonly instance: IceCardInstance;
+  /** Every card this drag carries, pressed one included. */
+  readonly cards: readonly GestureCard[];
 }
 
 interface PendingPin {
@@ -193,6 +270,7 @@ interface PendingBoard {
   readonly slot: IceBoardSlot;
   /** The frame's rect in its parent's frame, where the write goes. */
   readonly start: Rect;
+  readonly startScreen: ScreenPoint;
 }
 
 /**
@@ -236,17 +314,14 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
         if (board !== undefined && boardRect !== null) {
           // A Board's mat is a frame, not a card: the gesture moves or resizes
           // the frame itself, and the write is one rect in the parent's frame.
-          const origin = options.frameOriginOf?.(board.parentBoardId) ?? { x: 0, y: 0 };
+          // ICE reports a child's box in exactly that frame, so it is the rect
+          // the document stores, with no origin to remove.
           pendingBoard = {
             pointerId,
             entity: picked,
             slot: board,
-            start: {
-              x: boardRect.x - origin.x,
-              y: boardRect.y - origin.y,
-              width: boardRect.width,
-              height: boardRect.height,
-            },
+            start: boardRect,
+            startScreen: screen,
           };
           return true;
         }
@@ -264,11 +339,19 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       const rect = options.rectOf(entity);
       if (rect === null) return false;
 
-      const instance = instanceFor(slot, options.rootBoardId, rect);
-      // ONE instance this phase: a gesture inside a portal is refused until the
-      // instance transform is wired, so a nested drag cannot move the wrong board.
-      if (slot.boardId !== options.rootBoardId) return false;
+      // ICE reports every box in the frame the camera is inside, and that
+      // frame's own coordinates are the ones its placements are stored in. An
+      // entity on any other Board cannot be committed from here, so its press
+      // is refused rather than moved without a write.
+      const frame = options.currentFrame?.() ?? {
+        boardId: options.rootBoardId,
+        path: [options.rootBoardId],
+      };
+      if (slot.boardId !== frame.boardId) return false;
 
+      const instance = instanceFor(slot, frame.path, rect);
+      const cards = gestureCards(options, entity, instance, rect, frame.boardId);
+      const instances = cards.map((card) => card.instance);
       const target: IcePick = { entity, type: "suite.card", instance };
       const gesture = beginGesture({
         pointerId,
@@ -278,10 +361,11 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
         capabilities,
         geometry: rect,
         view: rect,
-        index: indexFor(instance),
+        index: indexFor(instances),
+        instanceKeys: instances.map((candidate) => candidate.instanceKey),
       });
       if (gesture === null) return false;
-      pending = { pointerId, entity, gesture, instance };
+      pending = { pointerId, entity, gesture, instance, cards };
       return true;
     },
 
@@ -292,19 +376,24 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
         if (!finitePoint(screen)) return false;
         const box = options.rectOf(board.entity);
         if (box === null) return false;
-        const origin = options.frameOriginOf?.(board.slot.parentBoardId) ?? { x: 0, y: 0 };
+        // A mat dropped into a Board changes its parent; the re-parent and the
+        // frame's box land together, in the new parent's frame.
+        const landed = options.containerOf?.(board.entity) ?? null;
+        if (
+          landed !== null &&
+          landed !== board.slot.parentBoardId &&
+          travelled(board.startScreen, screen)
+        ) {
+          return commit(
+            planBoardNestCommit(
+              { boardId: board.slot.boardId, parentBoardId: landed, geometry: box },
+              { capabilities },
+            ),
+          );
+        }
         return commit(
           planBoardRectCommit(
-            {
-              boardId: board.slot.boardId,
-              start: board.start,
-              final: {
-                x: box.x - origin.x,
-                y: box.y - origin.y,
-                width: box.width,
-                height: box.height,
-              },
-            },
+            { boardId: board.slot.boardId, start: board.start, final: box },
             { capabilities },
           ),
         );
@@ -363,6 +452,32 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
         );
       }
 
+      // A drop ICE reported as entering a Board belongs to that Board: the
+      // placement moves from the frame the cards came from to the one they
+      // landed in, as one write, in the boxes ICE left them at.
+      const landed = options.containerOf?.(current.entity) ?? null;
+      if (
+        landed !== null &&
+        landed !== current.instance.boardId &&
+        travelled(current.gesture.startScreen, screen)
+      ) {
+        const drops: IceDropMove[] = [];
+        for (const card of current.cards) {
+          const target: string | null =
+            card.entity === current.entity
+              ? landed
+              : (options.containerOf?.(card.entity) ?? card.instance.boardId);
+          // The drag landed as a set: every card under the same container goes,
+          // and one that did not enter it keeps its in-board move.
+          if (target !== landed) continue;
+          const box = card.entity === current.entity ? finalRect : options.rectOf(card.entity);
+          if (box === null) continue;
+          drops.push({ instance: card.instance, geometry: box });
+        }
+        current.gesture.cancel();
+        return commit(planDropCommit({ targetBoardId: landed, items: drops }, { capabilities }));
+      }
+
       return commit(current.gesture.end({ screen, finalGeometry: finalRect }));
     },
 
@@ -381,23 +496,19 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
 
     deleteSelection(selectedCardIds) {
       if (selectedCardIds.length === 0) return false;
+      const frame = options.currentFrame?.() ?? {
+        boardId: options.rootBoardId,
+        path: [options.rootBoardId],
+      };
       const instances: IceCardInstance[] = [];
       for (const cardId of selectedCardIds) {
-        const entity = [...options.slots].find(([, slot]) => slot.cardId === cardId)?.[0];
+        const found = [...options.slots].find(([, slot]) => slot.cardId === cardId);
+        const slot = found?.[1] ?? { cardId, boardId: frame.boardId };
         instances.push(
-          instanceFor(
-            { cardId, boardId: options.rootBoardId },
-            options.rootBoardId,
-            entity === undefined ? null : options.rectOf(entity),
-          ),
+          instanceFor(slot, frame.path, found === undefined ? null : options.rectOf(found[0])),
         );
       }
-      const index: IceInstanceIndex = {
-        instances,
-        byKey: new Map(instances.map((instance) => [instance.instanceKey, instance])),
-        byCardId: new Map(instances.map((instance) => [instance.cardId, [instance]])),
-        bySectionId: new Map(),
-      };
+      const index: IceInstanceIndex = indexFor(instances);
       const plan = planDeleteGesture({
         index,
         instanceKeys: instances.map((instance) => instance.instanceKey),

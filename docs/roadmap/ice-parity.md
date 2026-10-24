@@ -556,7 +556,9 @@ One row per capability the React Flow surface had. `CanvasBoard.tsx` — the flo
 source of most rows: its handlers and their callbacks are the feature list. The "React Flow era"
 column names the module that implemented each capability as of `972431a^`, so every claim can be
 checked with `git show`; the "ICE today" column names the live module or says plainly that nothing
-does it. "Gap" is what a user loses today: `—` means the capability is present, `P0` marks a row that
+does it. A row whose "ICE today" starts with **Closed** was a gap this phase paid for, and the cell
+says what closed it, so the matrix doubles as the record of what changed. "Gap" is what a user loses
+today: `—` means the capability is present, `P0` marks a row that
 silently loses data or breaks a promise the document already makes. "Owner" is the phase-12
 workstream that closes the row, and `—` means there is nothing to close.
 
@@ -587,12 +589,12 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | Capability | React Flow era | ICE today | Gap | Owner |
 | --- | --- | --- | --- | --- |
 | Drag one card | `onNodeDragStop` → `commitDrop` → one `movePlacements` | `attachIcePointerEditing` → `planMoveCommit` → one Loro commit | — | — |
-| Drag a multi-card selection | `dragMoves(dragged)` committed every dragged card in one write | `iceEditingController` builds a one-instance index, so only the pressed card is written; the selection moves as one on screen only until the next reconcile | P0: all but one card of a multi-card drag is lost | G polish |
+| Drag a multi-card selection | `dragMoves(dragged)` committed every dragged card in one write | Closed: `gestureCards` gives the gesture every selected card on the frame and `planMoveCommit` writes them as one `movePlacements`; a selection spanning Boards is one batched `movePlacementsMany`, grouped by Board | — | — |
 | Resize a card | `NodeResizer`, minimum 160×80, geometry written on release | ICE handles plus `planResizeCommit`: type rung, Shift reflow, Alt fit; the bridge refuses a box under 48×32 | — (the rung rules are new) | — |
 | Layer order | `changeLayer` and `changeLayerBulk` in the card menu | The same entries, through the shared menu builder | — | — |
 | Move a card to another Board | "Move to board" submenu | The same submenu (`IceContextMenu`) | — | — |
-| Drop a card into a Board | `sectionLayout.ts` grew the region on a drop (`sectionsExpandPlan`) and membership was derived from geometry | ICE accepts the drop (`drop: "into"`), but the commit is a placement move; no re-parent is written | P0: a card can look nested and still belong to the View | D board tree |
-| Move a card inside a Board | One flat plane, so any card could be dragged | The controller refuses the press (`slot.boardId !== rootBoardId`) while ICE still moves the entity, and nothing writes | P0: the desk diverges from the document until the next change | D board tree |
+| Drop a card into a Board | `sectionLayout.ts` grew the region on a drop (`sectionsExpandPlan`) and membership was derived from geometry | Closed: ICE's own `ChildOf` is read after the drop and `planDropCommit` places on the target and unplaces from the old Board in one batch; a Board dropped into a Board writes `nestBoard` + its rect | — | — |
+| Move a card inside a Board | One flat plane, so any card could be dragged | Closed: `iceEntityIdentity` resolves the entity the entered frame reports, the projection parents nested placements to their mat, and the controller commits in the frame's own units | — | — |
 
 ### Links
 
@@ -674,7 +676,7 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | --- | --- | --- | --- | --- |
 | The View's camera is written | Recorded per board when leaving, restored on return within the session | `WorkspaceDocument.setViewCamera` has no caller | ADR-0039's "written when the user leaves it" is unimplemented | A persistence |
 | The camera comes back | `recordBoardViewport` and `viewportRequest` restored a board's framing | Both are dead (`useUiStore.ts`); every mount refits the View | Tab return and reload both jump | A persistence |
-| Switch Views | Re-projected the same graph and moved the camera | `rootBoardId` is a dependency of the seed effect: the desk tears down, the GPU device is destroyed and re-acquired, then fits | P0: a camera move costs a device | A persistence |
+| Switch Views | Re-projected the same graph and moved the camera | Closed: the seed is staged into the same engine, so the device, the layer and the camera survive a View switch | — | — |
 | The entered Board survives | Entering a portal switched the active board, so the back stack lived in the store and the board id rode `?board=` | `portalPath` is component state, cleared by the View remount and absent from the URL | Entering is lost on a View switch and on reload | A persistence |
 | Shell UI across reload | Not persisted | `useUiStore` has no `persist`; library open, tab and filters reset | Library state and filters are lost on reload | A persistence |
 | View tabs | `BoardTabs` | `ViewTabs`: create, rename, delete | — | — |

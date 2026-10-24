@@ -361,7 +361,7 @@ describe("LibraryDrawer drop on the canvas", () => {
    * be `canvas-board`, which stopped existing when the ICE surface replaced React
    * Flow, so every drop was silently inert. `ice-surface` is the only canvas root.
    */
-  function pointerDrop(over: Element | null): ReturnType<typeof vi.fn> {
+  function pointerDrop(over: "surface" | null): ReturnType<typeof vi.fn> {
     const { workspace, items } = fixture();
     const onDropAt = vi.fn();
     renderDrawer(workspace, items, { onDropAt });

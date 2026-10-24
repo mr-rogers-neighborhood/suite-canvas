@@ -20,6 +20,13 @@ export interface IceWhiteboard {
   readonly stage: SuiteWhiteboardStageProps | null;
   /** A double click on a whiteboard card opens its editor at this box. */
   readonly open: (cardId: string, box: SuiteWhiteboardStageBox) => void;
+  /**
+   * Closes the stage, if any. The whiteboard stage and the in-place card editor
+   * are the desk's only two DOM editors and never coexist (ADR-0042), so the
+   * surface closes this one when a text editor opens and closes the text editor
+   * when this one opens.
+   */
+  readonly close: () => void;
 }
 
 export function useIceWhiteboard(input: {
@@ -82,5 +89,5 @@ export function useIceWhiteboard(input: {
     };
   }, [whiteboard, wiring.caps.canWriteLayout, suspended, wiring.liveWorkspace, close]);
 
-  return useMemo(() => ({ stage, open }), [stage, open]);
+  return useMemo(() => ({ stage, open, close }), [stage, open, close]);
 }

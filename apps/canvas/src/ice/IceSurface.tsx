@@ -49,7 +49,7 @@
  */
 import type { Board, WorkspaceDocument } from "@suite/graph";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CanvasZoomControls } from "../components/CanvasZoomControls";
 import { getSession } from "../session/session";
@@ -61,8 +61,9 @@ import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { useIceCamera, useIceCameraFrame, useIceMiddlePan } from "./iceSurfaceCamera";
 import { demoModeFromSearch, SUITE_PIN_KIND } from "./iceSurfaceSpawns";
 import { type IceCommands, type IceSurfaceRefs, useIceWiring } from "./iceSurfaceWiring";
-import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
+import { SuiteWhiteboardStage, type SuiteWhiteboardStageBox } from "./SuiteWhiteboardStage";
 import { useIceBoardGesture } from "./useIceBoardGesture";
+import { useIceCardEditing } from "./useIceCardEditing";
 import { useIceDeskBoot } from "./useIceDeskBoot";
 import { useIceLinkGesture } from "./useIceLinkGesture";
 import { useIcePresence } from "./useIcePresence";
@@ -192,6 +193,24 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   const link = useIceLinkGesture({ wiring, refs, projection });
   useIcePresence({ wiring, refs, link, owned, boardsRef, portalFramesRef });
   const whiteboard = useIceWhiteboard({ wiring, refs });
+  // The one in-place text editor (ADR-0042). It reads the store's editing
+  // protocol, so the inspector, the focus surface and this editor can never be
+  // open on the same card at once; the whiteboard stage is the other DOM editor,
+  // and the two close each other.
+  const editing = useIceCardEditing({
+    wiring,
+    refs,
+    commands: commandsRef,
+    framePath: portalPath,
+    closeWhiteboard: whiteboard.close,
+  });
+  const openWhiteboard = useCallback(
+    (cardId: string, box: SuiteWhiteboardStageBox): void => {
+      editing.close();
+      whiteboard.open(cardId, box);
+    },
+    [editing.close, whiteboard.open],
+  );
   useIceBoardGesture({
     wiring,
     refs,
@@ -203,7 +222,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     portalDepth,
     portalFramesRef,
     setPortalPath,
-    openWhiteboard: whiteboard.open,
+    openWhiteboard,
   });
   useIceCameraFrame({ wiring, cameraApi: iceCamera.cameraApi, flight: iceCamera.flight });
   useIceMiddlePan({ refs, cameraApi: iceCamera.cameraApi });
@@ -331,6 +350,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       )}
 
       <div ref={overlaysRef} className="ice-surface__overlays" aria-hidden="true" />
+
+      {/* The one place writing happens on the canvas: a real card face over the
+          card's sheet, kept above the desk and inside the surface's own tree. */}
+      {editing.editor}
 
       {workspaceMode && ready !== null ? (
         <div className="ice-surface__zoom">

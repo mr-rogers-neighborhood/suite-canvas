@@ -1,0 +1,46 @@
+/*
+ * The one in-place card editor (ADR-0042). It is a screen-space slot over the
+ * card's sheet: the outer element is the card's box in container CSS px (set by
+ * the frame loop), the page inside it is the card's WORLD box, scaled by the
+ * camera — the same layout the GPU sheet draws, so opening the editor does not
+ * change the type size and closing it does not pop.
+ *
+ * The ground is opaque on purpose: the sheet behind is hidden while the editor
+ * is open, so the reader never sees two images of the same words.
+ */
+.ice-card-editor {
+  position: absolute;
+  z-index: 7;
+  box-sizing: border-box;
+  transform-origin: 50% 50%;
+  pointer-events: auto;
+  /* A box that is not placed yet (the entity is mid-reconcile) keeps no paint
+     and no clicks: the card behind it is still the truth for that frame. */
+  opacity: 1;
+}
+
+.ice-card-editor[data-placed="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ice-card-editor__page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  background: var(--surface);
+  /* One card, one editor: the page clips its own overflow rather than growing
+     a scrollbar the desk would have to follow. */
+  contain: layout paint style;
+}
+
+/* The card face fills the page exactly; the sheet's own paper is covered. */
+.ice-card-editor__page > .node-card {
+  box-sizing: border-box;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0.35em;
+  /* The editor is the card, so it wears the sheet's line, not a UI border. */
+  box-shadow: none;
+}

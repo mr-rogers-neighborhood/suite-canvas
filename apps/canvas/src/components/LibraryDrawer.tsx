@@ -292,9 +292,11 @@ export function LibraryDrawer({
         onOpenCard(current.cardId);
         return;
       }
+      // ICE is the only surface now, so the drop target is its root: the old
+      // `canvas-board` test id no longer exists and every drop was silently inert.
       const canvas = document
         .elementFromPoint(event.clientX, event.clientY)
-        ?.closest('[data-testid="canvas-board"]');
+        ?.closest('[data-testid="ice-surface"]');
       if (canvas) onDropAt(current.cardId, { x: event.clientX, y: event.clientY });
     };
 

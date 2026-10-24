@@ -26,6 +26,7 @@ import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
+import { screenToWorld } from "./ice/iceScreenToWorld";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
@@ -331,10 +332,11 @@ function WorkspaceShell({
   }, [editingNodeId, editingField, setFocus]);
 
   /**
-   * A point on the plane, in plane units. ICE owns the camera, so the shell
-   * converts a client point to the surface's own box instead of applying a
-   * viewport transform of its own: both are the identity on the root plane,
-   * which is where the shell places things.
+   * A point in the document, from a client point. Two steps, both owned
+   * elsewhere: the client point becomes a point in the surface's own box, and
+   * the surface's camera (published by ICE) inverts screen → document. Skipping
+   * the second step put every dropped card at its screen position, which is only
+   * right when the camera happens to sit at the origin at 1:1.
    */
   const canvasPoint = useCallback((clientPoint?: { x: number; y: number }) => {
     const rect = document.querySelector('[data-testid="ice-surface"]')?.getBoundingClientRect();
@@ -342,8 +344,10 @@ function WorkspaceShell({
     const top = rect?.top ?? 0;
     const width = rect?.width ?? window.innerWidth;
     const height = rect?.height ?? window.innerHeight;
-    if (clientPoint) return { x: clientPoint.x - left, y: clientPoint.y - top };
-    return { x: width / 2, y: height / 2 };
+    const onSurface = clientPoint
+      ? { x: clientPoint.x - left, y: clientPoint.y - top }
+      : { x: width / 2, y: height / 2 };
+    return screenToWorld(onSurface);
   }, []);
 
   const placeCard = useCallback(

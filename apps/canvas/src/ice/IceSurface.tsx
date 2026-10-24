@@ -94,6 +94,7 @@ import {
   zoomedCamera,
 } from "./iceGraphBand";
 import { beginMiddlePan, endMiddlePan, type MiddlePanState, updateMiddlePan } from "./iceMiddlePan";
+import { publishScreenCamera } from "./iceScreenToWorld";
 import { planCardLanding } from "./iceSelectionLanding";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
@@ -246,14 +247,6 @@ function webGpuApi(): WebGpuApi | undefined {
   if (typeof navigator === "undefined") return undefined;
   const gpu = (navigator as Navigator & { readonly gpu?: WebGpuApi }).gpu;
   return gpu;
-}
-
-/** The scene surface, keeping the workspace and any other parameter intact. */
-function sceneSurfaceHref(): string {
-  if (typeof window === "undefined") return "?canvas=scene";
-  const url = new URL(window.location.href);
-  url.searchParams.set("canvas", "scene");
-  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function describeError(error: unknown): string {
@@ -776,11 +769,10 @@ export interface IceSurfaceFallbackProps {
   readonly title: string;
   readonly message: string;
   readonly detail?: string;
-  readonly sceneHref: string;
 }
 
 /** The calm no-desk card. Exported so Storybook can show it without WebGPU. */
-export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSurfaceFallbackProps) {
+export function IceSurfaceFallback({ title, message, detail }: IceSurfaceFallbackProps) {
   return (
     <div className="ice-surface__state" data-testid="ice-fallback">
       <div className="ice-surface__card">
@@ -795,9 +787,6 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
             {detail}
           </p>
         )}
-        <a className="ice-surface__card-link" data-testid="ice-fallback-link" href={sceneHref}>
-          Back to the scene surface
-        </a>
       </div>
     </div>
   );
@@ -806,7 +795,6 @@ export function IceSurfaceFallback({ title, message, detail, sceneHref }: IceSur
 /** The ICE mount. In the app it projects the live workspace read-only. */
 export interface IceSurfaceProps {
   /** Where the fallback/HUD returns; the standalone demo overrides it to `/`. */
-  readonly sceneHref?: string;
   /**
    * The live workspace to project. Omit for the standalone demo; `null` means
    * the app has the workspace but it is not hydrated yet, so the surface waits
@@ -817,11 +805,7 @@ export interface IceSurfaceProps {
   readonly rootBoardId?: string | null;
 }
 
-export function IceSurface({
-  sceneHref: sceneHrefProp,
-  workspace,
-  rootBoardId = null,
-}: IceSurfaceProps = {}) {
+export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = {}) {
   const workspaceMode = workspace !== undefined;
   const liveWorkspace = workspace ?? null;
   const [mode, setMode] = useState<DemoMode>(() =>
@@ -859,7 +843,6 @@ export function IceSurface({
   const bandTypeRows = useTypeTable(rootBoardId ?? null);
   const actorId = useRef(`local-${Math.random().toString(36).slice(2, 10)}`);
   const [runId, setRunId] = useState(0);
-  const sceneHref = useMemo(() => sceneHrefProp ?? sceneSurfaceHref(), [sceneHrefProp]);
   const owned = useRef<{
     engine?: CanvasEngine;
     doc?: DocSession;
@@ -2081,6 +2064,11 @@ export function IceSurface({
       if (!active) return;
       handle = requestAnimationFrame(tick);
 
+      // The chrome inverts this to turn a pointer into a document point, so it
+      // has to track pans and flights, not just the commands that write a camera.
+      const camera = cameraApi.cameraOf();
+      if (camera !== null) publishScreenCamera(camera);
+
       const flight = flightRef.current;
       if (flight !== null) {
         const elapsed = now - flight.startedAt;
@@ -2313,7 +2301,6 @@ export function IceSurface({
         <IceSurfaceFallback
           title="Checking for WebGPU"
           message="ICE needs WebGPU before it can start. Nothing has been loaded yet."
-          sceneHref={sceneHref}
         />
       ) : null}
 
@@ -2321,7 +2308,6 @@ export function IceSurface({
         <IceSurfaceFallback
           title="Starting the ICE desk"
           message="Importing the engine and acquiring the GPU. This is a one-time cost; the default canvas never pays it."
-          sceneHref={sceneHref}
         />
       ) : null}
 
@@ -2330,13 +2316,12 @@ export function IceSurface({
           title={
             phase.reason === "api" ? "This browser has no WebGPU" : "WebGPU has no graphics adapter"
           }
-          message="ICE is an experimental WebGPU engine, so the desk cannot start here. Run `pnpm dev:ice` and open the printed URL in a headed Chrome started with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs` does both for you). The integrated browser and headless Chrome will not work. The default canvas and the scene projection are unaffected."
+          message="ICE is an experimental WebGPU engine, so the desk cannot start here. Run `pnpm dev:ice` and open the printed URL in a headed Chrome started with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs` does both for you). The integrated browser and headless Chrome will not work."
           detail={
             phase.reason === "api"
               ? `${phase.detail} Try Chrome 113+, Edge 113+, or Safari 26+ with hardware acceleration on.`
               : `${phase.detail} Check that hardware acceleration is on and a supported GPU is present.`
           }
-          sceneHref={sceneHref}
         />
       ) : null}
 
@@ -2351,7 +2336,6 @@ export function IceSurface({
               : "The desk failed before it could draw. Nothing was written to your workspace. Reset demo retries; if it keeps failing, run `pnpm dev:ice` in a headed Chrome with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs`)."
           }
           detail={phase.detail}
-          sceneHref={sceneHref}
         />
       ) : null}
 
@@ -2486,9 +2470,6 @@ export function IceSurface({
             ? "Select and drag a card · drag a handle to resize · double-click a mat to enter, a whiteboard to draw · g for the graph view · Escape returns"
             : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
-        <a className="ice-surface__link" data-testid="ice-scene-link" href={sceneHref}>
-          Back to the scene surface
-        </a>
       </div>
     </section>
   );

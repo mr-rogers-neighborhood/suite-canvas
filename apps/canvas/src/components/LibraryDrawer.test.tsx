@@ -354,3 +354,44 @@ describe("Library shortcut", () => {
     expect(screen.getByTestId("library-search")).toHaveFocus();
   });
 });
+
+describe("LibraryDrawer drop on the canvas", () => {
+  /**
+   * The drop asks the document what sits under the pointer. That test id used to
+   * be `canvas-board`, which stopped existing when the ICE surface replaced React
+   * Flow, so every drop was silently inert. `ice-surface` is the only canvas root.
+   */
+  function pointerDrop(over: Element | null): ReturnType<typeof vi.fn> {
+    const { workspace, items } = fixture();
+    const onDropAt = vi.fn();
+    renderDrawer(workspace, items, { onDropAt });
+    const surface = document.createElement("div");
+    surface.setAttribute("data-testid", "ice-surface");
+    const child = document.createElement("div");
+    surface.append(child);
+    document.body.append(surface);
+    // jsdom has no layout, so it defines no `elementFromPoint` at all.
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => (over === null ? null : child),
+    });
+
+    const row = screen.getByTestId("library-item-c1");
+    fireEvent.pointerDown(row, { clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 240, clientY: 180 });
+    fireEvent.pointerUp(window, { clientX: 240, clientY: 180 });
+    surface.remove();
+    Reflect.deleteProperty(document, "elementFromPoint");
+    return onDropAt;
+  }
+
+  it("should drop a row on the canvas under the pointer", () => {
+    const onDropAt = pointerDrop("surface");
+
+    expect(onDropAt).toHaveBeenCalledWith("c1", { x: 240, y: 180 });
+  });
+
+  it("should ignore a drag that ends away from the canvas", () => {
+    expect(pointerDrop(null)).not.toHaveBeenCalled();
+  });
+});

@@ -34,7 +34,6 @@ const meta = {
     message: WEBGPU_HINT,
     detail:
       "navigator.gpu is not exposed by this browser. Try Chrome 113+, Edge 113+, or Safari 26+ with hardware acceleration on.",
-    sceneHref: "/?canvas=scene",
   },
   decorators: [
     (Story) => (

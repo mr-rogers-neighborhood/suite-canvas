@@ -13,4 +13,4 @@ const root = document.createElement("div");
 root.className = "ice-standalone";
 container.append(root);
 
-createRoot(root).render(<IceSurface sceneHref="/" />);
+createRoot(root).render(<IceSurface />);

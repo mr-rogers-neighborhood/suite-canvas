@@ -312,10 +312,6 @@ describe("IceSurface", () => {
     expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("pnpm dev:ice");
     expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("--enable-unsafe-webgpu");
     expect(screen.getByTestId("ice-fallback-copy")).toHaveTextContent("integrated browser");
-    expect(screen.getByTestId("ice-scene-link")).toHaveAttribute(
-      "href",
-      expect.stringContaining("canvas=scene"),
-    );
     expect(screen.getByTestId("ice-status")).toHaveTextContent("engine: no WebGPU");
     expect(screen.getByTestId("ice-phase")).toHaveTextContent("phase: unavailable");
     // The dynamic import is the whole point: an unsupported browser pays nothing.

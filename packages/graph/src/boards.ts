@@ -279,3 +279,36 @@ export function boardMovePlan(
     placements: placements.filter((placement) => ids.has(placement.boardId)),
   };
 }
+
+/** Which side of a frame a link is drawn from (ADR-0041). */
+export type BoardSide = "north" | "east" | "south" | "west";
+
+/**
+ * The side of a frame a link leaves by: the side whose midpoint faces `toward`.
+ * A Board end attaches at a side midpoint rather than at a connector, because a
+ * frame has no perimeter to hang one on — the wall itself is the anchor.
+ */
+export function boardSideFacing(rect: BoardRect, toward: Point): { side: BoardSide; point: Point } {
+  const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const dx = toward.x - centre.x;
+  const dy = toward.y - centre.y;
+  // Compare the travel against the frame's own aspect so a wide Board does not
+  // always answer east/west: what matters is which wall is nearest the line.
+  const horizontal = Math.abs(dx) * rect.height >= Math.abs(dy) * rect.width;
+  if (horizontal) {
+    return dx >= 0
+      ? { side: "east", point: { x: rect.x + rect.width, y: centre.y } }
+      : { side: "west", point: { x: rect.x, y: centre.y } };
+  }
+  return dy >= 0
+    ? { side: "south", point: { x: centre.x, y: rect.y + rect.height } }
+    : { side: "north", point: { x: centre.x, y: rect.y } };
+}
+
+/**
+ * The point a Board's link end attaches at, in the Board's parent frame: the
+ * midpoint of the wall facing `toward` (a world point), expressed as `rect` is.
+ */
+export function boardSideAnchor(rect: BoardRect, toward: Point): Point {
+  return boardSideFacing(rect, toward).point;
+}

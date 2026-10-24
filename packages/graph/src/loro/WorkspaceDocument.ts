@@ -165,6 +165,9 @@ export interface CreateEdgeInput {
   boardId: string;
   source: string;
   target: string;
+  /** What each end names; a card unless the caller says otherwise. */
+  sourceKind?: GraphEdge["sourceKind"];
+  targetKind?: GraphEdge["targetKind"];
   sourceConnector?: string | undefined;
   targetConnector?: string | undefined;
   kind?: GraphEdge["kind"];
@@ -793,6 +796,8 @@ export function placementFromMap(key: string, fields: LoroMap): Placement {
 export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
   const sourceConnector = readString(fields, "sourceConnector");
   const targetConnector = readString(fields, "targetConnector");
+  const sourceKind = readString(fields, "sourceKind");
+  const targetKind = readString(fields, "targetKind");
   const label = readString(fields, "label");
   const labelOffset = readNumber(fields, "labelOffset");
   return normalizeEdge(
@@ -803,6 +808,8 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
       target: readString(fields, "target") ?? "",
       ...(sourceConnector ? { sourceConnector } : {}),
       ...(targetConnector ? { targetConnector } : {}),
+      ...(sourceKind === "board" ? { sourceKind } : {}),
+      ...(targetKind === "board" ? { targetKind } : {}),
       kind: readString(fields, "kind") ?? "references",
       path: readString(fields, "path") ?? "bezier",
       bidirectional: readBoolean(fields, "bidirectional") ?? false,
@@ -3744,13 +3751,31 @@ export class WorkspaceDocument {
 
   listBoardEdges(boardId: string): GraphEdge[] {
     const placed = new Map(this.listBoardCards(boardId).map((card) => [card.id, card]));
+    // The frames *on* this plane are its children — a Board end names one of
+    // those, not the plane itself.
+    const frames = new Set(
+      this.listBoards()
+        .filter((board) => board.parentBoardId === boardId)
+        .map((board) => board.id),
+    );
+    const ends = this.edgeEndsPlaced(placed, frames);
     return this.listEdges().filter(
       (edge) =>
         edge.boardId === boardId &&
-        placed.has(edge.source) &&
-        placed.has(edge.target) &&
+        ends(edge.source, edge.sourceKind) &&
+        ends(edge.target, edge.targetKind) &&
         this.anchorsResolve(edge, placed),
     );
+  }
+
+  /**
+   * Whether an edge end is present on the plane being drawn. A card end needs a
+   * placement in `placed`; a Board end needs the frame itself, which is what a
+   * link between frames names (ADR-0041).
+   */
+  private edgeEndsPlaced(placed: Map<string, Card>, boards: ReadonlySet<string>) {
+    return (id: string, kind: GraphEdge["sourceKind"]): boolean =>
+      kind === "board" ? boards.has(id) : placed.has(id);
   }
 
   /**
@@ -3775,22 +3800,27 @@ export class WorkspaceDocument {
       const card = this.getCard(placement.cardId);
       if (card && !card.deletedAt) placed.set(card.id, card);
     }
+    const ends = this.edgeEndsPlaced(placed, subtree);
     return this.listEdges().filter(
       (edge) =>
         subtree.has(edge.boardId) &&
-        placed.has(edge.source) &&
-        placed.has(edge.target) &&
+        ends(edge.source, edge.sourceKind) &&
+        ends(edge.target, edge.targetKind) &&
         this.anchorsResolve(edge, placed),
     );
   }
 
   private anchorsResolve(edge: GraphEdge, placed: Map<string, Card>): boolean {
+    // A named connector has to exist on the card it names. A Board end names no
+    // connector — its anchor is the wall — so it has nothing to resolve.
     const resolve = (cardId: string, connectorId: string | undefined): boolean => {
       if (!connectorId) return true;
       const connectors = placed.get(cardId)?.connectors ?? [];
       return connectors.some((connector) => connector.id === connectorId);
     };
-    return resolve(edge.source, edge.sourceConnector) && resolve(edge.target, edge.targetConnector);
+    const source = edge.sourceKind === "board" ? true : resolve(edge.source, edge.sourceConnector);
+    const target = edge.targetKind === "board" ? true : resolve(edge.target, edge.targetConnector);
+    return source && target;
   }
 
   getEdge(id: string): GraphEdge | undefined {
@@ -3817,6 +3847,11 @@ export class WorkspaceDocument {
     else fields.delete("sourceConnector");
     if (edge.targetConnector) fields.set("targetConnector", edge.targetConnector);
     else fields.delete("targetConnector");
+    // Absent is a card: an end only carries the flag when it names a frame.
+    if (edge.sourceKind === "board") fields.set("sourceKind", edge.sourceKind);
+    else fields.delete("sourceKind");
+    if (edge.targetKind === "board") fields.set("targetKind", edge.targetKind);
+    else fields.delete("targetKind");
     if (edge.label) fields.set("label", edge.label);
     else fields.delete("label");
   }
@@ -3837,6 +3872,8 @@ export class WorkspaceDocument {
       updatedAt: now,
       ...(input.sourceConnector ? { sourceConnector: input.sourceConnector } : {}),
       ...(input.targetConnector ? { targetConnector: input.targetConnector } : {}),
+      ...(input.sourceKind === "board" ? { sourceKind: input.sourceKind } : {}),
+      ...(input.targetKind === "board" ? { targetKind: input.targetKind } : {}),
     });
     this.applyEdge(edge);
     this.commit(`${STRUCT_ORIGIN}add-edge`);

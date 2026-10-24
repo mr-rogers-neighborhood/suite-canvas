@@ -172,6 +172,60 @@ describe("edgeFrameOf", () => {
     });
   });
 
+  it("should list a link that ends on a Board (ADR-0041)", () => {
+    const { workspace, outer, left } = setup();
+    const a = workspace.createCard({ boardId: outer.id, position: { x: 10, y: 10 } });
+    const edge = workspace.addEdge({
+      boardId: outer.id,
+      source: a.id,
+      target: left.id,
+      targetKind: "board",
+    });
+    if (!edge) throw new Error("expected an edge");
+
+    // The frame is a Board end, so it needs no placement: the frame is the end.
+    expect(edge.targetKind).toBe("board");
+    expect(edge.sourceKind).toBeUndefined();
+    expect(workspace.listSubtreeEdges(outer.id).map((entry) => entry.id)).toEqual([edge.id]);
+    expect(workspace.listBoardEdges(outer.id).map((entry) => entry.id)).toEqual([edge.id]);
+    // A link into a frame is not drawn *inside* that frame: its ends are not both
+    // on that plane.
+    expect(workspace.listSubtreeEdges(left.id)).toEqual([]);
+  });
+
+  it("should keep a link between two frames, and forget one whose frame left", () => {
+    const { workspace, home, outer, left, right } = setup();
+    const edge = workspace.addEdge({
+      boardId: outer.id,
+      source: left.id,
+      sourceKind: "board",
+      target: right.id,
+      targetKind: "board",
+    });
+    if (!edge) throw new Error("expected an edge");
+    expect(workspace.listSubtreeEdges(home.id).map((entry) => entry.id)).toEqual([edge.id]);
+    expect(edge).toMatchObject({ sourceKind: "board", targetKind: "board" });
+
+    // A dormancy, not a deletion: the link comes back with the frame.
+    workspace.deleteBoard(right.id);
+    expect(workspace.listSubtreeEdges(home.id)).toEqual([]);
+  });
+
+  it("should round-trip the endpoint kinds through the stored map", () => {
+    const { workspace, outer, left, right } = setup();
+    const edge = workspace.addEdge({
+      boardId: outer.id,
+      source: left.id,
+      sourceKind: "board",
+      target: right.id,
+      targetKind: "board",
+    });
+    if (!edge) throw new Error("expected an edge");
+
+    const stored = workspace.getEdge(edge.id);
+    expect(stored).toMatchObject({ sourceKind: "board", targetKind: "board" });
+  });
+
   it("should have no frame for Boards under different Views", () => {
     const { workspace, left } = setup();
     const other = workspace.createView({ name: "Elsewhere" });

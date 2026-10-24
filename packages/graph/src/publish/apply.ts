@@ -394,6 +394,8 @@ function applyChange(
       const endpointsChanged =
         current.source !== next.source ||
         current.target !== next.target ||
+        (current.sourceKind ?? null) !== (next.sourceKind ?? null) ||
+        (current.targetKind ?? null) !== (next.targetKind ?? null) ||
         (current.sourceConnector ?? null) !== (next.sourceConnector ?? null) ||
         (current.targetConnector ?? null) !== (next.targetConnector ?? null);
       if (endpointsChanged) {

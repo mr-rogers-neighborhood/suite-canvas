@@ -155,6 +155,8 @@ export function sectionFields(section: Section): SectionFields {
 export interface EdgeFields {
   source: string;
   target: string;
+  sourceKind: GraphEdge["sourceKind"] | null;
+  targetKind: GraphEdge["targetKind"] | null;
   sourceConnector: string | null;
   targetConnector: string | null;
   path: GraphEdge["path"];
@@ -168,6 +170,8 @@ export function edgeFields(edge: GraphEdge | undefined): EdgeFields | undefined 
   return {
     source: edge.source,
     target: edge.target,
+    sourceKind: edge.sourceKind ?? null,
+    targetKind: edge.targetKind ?? null,
     sourceConnector: edge.sourceConnector ?? null,
     targetConnector: edge.targetConnector ?? null,
     path: edge.path,

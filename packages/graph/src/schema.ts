@@ -2,6 +2,12 @@ import { z } from "zod";
 
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
+/**
+ * What a link's end names (ADR-0041): a card, or a whole Board's frame. A link
+ * between Boards is how the tree is read from above — the same relation a card
+ * makes, drawn against the frame instead of the card.
+ */
+export const edgeEndpointKinds = ["card", "board"] as const;
 export const fieldKinds = [
   "text",
   "number",
@@ -18,6 +24,7 @@ export const sectionColors = boardColors;
 
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
+export const edgeEndpointKindSchema = z.enum(edgeEndpointKinds);
 export const fieldKindSchema = z.enum(fieldKinds);
 export const boardColorSchema = z.enum(boardColors);
 /** @deprecated Use `boardColorSchema`. */
@@ -235,6 +242,13 @@ export const graphEdgeSchema = z.object({
   boardId: entityIdSchema,
   source: entityIdSchema,
   target: entityIdSchema,
+  /**
+   * What each end names. Absent means a card, so every link written before the
+   * field existed reads unchanged, and a link only carries the flag when it
+   * needs it.
+   */
+  sourceKind: edgeEndpointKindSchema.optional(),
+  targetKind: edgeEndpointKindSchema.optional(),
   /** Connector ids the link attaches to, when it was drawn between connectors. */
   sourceConnector: entityIdSchema.optional(),
   targetConnector: entityIdSchema.optional(),
@@ -270,4 +284,5 @@ export type SectionColor = z.infer<typeof sectionColorSchema>;
 export type BoardColor = z.infer<typeof boardColorSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
+export type EdgeEndpointKind = z.infer<typeof edgeEndpointKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;

@@ -8,6 +8,7 @@ export {
   boardMovePlan,
   boardPath,
   boardRootId,
+  boardSideAnchor,
   boardWorldRect,
   canNestBoard,
   edgeFrameOf,

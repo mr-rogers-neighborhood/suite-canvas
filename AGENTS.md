@@ -42,7 +42,9 @@ pnpm lint             # biome check .
 pnpm lint:fix         # biome check --write .
 pnpm typecheck        # tsc across all packages (turbo)
 pnpm test             # vitest (workspace mode)
-pnpm e2e              # playwright
+pnpm e2e              # playwright on a virtual display (no windows; needs WebGPU)
+pnpm e2e:shell        # the fast loop: headless, desk specs skip themselves
+pnpm e2e:headed       # watched run, on your own screen, one worker
 pnpm build            # turbo build (graph dist + canvas)
 pnpm storybook        # storybook dev server
 ```

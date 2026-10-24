@@ -1,30 +1,24 @@
 import { type Browser, chromium, expect, test } from "@playwright/test";
 import { windowArgs } from "../../scripts/e2e-window.mjs";
+import { ICE_LAUNCH_OPTIONS } from "../playwright.config";
 
 /**
- * The live ICE desk is the one surface the default suite cannot cover: it needs
- * a real WebGPU adapter, and Playwright's bundled headless Chromium has none.
- * This spec therefore launches the system Chrome headed with the flags the
- * launcher uses, and skips unless `SUITE_ICE_E2E` is set, so `pnpm e2e` never
- * depends on a GPU.
+ * The live ICE desk is the one surface that needs a real WebGPU adapter, and
+ * Playwright's bundled headless Chromium has none (every headless mode reports
+ * SwiftShader and loses the device within seconds). So this spec launches its
+ * own system Chrome — headed, on whatever display the run was given. Under
+ * `scripts/with-display.mjs` that display is virtual: the desk gets the
+ * hardware adapter and no window appears on the user's screen.
  *
- * Recover the same way as a manual run: `SUITE_ICE_E2E=1 pnpm --filter
- * @suite/e2e e2e ice.spec.ts`. A screenshot is written only on failure, under
+ * It skips unless `SUITE_ICE_E2E` is set, which the virtual-display wrapper sets
+ * for the whole suite. `SUITE_ICE_VISIBLE=1` puts it back on the real screen so a
+ * human can watch. A screenshot is written only on failure, under
  * `e2e/test-results/`, because a committed baseline would encode one machine's
  * adapter and font stack.
  */
 const ENABLED = process.env.SUITE_ICE_E2E === "1";
-
-const CHROME_ARGS = [
-  "--enable-unsafe-webgpu",
-  "--enable-features=Vulkan",
-  "--use-angle=vulkan",
-  "--enable-unsafe-swiftshader",
-  "--ozone-platform=x11",
-  "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  "--disable-background-timer-throttling",
-];
+/** On a virtual display there is no second monitor to move out of the way of. */
+const VISIBLE = process.env.SUITE_ICE_VISIBLE === "1";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -34,11 +28,10 @@ function messageOf(error: unknown): string {
 async function launchChrome(): Promise<Browser> {
   try {
     return await chromium.launch({
-      channel: "chrome",
-      headless: false,
-      // A headed test window opens on the screen the developer is NOT using:
-      // an unpositioned one lands under the pointer and interrupts them.
-      args: [...CHROME_ARGS, ...windowArgs()],
+      ...ICE_LAUNCH_OPTIONS,
+      // Only a watched run needs putting out of the way: a virtual-display
+      // window is never mapped, so there is nothing to move it off of.
+      args: [...ICE_LAUNCH_OPTIONS.args, ...(VISIBLE ? windowArgs() : [])],
     });
   } catch (error) {
     test.skip(true, `system Chrome is not available to Playwright: ${messageOf(error)}`);
@@ -106,9 +99,12 @@ test.describe("ICE demo surface", () => {
     try {
       await page.goto("/ice.html?demo=suite");
       await expect(page.getByTestId("ice-status")).toHaveText("engine: ready", { timeout: 60_000 });
-      await expect(page.getByTestId("ice-seed")).toHaveText("20/20 objects seeded");
+      // The example's shape after ADR-0039: three Boards inside one View, four
+      // mats in total, ten projected objects. A Boards change moves these
+      // numbers, so they read from the desk rather than being recomputed here.
+      await expect(page.getByTestId("ice-seed")).toHaveText("10/10 objects seeded");
       await expect(page.getByTestId("ice-demo-summary")).toHaveText(
-        "Suite demo: 20 objects / 3 boards",
+        "Suite demo: 10 objects / 4 boards",
       );
       await expect(page.locator('[data-testid="ice-surface"] canvas').first()).toBeVisible();
       console.log(`ICE Suite adapter: ${await page.getByTestId("ice-adapter").innerText()}`);

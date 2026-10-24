@@ -59,9 +59,9 @@ them):
 
 - Unit and integration: 108 test files — 1,392 Vitest tests across `graph`, `server` and `canvas`,
   plus 64 `node --test` tests in `services/billing`.
-- End-to-end: 32 Playwright specs containing 179 tests, all in the single `chromium` project.
-  One of them, `e2e/tests/ice.spec.ts`, skips unless `SUITE_ICE_E2E=1` (see the environment
-  table below) because it needs a real WebGPU adapter.
+- End-to-end: 18 Playwright specs containing 84 tests, split across two projects — `chromium` (behaviour;
+  its desk specs skip unless `SUITE_ICE_E2E=1`, see the environment table below) and `visual`
+  (screenshot baselines, always headless).
 
 Recount them with:
 
@@ -101,10 +101,24 @@ UI mode also never starts a second set of servers: it reuses a canvas (`:5173`) 
 that is already listening even when `CI` is set, because spawning one on a taken port can only fail
 and take the open window down. With nothing running it starts them as usual.
 
+### `pnpm e2e:shell` — the quick loop
+
+The whole suite runs on a virtual display (below), which is the gate but takes a few minutes. For the
+tight loop, `e2e:shell` runs the same specs in plain headless Chromium and lets the desk specs skip
+themselves:
+
+```sh
+pnpm e2e:shell                               # ~1.5 min, no GPU, no windows
+pnpm e2e:shell semantic                      # one file
+```
+
+It cannot see anything the canvas draws — a passing `e2e:shell` says the shell is healthy, not the
+desk. `pnpm e2e` is still the command to trust.
+
 ### `pnpm e2e:headed`
 
-Runs the real suite with a visible browser, one worker at a time (`--headed --workers=1`), so tests
-stay sequential and followable:
+Runs the real suite with a visible browser on your own display, one worker at a time, so tests stay
+sequential and followable:
 
 ```sh
 pnpm e2e:headed
@@ -126,8 +140,8 @@ picks the widest monitor that is not the primary one (`xrandr --listmonitors`) a
 SUITE_E2E_WINDOW_POSITION=64,64 SUITE_E2E_WINDOW_SIZE=1280x900 pnpm e2e:headed
 ```
 
-Headed runs are slower than the parallel headless run and open one window at a time — use them to
-observe, not as the gate. `pnpm e2e` stays the CI command.
+A watched run opens one window at a time and is slower than the parallel default — use it to observe,
+not as the gate. `pnpm e2e` (virtual display, no windows) stays the gate.
 
 ### `pnpm e2e:trace`
 
@@ -145,12 +159,19 @@ SUITE_TRACE=on pnpm e2e && pnpm e2e:trace   # record every test, then open the n
 | --- | --- | --- |
 | `CI` | unset | Selects the `github` reporter and stops server reuse. UI mode is exempt: it always reuses a server that is already listening. |
 | `SUITE_TRACE` | unset | `on` records a trace for every test. Anything else keeps `retain-on-failure`. |
-| `SUITE_ICE_E2E` | unset | `1` enables `e2e/tests/ice.spec.ts`. It launches the system Chrome headed with WebGPU flags, so it is skipped by default and never part of the CI gate. |
+| `SUITE_ICE_E2E` | set by `pnpm e2e` | `1` turns the `chromium` project into system Chrome with the WebGPU flags and un-skips the desk specs. Set for you by `scripts/with-display.mjs`; set it yourself only when you are not going through that wrapper. |
+| `SUITE_ICE_VISIBLE` | unset | `1` skips the virtual display and runs on the real one, so the browser windows are watchable. Debugging only — this is what `pnpm e2e:headed` does. |
+| `SUITE_XVFB_DISPLAY` | `:99` | Display number the wrapper starts `Xvfb` on. |
+| `SUITE_XVFB_SIZE` | `1920x1080x24` | Virtual screen size. |
 
-The ICE spec is the exception to the table above: it needs a real WebGPU adapter, so it launches
-its own headed Chrome instead of the project's headless browser. Run it with
-`SUITE_ICE_E2E=1 pnpm --filter @suite/e2e e2e ice.spec.ts`; see
-[docs/ice-spike.md](./ice-spike.md). Without the variable it reports a skip.
+**Why a virtual display and not `headless`.** The canvas is ICE (WebGPU). Every headless mode of
+Chrome — bundled or system, with or without `--use-angle=vulkan` — reports a SwiftShader adapter and
+**loses the device within about six seconds**, so the specs that read what the canvas draws cannot run
+there at all. Headed Chrome gets the hardware adapter but steals focus while it runs. So `pnpm e2e`
+runs Chrome headed *on an `Xvfb` display*: `hardware · nvidia / ampere`, `engine: ready` held through
+zoom, fit and drag, and no window ever mapped onto the desktop. The screenshots, traces and timings
+are in `e2e/playwright-report/` afterwards (`npx playwright show-report`), so a run never has to be
+watched to be understood.
 
 `trace: "on"` is opt-in because it is the one setting that turns a fast run into a slow, disk-filling
 one. Measured on this suite, a trace is about 100 KB for the 1.2 s boot test and 1.3 MB for a

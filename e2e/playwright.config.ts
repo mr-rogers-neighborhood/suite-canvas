@@ -23,20 +23,33 @@ const reuseExistingServer = uiMode || !process.env.CI;
  * switch turns the one project into the harness those specs need: system
  * Chrome, headed, with the WebGPU flags `./tests/ice.spec.ts` already uses. One
  * knob, so "the ICE specs ran" and "the desk could start" can never disagree.
+ *
+ * Headless is not an option for the desk (measured: every headless mode reports
+ * SwiftShader and loses the device within ~6s), so `scripts/with-display.mjs`
+ * runs the whole suite on a virtual X display instead: Chrome is headed, picks
+ * up the hardware adapter, and no window ever appears on the user's screen.
+ * `SUITE_ICE_VISIBLE=1` opts back into the real display for debugging.
  */
 const iceHarness = process.env.SUITE_ICE_E2E === "1";
 
-/** Mirrors `CHROME_ARGS` in `./tests/ice.spec.ts`; keep the two in step. */
-const ICE_CHROME_ARGS = [
-  "--enable-unsafe-webgpu",
-  "--enable-features=Vulkan",
-  "--use-angle=vulkan",
-  "--enable-unsafe-swiftshader",
-  "--ozone-platform=x11",
-  "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  "--disable-background-timer-throttling",
-];
+/**
+ * The WebGPU launch options, shared with `./tests/ice.spec.ts` (which launches
+ * its own browser) — one list, so the gate and the spec cannot drift.
+ */
+export const ICE_LAUNCH_OPTIONS = {
+  channel: "chrome",
+  headless: false,
+  args: [
+    "--enable-unsafe-webgpu",
+    "--enable-features=Vulkan",
+    "--use-angle=vulkan",
+    "--enable-unsafe-swiftshader",
+    "--ozone-platform=x11",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+  ],
+} as const;
 
 export default defineConfig({
   testDir: "./tests",
@@ -57,7 +70,10 @@ export default defineConfig({
   workers: process.env.CI ? 3 : 4,
   timeout: 45_000,
   expect: { timeout: 10_000 },
-  reporter: process.env.CI ? "github" : "list",
+  // `html --open=never` writes `e2e/playwright-report/`: the run never steals
+  // focus while it is going, and the screenshots, traces and timings are there
+  // afterwards for whoever wants to look. `list` stays for the live progress.
+  reporter: process.env.CI ? "github" : [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: "http://localhost:5173",
     trace,
@@ -93,18 +109,31 @@ export default defineConfig({
     },
   ],
   projects: [
+    // Behaviour. Every spec here drives the app; under the virtual display they
+    // all share the harness's Chrome, so the desk specs and the shell specs see
+    // the same browser.
     {
       name: "chromium",
+      testIgnore: /visual\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         ...(iceHarness
           ? {
-              channel: "chrome",
-              headless: false,
-              launchOptions: { args: ICE_CHROME_ARGS },
+              channel: ICE_LAUNCH_OPTIONS.channel,
+              headless: ICE_LAUNCH_OPTIONS.headless,
+              launchOptions: { args: [...ICE_LAUNCH_OPTIONS.args] },
             }
           : {}),
       },
+    },
+    // Appearance. Screenshot baselines are committed art: they were recorded in
+    // headless Chromium, and a headed browser (which the desk needs) antialiases
+    // and hints text slightly differently, so these always run headless — the
+    // only machine-independent renderer the project has.
+    {
+      name: "visual",
+      testMatch: /visual\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], headless: true },
     },
   ],
 });

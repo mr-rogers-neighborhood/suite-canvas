@@ -553,6 +553,9 @@ describe("iceBridge resize planning", () => {
       boardId: "board-1",
       cardId: "card-a",
       geometry: { x: 0, y: 0, width: 250, height: 125 },
+      // 250 wide is under the base card's extent, so the type steps down to the
+      // ladder's floor — a small box never holds base-size writing.
+      typeScale: 0.5,
     });
 
     const fromCorner = expectCommit(
@@ -566,6 +569,7 @@ describe("iceBridge resize planning", () => {
       boardId: "board-1",
       cardId: "card-a",
       geometry: { x: 40, y: 20, width: 160, height: 80 },
+      typeScale: 0.5,
     });
   });
 
@@ -600,12 +604,13 @@ describe("iceBridge resize planning", () => {
       }),
     );
     expect(writer.updatePlacementGeometry).toHaveBeenCalledTimes(1);
-    expect(writer.updatePlacementGeometry).toHaveBeenCalledWith("board-1", "card-a", {
-      x: 0,
-      y: 0,
-      width: 300,
-      height: 150,
-    });
+    expect(writer.updatePlacementGeometry).toHaveBeenCalledWith(
+      "board-1",
+      "card-a",
+      { x: 0, y: 0, width: 300, height: 150 },
+      // 300 wide is a few units past the base extent: still the base rung.
+      1,
+    );
   });
 
   it("should refuse a resize with no change and for a viewer", () => {

@@ -26,7 +26,7 @@ import type { Placement } from "@suite/graph";
 /** The slice of a placement this module needs. */
 export type CanonicalPlacement = Pick<
   Placement,
-  "boardId" | "cardId" | "x" | "y" | "width" | "height"
+  "boardId" | "cardId" | "x" | "y" | "width" | "height" | "typeScale"
 > & {
   /**
    * What the card says, as one text flow (title, blank line, body). A card's

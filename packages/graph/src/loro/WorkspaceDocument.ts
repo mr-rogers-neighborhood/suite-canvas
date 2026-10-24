@@ -3467,6 +3467,7 @@ export class WorkspaceDocument {
     boardId: string,
     cardId: string,
     geometry: { x: number; y: number; width: number; height: number },
+    typeScale?: number | null,
   ): void {
     const fields = this.placements.get(placementKey(boardId, cardId));
     if (!isMap(fields)) return;
@@ -3474,6 +3475,12 @@ export class WorkspaceDocument {
     fields.set("y", geometry.y);
     fields.set("width", geometry.width);
     fields.set("height", geometry.height);
+    // `undefined` leaves the rung alone (a similarity resize derives it from the
+    // box); `null` clears it, which is the same thing stated explicitly.
+    if (typeScale === null) fields.delete("typeScale");
+    else if (typeof typeScale === "number" && Number.isFinite(typeScale) && typeScale > 0) {
+      fields.set("typeScale", typeScale);
+    }
     this.commit(`${STRUCT_ORIGIN}resize-card`);
   }
 

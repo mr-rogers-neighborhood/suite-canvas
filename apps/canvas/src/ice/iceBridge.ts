@@ -35,6 +35,7 @@
  */
 import type { EdgeKind } from "@suite/graph";
 import type { Camera, Point, Rect, ResizeHandle, Size, Transform } from "@suite/scene";
+import { cardScaleForResize } from "./suiteCardScale";
 
 /* --------------------------------------------------------------- constants */
 
@@ -588,6 +589,10 @@ export interface IceResizeIntent {
   readonly item: IceGestureItem;
   readonly handle: ResizeHandle;
   readonly worldDelta: Point;
+  /** Shift held at pointer-up: reflow at the starting rung instead of rescaling it. */
+  readonly reflow?: boolean | undefined;
+  /** The rung the gesture began on, so a reflow holds it. */
+  readonly startScale?: number | undefined;
 }
 
 export interface IceSectionMoveIntent {
@@ -718,6 +723,8 @@ export type CanonicalWrite =
       readonly boardId: string;
       readonly cardId: string;
       readonly geometry: Rect;
+      /** The type rung the resize settles on; absent means "derive it from the box". */
+      readonly typeScale?: number | undefined;
     }
   | { readonly kind: "createCard"; readonly input: IceCreateCardWrite }
   | {
@@ -740,7 +747,12 @@ export type CanonicalWrite =
  */
 export interface CanonicalWriter {
   movePlacements(boardId: string, moves: readonly IcePlacementMove[]): void;
-  updatePlacementGeometry(boardId: string, cardId: string, geometry: Rect): void;
+  updatePlacementGeometry(
+    boardId: string,
+    cardId: string,
+    geometry: Rect,
+    typeScale?: number | undefined,
+  ): void;
   /** The card and its size must land in the same commit. */
   createCard(input: IceCreateCardWrite): void;
   trashCards(cardIds: readonly string[]): void;
@@ -764,7 +776,7 @@ export function applyCanonicalWrite(writer: CanonicalWriter, write: CanonicalWri
       writer.movePlacements(write.boardId, write.moves);
       return;
     case "resizePlacement":
-      writer.updatePlacementGeometry(write.boardId, write.cardId, write.geometry);
+      writer.updatePlacementGeometry(write.boardId, write.cardId, write.geometry, write.typeScale);
       return;
     case "createCard":
       writer.createCard(write.input);
@@ -1036,11 +1048,20 @@ export function planResizeCommit(intent: IceResizeIntent, context: IcePlanContex
     return skipPlan(snapped ? "no-change" : "sub-epsilon");
   }
 
+  const rounded = roundRectGeometry(geometry);
+  // One policy decides the rung: similarity reads it off the resolved box (the
+  // same `scaleForExtent` the projection uses, so box and rung cannot disagree),
+  // a reflow holds the rung the gesture started on.
   return commitPlan({
     kind: "resizePlacement",
     boardId: instance.boardId,
     cardId: instance.cardId,
-    geometry: roundRectGeometry(geometry),
+    geometry: rounded,
+    typeScale: cardScaleForResize({
+      extent: rounded,
+      reflow: intent.reflow === true,
+      startScale: intent.startScale,
+    }),
   });
 }
 
@@ -1536,6 +1557,7 @@ export interface WorkspaceDocumentLike {
     boardId: string,
     cardId: string,
     geometry: { x: number; y: number; width: number; height: number },
+    typeScale?: number | null,
   ): void;
   createCard(input: {
     id?: string;
@@ -1578,13 +1600,13 @@ export function workspaceWriter(doc: WorkspaceDocumentLike): CanonicalWriter {
         moves.map((move) => ({ cardId: move.cardId, x: move.x, y: move.y })),
       );
     },
-    updatePlacementGeometry(boardId, cardId, geometry) {
-      doc.updatePlacementGeometry(boardId, cardId, {
-        x: geometry.x,
-        y: geometry.y,
-        width: geometry.width,
-        height: geometry.height,
-      });
+    updatePlacementGeometry(boardId, cardId, geometry, typeScale) {
+      doc.updatePlacementGeometry(
+        boardId,
+        cardId,
+        { x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height },
+        typeScale ?? null,
+      );
     },
     createCard(input) {
       doc.batch(ICE_WRITE_ORIGIN, () => {

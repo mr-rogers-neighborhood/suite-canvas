@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createSuiteCardOverlay,
+  escalateToDom,
+  normalizeDpr,
   SUITE_CARD_COMPACT_SCREEN_WIDTH,
   SUITE_CARD_FULL_SCREEN_WIDTH,
+  SUITE_CARD_INK_PAGE,
   type SuiteCardGeometry,
   type SuiteCardRect,
+  sharpCeiling,
   suiteCardBand,
   suiteCardBox,
   suiteCardBoxFromRect,
@@ -28,6 +32,7 @@ describe("suiteCardBox", () => {
       scale: 2,
       angleDeg: 90,
       band: "full",
+      escalated: false,
     });
   });
 
@@ -59,6 +64,7 @@ describe("suiteCardBox", () => {
       scale: 2,
       angleDeg: 0,
       band: "full",
+      escalated: false,
     });
     expect(suiteCardBoxFromRect(null, { x: 0, y: 0, zoom: 1 })).toBeNull();
     expect(suiteCardBoxFromRect(rect, { x: 0, y: 0, zoom: 0 })).toBeNull();
@@ -71,6 +77,139 @@ describe("suiteCardBox", () => {
     expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 0 })).toBeNull();
     expect(suiteCardBox(geometry({ alpha: 0 }), { x: 0, y: 0, zoom: 1 })).toBeNull();
     expect(suiteCardBox(geometry({ half: [Number.NaN, 120] }), { x: 0, y: 0, zoom: 1 })).toBeNull();
+  });
+});
+
+describe("the sharp ceiling", () => {
+  it("should be the ink page divided by the device pixel ratio", () => {
+    expect(SUITE_CARD_INK_PAGE).toBe(2048);
+    expect(sharpCeiling(1)).toBe(2048);
+    expect(sharpCeiling(1.5)).toBeCloseTo(2048 / 1.5, 6);
+    expect(sharpCeiling(2)).toBe(1024);
+    expect(sharpCeiling(3)).toBeCloseTo(2048 / 3, 6);
+    // A nonsense ratio is a plain 1x screen: the sheet is never given 0 width.
+    expect(sharpCeiling(0)).toBe(2048);
+    expect(sharpCeiling(-2)).toBe(2048);
+    expect(sharpCeiling(Number.NaN)).toBe(2048);
+    expect(normalizeDpr(undefined)).toBe(1);
+    expect(normalizeDpr(1.5)).toBe(1.5);
+  });
+
+  it("should escalate only past the ceiling, at every ratio", () => {
+    for (const dpr of [1, 1.5, 2, 3]) {
+      const ceiling = sharpCeiling(dpr);
+      expect(escalateToDom(ceiling - 1, dpr)).toBe(false);
+      // Exactly at the ceiling the sheet is still sharp: no switch, no flicker.
+      expect(escalateToDom(ceiling, dpr)).toBe(false);
+      expect(escalateToDom(ceiling + 1, dpr)).toBe(true);
+    }
+    expect(escalateToDom(Number.NaN, 1)).toBe(false);
+  });
+
+  it("should never let escalation fight the LOD bands", () => {
+    // 150px is a compact card on a 1x screen, however small the ceiling is.
+    expect(suiteCardBand(150)).toBe("compact");
+    expect(escalateToDom(150, 100)).toBe(false);
+    expect(escalateToDom(SUITE_CARD_COMPACT_SCREEN_WIDTH, 100)).toBe(false);
+    // The full band is the only one that escalates.
+    expect(escalateToDom(SUITE_CARD_FULL_SCREEN_WIDTH, 100)).toBe(true);
+  });
+
+  it("should mark the box escalated past the ceiling, at full only", () => {
+    // 288 world units at 8x = 2304px, past the 2048px ceiling of a 1x screen.
+    const wide = suiteCardBox(geometry(), { x: 0, y: 0, zoom: 8 }, 0, 1);
+    expect(wide?.band).toBe("full");
+    expect(wide?.escalated).toBe(true);
+    // The same box on a 2x screen: 2304 > 1024, still escalated.
+    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 8 }, 0, 2)?.escalated).toBe(true);
+    // At 4x (1152px) a 1x screen is still under its ceiling.
+    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 4 }, 0, 1)?.escalated).toBe(false);
+    expect(suiteCardBox(geometry(), { x: 0, y: 0, zoom: 4 }, 0, 2)?.escalated).toBe(true);
+    // The canonical rect path agrees with the geometry path.
+    const rect: SuiteCardRect = { x: 0, y: 0, w: 288, h: 240 };
+    expect(suiteCardBoxFromRect(rect, { x: 0, y: 0, zoom: 8 }, 1)?.escalated).toBe(true);
+    expect(suiteCardBoxFromRect(rect, { x: 0, y: 0, zoom: 1 }, 4)?.escalated).toBe(false);
+  });
+});
+
+describe("createSuiteCardOverlay escalation", () => {
+  /** Two cards at one camera: a normal one and one far past the ceiling. */
+  function twoCards(options: { escalatedOnly?: boolean; dpr?: number } = {}) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const rects = new Map<number, SuiteCardRect>([
+      [1, { x: 0, y: 0, w: 288, h: 240 }],
+      [2, { x: 0, y: 0, w: 3000, h: 2400 }],
+    ]);
+    const overlay = createSuiteCardOverlay({
+      container,
+      entities: () => [1, 2],
+      geometryOf: () => geometry(),
+      rectOf: (entity) => rects.get(entity) ?? null,
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      ...(options.dpr === undefined ? {} : { dpr: () => options.dpr }),
+      ...(options.escalatedOnly === undefined ? {} : { escalatedOnly: options.escalatedOnly }),
+    });
+    return { container, overlay };
+  }
+
+  it("should mount only the cards the sheet can no longer draw sharply", () => {
+    const { container, overlay } = twoCards({ escalatedOnly: true, dpr: 1 });
+    overlay.sync();
+    expect(overlay.visibleCount()).toBe(1);
+    expect(overlay.escalatedCount()).toBe(1);
+    const normal = container.querySelector<HTMLElement>('[data-entity="1"]');
+    const wide = container.querySelector<HTMLElement>('[data-entity="2"]');
+    expect(normal?.dataset.visible).toBe("false");
+    expect(wide?.dataset.visible).toBe("true");
+    expect(wide?.dataset.escalated).toBe("true");
+    overlay.dispose();
+    container.remove();
+  });
+
+  it("should keep every card when it is not escalated-only", () => {
+    const { container, overlay } = twoCards({ dpr: 1 });
+    overlay.sync();
+    expect(overlay.visibleCount()).toBe(2);
+    expect(overlay.escalatedCount()).toBe(1);
+    // A 3000px card is sharp on a 2x screen: the ceiling follows the ratio.
+    overlay.dispose();
+    container.remove();
+
+    const big = twoCards({ dpr: 2 });
+    big.overlay.sync();
+    expect(big.overlay.visibleCount()).toBe(2);
+    expect(big.overlay.escalatedCount()).toBe(1);
+    big.overlay.dispose();
+    big.container.remove();
+  });
+
+  it("should hand the escalated flag to the slot renderer", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const seen: Array<{ entity: number; escalated: boolean }> = [];
+    const overlay = createSuiteCardOverlay({
+      container,
+      entities: () => [1, 2],
+      geometryOf: () => geometry(),
+      rectOf: (entity) =>
+        entity === 1 ? { x: 0, y: 0, w: 288, h: 240 } : { x: 0, y: 0, w: 3000, h: 2400 },
+      camera: () => ({ x: 0, y: 0, zoom: 1 }),
+      dpr: () => 1,
+      renderer: {
+        mount: (_content, info) => {
+          seen.push({ entity: info.entity, escalated: info.escalated });
+          return undefined;
+        },
+      },
+    });
+    overlay.sync();
+    expect(seen).toEqual([
+      { entity: 1, escalated: false },
+      { entity: 2, escalated: true },
+    ]);
+    overlay.dispose();
+    container.remove();
   });
 });
 

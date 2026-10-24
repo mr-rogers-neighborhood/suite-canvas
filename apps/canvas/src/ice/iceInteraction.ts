@@ -25,6 +25,24 @@
  * (`PickResultLike`, `GeometryLike`, `CameraLike`). There is no React, DOM, ICE
  * or `loro-crdt` import: `@suite/scene` and `./iceBridge` are type-only or
  * dependency-free.
+ *
+ * ## A card resize is a similarity transform (Shift reflows)
+ *
+ * A card's type size is its *kind's* (`layoutText` reads the kind's `law.size`),
+ * so the only way to grow a card's writing with its box is to move it along the
+ * type ladder in `./suiteCardScale`. A resize drag therefore does both at once:
+ *
+ * - **Default (similarity).** The box scales from the handle and the rung is
+ *   read back from that box with `scaleForExtent` — the same mapping the
+ *   projection applies to a placement — so the two can never disagree. As the
+ *   box crosses a rung's threshold the card steps to its neighbouring rung.
+ * - **Shift (reflow).** The modifier — read off the pointer event by the caller
+ *   and handed in as `shiftKey` — pins the rung to the one the gesture started
+ *   on, so the box changes and the text reflows inside it.
+ *
+ * The modifier is read when the gesture ends, because nothing is written before
+ * that: motion only updates the ephemeral `live` preview, and `end()` returns
+ * the one plan (one geometry write) that the caller commits at pointer-up.
  */
 import type { Point, Rect, ResizeHandle } from "@suite/scene";
 import {
@@ -53,6 +71,12 @@ import {
   screenToWorld,
   worldToBoard,
 } from "./iceBridge";
+import {
+  type CardTypeScale,
+  cardScaleForResize,
+  clampCardTypeScale,
+  scaleForExtent,
+} from "./suiteCardScale";
 
 export { ICE_NATIVE_HISTORY_ENABLED } from "./iceBridge";
 
@@ -294,6 +318,11 @@ export interface IceLiveItemGeometry {
   readonly boardId: string;
   readonly geometry: Rect;
   readonly view: Rect | null;
+  /**
+   * The card rung the previewed box would commit. Only a card resize carries
+   * one: similarity reads it from the box, Shift pins it to the start rung.
+   */
+  readonly typeScale?: CardTypeScale | undefined;
 }
 
 /**
@@ -323,6 +352,12 @@ export interface IceGestureBeginInput {
   readonly view?: GeometryLike | undefined;
   /** A resize handle when the press landed on one; absent starts a move. */
   readonly handle?: ResizeHandle | null | undefined;
+  /**
+   * The type rung the card is on at pointer-down, when the caller knows it from
+   * the document. Defaults to the rung its start box takes, which is what the
+   * projection would have picked for it.
+   */
+  readonly typeScale?: number | undefined;
   /** Instance index used to expand a multi-selection press. */
   readonly index?: IceInstanceIndex | undefined;
   /** Further instances in the same selection; only same-board, same-kind ones join. */
@@ -344,6 +379,12 @@ export interface IceGestureUpdateInput {
   readonly screen?: Point | undefined;
   /** Cumulative world-space delta since pointer down, not a per-frame delta. */
   readonly worldDelta?: Point | undefined;
+  /**
+   * The pointer event's Shift state. On a card resize it means *reflow*: the
+   * box changes and the type rung stays where it was. Held for the rest of the
+   * gesture — the last sample wins, and `end()` reads it as the commit's mode.
+   */
+  readonly shiftKey?: boolean | undefined;
   /** ICE's post-snap view rect for the pressed instance. */
   readonly finalGeometry?: GeometryLike | undefined;
   /** Post-snap view rects for every instance in the gesture. */
@@ -383,6 +424,10 @@ export interface IceGestureHandle {
   readonly worldDelta: Point;
   /** Ephemeral preview; the start box once the gesture is over. */
   readonly live: IceLiveGeometry;
+  /** True while Shift is held on a card resize: the box changes, the hand stays. */
+  readonly reflow: boolean;
+  /** The card rung this gesture would commit; null unless it is a card resize. */
+  readonly typeScale: CardTypeScale | null;
   /** Records motion. Ephemeral: this never plans and never writes. */
   update(input?: IceGestureUpdateInput): IceLiveGeometry;
   /** Ends the gesture and returns its one plan, or null when nothing happened. */
@@ -454,9 +499,20 @@ export function beginGesture(
   let delta: Point = { x: 0, y: 0 };
   let travel = 0;
   let sawWorldOnly = false;
+  /** The live Shift state: reflow for a card resize, ignored for everything else. */
+  let shiftKey = false;
+  /** The rung the resize committed, frozen at `end()` so it survives the reset. */
+  let committedScale: CardTypeScale | null = null;
+  /** The rung the card is on at pointer-down; the anchor a reflow drag holds. */
+  const startScale: CardTypeScale = clampCardTypeScale(input.typeScale ?? scaleForExtent(geometry));
   const snapped = new Map<string, Rect>();
 
+  /** The hand a previewed box would commit: similarity, or the pinned rung. */
+  const handFor = (box: GeometryLike): CardTypeScale =>
+    cardScaleForResize({ extent: box, reflow: shiftKey, startScale });
+
   const record = (update: IceGestureUpdateInput): void => {
+    if (update.shiftKey !== undefined) shiftKey = update.shiftKey;
     if (update.screen && finitePoint(update.screen)) {
       travel = Math.max(travel, distance(startScreen, update.screen));
     }
@@ -497,6 +553,7 @@ export function beginGesture(
     boardId: instance.boardId,
     geometry,
     view,
+    ...(kind === "resize" ? { typeScale: startScale } : {}),
   };
 
   const liveItems = (): IceLiveItemGeometry[] => {
@@ -514,6 +571,8 @@ export function beginGesture(
         boardId: item.instance.boardId,
         geometry: next,
         view: boardRectToWorld(item.instance.transform, next),
+        // A section is not a card: only a card resize moves along the ladder.
+        ...(kind === "resize" ? { typeScale: handFor(next) } : {}),
       });
     }
     return result;
@@ -547,7 +606,12 @@ export function beginGesture(
       case "resize": {
         const [item] = resolved;
         if (!item || !handle) return { status: "skip", reason: "no-instance" };
-        return planIntent({ kind: "resize", item, handle, worldDelta: delta }, context);
+        // The modifier is part of the intent, not of the box: Shift reflows at
+        // the rung the gesture started on, and the plan has to be told so.
+        return planIntent(
+          { kind: "resize", item, handle, worldDelta: delta, reflow: shiftKey, startScale },
+          context,
+        );
       }
       case "section-resize": {
         const [item] = resolved;
@@ -581,6 +645,11 @@ export function beginGesture(
       status = "ended";
       return null;
     }
+    // Freeze the rung the commit carries: a similarity drag follows the box it
+    // is about to write, a reflow drag keeps the rung it started on.
+    if (kind === "resize") {
+      committedScale = handFor(liveItems()[0]?.geometry ?? geometry);
+    }
     status = "ended";
     return planFor();
   };
@@ -605,6 +674,14 @@ export function beginGesture(
     },
     get live() {
       return liveGeometry();
+    },
+    get reflow() {
+      return kind === "resize" && shiftKey;
+    },
+    get typeScale(): CardTypeScale | null {
+      if (kind !== "resize") return null;
+      if (committedScale !== null) return committedScale;
+      return liveGeometry().target.typeScale ?? startScale;
     },
     update(next: IceGestureUpdateInput = {}) {
       if (status === "active") record(next);

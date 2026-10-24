@@ -201,6 +201,13 @@ export const placementSchema = z.object({
   /** Resized card dimensions in flow units; unset means the card's natural size. */
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
+  /**
+   * The card's type rung — the ladder position its writing is laid out at
+   * (`0.5 · 1 · 2 · 3`). Unset means "derive it from the box", which is what a
+   * similarity resize wants. A reflow resize (Shift) sets it, so the card keeps
+   * its type size while the box changes, and it survives a reload.
+   */
+  typeScale: z.number().positive().optional(),
 });
 
 /**

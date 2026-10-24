@@ -144,7 +144,7 @@ function sizeChanged(start: Rect, next: Rect): boolean {
 
 export interface IceEditingController {
   pointerDown(pointerId: number, screen: ScreenPoint): boolean;
-  pointerUp(pointerId: number, screen: ScreenPoint): boolean;
+  pointerUp(pointerId: number, screen: ScreenPoint, shiftKey?: boolean): boolean;
   pointerCancel(pointerId: number): void;
   /** Delete the current canonical selection through one plan. */
   deleteSelection(selectedCardIds: readonly string[]): boolean;
@@ -239,7 +239,7 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       return true;
     },
 
-    pointerUp(pointerId, screen) {
+    pointerUp(pointerId, screen, shiftKey = false) {
       const pin = pendingPin;
       if (pin !== null && pin.pointerId === pointerId) {
         pendingPin = null;
@@ -274,6 +274,9 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       if (sizeChanged(start, finalRect)) {
         // ICE owns the resize handles; the size delta is the evidence that this
         // gesture resized rather than moved, and position+size land together.
+        // The gesture carries the reading the user asked for: Shift reflows at
+        // the rung it started on, otherwise the rung follows the box.
+        const startScale = current.gesture.typeScale ?? undefined;
         current.gesture.cancel();
         return commit(
           planResizeCommit(
@@ -282,6 +285,8 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
               item: { instance: current.instance, startGeometry: start, finalGeometry: finalRect },
               handle: "se",
               worldDelta: { x: 0, y: 0 },
+              reflow: shiftKey,
+              startScale,
             },
             { capabilities },
           ),
@@ -375,7 +380,7 @@ export function attachIcePointerEditing(
     // One frame for ICE to settle the entity at its snapped box, then commit.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (point !== null) controller.pointerUp(event.pointerId, point);
+        if (point !== null) controller.pointerUp(event.pointerId, point, event.shiftKey);
       });
     });
   };

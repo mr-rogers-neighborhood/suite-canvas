@@ -83,6 +83,7 @@ function info(overrides: Partial<CardInfoFixture> = {}): SuiteCardInfo {
     boardId,
     worldWidth: 288,
     worldHeight: 240,
+    escalated: false,
     ...overrides,
   } as SuiteCardInfo;
 }
@@ -208,6 +209,39 @@ describe("createWorkspaceCardSlotRenderer", () => {
 
     act(() => teardown()?.());
     container.remove();
+  });
+
+  it("should mark the escalated full face and leave the static bands unmarked", async () => {
+    const escalated = mountCard({ band: "full", escalated: true });
+    const face = await waitFor(() => {
+      const found = escalated.container.querySelector('[data-testid="suite-card-workspace"]');
+      expect(found).not.toBeNull();
+      return found;
+    });
+    // The DOM face is standing in for a sheet past the sharp ceiling: it says
+    // so, and it grounds itself so the blurred sheet cannot show through.
+    expect(face).toHaveAttribute("data-escalated", "true");
+    expect(face?.getAttribute("style")).toContain("--surface");
+    act(() => escalated.teardown()?.());
+    escalated.container.remove();
+
+    // A normal full card is not escalated.
+    const plain = mountCard({ band: "full" });
+    await waitFor(() =>
+      expect(plain.container.querySelector('[data-testid="node-card"]')).not.toBeNull(),
+    );
+    expect(plain.container.querySelector('[data-escalated="true"]')).toBeNull();
+    act(() => plain.teardown()?.());
+    plain.container.remove();
+
+    // Escalation is decided at `full`: a static band keeps its own face.
+    const compact = mountCard({ band: "compact", escalated: true });
+    await waitFor(() =>
+      expect(compact.container.querySelector('[data-testid="suite-card-compact"]')).not.toBeNull(),
+    );
+    expect(compact.container.querySelector('[data-escalated="true"]')).toBeNull();
+    act(() => compact.teardown()?.());
+    compact.container.remove();
   });
 
   it("should render nothing for a card the workspace does not know", async () => {

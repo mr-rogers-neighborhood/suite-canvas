@@ -26,6 +26,7 @@ import {
   routeIceHistory,
   updateGesture,
 } from "./iceInteraction";
+import { MAX_CARD_TYPE_SCALE, MIN_CARD_TYPE_SCALE, scaleForExtent } from "./suiteCardScale";
 
 const IDENTITY: IceInstanceTransform = { scale: 1, x: 0, y: 0 };
 const CAMERA = { x: 0, y: 0, zoom: 1 };
@@ -94,6 +95,7 @@ function press(input: {
   capabilities?: IceCapabilities;
   screen?: { x: number; y: number };
   now?: number;
+  typeScale?: number;
 }): IceGestureHandle {
   const gesture = beginGesture({
     pointerId: 7,
@@ -103,6 +105,7 @@ function press(input: {
     capabilities: input.capabilities ?? ICE_EDIT_CAPABILITIES,
     now: input.now ?? 1_000,
     ...(input.handle ? { handle: input.handle } : {}),
+    ...(input.typeScale === undefined ? {} : { typeScale: input.typeScale }),
     ...(input.instanceKeys ? { instanceKeys: input.instanceKeys } : {}),
     ...(input.index ? { index: input.index } : {}),
     ...(input.members ? { members: input.members } : {}),
@@ -333,6 +336,8 @@ describe("iceInteraction resize gestures", () => {
       boardId: "board-1",
       cardId: "card-a",
       geometry: { x: 10, y: 10, width: 240, height: 140 },
+      // Similarity: 240 wide is under the base extent, so the type steps down.
+      typeScale: 0.5,
     });
     expect(writer.updatePlacementGeometry).toHaveBeenCalledTimes(1);
   });
@@ -349,6 +354,7 @@ describe("iceInteraction resize gestures", () => {
       boardId: "board-1",
       cardId: "card-a",
       geometry: { x: 10, y: 10, width: 260, height: 120 },
+      typeScale: 0.5,
     });
   });
 
@@ -391,6 +397,154 @@ describe("iceInteraction resize gestures", () => {
       geometry: { x: 100, y: 100, width: 350, height: 200 },
     });
     expect(writer.updateSectionGeometry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("iceInteraction card resize and the type ladder", () => {
+  // A card at its natural size sits on rung 1, so each test can read a rung
+  // change as "the drag crossed a threshold".
+  const NATURAL = { x: 10, y: 10, width: 288, height: 240 };
+
+  /** A resize of a natural card, held by `handle` and dragged by `delta`. */
+  function resize(input: {
+    handle: "e" | "se";
+    delta: { x: number; y: number };
+    shiftKey?: boolean;
+    typeScale?: number;
+    geometry?: { x: number; y: number; width: number; height: number };
+  }): IceGestureHandle {
+    const gesture = press({
+      instance: card({ instanceKey: "i1", cardId: "card-a", geometry: input.geometry ?? NATURAL }),
+      handle: input.handle,
+      ...(input.typeScale === undefined ? {} : { typeScale: input.typeScale }),
+    });
+    gesture.update({
+      worldDelta: input.delta,
+      ...(input.shiftKey === undefined ? {} : { shiftKey: input.shiftKey }),
+    });
+    return gesture;
+  }
+
+  it("should grow the rung with the box on a similarity drag", () => {
+    const gesture = resize({ handle: "e", delta: { x: 288, y: 0 } });
+    expect(gesture.reflow).toBe(false);
+    // 288 wide → 576: exactly twice the base, so the card takes the 2x hand.
+    expect(gesture.live.target.geometry.width).toBe(576);
+    expect(gesture.live.target.typeScale).toBe(2);
+    expect(gesture.typeScale).toBe(2);
+
+    const plan = expectCommit(endGesture(gesture));
+    expect(plan.write).toEqual({
+      kind: "resizePlacement",
+      boardId: "board-1",
+      cardId: "card-a",
+      geometry: { x: 10, y: 10, width: 576, height: 240 },
+      // The committed rung is the one the projection would read off the box.
+      typeScale: 2,
+    });
+    expect(gesture.typeScale).toBe(scaleForExtent({ width: 576, height: 240 }));
+  });
+
+  it("should de-escalate the rung as a similarity drag shrinks the box", () => {
+    const gesture = resize({
+      handle: "se",
+      geometry: { x: 10, y: 10, width: 576, height: 480 },
+      delta: { x: -288, y: -240 },
+    });
+    expect(gesture.typeScale).toBe(1);
+    endGesture(gesture);
+    expect(gesture.typeScale).toBe(1);
+  });
+
+  it("should clamp a similarity drag at the ladder floor", () => {
+    // The box floors at ICE_MIN_CARD_SIZE (48 × 32), far below the base extent.
+    const gesture = resize({ handle: "se", delta: { x: -400, y: -400 } });
+    expect(gesture.live.target.geometry).toEqual({ x: 10, y: 10, width: 48, height: 32 });
+    expect(gesture.typeScale).toBe(MIN_CARD_TYPE_SCALE);
+  });
+
+  it("should clamp a similarity drag at the ladder's cap", () => {
+    const gesture = resize({ handle: "e", delta: { x: 4000, y: 0 } });
+    expect(gesture.live.target.geometry.width).toBe(4288);
+    expect(gesture.typeScale).toBe(MAX_CARD_TYPE_SCALE);
+    endGesture(gesture);
+    // Past the cap the box keeps growing as page, not as letters.
+    expect(gesture.typeScale).toBe(MAX_CARD_TYPE_SCALE);
+  });
+
+  it("should reflow instead of rescaling when Shift is held", () => {
+    const gesture = resize({ handle: "e", delta: { x: 288, y: 0 }, shiftKey: true });
+    expect(gesture.reflow).toBe(true);
+    // The box doubled but the hand stayed on rung 1: the text reflows.
+    expect(gesture.live.target.geometry.width).toBe(576);
+    expect(gesture.live.target.typeScale).toBe(1);
+    expect(gesture.typeScale).toBe(1);
+    expect(expectCommit(endGesture(gesture)).write).toEqual({
+      kind: "resizePlacement",
+      boardId: "board-1",
+      cardId: "card-a",
+      geometry: { x: 10, y: 10, width: 576, height: 240 },
+      // The point of Shift: the box doubled and the rung did not move.
+      typeScale: 1,
+    });
+  });
+
+  it("should never change the rung on a Shift drag, however far it travels", () => {
+    for (const delta of [
+      { x: 4, y: 0 },
+      { x: 288, y: 0 },
+      { x: 4000, y: 0 },
+      { x: -400, y: -400 },
+      { x: -4000, y: -4000 },
+    ]) {
+      const gesture = resize({ handle: "se", delta, shiftKey: true });
+      const before = gesture.typeScale;
+      expect(gesture.live.target.typeScale).toBe(1);
+      endGesture(gesture);
+      expect(gesture.typeScale).toBe(before);
+      expect(gesture.typeScale).toBe(1);
+    }
+  });
+
+  it("should hold a non-base rung pinned through a Shift drag", () => {
+    const gesture = resize({
+      handle: "se",
+      typeScale: MAX_CARD_TYPE_SCALE,
+      delta: { x: -300, y: -200 },
+      shiftKey: true,
+    });
+    expect(gesture.typeScale).toBe(MAX_CARD_TYPE_SCALE);
+    endGesture(gesture);
+    expect(gesture.typeScale).toBe(MAX_CARD_TYPE_SCALE);
+  });
+
+  it("should read the modifier at pointer-up, not only mid-drag", () => {
+    const gesture = press({
+      instance: card({ instanceKey: "i1", cardId: "card-a", geometry: NATURAL }),
+      handle: "e",
+    });
+    gesture.update({ worldDelta: { x: 288, y: 0 } });
+    expect(gesture.typeScale).toBe(2);
+    // Shift pressed only for the final sample: the commit reflows.
+    endGesture(gesture, { shiftKey: true });
+    expect(gesture.reflow).toBe(true);
+    expect(gesture.typeScale).toBe(1);
+  });
+
+  it("should carry no rung on a move or a section resize", () => {
+    const move = press({ instance: card({ instanceKey: "i1", cardId: "card-a" }) });
+    move.update({ worldDelta: { x: 40, y: 20 } });
+    expect(move.typeScale).toBeNull();
+    expect(move.reflow).toBe(false);
+    expect(move.live.target.typeScale).toBeUndefined();
+
+    const sectionResize = press({
+      instance: section({ instanceKey: "s1", sectionId: "section-a", geometry: NATURAL }),
+      handle: "e",
+    });
+    sectionResize.update({ worldDelta: { x: 400, y: 0 } });
+    expect(sectionResize.typeScale).toBeNull();
+    expect(sectionResize.live.target.typeScale).toBeUndefined();
   });
 });
 

@@ -17,6 +17,15 @@
  * Below `minScreenWidth` the card is hidden AND its slot content is unmounted,
  * which is the LOD budget a real bridge would need: a screen-space editor is
  * only affordable while the card is readable.
+ *
+ * The other mount gate is the *sharp ceiling*. The engine rasters a card's ink
+ * onto one sheet of `INK_PAGE` device pixels, so a card stops being sharp once
+ * its on-screen width passes `2048 / dpr` CSS px. Past that the sheet would be
+ * stretched rather than re-drawn, so the overlay escalates that card to the DOM
+ * face — vector text, crisp at any zoom. Escalation is decided at the `full`
+ * band only: `compact` and `icon` are LOD choices and must not be overridden by
+ * a size. With `escalatedOnly`, the overlay mounts *only* those cards, so the
+ * GPU sheet keeps every card it can still draw sharply.
  */
 
 export interface SuiteCardCamera {
@@ -52,6 +61,39 @@ export interface SuiteCardBox {
   readonly angleDeg: number;
   /** Which face to draw. The face never unmounts, so there is no pop at a boundary. */
   readonly band: SuiteCardBand;
+  /**
+   * True when the GPU sheet would blur under this box, so the crisp DOM face
+   * stands in for it. Only ever true at the `full` band: escalation must never
+   * fight the LOD bands.
+   */
+  readonly escalated: boolean;
+}
+
+/**
+ * The engine's ink page: one raster sheet is `INK_PAGE` device pixels wide, so a
+ * card stays sharp while its on-screen width is at most `INK_PAGE / dpr` CSS px.
+ * Past that the engine must stretch a page it already drew, and the sheet blurs.
+ */
+export const SUITE_CARD_INK_PAGE = 2048;
+
+/** The on-screen width (CSS px) at which the sheet stops being sharp, for a `dpr`. */
+export function sharpCeiling(dpr: number): number {
+  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  return SUITE_CARD_INK_PAGE / ratio;
+}
+
+/**
+ * Should this card be drawn by the crisp DOM face instead of the GPU sheet?
+ *
+ * The gate is the sharp ceiling, but *banded*: escalation is only decided at
+ * `full`, because `compact` and `icon` are LOD choices (a far card is a glyph by
+ * design) and a size-driven face must never override them. At the ceiling
+ * exactly the sheet is still sharp, so the switch happens strictly above it.
+ */
+export function escalateToDom(screenWidth: number, dpr: number): boolean {
+  if (!Number.isFinite(screenWidth)) return false;
+  if (suiteCardBand(screenWidth) !== "full") return false;
+  return screenWidth > sharpCeiling(dpr);
 }
 
 /**
@@ -71,6 +113,11 @@ export function suiteCardBand(screenWidth: number): SuiteCardBand {
   return "icon";
 }
 
+/** A device pixel ratio that can be divided by; nonsense is a plain 1x screen. */
+export function normalizeDpr(dpr: number | undefined): number {
+  return dpr !== undefined && Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+}
+
 function finite(value: number): boolean {
   return Number.isFinite(value);
 }
@@ -84,6 +131,7 @@ export function suiteCardBox(
   geometry: SuiteCardGeometry | null | undefined,
   camera: SuiteCardCamera | null | undefined,
   minScreenWidth = 0,
+  dpr = 1,
 ): SuiteCardBox | null {
   if (geometry === null || geometry === undefined) return null;
   if (camera === null || camera === undefined) return null;
@@ -110,6 +158,7 @@ export function suiteCardBox(
     scale: zoom,
     angleDeg: (geometry.angle * 180) / Math.PI,
     band: suiteCardBand(width),
+    escalated: escalateToDom(width, dpr),
   };
 }
 
@@ -130,6 +179,7 @@ export interface SuiteCardRect {
 export function suiteCardBoxFromRect(
   rect: SuiteCardRect | null | undefined,
   camera: SuiteCardCamera | null | undefined,
+  dpr = 1,
 ): SuiteCardBox | null {
   if (rect === null || rect === undefined) return null;
   if (camera === null || camera === undefined) return null;
@@ -150,6 +200,7 @@ export function suiteCardBoxFromRect(
     scale: zoom,
     angleDeg: 0,
     band: suiteCardBand(width),
+    escalated: escalateToDom(width, dpr),
   };
 }
 
@@ -160,6 +211,12 @@ export interface SuiteCardInfo {
   readonly body: string;
   /** Which face to draw; the renderer switches content, not existence. */
   readonly band: SuiteCardBand;
+  /**
+   * True when this card outgrew the sheet's sharp ceiling: the DOM face is the
+   * crisp one, and the renderer should paint it as the real card rather than a
+   * placeholder over a blurred sheet.
+   */
+  readonly escalated: boolean;
   /**
    * The workspace card this object stands for. "" when the kind carries none,
    * which is the lab's case; a production renderer then mounts nothing.
@@ -210,6 +267,18 @@ export interface SuiteCardOverlayOptions {
    * card's DOM face is the only face it has, so it is never hidden by size.
    */
   readonly minScreenWidth?: number | undefined;
+  /**
+   * The device pixel ratio the sheet rasters at. Read once per `sync()`; a card
+   * whose on-screen width passes `sharpCeiling(dpr)` is escalated to the DOM face.
+   */
+  readonly dpr?: (() => number | undefined) | undefined;
+  /**
+   * Mount *only* the escalated cards — the ones the GPU sheet can no longer
+   * draw sharply — instead of every visible card. This is how the overlay stands
+   * in for a blurred sheet while the ordinary cards stay GPU-only, and it is the
+   * same mount gate `minScreenWidth` uses, read from the ceiling instead.
+   */
+  readonly escalatedOnly?: boolean | undefined;
 }
 
 export interface SuiteCardOverlayHandle {
@@ -219,6 +288,8 @@ export interface SuiteCardOverlayHandle {
   sync(): void;
   /** Slots currently mounted (visible). */
   visibleCount(): number;
+  /** Mounted slots currently standing in for a sheet past the sharp ceiling. */
+  escalatedCount(): number;
   dispose(): void;
 }
 
@@ -311,6 +382,8 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
 
   const sync = (): void => {
     const camera = opts.camera();
+    const dpr = normalizeDpr(opts.dpr?.());
+    const escalatedOnly = opts.escalatedOnly === true;
     const seen = new Set<number>();
     for (const entity of opts.entities()) {
       seen.add(entity);
@@ -318,12 +391,16 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
       const rect = opts.rectOf?.(entity);
       const box =
         rect === null || rect === undefined
-          ? suiteCardBox(opts.geometryOf(entity), camera, opts.minScreenWidth)
-          : suiteCardBoxFromRect(rect, camera);
-      if (box === null) {
+          ? suiteCardBox(opts.geometryOf(entity), camera, opts.minScreenWidth, dpr)
+          : suiteCardBoxFromRect(rect, camera, dpr);
+      // The escalated card is the one the GPU sheet can no longer draw sharply;
+      // in `escalatedOnly` mode every other card stays a sheet with no slot.
+      if (box === null || (escalatedOnly && !box.escalated)) {
         if (slot.mounted) unmount(slot);
         slot.element.style.display = "none";
         slot.element.dataset.visible = "false";
+        slot.element.dataset.escalated = "false";
+        slot.band = undefined;
         continue;
       }
       const face = opts.infoOf?.(entity);
@@ -334,6 +411,7 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
         cardId: face?.cardId ?? "",
         boardId: face?.boardId ?? "",
         band: box.band,
+        escalated: box.escalated,
         worldWidth: box.worldWidth,
         worldHeight: box.worldHeight,
       };
@@ -344,6 +422,7 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
       slot.content.style.transform = `scale(${box.scale})`;
       slot.element.style.display = "block";
       slot.element.dataset.visible = "true";
+      slot.element.dataset.escalated = box.escalated ? "true" : "false";
       slot.element.style.left = `${box.left}px`;
       slot.element.style.top = `${box.top}px`;
       slot.element.style.width = `${box.width}px`;
@@ -366,6 +445,13 @@ export function createSuiteCardOverlay(opts: SuiteCardOverlayOptions): SuiteCard
     visibleCount: () => {
       let count = 0;
       for (const slot of slots.values()) if (slot.mounted) count += 1;
+      return count;
+    },
+    escalatedCount: () => {
+      let count = 0;
+      for (const slot of slots.values()) {
+        if (slot.mounted && slot.element.dataset.escalated === "true") count += 1;
+      }
       return count;
     },
     dispose: () => {

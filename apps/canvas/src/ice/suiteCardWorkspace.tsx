@@ -363,6 +363,12 @@ export interface SuiteCardWorkspaceViewProps {
   readonly boardId: string;
   /** Detail level; a missing band is a full card. */
   readonly band?: SuiteCardBand | undefined;
+  /**
+   * The card outgrew the GPU sheet's sharp ceiling, so this DOM face is the
+   * crisp one: it gets an opaque ground (the blurred sheet must not show
+   * through) and says so for tests and styling.
+   */
+  readonly escalated?: boolean | undefined;
   /** Projected display title, used by the compact face. */
   readonly title?: string | undefined;
   /** Box in world units, from the overlay's geometry. */
@@ -381,6 +387,7 @@ export function SuiteCardWorkspaceView({
   cardId,
   boardId,
   band = "full",
+  escalated = false,
   title = "",
   width = null,
   height = null,
@@ -423,11 +430,22 @@ export function SuiteCardWorkspaceView({
   }
 
   const meta: CardMeta = cardMeta(card, types, tags);
+  // Escalation is only ever decided at `full`, and only there does it mean
+  // anything: the real NodeCard's vector text is the crisp stand-in for a sheet
+  // the engine would otherwise stretch. The opaque ground keeps that blurred
+  // sheet from showing through the DOM face.
+  const crisp = band === "full" && escalated;
 
   return (
     <div
       data-testid="suite-card-workspace"
-      style={{ position: "relative", width: "100%", height: "100%" }}
+      data-escalated={crisp ? "true" : undefined}
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        ...(crisp ? { background: "var(--surface)" } : {}),
+      }}
     >
       <CardSurface
         card={card}
@@ -460,6 +478,7 @@ export function createWorkspaceCardSlotRenderer(): SuiteCardSlotRenderer {
           cardId={info.cardId}
           boardId={info.boardId}
           band={bandOf(info)}
+          escalated={info.escalated}
           title={info.title}
           width={info.worldWidth}
           height={info.worldHeight}

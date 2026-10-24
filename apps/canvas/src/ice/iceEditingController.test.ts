@@ -123,6 +123,9 @@ describe("iceEditingController", () => {
       ROOT,
       "card-1",
       { width: 400, height: 300 },
+      // The rung travels with the size: past the base extent but short of the
+      // next rung's threshold, so the card stays on the base kind.
+      1,
     ]);
   });
 

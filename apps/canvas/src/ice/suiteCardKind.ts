@@ -67,6 +67,7 @@ import {
   type SuiteCardSlotRenderer,
 } from "./suiteCardOverlay";
 import {
+  CARD_BASE_SCALE,
   type CardTypeScale,
   cardTypeForScale,
   SUITE_TYPE_LADDER,
@@ -222,11 +223,11 @@ function createSuiteCardRung(scale: CardTypeScale): SuiteCardRung {
     },
     host: {
       mount: (host) => {
-        // The sheet is the card. A DOM overlay is only mounted when something
-        // asks for one (the comparison renderer, or the lab's default face);
-        // mounting it beside the GPU text would paint a second card on top of
-        // the first, which is exactly the "old text over the new" seam.
-        if (!SUITE_CARD_DOM_FACE && slotRenderer === undefined) return;
+        // The sheet is the card, EXCEPT above the sharp ceiling: past
+        // `2048 / dpr` CSS px of on-screen width ICE's ink raster runs out of
+        // resolution and the sheet blurs. There the overlay mounts that card
+        // alone (`escalatedOnly`) and draws it in DOM, which is crisp at any
+        // size. A comparison renderer or the lab face still takes everything.
         const overlay = createSuiteCardOverlay({
           container: host.container,
           entities: () =>
@@ -242,7 +243,12 @@ function createSuiteCardRung(scale: CardTypeScale): SuiteCardRung {
           },
           camera: () => host.world.getResource(Camera),
           infoOf: (entity) => faceOf(host.world, entity as Entity, face),
-          ...(slotRenderer !== undefined ? { renderer: slotRenderer } : {}),
+          dpr: () => globalThis.devicePixelRatio,
+          ...(slotRenderer !== undefined
+            ? { renderer: slotRenderer }
+            : SUITE_CARD_DOM_FACE
+              ? {}
+              : { escalatedOnly: true }),
         });
         overlay.sync();
         (host.driver as SuiteCardDriver | undefined)?.attach(overlay);
@@ -254,12 +260,17 @@ function createSuiteCardRung(scale: CardTypeScale): SuiteCardRung {
   return { scale, type, object, face };
 }
 
-const BASE_RUNG = createSuiteCardRung(SUITE_TYPE_LADDER[0] as CardTypeScale);
+// The base kind is `suite.card` at rung 1, whatever the ladder's floor is: the
+// ladder starts at 0.5 now, and taking its first entry would rename the base
+// type (and every id pointing at it) to `suite.card@0.5`.
+const BASE_RUNG = createSuiteCardRung(CARD_BASE_SCALE);
 
 /** Every rung, in ladder order — the base one first. */
 export const SUITE_CARD_RUNGS: readonly SuiteCardRung[] = [
   BASE_RUNG,
-  ...SUITE_TYPE_LADDER.slice(1).map((scale) => createSuiteCardRung(scale as CardTypeScale)),
+  ...SUITE_TYPE_LADDER.filter((scale) => scale !== CARD_BASE_SCALE).map((scale) =>
+    createSuiteCardRung(scale),
+  ),
 ];
 
 /** The base rung's object — the desk registration for `suite.card`. */

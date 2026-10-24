@@ -31,7 +31,7 @@ vi.mock("./suiteEdgeKind", () => ({
   },
 }));
 
-import { spawnLinkEdges } from "./IceSurface";
+import { spawnLinkEdges } from "./iceSurfaceSpawns";
 
 function fakeEngine() {
   let next = 0;

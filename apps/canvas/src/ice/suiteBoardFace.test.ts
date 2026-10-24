@@ -237,21 +237,55 @@ describe("createSuiteBoardFaceLayer", () => {
     return { container, layer, current, selection };
   }
 
-  it("should draw nothing at all for an unselected Board", () => {
-    // The GPU mat is the Board: an idle canvas carries no overlay.
+  it("should name every Board at rest", () => {
+    // A Board is unlabelled without this: the mat prints no name, so the face
+    // carries it whether or not the Board is selected (ADR-0043).
     const { container, layer } = mount([node(), node({ id: "board:2", name: "Actors" })]);
     layer.sync();
 
     const titles = container.querySelectorAll<HTMLElement>(
       '[data-testid="suite-board-face__title"]',
     );
-    for (const title of titles) expect(title.style.display).toBe("none");
+    expect(titles).toHaveLength(2);
+    expect(titles[0]?.style.display).toBe("flex");
+    expect(titles[0]?.textContent).toContain("Research");
+    expect(titles[1]?.style.display).toBe("flex");
+    expect(titles[1]?.textContent).toContain("Actors");
+    // Selection is not what puts the name there, so it carries no count yet.
+    for (const title of titles) {
+      expect(title.dataset.selected).toBe("false");
+      expect(
+        title.querySelector<HTMLElement>('[data-testid="suite-board-face__count"]')?.style.display,
+      ).toBe("none");
+    }
     expect(container.querySelectorAll('[data-testid="suite-board-face__chip"]')).toHaveLength(0);
 
     layer.dispose();
   });
 
-  it("should name a Board while it is selected, and only then", () => {
+  it("should keep the name at fit zoom, where a plane is actually read", () => {
+    // Fit is ~0.12: the mat is a sliver of its authored size and the GPU mat
+    // prints no legible name, so this is the zoom the face exists for.
+    const { container, layer, current } = mount([node({ name: "Sources" })], 0.12);
+    layer.sync();
+    const title = container.querySelector<HTMLElement>('[data-testid="suite-board-face__title"]');
+    expect(title?.dataset.band).toBe("compact");
+    expect(title?.style.display).toBe("flex");
+    expect(title?.textContent).toContain("Sources");
+    // The pill is never narrower than a readable name, even over a sliver mat.
+    expect(Number.parseFloat(title?.style.maxWidth ?? "0")).toBeGreaterThanOrEqual(
+      SUITE_BOARD_FACE_TITLE.minWidth,
+    );
+
+    // Below the compact band a mat is a dot, and a dot with a label is noise.
+    current.camera = { x: 0, y: 0, zoom: 0.02 };
+    layer.sync();
+    expect(title?.style.display).toBe("none");
+
+    layer.dispose();
+  });
+
+  it("should add the count to a selected Board rather than the name", () => {
     const nodes = [node(), node({ id: "board:2", rect: { ...mat, x: 900 }, name: "Actors" })];
     const { container, layer, selection } = mount(nodes, 1, ["board:1", "board:2"]);
     layer.sync();
@@ -272,11 +306,20 @@ describe("createSuiteBoardFaceLayer", () => {
     expect(titles[0]?.textContent).toContain("Research");
     expect(titles[1]?.textContent).toContain("Actors");
 
-    // Deselect one: its name goes away, the other's stays.
+    // Selection adds the count; deselecting takes the count away, not the name.
+    for (const title of titles) expect(title.dataset.selected).toBe("true");
+    const countOf = (element: HTMLElement | undefined): HTMLElement | null =>
+      element?.querySelector<HTMLElement>('[data-testid="suite-board-face__count"]') ?? null;
+    expect(countOf(titles[0])?.style.display).toBe("inline-block");
+    expect(countOf(titles[0])?.textContent).toBe("4");
+
     selection.ids.delete("board:1");
     layer.sync();
-    expect(titles[0]?.style.display).toBe("none");
+    expect(titles[0]?.style.display).toBe("flex");
+    expect(titles[0]?.dataset.selected).toBe("false");
+    expect(countOf(titles[0])?.style.display).toBe("none");
     expect(titles[1]?.style.display).toBe("flex");
+    expect(titles[1]?.dataset.selected).toBe("true");
 
     layer.dispose();
   });

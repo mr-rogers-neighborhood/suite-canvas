@@ -1,19 +1,22 @@
 /**
  * The visible face of `suite.board` — the legible half of a Board, drawn in
- * screen space over ICE's mat (ADR-0036 §5, ADR-0039).
+ * screen space over ICE's mat (ADR-0036 §5, ADR-0039, ADR-0043).
  *
  * WHY A DOM FACE AT ALL — a Board is a container, so its identity has to outrank
  * its contents exactly where its contents stop being readable: at fit zoom. The
  * mat's own printed name is a world-space print (`MINIMAT.print.name`): it is a
- * smudge below ~5× and it is sold in three vinyls, neither of which can carry a
- * Board's colour. Text that must be read at every zoom can only be text that
- * does not scale with the world, so the name, the colour and the child chips are
- * CSS pixels here, and the GPU mat stays what it is good at — a sheet with a
- * shadow, pickable on exactly its rect.
+ * smudge below ~5×, which is why the kind tells the mat to print no name at all
+ * and this layer carries the only one. Text that must be read at every zoom can
+ * only be text that does not scale with the world, so the name and its colour
+ * dot are CSS pixels here, and the GPU mat stays what it is good at — a sheet in
+ * the Board's own material (one of six, ADR-0043), with a shadow, pickable on
+ * exactly its rect.
  *
  * WHAT IS CONSTANT AND WHAT IS NOT:
- * - the NAME, the COLOUR and the CHIPS are laid out in CSS px and never scale
- *   with the camera;
+ * - the NAME and the COLOUR are laid out in CSS px and never scale with the
+ *   camera, and they are drawn at REST: an unselected Board still says what it
+ *   is called. Selection adds detail (the card count), it does not reveal the
+ *   name;
  * - the MAT follows the projected footprint exactly, with no legible minimum: a
  *   Board's rect is geometry the user authored, so the face may never draw a mat
  *   bigger or smaller than the one ICE picks on.
@@ -374,9 +377,9 @@ export interface SuiteBoardFaceLayerOptions {
   /** Enumerate the kind's live Boards, once per `sync()`. */
   readonly nodes: () => Iterable<SuiteBoardFaceNode>;
   /**
-   * Whether a Board is selected *right now*. The face draws nothing but a
-   * Board's name, and only while it is selected: everything else about a Board
-   * is the GPU mat, so an idle canvas has no overlay on it at all.
+   * Whether a Board is selected *right now*. The name is drawn either way (a
+   * Board's identity is not a selection state); selection adds the card count,
+   * the one number a reader wants only about the Board they are working on.
    */
   readonly selected?: ((id: string) => boolean) | undefined;
   readonly camera: () => SuiteBoardFaceCamera | null | undefined;
@@ -607,7 +610,7 @@ export function createSuiteBoardFaceLayer(
   };
 
   const paint = (slot: BoardSlot, node: SuiteBoardFaceNode, layout: BoardFaceLayout): void => {
-    // Nothing but the name, and only when selected: the mat is the Board.
+    // The mat is the Board's body; the face adds only what the mat cannot say.
     const isSelected = opts.selected?.(node.id) === true;
     const { mat } = layout;
     const level = mat.level;
@@ -647,13 +650,16 @@ export function createSuiteBoardFaceLayer(
     }
 
     // No chips: they were the last overlay on an idle Board. The count rides the
-    // name pill, which only exists while the Board is selected.
+    // name pill, which a selected Board also shows.
     paintChips(slot, { ...layout, chips: [] }, false);
 
-    // The name is the whole face, and it is only there while the Board is
-    // selected — an idle canvas carries no overlay at all.
-    const title = isSelected ? layout.title : null;
+    // The NAME is the face, at rest and when selected (ADR-0043): a Board is a
+    // container whose identity must outrank its contents exactly where its
+    // contents stop being readable, and the GPU mat prints nothing legible below
+    // ~5×. Selection adds detail (the card count); it never reveals the name.
+    const title = layout.title;
     slot.title.style.display = title === null ? "none" : "flex";
+    slot.title.dataset.selected = isSelected ? "true" : "false";
     if (title !== null) {
       slot.title.style.left = `${title.left}px`;
       slot.title.style.top = `${title.top}px`;
@@ -665,14 +671,21 @@ export function createSuiteBoardFaceLayer(
       slot.title.style.zIndex = `${Z.title + level}`;
       slot.title.dataset.band = layout.band;
       slot.title.style.color = "var(--ink, #1d1d1f)";
-      slot.title.style.background = "color-mix(in srgb, var(--surface, #fff) 92%, transparent)";
-      slot.title.style.border =
-        "1px solid color-mix(in srgb, var(--suite-board-accent) 55%, transparent)";
+      // At rest the pill is a label; selected it is the one Board in focus — a
+      // solid sheet and its full accent, not a second overlay.
+      slot.title.style.background = isSelected
+        ? "var(--surface, #fff)"
+        : "color-mix(in srgb, var(--surface, #fff) 92%, transparent)";
+      slot.title.style.border = `1px solid color-mix(in srgb, var(--suite-board-accent) ${
+        isSelected ? 100 : 45
+      }%, transparent)`;
       slot.title.style.setProperty("--suite-board-accent", layout.accentColor);
       slot.title.title = `${title.text} — ${cards} ${noun}`;
       slot.dot.style.background = layout.accentColor;
       slot.label.textContent = title.text;
-      slot.count.style.display = layout.band === "full" ? "inline-block" : "none";
+      // The count is the selected state's addition: at rest a Board says its
+      // name and its colour, which is what the mat itself cannot say.
+      slot.count.style.display = isSelected ? "inline-block" : "none";
       slot.count.textContent = `${cards}`;
       slot.count.title = `${cards} ${noun}`;
       slot.count.style.color = "var(--ink, #1d1d1f)";

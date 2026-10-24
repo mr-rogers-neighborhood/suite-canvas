@@ -5,10 +5,13 @@ import {
   DESK_OBJECT,
   driversOf,
   hostOf,
+  kindPalette,
   type ObjectDomHost,
   objectKindOf,
 } from "@vibecook/ice/desk";
+import { deskPalette, minimatKind } from "@vibecook/ice/desk/objects";
 import { describe, expect, it } from "vitest";
+import { SUITE_BOARD_FACE_UNTITLED } from "./suiteBoardFace";
 import {
   boardVinyl,
   SUITE_BOARD_DEFAULTS,
@@ -19,10 +22,12 @@ import {
   SUITE_BOARD_SIZE,
   SUITE_BOARD_TYPE,
   SUITE_BOARD_VINYL_BY_COLOR,
+  SUITE_BOARD_VINYLS,
   SuiteBoard,
   type SuiteBoardFace,
   suiteBoardSpawn,
 } from "./suiteBoardKind";
+import { suitePalette } from "./suitePen";
 
 /**
  * The Board's declared surface, without a desk: the props the projection
@@ -119,10 +124,13 @@ describe("suite.board kind", () => {
     expect(painted?.style.left).toBe("10px");
     expect(painted?.style.width).toBe("640px");
     expect(painted?.style.getPropertyValue("--suite-board-accent")).toContain("--section-violet");
-    // Nothing is selected, so the face draws nothing: the mat is the Board, and
-    // its count only appears (in the name pill) once the Board is selected.
+    // The mat is the Board's body, so the DOM box itself stays hidden; the name
+    // is drawn anyway — nothing is selected here (ADR-0043).
     expect(painted?.style.display).toBe("none");
-    expect(container.textContent?.trim()).toBe("");
+    const title = container.querySelector<HTMLElement>('[data-testid="suite-board-face__title"]');
+    expect(title?.style.display).toBe("flex");
+    expect(title?.dataset.selected).toBe("false");
+    expect(title?.textContent).toContain(SUITE_BOARD_FACE_UNTITLED);
   });
 
   it("should spawn a Board with its rect in the parent's frame untouched", () => {
@@ -152,7 +160,7 @@ describe("suite.board kind", () => {
         cardCount: 12,
         childCount: 3,
         collapsed: false,
-        vinyl: "charcoal",
+        vinyl: "board-rose",
       },
     });
   });
@@ -173,16 +181,37 @@ describe("suite.board kind", () => {
     expect(spawn.props.name).toBe(SUITE_BOARD_DEFAULTS.name);
   });
 
-  it("should lie on the nearest vinyl for every board colour", () => {
+  it("should give every board colour a material of its own", () => {
     const vinyls = new Set<string>();
     for (const color of boardColors) {
       const vinyl = boardVinyl(color);
       expect(vinyl).toBe(SUITE_BOARD_VINYL_BY_COLOR[color]);
       vinyls.add(vinyl);
     }
-    // The six colours resolve to the three materials the mat program knows.
-    expect(vinyls.size).toBe(3);
+    // Six colours, six mats: two Boards of different colours must never be
+    // drawn on the same material (ADR-0043).
+    expect(vinyls.size).toBe(boardColors.length);
+    for (const vinyl of vinyls) {
+      expect(SUITE_BOARD_VINYLS as readonly string[]).toContain(vinyl);
+    }
     expect(boardVinyl("not-a-colour")).toBe("sage");
     expect(boardVinyl(undefined)).toBe("sage");
+  });
+
+  it("should hand the mat program a distinct colour for every board vinyl", () => {
+    // The names being distinct is not enough: the mat resolves its vinyl through
+    // the palette's `theme()`, so each name must reach the program as its own
+    // colour. This is the path the GPU actually takes (`looksOf` → `theme`).
+    const palette = suitePalette(deskPalette("light"));
+    const look = minimatKind().theme?.(kindPalette(palette), "light");
+    const inks = new Set<string>();
+    for (const color of boardColors) {
+      const name = SUITE_BOARD_VINYL_BY_COLOR[color];
+      expect(palette.vinyls[name]).toBeDefined();
+      const rgb = look?.vinyls[name];
+      expect(rgb).toBeDefined();
+      inks.add(JSON.stringify(rgb));
+    }
+    expect(inks.size).toBe(boardColors.length);
   });
 });

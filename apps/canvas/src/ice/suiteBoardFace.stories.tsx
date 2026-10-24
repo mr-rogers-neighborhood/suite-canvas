@@ -11,9 +11,13 @@ interface BoardFaceStageProps {
   readonly boards: readonly SuiteBoardFaceNode[];
   /** The camera's zoom: the one thing that bands the face. */
   readonly zoom: number;
+  /** Board ids that are selected — selection adds the card count, nothing else. */
+  readonly selected?: readonly string[];
 }
 
-function BoardFaceStage({ boards, zoom }: BoardFaceStageProps) {
+const NO_SELECTION: readonly string[] = [];
+
+function BoardFaceStage({ boards, zoom, selected = NO_SELECTION }: BoardFaceStageProps) {
   const host = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -24,10 +28,11 @@ function BoardFaceStage({ boards, zoom }: BoardFaceStageProps) {
       nodes: () => boards,
       // World (0, 0) at the stage's top-left: the boards below are placed to fit.
       camera: () => ({ x: 0, y: 0, zoom }),
+      selected: (id) => selected.includes(id),
     });
     layer.sync();
     return () => layer.dispose();
-  }, [boards, zoom]);
+  }, [boards, zoom, selected]);
 
   return (
     <div
@@ -88,9 +93,10 @@ const meta = {
     docs: {
       description: {
         component:
-          "The screen-space face of `suite.board`: the name above the mat's top edge, the Board's " +
-          "colour as a stripe and a border, the 2.5D depth stack behind it, and chips for child " +
-          "Boards once there is room. The name survives fit zoom; the chips do not.",
+          "The screen-space face of `suite.board`: the Board's name above the mat's top edge and " +
+          "its colour as a dot and a border. The name is drawn at rest — the GPU mat underneath " +
+          "carries the Board's material but prints no legible name — and it survives fit zoom. " +
+          "Selecting a Board adds its card count to the name pill.",
       },
     },
   },
@@ -113,8 +119,14 @@ type Story = StoryObj<typeof meta>;
 /** The three cases: nested (a plate stack), collapsed (dashed, no chips), long name (ellipsised). */
 export const Default: Story = {};
 
-/** The same Boards at fit zoom (0.12): the mats shrink to slivers, the names do not. */
+/** The same Boards at fit zoom (0.12), where a reader looks at a whole plane. */
 export const FitZoom: Story = { args: { zoom: 0.12 } };
 
-/** Below the full band a Board drops its chips and its count, keeping only its name. */
-export const Compact: Story = { args: { zoom: 0.2 } };
+/** At rest every Board is named, and no Board shows a count. */
+export const AtRest: Story = { args: { zoom: 0.5 } };
+
+/** Selection adds the count to the name pill; it is not what reveals the name. */
+export const Selected: Story = { args: { zoom: 0.5, selected: ["board:nested"] } };
+
+/** Below the compact threshold a mat is a dot, and a dot with a label is noise. */
+export const Culled: Story = { args: { zoom: 0.02 } };

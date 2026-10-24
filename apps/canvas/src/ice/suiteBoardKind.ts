@@ -12,9 +12,9 @@
  * `stringProp`) and its colours through `theme()`, so no ICE internals are
  * needed: the sheet, the die-cut edge, the slab's shadow and its container face
  * (what a live inside is built through) all come for free, and `hit` is the
- * mat's own SDF, so the Board is pickable on exactly its rect. The vinyl is the
- * nearest of the three the program knows; the Board's actual colour is the DOM
- * face's, which is the only half that can draw six.
+ * mat's own SDF, so the Board is pickable on exactly its rect. The vinyl is one
+ * of six mats the host's palette defines, one per `boardColors` value (ADR-0043):
+ * the mat carries the Board's colour, and the DOM face carries its name.
  *
  * Visible face — the screen-space layer in `suiteBoardFace.ts`: the name above
  * the mat's top edge (a container's identity outranks its contents at distance),
@@ -46,13 +46,14 @@ import {
 } from "@vibecook/ice";
 import type { KindLocal } from "@vibecook/ice/desk";
 import { CONTAINABLE, DESK_OBJECT, defineObject, type KindDriver } from "@vibecook/ice/desk";
-import { MINIMAT, minimatKind, SAGE, VINYLS, type VinylName } from "@vibecook/ice/desk/objects";
+import { MINIMAT, minimatKind, SAGE, type VinylName } from "@vibecook/ice/desk/objects";
 import {
   createSuiteBoardFaceLayer,
   type SuiteBoardColor,
   type SuiteBoardFaceLayerHandle,
   type SuiteBoardFaceNode,
 } from "./suiteBoardFace";
+import type { SuiteBoardVinyl } from "./suitePen";
 
 /**
  * The per-desk tick hook the face rides. ICE ticks a kind's `local` before it
@@ -94,17 +95,27 @@ export const SUITE_BOARD_SIZE = { w: MINIMAT.size.w, h: MINIMAT.size.h } as cons
 /** The Board face draws above the card overlay (2) and level with pins (3). */
 export const SUITE_BOARD_LAYER_Z = 3;
 
-/** The name a Board takes when the document has none (`minimatFrom`'s fallback). */
 /**
- * The vinyls ICE sells, named here as a runtime list: `/desk/objects` exports the
- * enum only as a type-level const, so the values a spawn may pass are stated
- * once, in one place, and checked against `VinylName` for drift.
+ * Every vinyl a Board may name, as the runtime list `p.enum` takes: the desk's
+ * own ground (`sage`, the unknown-colour fallback), the six Board mats the
+ * palette defines (`suitePen.ts`, `SUITE_BOARD_VINYL_INKS`), and ICE's two
+ * materials kept so a mat projected by an older build still resolves. Adding
+ * values is additive; none of these may be removed.
  */
 export const SUITE_BOARD_VINYLS = [
-  "sage",
+  SAGE,
+  "board-slate",
+  "board-blue",
+  "board-green",
+  "board-amber",
+  "board-rose",
+  "board-violet",
   "slate",
   "charcoal",
-] as const satisfies readonly VinylName[];
+] as const satisfies readonly (SuiteBoardVinyl | VinylName)[];
+
+/** The vinyl a Board's mat is drawn on: one material per board colour. */
+export type SuiteBoardMatVinyl = SuiteBoardVinyl | typeof SAGE;
 
 export const SUITE_BOARD_DEFAULTS = {
   boardId: "",
@@ -114,7 +125,7 @@ export const SUITE_BOARD_DEFAULTS = {
   cardCount: 0,
   childCount: 0,
   collapsed: false,
-  vinyl: SAGE as VinylName,
+  vinyl: "board-slate" as SuiteBoardMatVinyl,
 } as const;
 
 /**
@@ -134,21 +145,25 @@ export const SUITE_BOARD_INTERACTION = {
 } as const;
 
 /**
- * The three vinyls the reused mat program knows. A Board's palette colour is the
- * DOM face's; this is the material it lies on: cool hues read as the blue-grey
- * mat, green as the desk's own sage, warm ones as the green-black charcoal.
+ * The mat a Board's colour lies on (ADR-0043). Six colours, six materials: the
+ * palette is the mapping, so no two palette colours can share a mat. The colours
+ * themselves are `SUITE_BOARD_VINYL_INKS` — the material the reused mat program
+ * is handed through `palette.vinyls`.
  */
-export const SUITE_BOARD_VINYL_BY_COLOR: Readonly<Record<SuiteBoardColor, VinylName>> = {
-  slate: "slate",
-  blue: "slate",
-  violet: "slate",
-  green: "sage",
-  amber: "charcoal",
-  rose: "charcoal",
+export const SUITE_BOARD_VINYL_BY_COLOR: Readonly<Record<SuiteBoardColor, SuiteBoardVinyl>> = {
+  slate: "board-slate",
+  blue: "board-blue",
+  green: "board-green",
+  amber: "board-amber",
+  rose: "board-rose",
+  violet: "board-violet",
 };
 
-/** The vinyl a Board's colour lies on. An unknown colour is the desk's own mat. */
-export function boardVinyl(color: string | undefined): VinylName {
+/**
+ * The vinyl a Board's colour lies on. An unknown colour is the desk's own mat:
+ * a hand-edited prop may never name a material the palette does not define.
+ */
+export function boardVinyl(color: string | undefined): SuiteBoardMatVinyl {
   if (color === undefined) return SAGE;
   if (!Object.hasOwn(SUITE_BOARD_VINYL_BY_COLOR, color)) return SAGE;
   return SUITE_BOARD_VINYL_BY_COLOR[color as SuiteBoardColor];
@@ -193,7 +208,7 @@ export interface SuiteBoardSpawn {
   readonly y: number;
   readonly w: number;
   readonly h: number;
-  readonly props: SuiteBoardFace & { readonly vinyl: VinylName };
+  readonly props: SuiteBoardFace & { readonly vinyl: SuiteBoardMatVinyl };
 }
 
 /**
@@ -258,7 +273,9 @@ export const SuiteBoard = defineObject({
     childCount: p.number({ default: SUITE_BOARD_DEFAULTS.childCount }),
     collapsed: p.boolean({ default: SUITE_BOARD_DEFAULTS.collapsed }),
     // Read by the reused mat program for its (visible) vinyl.
-    vinyl: p.enum(VINYLS, { default: SUITE_BOARD_DEFAULTS.vinyl }),
+    // Six mats, one per board colour, plus the desk's ground and ICE's two
+    // materials for documents projected by an older build (ADR-0043).
+    vinyl: p.enum(SUITE_BOARD_VINYLS, { default: SUITE_BOARD_DEFAULTS.vinyl }),
   },
   groups: {
     board: ["boardId", "name", "depth", "color", "cardCount", "childCount", "collapsed"],
@@ -304,8 +321,8 @@ export const SuiteBoard = defineObject({
         container: host.container,
         nodes: () => boardFaces(host.world),
         camera: () => host.world.getResource(Camera),
-        // The face draws a Board's name only while that Board is selected: an
-        // idle canvas carries no overlay at all, and the GPU mat is the Board.
+        // The face draws a Board's name at rest; this callback is the extra a
+        // selected Board gets (its card count), not the switch that reveals it.
         selected: (id) => {
           const entity = Number(id.replace("board:", ""));
           if (!Number.isFinite(entity)) return false;

@@ -100,23 +100,55 @@ interface Ink {
   readonly css: string;
 }
 
+/**
+ * The six Board mats — the vinyl a Board lies on (ADR-0043).
+ *
+ * `boardColors` is the document's palette and it has six values; the mat must be
+ * able to say all six apart, or two differently coloured Boards are the same
+ * object on screen. ICE's own `VINYLS` is three names because its default
+ * palette ships three mats, not because the mat program can only draw three: a
+ * mini mat resolves its vinyl by *name* through `palette.vinyls`, so a host may
+ * define as many as it likes.
+ *
+ * The names are prefixed so they never collide with ICE's `slate`/`charcoal`
+ * tokens (an old projection spawning `desk.minimat` keeps the exact mat it had).
+ * Each is a desaturated, mat-like tint of its accent, and the six differ in
+ * **value as well as hue** — a tone curve (ICE's night chain is steep and blue)
+ * can stretch or compress lightness, but it cannot turn two different values
+ * into the same one.
+ */
+export const SUITE_BOARD_VINYL_INKS = {
+  "board-slate": { token: "board mat: slate", css: "#8a9aa4" },
+  "board-blue": { token: "board mat: blue", css: "#5f7fa8" },
+  "board-green": { token: "board mat: green", css: "#6f8f6d" },
+  "board-amber": { token: "board mat: amber", css: "#c0a166" },
+  "board-rose": { token: "board mat: rose", css: "#b0848c" },
+  "board-violet": { token: "board mat: violet", css: "#8578a8" },
+} as const satisfies Readonly<Record<string, Ink>>;
+
+/** A Board mat's vinyl name (`palette.vinyls` key and `props.vinyl` value). */
+export type SuiteBoardVinyl = keyof typeof SUITE_BOARD_VINYL_INKS;
+
 interface PaletteLike {
   readonly papers?: Readonly<Record<string, Ink>>;
   readonly pens?: Readonly<Record<string, Ink>>;
+  readonly vinyls?: Readonly<Record<string, Ink>>;
 }
 
 /**
- * An ICE palette plus the two entries a card needs: a document sheet and its
- * ink. `papers`/`pens` are looked up by the object's `paper`/`pen` prop, so a
- * card names `card` while a note keeps the sticky's `yellow`.
+ * An ICE palette plus the entries Suite's own kinds need: a document sheet, its
+ * ink and the six Board mats. `papers`/`pens` are looked up by the object's
+ * `paper`/`pen` prop, so a card names `card` while a note keeps the sticky's
+ * `yellow`; `vinyls` is looked up by a Board's `vinyl` prop.
  */
 export function suitePalette<P extends PaletteLike>(
   base: P,
-): Omit<P, "papers" | "pens"> & {
+): Omit<P, "papers" | "pens" | "vinyls"> & {
   readonly papers: Record<string, Ink>;
   readonly pens: Record<string, Ink>;
+  readonly vinyls: Record<string, Ink>;
 } {
-  const { papers, pens, ...rest } = base;
+  const { papers, pens, vinyls, ...rest } = base;
   return {
     ...rest,
     papers: {
@@ -127,5 +159,6 @@ export function suitePalette<P extends PaletteLike>(
       ...pens,
       card: { token: "--ink", css: token("--ink", "#1d1d1f") },
     },
+    vinyls: { ...vinyls, ...SUITE_BOARD_VINYL_INKS },
   };
 }

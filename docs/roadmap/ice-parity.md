@@ -181,6 +181,42 @@ Goal: parity for the non-card objects.
 - Reuse `useCanvasMenuItems`; no second menu builder.
 - Sections and edges clip to their board instance in a portal.
 
+**Landed:** `suite.edge` draws a link as one rotated quad per segment over the reused paper pass. A
+link honours the connectors it names (`anchorWorld` reads the card's own connector fractions), the
+link table re-syncs when the document changes, and a link that leaves the document leaves the desk.
+Hovering a card offers its connectors; a drag from one to another card's connector commits one
+`addEdge` at pointer-up and publishes the gesture as `connect` presence. A viewer, or a seat without
+layout authority, is offered no connectors.
+
+**Landed — the link lives on its frame's plane.** A link is now a child of the mat of the Boards'
+lowest common ancestor, spawned in that frame's coordinates with `CONTAINABLE` (a container only
+accepts what provides it), and the endpoint resolver subtracts the frame origin so the polyline it
+routes is frame-local. From the View a link inside a Board is drawn small inside the frame's face;
+entering the Board draws the same object at full size. That is the depth the canvas asks for, and it
+is what stops a link vanishing the moment its Board is entered.
+
+**Landed — a link reads on any ground.** A stroke is a run of overlapping capsules, so an alpha tone
+darkens every joint: the record now mixes the relation's tone into the ink and lays every halo (the
+palette's sheet colour, wider than the ink) before every stroke. A reference is a quiet ink line on
+paper and a light one on a Board's dark face, and nothing is drawn twice.
+
+**Landed — a Board's frame is a document write.** A mat is now movable *and* resizable in one gesture
+(`SUITE_BOARD_INTERACTION`), and the surface commits the frame's rect in its parent's frame through
+`planBoardRectCommit` → `updateBoardRect` (one write for a move and a resize; the document's 80×60
+floor is the only limit). A reload brings the moved frame back, because the frame was never ICE's
+fact to keep.
+
+**Landed — a link may end on a Board (ADR-0041).** `sourceKind`/`targetKind` name a frame instead of
+a card, additively and per end, and a frame end attaches to the midpoint of the wall facing the other
+end — recomputed every frame, never stored. Hovering a mat offers its four wall midpoints exactly as a
+card offers its connectors, so the gesture that links two cards also links Board↔card, card↔Board and
+Board↔Board; `listBoardEdges`/`listSubtreeEdges` resolve a frame end against the plane it is drawn on,
+and the publish path carries the kinds.
+
+**Still open:** a link that crosses a wall, drawn clipped at the frame with a through tick; re-projecting
+the desk when the Board tree changes structurally; the section kind; the shared edge menu and label
+editing on the ICE surface; connector repositioning.
+
 **Exit evidence:** section move/resize commits once and moves members; edge create/select/delete and
 label work; connector handles are reachable; menus are the same builder as the reference surface.
 
@@ -211,8 +247,31 @@ Goal: collaboration does not fork.
 - Share projection includes only boards, cards, sections, edges and pins in scope; a pin never
   expands scope.
 
+**Landed on the ICE surface:**
+
+- The surface publishes pointer, selection, drag set and marquee into the existing awareness store,
+  at a peer redraw rate rather than a frame rate, gated by `presenceRoleCaps` — a viewer points and
+  selects, and publishes no gesture.
+- The projection turns them into screen-space cursors, selection rings, drag ghosts, the marquee and
+  each peer's in-flight link; one inert DOM layer paints them, and the layer is empty (and hidden)
+  when nobody else is present. Editing peaks as the in-card chips, and as a dot only where the card is
+  too small to show them.
+- The projection now follows the document: a peer's move, link or undo reconciles the desk without a
+  reload.
+
+**Decision — a View is the presence scope; a Board is attribution.** A View flattens its Boards into
+one plane, so replacing the peer's `board` with the deepest Board under their pointer would hide a
+peer working inside a Board from a peer on that View's plane — no cursor, no ring, no ghost. Presence
+therefore stays View-scoped, and a new ephemeral field (`boardOf`, from `ownerBoardAt`) rides along and
+is drawn as "Ada · Interviews" on the cursor.
+
+**Still open:** resize, section-drag and reconnect presence; share scope at the projection (it is
+enforced at the write path, not yet by dropping out-of-scope peers); presence in a portal instance is
+the same projection once portals project.
+
 **Exit evidence:** two headed browsers see each other's pointers and selection in a portal; a viewer
-cannot drag; a share link opens ICE with the same scope as the scene surface.
+cannot drag; a share link opens ICE with the same scope as the scene surface. *(Outstanding: this run
+verifies the wiring with unit tests only.)*
 
 ### Phase 8 — Views, Pins and navigation
 
@@ -477,9 +536,9 @@ draws one.
 | `suite.card` production | done for text via the inspector; the overlay stays read-only | inline Tiptap (deferred) |
 | Interaction bridge | done — drag/resize/delete commit once, Loro undo re-derives the projection | 5k drag budget |
 | Whiteboard | done — inline Excalidraw after an intent dwell, one instance, preview underlay, focus surface retained | measure the mount cost and record the ladder rung |
-| Sections/edges/connectors | plan landed; integration pending | custom kinds/overlays + e2e |
+| Sections/edges/connectors | done for links — drawn from their connectors or a Board's wall, drag-to-connect commits one edge, re-synced when the document changes, drawn on their frame's own plane with a halo; a Board's frame commits move and resize in one write | crossing links clipped at the wall; section kind + edge label/menu |
 | Portals/shared views | camera entry, breadcrumb, Escape exit and cycle/depth/missing stubs done; canonical multi-instance selection pending | shared-view selection across instances |
-| Presence/shares | pending | two-browser artifact |
+| Presence/shares | landed on ICE — pointer, selection, drag, marquee and Board attribution publish; cursors, rings, ghosts, marquee and peer links paint in one screen-space layer; the projection follows the document | two-browser artifact; resize/reconnect presence; share-scoped projection |
 | Views/Pins | done — pins tab, drop action, markers, drag and click-to-focus | Views switcher rename (ADR-0035) |
 | Fractal LOD/budget | pending | crossfade + mounted-count artifact |
 | Graph projection | done — pure aggregation in `@suite/scene`, deterministic positions, containment edges, 42 tests | — |

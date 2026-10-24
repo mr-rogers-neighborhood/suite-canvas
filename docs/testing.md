@@ -115,6 +115,48 @@ pnpm e2e:shell semantic                      # one file
 It cannot see anything the canvas draws — a passing `e2e:shell` says the shell is healthy, not the
 desk. `pnpm e2e` is still the command to trust.
 
+### `pnpm ice:lab` — asking the desk what it drew
+
+The ICE desk is GPU-drawn, so neither a DOM assertion ("is that dot on the card?") nor a screenshot
+("where is it?") can answer a question about it alone. The lab answers both in one run: a scenario is
+a list of gestures, each of which may take a picture *and* read the surface's own state, published in
+development at `window.__suiteIce` by `apps/canvas/src/ice/iceDebug.ts` — camera, the frames the
+camera is inside, Boards with their world rects, card slots, drawn links, and the screen-space
+overlays (connector dots, cursors, rings, ghosts, marquee, drag line).
+
+```sh
+pnpm dev                       # the lab drives a running dev server
+pnpm ice:lab links             # a scenario name from scripts/ice-scenarios/
+pnpm ice:lab board-drag        # a frame drag, then a reload to prove it committed
+SUITE_ICE_VISIBLE=1 pnpm ice:lab links    # watch it on your own display
+```
+
+Every run writes `e2e/artifacts/<timestamp>-<scenario>/` (gitignored): a `step-N-<name>.png` per
+screenshot, a `state-N-<label>.json` per step, and `report.json` with the summary of what the surface
+held at each step. An expectation is **polled** for up to three seconds, because the desk keeps
+painting after a gesture ends; it states what should become true, not what is true in one frame.
+
+A scenario is a plain module, so a gesture reads like the thing a user does:
+
+```js
+export default {
+  url: "?fresh=1",
+  steps: [
+    "wait:engine: ready",
+    { fit: true, screenshot: "fit" },
+    { hoverCard: "demo-card-atlas-capture" },
+    { expect: (state) => state.overlays.connectorDots.length === 4, why: "four dots" },
+  ],
+};
+```
+
+Steps: `wait`/`waitFor`, `fit`, `hoverCard`, `hoverBoard`, `clickBoard`, `dragBoard`, `drag`/`dragWorld`,
+`click`/`clickWorld`, `dblclickBoard`, `reload`, `screenshot`, `expect`. Each `expect` gets
+`(state, { page, memory })` — `memory` is shared across the scenario, so "did it move?" can compare
+against the rect the previous step saw instead of a hard-coded seed value. The lab is a development
+tool, not a gate: `pnpm e2e` stays the gate, and a bug the lab found should end up as a spec or a unit
+test.
+
 ### `pnpm e2e:headed`
 
 Runs the real suite with a visible browser on your own display, one worker at a time, so tests stay

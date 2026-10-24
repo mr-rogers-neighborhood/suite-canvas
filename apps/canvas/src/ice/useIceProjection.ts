@@ -19,6 +19,7 @@ import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { useUiStore } from "../store/useUiStore";
+import { workspaceStructureKey } from "./iceBoardTree";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { extentOf, type FitRect, fitCamera } from "./iceSurfaceCamera";
 import { entityRectOf } from "./iceSurfaceShared";
@@ -319,11 +320,39 @@ export function useIceProjection(input: {
 
     reconcileRef.current = reconcile;
     fitViewRef.current = fitView;
+    // A rebuild replaces every entity the projection held, so a selection the
+    // shell kept across it would be a set of dead ids. Re-derive it from the
+    // card ids now that the new entities are registered; on a first seed this
+    // is the same shell-driven selection the surface started with.
+    restoreSelection();
     return () => {
       reconcileRef.current = null;
       fitViewRef.current = null;
     };
   }, [wiring, owned]);
+
+  /**
+   * The Board tree, and only the Board tree.
+   *
+   * A mat is a container: ICE compiles an inside frame for it when it spawns,
+   * which is why cards converge through `reconcile` and Boards do not. The boot
+   * records the structural key it seeded from; when the document's key differs,
+   * the desk rebuilds its contents from the document — once, into the same
+   * engine, with the reader's camera, selection and entered Board kept.
+   *
+   * The trigger is the Board/View half of the snapshot, so a card's move, a
+   * resize, a keystroke or a link edit never even runs this effect: those are
+   * the reconcile's own business, one pass per frame.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the Board/View arrays are the trigger; the key is read from the document.
+  useEffect(() => {
+    const { phase, seed, workspaceMode, liveWorkspace, rootBoardId } = wiring;
+    if (phase.kind !== "ready" || seed === null || !workspaceMode) return;
+    if (liveWorkspace === null || rootBoardId === null) return;
+    const structure = workspaceStructureKey(liveWorkspace, rootBoardId);
+    if (owned.current.structure === undefined || owned.current.structure === structure) return;
+    owned.current.reseed?.();
+  }, [wiring, snapshot.boards, snapshot.views, owned]);
 
   /**
    * Convergence: a document change this seat did not make — a peer's drag, a

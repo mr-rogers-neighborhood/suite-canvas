@@ -22,6 +22,8 @@ import type { DeskHandle } from "@vibecook/ice/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 import { useThemeStore } from "../theme/useThemeStore";
+import { reseedBoardTree } from "./iceBoardReseed";
+import { workspaceStructureKey } from "./iceBoardTree";
 import { restoreEnteredPath, storedViewStanding } from "./iceEnteredPath";
 import { worldOf } from "./iceSurfaceCamera";
 import { describeError, quietly } from "./iceSurfaceShared";
@@ -123,6 +125,8 @@ export function useIceDeskBoot(input: {
     engine: CanvasEngine;
     rootBoardId: string | null;
     mode: DemoMode;
+    /** The Board tree the seed was built from; see `iceBoardTree.ts`. */
+    structure: string | null;
   } | null>(null);
   /** The seed the desk is showing, for the restore that runs before `ready`. */
   const stagedReport = useRef<SeedReport | null>(null);
@@ -135,18 +139,27 @@ export function useIceDeskBoot(input: {
 
   /**
    * The desk's *contents*: the seed and the links, spawned into an engine. The
-   * boot calls this before it publishes `ready`, and the effect below calls it
-   * again when the View changes — into the same engine, which is what keeps the
-   * device and the camera across a View switch.
+   * boot calls this before it publishes `ready`, the effect below calls it
+   * again when the View changes, and a re-seed calls it when the Board tree
+   * changed — always into the same engine, which is what keeps the device and
+   * the camera across a View switch or a rebuild.
+   *
+   * `force` is the one difference between "the View changed" and "the Board
+   * tree changed": both replace the contents, but only the second one is
+   * already standing in the right View, so it arrives here with a seat to keep
+   * (`iceBoardReseed.ts`).
    */
   const stageSeed = useCallback(
-    (engine: CanvasEngine): void => {
+    (engine: CanvasEngine, options?: { readonly force?: boolean }): void => {
       const current = staged.current;
+      const structure = workspaceStructureKey(liveWorkspace, rootBoardId);
       if (
+        options?.force !== true &&
         current !== null &&
         current.engine === engine &&
         current.rootBoardId === rootBoardId &&
-        current.mode === mode
+        current.mode === mode &&
+        current.structure === structure
       ) {
         return;
       }
@@ -182,9 +195,9 @@ export function useIceDeskBoot(input: {
         liveWorkspace !== null && rootBoardId !== null && linkOf !== null
           ? spawnLinkEdges(engine, liveWorkspace, rootBoardId, report.boardMats, linkOf)
           : undefined;
-      owned.current = { ...owned.current, edges };
+      owned.current = { ...owned.current, edges, structure };
 
-      staged.current = { engine, rootBoardId, mode };
+      staged.current = { engine, rootBoardId, mode, structure };
       stagedReport.current = report;
       setSeed(report);
     },
@@ -196,6 +209,53 @@ export function useIceDeskBoot(input: {
   useEffect(() => {
     stageSeedRef.current = stageSeed;
   }, [stageSeed]);
+
+  /**
+   * Rebuild the desk from the document, keeping the seat: the same engine, the
+   * same camera, the same entered Board. Only the Board tree's shape gets here
+   * — a mat is a container ICE compiles an inside frame for, so it cannot be
+   * reconciled card by card the way a placement can.
+   *
+   * This is deliberately *not* the boot's View-switch path: a View switch
+   * re-seeds `restoredView` free and lets the fit decide, while a rebuild is a
+   * reader staying exactly where they are. Nothing here touches `restoredView`,
+   * and the camera is written back rather than fitted.
+   */
+  const reseed = useCallback(
+    (engine: CanvasEngine, core: typeof import("@vibecook/ice")): void => {
+      if (liveWorkspace === null || rootBoardId === null) return;
+      const world = worldOf(engine);
+      if (world === undefined) return;
+      reseedBoardTree({
+        engine,
+        boards: liveWorkspace.listBoards(),
+        rootBoardId,
+        mats: stagedReport.current?.boardMats ?? new Map(),
+        replace: () => {
+          stageSeedRef.current(engine, { force: true });
+          return stagedReport.current;
+        },
+        // The camera is read here, in the frame the reader is standing in, and
+        // written back by the reseed only when that frame survived.
+        readCamera: () => {
+          const view = world.getResource(core.Camera);
+          if (view === undefined) return null;
+          const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
+          return { x: view.x, y: view.y, zoom };
+        },
+        writeCamera: (camera) => {
+          core.writeRuntimeResource(world, core.Camera, { ...camera, gesturing: false });
+        },
+      });
+    },
+    [liveWorkspace, rootBoardId],
+  );
+  // A rebuild is asked for from the surface (the projection compares the Board
+  // tree); the engine and the ICE module are what it needs, not React state.
+  const reseedRef = useRef(reseed);
+  useEffect(() => {
+    reseedRef.current = reseed;
+  }, [reseed]);
 
   // One teardown for every exit: unmount, a reset, or a desk that reported
   // `failed` and was replaced by the fallback. Emptying the ref makes it
@@ -341,7 +401,15 @@ export function useIceDeskBoot(input: {
           );
           clearCardRenderer = () => suiteCardModules[0].setSuiteCardSlotRenderer(undefined);
         }
-        owned.current = { engine, doc, gpu, clearCardRenderer };
+        owned.current = {
+          engine,
+          doc,
+          gpu,
+          clearCardRenderer,
+          // The projection rebuilds the desk when the Board tree moves under
+          // it; the engine and the loaded module are all a rebuild needs.
+          reseed: () => reseedRef.current(engine, core),
+        };
         // The links are spawned by the seed effect, which also has to re-spawn
         // them when the View changes; it reaches the kind's table through here.
         setEdgeLinkOf.current = suiteCardModules[4].setSuiteEdgeLinkOf;

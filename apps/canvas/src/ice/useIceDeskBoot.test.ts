@@ -130,11 +130,13 @@ function stubGpu(): void {
 
 /**
  * The hook hands the workspace to the seeded projection, which is mocked, and
- * reads one View from it to decide whether a camera is restored.
+ * reads one View from it to decide whether a camera is restored. The Board tree
+ * is read for the structural key a re-seed compares.
  */
 const workspace = {
   getView: () => undefined,
   hasStoredCamera: () => false,
+  listBoards: () => [],
 } as unknown as WorkspaceDocument;
 
 function bootHook(root: string) {

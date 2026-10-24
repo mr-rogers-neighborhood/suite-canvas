@@ -1092,29 +1092,28 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         ]);
         if (cancelled) return;
 
-        const live = liveWorkspace !== null && rootBoardId !== null;
-        const suiteCardModules = live
-          ? await Promise.all([
-              import("./suiteCardKind"),
-              import("./suiteCardWorkspace"),
-              import("./suitePinKind"),
-              import("./suiteBoardKind"),
-              import("./suiteEdgeKind"),
-            ])
-          : null;
+        // The Suite kinds are loaded for **every** surface, demo included: the
+        // demo projects the same example, so a Board is a `suite.board` there
+        // too. A kind that is not registered fails its spawn and takes its
+        // children with it, which is exactly how the demo went blank once.
+        const suiteCardModules = await Promise.all([
+          import("./suiteCardKind"),
+          import("./suiteCardWorkspace"),
+          import("./suitePinKind"),
+          import("./suiteBoardKind"),
+          import("./suiteEdgeKind"),
+        ]);
         if (cancelled) return;
         // Every rung of the card's type ladder is its own kind (ICE fixes a
         // note's type size per kind), so all of them are registered, and
         // `suite.board` is the frame a Board is drawn as.
-        const widgets = suiteCardModules
-          ? [
-              ...objects.DESK_OBJECTS,
-              ...suiteCardModules[0].SUITE_CARD_RUNGS.map((rung) => rung.object),
-              suiteCardModules[2].SuitePin,
-              suiteCardModules[3].SuiteBoard,
-              suiteCardModules[4].SuiteEdge,
-            ]
-          : [...objects.DESK_OBJECTS];
+        const widgets = [
+          ...objects.DESK_OBJECTS,
+          ...suiteCardModules[0].SUITE_CARD_RUNGS.map((rung) => rung.object),
+          suiteCardModules[2].SuitePin,
+          suiteCardModules[3].SuiteBoard,
+          suiteCardModules[4].SuiteEdge,
+        ];
 
         // ONE device per engine (D7): the desk adopts this one instead of
         // acquiring its own, so a discarded StrictMode mount cannot destroy
@@ -1150,7 +1149,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         });
         const doc = engine.docs.create();
         let clearCardRenderer: (() => void) | undefined;
-        if (suiteCardModules !== null && SUITE_CARD_DOM_FACE) {
+        if (SUITE_CARD_DOM_FACE) {
           suiteCardModules[0].setSuiteCardSlotRenderer(
             suiteCardModules[1].createWorkspaceCardSlotRenderer(),
           );
@@ -1171,7 +1170,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         // both ends (`edgeFrameOf`). The table is what lets the kind re-route a
         // link when a card moves, without reading the document per frame.
         const edges: EdgeSpawns | undefined =
-          liveWorkspace !== null && rootBoardId !== null && suiteCardModules !== null
+          liveWorkspace !== null && rootBoardId !== null
             ? spawnLinkEdges(
                 engine,
                 liveWorkspace,

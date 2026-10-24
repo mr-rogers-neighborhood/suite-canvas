@@ -2,6 +2,7 @@ import { fitTransform, rectIntersection, rectUnionAll } from "./geometry.js";
 import type {
   FractalRecipe,
   LayoutAlign,
+  LayoutClusterBy,
   LayoutOrder,
   LayoutPattern,
   Point,
@@ -12,6 +13,7 @@ import type {
 export type {
   FractalRecipe,
   LayoutAlign,
+  LayoutClusterBy,
   LayoutDepthRecipe,
   LayoutOrder,
   LayoutPattern,
@@ -35,6 +37,13 @@ export const LAYOUT_PATTERNS: readonly LayoutPattern[] = [
 
 export const DEFAULT_LAYOUT_MAX_DEPTH = 6;
 
+/** A flat plan: one arrangement of the board's cards. */
+export const DEFAULT_FRACTAL_LEVELS = 1;
+/** Three clusters per level reads as a spiral of spirals without becoming noise. */
+export const DEFAULT_FRACTAL_BRANCHING = 3;
+/** Half the area per level: the area step a nested frame wants. */
+export const DEFAULT_FRACTAL_SCALE_STEP = 1 / Math.SQRT2;
+
 export const DEFAULT_FRACTAL_RECIPE: FractalRecipe = {
   pattern: "grid",
   gap: 48,
@@ -44,6 +53,25 @@ export const DEFAULT_FRACTAL_RECIPE: FractalRecipe = {
   jitter: 0,
   seed: 1,
   depth: { scale: 0.35, gap: 24, rotate: 0 },
+};
+
+/**
+ * A spiral at every scale: the board's cards cluster, each cluster is a spiral,
+ * each of its clusters is a spiral again, and the cards shrink by 1/√2 a level.
+ */
+export const FRACTAL_SPIRAL_RECIPE: FractalRecipe = {
+  pattern: "spiral",
+  gap: 48,
+  padding: 64,
+  align: "center",
+  order: "reading",
+  jitter: 0,
+  seed: 1,
+  depth: { scale: 0.35, gap: 24, rotate: 0 },
+  levels: 3,
+  branching: 3,
+  scaleStep: DEFAULT_FRACTAL_SCALE_STEP,
+  cluster: "order",
 };
 
 export interface LayoutItem {
@@ -57,6 +85,8 @@ export interface LayoutItem {
   readonly y?: number | undefined;
   readonly pinned?: boolean | undefined;
   readonly excluded?: boolean | undefined;
+  /** Tags, used only when the recipe clusters by tag. */
+  readonly tags?: readonly string[] | undefined;
   /** Target board id when the item is a portal card. */
   readonly portalBoardId?: string | undefined;
 }
@@ -70,6 +100,13 @@ export interface LayoutPlacement {
   /** Rotation hint in radians; rects stay axis-aligned for non-overlap checks. */
   readonly rotate: number;
   readonly depth: number;
+  /**
+   * Cumulative size step of the arrangement level that placed this card.
+   * Absent on a flat plan, where every card keeps its own size.
+   */
+  readonly scale?: number | undefined;
+  /** 1-based arrangement level; derived from `scale`, never set independently. */
+  readonly rung?: number | undefined;
 }
 
 export type LayoutIssueCode = "cycle" | "depth" | "missing-board" | "overlap";
@@ -94,6 +131,23 @@ export interface PortalLayoutPlan {
   readonly missing: boolean;
 }
 
+/**
+ * A container the plan proposes for one cluster. Proposals are never written:
+ * they say "this group of cards would read better inside a Board of this size,
+ * here", and the caller decides whether to create it.
+ */
+export interface LayoutProposal {
+  /** The board the proposed container would sit on. */
+  readonly boardId: string;
+  readonly name: string;
+  /** Arrangement level of the cluster; 1 is the board's own level. */
+  readonly level: number;
+  /** Frame-local rect in the parent board's coordinates. */
+  readonly rect: Rect;
+  /** Cards the container would hold. */
+  readonly ids: readonly string[];
+}
+
 export interface LayoutPlan {
   readonly boardId: string;
   readonly path: readonly string[];
@@ -104,6 +158,8 @@ export interface LayoutPlan {
   readonly bounds: Rect | null;
   readonly portals: readonly PortalLayoutPlan[];
   readonly issues: readonly LayoutIssue[];
+  /** Clusters that could become real containers; only when the recipe nests. */
+  readonly proposals?: readonly LayoutProposal[] | undefined;
 }
 
 export interface FractalLayoutInput {
@@ -562,6 +618,364 @@ export function arrangeItems(
   return placements;
 }
 
+export interface ClusterOptions {
+  /** Clusters to split into; a value below 2 keeps one cluster. */
+  readonly branching?: number | undefined;
+  readonly cluster?: LayoutClusterBy | undefined;
+  /** Order used to sort items before they are cut into contiguous runs. */
+  readonly order?: LayoutOrder | undefined;
+}
+
+function clusterKey(item: LayoutItem, by: LayoutClusterBy): string {
+  if (by === "type") return item.typeId ?? "";
+  if (by === "tag") {
+    const tags = item.tags;
+    if (!tags || tags.length === 0) return "";
+    return [...tags].sort((a, b) => a.localeCompare(b))[0] ?? "";
+  }
+  return "";
+}
+
+/** Cut sorted items into contiguous runs of `ceil(n / branching)`. */
+function contiguousClusters(
+  sorted: readonly LayoutItem[],
+  branching: number,
+): readonly (readonly LayoutItem[])[] {
+  const size = Math.max(1, Math.ceil(sorted.length / branching));
+  const chunks: LayoutItem[][] = [];
+  for (let index = 0; index < sorted.length; index += size) {
+    chunks.push(sorted.slice(index, index + size));
+  }
+  return chunks;
+}
+
+/**
+ * Group items into clusters deterministically. `"order"` cuts the sorted items
+ * into contiguous runs of `ceil(n / branching)`, so the grouping never depends
+ * on data the caller did not pass; `"type"` and `"tag"` group by key first, fold
+ * groups together when a board has more keys than clusters, and fall back to
+ * contiguous runs once every item left shares one key — otherwise the key would
+ * stop the recursion dead. A board that cannot fill one item per cluster stays
+ * whole.
+ */
+export function clusterItems(
+  items: readonly LayoutItem[],
+  options: ClusterOptions = {},
+): readonly (readonly LayoutItem[])[] {
+  const branching = Math.max(1, Math.floor(options.branching ?? DEFAULT_FRACTAL_BRANCHING));
+  const by = options.cluster ?? "order";
+  const sorted = [...items].sort(compareItems(options.order ?? "reading"));
+  if (sorted.length === 0) return [];
+  if (sorted.length <= branching) return [sorted];
+  if (branching === 1 || by === "order") return contiguousClusters(sorted, branching);
+  const groups = new Map<string, LayoutItem[]>();
+  for (const item of sorted) {
+    const key = clusterKey(item, by);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(item);
+    else groups.set(key, [item]);
+  }
+  // Untagged cards have no key to sort on, so their bucket goes last.
+  const ordered = [...groups.entries()]
+    .sort(([first], [second]) => (first || "\uffff").localeCompare(second || "\uffff"))
+    .map(([, bucket]) => bucket);
+  if (ordered.length === 1) return contiguousClusters(sorted, branching);
+  if (ordered.length <= branching) return ordered;
+  const buckets: LayoutItem[][] = Array.from({ length: branching }, () => []);
+  for (const group of ordered) {
+    let smallest = 0;
+    for (let index = 1; index < buckets.length; index += 1) {
+      if ((buckets[index]?.length ?? 0) < (buckets[smallest]?.length ?? 0)) smallest = index;
+    }
+    buckets[smallest]?.push(...group);
+  }
+  return buckets.filter((bucket) => bucket.length > 0);
+}
+
+export interface FractalArrangeOptions extends ArrangeOptions {
+  /** Arrangement levels; 1 is the flat plan. */
+  readonly levels?: number | undefined;
+  readonly branching?: number | undefined;
+  readonly scaleStep?: number | undefined;
+  readonly cluster?: LayoutClusterBy | undefined;
+  /** Also propose a container per cluster (pure proposal, never written). */
+  readonly nest?: boolean | undefined;
+  /** Board the proposals would live on; ignored when `nest` is off. */
+  readonly boardId?: string | undefined;
+}
+
+interface FractalContext {
+  readonly pattern: LayoutPattern;
+  readonly gap: number;
+  readonly align: LayoutAlign;
+  readonly rotate: number;
+  readonly jitter: number;
+  readonly seed: number;
+  readonly order: LayoutOrder;
+  readonly levels: number;
+  readonly branching: number;
+  readonly scaleStep: number;
+  readonly cluster: LayoutClusterBy;
+  readonly depth: number;
+  readonly nest: boolean;
+  readonly boardId: string;
+}
+
+interface FractalPatch {
+  readonly placements: readonly LayoutPlacement[];
+  readonly proposals: readonly LayoutProposal[];
+}
+
+interface FractalUnit {
+  readonly patch: FractalPatch;
+  readonly bounds: Rect;
+  /** Set when the unit is a real cluster the caller may want as a container. */
+  readonly cluster?: { readonly level: number; readonly ids: readonly string[] } | undefined;
+}
+
+const EMPTY_PATCH: FractalPatch = { placements: [], proposals: [] };
+
+const PATTERN_LABELS: Record<LayoutPattern, string> = {
+  grid: "Grid",
+  columns: "Columns",
+  rows: "Rows",
+  radial: "Radial",
+  spiral: "Spiral",
+  phyllotaxis: "Phyllotaxis",
+  rings: "Rings",
+  treemap: "Treemap",
+};
+
+function translatePatch(patch: FractalPatch, dx: number, dy: number): FractalPatch {
+  return {
+    placements: patch.placements.map((placement) => ({
+      ...placement,
+      x: placement.x + dx,
+      y: placement.y + dy,
+    })),
+    proposals: patch.proposals.map((proposal) => ({
+      ...proposal,
+      rect: {
+        ...proposal.rect,
+        x: proposal.rect.x + dx,
+        y: proposal.rect.y + dy,
+      },
+    })),
+  };
+}
+
+function scaleItem(item: LayoutItem, scale: number): LayoutItem {
+  return {
+    ...item,
+    width: Math.max(0, item.width * scale),
+    height: Math.max(0, item.height * scale),
+  };
+}
+
+/** Place the items that an arrangement level owns: cards, at that level's scale. */
+function placeLeaf(
+  items: readonly LayoutItem[],
+  level: number,
+  scale: number,
+  ctx: FractalContext,
+): FractalPatch {
+  const placements = arrangeItems(
+    items.map((item) => scaleItem(item, scale)),
+    ctx.pattern,
+    {
+      gap: ctx.gap * scale,
+      align: ctx.align,
+      rotate: ctx.rotate,
+      jitter: ctx.jitter,
+      seed: ctx.seed,
+      order: ctx.order,
+      depth: ctx.depth,
+    },
+  );
+  return {
+    placements: placements.map((placement) => ({ ...placement, scale, rung: level })),
+    proposals: [],
+  };
+}
+
+/** Arrange already-planned clusters by the same pattern, at this level's scale. */
+function arrangeUnits(
+  units: readonly FractalUnit[],
+  scale: number,
+  ctx: FractalContext,
+): FractalPatch {
+  if (units.length === 0) return EMPTY_PATCH;
+  const cells = patternRects(
+    units.map((unit) => unit.bounds),
+    ctx.pattern,
+    ctx.gap * scale,
+    ctx.align,
+  );
+  const placements: LayoutPlacement[] = [];
+  const proposals: LayoutProposal[] = [];
+  units.forEach((unit, index) => {
+    const cell = cells[index];
+    if (!cell) return;
+    const patch = translatePatch(unit.patch, cell.x - unit.bounds.x, cell.y - unit.bounds.y);
+    placements.push(...patch.placements);
+    proposals.push(...patch.proposals);
+    const cluster = unit.cluster;
+    if (!ctx.nest || !cluster) return;
+    proposals.push({
+      boardId: ctx.boardId,
+      name: `${PATTERN_LABELS[ctx.pattern]} ${cluster.level}.${index + 1}`,
+      level: cluster.level,
+      rect: { x: cell.x, y: cell.y, width: unit.bounds.width, height: unit.bounds.height },
+      ids: cluster.ids,
+    });
+  });
+  return { placements, proposals };
+}
+
+/**
+ * Split a level's items into clusters and plan each one a level deeper. A card
+ * alone in its cluster is not shrunk for a level it never uses: it keeps the
+ * size of the arrangement that holds it.
+ */
+function clusterUnits(
+  items: readonly LayoutItem[],
+  level: number,
+  scale: number,
+  ctx: FractalContext,
+): FractalUnit[] {
+  const deeper = scale * ctx.scaleStep;
+  const units: FractalUnit[] = [];
+  for (const cluster of clusterItems(items, {
+    branching: ctx.branching,
+    cluster: ctx.cluster,
+    order: ctx.order,
+  })) {
+    const patch =
+      cluster.length === 1
+        ? placeLeaf(cluster, level, scale, ctx)
+        : fractalPlacements(cluster, level + 1, deeper, ctx);
+    const bounds = rectUnionAll(patch.placements);
+    if (!bounds) continue;
+    units.push({
+      patch,
+      bounds,
+      ...(cluster.length === 1 ? {} : { cluster: { level, ids: cluster.map((item) => item.id) } }),
+    });
+  }
+  return units;
+}
+
+/** A level that cannot split any further is a leaf, however much budget is left. */
+function canSplit(items: readonly LayoutItem[], ctx: FractalContext): boolean {
+  return (
+    clusterItems(items, {
+      branching: ctx.branching,
+      cluster: ctx.cluster,
+      order: ctx.order,
+    }).length > 1
+  );
+}
+
+/**
+ * The recursion: a level either places its cards (the leaves) or splits into
+ * clusters, plans each cluster one level deeper at `scaleStep` of the size, and
+ * then arranges the cluster boxes with the very same pattern. A spiral of
+ * spirals falls out of calling this once; no preset needs a second algorithm.
+ */
+function fractalPlacements(
+  items: readonly LayoutItem[],
+  level: number,
+  scale: number,
+  ctx: FractalContext,
+): FractalPatch {
+  if (items.length === 0) return EMPTY_PATCH;
+  if (items.length === 1 || level >= ctx.levels || !canSplit(items, ctx)) {
+    return placeLeaf(items, level, scale, ctx);
+  }
+  return arrangeUnits(clusterUnits(items, level, scale, ctx), scale, ctx);
+}
+
+/**
+ * Arrange items with a self-similar plan: the pattern repeats inside each of its
+ * own cells, `levels` deep, shrinking by `scaleStep` each time. `levels: 1` is
+ * `arrangeItems`, unchanged.
+ */
+export function arrangeFractal(
+  items: readonly LayoutItem[],
+  pattern: LayoutPattern,
+  options: FractalArrangeOptions = {},
+): readonly LayoutPlacement[] {
+  return arrangeFractalPatches(items, pattern, options).placements;
+}
+
+/** `arrangeFractal`, plus the containers a nesting plan proposes. */
+function arrangeFractalPatches(
+  items: readonly LayoutItem[],
+  pattern: LayoutPattern,
+  options: FractalArrangeOptions,
+): FractalPatch {
+  const levels = Math.max(1, Math.floor(options.levels ?? DEFAULT_FRACTAL_LEVELS));
+  if (levels <= 1) return { placements: arrangeItems(items, pattern, options), proposals: [] };
+  const step = options.scaleStep ?? DEFAULT_FRACTAL_SCALE_STEP;
+  const ctx: FractalContext = {
+    pattern,
+    gap: Math.max(0, options.gap ?? DEFAULT_FRACTAL_RECIPE.gap),
+    align: options.align ?? "start",
+    rotate: options.rotate ?? 0,
+    jitter: Math.max(0, options.jitter ?? 0),
+    seed: options.seed ?? 1,
+    order: options.order ?? "reading",
+    levels,
+    branching: Math.max(1, Math.floor(options.branching ?? DEFAULT_FRACTAL_BRANCHING)),
+    scaleStep: Number.isFinite(step) && step > 0 ? step : DEFAULT_FRACTAL_SCALE_STEP,
+    cluster: options.cluster ?? "order",
+    depth: options.depth ?? 0,
+    nest: options.nest === true,
+    boardId: options.boardId ?? "",
+  };
+  const pinned: LayoutPlacement[] = [];
+  const containers: LayoutItem[] = [];
+  const flow: LayoutItem[] = [];
+  for (const item of items) {
+    if (item.excluded) continue;
+    if (item.pinned) {
+      pinned.push({
+        id: item.id,
+        x: item.x ?? 0,
+        y: item.y ?? 0,
+        width: item.width,
+        height: item.height,
+        rotate: ctx.rotate,
+        depth: ctx.depth,
+        scale: 1,
+        rung: 1,
+      });
+      continue;
+    }
+    if (item.portalBoardId) containers.push(item);
+    else flow.push(item);
+  }
+  const units: FractalUnit[] = [];
+  const flowPatch = fractalPlacements(flow, 1, 1, ctx);
+  const flowBounds = rectUnionAll(flowPatch.placements);
+  if (flowBounds) units.push({ patch: flowPatch, bounds: flowBounds });
+  // A Board is a container, not a cluster member: it keeps its own extent.
+  for (const container of containers) {
+    const patch = placeLeaf([container], 1, 1, ctx);
+    const bounds = rectUnionAll(patch.placements);
+    if (bounds) units.push({ patch, bounds });
+  }
+  const arranged = arrangeUnits(units, 1, ctx);
+  const union = rectUnionAll(arranged.placements);
+  const shiftX = union?.x ?? 0;
+  const shiftY = union?.y ?? 0;
+  const shifted = translatePatch(arranged, -shiftX, -shiftY);
+  return {
+    placements: [...pinned, ...shifted.placements],
+    proposals: shifted.proposals,
+  };
+}
+
 interface PortalMeta {
   readonly target: string;
   readonly child: LayoutPlan | null;
@@ -636,7 +1050,7 @@ function planBoard(
     portalMeta.set(item.id, { target, child, cycle, depthCapped, missing });
   }
 
-  const arranged = arrangeItems(sized, pattern, {
+  const arrangement = arrangeFractalPatches(sized, pattern, {
     gap,
     align: recipe.align,
     rotate,
@@ -644,13 +1058,26 @@ function planBoard(
     seed: recipe.seed ?? 1,
     order: recipe.order,
     depth,
+    ...(recipe.levels !== undefined ? { levels: recipe.levels } : {}),
+    ...(recipe.branching !== undefined ? { branching: recipe.branching } : {}),
+    ...(recipe.scaleStep !== undefined ? { scaleStep: recipe.scaleStep } : {}),
+    ...(recipe.cluster !== undefined ? { cluster: recipe.cluster } : {}),
+    ...(recipe.nest === true ? { nest: true, boardId } : {}),
   });
   const offsetX = origin.x + recipe.padding;
   const offsetY = origin.y + recipe.padding;
-  const placements = arranged.map((placement) => ({
+  const placements = arrangement.placements.map((placement) => ({
     ...placement,
     x: placement.x + offsetX,
     y: placement.y + offsetY,
+  }));
+  const proposals = arrangement.proposals.map((proposal) => ({
+    ...proposal,
+    rect: {
+      ...proposal.rect,
+      x: proposal.rect.x + offsetX,
+      y: proposal.rect.y + offsetY,
+    },
   }));
 
   const portals: PortalLayoutPlan[] = [];
@@ -697,6 +1124,7 @@ function planBoard(
     bounds: rectUnionAll(placements),
     portals,
     issues,
+    ...(proposals.length > 0 ? { proposals } : {}),
   };
 }
 

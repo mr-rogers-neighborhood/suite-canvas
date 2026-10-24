@@ -121,6 +121,9 @@ export type LayoutAlign = "start" | "center" | "end";
 
 export type LayoutOrder = "reading" | "z" | "created" | "type";
 
+/** How a board's cards group into clusters when an arrangement recurses. */
+export type LayoutClusterBy = "type" | "tag" | "order";
+
 export interface LayoutDepthRecipe {
   /** Portal frame / child board ratio. */
   readonly scale: number;
@@ -139,6 +142,23 @@ export interface FractalRecipe {
   readonly jitter?: number | undefined;
   readonly seed?: number | undefined;
   readonly depth: LayoutDepthRecipe;
+  /**
+   * How deep the arrangement itself recurses. `1` (the default) is the flat
+   * plan: one pattern over the board's cards. `2` arranges clusters with the
+   * same pattern and each cluster with it again, and so on.
+   */
+  readonly levels?: number | undefined;
+  /** Clusters each level splits its items into. Defaults to 3. */
+  readonly branching?: number | undefined;
+  /** Per-level geometric step applied to sizes and gaps. Defaults to 1/√2. */
+  readonly scaleStep?: number | undefined;
+  /** How a board's cards group into clusters. Defaults to `"order"`. */
+  readonly cluster?: LayoutClusterBy | undefined;
+  /**
+   * Also propose a container for each cluster. Pure proposal: the plan returns
+   * the rect and the cards, and the caller creates the Board if it wants one.
+   */
+  readonly nest?: boolean | undefined;
 }
 
 /* ------------------------------------------------------------------ inputs */

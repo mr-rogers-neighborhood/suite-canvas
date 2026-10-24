@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { FractalRecipe, LayoutItem } from "./layout.js";
+import type { FractalRecipe, LayoutItem, LayoutPlacement } from "./layout.js";
 import {
+  arrangeFractal,
   arrangeItems,
+  clusterItems,
   DEFAULT_FRACTAL_RECIPE,
+  DEFAULT_FRACTAL_SCALE_STEP,
+  FRACTAL_SPIRAL_RECIPE,
   LAYOUT_PATTERNS,
   overlappingPlacements,
   planFractalLayout,
@@ -208,5 +212,234 @@ describe("planFractalLayout", () => {
       recipe: recipe({ pattern: "treemap" as const, jitter: 5, seed: 11 }),
     };
     expect(planFractalLayout(input)).toEqual(planFractalLayout(input));
+  });
+});
+
+describe("clusterItems", () => {
+  it("should cut ordered items into contiguous runs of ceil(n / branching)", () => {
+    const clusters = clusterItems(cards(12), { branching: 3, cluster: "order" });
+    expect(clusters.map((cluster) => cluster.length)).toEqual([4, 4, 4]);
+    expect(new Set(clusters.flat().map((item) => item.id)).size).toBe(12);
+    const uneven = clusterItems(cards(10), { branching: 3, cluster: "order" });
+    expect(uneven.map((cluster) => cluster.length)).toEqual([4, 4, 2]);
+  });
+
+  it("should group by type before folding groups into clusters", () => {
+    const items = cards(12).map((card, index) => ({
+      ...card,
+      typeId: index < 5 ? "note" : index < 9 ? "quote" : "sketch",
+    }));
+    const clusters = clusterItems(items, { branching: 3, cluster: "type" });
+    expect(clusters.map((cluster) => cluster.length)).toEqual([5, 4, 3]);
+    expect(clusters.map((cluster) => cluster[0]?.typeId)).toEqual(["note", "quote", "sketch"]);
+  });
+
+  it("should group by the alphabetically first tag", () => {
+    const items: LayoutItem[] = [
+      { id: "a", width: 10, height: 10, tags: ["zeta", "alpha"] },
+      { id: "b", width: 10, height: 10, tags: ["alpha", "beta"] },
+      { id: "c", width: 10, height: 10, tags: ["zeta"] },
+      { id: "d", width: 10, height: 10 },
+    ];
+    const clusters = clusterItems(items, { branching: 3, cluster: "tag" });
+    expect(clusters.map((cluster) => cluster.map((item) => item.id))).toEqual([
+      ["a", "b"],
+      ["c"],
+      ["d"],
+    ]);
+  });
+
+  it("should keep a board that cannot fill a cluster whole", () => {
+    const clusters = clusterItems(cards(3), { branching: 9, cluster: "order" });
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toHaveLength(3);
+  });
+});
+
+describe("fractal arrangement", () => {
+  const step = DEFAULT_FRACTAL_SCALE_STEP;
+
+  const scalesOf = (placements: readonly LayoutPlacement[]): number[] => [
+    ...new Set(placements.map((placement) => defined(placement.scale))),
+  ];
+
+  const countByScale = (placements: readonly LayoutPlacement[]): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const placement of placements) {
+      const key = String(defined(placement.scale));
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  };
+
+  it("should reproduce the flat plan exactly when levels is 1", () => {
+    const boards = { a: cards(12) };
+    const flat = planFractalLayout({
+      rootBoardId: "a",
+      boards,
+      recipe: recipe({ pattern: "spiral", jitter: 3, seed: 5 }),
+    });
+    const explicit = planFractalLayout({
+      rootBoardId: "a",
+      boards,
+      recipe: recipe({ pattern: "spiral", jitter: 3, seed: 5, levels: 1 }),
+    });
+    expect(explicit).toStrictEqual(flat);
+    expect("scale" in defined(explicit.placements[0])).toBe(false);
+    expect("rung" in defined(explicit.placements[0])).toBe(false);
+    expect(arrangeFractal(cards(5), "spiral", { gap: 20, levels: 1 })).toStrictEqual(
+      arrangeItems(cards(5), "spiral", { gap: 20 }),
+    );
+  });
+
+  it("should arrange twelve cards on three scales", () => {
+    // 7 notes, 4 quotes and 1 sketch: the type groups split at three different
+    // depths, so the plan genuinely shows three sizes rather than one.
+    const items = cards(12).map((card, index) => ({
+      ...card,
+      typeId: index < 7 ? "note" : index < 11 ? "quote" : "sketch",
+    }));
+    const plan = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: items },
+      recipe: recipe({
+        pattern: "spiral",
+        levels: 3,
+        branching: 3,
+        cluster: "type",
+      }),
+    });
+    expect(plan.placements).toHaveLength(12);
+    expect(scalesOf(plan.placements).sort()).toEqual([step * step, step, 1].sort());
+    expect(countByScale(plan.placements)).toEqual({
+      "1": 1,
+      [String(step)]: 1,
+      [String(step * step)]: 10,
+    });
+    // Deeper levels shrink the box, not just the offset.
+    const widest = Math.max(...plan.placements.map((placement) => placement.width));
+    const narrowest = Math.min(...plan.placements.map((placement) => placement.width));
+    expect(widest).toBeCloseTo(100);
+    expect(narrowest).toBeCloseTo(100 * step * step);
+    for (const placement of plan.placements) {
+      expect(defined(placement.scale)).toBeCloseTo(step ** (defined(placement.rung) - 1));
+    }
+  });
+
+  for (const pattern of LAYOUT_PATTERNS) {
+    it(`should not overlap placements inside or between ${pattern} clusters`, () => {
+      const plan = planFractalLayout({
+        rootBoardId: "a",
+        boards: { a: cards(12) },
+        recipe: recipe({ pattern, levels: 3, branching: 3, align: "center" }),
+      });
+      expect(plan.placements).toHaveLength(12);
+      expect(overlappingPlacements(plan.placements)).toEqual([]);
+      expect(plan.issues).toEqual([]);
+    });
+  }
+
+  it("should be deterministic for the same fractal input", () => {
+    const input = {
+      rootBoardId: "a",
+      boards: { a: cards(12) },
+      recipe: recipe({ pattern: "phyllotaxis", levels: 3, branching: 4 }),
+    };
+    expect(planFractalLayout(input)).toStrictEqual(planFractalLayout(input));
+  });
+
+  it("should place a board with a single card at its own size", () => {
+    const plan = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: cards(1) },
+      recipe: FRACTAL_SPIRAL_RECIPE,
+    });
+    expect(plan.placements).toHaveLength(1);
+    expect(defined(plan.placements[0])).toMatchObject({
+      width: 100,
+      height: 80,
+      scale: 1,
+      rung: 1,
+    });
+    expect(plan.issues).toEqual([]);
+  });
+
+  it("should not crash when branching exceeds the card count", () => {
+    const plan = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: cards(3) },
+      recipe: recipe({ pattern: "grid", levels: 3, branching: 9 }),
+    });
+    expect(plan.placements).toHaveLength(3);
+    expect(overlappingPlacements(plan.placements)).toEqual([]);
+  });
+
+  it("should fractalize the spiral preset", () => {
+    expect(FRACTAL_SPIRAL_RECIPE).toMatchObject({ pattern: "spiral", levels: 3, branching: 3 });
+    const plan = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: cards(12) },
+      recipe: FRACTAL_SPIRAL_RECIPE,
+    });
+    expect(plan.placements).toHaveLength(12);
+    expect(overlappingPlacements(plan.placements)).toEqual([]);
+    // Four cards per top-level cluster, two per cluster below, then pairs: the
+    // spiral repeats three times, so the deepest cards are a quarter of the area.
+    expect(scalesOf(plan.placements)).toEqual([step * step]);
+    const flat = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: cards(12) },
+      recipe: { ...FRACTAL_SPIRAL_RECIPE, levels: 1 },
+    });
+    expect(defined(plan.bounds).width).not.toBeCloseTo(defined(flat.bounds).width);
+  });
+});
+
+describe("nesting proposals", () => {
+  it("should propose one container per cluster without moving a card", () => {
+    const boards = { a: cards(12) };
+    const flat = planFractalLayout({
+      rootBoardId: "a",
+      boards,
+      recipe: recipe({ pattern: "grid", levels: 3, branching: 3 }),
+    });
+    const nested = planFractalLayout({
+      rootBoardId: "a",
+      boards,
+      recipe: recipe({ pattern: "grid", levels: 3, branching: 3, nest: true }),
+    });
+    expect(nested.placements).toStrictEqual(flat.placements);
+    const proposals = nested.proposals ?? [];
+    // Three top-level clusters of four; each of those splits into two pairs.
+    expect(proposals).toHaveLength(9);
+    expect(proposals.filter((proposal) => proposal.level === 1)).toHaveLength(3);
+    expect(proposals.filter((proposal) => proposal.level === 2)).toHaveLength(6);
+    expect(proposals.every((proposal) => proposal.boardId === "a")).toBe(true);
+    expect(
+      proposals.every((proposal) => proposal.ids.length === 2 || proposal.ids.length === 4),
+    ).toBe(true);
+    const placementById = new Map(nested.placements.map((placement) => [placement.id, placement]));
+    for (const proposal of proposals) {
+      for (const id of proposal.ids) {
+        const placement = defined(placementById.get(id));
+        expect(placement.x).toBeGreaterThanOrEqual(proposal.rect.x - 1e-6);
+        expect(placement.y).toBeGreaterThanOrEqual(proposal.rect.y - 1e-6);
+        expect(placement.x + placement.width).toBeLessThanOrEqual(
+          proposal.rect.x + proposal.rect.width + 1e-6,
+        );
+        expect(placement.y + placement.height).toBeLessThanOrEqual(
+          proposal.rect.y + proposal.rect.height + 1e-6,
+        );
+      }
+    }
+  });
+
+  it("should not propose anything when nest is off", () => {
+    const plan = planFractalLayout({
+      rootBoardId: "a",
+      boards: { a: cards(12) },
+      recipe: recipe({ pattern: "grid", levels: 3, branching: 3 }),
+    });
+    expect("proposals" in plan).toBe(false);
   });
 });

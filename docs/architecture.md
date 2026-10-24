@@ -377,7 +377,8 @@ Live `NodeCard` at full LOD + proxy layers (miniatures, icons, edges, sections, 
 [ADR-0034](./decisions/0034-ice-primary-rendering-engine.md) makes ICE the primary engine, and it is
 now the **only** one: `@xyflow/react` and the React Flow surfaces are gone, `?canvas=` no longer
 selects an engine (`?canvas=ice` is accepted and harmless), and the pure layer that survives is
-`packages/scene` (`@suite/scene`) — the projection the overlay and the type graph read.
+`packages/scene` (`@suite/scene`) — the pure layout and geometry the canvas reads (fractal presets,
+  the type-graph module, which is parked: see [ADR-0040](./decisions/0040-the-type-graph-is-withdrawn.md)).
 Interaction is described in
 [ADR-0033](./decisions/0033-interactive-scene-surface.md); the ICE port is tracked in
 [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md) and the sections below record what is
@@ -513,12 +514,12 @@ the gesture ends.
 - **Far zoom:** a spatial icon field — type glyphs at exact positions and footprints, container
   glyphs encoding layout mode — with no invented reference edges. Pins and selection chrome remain
   counter-scaled.
-- **Graph projection:** the canvas can also be *read* as a type graph — a `Graph view` control (also
-  `g`) draws one node per (container, type) inside its container plus an unfiled bucket, counts and
-  glyphs only, containment edges only, with positions derived from members' own positions. It is an
-  overlay: the cards stay drawn underneath, closing it restores the exact camera, and nothing is
-  authored in it. There is no zoom band and no ceiling. Every navigation is a flight whose duration grows with distance ([ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md)).
-  The camera only moves; nothing switches.
+- **No graph projection.** The type-graph overlay was built, shipped and then withdrawn: it answered a
+  question the inspector and the library already answered, at the cost of a second rendering of the
+  same content ([ADR-0040](./decisions/0040-the-type-graph-is-withdrawn.md), which supersedes
+  [ADR-0037](./decisions/0037-graph-projection-and-ambient-layer.md)). The zoom cluster's fourth control
+  is **Types**, which opens the manage-types dialog. There is no zoom band and no ceiling. Every
+  navigation is a flight whose duration grows with distance.
 - **Evidence:** `?perf=1` render counters and a `buildScene` perf smoke exist. ICE frame time, GPU
   memory and mounted-editor count are not measured yet and are P0 gate evidence.
 

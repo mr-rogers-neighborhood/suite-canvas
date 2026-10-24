@@ -271,7 +271,13 @@ Goal: a default that fails honestly.
 **Exit evidence:** the P0 table in ADR-0034 is green; unsupported browsers see the right screen;
 accessibility checks pass; the perf artifact is linked; the default opens ICE.
 
-### Phase 11 — The graph projection (and the ambient layer)
+### Phase 11 — The graph projection (and the ambient layer) — **withdrawn**
+
+> **Status: built, shipped, withdrawn** ([ADR-0040](../decisions/0040-the-type-graph-is-withdrawn.md)).
+> The overlay answered a question the inspector and the library already answered. Everything in this
+> phase below is history: the kinds, the band, the table and the crumb are deleted, and the zoom
+> cluster's fourth control is **Types**, which opens the manage-types dialog. `packages/scene/src/typeGraph.ts`
+> stays parked. Kept for the reasoning, not as work to do.
 
 Goal: the canvas can be read as a type graph, without becoming a second layout.
 
@@ -286,7 +292,7 @@ Goal: the canvas can be read as a type graph, without becoming a second layout.
   card in the library, a drawer or the Types table.
 - Draw derived depth inside the projection only: nesting depth becomes offset, scale and shadow on
   flat quads. No perspective camera, no authored Z.
-- The canvas zoom cluster keeps the traditional controls — zoom in, zoom out, fit the View, graph —
+- The canvas zoom cluster keeps the traditional controls — zoom in, zoom out, fit the View, **Types** —
   and no scale or percentage: the extent has no ends, so it has nothing honest to put on a track.
   Holding either zoom button repeats, accelerating.
 - Add the inspector's **Types in view** table while the projection is open: count and share per type,

@@ -1,5 +1,9 @@
 # ADR-0037: The graph projection (and the ambient layer)
 
+> **Superseded by [ADR-0040](./0040-the-type-graph-is-withdrawn.md).** The projection, its band and the
+> ambient layer were withdrawn after review; this record is kept for the reasoning that led there, not
+> as a description of the app.
+
 - **Status:** accepted
 - **Date:** 2026-10-23
 - **Related:** [ADR-0019](./0019-references-not-typed-links.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0034](./0034-ice-primary-rendering-engine.md), [ADR-0035](./0035-views-pins-and-portals.md), [ADR-0036](./0036-fractal-lod-and-icon-graph.md), [`docs/fractal-interface-research.md`](../fractal-interface-research.md), [`docs/roadmap/ice-parity.md`](../roadmap/ice-parity.md), `packages/scene/src/typeGraph.ts`, `apps/canvas/src/ice/iceCameraFlight.ts`

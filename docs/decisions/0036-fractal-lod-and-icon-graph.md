@@ -128,7 +128,9 @@ size. A label appears on hover, focus or selection at a readable size.
 
 The icon field is the last **card-band** LOD. Below it the canvas does not fade to nothing: it
 aggregates into a type graph inside a `graph` band, entered through a membrane rather than a clamp,
-specified in [ADR-0037](./0037-graph-projection-and-ambient-layer.md). The rules above still hold there
+specified in [ADR-0037](./0037-graph-projection-and-ambient-layer.md) — **since withdrawn by
+[ADR-0040](./0040-the-type-graph-is-withdrawn.md), so the icon graph and the graph band are parked:**
+the LOD, sheet and ladder rules above still hold. The rules above still hold there
 — glyphs and counts, derived positions, no reference edges.
 
 ### 6. The editor budget is explicit

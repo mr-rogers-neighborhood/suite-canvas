@@ -12,8 +12,10 @@ Claude Code, …). Read it first; keep it high-signal.
   (`@vibecook/ice`, WebGPU) hosting the pure `@suite/scene` projection and the real `NodeCard` in a
   screen-space DOM overlay ([ADR-0034](docs/decisions/0034-ice-primary-rendering-engine.md)). ICE is
   the only canvas surface: the React Flow boards and the scene surface were removed once the port
-  reached parity, and `?canvas=` no longer selects an engine. React Flow survives only as the
-  package `NodeCard`/`Connector` import for `Handle`, inside the ICE card roots.
+  reached parity, and `?canvas=` no longer selects an engine. The React Flow dependency is gone
+  entirely — `Connector` is a plain positioned button and the card face has no handles. The desk
+  itself now wears a neutral ground in both themes, and Boards are drawn by `suite.board`
+  ([ADR-0040](docs/decisions/0040-the-type-graph-is-withdrawn.md)).
 
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))

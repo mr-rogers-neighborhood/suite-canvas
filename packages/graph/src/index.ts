@@ -1,6 +1,7 @@
-export type { BoardSection } from "./boards.js";
+export type { BoardSection, EdgeFrame } from "./boards.js";
 export {
   boardAt,
+  boardCommonAncestor,
   boardDepth,
   boardDescendants,
   boardIsDescendant,
@@ -9,6 +10,7 @@ export {
   boardRootId,
   boardWorldRect,
   canNestBoard,
+  edgeFrameOf,
   findBoard,
   ownerBoardAt,
   sectionsFromBoards,

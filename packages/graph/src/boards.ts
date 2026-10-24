@@ -88,6 +88,54 @@ export function boardIsDescendant(
 }
 
 /**
+ * The lowest Board that contains both ids — the deepest id shared by their
+ * paths, so a Board contained in the other is its own answer. `undefined` when
+ * they hang from different View roots: no single plane draws both.
+ */
+export function boardCommonAncestor(
+  boards: readonly Board[],
+  first: string,
+  second: string,
+): string | undefined {
+  const secondPath = new Set(boardPath(boards, second));
+  let common: string | undefined;
+  for (const id of boardPath(boards, first)) {
+    if (secondPath.has(id)) common = id;
+  }
+  return common;
+}
+
+/** Where a link between two Boards is drawn, and how deep that frame sits. */
+export interface EdgeFrame {
+  /** The frame itself: the Boards' lowest common ancestor. */
+  boardId: string;
+  /** Depth below its View root; a View root is 0. */
+  depth: number;
+  /** The frame's parent Board, when the frame is itself a stored Board. */
+  ancestor?: string;
+}
+
+/**
+ * The frame a link between these two Boards is drawn in (ADR-0039): the lowest
+ * common ancestor, because that is the first plane on which both endpoint
+ * cards are visible. `undefined` when the Boards belong to different Views.
+ */
+export function edgeFrameOf(
+  boards: readonly Board[],
+  sourceBoardId: string,
+  targetBoardId: string,
+): EdgeFrame | undefined {
+  const boardId = boardCommonAncestor(boards, sourceBoardId, targetBoardId);
+  if (boardId === undefined) return undefined;
+  const ancestor = findBoard(boards, boardId)?.parentBoardId;
+  return {
+    boardId,
+    depth: boardDepth(boards, boardId),
+    ...(ancestor === undefined ? {} : { ancestor }),
+  };
+}
+
+/**
  * Whether `parentBoardId` may contain `boardId`. Nesting cannot cycle: a Board
  * may not be its own parent, nor be moved inside anything it already holds.
  * An unknown parent (a View id) is always allowed — that is the root plane.

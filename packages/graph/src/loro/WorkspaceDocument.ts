@@ -3746,6 +3746,37 @@ export class WorkspaceDocument {
     );
   }
 
+  /**
+   * Links drawn anywhere in the subtree rooted at `boardId` (ADR-0039): the
+   * link's own Board and both endpoint placements may sit on the Board itself
+   * or on any Board nested inside it, which is what a link between two sibling
+   * child Boards needs. `listBoardEdges` stays single-plane.
+   *
+   * Dormancy mirrors `listBoardEdges`: an endpoint that is trashed, unplaced,
+   * or outside the subtree hides the link without deleting it, and it revives
+   * when the card returns.
+   */
+  listSubtreeEdges(boardId: string): GraphEdge[] {
+    const boards = this.listBoards();
+    const subtree = new Set([
+      boardId,
+      ...boardDescendants(boards, boardId).map((board) => board.id),
+    ]);
+    const placed = new Map<string, Card>();
+    for (const placement of this.listPlacements()) {
+      if (!subtree.has(placement.boardId)) continue;
+      const card = this.getCard(placement.cardId);
+      if (card && !card.deletedAt) placed.set(card.id, card);
+    }
+    return this.listEdges().filter(
+      (edge) =>
+        subtree.has(edge.boardId) &&
+        placed.has(edge.source) &&
+        placed.has(edge.target) &&
+        this.anchorsResolve(edge, placed),
+    );
+  }
+
   private anchorsResolve(edge: GraphEdge, placed: Map<string, Card>): boolean {
     const resolve = (cardId: string, connectorId: string | undefined): boolean => {
       if (!connectorId) return true;

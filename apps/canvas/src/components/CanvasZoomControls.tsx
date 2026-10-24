@@ -5,7 +5,7 @@
  * percentage means anything, and no track has ends. What a scale control would
  * have communicated is already on screen — the cards themselves show how far in
  * you are. So this is the traditional cluster and nothing more: zoom in, zoom
- * out, fit the View, and the graph projection.
+ * out, fit the View, and the types the View's cards use.
  *
  * Hold either button to keep zooming, and the step accelerates the longer it is
  * held: an extent with no floor cannot be crossed at one fixed rate, so the
@@ -26,17 +26,13 @@ export function holdZoomFactor(repeat: number): number {
 }
 
 export interface CanvasZoomControlsProps {
-  /** True while the graph band is active, so the graph control offers the way back. */
-  graphActive?: boolean;
   /** `factor` grows while the button is held, so a hold traverses the extent. */
   onZoomIn: (factor: number) => void;
   onZoomOut: (factor: number) => void;
   /** Fly to fit the current View's content. */
   onFitView: () => void;
-  /** Enter the graph band, or leave it when `graphActive`. */
-  onGraphView: () => void;
-  /** Hide the graph control entirely (an empty View has nothing to graph). */
-  canGraphView?: boolean;
+  /** Open the type settings, where the type library lives. */
+  onTypes?: () => void;
   /** Screen-reader label for the cluster. */
   label?: string;
 }
@@ -71,16 +67,14 @@ const PLUS = ["M8 3.5v9", "M3.5 8h9"];
 const MINUS = ["M3.5 8h9"];
 /** Four arrows out of a square: "fit everything". */
 const FIT = ["M6 2.5H2.5V6", "M10 2.5h3.5V6", "M6 13.5H2.5V10", "M10 13.5h3.5V10"];
-/** A cluster of nodes: the graph band. */
-const GRAPH = ["M4 4.5h3v3H4z", "M9 8.5h3v3H9z", "M7 6l2 2.5"];
+/** A cluster of marks: the types the View's cards use. */
+const TYPES = ["M4 4.5h3v3H4z", "M9 8.5h3v3H9z", "M7 6l2 2.5"];
 
 export function CanvasZoomControls({
-  graphActive = false,
   onZoomIn,
   onZoomOut,
   onFitView,
-  onGraphView,
-  canGraphView = true,
+  onTypes,
   label = "Canvas zoom",
 }: CanvasZoomControlsProps) {
   const inHandlers = useHoldRepeat((repeat) => onZoomIn(holdZoomFactor(repeat)));
@@ -123,20 +117,16 @@ export function CanvasZoomControls({
       >
         <Icon paths={FIT} />
       </button>
-      {canGraphView ? (
-        <button
-          type="button"
-          className={`${BUTTON} ${graphActive ? "text-[var(--ink)]" : ""}`}
-          aria-label={graphActive ? "Exit graph" : "Graph view"}
-          aria-pressed={graphActive}
-          title={graphActive ? "Exit graph" : "Graph view"}
-          data-testid="canvas-graph-view"
-          data-graph-active={graphActive ? "true" : "false"}
-          onClick={onGraphView}
-        >
-          <Icon paths={GRAPH} />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={BUTTON}
+        aria-label="Types"
+        title="Types"
+        data-testid="canvas-types"
+        onClick={onTypes}
+      >
+        <Icon paths={TYPES} />
+      </button>
     </div>
   );
 }

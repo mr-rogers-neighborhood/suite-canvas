@@ -111,7 +111,6 @@ export {
   lodThresholds,
   resolveLod,
 } from "./lod.js";
-export { buildOutline, flattenOutline, outlineStops } from "./outline.js";
 export type { PortalGateDecision, PortalGateInput } from "./scene.js";
 export {
   boardInstanceKey,

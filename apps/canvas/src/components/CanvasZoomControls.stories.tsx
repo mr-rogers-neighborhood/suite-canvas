@@ -9,7 +9,7 @@ const meta = {
     onZoomIn: () => {},
     onZoomOut: () => {},
     onFitView: () => {},
-    onGraphView: () => {},
+    onTypes: () => {},
   },
 } satisfies Meta<typeof CanvasZoomControls>;
 
@@ -17,7 +17,3 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-
-export const GraphActive: Story = { args: { graphActive: true } };
-
-export const NoGraph: Story = { args: { canGraphView: false } };

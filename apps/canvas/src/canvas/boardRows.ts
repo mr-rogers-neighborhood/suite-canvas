@@ -1,12 +1,11 @@
 import { rectContainsRect, type Section } from "@suite/graph";
-import type { PeerPresence } from "../collab/presence";
 
-/** Indentation levels the rail draws; deeper nesting stays at the last level. */
-export const OUTLINE_MAX_DEPTH = 4;
+/** Indentation levels a Board's grouping draws; deeper nesting stays at the last level. */
+const MAX_ROW_DEPTH = 4;
 
-export interface OutlineRow {
+export interface BoardRow {
   section: Section;
-  /** 0 for a top-level section, at most `OUTLINE_MAX_DEPTH`. */
+  /** 0 for a top-level section, at most `MAX_ROW_DEPTH`. */
   depth: number;
   /** Cards whose smallest containing section is this one. */
   count: number;
@@ -25,7 +24,7 @@ function byReadingOrder(a: Section, b: Section): number {
  * nesting, so only real containment creates a parent; ties fall back to the id
  * so every client builds the same tree.
  */
-export function outlineParent(section: Section, sections: Section[]): Section | undefined {
+function sectionParent(section: Section, sections: Section[]): Section | undefined {
   let parent: Section | undefined;
   for (const candidate of sections) {
     if (candidate.id === section.id || !rectContainsRect(candidate, section)) continue;
@@ -42,10 +41,10 @@ export function outlineParent(section: Section, sections: Section[]): Section | 
 }
 
 /**
- * Rails rows in reading order (top-left first). Depth comes from containment,
+ * Board rows in reading order (top-left first). Depth comes from containment,
  * never from the order sections were created.
  */
-export function outlineRows(sections: Section[], membership: Map<string, string>): OutlineRow[] {
+export function boardRows(sections: Section[], membership: Map<string, string>): BoardRow[] {
   const counts = new Map<string, number>();
   for (const sectionId of membership.values()) {
     counts.set(sectionId, (counts.get(sectionId) ?? 0) + 1);
@@ -56,8 +55,8 @@ export function outlineRows(sections: Section[], membership: Map<string, string>
     let current = section;
     // Equal rectangles would otherwise nest into each other forever.
     const seen = new Set([section.id]);
-    while (depth < OUTLINE_MAX_DEPTH) {
-      const parent = outlineParent(current, sections);
+    while (depth < MAX_ROW_DEPTH) {
+      const parent = sectionParent(current, sections);
       if (!parent || seen.has(parent.id)) break;
       seen.add(parent.id);
       depth += 1;
@@ -65,24 +64,4 @@ export function outlineRows(sections: Section[], membership: Map<string, string>
     }
     return { section, depth, count: counts.get(section.id) ?? 0 };
   });
-}
-
-/**
- * Peers touching each section: selecting it, dragging it, or resizing it. One
- * entry per peer per section even while several of those hold at once.
- */
-export function outlinePeerIds(peers: PeerPresence[]): Map<string, PeerPresence[]> {
-  const bySection = new Map<string, PeerPresence[]>();
-  for (const peer of peers) {
-    const sectionIds = new Set<string>();
-    if (peer.selection?.sectionId) sectionIds.add(peer.selection.sectionId);
-    if (peer.sectionDrag?.sectionId) sectionIds.add(peer.sectionDrag.sectionId);
-    if (peer.sectionResize?.sectionId) sectionIds.add(peer.sectionResize.sectionId);
-    for (const sectionId of sectionIds) {
-      const list = bySection.get(sectionId);
-      if (list) list.push(peer);
-      else bySection.set(sectionId, [peer]);
-    }
-  }
-  return bySection;
 }

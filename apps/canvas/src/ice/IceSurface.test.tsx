@@ -50,8 +50,8 @@ const ice = vi.hoisted(() => {
   const deleteSelection = vi.fn();
   const cancelActiveGestures = vi.fn();
   // The camera the surface reads and writes. Off by default so the tests that
-  // only cover seeding never see a camera at all; the graph-band tests turn it
-  // on and then can assert the flight's destination.
+  // only cover seeding never see a camera at all; the navigation tests turn it
+  // on and then can assert the camera's destination.
   const Camera = { name: "Camera" };
   const Viewport = { name: "Viewport" };
   const cameraWorld = {
@@ -174,71 +174,44 @@ vi.mock("./suiteCardKind", () => ({
 vi.mock("./suiteCardWorkspace", () => ({
   createWorkspaceCardSlotRenderer: vi.fn(() => ({ mount: vi.fn() })),
 }));
+vi.mock("./suiteBoardKind", () => ({
+  SuiteBoard: { type: "suite.board" },
+  SUITE_BOARD_TYPE: "suite.board",
+  SUITE_BOARD_VINYLS: ["sage", "slate", "charcoal"],
+  // The projection only needs a spawn shape; the kind's own tests cover its body.
+  suiteBoardSpawn: (input: {
+    boardId: string;
+    name: string;
+    depth: number;
+    color: string;
+    cardCount: number;
+    childCount: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ({
+    type: "suite.board",
+    x: input.x,
+    y: input.y,
+    w: input.width,
+    h: input.height,
+    props: {
+      boardId: input.boardId,
+      name: input.name,
+      depth: input.depth,
+      color: input.color,
+      cardCount: input.cardCount,
+      childCount: input.childCount,
+      collapsed: false,
+      vinyl: "sage",
+    },
+  }),
+}));
 vi.mock("./suitePinKind", () => ({
   SuitePin: { type: "suite.pin" },
   SUITE_PIN_TYPE: "suite.pin",
 }));
-// The graph band's two kinds, mocked the same way the card kind is: the real
-// modules build a GPU-backed prefab on import, which jsdom cannot do.
-vi.mock("./suiteTypeNodeKind", () => ({
-  SUITE_TYPE_NODE_TYPE: "suite.typeNode",
-  SuiteTypeNode: { type: "suite.typeNode" },
-  suiteTypeNodeSpawn: (node: {
-    key: string;
-    label: string;
-    glyph: string;
-    count: number;
-    depth: number;
-    color?: string | undefined;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }) => ({
-    type: "suite.typeNode",
-    x: node.x,
-    y: node.y,
-    w: node.width,
-    h: node.height,
-    props: {
-      nodeKey: node.key,
-      label: node.label,
-      glyph: node.glyph,
-      count: node.count,
-      depth: node.depth,
-      color: node.color ?? "",
-    },
-  }),
-}));
-vi.mock("./suiteContainerNodeKind", () => ({
-  SUITE_CONTAINER_NODE_TYPE: "suite.containerNode",
-  SuiteContainerNode: { type: "suite.containerNode" },
-  suiteContainerNodeSpawn: (node: {
-    key: string;
-    label: string;
-    count: number;
-    depth: number;
-    color?: string | undefined;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }) => ({
-    type: "suite.containerNode",
-    x: node.x,
-    y: node.y,
-    w: node.width,
-    h: node.height,
-    props: {
-      containerKey: node.key,
-      label: node.label,
-      count: node.count,
-      depth: node.depth,
-      color: node.color ?? "",
-    },
-  }),
-}));
-
 const ADAPTER = {
   info: {
     vendor: "Acme",
@@ -259,31 +232,14 @@ function stubClipboard(writeText: (text: string) => Promise<void>): void {
 
 /**
  * Wait until the surface's editing effect is attached: the desk's `onReady`
- * starts it, and everything the graph band needs (the ceiling, the wheel
- * membrane, the commands) lives there.
+ * starts it, and everything the surface's commands need (the wheel membrane,
+ * the keymap) lives there.
  */
 async function settled(): Promise<void> {
   await screen.findByTestId("ice-desk-mock");
   await waitFor(() => expect(ice.layer.onStatus).toHaveBeenCalled());
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
-  });
-}
-
-/** Ask for no motion, so a flight lands in one write instead of a frame loop. */
-function stubReducedMotion(): void {
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    value: (query: string) => ({
-      matches: query.includes("prefers-reduced-motion"),
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }),
   });
 }
 
@@ -296,7 +252,7 @@ afterEach(() => {
   ice.layerStatus.current = { state: "ready" };
   ice.resetCamera();
   ice.resetSpawn();
-  useUiStore.setState({ graphViewRequest: 0, selectedNodeIds: [] });
+  useUiStore.setState({ selectedNodeIds: [] });
   vi.clearAllMocks();
 });
 
@@ -631,7 +587,8 @@ describe("IceSurface", () => {
 
     const suiteTypes = ice.spawnWidget.mock.calls.slice(10).map(([type]) => type);
     expect(suiteTypes.filter((type) => type === "desk.note")).toHaveLength(7);
-    expect(suiteTypes.filter((type) => type === "desk.minimat")).toHaveLength(3);
+    // A Board is drawn by our own kind now, not the borrowed mini mat.
+    expect(suiteTypes.filter((type) => type === "suite.board")).toHaveLength(3);
     expect(ice.step).toHaveBeenCalledTimes(3 + 4);
 
     // Switching back is another reset, with the native count again.
@@ -645,114 +602,6 @@ describe("IceSurface", () => {
     expect(ice.close).toHaveBeenCalledTimes(3);
     expect(ice.dispose).toHaveBeenCalledTimes(3);
     expect(ice.destroyDevice).toHaveBeenCalledTimes(3);
-  });
-
-  it("should open the graph projection from the canvas zoom cluster", async () => {
-    stubGpu({ requestAdapter: async () => ADAPTER });
-    stubReducedMotion();
-    const workspace = new WorkspaceDocument();
-    workspace.ensureDefaultTypes();
-    const board = workspace.ensureView();
-    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
-    ice.cameraWorld.enabled = true;
-
-    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
-    await settled();
-
-    expect(screen.getByTestId("canvas-controls")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("canvas-graph-view"));
-
-    // One widget per (container, type) pair, drawn *over* the canvas: the card
-    // projection is untouched, which is what makes this an overlay.
-    const spawned = ice.spawnWidget.mock.calls.map(([type]) => type);
-    expect(spawned).toContain("suite.containerNode");
-    expect(spawned).toContain("suite.typeNode");
-    const cardsBefore = spawned.filter((type) => type === "suite.card").length;
-    expect(cardsBefore).toBeGreaterThan(0);
-    expect(screen.getByTestId("ice-graph-crumb")).toBeInTheDocument();
-    expect(screen.getByTestId("ice-band-types")).toBeInTheDocument();
-    expect(screen.getByTestId("canvas-graph-view")).toHaveAttribute("data-graph-active", "true");
-    // A flight, not a jump: the camera is written through the engine resource.
-    expect(ice.writeRuntimeResource).toHaveBeenCalled();
-  });
-
-  it("should return to the camera the graph was entered from", async () => {
-    stubGpu({ requestAdapter: async () => ADAPTER });
-    stubReducedMotion();
-    const workspace = new WorkspaceDocument();
-    workspace.ensureDefaultTypes();
-    const board = workspace.ensureView();
-    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
-    ice.cameraWorld.enabled = true;
-    ice.cameraWorld.camera = { x: 300, y: 120, zoom: 1.4, gesturing: false };
-
-    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
-    await settled();
-
-    fireEvent.click(screen.getByTestId("canvas-graph-view"));
-    expect(await screen.findByTestId("ice-graph-crumb")).toBeInTheDocument();
-    // The camera the graph view landed on is not the one we came from.
-    expect(ice.cameraWorld.camera.zoom).not.toBeCloseTo(1.4);
-
-    // Wandering inside the graph must not change where the return goes.
-    ice.cameraWorld.camera = { x: -900, y: 400, zoom: 0.09, gesturing: false };
-    await waitFor(() =>
-      expect(screen.getByTestId("canvas-graph-view")).toHaveAttribute("data-graph-active", "true"),
-    );
-
-    fireEvent.click(screen.getByTestId("canvas-graph-view"));
-
-    await waitFor(() => expect(screen.queryByTestId("ice-graph-crumb")).not.toBeInTheDocument());
-    expect(ice.cameraWorld.camera.x).toBeCloseTo(300);
-    expect(ice.cameraWorld.camera.y).toBeCloseTo(120);
-    expect(ice.cameraWorld.camera.zoom).toBeCloseTo(1.4);
-  });
-
-  it("should still take a graph request from the shell store action", async () => {
-    stubGpu({ requestAdapter: async () => ADAPTER });
-    stubReducedMotion();
-    const workspace = new WorkspaceDocument();
-    workspace.ensureDefaultTypes();
-    const board = workspace.ensureView();
-    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
-    ice.cameraWorld.enabled = true;
-
-    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
-    await settled();
-
-    act(() => {
-      useUiStore.getState().requestGraphView();
-    });
-
-    expect(await screen.findByTestId("ice-graph-crumb")).toBeInTheDocument();
-  });
-
-  it("should return from the graph on Escape and on the breadcrumb", async () => {
-    stubGpu({ requestAdapter: async () => ADAPTER });
-    stubReducedMotion();
-    const workspace = new WorkspaceDocument();
-    workspace.ensureDefaultTypes();
-    const board = workspace.ensureView();
-    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
-    ice.cameraWorld.enabled = true;
-
-    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
-    await settled();
-
-    const entry = ice.keymap.current?.find((binding) => binding.key === "g");
-    expect(entry).toBeDefined();
-    act(() => entry?.run(undefined));
-    expect(await screen.findByTestId("ice-graph-crumb")).toBeInTheDocument();
-
-    const escapeEntry = ice.keymap.current?.find((binding) => binding.key === "Escape");
-    act(() => escapeEntry?.run(undefined));
-
-    // The projection closes: the crumb goes away, and the graph widgets are
-    // removed through the engine's delete path. The cards were never disturbed,
-    // which is the point of an overlay.
-    await waitFor(() => expect(screen.queryByTestId("ice-graph-crumb")).not.toBeInTheDocument());
-    expect(ice.deleteSelection).toHaveBeenCalled();
-    expect(screen.queryByTestId("ice-band-types")).toBeNull();
   });
 
   it("should pan on a middle press over a card and never start a gesture", async () => {

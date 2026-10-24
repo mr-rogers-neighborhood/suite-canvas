@@ -34,6 +34,7 @@
 import { type Board, type Card, type Placement, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { seedExampleWorkspace } from "../demo/seedExample";
+import { type SUITE_BOARD_TYPE, type SuiteBoardSpawn, suiteBoardSpawn } from "./suiteBoardKind";
 
 /** The ICE note kind the projection uses. */
 export const SUITE_NOTE_TYPE = "desk.note";
@@ -48,29 +49,6 @@ export const SUITE_MAX_DEPTH = 2;
 
 /** `desk.note`'s pen names, in ICE's order, cycled by note index. */
 const NOTE_PENS = ["felt", "ball", "fountain", "red"] as const;
-/** The vinyl a mini mat wears, by depth: depth 1 and below differ from the desk. */
-const MINIMAT_VINYLS: Readonly<Record<number, string>> = { 1: "charcoal", 2: "slate" };
-
-/**
- * `desk.minimat` sells three vinyls (`sage`, `slate`, `charcoal`) and its `vinyl`
- * prop is a closed `p.enum`, so a Board's palette colour cannot be passed
- * through: an unknown name fails the spawn and takes the Board's cards with it.
- * Each Board colour is therefore mapped onto the nearest vinyl, on purpose —
- * green is the desk's own green mat, cool hues the blue-grey slate, warm ones the
- * green-black charcoal. A Board's own colour coming back needs a `suite.board`
- * kind of our own (pinned in the plan), not another palette entry.
- */
-export const MINIMAT_VINYL_NAMES = ["sage", "slate", "charcoal"] as const;
-type MiniMatVinyl = (typeof MINIMAT_VINYL_NAMES)[number];
-const MINIMAT_VINYL_BY_COLOR: Readonly<Record<NonNullable<Board["color"]>, MiniMatVinyl>> = {
-  slate: "slate",
-  blue: "slate",
-  violet: "slate",
-  green: "sage",
-  amber: "charcoal",
-  rose: "charcoal",
-};
-
 export type IceSuiteObjectKind = "note" | "card" | "minimat";
 export type IceSuiteSkipKind = "portal" | "section";
 export type IceSuiteSkipReason = "cycle" | "depth" | "section" | "missing";
@@ -138,7 +116,7 @@ export interface IceSuiteCardObject {
 export interface IceSuiteMiniMat {
   readonly kind: "minimat";
   readonly id: string;
-  readonly type: typeof SUITE_MINIMAT_TYPE;
+  readonly type: typeof SUITE_BOARD_TYPE;
   /** The board this mat opens. */
   readonly boardId: string;
   /** The Board that contains this one (its parent frame). */
@@ -153,9 +131,9 @@ export interface IceSuiteMiniMat {
   readonly y: number;
   readonly width: number;
   readonly height: number;
-  /** The mini mat this mat sits inside; absent on the root board. */
+  /** The Board this one sits inside; absent on the root board. */
   readonly parentId?: string;
-  readonly props: Readonly<{ name: string; vinyl: string }>;
+  readonly props: SuiteBoardSpawn["props"];
 }
 
 export type IceSuiteObject = IceSuiteNote | IceSuiteCardObject | IceSuiteMiniMat;
@@ -326,37 +304,49 @@ function suiteCardFrom(
 }
 
 /**
- * A Board is a container now (ADR-0039): its mat is spawned from the Board's own
- * rect, not from a card that pointed at it. The rect is given in the parent's
- * frame, which is exactly what a frame-local child needs.
+ * A Board is a container (ADR-0039), so it is drawn by `suite.board`: our own
+ * kind, which keeps a name and a palette colour at *every* zoom — the borrowed
+ * `desk.minimat` printed its name only past ~5x and could sell three vinyls.
+ * The rect is given in the parent's frame, which is exactly what a frame-local
+ * child needs.
  */
-function minimatFrom(
+function boardFrom(
+  workspace: WorkspaceDocument,
   board: Board,
   parentBoardId: string,
   parent: ParentMat | undefined,
   depth: number,
 ): IceSuiteMiniMat {
-  return {
-    kind: "minimat",
-    id: objectId(parent, "minimat", board.id),
-    type: SUITE_MINIMAT_TYPE,
+  const spawn = suiteBoardSpawn({
     boardId: board.id,
-    parentBoardId,
-    portalCardId: null,
-    title: board.name.length > 0 ? board.name : "Board",
+    name: board.name,
     depth,
+    // A Board with no colour on the record wears the neutral one; the spawn's
+    // `color` prop is a closed enum of the six palette values.
+    color: board.color ?? "slate",
+    cardCount: workspace.listBoardPlacements(board.id).filter((entry) => entry.boardId === board.id)
+      .length,
+    childCount: workspace.listBoardChildren(board.id).length,
     x: board.rect.x,
     y: board.rect.y,
     width: board.rect.width,
     height: board.rect.height,
+  });
+  return {
+    kind: "minimat",
+    id: objectId(parent, "minimat", board.id),
+    type: spawn.type,
+    boardId: board.id,
+    parentBoardId,
+    portalCardId: null,
+    title: spawn.props.name,
+    depth,
+    x: spawn.x,
+    y: spawn.y,
+    width: spawn.w,
+    height: spawn.h,
+    props: spawn.props,
     ...(parent === undefined ? {} : { parentId: parent.objectId }),
-    props: {
-      name: board.name.length > 0 ? board.name : "Board",
-      vinyl:
-        (board.color === undefined ? undefined : MINIMAT_VINYL_BY_COLOR[board.color]) ??
-        MINIMAT_VINYLS[depth] ??
-        "slate",
-    },
   };
 }
 
@@ -455,7 +445,7 @@ export function projectWorkspaceToIce(
         });
         continue;
       }
-      const mat = minimatFrom(child, boardId, parent, depth + 1);
+      const mat = boardFrom(workspace, child, boardId, parent, depth + 1);
       objects.push(mat);
       visit(child.id, [...path, child.id], { objectId: mat.id }, depth + 1);
     }

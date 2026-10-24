@@ -15,7 +15,7 @@ function mount(overrides: Partial<Parameters<typeof CanvasZoomControls>[0]> = {}
     onZoomIn: vi.fn(),
     onZoomOut: vi.fn(),
     onFitView: vi.fn(),
-    onGraphView: vi.fn(),
+    onTypes: vi.fn(),
   };
   render(<CanvasZoomControls {...handlers} {...overrides} />);
   return handlers;
@@ -35,11 +35,11 @@ describe("CanvasZoomControls", () => {
     fireEvent.click(screen.getByTestId("canvas-zoom-in"));
     fireEvent.click(screen.getByTestId("canvas-zoom-out"));
     fireEvent.click(screen.getByTestId("canvas-zoom-fit"));
-    fireEvent.click(screen.getByTestId("canvas-graph-view"));
+    fireEvent.click(screen.getByTestId("canvas-types"));
     expect(handlers.onZoomIn).toHaveBeenCalledTimes(1);
     expect(handlers.onZoomOut).toHaveBeenCalledTimes(1);
     expect(handlers.onFitView).toHaveBeenCalledTimes(1);
-    expect(handlers.onGraphView).toHaveBeenCalledTimes(1);
+    expect(handlers.onTypes).toHaveBeenCalledTimes(1);
   });
 
   it("should repeat while a zoom button is held and stop on release", () => {
@@ -102,10 +102,10 @@ describe("CanvasZoomControls", () => {
     expect(holdZoomFactor(1000)).toBeLessThanOrEqual(1.8);
   });
 
-  it("should hide the graph control when there is nothing to graph", () => {
-    mount({ canGraphView: false });
-    expect(screen.queryByTestId("canvas-graph-view")).toBeNull();
-    // The rest of the cluster is untouched.
+  it("should always offer the types control, even on an empty View", () => {
+    mount();
+    const types = screen.getByTestId("canvas-types");
+    expect(types).toHaveAttribute("aria-label", "Types");
     expect(screen.getByTestId("canvas-zoom-in")).toBeInTheDocument();
     expect(screen.getByTestId("canvas-zoom-fit")).toBeInTheDocument();
   });

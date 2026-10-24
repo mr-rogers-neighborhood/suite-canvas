@@ -35,6 +35,7 @@
  */
 import type { EdgeKind } from "@suite/graph";
 import type { Camera, Point, Rect, ResizeHandle, Size, Transform } from "@suite/scene";
+import { cardFit } from "./suiteCardFit";
 import { cardScaleForResize } from "./suiteCardScale";
 
 /* --------------------------------------------------------------- constants */
@@ -295,6 +296,12 @@ interface IceInstanceBase {
 export interface IceCardInstance extends IceInstanceBase {
   readonly kind: "card";
   readonly cardId: string;
+  /**
+   * What the card says, when the caller knows it. Only the fit reading needs it
+   * (a resize that may not leave the writing clipped), so it stays optional: a
+   * projection that has not read the text can still describe the card.
+   */
+  readonly text?: string | undefined;
 }
 
 export interface IceSectionInstance extends IceInstanceBase {
@@ -593,6 +600,12 @@ export interface IceResizeIntent {
   readonly reflow?: boolean | undefined;
   /** The rung the gesture began on, so a reflow holds it. */
   readonly startScale?: number | undefined;
+  /**
+   * Alt held at pointer-up: fit the writing. The box may grow past the drag and
+   * the rung may step down, but the card can never be left with text that does
+   * not fit it (`suiteCardFit.ts`).
+   */
+  readonly fit?: boolean | undefined;
 }
 
 export interface IceSectionMoveIntent {
@@ -1048,20 +1061,34 @@ export function planResizeCommit(intent: IceResizeIntent, context: IcePlanContex
     return skipPlan(snapped ? "no-change" : "sub-epsilon");
   }
 
-  const rounded = roundRectGeometry(geometry);
+  let rounded = roundRectGeometry(geometry);
   // One policy decides the rung: similarity reads it off the resolved box (the
   // same `scaleForExtent` the projection uses, so box and rung cannot disagree),
-  // a reflow holds the rung the gesture started on.
+  // a reflow holds the rung the gesture started on, and a fit lets the writing
+  // veto both — the one reading that may change the size the drag asked for.
+  let typeScale = cardScaleForResize({
+    extent: rounded,
+    reflow: intent.reflow === true,
+    startScale: intent.startScale,
+  });
+  if (intent.fit === true) {
+    const fitted = cardFit(instance.text ?? "", rounded);
+    typeScale = fitted.rung;
+    if (fitted.extent.width !== rounded.width || fitted.extent.height !== rounded.height) {
+      rounded = roundRectGeometry({
+        x: rounded.x,
+        y: rounded.y,
+        width: fitted.extent.width,
+        height: fitted.extent.height,
+      });
+    }
+  }
   return commitPlan({
     kind: "resizePlacement",
     boardId: instance.boardId,
     cardId: instance.cardId,
     geometry: rounded,
-    typeScale: cardScaleForResize({
-      extent: rounded,
-      reflow: intent.reflow === true,
-      startScale: intent.startScale,
-    }),
+    typeScale,
   });
 }
 

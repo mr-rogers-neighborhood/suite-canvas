@@ -385,6 +385,11 @@ export interface IceGestureUpdateInput {
    * gesture — the last sample wins, and `end()` reads it as the commit's mode.
    */
   readonly shiftKey?: boolean | undefined;
+  /**
+   * The pointer event's Alt state. On a card resize it means *fit*: the writing
+   * decides, so the rung may step down and the box may grow rather than clip.
+   */
+  readonly altKey?: boolean | undefined;
   /** ICE's post-snap view rect for the pressed instance. */
   readonly finalGeometry?: GeometryLike | undefined;
   /** Post-snap view rects for every instance in the gesture. */
@@ -426,6 +431,8 @@ export interface IceGestureHandle {
   readonly live: IceLiveGeometry;
   /** True while Shift is held on a card resize: the box changes, the hand stays. */
   readonly reflow: boolean;
+  /** True while a card resize is being read as *fit* (Alt held). */
+  readonly fit: boolean;
   /** The card rung this gesture would commit; null unless it is a card resize. */
   readonly typeScale: CardTypeScale | null;
   /** Records motion. Ephemeral: this never plans and never writes. */
@@ -501,6 +508,8 @@ export function beginGesture(
   let sawWorldOnly = false;
   /** The live Shift state: reflow for a card resize, ignored for everything else. */
   let shiftKey = false;
+  /** The live Alt state: fit for a card resize, ignored for everything else. */
+  let fitKey = false;
   /** The rung the resize committed, frozen at `end()` so it survives the reset. */
   let committedScale: CardTypeScale | null = null;
   /** The rung the card is on at pointer-down; the anchor a reflow drag holds. */
@@ -513,6 +522,7 @@ export function beginGesture(
 
   const record = (update: IceGestureUpdateInput): void => {
     if (update.shiftKey !== undefined) shiftKey = update.shiftKey;
+    if (update.altKey !== undefined) fitKey = update.altKey;
     if (update.screen && finitePoint(update.screen)) {
       travel = Math.max(travel, distance(startScreen, update.screen));
     }
@@ -609,7 +619,15 @@ export function beginGesture(
         // The modifier is part of the intent, not of the box: Shift reflows at
         // the rung the gesture started on, and the plan has to be told so.
         return planIntent(
-          { kind: "resize", item, handle, worldDelta: delta, reflow: shiftKey, startScale },
+          {
+            kind: "resize",
+            item,
+            handle,
+            worldDelta: delta,
+            reflow: shiftKey,
+            startScale,
+            fit: fitKey,
+          },
           context,
         );
       }
@@ -677,6 +695,9 @@ export function beginGesture(
     },
     get reflow() {
       return kind === "resize" && shiftKey;
+    },
+    get fit() {
+      return kind === "resize" && fitKey;
     },
     get typeScale(): CardTypeScale | null {
       if (kind !== "resize") return null;

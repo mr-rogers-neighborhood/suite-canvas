@@ -1,10 +1,9 @@
 import { sectionForCard, sectionMembership } from "@suite/graph";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BoardOutlineHost } from "./canvas/BoardOutline";
+import { boardRows } from "./canvas/boardRows";
 import { DEFAULT_BOARD_SIZE } from "./canvas/boardSize";
 import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
-import { outlineRows } from "./canvas/outlineTree";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { BootSkeleton } from "./components/BootSkeleton";
@@ -427,11 +426,11 @@ function WorkspaceShell({
       activeBoardId ? sectionMembership(boardPlacements, boardSections) : new Map<string, string>(),
     [activeBoardId, boardPlacements, boardSections],
   );
-  // The same trees the outline rail draws, so the facet and the grouping agree
-  // with it about order and depth.
+  // Section trees in reading order, so the facet and the grouping agree about
+  // order and depth.
   const sectionOrder = useMemo(
     () =>
-      outlineRows(boardSections, boardMembership).map((row) => ({
+      boardRows(boardSections, boardMembership).map((row) => ({
         id: row.section.id,
         title: row.section.title.trim() || "Untitled section",
         depth: row.depth,
@@ -630,7 +629,6 @@ function WorkspaceShell({
             </div>
           </div>
         ) : null}
-        <BoardOutlineHost />
         <CardInspectorHost />
         <CardFocusHost />
       </main>

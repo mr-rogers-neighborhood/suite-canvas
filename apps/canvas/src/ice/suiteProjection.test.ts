@@ -2,11 +2,11 @@ import { boardColors, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
 import { seedExampleWorkspace } from "../demo/seedExample";
+import { SUITE_BOARD_VINYLS } from "./suiteBoardKind";
 import {
   buildSuiteSeed,
   type IceSuiteObject,
   type IceSuiteSpawnOptions,
-  MINIMAT_VINYL_NAMES,
   projectWorkspaceToIce,
   SUITE_BODY_SNIPPET_LENGTH,
   SUITE_CARD_TYPE,
@@ -125,7 +125,15 @@ describe("suiteProjection", () => {
       y: 74,
       width: 816,
       height: 280,
-      props: { name: "Start here", vinyl: "slate" },
+      props: {
+        boardId: "demo-section-atlas-start",
+        name: "Start here",
+        depth: 1,
+        color: "blue",
+        // The nested Board's card lives in the nested Board, not in this one.
+        cardCount: 1,
+        childCount: 1,
+      },
     });
     expect(start).not.toHaveProperty("parentId");
 
@@ -145,7 +153,7 @@ describe("suiteProjection", () => {
       parentBoardId: "demo-section-atlas-start",
       parentId: "minimat:demo-section-atlas-start",
       title: "Nested detail",
-      props: { name: "Nested detail", vinyl: "charcoal" },
+      props: expect.objectContaining({ name: "Nested detail", depth: 2, color: "rose" }),
     });
     // A child's rect is stored in its parent's frame, so the mat lands inside it.
     expect(nested?.x).toBeCloseTo(488, 6);
@@ -165,7 +173,7 @@ describe("suiteProjection", () => {
     });
 
     const sketches = mats.find((mat) => mat.boardId === "demo-section-atlas-sketches");
-    expect(sketches).toMatchObject({ depth: 1, props: { vinyl: "charcoal" } });
+    expect(sketches).toMatchObject({ depth: 1, props: { color: "amber", cardCount: 2 } });
     expect(sketches).not.toHaveProperty("parentId");
   });
 
@@ -180,7 +188,7 @@ describe("suiteProjection", () => {
    * owns the board-colour → vinyl mapping, and this is the guard that keeps it
    * inside ICE's closed enum for every colour a Board can be.
    */
-  it("should wear a vinyl that ICE sells for every board colour", () => {
+  it("should carry every board colour on the face, with a vinyl ICE sells underneath", () => {
     for (const color of boardColors) {
       const workspace = new WorkspaceDocument(new LoroDoc());
       const view = workspace.ensureView();
@@ -191,7 +199,10 @@ describe("suiteProjection", () => {
       const [mat] = matsOf(projected.objects);
 
       expect(mat?.boardId).toBe(board.id);
-      expect(MINIMAT_VINYL_NAMES).toContain(mat?.props.vinyl);
+      // The colour is the face's (all six); the vinyl is the mat's material and
+      // must stay inside ICE's closed enum, or the Board fails to spawn.
+      expect(mat?.props.color).toBe(color);
+      expect(SUITE_BOARD_VINYLS).toContain(mat?.props.vinyl);
       expect(
         projectWorkspaceToIce(workspace, view.id).cards.some((entry) => entry.cardId === card.id),
       ).toBe(true);
@@ -275,7 +286,7 @@ describe("spawnIceSuite", () => {
     expect(first?.type).toBe("desk.note");
     expect(first?.opts).toMatchObject({ x: 1040, y: 94, undoable: false });
 
-    const mat = engine.calls.find((call) => call.type === "desk.minimat");
+    const mat = engine.calls.find((call) => call.type === "suite.board");
     expect(mat?.opts).toMatchObject({ undoable: false, props: { name: "Start here" } });
     expect(mat?.opts.w).toBeCloseTo(816, 6);
 
@@ -290,8 +301,8 @@ describe("spawnIceSuite", () => {
     expect(report.cards.get("demo-card-atlas-capture")).toBeDefined();
   });
 
-  it("should report a refused mat and skip its children", () => {
-    const engine = recorder({ refuse: "desk.minimat" });
+  it("should report a refused board and skip its children", () => {
+    const engine = recorder({ refuse: "suite.board" });
     const report = spawnIceSuite(seed, engine);
 
     // The plane's own cards still spawn; every mat and everything it held does not.
@@ -299,7 +310,7 @@ describe("spawnIceSuite", () => {
     expect(report.objects.size).toBe(3);
     expect(report.boards.size).toBe(0);
     expect(report.failures).toHaveLength(7);
-    expect(report.failures.some((failure) => failure.includes("refused desk.minimat"))).toBe(true);
+    expect(report.failures.some((failure) => failure.includes("refused suite.board"))).toBe(true);
     expect(report.failures.some((failure) => failure.includes("its mini mat did not spawn"))).toBe(
       true,
     );

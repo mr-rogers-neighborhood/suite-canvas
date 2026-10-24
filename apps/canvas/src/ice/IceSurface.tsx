@@ -46,7 +46,6 @@
  * their chip LOD.
  */
 import type { WorkspaceDocument } from "@suite/graph";
-import { buildTypeGraph, type TypeGraphNode } from "@suite/scene";
 import type {
   CanvasEngine,
   DocSession,
@@ -66,11 +65,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { isWhiteboardCard } from "../cards/whiteboard";
 import { CanvasZoomControls } from "../components/CanvasZoomControls";
-import { TypeTable } from "../components/TypeTable";
 import { getSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
+import { useThemeStore } from "../theme/useThemeStore";
 import { IceContextMenu } from "./IceContextMenu";
-import { applySuiteAmbient, type SuiteAmbientDesk } from "./iceAmbient";
 import { workspaceWriter } from "./iceBridge";
 import {
   type FlightCamera,
@@ -82,29 +80,22 @@ import {
 } from "./iceCameraFlight";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
-import { attachIcePointerEditing, createIceEditingController } from "./iceEditingController";
 import {
-  type BandRect,
-  cameraForBounds,
-  frameCameraFor,
-  graphNodeSignature,
-  graphReconcile,
-  placementRect,
-  typeUnionBounds,
-  unionRect,
-  zoomedCamera,
-} from "./iceGraphBand";
+  attachIcePointerEditing,
+  createIceEditingController,
+  type IceEditableSlot,
+} from "./iceEditingController";
 import { beginMiddlePan, endMiddlePan, type MiddlePanState, updateMiddlePan } from "./iceMiddlePan";
 import { publishScreenCamera } from "./iceScreenToWorld";
 import { planCardLanding } from "./iceSelectionLanding";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
+import { cardFit } from "./suiteCardFit";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
-import type { SuiteContainerNodeSpawn } from "./suiteContainerNodeKind";
+import { applySuiteDeskLight, type SuiteLightDesk } from "./suiteDeskLight";
+import { applySuiteDeskTheme, type SuiteDeskSurface } from "./suiteDeskTheme";
 import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
 import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
-import type { SuiteTypeNodeSpawn } from "./suiteTypeNodeKind";
-import { useTypeTable } from "./useTypeTable";
 import "./iceSurface.css";
 
 /**
@@ -189,7 +180,7 @@ interface SeedReport {
    * Entity → canonical card id. Mutable on purpose: a re-spawned card replaces
    * its entity in place.
    */
-  readonly entitySlots: Map<Entity, { cardId: string; boardId: string }>;
+  readonly entitySlots: Map<Entity, IceEditableSlot>;
   /** Mat entity → the Board it stands for, for camera entry. */
   readonly boardMats: Map<Entity, BoardMat>;
   /** Markers the projection could not resolve; always 0 for the live document. */
@@ -221,6 +212,8 @@ interface LoadedIce {
   readonly Desk: typeof IceDesk;
   readonly EngineProvider: typeof IceEngineProvider;
   readonly core: typeof import("@vibecook/ice");
+  /** The desk's theme and palette builders, so a theme switch can re-make them. */
+  readonly objects: typeof import("@vibecook/ice/desk/objects");
 }
 
 type Phase =
@@ -278,14 +271,70 @@ function worldOf(engine: CanvasEngine): World | undefined {
   return (engine as { readonly world?: World }).world;
 }
 
-function isEntity(value: Entity | undefined): value is Entity {
-  return value !== undefined;
+/** A world rect: what Fit View frames. */
+interface FitRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Screen margin kept around a fitted View, as a fraction of the viewport. */
+const FIT_PADDING = 0.06;
+/** A fit is never tighter than this, so an enormous empty View still frames. */
+const FIT_MIN_ZOOM = 0.02;
+/** …and never closer than this, so a single small card does not fill the screen. */
+const FIT_MAX_ZOOM = 4;
+
+/** A usable zoom: the fit limits, with a non-positive request ignored. */
+function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 0) return FIT_MIN_ZOOM;
+  return Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, zoom));
+}
+
+/** A stored extent when it is a real one, else the natural size. */
+function extentOf(value: number | undefined, natural: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : natural;
+}
+
+/** The camera that centres `bounds` at the zoom that fits it in `viewport`. */
+function fitCamera(bounds: FitRect, viewport: FlightViewport): FlightCamera {
+  const width = viewport.width * (1 - FIT_PADDING * 2);
+  const height = viewport.height * (1 - FIT_PADDING * 2);
+  const fit =
+    width > 0 && height > 0
+      ? Math.min(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height))
+      : FIT_MIN_ZOOM;
+  const zoom = clampZoom(fit);
+  return {
+    x: viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
+    y: viewport.height / 2 - (bounds.y + bounds.height / 2) * zoom,
+    zoom,
+  };
+}
+
+/**
+ * `camera` with its zoom replaced, holding the world point under `anchor`
+ * (screen px) still — what a zoom-in/zoom-out control asks for.
+ */
+function zoomedCamera(
+  camera: FlightCamera,
+  zoom: number,
+  anchor: { readonly x: number; readonly y: number },
+): FlightCamera {
+  const next = clampZoom(zoom);
+  if (!(camera.zoom > 0) || !Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
+    return { ...camera, zoom: next };
+  }
+  const worldX = (anchor.x - camera.x) / camera.zoom;
+  const worldY = (anchor.y - camera.y) / camera.zoom;
+  return { x: anchor.x - worldX * next, y: anchor.y - worldY * next, zoom: next };
 }
 
 /**
  * A camera flight is a courtesy, not a rule: a reader who asked the system to
- * reduce motion gets the destination without the travel, and the band, the
- * commit rule and the document are unchanged (ADR-0037 §6).
+ * reduce motion gets the destination without the travel, and the commit rule
+ * and the document are unchanged (ADR-0037 §6).
  */
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -294,22 +343,6 @@ function prefersReducedMotion(): boolean {
   } catch {
     return false;
   }
-}
-
-/** Which way a flight is going: the return is deliberately slower. */
-type FlightKind = "enter" | "return";
-
-/**
- * The exit is a descent, so it is given more time than the entry: the same
- * planned distance, stretched by this share (ADR-0037 §6, the "convincing
- * exit"). The planner still owns the duration, so a short hop stays short.
- */
-const RETURN_FLIGHT_STRETCH = 0.35;
-
-/** The graph kinds' spawn helpers, loaded beside the card kind (never statically). */
-interface GraphKindSpawns {
-  readonly type: (node: TypeGraphNode) => SuiteTypeNodeSpawn;
-  readonly container: (node: TypeGraphNode) => SuiteContainerNodeSpawn;
 }
 
 /**
@@ -603,7 +636,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     project: () => engine.step(performance.now()),
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
-  const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
+  const entitySlots = new Map<Entity, IceEditableSlot>();
   const boardMats = new Map<Entity, BoardMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
@@ -671,7 +704,7 @@ function seedWorkspaceDocument(
     project: () => engine.step(performance.now()),
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
-  const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
+  const entitySlots = new Map<Entity, IceEditableSlot>();
   const boardMats = new Map<Entity, BoardMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
@@ -834,14 +867,11 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       }),
     [readOnly, canEditLayout, canEditContent, canManageSchema, canManageTrash],
   );
+  // The desk follows the app's theme: the mat is neutral in both, and the only
+  // coloured things on it are what the user put down (see `suiteDeskTheme.ts`).
+  const theme = useThemeStore((state) => state.theme);
   const pendingPinFocus = useUiStore((state) => state.pendingPinFocus);
   const dropPinRequest = useUiStore((state) => state.dropPinRequest);
-  const graphFrameTypeRequest = useUiStore((state) => state.graphFrameTypeRequest);
-  const inspectorOpen = useUiStore((state) => state.inspectorNodeId !== null);
-  const graphViewRequest = useUiStore((state) => state.graphViewRequest);
-  // The *Types in view* rows the graph band's panel shows; a live projection of
-  // this board's cards, never a stored table.
-  const bandTypeRows = useTypeTable(rootBoardId ?? null);
   const actorId = useRef(`local-${Math.random().toString(36).slice(2, 10)}`);
   const [runId, setRunId] = useState(0);
   const owned = useRef<{
@@ -877,6 +907,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     if (gpu !== undefined) quietly(() => gpu.destroy());
   }, [clearPendingFailure, clearPendingFit]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `theme` is read once, at mount; the theme effect repaints
   useEffect(() => {
     let cancelled = false;
 
@@ -943,29 +974,21 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               import("./suiteCardKind"),
               import("./suiteCardWorkspace"),
               import("./suitePinKind"),
-              import("./suiteTypeNodeKind"),
-              import("./suiteContainerNodeKind"),
+              import("./suiteBoardKind"),
             ])
           : null;
         if (cancelled) return;
         // Every rung of the card's type ladder is its own kind (ICE fixes a
-        // note's type size per kind), so all of them are registered. The two
-        // graph kinds ride along: they are the ceiling's representation.
+        // note's type size per kind), so all of them are registered, and
+        // `suite.board` is the frame a Board is drawn as.
         const widgets = suiteCardModules
           ? [
               ...objects.DESK_OBJECTS,
               ...suiteCardModules[0].SUITE_CARD_RUNGS.map((rung) => rung.object),
               suiteCardModules[2].SuitePin,
-              suiteCardModules[3].SuiteTypeNode,
-              suiteCardModules[4].SuiteContainerNode,
+              suiteCardModules[3].SuiteBoard,
             ]
           : [...objects.DESK_OBJECTS];
-        graphKindsRef.current = suiteCardModules
-          ? {
-              type: suiteCardModules[3].suiteTypeNodeSpawn,
-              container: suiteCardModules[4].suiteContainerNodeSpawn,
-            }
-          : null;
 
         // ONE device per engine (D7): the desk adopts this one instead of
         // acquiring its own, so a discarded StrictMode mount cannot destroy
@@ -1017,8 +1040,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               : seedDemoDocument(engine);
         seededEntities.current = report.entities;
         const layer = desk.deskLayer({
-          theme: objects.deskTheme("light"),
-          palette: suitePalette(objects.deskPalette("light")),
+          theme: objects.deskTheme(theme),
+          palette: suitePalette(objects.deskPalette(theme)),
           objects: widgets,
           docs: engine.docs,
           text: desk.inkRaster({ faces: SUITE_PEN_FACES }),
@@ -1034,6 +1057,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           Desk: react.Desk,
           EngineProvider: react.EngineProvider,
           core,
+          objects,
         });
       } catch (error) {
         if (!cancelled) {
@@ -1132,6 +1156,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
    * by the fallback (the engine is disposed with it); `degraded` keeps drawing
    * and says so in the HUD.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the theme is read at submit time and repainted by the theme effect
   const handleReady = useCallback(
     (handle: DeskHandle) => {
       const layer = handle.layer as Partial<DeskLayerHandle>;
@@ -1153,10 +1178,13 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         setEngineState(status.state);
         clearPendingFailure();
         if (status.state === "ready") {
-          // Suite's own light: a cloud plate instead of the desk's hard tree
-          // wedge, drifting on the engine's wind clock (no per-frame work of
-          // ours). The first `ready` is the first frame the ground exists.
-          quietly(() => applySuiteAmbient(layer as SuiteAmbientDesk));
+          // The ground and the light: a neutral mat, and the desk's own
+          // tree-shadow dapple switched off (it can only ever be a splotch on an
+          // infinite canvas — see `suiteDeskLight.ts`).
+          quietly(() => {
+            applySuiteDeskTheme(layer as SuiteDeskSurface, theme);
+            applySuiteDeskLight(layer as SuiteLightDesk);
+          });
           frameDemo();
         }
         if (status.state !== "failed") return;
@@ -1226,13 +1254,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     deleteSelection(): void;
     reconcile(): void;
     escape(): void;
-    enterGraph(): void;
-    exitGraph(): void;
-    toggleGraph(): void;
     zoomBy(factor: number): void;
     fitView(): void;
-    frameType(typeId: string): void;
-    selectType(typeId: string): void;
   } | null>(null);
   const [portalPath, setPortalPath] = useState<readonly string[]>([]);
   const portalDepth = useRef(0);
@@ -1247,18 +1270,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
    */
   const [suspendedStage, setSuspendedStage] = useState(false);
   const [layerReady, setLayerReady] = useState(0);
-  /** True while the type graph is projected over the canvas. */
-  const [graphOverlay, setGraphOverlay] = useState(false);
-  /** False while the View holds nothing, which hides the graph control. */
-  const [hasContent, setHasContent] = useState(false);
-  /** The graph kinds' spawns, loaded in the dynamic block with the card kind. */
-  const graphKindsRef = useRef<GraphKindSpawns | null>(null);
-  const flightRef = useRef<{ plan: FlightPlan; startedAt: number; kind: FlightKind } | null>(null);
-  /**
-   * Where the user was when the graph overlay opened. The return flies here, so
-   * panning or zooming inside the graph never strands them.
-   */
-  const returnCameraRef = useRef<FlightCamera | null>(null);
+  const flightRef = useRef<{ plan: FlightPlan; startedAt: number } | null>(null);
 
   /**
    * The one way to read and move the camera. ICE stores the *world* coordinate
@@ -1310,28 +1322,20 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
    * initial demo framing.
    */
   const flyTo = useCallback(
-    (target: FlightCamera | null, kind: FlightKind = "enter"): void => {
+    (target: FlightCamera | null): void => {
       if (cameraApi === null || target === null) return;
       if (prefersReducedMotion()) {
         cameraApi.write(target);
-        if (kind === "return") returnCameraRef.current = null;
         return;
       }
       const from = cameraApi.cameraOf();
       if (from === null) return;
-      const viewport = cameraApi.viewportOf();
-      const plan = planFlight(from, target, viewport);
+      const plan = planFlight(from, target, cameraApi.viewportOf());
       if (!plan.moving) {
         cameraApi.write(plan.to);
-        if (kind === "return") returnCameraRef.current = null;
         return;
       }
-      // A descent is gentler than the climb: the same distance, more time.
-      const stretched =
-        kind === "return"
-          ? planFlight(from, target, viewport, { extraMs: plan.durationMs * RETURN_FLIGHT_STRETCH })
-          : plan;
-      flightRef.current = { plan: stretched, startedAt: performance.now(), kind };
+      flightRef.current = { plan, startedAt: performance.now() };
     },
     [cameraApi],
   );
@@ -1393,24 +1397,6 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       return body.length === 0 ? title : `${title}\n\n${body}`;
     };
 
-    /* ---------------------------------------------------------------- *
-     * The ceiling and the graph band (ADR-0037)
-     *
-     * The band is a projection of the same layout: one node per
-     * (container, type) pair, positioned from the cards' own positions. It is
-     * rebuilt on band entry and on a document revision — never per frame — and
-     * it writes nothing, so a viewer and an owner draw the same graph.
-     * ---------------------------------------------------------------- */
-
-    /** True while the graph is the surface's representation. */
-    let bandOn = false;
-    /** node.key → the entity standing for it. */
-    const graphEntities = new Map<string, Entity>();
-    /** node.key → what was drawn, so a moved node is replaced, never mutated. */
-    let graphSignatures: ReadonlyMap<string, string> = new Map();
-    /** The last projection's bounds; `null` when the View holds nothing. */
-    let graphBounds: BandRect | null = null;
-
     /** The View's live placements: trashed cards are not on the View. */
     const livePlacements = () =>
       liveWorkspace.listBoardPlacements(rootBoardId).filter((placement) => {
@@ -1419,106 +1405,39 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         return card !== undefined && !card.deletedAt;
       });
 
-    /** The ceiling is where the whole View fits; frames count as content. */
-    const contentBounds = (): BandRect | null =>
-      unionRect([
-        ...livePlacements().map((placement) =>
-          placementRect(placement, { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT }),
-        ),
-        ...liveWorkspace.listSections(rootBoardId).map((section) => ({
-          x: section.x,
-          y: section.y,
-          width: section.width,
-          height: section.height,
-        })),
-      ]);
-
-    /** An empty View has nothing to graph, so the control is hidden, not inert. */
-    const refreshContent = (): void => {
-      const has = contentBounds() !== null;
-      setHasContent((current) => (current === has ? current : has));
-    };
-
-    const spawnGraphNode = (node: TypeGraphNode): Entity | undefined => {
-      const kinds = graphKindsRef.current;
-      if (kinds === null) return undefined;
-      const spawn = node.kind === "container" ? kinds.container(node) : kinds.type(node);
-      try {
-        const entity = engine.ops.spawnWidget(spawn.type, {
-          x: spawn.x,
-          y: spawn.y,
-          w: spawn.w,
-          h: spawn.h,
-          props: { ...spawn.props },
-          undoable: false,
-        });
-        graphEntities.set(node.key, entity);
-        return entity;
-      } catch (error) {
-        console.warn("[ice] graph spawn", node.key, error);
-        return undefined;
-      }
-    };
-
-    /** Diff the projection against what the surface holds, then apply it. */
-    const syncGraph = (): void => {
-      const graph = buildTypeGraph({
-        boardId: rootBoardId,
-        cards: liveWorkspace
-          .listCards()
-          .filter((card) => !card.deletedAt)
-          .map((card) => ({ id: card.id, primaryTypeId: card.primaryTypeId })),
-        placements: livePlacements().map((placement) => ({
-          boardId: placement.boardId,
-          cardId: placement.cardId,
-          x: placement.x,
-          y: placement.y,
-          z: placement.z,
-          ...(placement.width === undefined ? {} : { width: placement.width }),
-          ...(placement.height === undefined ? {} : { height: placement.height }),
-        })),
-        sections: liveWorkspace.listSections(rootBoardId).map((section) => ({
-          id: section.id,
-          boardId: section.boardId,
-          title: section.title,
-          x: section.x,
-          y: section.y,
-          width: section.width,
-          height: section.height,
-          z: section.z,
-          ...(section.color === undefined ? {} : { color: section.color }),
-        })),
-        types: liveWorkspace.listTypes().map((type) => ({
-          id: type.id,
-          name: type.name,
-          glyph: type.glyph,
-          ...(type.color === undefined ? {} : { color: type.color }),
-        })),
-        depth: portalDepth.current,
-      });
-      graphBounds = graph.bounds.width > 0 && graph.bounds.height > 0 ? graph.bounds : null;
-      const plan = graphReconcile(graph.nodes, graphSignatures);
-      removeEntities(plan.remove.map((key) => graphEntities.get(key)).filter(isEntity));
-      for (const key of plan.remove) graphEntities.delete(key);
-      for (const node of plan.spawn) spawnGraphNode(node);
-      graphSignatures = new Map(graph.nodes.map((node) => [node.key, graphNodeSignature(node)]));
-    };
-
-    const clearGraph = (): void => {
-      removeEntities([...graphEntities.values()]);
-      graphEntities.clear();
-      graphSignatures = new Map();
-      graphBounds = null;
-    };
-
-    /** The cards of one type on this View — the ids the table's rows act on. */
-    const cardsOfType = (typeId: string): string[] => {
-      const ids = new Set<string>();
+    /** Fit View frames the whole View; a Board's frame counts as content. */
+    const contentBounds = (): FitRect | null => {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let seen = false;
+      const include = (x: number, y: number, width: number, height: number): void => {
+        if (![x, y, width, height].every((value) => Number.isFinite(value))) return;
+        seen = true;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + width);
+        maxY = Math.max(maxY, y + height);
+      };
       for (const placement of livePlacements()) {
-        const card = liveWorkspace.getCard(placement.cardId);
-        if (card?.primaryTypeId === typeId) ids.add(card.id);
+        include(
+          placement.x,
+          placement.y,
+          extentOf(placement.width, DEFAULT_CARD_WIDTH),
+          extentOf(placement.height, DEFAULT_CARD_HEIGHT),
+        );
       }
-      return [...ids].sort((a, b) => a.localeCompare(b));
+      for (const section of liveWorkspace.listSections(rootBoardId)) {
+        include(section.x, section.y, section.width, section.height);
+      }
+      if (!seen) return null;
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+      };
     };
 
     const projection = new CardProjection<Entity>({
@@ -1547,7 +1466,11 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
             seed: 0,
           },
         });
-        slots.set(entity, { cardId: placement.cardId, boardId: placement.boardId });
+        slots.set(entity, {
+          cardId: placement.cardId,
+          boardId: placement.boardId,
+          text: placement.text ?? "",
+        });
         return entity;
       },
       remove: (entity) => {
@@ -1564,26 +1487,35 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       projection.register(entity, slot.cardId, slot.boardId, faceText(slot.cardId));
     }
 
-    /** The rung a card's writing is laid out at: stored if a reflow pinned it. */
+    /**
+     * The rung a card's writing is laid out at: the stored rung when a reflow
+     * pinned one, otherwise what its box implies — and in either case the
+     * writing has the last word, so a card is never drawn with text that runs
+     * off it (`suiteCardFit.ts`).
+     */
     function cardScaleOf(placement: CanonicalPlacement): number {
-      return placement.typeScale ?? scaleForExtent(placement);
+      const proposed = placement.typeScale ?? scaleForExtent(placement);
+      // No size on the placement means the card's natural extent, which the fit
+      // module resolves itself; a stored rung is a request, not a promise.
+      const extent = {
+        width: placement.width ?? DEFAULT_CARD_WIDTH,
+        height: placement.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const fitted = cardFit(placement.text ?? "", extent).rung;
+      return Math.min(proposed, fitted);
     }
 
-    /** Cards only — the projection the band suppresses while the graph is drawn. */
+    /** The card faces: one widget per live placement. */
     const reconcileCards = () => {
-      // In the band the card faces are gone: the aggregate stands in for them,
-      // and leaving the band is what brings them back (ADR-0037 §2).
-      const placements = bandOn
-        ? []
-        : livePlacements().map((placement) => ({
-            boardId: placement.boardId,
-            cardId: placement.cardId,
-            x: placement.x,
-            y: placement.y,
-            text: faceText(placement.cardId),
-            ...(placement.width !== undefined ? { width: placement.width } : {}),
-            ...(placement.height !== undefined ? { height: placement.height } : {}),
-          }));
+      const placements = livePlacements().map((placement) => ({
+        boardId: placement.boardId,
+        cardId: placement.cardId,
+        x: placement.x,
+        y: placement.y,
+        text: faceText(placement.cardId),
+        ...(placement.width !== undefined ? { width: placement.width } : {}),
+        ...(placement.height !== undefined ? { height: placement.height } : {}),
+      }));
       const report = projection.reconcile(placements, {
         width: DEFAULT_CARD_WIDTH,
         height: DEFAULT_CARD_HEIGHT,
@@ -1611,87 +1543,16 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       }
     };
 
-    /**
-     * A document change: move the ceiling if the content moved, refresh the
-     * graph when it is the representation on screen, else re-derive the cards.
-     */
+    /** A document change: re-derive the cards from the new truth. */
     const reconcile = () => {
-      refreshContent();
-      // The overlay is a projection of the same document, so it is re-derived
-      // on a revision; the cards are always re-derived, because the overlay
-      // draws over them rather than replacing them.
-      if (bandOn) syncGraph();
       reconcileCards();
-    };
-
-    /** Open or close the projection. A toggle, not a zoom band. */
-    const applyBand = (next: boolean): void => {
-      if (next === bandOn) return;
-      bandOn = next;
-      setGraphOverlay(next);
-      // The shell's inspector reads this to show the Types table instead of a
-      // card: while the projection is open the subject is a type, not a card.
-      useUiStore.getState().setGraphBandActive(next);
-      // The overlay draws over the canvas, so the card projection is untouched
-      // in both directions: cards stay where they are, which is what makes the
-      // graph feel like weather over the board rather than a different place.
-      if (next) syncGraph();
-      else clearGraph();
-    };
-
-    /**
-     * The camera the overlay opens on: the graph's own bounds, framed.
-     *
-     * There is no "lid" to cross any more. The overlay is a projection of the
-     * layout, so opening it frames that projection the way Fit View frames the
-     * canvas — the same camera vocabulary, one layer up.
-     */
-    const graphCamera = (): FlightCamera | null => {
-      const viewport = cameraApi?.viewportOf() ?? null;
-      if (viewport === null) return null;
-      return frameCameraFor(graphBounds ?? contentBounds(), viewport);
-    };
-
-    /** Open the projection over the canvas. A camera flight, nothing else. */
-    const enterGraph = (): void => {
-      refreshContent();
-      // Remember where the user was. The exit flies back to *this* camera, so
-      // panning or zooming inside the graph never strands them; opening again
-      // overwrites it.
-      if (!bandOn) returnCameraRef.current = cameraApi?.cameraOf() ?? null;
-      applyBand(true);
-      flyTo(graphCamera(), "enter");
-    };
-
-    /** Close it: back to exactly where they were, or the View's fit if unrecorded. */
-    const exitGraph = (): void => {
-      // Closing is the projection's own business; the camera then travels back
-      // underneath it, so the cards are there when the veil lifts.
-      applyBand(false);
-      const remembered = returnCameraRef.current;
-      if (remembered !== null) {
-        flyTo(remembered, "return");
-        return;
-      }
-      const viewport = cameraApi?.viewportOf() ?? null;
-      if (viewport === null) return;
-      flyTo(cameraForBounds(contentBounds(), viewport), "return");
-    };
-
-    /** Frame one type's instances: the user named a destination, so it may come. */
-    const frameType = (typeId: string): void => {
-      const viewport = cameraApi?.viewportOf() ?? null;
-      if (viewport === null) return;
-      const bounds = typeUnionBounds(livePlacements(), new Set(cardsOfType(typeId)));
-      if (bounds === null) return;
-      flyTo(frameCameraFor(bounds, viewport));
     };
 
     /**
      * One notch of the zoom cluster.
      *
      * This is *not* a flight. A flight is for travelling somewhere (a card, a
-     * type, the ceiling); a zoom step is a continuous adjustment, and animating
+     * type); a zoom step is a continuous adjustment, and animating
      * each one made a held button hop and lag behind the pointer. The camera is
      * written at once, so clicks and holds both feel like the wheel they stand
      * in for. The anchor is the viewport centre, so the step keeps whatever is
@@ -1720,26 +1581,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     const fitView = (): void => {
       const viewport = cameraApi?.viewportOf() ?? null;
       if (viewport === null) return;
-      refreshContent();
-      flyTo(cameraForBounds(contentBounds(), viewport));
-    };
-
-    /** The cluster's one graph control: open the projection, or close it. */
-    const toggleGraph = (): void => {
-      if (bandOn) exitGraph();
-      else enterGraph();
-    };
-
-    /** Select every card of one type. Selection is UI state; nothing is written. */
-    const selectType = (typeId: string): void => {
-      const ids = cardsOfType(typeId);
-      useUiStore.getState().setSelectedNodeIds(ids);
-      const entities = ids.map((cardId) => projection.entityOf(cardId)).filter(isEntity);
-      try {
-        engine.ops.setSelection(entities);
-      } catch {
-        // A refused selection is cosmetic; the next click repairs it.
-      }
+      const bounds = contentBounds();
+      // An empty View has nothing to frame; the camera stays where it is.
+      if (bounds === null) return;
+      flyTo(fitCamera(bounds, viewport));
     };
 
     const controller = createIceEditingController({
@@ -1780,17 +1625,11 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         reconcile();
       },
       deleteSelection: () => {
-        // The graph is a projection: there is nothing in it to delete.
-        if (bandOn) return;
         controller.deleteSelection(useUiStore.getState().selectedNodeIds);
       },
       reconcile,
       escape: () => {
-        // Escape is the return gesture: out of the graph before out of a mat.
-        if (bandOn) {
-          exitGraph();
-          return;
-        }
+        // Escape is the return gesture: out of a mat before out of a gesture.
         if (portalDepth.current > 0) {
           try {
             engine.ops.exitContainer();
@@ -1803,13 +1642,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         }
         engine.ops.cancelActiveGestures();
       },
-      enterGraph: () => enterGraph(),
-      exitGraph,
-      toggleGraph,
       zoomBy,
       fitView,
-      frameType,
-      selectType,
     };
 
     const detach = attachIcePointerEditing(root, controller);
@@ -2023,14 +1857,6 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     };
     root.addEventListener("auxclick", onMiddleAux);
 
-    // A revision can move cards and add types; while the projection is open it
-    // is rebuilt too. Per change, never per frame.
-    const stopObserving = liveWorkspace.observe(() => {
-      refreshContent();
-      if (bandOn) syncGraph();
-    });
-    refreshContent();
-
     return () => {
       root.removeEventListener("dblclick", onDouble);
       root.removeEventListener("pointerdown", suspendOn, true);
@@ -2041,14 +1867,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       root.removeEventListener("auxclick", onMiddleAux);
       middlePan = null;
       stopMiddleListeners();
-      stopObserving();
       detach();
       controller.cancel();
-      clearGraph();
       commandsRef.current = null;
       portalDepth.current = 0;
-      setGraphOverlay(false);
-      useUiStore.getState().setGraphBandActive(false);
       setPortalPath([]);
     };
   }, [
@@ -2090,9 +1912,6 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         if (flightDone(flight.plan, elapsed)) {
           cameraApi.write(flight.plan.to);
           flightRef.current = null;
-          // The return is only finished once it has landed: until then the
-          // stored camera is the place to go back to.
-          if (flight.kind === "return") returnCameraRef.current = null;
         }
       }
     };
@@ -2103,24 +1922,6 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       cancelAnimationFrame(handle);
     };
   }, [phase, cameraApi, workspaceMode, liveWorkspace, rootBoardId, layerReady]);
-
-  // A shell control asking for the ceiling is the same transition as the
-  // gesture: a camera action, never a mode toggle (ADR-0037 §3).
-  useEffect(() => {
-    if (graphViewRequest === 0) return;
-    if (phase.kind !== "ready" || !workspaceMode || liveWorkspace === null) return;
-    if (rootBoardId === null) return;
-    commandsRef.current?.enterGraph();
-  }, [graphViewRequest, phase, workspaceMode, liveWorkspace, rootBoardId]);
-
-  // The inspector's Types table flies the camera to a type's instances. A
-  // request, not a call: the panel does not own a camera, and the flight is the
-  // only way to get there (ADR-0037: navigation is movement).
-  useEffect(() => {
-    if (graphFrameTypeRequest === null) return;
-    if (phase.kind !== "ready") return;
-    commandsRef.current?.frameType(graphFrameTypeRequest.typeId);
-  }, [graphFrameTypeRequest, phase.kind]);
 
   // A pin click is navigation: centre the camera on the marked point.
   useEffect(() => {
@@ -2200,12 +2001,6 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         },
       },
       {
-        key: "g",
-        run: () => {
-          commandsRef.current?.enterGraph();
-        },
-      },
-      {
         key: "Escape",
         run: () => {
           commandsRef.current?.escape();
@@ -2254,26 +2049,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       {workspaceMode && ready !== null ? (
         <div className="ice-surface__zoom">
           <CanvasZoomControls
-            graphActive={graphOverlay}
-            canGraphView={hasContent}
             onZoomIn={(factor: number) => commandsRef.current?.zoomBy(factor)}
             onZoomOut={(factor: number) => commandsRef.current?.zoomBy(factor)}
             onFitView={() => commandsRef.current?.fitView()}
-            onGraphView={() => commandsRef.current?.toggleGraph()}
-          />
-        </div>
-      ) : null}
-
-      {graphOverlay && !inspectorOpen && liveWorkspace !== null && rootBoardId !== null ? (
-        <div className="ice-surface__types" data-testid="ice-band-types">
-          <TypeTable
-            rows={bandTypeRows}
-            boardId={rootBoardId}
-            onFrameType={(typeId) => commandsRef.current?.frameType(typeId)}
-            onSelectAll={(typeId) => commandsRef.current?.selectType(typeId)}
-            readOnly={readOnly}
-            canEditContent={caps.canEditContent}
-            canEditLayout={caps.canWriteLayout}
+            onTypes={() => useUiStore.getState().openTypeSettings()}
           />
         </div>
       ) : null}
@@ -2467,21 +2246,9 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
             Inside {portalPath.join(" › ")} · Escape to return
           </span>
         ) : null}
-        {graphOverlay ? (
-          <button
-            type="button"
-            className="ice-surface__crumb"
-            data-testid="ice-graph-crumb"
-            onClick={() => commandsRef.current?.exitGraph()}
-          >
-            <span aria-hidden="true">{"\u2b21"}</span>
-            <span>Graph view</span>
-            <span className="ice-surface__crumb-hint">Escape or click to return</span>
-          </button>
-        ) : null}
         <span className="ice-surface__badge-hint">
           {workspaceMode
-            ? "Select and drag a card · drag a handle to resize · double-click a mat to enter, a whiteboard to draw · g for the graph view · Escape returns"
+            ? "Select and drag a card · drag a handle to resize · double-click a mat to enter, a whiteboard to draw · Escape returns"
             : "Pan the mat · wheel to zoom · drag a note to move it"}
         </span>
       </div>

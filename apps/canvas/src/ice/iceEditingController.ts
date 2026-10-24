@@ -40,6 +40,8 @@ import {
 export interface IceEditableSlot {
   readonly cardId: string;
   readonly boardId: string;
+  /** What the card says, when the caller knows: the fit reading measures it. */
+  readonly text?: string | undefined;
 }
 
 /** How the controller reaches the engine and the document. */
@@ -99,6 +101,7 @@ export function instanceFor(
     transform: IDENTITY,
     geometry: rect ?? { x: 0, y: 0, width: 1, height: 1 },
     cardId: slot.cardId,
+    ...(slot.text === undefined ? {} : { text: slot.text }),
   };
 }
 
@@ -144,7 +147,7 @@ function sizeChanged(start: Rect, next: Rect): boolean {
 
 export interface IceEditingController {
   pointerDown(pointerId: number, screen: ScreenPoint): boolean;
-  pointerUp(pointerId: number, screen: ScreenPoint, shiftKey?: boolean): boolean;
+  pointerUp(pointerId: number, screen: ScreenPoint, shiftKey?: boolean, altKey?: boolean): boolean;
   pointerCancel(pointerId: number): void;
   /** Delete the current canonical selection through one plan. */
   deleteSelection(selectedCardIds: readonly string[]): boolean;
@@ -239,7 +242,7 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       return true;
     },
 
-    pointerUp(pointerId, screen, shiftKey = false) {
+    pointerUp(pointerId, screen, shiftKey = false, altKey = false) {
       const pin = pendingPin;
       if (pin !== null && pin.pointerId === pointerId) {
         pendingPin = null;
@@ -285,7 +288,8 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
               item: { instance: current.instance, startGeometry: start, finalGeometry: finalRect },
               handle: "se",
               worldDelta: { x: 0, y: 0 },
-              reflow: shiftKey,
+              reflow: shiftKey && !altKey,
+              fit: altKey,
               startScale,
             },
             { capabilities },
@@ -380,7 +384,9 @@ export function attachIcePointerEditing(
     // One frame for ICE to settle the entity at its snapped box, then commit.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (point !== null) controller.pointerUp(event.pointerId, point, event.shiftKey);
+        if (point !== null) {
+          controller.pointerUp(event.pointerId, point, event.shiftKey, event.altKey);
+        }
       });
     });
   };

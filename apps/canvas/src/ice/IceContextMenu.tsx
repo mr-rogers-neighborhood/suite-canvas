@@ -23,14 +23,31 @@
  * and a double click on the ink (the gesture dispatches `SUITE_EDGE_LABEL_EVENT`
  * rather than opening a second editor).
  *
- * Deliberately absent: sections. The shared section entries never render on ICE
- * because no pick produces a section target. Connectors are supported end to
- * end — "Add connector" on a card, "Reposition Connector" and "Delete connector"
- * on the dot's own menu (the gesture hit-tests the dot, because ICE's card
- * carries no connector part), and the slide itself.
+ * ## What a `section` menu is here
+ *
+ * A Board is a container and the document's Section is its legacy reading
+ * (ADR-0039), so the shared builder's section branch is the Board menu — hence
+ * "Rename board" / "Delete board" (`sectionNoun`) — and its "Select N cards" row
+ * counts the Board's own placements (`boardMembership`), not an empty map.
+ * Selecting those cards goes through both halves of the selection: the store
+ * write the builder makes, and `selectCardsInIce`, so the engine's `Selected`
+ * set agrees with the store for the frame that follows.
+ *
+ * ## The second editor
+ *
+ * "Rename board" opens `BoardRenameInput` over the Board's name pill. The state
+ * is the shell's (`editingSectionId`), the field is mounted here beside the
+ * description editor, and the write is one `renameBoard`.
+ *
+ * Deliberately absent: the section-only entries (a section created on the plane).
+ * Connectors are supported end to end — "Add connector" on a card, "Reposition
+ * Connector" and "Delete connector" on the dot's own menu (the gesture
+ * hit-tests the dot, because ICE's card carries no connector part), and the
+ * slide itself: "Reposition Connector" arms the same connector a click on the
+ * dot arms, which is what the next press slides.
  */
 import type { EdgePath, LayerAction, WorkspaceDocument } from "@suite/graph";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { boardSizeForBounds } from "../canvas/boardSize";
 import { EdgeDescriptionInput } from "../canvas/EdgeDescriptionInput";
 import { boardBounds } from "../canvas/portalMiniature";
@@ -45,10 +62,12 @@ import {
   planEdgeLabel,
   workspaceWriter,
 } from "../ice/iceBridge";
-import { menuTargetFromPick } from "../ice/iceContextMenu";
+import { boardMembership, menuTargetFromPick } from "../ice/iceContextMenu";
 import { edgeLabelRequestOf, SUITE_EDGE_LABEL_EVENT } from "../ice/suiteEdgeLabelLayer";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { BoardRenameInput } from "./BoardRenameInput";
+import { selectCardsInIce } from "./iceSelectionCommand";
 
 /** What the surface must do after a menu action has written to the document. */
 export interface IceContextMenuActions {
@@ -92,7 +111,35 @@ export function IceContextMenu({
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const selectSection = useUiStore((state) => state.selectSection);
   const setEditingSection = useUiStore((state) => state.setEditingSection);
+  const editingSectionId = useUiStore((state) => state.editingSectionId);
   const requestShare = useUiStore((state) => state.requestShare);
+
+  /**
+   * The Board's real membership: the Board a card is placed on. This is the map
+   * the shared builder counts "Select N cards" from and unplaces through, and
+   * ICE used to hand it an empty one — which is why the row always read zero.
+   */
+  const membership = useMemo(() => boardMembership(snapshot.placements), [snapshot.placements]);
+
+  /**
+   * The Board being renamed, read back from the snapshot so the field opens on
+   * the current name (a peer may have renamed it since the menu opened).
+   */
+  const renaming = useMemo(() => {
+    if (editingSectionId === null) return null;
+    return snapshot.boards.find((board) => board.id === editingSectionId) ?? null;
+  }, [editingSectionId, snapshot.boards]);
+
+  /**
+   * Where the rename field stands when the Board's pill cannot be measured.
+   * Captured while the menu is open, because the row closes it before the field
+   * mounts and the menu's point is the one the reader asked from.
+   */
+  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    if (contextMenu === null) return;
+    setMenuAnchor({ x: contextMenu.x, y: contextMenu.y });
+  }, [contextMenu]);
 
   /**
    * ICE entities are a projection, so any menu write has to be re-derived. The
@@ -277,11 +324,13 @@ export function IceContextMenu({
 
   const unplaceSelected = useCallback(() => {
     if (!canEditLayout) return;
+    // Each card leaves the Board it is actually on: inside an entered Board the
+    // root id would name no placement and the row would quietly do nothing.
     for (const id of useUiStore.getState().selectedNodeIds) {
-      workspace.unplaceCard(rootBoardId, id);
+      workspace.unplaceCard(membership.get(id) ?? rootBoardId, id);
     }
     setSelectedNodeIds([]);
-  }, [canEditLayout, rootBoardId, setSelectedNodeIds, workspace]);
+  }, [canEditLayout, membership, rootBoardId, setSelectedNodeIds, workspace]);
 
   const trashSelected = useCallback(() => {
     if (!canManageTrash) return;
@@ -290,6 +339,20 @@ export function IceContextMenu({
     }
     setSelectedNodeIds([]);
   }, [canManageTrash, setSelectedNodeIds, workspace]);
+
+  /**
+   * A Board's new name: one `renameBoard` write (the document trims and skips a
+   * no-op), then the projection re-derives the pill. The field is only reachable
+   * from the row, which is gated on layout rights.
+   */
+  const commitRename = useCallback(
+    (boardId: string, name: string) => {
+      if (canEditLayout) workspace.renameBoard(boardId, name);
+      setEditingSection(null);
+      reconcile();
+    },
+    [canEditLayout, reconcile, setEditingSection, workspace],
+  );
 
   const changeLayer = useCallback(
     (nodeId: string, action: LayerAction) => {
@@ -313,9 +376,12 @@ export function IceContextMenu({
     snapshot,
     activeBoardId: rootBoardId,
     selectedNodeIds,
-    // No section layer on ICE: no card belongs to a section, and the section
-    // entries never render because a pick never targets one.
-    sectionMembershipMap: EMPTY_MEMBERSHIP,
+    // A Board *is* the membership: the placement names the Board a card is on,
+    // so "Select N cards", "Remove from board" and the count all read the truth.
+    sectionMembershipMap: membership,
+    // The same selection, told to the engine so ICE's own `Selected` set agrees
+    // (the surface's mirror would otherwise disagree for a frame).
+    syncCardSelection: selectCardsInIce,
     setSelectedNodeIds,
     setSelectedConnector,
     selectSection,
@@ -343,18 +409,30 @@ export function IceContextMenu({
     changeLayer,
     changeLayerBulk,
     requestShare,
-    // No section layer on ICE, so the section entries are declined rather than
-    // offered for an action the surface cannot show. Connectors *are* offered:
-    // the dots are read from the document on every hover, so an added connector
-    // appears at once, and the gesture can slide and delete one.
+    // No *section* layer on ICE: a section is a Board, and a Board is drawn by
+    // its mat, so the section-only entries (a new section on the plane) are
+    // declined rather than offered for an action the surface cannot show.
+    // Connectors *are* offered: the dots are read from the document, so an added
+    // connector appears at once, and the gesture can slide and delete one.
     supportsSections: false,
     supportsConnectors: true,
+    // The frame a `section` menu opens on is a Board on this surface.
+    sectionNoun: "board",
   });
 
   return (
     <>
       {contextMenu === null ? null : (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} items={items} onClose={close} />
+      )}
+      {renaming === null ? null : (
+        <BoardRenameInput
+          boardId={renaming.id}
+          name={renaming.name}
+          fallback={menuAnchor}
+          onCommit={(name) => commitRename(renaming.id, name)}
+          onCancel={() => setEditingSection(null)}
+        />
       )}
       {description === null ? null : (
         <EdgeDescriptionInput
@@ -369,7 +447,6 @@ export function IceContextMenu({
   );
 }
 
-const EMPTY_MEMBERSHIP: ReadonlyMap<string, string> = new Map();
 const NOOP_POINT = (_point: { x: number; y: number }, _wrap?: boolean): void => {};
 
 /** Re-exported for the surface's own listener, which needs the same mapping. */

@@ -77,6 +77,14 @@ export interface CanvasMenuItemsInput {
    * surface that cannot show a connector must not offer to add one.
    */
   supportsConnectors?: boolean | undefined;
+  /**
+   * What a `section` context menu is called on this surface. A Board is the
+   * document's container and the derived Section is its legacy reading
+   * (ADR-0039), so the ICE surface — where a mat *is* a Board — says "board"
+   * and the rows read "Rename board" / "Delete board". Absent means "section",
+   * the shared vocabulary the state's `section` kind is named after.
+   */
+  sectionNoun?: "section" | "board" | undefined;
 }
 
 /**
@@ -104,6 +112,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
     supportsConnectors = true,
     canManageTrash,
     canManageLinks,
+    sectionNoun = "section",
     createNoteAt,
     createWhiteboardAt,
     createSectionAt,
@@ -205,8 +214,10 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
       .filter(([, id]) => id === sectionId)
       .map(([cardId]) => cardId);
     return [
+      // The row opens the surface's own name field (`editingSectionId`), which
+      // commits one `renameBoard` — never a prompt, and never a dead state flag.
       {
-        label: "Rename section",
+        label: `Rename ${sectionNoun}`,
         onSelect: () => setEditingSection(sectionId),
       },
       {
@@ -216,6 +227,9 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
           onSelect: () => workspace.setSectionColor(sectionId, color),
         })),
       },
+      // Membership comes from the caller: a Board's placements on ICE, the
+      // derived section map elsewhere. `syncCardSelection` is the surface's own
+      // selection path, so the engine's `Selected` set agrees with the store.
       {
         label: `Select ${memberIds.length} card${memberIds.length === 1 ? "" : "s"}`,
         onSelect: () => {
@@ -227,7 +241,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
       ...(canManageStructure
         ? [
             {
-              label: "Delete section",
+              label: `Delete ${sectionNoun}`,
               danger: true,
               onSelect: () => {
                 workspace.deleteSection(sectionId);
@@ -386,11 +400,15 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             },
           ]
         : []),
-      // Destructive entries stay last.
+      // Destructive entries stay last. Trashing is named for what it is: the
+      // card leaves the canvas but stays in the workspace's trash, which is a
+      // different act from "Remove from board" above it (and from the Delete
+      // key, which removes from the Board — the decision lives on the ICE
+      // surface's commands, `useIceBoardGesture`).
       ...(canManageTrash
         ? [
             {
-              label: "Delete cards",
+              label: `Move ${selection.noun} to trash`,
               danger: true,
               onSelect: () => trashSelected(),
             },
@@ -460,10 +478,17 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             ],
           },
           {
+            // The card's own Board, not the active one: a right-click inside an
+            // entered Board carries a card whose placement is on *that* Board,
+            // and unplacing from the root would be a silent no-op. The
+            // membership map is the same index "Select N cards" counts from.
             label: "Remove from board",
             onSelect: () => {
-              if (nodeId && activeBoardId) {
-                workspace.unplaceCard(activeBoardId, nodeId);
+              const boardId = nodeId
+                ? (sectionMembershipMap.get(nodeId) ?? activeBoardId)
+                : activeBoardId;
+              if (nodeId && boardId) {
+                workspace.unplaceCard(boardId, nodeId);
                 setSelectedNodeIds([]);
                 setSelectedConnector(null);
               }
@@ -474,7 +499,11 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
     ...(canManageTrash
       ? [
           {
-            label: "Delete card",
+            // Not "Delete card": the Delete key removes the card from its
+            // Board (the recoverable act above, decided in
+            // `useIceBoardGesture`). This row is the explicit, destructive one
+            // and says where the card goes.
+            label: "Move to trash",
             danger: true,
             onSelect: () => {
               if (nodeId) {
@@ -528,6 +557,7 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
     syncCardSelection,
     supportsSections,
     supportsConnectors,
+    sectionNoun,
   } = input;
 
   return useMemo(
@@ -552,6 +582,7 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
         canManageLinks,
         supportsSections,
         supportsConnectors,
+        sectionNoun,
         createNoteAt,
         createWhiteboardAt,
         createSectionAt,
@@ -590,6 +621,7 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
       canManageLinks,
       supportsSections,
       supportsConnectors,
+      sectionNoun,
       createNoteAt,
       createWhiteboardAt,
       createSectionAt,

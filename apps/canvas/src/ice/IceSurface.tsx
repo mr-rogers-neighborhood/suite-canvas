@@ -311,6 +311,9 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           commandsRef.current?.escape();
         },
       },
+      // Delete removes the card from its Board — recoverable, the card is still
+      // in the workspace — and Shift+Delete is the only key that trashes (the
+      // decision and its reasoning live in `useIceBoardGesture`'s commands).
       {
         key: "Backspace",
         run: () => {
@@ -321,6 +324,20 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         key: "Delete",
         run: () => {
           commandsRef.current?.deleteSelection();
+        },
+      },
+      {
+        key: "Backspace",
+        shift: true,
+        run: () => {
+          commandsRef.current?.trashSelection?.();
+        },
+      },
+      {
+        key: "Delete",
+        shift: true,
+        run: () => {
+          commandsRef.current?.trashSelection?.();
         },
       },
     ];

@@ -245,6 +245,29 @@ describe("useCanvasMenuItems section menu", () => {
     expect(input.selectSection).toHaveBeenCalledWith(null);
   });
 
+  it("speaks Board where the frame a mat draws is a Board", () => {
+    // The ICE surface sets `sectionNoun: "board"` — a mat is a Board, and a
+    // Section is only its legacy reading (ADR-0039).
+    const input = makeInput(sectionMenu, {
+      sectionNoun: "board",
+      sectionMembershipMap: new Map([
+        ["card-1", "section-1"],
+        ["card-2", "section-1"],
+      ]),
+    });
+    const items = renderMenu(input);
+
+    expect(labels(items)).toEqual(["Rename board", "Color", "Select 2 cards", "Delete board"]);
+
+    item(items, "Rename board").onSelect?.();
+    expect(input.setEditingSection).toHaveBeenCalledWith("section-1");
+  });
+
+  it("counts no members rather than inventing them", () => {
+    const items = renderMenu(makeInput(sectionMenu));
+    expect(labels(items)).toContain("Select 0 cards");
+  });
+
   it("keeps the destructive entry behind the structure capability", () => {
     const items = renderMenu(makeInput(sectionMenu, { canManageStructure: false }));
     expect(labels(items)).not.toContain("Delete section");
@@ -332,7 +355,11 @@ describe("useCanvasMenuItems connector menu", () => {
     connectorId: "connector-1",
   };
 
-  it("repositions and deletes the connector", () => {
+  it("arms a connector for the slide, and deletes one", () => {
+    // "Reposition Connector" is not a gesture of its own: it puts the same
+    // `selectedConnector` a click on the dot puts, which is the state the link
+    // gesture's pointer-down reads to slide that dot. Nothing is written here —
+    // the slide commits on release.
     const workspace = makeWorkspace();
     const input = makeInput(connectorMenu, { workspace });
     const items = renderMenu(input);
@@ -344,6 +371,7 @@ describe("useCanvasMenuItems connector menu", () => {
       nodeId: "card-1",
       connectorId: "connector-1",
     });
+    expect(workspace.removeConnector).not.toHaveBeenCalled();
 
     item(items, "Delete connector").onSelect?.();
     expect(workspace.removeConnector).toHaveBeenCalledWith("card-1", "connector-1");
@@ -375,7 +403,7 @@ describe("useCanvasMenuItems card menus", () => {
       "Position",
       "Remove from board",
       "Share 2 cards…",
-      "Delete cards",
+      "Move 2 cards to trash",
     ]);
 
     item(items, "Duplicate 2 cards").onSelect?.();
@@ -395,7 +423,7 @@ describe("useCanvasMenuItems card menus", () => {
     item(items, "Share 2 cards…").onSelect?.();
     expect(input.requestShare).toHaveBeenCalledWith("selection");
 
-    item(items, "Delete cards").onSelect?.();
+    item(items, "Move 2 cards to trash").onSelect?.();
     expect(input.trashSelected).toHaveBeenCalledTimes(1);
   });
 
@@ -410,7 +438,7 @@ describe("useCanvasMenuItems card menus", () => {
       "Add connector",
       "Position",
       "Remove from board",
-      "Delete card",
+      "Move to trash",
     ]);
 
     item(items, "Duplicate").onSelect?.();
@@ -434,10 +462,25 @@ describe("useCanvasMenuItems card menus", () => {
     expect(input.setSelectedNodeIds).toHaveBeenCalledWith([]);
     expect(input.setSelectedConnector).toHaveBeenCalledWith(null);
 
-    item(items, "Delete card").onSelect?.();
+    item(items, "Move to trash").onSelect?.();
     expect(workspace.trashCard).toHaveBeenCalledWith("card-1");
     expect(input.setSelectedNodeIds).toHaveBeenCalledWith([]);
     expect(input.setSelectedConnector).toHaveBeenCalledWith(null);
+  });
+
+  it("removes a card from the Board it is actually on", () => {
+    // Inside an entered Board the active id is the Board the camera is in, but
+    // the membership is the authority: a card dropped into a nested Board is
+    // unplaced from *that* Board, or the row would quietly do nothing.
+    const workspace = makeWorkspace();
+    const input = makeInput(cardMenu, {
+      workspace,
+      selectedNodeIds: ["card-1"],
+      sectionMembershipMap: new Map([["card-1", "board-nested"]]),
+    });
+
+    item(renderMenu(input), "Remove from board").onSelect?.();
+    expect(workspace.unplaceCard).toHaveBeenCalledWith("board-nested", "card-1");
   });
 
   it("drops destructive and share entries a viewer could not complete", () => {

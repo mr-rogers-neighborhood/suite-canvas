@@ -137,13 +137,22 @@ interface UiState extends SessionCapabilities {
   selectedEdgeIds: string[];
   /** Section selected on the active board, if any. */
   selectedSectionId: string | null;
-  /** Section whose title input is open for renaming. */
+  /**
+   * The Board whose name field is open for renaming. A Board is the document's
+   * container and the derived Section is its legacy reading (ADR-0039), so this
+   * id is a Board id: on the canvas the field is laid over the mat's name pill
+   * (`BoardRenameInput`), and committing it is one `renameBoard`.
+   */
   editingSectionId: string | null;
   editingNodeId: string | null;
   /** Which editor on the card has focus; titles come first for new cards. */
   editingField: "title" | "body";
   editingSurface: EditingSurface;
-  /** Card or section a surface asked to reveal; consumed once by the canvas. */
+  /**
+   * Card or Board a surface asked to reveal; consumed once by the canvas —
+   * `useIceBoardGesture` enters the Boards it is nested in and flies the camera
+   * to its box (`iceReveal.ts`), then clears it.
+   */
   focusTarget: FocusTarget | null;
   /** Card whose inspector panel is open, if any. */
   inspectorNodeId: string | null;

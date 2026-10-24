@@ -122,6 +122,26 @@ export function connectorIdFromPart(part: string | undefined): string | null {
 }
 
 /**
+ * A card id → the Board it is placed on, for a Board's "Select N cards" row.
+ *
+ * The menu builder used to be handed this map by the flow surface's section
+ * layer. That layer is gone and a Board *is* a container now, so the answer is
+ * the placement itself: the Board a card stands on is the Board it belongs to.
+ * A card placed more than once keeps the first placement — containment is a
+ * tree (ADR-0039), and a legacy second placement must not make the count
+ * disagree with the row it labels.
+ */
+export function boardMembership(
+  placements: readonly { readonly boardId: string; readonly cardId: string }[],
+): ReadonlyMap<string, string> {
+  const membership = new Map<string, string>();
+  for (const placement of placements) {
+    if (!membership.has(placement.cardId)) membership.set(placement.cardId, placement.boardId);
+  }
+  return membership;
+}
+
+/**
  * Resolve one pick to the menu target it belongs to.
  *
  * Lookup order is the precedence: connector part on a card, card, pin, Board
@@ -193,7 +213,7 @@ export type MenuSectionId =
   | "connectors"
   | "rename"
   | "color"
-  | "layer"
+  | "select"
   | "description"
   | "delete"
   | "reposition";
@@ -234,9 +254,12 @@ export const MENU_SECTIONS: Readonly<Record<MenuTargetKind, readonly MenuSection
     // Add connector.
     "connectors",
   ],
-  // A Board is a frame, so it offers exactly what a section offered.
-  board: ["rename", "color", "layer", "trash"],
-  section: ["rename", "color", "layer", "trash"],
+  // A Board is a frame, so it offers exactly what a section offered: the name
+  // (now consumed by the inline rename field), the colour, the member selection
+  // and the destructive removal. There is no layer section: a Board's depth is
+  // its containment, not a z on a shared plane.
+  board: ["rename", "color", "select", "trash"],
+  section: ["rename", "color", "select", "trash"],
   // A link offers two sections: its description (the label is drawn from
   // `edge.label`) and its removal (one planned `removeEdges`). Direction and
   // routing are entries inside those sections' menu, not sections of their own.

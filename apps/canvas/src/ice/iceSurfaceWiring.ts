@@ -27,7 +27,10 @@ import type { Phase } from "./iceSurfaceStatus";
 export interface IceCommands {
   undo(): void;
   redo(): void;
+  /** Delete/Backspace: remove the selection from the Board it is on. */
   deleteSelection(): void;
+  /** Shift+Delete: move the selection to the trash (the only destructive key). */
+  trashSelection?(): void;
   reconcile(): void;
   escape(): void;
   zoomBy(factor: number): void;
@@ -41,6 +44,15 @@ export interface IceOwned {
   gpu?: EngineGpu;
   clearCardRenderer?: (() => void) | undefined;
   edges?: EdgeSpawns | undefined;
+  /**
+   * The structural key of the Board tree the contents were seeded from
+   * (`iceBoardTree.ts`). The projection compares the document against it and
+   * asks for a rebuild when a Board was added, deleted, renamed, nested or
+   * moved — the one class of change the cheap reconcile cannot absorb.
+   */
+  structure?: string | null | undefined;
+  /** Rebuild the desk's contents from the document, keeping the reader's seat. */
+  reseed?: (() => void) | undefined;
 }
 
 export interface IceWiring {

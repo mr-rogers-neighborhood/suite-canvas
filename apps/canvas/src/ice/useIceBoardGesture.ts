@@ -24,14 +24,19 @@ import {
   createIceEditingController,
   currentFrameOf,
 } from "./iceEditingController";
-import { enteredPathOf } from "./iceEnteredPath";
+import { enteredPathOf, restoreEnteredPath } from "./iceEnteredPath";
 import { identitySlots, matBoardOf } from "./iceEntityIdentity";
+import { pinFocusPoint, revealCamera, revealPlan } from "./iceReveal";
+import { setIceSelectionCommand } from "./iceSelectionCommand";
 import type { IceCamera } from "./iceSurfaceCamera";
 import { entityAt, entityRectOf } from "./iceSurfaceShared";
 import type { IceCommands, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
 import { resolveSurface } from "./iceSurfaceWiring";
 import type { IceLinkGesture } from "./useIceLinkGesture";
 import type { IceProjection } from "./useIceProjection";
+
+/** Screen px a press may travel and still count as a click on a pin marker. */
+export const PIN_CLICK_SLOP_PX = 4;
 
 export function useIceBoardGesture(input: {
   readonly wiring: IceWiring;
@@ -51,6 +56,8 @@ export function useIceBoardGesture(input: {
 }): void {
   const { wiring, refs, projection, camera, link, commands, boardsRef } = input;
   const { portalDepth, portalFramesRef, setPortalPath, openWhiteboard } = input;
+  // The shell's one-shot "show me this" request; consumed by the reveal effect.
+  const focusTarget = useUiStore((state) => state.focusTarget);
 
   useEffect(() => {
     const { phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, caps, cameraApi } =
@@ -149,6 +156,31 @@ export function useIceBoardGesture(input: {
       ),
     });
 
+    /**
+     * The store and the engine both let go of the selection. Two writes because
+     * there are two owners: Suite owns *what* is selected, ICE owns the `Selected`
+     * tag it paints from (and mirrors back each frame).
+     */
+    const clearSelection = (): void => {
+      const store = useUiStore.getState();
+      const had =
+        store.selectedNodeIds.length > 0 ||
+        store.selectedEdgeIds.length > 0 ||
+        store.selectedSectionId !== null ||
+        store.selectedConnector !== null;
+      if (had) {
+        store.setSelectedNodeIds([]);
+        store.setSelectedEdgeIds([]);
+        store.selectSection(null);
+        store.setSelectedConnector(null);
+      }
+      try {
+        engine.ops.clearSelection();
+      } catch {
+        // A desk without a selection model has nothing to clear.
+      }
+    };
+
     commands.current = {
       undo: () => {
         liveWorkspace.undo();
@@ -158,11 +190,57 @@ export function useIceBoardGesture(input: {
         liveWorkspace.redo();
         projection.reconcile();
       },
+      /**
+       * PRODUCT DECISION — what Delete means here.
+       *
+       * A card is a document object with an inbox, so taking it off a Board is
+       * recoverable (the card is still in the workspace, still in the library,
+       * one drag from being placed again) and trashing it is not. The flow
+       * surface got this right by accident of shape — Delete unplaced, and
+       * Shift+Delete was the explicit destructive key — and the ICE port
+       * inverted it. It is inverted back: **Delete/Backspace remove the
+       * selection from the Board it is on** (one `unplaceCard` per card, no
+       * trash, nothing lost), and **Shift+Delete is the only key that trashes**
+       * (`trashSelection`, below). The menu says the same thing in words:
+       * "Remove from board" and "Move to trash".
+       */
       deleteSelection: () => {
-        controller.deleteSelection(useUiStore.getState().selectedNodeIds);
+        const selected = useUiStore.getState().selectedNodeIds;
+        if (selected.length === 0) return;
+        // Unplace from the Board each card is actually on: the frame the camera
+        // is inside is the fallback, and a card inside a nested Board names its
+        // own placement through the seed.
+        const frameBoard = currentFrameOf(rootBoardId, portalFramesRef.current).boardId;
+        for (const cardId of selected) {
+          let boardId = frameBoard;
+          for (const [, slot] of seed.entitySlots) {
+            if (slot.cardId === cardId) {
+              boardId = slot.boardId;
+              break;
+            }
+          }
+          liveWorkspace.unplaceCard(boardId, cardId);
+        }
+        clearSelection();
+        projection.reconcile();
+      },
+      /** Shift+Delete: the explicit, destructive key. One planned delete write. */
+      trashSelection: () => {
+        const selected = useUiStore.getState().selectedNodeIds;
+        if (selected.length === 0) return;
+        controller.deleteSelection(selected);
+        clearSelection();
       },
       reconcile: projection.reconcile,
+      /**
+       * Escape is a ladder, innermost first: abandon the gesture that owns the
+       * pointer, leave the Board the camera is inside, and — with nothing else
+       * to exit — let go of the selection. A context menu or the full-canvas
+       * focus surface owns its own Escape, so this press is left to them.
+       */
       escape: () => {
+        const store = useUiStore.getState();
+        if (store.contextMenu !== null || store.cardFocusId !== null) return;
         // A link drag is the first thing Escape abandons: it owns the pointer.
         if (link.cancel()) return;
         // Escape is the return gesture: out of a mat before out of a gesture.
@@ -178,10 +256,34 @@ export function useIceBoardGesture(input: {
           return;
         }
         engine.ops.cancelActiveGestures();
+        clearSelection();
       },
       zoomBy: camera.zoomBy,
       fitView: projection.fitView,
     };
+
+    /**
+     * The shell's half of the selection: a menu row writes the store, and this
+     * makes ICE agree so the next frame's mirror does not disagree with it.
+     * Registered for `IceContextMenu`, which is a sibling component with no
+     * reference to this engine.
+     */
+    setIceSelectionCommand((cardIds) => {
+      const entities: Entity[] = [];
+      for (const cardId of cardIds) {
+        for (const [entity, slot] of slots) {
+          if (slot.cardId === cardId) {
+            entities.push(entity);
+            break;
+          }
+        }
+      }
+      try {
+        engine.ops.setSelection(entities);
+      } catch {
+        // A refused selection is repaired by the next pick; never a crash.
+      }
+    });
 
     const detach = attachIcePointerEditing(root, controller);
 
@@ -311,9 +413,52 @@ export function useIceBoardGesture(input: {
     };
     root.addEventListener("contextmenu", onContextMenu);
 
+    /**
+     * A pin marker is a place on the desk, and a click on one goes there. The
+     * marker is drawn by the GPU (`suite.pin`) with a screen-space label, so
+     * there is no DOM element to press: the pick says which pin was hit, and the
+     * document says where it is. Navigation only — the camera, never a write.
+     *
+     * A press that travelled is a pin *drag* (the controller moves it), not a
+     * click on it, so the pointer's start is kept and compared.
+     */
+    let pressedAt: { x: number; y: number } | null = null;
+    const onPinPointerDown = (event: PointerEvent): void => {
+      pressedAt = { x: event.clientX, y: event.clientY };
+    };
+    const onPinClick = (event: MouseEvent): void => {
+      const from = pressedAt;
+      pressedAt = null;
+      if (from === null || event.button !== 0) return;
+      if (Math.hypot(event.clientX - from.x, event.clientY - from.y) > PIN_CLICK_SLOP_PX) return;
+      const bounds = root.getBoundingClientRect();
+      let picked: Entity | null = null;
+      try {
+        picked =
+          desk.pick({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })?.entity ??
+          null;
+      } catch {
+        picked = null;
+      }
+      const point = pinFocusPoint({
+        entity: picked,
+        pinEntities: seed.pinEntities,
+        pinOf: (pinId) => liveWorkspace.getPin(pinId),
+      });
+      if (point === null) return;
+      // The shell already owns "go to this pin" from the library list; a marker
+      // click is the same request, so it rides the same one-shot.
+      useUiStore.getState().focusPinAt(point);
+    };
+    root.addEventListener("pointerdown", onPinPointerDown, true);
+    root.addEventListener("click", onPinClick);
+
     return () => {
       root.removeEventListener("dblclick", onDouble);
       root.removeEventListener("contextmenu", onContextMenu);
+      root.removeEventListener("pointerdown", onPinPointerDown, true);
+      root.removeEventListener("click", onPinClick);
+      setIceSelectionCommand(null);
       detach();
       controller.cancel();
       commands.current = null;
@@ -334,4 +479,89 @@ export function useIceBoardGesture(input: {
     setPortalPath,
     openWhiteboard,
   ]);
+
+  /**
+   * "Reveal this" from the shell — the inspector's focus action, a link to a
+   * card, a search result. `focusTarget` is one-shot (a nonce, so asking twice
+   * moves twice), and this is its only consumer on the canvas: the camera flies
+   * to the object, entering the Boards it is nested in on the way.
+   *
+   * A target the desk does not hold is cleared rather than chased: an inbox
+   * card, a trashed card or a Board a peer has not drawn yet has nothing to
+   * frame, and a reveal that silently does nothing is better than one that
+   * flies to a stale rectangle.
+   */
+  useEffect(() => {
+    if (focusTarget === null) return;
+    const { phase, seed, workspaceMode, liveWorkspace, rootBoardId, cameraApi, flyTo } = wiring;
+    if (phase.kind !== "ready" || seed === null || !workspaceMode) return;
+    if (liveWorkspace === null || rootBoardId === null || cameraApi === null) return;
+    const dom = resolveSurface(refs);
+    if (dom === null) return;
+    const { engine } = phase;
+    const store = useUiStore.getState();
+    const plan = revealPlan({
+      target: focusTarget,
+      rootBoardId,
+      mats: seed.boardMats,
+      slots: seed.entitySlots,
+    });
+    if (plan === null) {
+      store.clearFocusTarget();
+      return;
+    }
+
+    // Stand where the object lives: leave whatever Board is entered and walk the
+    // plan's chain, outermost first. A restore that cannot reach the frame means
+    // the object is not where the seed says it is, so the request is dropped.
+    const standing = (enteredPathOf(engine.world, seed.boardMats, rootBoardId) ?? []).map(
+      (frame) => frame.id,
+    );
+    if (standing.join("/") !== plan.path.join("/")) {
+      if (standing.length > 0) {
+        try {
+          engine.ops.exitTo(0, { transition: "none" });
+        } catch {
+          // A refused exit leaves the camera where it is; the check below says so.
+        }
+      }
+      restoreEnteredPath(engine, seed.boardMats, plan.path);
+      const adopted = enteredPathOf(engine.world, seed.boardMats, rootBoardId) ?? [];
+      portalDepth.current = adopted.length;
+      portalFramesRef.current = adopted;
+      setPortalPath(adopted.map((frame) => frame.name));
+      if (adopted.map((frame) => frame.id).join("/") !== plan.path.join("/")) {
+        store.clearFocusTarget();
+        return;
+      }
+    }
+
+    // The box is read in the frame the camera is inside now: geometry is
+    // frame-local, exactly as a gesture measures it.
+    let geometry:
+      | { centre?: readonly [number, number]; half?: readonly [number, number] }
+      | undefined;
+    try {
+      geometry = dom.desk.geometryOf(plan.entity) as typeof geometry;
+    } catch {
+      geometry = undefined;
+    }
+    if (geometry?.centre === undefined || geometry.half === undefined) {
+      store.clearFocusTarget();
+      return;
+    }
+    const halfWidth = Math.abs(geometry.half[0]);
+    const halfHeight = Math.abs(geometry.half[1]);
+    const camera = revealCamera({
+      rect: {
+        x: geometry.centre[0] - halfWidth,
+        y: geometry.centre[1] - halfHeight,
+        width: halfWidth * 2,
+        height: halfHeight * 2,
+      },
+      viewport: cameraApi.viewportOf(),
+    });
+    if (camera !== null) flyTo(camera);
+    store.clearFocusTarget();
+  }, [focusTarget, wiring, refs, portalDepth, portalFramesRef, setPortalPath]);
 }

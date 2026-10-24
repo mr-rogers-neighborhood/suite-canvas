@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  boardMembership,
   CONNECTOR_PART_PREFIX,
   connectorIdFromPart,
   contextMenuStateFor,
@@ -310,6 +311,34 @@ describe("contextMenuStateFor", () => {
   });
 });
 
+describe("boardMembership", () => {
+  it("indexes each card by the Board it is placed on", () => {
+    const membership = boardMembership([
+      { cardId: "card-1", boardId: "board-1" },
+      { cardId: "card-2", boardId: "board-2" },
+    ]);
+    expect([...membership]).toEqual([
+      ["card-1", "board-1"],
+      ["card-2", "board-2"],
+    ]);
+  });
+
+  it("keeps the first placement of a card placed twice", () => {
+    // Containment is a tree (ADR-0039); a legacy second placement must not make
+    // "Select N cards" disagree with the Board it names.
+    const membership = boardMembership([
+      { cardId: "card-1", boardId: "board-1" },
+      { cardId: "card-1", boardId: "board-2" },
+    ]);
+    expect(membership.get("card-1")).toBe("board-1");
+    expect(membership.size).toBe(1);
+  });
+
+  it("is empty when nothing is placed", () => {
+    expect(boardMembership([]).size).toBe(0);
+  });
+});
+
 describe("menuItemsAvailable", () => {
   const targetOf = (kind: MenuTarget["kind"]): MenuTarget => ({ kind, boardId: "board-1" });
 
@@ -342,7 +371,7 @@ describe("menuItemsAvailable", () => {
     expect(menuItemsAvailable(targetOf("section"))).toEqual([
       "rename",
       "color",
-      "layer",
+      "select",
       "trash",
     ] satisfies MenuSectionId[]);
   });
@@ -366,7 +395,12 @@ describe("menuItemsAvailable", () => {
   });
 
   it("offers the frame entries on a board mat", () => {
-    expect(menuItemsAvailable(targetOf("board"))).toEqual(["rename", "color", "layer", "trash"]);
+    expect(menuItemsAvailable(targetOf("board"))).toEqual([
+      "rename",
+      "color",
+      "select",
+      "trash",
+    ] satisfies MenuSectionId[]);
   });
 
   it("publishes the same table it serves", () => {

@@ -251,6 +251,10 @@ describe("createSuiteBoardFaceLayer", () => {
     expect(titles[0]?.textContent).toContain("Research");
     expect(titles[1]?.style.display).toBe("flex");
     expect(titles[1]?.textContent).toContain("Actors");
+    // The pill carries its Board's id: the inline rename field is placed by it,
+    // so renaming happens where the name already is (no dialog).
+    expect(titles[0]?.dataset.suiteBoardId).toBe(node().id);
+    expect(titles[1]?.dataset.suiteBoardId).toBe("board:2");
     // Selection is not what puts the name there, so it carries no count yet.
     for (const title of titles) {
       expect(title.dataset.selected).toBe("false");

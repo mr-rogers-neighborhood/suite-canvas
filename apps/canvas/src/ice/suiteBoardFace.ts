@@ -502,6 +502,10 @@ export function createSuiteBoardFaceLayer(
     const title = doc.createElement("div");
     title.className = TITLE_CLASS;
     title.dataset.testid = TITLE_CLASS;
+    // The pill is where a Board's name lives, so it is also where renaming it
+    // happens: `BoardRenameInput` lays its field over this box by id. Stamped
+    // once, on creation, and never rewritten — the name changes, not the key.
+    title.dataset.suiteBoardId = node.id;
     title.style.cssText =
       "position:absolute;display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;border-radius:6px;padding:0 6px;font:600 12px/16px ui-sans-serif,system-ui,sans-serif;";
 

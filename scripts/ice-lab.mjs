@@ -49,7 +49,9 @@ const CHROME_ARGS = [
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((arg) => arg.startsWith("--")));
-const name = args.find((arg) => !arg.startsWith("--")) ?? "links";
+// Every plain argument is a scenario, so a gate can name the whole set in one
+// run: `pnpm ice:lab camera editing links` stops at the first failure.
+const names = args.filter((arg) => !arg.startsWith("--"));
 const two = flags.has("--two");
 
 function stamp() {
@@ -170,7 +172,7 @@ function labUrl(search, workspace) {
   return `${DEV_URL}/?${query.toString()}`;
 }
 
-async function run() {
+async function runScenario(name) {
   await checkDevServer();
   const scenarioPath = join(SCENARIO_DIR, `${name}.mjs`);
   const scenario = (await import(pathToFileURL(scenarioPath).href)).default;
@@ -222,6 +224,16 @@ async function run() {
       if (step.fit === true) {
         await page.getByTestId("canvas-zoom-fit").click();
         await page.waitForTimeout(400);
+      }
+      if (step.clickTestId !== undefined) {
+        // A shell control is DOM, not desk: the Dock's new-Board item lives in
+        // its "+ New card" menu, so a step may name the clicks in order.
+        const targets = Array.isArray(step.clickTestId) ? step.clickTestId : [step.clickTestId];
+        for (const testId of targets) {
+          await page.getByTestId(testId).click();
+          await page.waitForTimeout(250);
+        }
+        report.steps.push({ step: label, clickedTestIds: targets });
       }
       if (step.clickCard !== undefined) {
         // A bare press selects; shift extends the selection, which is how a
@@ -515,6 +527,12 @@ async function run() {
   }
   if (report.peers !== undefined) console.log(`peers: ${JSON.stringify(report.peers)}`);
   console.log("ok");
+}
+
+async function run() {
+  for (const name of names.length > 0 ? names : ["links"]) {
+    await runScenario(name);
+  }
 }
 
 /** `"wait:engine: ready"` → `{ waitFor: "engine: ready" }`, `"wait:800"` → `{ wait: 800 }`. */

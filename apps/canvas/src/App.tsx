@@ -35,6 +35,7 @@ import {
   rememberWorkspaceName,
 } from "./session/workspaceName";
 import { rememberWorkspace } from "./session/workspaceTransfer";
+import { hydratePersistedUi, startPersistedUi } from "./store/persistedUi";
 import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
@@ -94,6 +95,18 @@ function WorkspaceShell({
   const snapshot = useWorkspaceSnapshot();
 
   countRender("shell");
+
+  /**
+   * The shell's own state — the inspector's subject, the drawer and its tab,
+   * the cards left expanded — is read before this render paints and written
+   * back as it changes. Document state never travels through it: the camera is
+   * the View's, and the selection belongs to the gesture that made it.
+   */
+  const [uiScope] = useState(() => {
+    hydratePersistedUi(workspaceId);
+    return workspaceId;
+  });
+  useEffect(() => startPersistedUi(uiScope), [uiScope]);
 
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);

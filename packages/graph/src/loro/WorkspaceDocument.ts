@@ -458,6 +458,72 @@ function readIdSet(value: unknown): string[] {
   return isMap(value) ? value.keys().sort() : [];
 }
 
+/**
+ * The Boards a View was left inside, read from the one string field they are
+ * stored in. Absent or unreadable means "on the plane", which is what every
+ * document written before the field existed says.
+ */
+function readViewPath(map: LoroMap): string[] | undefined {
+  const raw = readString(map, "cameraPath");
+  if (raw === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return undefined;
+    const path = normaliseViewPath(parsed);
+    return path.length === 0 ? undefined : path;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A camera that can be written back, or undefined for one the desk cannot use. */
+function restorableView(camera: ViewCamera): ViewCamera | undefined {
+  if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) return undefined;
+  if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) return undefined;
+  return { x: camera.x, y: camera.y, zoom: camera.zoom };
+}
+
+/** A usable portal path: non-empty ids, no repeats, bounded. */
+function normaliseViewPath(path: readonly unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of path) {
+    if (typeof entry !== "string" || entry.trim().length === 0) continue;
+    if (seen.has(entry)) continue;
+    seen.add(entry);
+    result.push(entry);
+    if (result.length === 32) break;
+  }
+  return result;
+}
+
+/** A second camera on the same row (the plane pose behind an entered Board). */
+function readViewCamera(map: LoroMap, key: string): ViewCamera | undefined {
+  const raw = readString(map, key);
+  if (raw === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const value = parsed as { x?: unknown; y?: unknown; zoom?: unknown };
+    if (typeof value.x !== "number" || typeof value.y !== "number") return undefined;
+    if (typeof value.zoom !== "number") return undefined;
+    if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) return undefined;
+    if (!Number.isFinite(value.zoom) || value.zoom <= 0) return undefined;
+    return { x: value.x, y: value.y, zoom: value.zoom };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stores the entered path beside the camera; the plane drops the field. */
+function writeViewPath(fields: LoroMap, path: readonly string[]): void {
+  if (path.length === 0) {
+    if (fields.get("cameraPath") !== undefined) fields.delete("cameraPath");
+    return;
+  }
+  fields.set("cameraPath", JSON.stringify(path));
+}
+
 /** Rewrites a membership map to exactly `ids`, leaving shared keys untouched. */
 function writeIdSet(target: LoroMap, ids: readonly string[]): void {
   const wanted = new Set(ids);
@@ -1222,6 +1288,9 @@ export class WorkspaceDocument {
     if (cached) return cached;
     const value = this.views.get(id);
     if (!isMap(value)) return undefined;
+    const path = readViewPath(value);
+    const cameraStored = readBoolean(value, "cameraStored");
+    const returnCamera = readViewCamera(value, "cameraReturn");
     const parsed = viewSchema.safeParse({
       id,
       name: readString(value, "name") ?? "View",
@@ -1230,6 +1299,10 @@ export class WorkspaceDocument {
         y: readNumber(value, "cameraY") ?? DEFAULT_VIEW_CAMERA.y,
         zoom: readNumber(value, "cameraZoom") ?? DEFAULT_VIEW_CAMERA.zoom,
       },
+      // Older documents carry neither field; both read as "not written yet".
+      ...(cameraStored === undefined ? {} : { cameraStored }),
+      ...(path === undefined ? {} : { path }),
+      ...(returnCamera === undefined ? {} : { returnCamera }),
       createdAt: readNumber(value, "createdAt") ?? 0,
       updatedAt: readNumber(value, "updatedAt") ?? 0,
     });
@@ -1291,26 +1364,58 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}rename-view`);
   }
 
-  /** Remembers where the camera was; one write per gesture, one commit. */
-  setViewCamera(id: string, camera: ViewCamera): void {
+  /**
+   * Remembers where the camera was, and which Boards were entered above it, so
+   * the next mount can stand in the same place; one write per settle, one
+   * commit. A camera and path that did not move writes nothing, so a settle
+   * that only re-read the engine costs no commit.
+   */
+  setViewCamera(
+    id: string,
+    camera: ViewCamera,
+    path: readonly string[] = [],
+    returnCamera?: ViewCamera | null,
+  ): void {
     const view = this.getView(id);
     if (!view) return;
     if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) return;
     if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) return;
-    if (
-      view.camera.x === camera.x &&
-      view.camera.y === camera.y &&
-      view.camera.zoom === camera.zoom
-    ) {
-      return;
-    }
+    const entered = normaliseViewPath(path);
+    const held = view.path ?? [];
+    const back =
+      returnCamera === undefined || returnCamera === null
+        ? undefined
+        : restorableView(returnCamera);
+    const sameCamera =
+      view.camera.x === camera.x && view.camera.y === camera.y && view.camera.zoom === camera.zoom;
+    const samePath =
+      held.length === entered.length && held.every((boardId, index) => boardId === entered[index]);
+    const sameReturn =
+      back === undefined ||
+      (view.returnCamera !== undefined &&
+        view.returnCamera.x === back.x &&
+        view.returnCamera.y === back.y &&
+        view.returnCamera.zoom === back.zoom);
+    if (view.cameraStored === true && sameCamera && samePath && sameReturn) return;
     const fields = this.views.get(id);
     if (!isMap(fields)) return;
     fields.set("cameraX", camera.x);
     fields.set("cameraY", camera.y);
     fields.set("cameraZoom", camera.zoom);
+    fields.set("cameraStored", true);
+    writeViewPath(fields, entered);
+    if (back !== undefined) fields.set("cameraReturn", JSON.stringify(back));
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}view-camera`);
+  }
+
+  /**
+   * True once a camera was settled into this View. A View that has never moved
+   * — and every View written before the flag existed — answers false, which is
+   * the surface's cue to fit its content instead of restoring a default camera.
+   */
+  hasStoredCamera(id: string): boolean {
+    return this.getView(id)?.cameraStored === true;
   }
 
   /**

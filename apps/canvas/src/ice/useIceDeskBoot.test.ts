@@ -59,6 +59,9 @@ const ice = vi.hoisted(() => {
 vi.mock("@vibecook/ice", () => ({
   acquireCompositorDevice: ice.acquireCompositorDevice,
   createCanvasEngine: ice.createCanvasEngine,
+  // The boot restores a View only when the document says it moved; the jsdom
+  // desk has no nav stack, so the camera is always read on the plane.
+  currentNavFrame: vi.fn(() => undefined),
 }));
 vi.mock("@vibecook/ice/desk", () => ({
   deskLayer: vi.fn(() => ({ status: () => ({ state: "ready" }) })),
@@ -125,8 +128,14 @@ function stubGpu(): void {
   });
 }
 
-/** The hook only hands the workspace to the seeded projection, which is mocked. */
-const workspace = {} as unknown as WorkspaceDocument;
+/**
+ * The hook hands the workspace to the seeded projection, which is mocked, and
+ * reads one View from it to decide whether a camera is restored.
+ */
+const workspace = {
+  getView: () => undefined,
+  hasStoredCamera: () => false,
+} as unknown as WorkspaceDocument;
 
 function bootHook(root: string) {
   return renderHook(

@@ -62,6 +62,25 @@ export const viewSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
   camera: viewCameraSchema,
+  /**
+   * True once a camera was settled into the document. Absent on a View that has
+   * never moved — and on every View written before the field existed — so the
+   * surface knows to fit rather than restore `{x: 0, y: 0, zoom: 1}`, which is
+   * also the fallback for a document that predates the flag.
+   */
+  cameraStored: z.boolean().optional(),
+  /**
+   * The Boards entered above the View's plane, outermost first, kept beside the
+   * camera so a reload inside a Board reopens inside it. Additive: absent means
+   * "on the plane", which is what every older document reads as.
+   */
+  path: z.array(entityIdSchema).optional(),
+  /**
+   * The camera the reader left the plane with, so Escape after a reload returns
+   * to the frame they came from rather than to whatever a fresh desk boots at.
+   * Only meaningful with a non-empty `path`.
+   */
+  returnCamera: viewCameraSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

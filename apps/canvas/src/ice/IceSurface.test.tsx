@@ -165,6 +165,9 @@ vi.mock("@vibecook/ice", () => ({
   createCanvasEngine: ice.createCanvasEngine,
   selectedEntities: vi.fn(() => []),
   writeRuntimeResource: ice.writeRuntimeResource,
+  // The surface asks ICE which Board the camera is inside when it remembers
+  // the View's camera; the jsdom desk has no nav stack, so it is on the plane.
+  currentNavFrame: vi.fn(() => undefined),
 }));
 vi.mock("@vibecook/ice/desk", () => ({
   deskLayer: ice.deskLayer,

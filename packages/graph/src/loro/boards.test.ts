@@ -1,3 +1,4 @@
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { WorkspaceDocument } from "./WorkspaceDocument.js";
 
@@ -168,6 +169,63 @@ describe("views", () => {
     });
     workspace.setViewCamera(view.id, { x: -240, y: 96, zoom: 1.5 });
     expect(commits).toBe(0);
+  });
+
+  it("should round-trip the entered Board path with the camera", () => {
+    const { workspace, home } = setup();
+    const board = workspace.createBoard({ name: "Holder", parentBoardId: home.id });
+
+    workspace.setViewCamera(home.id, { x: 12, y: 34, zoom: 0.75 }, [board.id], {
+      x: -5,
+      y: -6,
+      zoom: 1.5,
+    });
+
+    expect(workspace.getView(home.id)?.camera).toEqual({ x: 12, y: 34, zoom: 0.75 });
+    expect(workspace.getView(home.id)?.path).toEqual([board.id]);
+    expect(workspace.getView(home.id)?.returnCamera).toEqual({ x: -5, y: -6, zoom: 1.5 });
+    expect(workspace.hasStoredCamera(home.id)).toBe(true);
+
+    // The path alone is a change worth one commit — and only one.
+    let commits = 0;
+    workspace.doc.subscribe(() => {
+      commits += 1;
+    });
+    workspace.setViewCamera(home.id, { x: 12, y: 34, zoom: 0.75 });
+    expect(commits).toBe(1);
+    expect(workspace.getView(home.id)?.path).toBeUndefined();
+    // Leaving the Board keeps the pose behind it: Escape still has somewhere
+    // to go after a reload.
+    expect(workspace.getView(home.id)?.returnCamera).toEqual({ x: -5, y: -6, zoom: 1.5 });
+
+    // Escape back home and stand still: nothing left to write.
+    workspace.setViewCamera(home.id, { x: 12, y: 34, zoom: 0.75 });
+    expect(commits).toBe(1);
+  });
+
+  it("should read a View written before the camera flags existed", () => {
+    const doc = new LoroDoc();
+    const fields = doc.getMap(WorkspaceDocument.BOARDS_KEY).ensureMergeableMap("legacy-view");
+    fields.set("name", "Atlas");
+    fields.set("createdAt", 1);
+    fields.set("updatedAt", 1);
+    const workspace = new WorkspaceDocument(doc);
+
+    expect(workspace.getView("legacy-view")).toMatchObject({
+      name: "Atlas",
+      camera: { x: 0, y: 0, zoom: 1 },
+    });
+    // Never moved: the surface fits rather than restoring the default camera.
+    expect(workspace.hasStoredCamera("legacy-view")).toBe(false);
+    expect(workspace.getView("legacy-view")?.path).toBeUndefined();
+  });
+
+  it("should ignore a portal path that cannot be drawn", () => {
+    const { workspace, home } = setup();
+
+    workspace.setViewCamera(home.id, { x: 0, y: 0, zoom: 1 }, ["  ", "holder", "holder", "goal"]);
+
+    expect(workspace.getView(home.id)?.path).toEqual(["holder", "goal"]);
   });
 
   it("should refuse a camera that cannot be drawn", () => {

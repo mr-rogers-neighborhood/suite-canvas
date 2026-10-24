@@ -52,10 +52,35 @@ export const FIT_MIN_ZOOM = 0.02;
 /** …and never closer than this, so a single small card does not fill the screen. */
 export const FIT_MAX_ZOOM = 4;
 
+/**
+ * ICE's own CameraLimits (`settings.zoom` on the desk): the band every camera
+ * path clamps to. A stored camera outside it cannot be written back — the
+ * engine would clamp it to a different framing — so a restore treats it as
+ * unusable and the View fits instead.
+ */
+export const ICE_MIN_ZOOM = 1e-8;
+export const ICE_MAX_ZOOM = 1e8;
+
 /** A usable zoom: the fit limits, with a non-positive request ignored. */
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) return FIT_MIN_ZOOM;
   return Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, zoom));
+}
+
+/**
+ * A camera read back from the document, when the desk can actually stand in it:
+ * finite, positively zoomed, and inside ICE's limits. Anything else returns
+ * `null`, which is the caller's cue to fit rather than jump somewhere wrong.
+ */
+export function restorableCamera(camera: {
+  readonly x: number;
+  readonly y: number;
+  readonly zoom: number;
+}): FlightCamera | null {
+  if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) return null;
+  if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) return null;
+  if (camera.zoom < ICE_MIN_ZOOM || camera.zoom > ICE_MAX_ZOOM) return null;
+  return { x: camera.x, y: camera.y, zoom: camera.zoom };
 }
 
 /** A stored extent when it is a real one, else the natural size. */

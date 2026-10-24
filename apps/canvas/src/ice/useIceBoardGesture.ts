@@ -24,6 +24,7 @@ import {
   createIceEditingController,
   currentFrameOf,
 } from "./iceEditingController";
+import { enteredPathOf } from "./iceEnteredPath";
 import { identitySlots, matBoardOf } from "./iceEntityIdentity";
 import type { IceCamera } from "./iceSurfaceCamera";
 import { entityAt, entityRectOf } from "./iceSurfaceShared";
@@ -62,6 +63,16 @@ export function useIceBoardGesture(input: {
 
     const { engine, core } = phase;
     const world = engine.world;
+    /**
+     * A reload inside a Board is restored into the engine by the boot, before
+     * the first paint. The path this hook keeps for Escape, the breadcrumb and
+     * the debug snapshot still starts empty, so adopt ICE's nav once here —
+     * entering again would reframe the camera the document just restored.
+     */
+    const adopted = enteredPathOf(world, seed.boardMats, rootBoardId) ?? [];
+    portalDepth.current = adopted.length;
+    portalFramesRef.current = adopted;
+    if (adopted.length > 0) setPortalPath(adopted.map((frame) => frame.name));
     // What this surface spawned, plus what a frame ICE built itself holds: a
     // press inside an entered Board lands on the latter, and the entity's own
     // face is what makes it a card there.

@@ -22,6 +22,8 @@ import type { DeskHandle } from "@vibecook/ice/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 import { useThemeStore } from "../theme/useThemeStore";
+import { restoreEnteredPath, storedViewStanding } from "./iceEnteredPath";
+import { worldOf } from "./iceSurfaceCamera";
 import { describeError, quietly } from "./iceSurfaceShared";
 import {
   type DemoMode,
@@ -122,6 +124,14 @@ export function useIceDeskBoot(input: {
     rootBoardId: string | null;
     mode: DemoMode;
   } | null>(null);
+  /** The seed the desk is showing, for the restore that runs before `ready`. */
+  const stagedReport = useRef<SeedReport | null>(null);
+  /**
+   * Whether the boot put the desk back where the View was left. The boot's own
+   * framing (`frameDemo`) must not run then: it would refit the content and
+   * throw the reader out of the frame the document restored.
+   */
+  const restoredView = useRef(false);
 
   /**
    * The desk's *contents*: the seed and the links, spawned into an engine. The
@@ -175,6 +185,7 @@ export function useIceDeskBoot(input: {
       owned.current = { ...owned.current, edges };
 
       staged.current = { engine, rootBoardId, mode };
+      stagedReport.current = report;
       setSeed(report);
     },
     [liveWorkspace, mode, rootBoardId],
@@ -197,6 +208,8 @@ export function useIceDeskBoot(input: {
     // The entities died with the engine; the next seed starts from nothing.
     seededEntities.current = [];
     staged.current = null;
+    stagedReport.current = null;
+    restoredView.current = false;
     edges?.dispose();
     clearCardRenderer?.();
     if (doc !== undefined) quietly(() => doc.close());
@@ -346,6 +359,48 @@ export function useIceDeskBoot(input: {
         // means "a desk with nothing on it".
         stageSeedRef.current(engine);
 
+        // Where the View was left, restored into this engine before `ready`
+        // publishes: entering the Boards it was inside and writing back the
+        // camera it held, so the first painted frame is already the right one.
+        // A View that never moved, a path a peer broke, or a camera the desk
+        // cannot stand in all fall back to the boot fit below.
+        restoredView.current = false;
+        const standing =
+          liveWorkspace === null ? null : storedViewStanding(liveWorkspace, rootBoardId);
+        const report = stagedReport.current;
+        const world = worldOf(engine);
+        if (standing !== null && report !== null && world !== undefined) {
+          // The pose Escape should return to is the one the reader left the
+          // plane with; writing it before entering makes ICE save it on the nav
+          // entry, exactly as the in-session double-click would have.
+          if (standing.returnCamera !== null) {
+            quietly(() =>
+              core.writeRuntimeResource(world, core.Camera, {
+                ...standing.returnCamera,
+                gesturing: false,
+              }),
+            );
+          }
+          // Only when every level was entered does the camera belong to the
+          // frame the reader is now in; a broken path falls back to the fit.
+          if (restoreEnteredPath(engine, report.boardMats, standing.path)) {
+            try {
+              core.writeRuntimeResource(world, core.Camera, {
+                ...standing.camera,
+                gesturing: false,
+              });
+              restoredView.current = true;
+            } catch {
+              // A desk that cannot take the camera yet fits instead.
+              restoredView.current = false;
+            }
+          } else if (engine.nav.depth() > 0) {
+            // A path a peer broke must not strand the reader in a partial
+            // frame: walk back to the plane, where the fit can frame the View.
+            quietly(() => engine.ops.exitTo(0, { transition: "none" }));
+          }
+        }
+
         setPhase({
           kind: "ready",
           adapter: deviceAdapter ?? adapter,
@@ -433,7 +488,9 @@ export function useIceDeskBoot(input: {
       let active = true;
       let framing = false;
       const frameDemo = (): void => {
-        if (framing) return;
+        // A restored View is already framed: fitting now would move a reader
+        // who reloaded back to where the document says they were standing.
+        if (framing || restoredView.current) return;
         framing = true;
         pendingFit.current = setTimeout(() => {
           pendingFit.current = undefined;

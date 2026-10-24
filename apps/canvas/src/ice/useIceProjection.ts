@@ -25,6 +25,7 @@ import { entityRectOf } from "./iceSurfaceShared";
 import type { IceCommands, IceOwned, IceWiring } from "./iceSurfaceWiring";
 import { cardFit } from "./suiteCardFit";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
+import { useIceCameraPersist } from "./useIceCameraPersist";
 
 export interface IceProjection {
   /** Bring the desk in line with the document: cards, links and the selection. */
@@ -47,6 +48,7 @@ export function useIceProjection(input: {
   readonly owned: RefObject<IceOwned>;
 }): IceProjection {
   const { wiring, snapshot, commands, owned } = input;
+  useIceCameraPersist(wiring);
   const reconcileRef = useRef<(() => void) | null>(null);
   const fitViewRef = useRef<(() => void) | null>(null);
 

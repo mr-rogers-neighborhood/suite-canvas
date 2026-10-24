@@ -55,11 +55,11 @@ describe("suite.board kind", () => {
     expect(SUITE_BOARD_SIZE).toEqual({ w: 640, h: 480 });
   });
 
-  it("should be selectable and movable, never resized, snapped both ways", () => {
+  it("should be selectable, movable and resizable, snapped both ways", () => {
     expect(SUITE_BOARD_INTERACTION).toEqual({
       selectable: true,
       movable: true,
-      resizable: false,
+      resizable: true,
       snap: "both",
       drop: "into",
     });

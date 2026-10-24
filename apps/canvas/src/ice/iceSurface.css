@@ -13,6 +13,20 @@
   height: 100%;
 }
 
+/*
+ * The screen-space layer host: peer presence and connector affordances. It is
+ * inert (pointer presses belong to ICE and to the surface's own hotspot test)
+ * and sits above the desk's GPU surface and the card overlays.
+ */
+.ice-surface__overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout style;
+}
+
 /* The calm states: checking, importing, no WebGPU, a failed boot. */
 
 .ice-surface__state {

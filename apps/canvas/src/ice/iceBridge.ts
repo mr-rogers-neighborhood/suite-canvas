@@ -647,7 +647,14 @@ export interface IceDeleteIntent {
 }
 
 export interface IceEdgeEnd {
+  /** A card id, or a Board id when `kind` says board. */
   readonly cardId: string;
+  /**
+   * What `cardId` names (ADR-0041). Absent means a card, so every existing
+   * caller reads unchanged; a Board end attaches to the frame's wall and names
+   * no connector.
+   */
+  readonly kind?: "card" | "board" | undefined;
   readonly connectorId?: string | undefined;
 }
 
@@ -716,6 +723,8 @@ export interface IceAddEdgeWrite {
   readonly boardId: string;
   readonly source: string;
   readonly target: string;
+  readonly sourceKind?: "board" | undefined;
+  readonly targetKind?: "board" | undefined;
   readonly sourceConnector?: string | undefined;
   readonly targetConnector?: string | undefined;
   readonly kind?: EdgeKind | undefined;
@@ -748,6 +757,8 @@ export type CanonicalWrite =
     }
   | { readonly kind: "moveSections"; readonly input: IceSectionMoveWrite }
   | { readonly kind: "resizeSection"; readonly sectionId: string; readonly geometry: Rect }
+  /** One Board frame's rect: a move and a resize of the same mat, in one write. */
+  | { readonly kind: "boardRect"; readonly boardId: string; readonly geometry: Rect }
   | { readonly kind: "addEdge"; readonly input: IceAddEdgeWrite }
   | { readonly kind: "removeEdges"; readonly edgeIds: readonly string[] };
 
@@ -771,6 +782,8 @@ export interface CanonicalWriter {
   trashCards(cardIds: readonly string[]): void;
   moveSections(input: IceSectionMoveWrite): void;
   updateSectionGeometry(sectionId: string, geometry: Rect): void;
+  /** A Board's frame: `x`/`y` are in its parent's frame. */
+  updateBoardRect(boardId: string, geometry: Rect): void;
   deleteSections(sectionIds: readonly string[]): void;
   addEdge(input: IceAddEdgeWrite): void;
   removeEdges(edgeIds: readonly string[]): void;
@@ -809,6 +822,9 @@ export function applyCanonicalWrite(writer: CanonicalWriter, write: CanonicalWri
       return;
     case "resizeSection":
       writer.updateSectionGeometry(write.sectionId, write.geometry);
+      return;
+    case "boardRect":
+      writer.updateBoardRect(write.boardId, write.geometry);
       return;
     case "addEdge":
       writer.addEdge(write.input);
@@ -1092,6 +1108,34 @@ export function planResizeCommit(intent: IceResizeIntent, context: IcePlanContex
   });
 }
 
+/** What a Board gesture resolved to: its rect before and after, in its parent's frame. */
+export interface IceBoardRectIntent {
+  readonly boardId: string;
+  readonly start: Rect;
+  readonly final: Rect;
+}
+
+/**
+ * Plans one Board frame commit. A mat is moved and resized by the same gesture —
+ * ICE reports one box either way — so both land in one write, and the frame is
+ * free to take any size above the document's floor.
+ */
+export function planBoardRectCommit(intent: IceBoardRectIntent, context: IcePlanContext): IcePlan {
+  if (!context.capabilities.write) return deniedPlan();
+  const { start, final } = intent;
+  if (![final.x, final.y, final.width, final.height].every((value) => Number.isFinite(value))) {
+    return skipPlan("invalid-transform");
+  }
+  const geometry = roundRectGeometry({
+    x: final.x,
+    y: final.y,
+    width: Math.max(ICE_MIN_SECTION_SIZE.width, final.width),
+    height: Math.max(ICE_MIN_SECTION_SIZE.height, final.height),
+  });
+  if (sameRect(geometry, start, planEpsilon(context))) return skipPlan("no-change");
+  return commitPlan({ kind: "boardRect", boardId: intent.boardId, geometry });
+}
+
 /**
  * Plans a section drag. The section and every member card it contains move in
  * one `moveSections` write, because membership is derived from geometry: moving
@@ -1255,6 +1299,8 @@ export function planEdgeCreate(intent: IceEdgeCreateIntent, context: IcePlanCont
       boardId: intent.boardId,
       source: intent.source.cardId,
       target: intent.target.cardId,
+      ...(intent.source.kind === "board" ? { sourceKind: "board" as const } : {}),
+      ...(intent.target.kind === "board" ? { targetKind: "board" as const } : {}),
       ...(intent.source.connectorId ? { sourceConnector: intent.source.connectorId } : {}),
       ...(intent.target.connectorId ? { targetConnector: intent.target.connectorId } : {}),
       ...(intent.edgeKind ? { kind: intent.edgeKind } : {}),
@@ -1601,11 +1647,17 @@ export interface WorkspaceDocumentLike {
     sectionId: string,
     rect: { x: number; y: number; width: number; height: number },
   ): void;
+  updateBoardRect(
+    boardId: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ): void;
   deleteSection(sectionId: string): void;
   addEdge(input: {
     boardId: string;
     source: string;
     target: string;
+    sourceKind?: "board";
+    targetKind?: "board";
     sourceConnector?: string;
     targetConnector?: string;
     kind?: EdgeKind;
@@ -1687,6 +1739,14 @@ export function workspaceWriter(doc: WorkspaceDocumentLike): CanonicalWriter {
         height: geometry.height,
       });
     },
+    updateBoardRect(boardId, geometry) {
+      doc.updateBoardRect(boardId, {
+        x: geometry.x,
+        y: geometry.y,
+        width: geometry.width,
+        height: geometry.height,
+      });
+    },
     deleteSections(sectionIds) {
       doc.batch(ICE_WRITE_ORIGIN, () => {
         for (const sectionId of sectionIds) doc.deleteSection(sectionId);
@@ -1697,6 +1757,8 @@ export function workspaceWriter(doc: WorkspaceDocumentLike): CanonicalWriter {
         boardId: input.boardId,
         source: input.source,
         target: input.target,
+        ...(input.sourceKind ? { sourceKind: input.sourceKind } : {}),
+        ...(input.targetKind ? { targetKind: input.targetKind } : {}),
         ...(input.sourceConnector ? { sourceConnector: input.sourceConnector } : {}),
         ...(input.targetConnector ? { targetConnector: input.targetConnector } : {}),
         ...(input.kind ? { kind: input.kind } : {}),

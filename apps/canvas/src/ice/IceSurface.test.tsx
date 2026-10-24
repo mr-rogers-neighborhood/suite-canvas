@@ -16,9 +16,14 @@ const ice = vi.hoisted(() => {
     current: { state: "ready" },
   };
   const unsubscribe = vi.fn();
+  const pick = vi.fn(
+    (_screen: { x: number; y: number }) =>
+      undefined as { entity: number; type: string } | undefined,
+  );
   const layer = {
     status: () => layerStatus.current,
     onStatus: vi.fn(() => unsubscribe),
+    pick,
   };
   const deskLayer = vi.fn(() => () => layer);
   const close = vi.fn();
@@ -40,9 +45,14 @@ const ice = vi.hoisted(() => {
     };
   });
   let entity = 0;
-  const spawn = (_type: string, _opts: unknown) => {
+  /** Every spawn, with the entity the mock handed back, for tests that pick one. */
+  const spawned: { type: string; entity: number }[] = [];
+  // The engine hands back an entity id, so the mock does too: the surface keys
+  // its card slots by it, and a picked entity must find its slot.
+  const spawn = (type: string, _opts: unknown) => {
     entity += 1;
-    return { entity };
+    spawned.push({ type, entity });
+    return entity;
   };
   const spawnWidget = vi.fn(spawn);
   const step = vi.fn();
@@ -54,6 +64,10 @@ const ice = vi.hoisted(() => {
   // on and then can assert the camera's destination.
   const Camera = { name: "Camera" };
   const Viewport = { name: "Viewport" };
+  const Position = { name: "Position" };
+  const Size = { name: "Size" };
+  /** Per-entity widget boxes, for the tests that need a pickable card. */
+  const rects = new Map<number, { x: number; y: number; w: number; h: number }>();
   const cameraWorld = {
     enabled: false,
     camera: { x: 100, y: 50, zoom: 1, gesturing: false },
@@ -71,7 +85,14 @@ const ice = vi.hoisted(() => {
       if (resource === Viewport) return cameraWorld.viewport;
       return undefined;
     },
-    read: () => undefined,
+    has: (entityId: number) => rects.has(entityId),
+    read: (entityId: number, component: unknown) => {
+      const rect = rects.get(entityId);
+      if (rect === undefined) return undefined;
+      if (component === Position) return { x: rect.x, y: rect.y };
+      if (component === Size) return { w: rect.w, h: rect.h };
+      return undefined;
+    },
   };
   const createCanvasEngine = vi.fn(() => ({
     docs: { create: () => ({ close }) },
@@ -85,6 +106,8 @@ const ice = vi.hoisted(() => {
   };
   return {
     Camera,
+    Position,
+    Size,
     Viewport,
     acquireCompositorDevice,
     cameraWorld,
@@ -100,7 +123,13 @@ const ice = vi.hoisted(() => {
     keymap,
     layer,
     layerStatus,
+    pick,
+    rects,
+    spawned,
     resetCamera: () => {
+      rects.clear();
+      pick.mockReset();
+      pick.mockReturnValue(undefined);
       cameraWorld.enabled = false;
       cameraWorld.camera = { x: 100, y: 50, zoom: 1, gesturing: false };
       cameraWorld.viewport = { w: 1200, h: 800, dpr: 1 };
@@ -108,6 +137,7 @@ const ice = vi.hoisted(() => {
     },
     resetSpawn: () => {
       entity = 0;
+      spawned.length = 0;
       spawnWidget.mockReset();
       spawnWidget.mockImplementation(spawn);
       setSelection.mockReset();
@@ -127,6 +157,10 @@ const ice = vi.hoisted(() => {
 vi.mock("@vibecook/ice", () => ({
   Camera: ice.Camera,
   Viewport: ice.Viewport,
+  // The presence layer reads a widget's own box once per sync; the mock world
+  // reports one only for the entities a test gave a rect.
+  Position: ice.Position,
+  Size: ice.Size,
   acquireCompositorDevice: ice.acquireCompositorDevice,
   createCanvasEngine: ice.createCanvasEngine,
   selectedEntities: vi.fn(() => []),
@@ -330,8 +364,8 @@ describe("IceSurface", () => {
       "desk.note",
     ]);
     // Both contained notes are frame-local children of the two mini mats.
-    expect(ice.spawnWidget.mock.calls[8]?.[1]).toMatchObject({ parent: { entity: 1 } });
-    expect(ice.spawnWidget.mock.calls[9]?.[1]).toMatchObject({ parent: { entity: 2 } });
+    expect(ice.spawnWidget.mock.calls[8]?.[1]).toMatchObject({ parent: 1 });
+    expect(ice.spawnWidget.mock.calls[9]?.[1]).toMatchObject({ parent: 2 });
     // Every seed is a batch write, never an undo step.
     expect(ice.spawnWidget.mock.calls.every(([, opts]) => opts !== undefined)).toBe(true);
     expect(
@@ -418,7 +452,7 @@ describe("IceSurface", () => {
     ice.spawnWidget.mockImplementation((type: string) => {
       if (type === "desk.board") throw new Error("no board today");
       next += 1;
-      return { entity: next };
+      return next;
     });
 
     render(<IceSurface />);
@@ -504,7 +538,7 @@ describe("IceSurface", () => {
     ice.spawnWidget.mockImplementation((type: string) => {
       if (type === "desk.notebook") throw new Error("the notebook was refused");
       next += 1;
-      return { entity: next };
+      return next;
     });
     const writeText = vi.fn((_text: string) => Promise.resolve());
     stubClipboard(writeText);
@@ -717,6 +751,94 @@ describe("IceSurface", () => {
       surface.dispatchEvent(aux);
     });
     expect(aux.defaultPrevented).toBe(true);
+  });
+
+  it("should draw one link when a connector is dragged onto another card", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureView();
+    const a = workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    const b = workspace.createCard({ boardId: board.id, position: { x: 500, y: 0 } });
+    ice.cameraWorld.enabled = true;
+    ice.cameraWorld.camera = { x: 0, y: 0, zoom: 1, gesturing: false };
+
+    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
+    await settled();
+
+    // The spawn order is the projection's, not the test's: the two cards the
+    // desk kept are the last two it spawned for them (a re-projection replaces).
+    const cards = ice.spawned
+      .filter((entry) => entry.type === "suite.card")
+      .map((entry) => entry.entity);
+    const aEntity = cards.at(-2) ?? 0;
+    const bEntity = cards.at(-1) ?? 0;
+    ice.rects.set(aEntity, { x: 0, y: 0, w: 288, h: 240 });
+    ice.rects.set(bEntity, { x: 500, y: 0, w: 288, h: 240 });
+    ice.pick.mockImplementation((screen: { x: number; y: number }) => {
+      if (screen.x <= 288 && screen.y <= 240) return { entity: aEntity, type: "suite.card" };
+      if (screen.x >= 500 && screen.x <= 788 && screen.y <= 240) {
+        return { entity: bEntity, type: "suite.card" };
+      }
+      return undefined;
+    });
+
+    const desk = screen.getByTestId("ice-desk-mock");
+    const reachedDesk = vi.fn();
+    desk.addEventListener("pointerdown", reachedDesk);
+
+    // Card a's east connector is at (288, 120) in world units, which the
+    // identity camera puts at the same screen point.
+    const down = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+      clientX: 288,
+      clientY: 120,
+      pointerId: 3,
+      isPrimary: true,
+    });
+    await act(async () => {
+      desk.dispatchEvent(down);
+    });
+    // The connector claimed the press: the desk never saw it, so no card moves.
+    expect(down.defaultPrevented).toBe(true);
+    expect(reachedDesk).not.toHaveBeenCalled();
+
+    const move = (clientX: number, clientY: number): void => {
+      desk.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX,
+          clientY,
+          pointerId: 3,
+        }),
+      );
+    };
+    await act(async () => {
+      move(400, 120);
+      move(500, 120);
+    });
+    await act(async () => {
+      desk.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: 500,
+          clientY: 120,
+          pointerId: 3,
+        }),
+      );
+    });
+
+    const edges = workspace.listEdges();
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ source: a.id, target: b.id, boardId: board.id });
+    // Both ends land on the connectors the drag started from and dropped on.
+    expect(edges[0]?.sourceConnector).toBeDefined();
+    expect(edges[0]?.targetConnector).toBeDefined();
   });
 
   it("should open the Suite demo directly when ?demo=suite is in the URL", async () => {

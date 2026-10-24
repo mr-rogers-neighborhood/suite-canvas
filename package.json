@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:ice": "node scripts/ice-chrome.mjs",
+    "ice:lab": "node e2e/scripts/with-display.mjs node ../scripts/ice-lab.mjs",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",

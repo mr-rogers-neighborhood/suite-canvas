@@ -125,6 +125,12 @@ export interface ConnectState {
 
 export const AWARENESS_FIELDS = {
   board: "board",
+  /**
+   * The deepest Board under the peer's pointer. `board` names what the peer is
+   * *looking at* (the View); this names what they are *in*, which a View cannot
+   * say because it flattens every Board into one plane.
+   */
+  boardOf: "boardOf",
   user: "user",
   pointer: "pointer",
   focus: "focus",
@@ -144,6 +150,12 @@ export interface PeerPresence {
   clientId: string;
   /** Board the peer is looking at; presence from other boards is ignored. */
   board: string | null;
+  /**
+   * The Board the peer's pointer is inside, or null on the plane. Attribution,
+   * not filtering: a peer in another Board of this View is still visible, and
+   * saying which Board they are in is the point.
+   */
+  boardOf: string | null;
   user: PresenceUser;
   pointer: PointerState | null;
   focus: FocusState | null;
@@ -174,4 +186,41 @@ export function peerIsInteracting(peer: PeerPresence): boolean {
       peer.labelDrag ||
       peer.selectionBox,
   );
+}
+
+/** `#rgb` / `#rrggbb` to channels; anything else is not a colour. */
+function parseHex(color: string): [number, number, number] | null {
+  const hex = color.trim().replace(/^#/, "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : hex;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+  return [0, 2, 4].map((start) => Number.parseInt(full.slice(start, start + 2), 16)) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+/**
+ * Presence colours are picked by people, so a chip cannot assume white ink:
+ * pick the side of the chip that clears 4.5:1 on whatever colour it was given.
+ * Lives here — not in the chip component — so a non-React surface (the ICE
+ * presence layer) can ink its chips the same way.
+ */
+export function presenceChipInk(color: string): string {
+  const rgb = parseHex(color);
+  if (!rgb) return "#ffffff";
+  const linear = (value: number) => {
+    const channel = value / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = rgb;
+  const luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  // 0.179 is where black and white text swap places for a 4.5:1 target.
+  return luminance > 0.179 ? "#1d1d1f" : "#ffffff";
 }

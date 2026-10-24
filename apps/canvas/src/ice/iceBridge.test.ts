@@ -91,6 +91,7 @@ function createWriter() {
     trashCards: vi.fn(),
     moveSections: vi.fn(),
     updateSectionGeometry: vi.fn(),
+    updateBoardRect: vi.fn(),
     deleteSections: vi.fn(),
     addEdge: vi.fn(),
     removeEdges: vi.fn(),

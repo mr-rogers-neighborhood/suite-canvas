@@ -38,3 +38,6 @@ stryker.log
 
 # Chrome profile the ICE launcher (`pnpm dev:ice`) owns.
 .ice-chrome-profile*/
+
+# Evidence folders the ICE lab (`pnpm ice:lab`) writes per run.
+e2e/artifacts/

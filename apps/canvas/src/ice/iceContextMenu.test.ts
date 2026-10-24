@@ -152,12 +152,12 @@ describe("contextMenuStateFor", () => {
       camera: CAMERA,
       target: { kind: "canvas", boardId: null },
     });
-    // screen (200, 100) → world ((200-100)/0.5, (100-50)/0.5).
+    // container-relative (200, 100) → world (200/0.5 + 100, 100/0.5 + 50).
     expect(state).toEqual({
       x: 240,
       y: 120,
       kind: "canvas",
-      flowPosition: { x: 200, y: 100 },
+      flowPosition: { x: 500, y: 250 },
     });
   });
 
@@ -220,7 +220,7 @@ describe("contextMenuStateFor", () => {
       y: 100,
       kind: "node",
       nodeId: "card-1",
-      flowPosition: { x: -80, y: 60 },
+      flowPosition: { x: 220, y: 210 },
     });
 
     expect(
@@ -239,7 +239,7 @@ describe("contextMenuStateFor", () => {
       kind: "connector",
       nodeId: "card-1",
       connectorId: "c-2",
-      flowPosition: { x: -80, y: 60 },
+      flowPosition: { x: 220, y: 210 },
     });
 
     expect(
@@ -252,7 +252,7 @@ describe("contextMenuStateFor", () => {
       y: 100,
       kind: "section",
       sectionId: "section-1",
-      flowPosition: { x: -80, y: 60 },
+      flowPosition: { x: 220, y: 210 },
     });
 
     expect(
@@ -265,7 +265,7 @@ describe("contextMenuStateFor", () => {
       y: 100,
       kind: "edge",
       edgeId: "edge-1",
-      flowPosition: { x: -80, y: 60 },
+      flowPosition: { x: 220, y: 210 },
     });
   });
 
@@ -276,7 +276,7 @@ describe("contextMenuStateFor", () => {
       target: { kind: "pin", pinId: "pin-1", boardId: null },
     });
 
-    expect(pin).toEqual({ x: 100, y: 100, kind: "canvas", flowPosition: { x: -80, y: 60 } });
+    expect(pin).toEqual({ x: 100, y: 100, kind: "canvas", flowPosition: { x: 220, y: 210 } });
     expect(pin.nodeId).toBeUndefined();
     expect(pin.sectionId).toBeUndefined();
   });
@@ -294,7 +294,7 @@ describe("contextMenuStateFor", () => {
       y: 100,
       kind: "section",
       sectionId: "board-nested",
-      flowPosition: { x: -80, y: 60 },
+      flowPosition: { x: 220, y: 210 },
     });
   });
 
@@ -306,7 +306,7 @@ describe("contextMenuStateFor", () => {
         camera: CAMERA,
         target: null,
       }),
-    ).toEqual({ x: 5, y: 6, kind: "canvas", flowPosition: { x: -270, y: -128 } });
+    ).toEqual({ x: 5, y: 6, kind: "canvas", flowPosition: { x: 30, y: 22 } });
   });
 });
 

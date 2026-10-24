@@ -19,6 +19,7 @@ function peer(patch: Partial<PeerPresence> = {}): PeerPresence {
   return {
     clientId: "peer-1",
     board: BOARD,
+    boardOf: null,
     user: { name: "Ada", color: "#f43f5e" },
     pointer: null,
     focus: null,
@@ -86,7 +87,7 @@ describe("projectPeerPresence", () => {
     });
 
     expect(frame.cursors).toEqual([
-      { peerId: "peer-1", name: "Ada", color: "#f43f5e", x: 100, y: 100 },
+      { peerId: "peer-1", name: "Ada", color: "#f43f5e", x: 100, y: 100, boardId: null },
     ]);
 
     const zoomedIn = projectPeerPresence({
@@ -111,7 +112,28 @@ describe("projectPeerPresence", () => {
     });
 
     expect(frame.cursors).toEqual([
-      { peerId: "peer-2", name: "Ada", color: "#f43f5e", x: 1000, y: 800 },
+      { peerId: "peer-2", name: "Ada", color: "#f43f5e", x: 1000, y: 800, boardId: null },
+    ]);
+  });
+
+  it("says which Board a peer's pointer is inside without hiding them", () => {
+    const frame = projectPeerPresence({
+      peers: peersOf(["peer-1", peer({ boardOf: "board-interviews", pointer: { x: 10, y: 20 } })]),
+      camera: CAMERA,
+      boardId: BOARD,
+      instances: [],
+    });
+
+    // Same View, so the peer still contributes; the Board is attribution.
+    expect(frame.cursors).toEqual([
+      {
+        peerId: "peer-1",
+        name: "Ada",
+        color: "#f43f5e",
+        x: 10,
+        y: 20,
+        boardId: "board-interviews",
+      },
     ]);
   });
 
@@ -328,6 +350,83 @@ describe("projectPeerPresence", () => {
     expect(projectPeerPresence({ peers: {}, camera: CAMERA, boardId: BOARD, instances: [] })).toBe(
       EMPTY_ICE_PRESENCE_FRAME,
     );
+  });
+
+  it("draws a peer's in-flight link from the connector it left", () => {
+    const frame = projectPeerPresence({
+      peers: peersOf([
+        "peer-1",
+        peer({
+          connect: {
+            nodeId: "card-1",
+            connectorId: "c-east",
+            anchorEnd: "source",
+            position: { x: 200, y: 120 },
+          },
+        }),
+      ]),
+      camera: CAMERA,
+      boardId: BOARD,
+      instances: [],
+      anchorOf: (cardId, connectorId) =>
+        cardId === "card-1" && connectorId === "c-east" ? { x: 50, y: 60 } : null,
+    });
+
+    expect(frame.links).toEqual([
+      {
+        peerId: "peer-1",
+        name: "Ada",
+        color: "#f43f5e",
+        from: { x: 50, y: 60 },
+        to: { x: 200, y: 120 },
+        compatible: false,
+      },
+    ]);
+  });
+
+  it("marks a link the peer has snapped to a compatible connector", () => {
+    const frame = projectPeerPresence({
+      peers: peersOf([
+        "peer-1",
+        peer({
+          connect: {
+            nodeId: "card-1",
+            connectorId: "c-east",
+            anchorEnd: "source",
+            position: { x: 10, y: 10 },
+            target: { nodeId: "card-2", connectorId: "c-west" },
+          },
+        }),
+      ]),
+      camera: CAMERA,
+      boardId: BOARD,
+      instances: [],
+      anchorOf: () => ({ x: 0, y: 0 }),
+    });
+    expect(frame.links[0]?.compatible).toBe(true);
+  });
+
+  it("draws no link when the surface cannot resolve the connector", () => {
+    const frame = projectPeerPresence({
+      peers: peersOf([
+        "peer-1",
+        peer({
+          connect: {
+            nodeId: "card-1",
+            connectorId: "c-east",
+            anchorEnd: "source",
+            position: { x: 10, y: 10 },
+          },
+        }),
+      ]),
+      camera: CAMERA,
+      boardId: BOARD,
+      instances: [],
+      anchorOf: () => null,
+    });
+    expect(frame.links).toEqual([]);
+    // No anchor, no preview: the frame is empty enough to share.
+    expect(frame).toBe(EMPTY_ICE_PRESENCE_FRAME);
   });
 
   it("ignores non-finite samples and refuses a broken camera", () => {

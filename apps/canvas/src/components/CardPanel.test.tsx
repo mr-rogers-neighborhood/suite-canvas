@@ -207,6 +207,7 @@ describe("CardPanel", () => {
         {
           clientId: "peer-a",
           board: "board-1",
+          boardOf: null,
           user: { name: "Nova", color: "#f97316" },
           pointer: null,
           focus: { nodeId: "n1", field: "body" },

@@ -109,6 +109,7 @@ function peer(
   return {
     clientId,
     board,
+    boardOf: null,
     user: { name, color: "#5b8def" },
     pointer: null,
     focus: focusNodeId === null ? null : { nodeId: focusNodeId, field: "body" },

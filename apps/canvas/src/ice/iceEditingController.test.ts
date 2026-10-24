@@ -32,6 +32,7 @@ function writer(): CanonicalWriter & { calls: unknown[] } {
     trashCards: record("trashCards"),
     moveSections: record("moveSections"),
     updateSectionGeometry: record("updateSectionGeometry"),
+    updateBoardRect: record("updateBoardRect"),
     deleteSections: record("deleteSections"),
     addEdge: record("addEdge"),
     removeEdges: record("removeEdges"),
@@ -127,6 +128,60 @@ describe("iceEditingController", () => {
       // next rung's threshold, so the card stays on the base kind.
       1,
     ]);
+  });
+
+  it("should commit a Board's frame once, in its parent's frame", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 7,
+      boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
+      frameOriginOf: () => ({ x: 1000, y: 2000 }),
+    });
+    boxes.set(7, { x: 1044, y: 2074, width: 816, height: 280 });
+    const start = inside({ x: 1044, y: 2074, width: 816, height: 280 });
+
+    controller.pointerDown(1, start);
+    // The mat was dragged and resized by the gesture: one frame, both parts.
+    boxes.set(7, { x: 1104, y: 2114, width: 936, height: 360 });
+    controller.pointerUp(1, start);
+
+    expect(canonical.calls).toEqual([
+      [
+        "updateBoardRect",
+        "board-a",
+        // World less the parent frame's origin — where the Board stores its rect.
+        { x: 104, y: 114, width: 936, height: 360 },
+      ],
+    ]);
+  });
+
+  it("should not write a Board that a gesture left where it was", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 7,
+      boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
+    });
+    boxes.set(7, { x: 44, y: 74, width: 816, height: 280 });
+    const start = inside({ x: 44, y: 74, width: 816, height: 280 });
+
+    controller.pointerDown(1, start);
+    controller.pointerUp(1, start);
+
+    expect(canonical.calls).toHaveLength(0);
+  });
+
+  it("should keep a Board above the document's floor however small the drag", () => {
+    const { controller, canonical, boxes } = harness({
+      pick: () => 7,
+      boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
+    });
+    boxes.set(7, { x: 44, y: 74, width: 816, height: 280 });
+    const start = inside({ x: 44, y: 74, width: 816, height: 280 });
+
+    controller.pointerDown(1, start);
+    boxes.set(7, { x: 44, y: 74, width: 12, height: 8 });
+    controller.pointerUp(1, start);
+
+    const call = canonical.calls[0] as unknown[];
+    expect(call).toMatchObject(["updateBoardRect", "board-a", { width: 80, height: 60 }]);
   });
 
   it("should write nothing for a viewer", () => {

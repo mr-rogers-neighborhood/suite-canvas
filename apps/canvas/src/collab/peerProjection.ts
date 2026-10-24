@@ -68,10 +68,17 @@ function toPresenceUser(state: Record<string, unknown>): PresenceUser {
   };
 }
 
+/** A peer's Board attribution: a non-empty id, or null for "on the plane". */
+function boardIdOf(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  return value;
+}
+
 export function toPeerPresence(clientId: string, state: Record<string, unknown>): PeerPresence {
   return {
     clientId,
     board: (state[AWARENESS_FIELDS.board] as string | undefined) ?? null,
+    boardOf: boardIdOf(state[AWARENESS_FIELDS.boardOf]),
     user: toPresenceUser(state),
     pointer: (state[AWARENESS_FIELDS.pointer] as PointerState | undefined) ?? null,
     focus: (state[AWARENESS_FIELDS.focus] as FocusState | undefined) ?? null,

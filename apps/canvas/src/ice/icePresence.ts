@@ -40,6 +40,12 @@ export interface IcePresenceInstance {
   /** Stable identity of the instance the surface drew (entity or portal key). */
   readonly instanceKey: string;
   readonly cardId: string;
+  /**
+   * The plane the instance is drawn on — the View, whose id is also the
+   * projection's `boardId` — not the Board that owns the card. A View flattens
+   * every nested Board into one plane, so this is the only value a ring filter
+   * can compare against.
+   */
   readonly boardId: string;
   /** The instance's box in board units. */
   readonly rect: Rect;
@@ -52,6 +58,12 @@ export interface IcePresenceCursor {
   readonly color: string;
   readonly x: number;
   readonly y: number;
+  /**
+   * The deepest Board under the peer's pointer, when it is inside one. The View
+   * in `boardId` decides whether the peer is visible at all; this only says
+   * which Board they are working in, and is painted as a suffix on the name.
+   */
+  readonly boardId: string | null;
 }
 
 /** A ring around one instance of a card a peer has selected. */
@@ -82,6 +94,17 @@ export interface IcePresenceMarquee {
   readonly rect: IceScreenRect;
 }
 
+/** A link a peer is dragging out of a connector, in container CSS px. */
+export interface IcePresenceLink {
+  readonly peerId: string;
+  readonly color: string;
+  readonly name: string;
+  readonly from: { readonly x: number; readonly y: number };
+  readonly to: { readonly x: number; readonly y: number };
+  /** True when the pointer is snapped to a connector that can take the link. */
+  readonly compatible: boolean;
+}
+
 /** Who has the caret in a card, resolved from `focus.nodeId`. */
 export interface IcePresenceEditor {
   readonly cardId: string;
@@ -98,6 +121,7 @@ export interface IcePresenceFrame {
   readonly rings: readonly IcePresenceRing[];
   readonly ghosts: readonly IcePresenceGhost[];
   readonly marquee: IcePresenceMarquee | null;
+  readonly links: readonly IcePresenceLink[];
   readonly editing: readonly IcePresenceEditor[];
 }
 
@@ -111,6 +135,12 @@ export interface IcePresenceInput {
   readonly instances: readonly IcePresenceInstance[];
   /** Screen-space clip in container CSS px. Absent, invalid or empty: no clip. */
   readonly viewport?: IceScreenRect | null | undefined;
+  /**
+   * A connector's world anchor, so a peer's in-flight link can be drawn from the
+   * connector it left. Absent: link previews are not projected (the surface has
+   * no document to resolve them against).
+   */
+  readonly anchorOf?: ((cardId: string, connectorId: string) => Point | null) | undefined;
 }
 
 /** Reused when there is nothing to paint, so a memoised frame stays identical. */
@@ -119,6 +149,7 @@ export const EMPTY_ICE_PRESENCE_FRAME: IcePresenceFrame = Object.freeze({
   rings: Object.freeze([]),
   ghosts: Object.freeze([]),
   marquee: null,
+  links: Object.freeze([]),
   editing: Object.freeze([]),
 });
 
@@ -209,7 +240,9 @@ function instancesOf(
  *   instance the delta cannot be derived, so nothing is drawn;
  * - `focus` becomes an editing entry for the card, never a caret;
  * - a marquee is a single slot: when several peers draw one, the lowest peer id
- *   wins so the paint order does not depend on store insertion order.
+ *   wins so the paint order does not depend on store insertion order;
+ * - a peer's in-flight link is a line from the connector it left to its pointer,
+ *   drawn only when the surface can resolve that connector (`anchorOf`).
  *
  * Non-finite samples drop out instead of poisoning a transform.
  */
@@ -223,6 +256,7 @@ export function projectPeerPresence(input: IcePresenceInput): IcePresenceFrame {
   const rings: IcePresenceRing[] = [];
   const ghosts: IcePresenceGhost[] = [];
   const marquees: IcePresenceMarquee[] = [];
+  const links: IcePresenceLink[] = [];
   const editors = new Map<
     string,
     { cardId: string; peers: IcePresenceEditor["peers"][number][] }
@@ -239,7 +273,14 @@ export function projectPeerPresence(input: IcePresenceInput): IcePresenceFrame {
     if (peer.pointer) {
       const point = projectPoint(peer.pointer, camera);
       if (point && viewportContainsPoint(viewport, point)) {
-        cursors.push({ peerId, name, color, x: point.x, y: point.y });
+        cursors.push({
+          peerId,
+          name,
+          color,
+          x: point.x,
+          y: point.y,
+          boardId: peer.boardOf,
+        });
       }
     }
 
@@ -300,6 +341,23 @@ export function projectPeerPresence(input: IcePresenceInput): IcePresenceFrame {
       }
     }
 
+    const connect = peer.connect;
+    if (connect && input.anchorOf) {
+      const anchor = input.anchorOf(connect.nodeId, connect.connectorId);
+      const from = anchor === null ? null : projectPoint(anchor, camera);
+      const to = projectPoint(connect.position, camera);
+      if (from && to) {
+        links.push({
+          peerId,
+          color,
+          name,
+          from,
+          to,
+          compatible: connect.target !== undefined,
+        });
+      }
+    }
+
     const focus = peer.focus;
     if (focus && focus.nodeId.length > 0) {
       const entry = editors.get(focus.nodeId) ?? { cardId: focus.nodeId, peers: [] };
@@ -315,7 +373,8 @@ export function projectPeerPresence(input: IcePresenceInput): IcePresenceFrame {
     rings.length === 0 &&
     ghosts.length === 0 &&
     editors.size === 0 &&
-    marquees.length === 0
+    marquees.length === 0 &&
+    links.length === 0
   ) {
     return EMPTY_ICE_PRESENCE_FRAME;
   }
@@ -325,6 +384,7 @@ export function projectPeerPresence(input: IcePresenceInput): IcePresenceFrame {
     rings,
     ghosts,
     marquee: marquees[0] ?? null,
+    links,
     editing: [...editors.values()],
   };
 }

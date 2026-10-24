@@ -96,6 +96,23 @@ describe("projectPeers", () => {
   });
 });
 
+describe("projectPeers board attribution", () => {
+  it("carries the deepest Board beside the View", () => {
+    const peers = project(1000, new Map(), { [AWARENESS_FIELDS.boardOf]: "b-nested" });
+    expect(peers[PEER]?.board).toBe("b1");
+    expect(peers[PEER]?.boardOf).toBe("b-nested");
+  });
+
+  it("reads a missing or malformed attribution as the plane", () => {
+    const missing = project(1000, new Map(), { [AWARENESS_FIELDS.boardOf]: undefined });
+    expect(missing[PEER]?.boardOf).toBeNull();
+    const blank = project(1000, new Map(), { [AWARENESS_FIELDS.boardOf]: "   " });
+    expect(blank[PEER]?.boardOf).toBeNull();
+    const wrongType = project(1000, new Map(), { [AWARENESS_FIELDS.boardOf]: 7 });
+    expect(wrongType[PEER]?.boardOf).toBeNull();
+  });
+});
+
 describe("projectPeers with a new-link drag", () => {
   const connectFrame = (x: number) => ({
     [AWARENESS_FIELDS.dragging]: undefined,

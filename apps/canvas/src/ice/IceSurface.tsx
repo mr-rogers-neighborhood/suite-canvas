@@ -45,7 +45,16 @@
  * the note bodies and diagnostics; the GPU shows their paper, the mini mats and
  * their chip LOD.
  */
-import { edgeFrameOf, type WorkspaceDocument } from "@suite/graph";
+import {
+  type Board,
+  boardDepth,
+  boardSideAnchor,
+  boardWorldRect,
+  edgeFrameOf,
+  type GraphEdge,
+  ownerBoardAt,
+  type WorkspaceDocument,
+} from "@suite/graph";
 import type {
   CanvasEngine,
   DocSession,
@@ -64,12 +73,14 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { isWhiteboardCard } from "../cards/whiteboard";
+import { usePresenceStore } from "../collab/usePresenceStore";
 import { CanvasZoomControls } from "../components/CanvasZoomControls";
 import { getSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
+import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { useThemeStore } from "../theme/useThemeStore";
 import { IceContextMenu } from "./IceContextMenu";
-import { workspaceWriter } from "./iceBridge";
+import { applyCanonicalWrite, planEdgeCreate, workspaceWriter } from "./iceBridge";
 import {
   type FlightCamera,
   type FlightPlan,
@@ -80,22 +91,49 @@ import {
 } from "./iceCameraFlight";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
+import {
+  buildIceDebugSnapshot,
+  type IceDebugEdge,
+  type IceDebugSlot,
+  publishIceDebug,
+  readIceOverlays,
+} from "./iceDebug";
 import { anchorWorld } from "./iceEdgeGeometry";
 import {
   attachIcePointerEditing,
   createIceEditingController,
   type IceEditableSlot,
 } from "./iceEditingController";
+import {
+  beginLinkDrag,
+  boardAnchors,
+  type ConnectorAnchor,
+  connectorAnchors,
+  connectorAt,
+  connectSample,
+  endLinkDrag,
+  type LinkDragState,
+  type LinkDragTarget,
+  linkHotspotRadius,
+  linkMinTravel,
+  moveLinkDrag,
+  nearestConnector,
+} from "./iceLinkDrag";
 import { beginMiddlePan, endMiddlePan, type MiddlePanState, updateMiddlePan } from "./iceMiddlePan";
-import { publishScreenCamera } from "./iceScreenToWorld";
+import type { IcePresenceInstance } from "./icePresence";
+import { marqueeSample, pointerSample, presenceRoleCaps, selectionSample } from "./icePresence";
+import { createIcePresenceLayer } from "./icePresenceLayer";
+import { beginPresencePress, presenceDragFor } from "./icePresencePress";
+import { publishScreenCamera, screenToWorld } from "./iceScreenToWorld";
 import { planCardLanding } from "./iceSelectionLanding";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
 import { cardFit } from "./suiteCardFit";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
+import { createSuiteConnectorLayer } from "./suiteConnectorLayer";
 import { applySuiteDeskLight, type SuiteLightDesk } from "./suiteDeskLight";
 import { applySuiteDeskTheme, type SuiteDeskSurface } from "./suiteDeskTheme";
-import { type SuiteEdgeLink, suiteEdgeSpawn } from "./suiteEdgeKind";
+import { type SuiteEdgeEnd, type SuiteEdgeLink, suiteEdgeSpawn } from "./suiteEdgeKind";
 import { SUITE_CARD_DOM_FACE, SUITE_PEN_FACES, suitePalette } from "./suitePen";
 import { buildSuiteSeed, projectWorkspaceToIce, spawnIceSuite } from "./suiteProjection";
 import "./iceSurface.css";
@@ -308,9 +346,11 @@ function fitCamera(bounds: FitRect, viewport: FlightViewport): FlightCamera {
       ? Math.min(width / Math.max(1, bounds.width), height / Math.max(1, bounds.height))
       : FIT_MIN_ZOOM;
   const zoom = clampZoom(fit);
+  // ICE's camera is the world point at the viewport's top-left:
+  // `screen = (world - camera) * zoom`.
   return {
-    x: viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
-    y: viewport.height / 2 - (bounds.y + bounds.height / 2) * zoom,
+    x: bounds.x + bounds.width / 2 - viewport.width / (2 * zoom),
+    y: bounds.y + bounds.height / 2 - viewport.height / (2 * zoom),
     zoom,
   };
 }
@@ -328,9 +368,9 @@ function zoomedCamera(
   if (!(camera.zoom > 0) || !Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
     return { ...camera, zoom: next };
   }
-  const worldX = (anchor.x - camera.x) / camera.zoom;
-  const worldY = (anchor.y - camera.y) / camera.zoom;
-  return { x: anchor.x - worldX * next, y: anchor.y - worldY * next, zoom: next };
+  const worldX = anchor.x / camera.zoom + camera.x;
+  const worldY = anchor.y / camera.zoom + camera.y;
+  return { x: worldX - anchor.x / next, y: worldY - anchor.y / next, zoom: next };
 }
 
 /**
@@ -782,77 +822,194 @@ function seedWorkspaceDocument(
  * drag moves its links with no document write per frame.
  */
 interface EdgeSpawns {
+  /**
+   * Bring the drawn links in line with the document: spawn a link that arrived
+   * (a peer drew one, or this seat did), drop one that left. The caller supplies
+   * the removal so a stale link disappears without eating the selection.
+   */
+  sync(removeEntity: (entity: Entity) => void): void;
+  /** What the desk is actually drawing, for the dev-only state bridge. */
+  debug(): readonly (IceDebugEdge & { readonly entity: Entity })[];
   dispose(): void;
 }
 
-function spawnLinkEdges(
+/** The middle of a rect: what a Board end measures its facing wall against. */
+function rectCentre(rect: { x: number; y: number; width: number; height: number }) {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+/** A Board's frame origins, outermost first — the fold `anchorWorld` undoes. */
+function boardFrames(
+  boards: readonly Board[],
+  boardId: string,
+): { x: number; y: number; width: number; height: number }[] {
+  const path: { x: number; y: number; width: number; height: number }[] = [];
+  let current = boards.find((board) => board.id === boardId);
+  while (current !== undefined) {
+    path.unshift(current.rect);
+    const parent = current.parentBoardId;
+    current = parent === undefined ? undefined : boards.find((board) => board.id === parent);
+  }
+  return path;
+}
+
+/**
+ * Draw the View's links as `suite.edge` objects.
+ *
+ * Exported for its own tests: the surface's suite mocks the kind, so the only
+ * way to prove that a link lands on its connector (and that a link which left
+ * the document leaves the desk) is to drive this function directly.
+ */
+export function spawnLinkEdges(
   engine: CanvasEngine,
   workspace: WorkspaceDocument,
   rootBoardId: string,
-  _boardMats: ReadonlyMap<Entity, BoardMat>,
+  boardMats: ReadonlyMap<Entity, BoardMat>,
   setLinkOf: (next: ((edgeId: string) => SuiteEdgeLink | undefined) | undefined) => void,
 ): EdgeSpawns {
-  const boards = workspace.listBoards();
-  const framesOf = (boardId: string): { x: number; y: number; width: number; height: number }[] => {
-    const path: { x: number; y: number; width: number; height: number }[] = [];
-    let current = boards.find((board) => board.id === boardId);
-    while (current !== undefined) {
-      path.unshift(current.rect);
-      const parent = current.parentBoardId;
-      current = parent === undefined ? undefined : boards.find((board) => board.id === parent);
-    }
-    return path;
+  // Re-read on every `sync`: a frame a peer moved has to carry its link with it.
+  let boards = workspace.listBoards();
+  const framesOf = (boardId: string) => boardFrames(boards, boardId);
+  /** A Board end, with the frame's current world rect filled in. */
+  const withFrame = (end: SuiteEdgeEnd): SuiteEdgeEnd => {
+    if (end.boardId === undefined) return end;
+    const rect = boardWorldRect(boards, end.boardId);
+    return rect === undefined ? { frames: end.frames } : { ...end, frame: rect };
   };
   const placementOf = (cardId: string) =>
     workspace.listPlacements().find((placement) => placement.cardId === cardId);
+  /** The plane an end is drawn on: a card's Board, or a frame's parent Board. */
+  const planeOfEnd = (id: string, kind: GraphEdge["sourceKind"]): string | undefined =>
+    kind === "board"
+      ? (boards.find((board) => board.id === id)?.parentBoardId ?? rootBoardId)
+      : placementOf(id)?.boardId;
+  // A Board's mat on the desk is where its inside lives: a link drawn on that
+  // plane is a child of the mat, so entering the Board shows the link at full
+  // size and the plane shows it inside the frame's own face.
+  const matOf = (boardId: string): Entity | undefined => {
+    for (const [entity, mat] of boardMats) {
+      if (mat.boardId === boardId) return entity;
+    }
+    return undefined;
+  };
 
   // The kind owns the link shape; this module only has to hand it back by id.
   const links = new Map<string, SuiteEdgeLink>();
   const spawned = new Map<string, Entity>();
+  const drawn = new Map<string, IceDebugEdge>();
 
-  const sync = (): void => {
-    for (const edge of workspace.listSubtreeEdges(rootBoardId)) {
+  const sync = (removeEntity: (entity: Entity) => void = () => {}): void => {
+    boards = workspace.listBoards();
+    for (const [edgeId, link] of [...links]) {
+      if (link.source.boardId === undefined && link.target.boardId === undefined) continue;
+      links.set(edgeId, {
+        ...link,
+        source: withFrame(link.source),
+        target: withFrame(link.target),
+      });
+    }
+    // Only edges that can be drawn count: a link whose end lost its placement
+    // is not wanted, so the entity it used to have is reaped below.
+    const edges = workspace
+      .listSubtreeEdges(rootBoardId)
+      .filter(
+        (edge) =>
+          planeOfEnd(edge.source, edge.sourceKind) !== undefined &&
+          planeOfEnd(edge.target, edge.targetKind) !== undefined,
+      );
+    const wanted = new Set(edges.map((edge) => edge.id));
+    for (const [edgeId, entity] of [...spawned]) {
+      if (wanted.has(edgeId)) continue;
+      removeEntity(entity);
+      spawned.delete(edgeId);
+      links.delete(edgeId);
+      drawn.delete(edgeId);
+    }
+
+    for (const edge of edges) {
       if (spawned.has(edge.id) || links.has(edge.id)) continue;
-      const source = placementOf(edge.source);
-      const target = placementOf(edge.target);
-      if (source === undefined || target === undefined) continue;
-      const frame = edgeFrameOf(boards, source.boardId, target.boardId);
+      const sourceBoard = planeOfEnd(edge.source, edge.sourceKind);
+      const targetBoard = planeOfEnd(edge.target, edge.targetKind);
+      if (sourceBoard === undefined || targetBoard === undefined) continue;
+      const frame = edgeFrameOf(boards, sourceBoard, targetBoard);
       if (frame === undefined) continue;
 
-      const from = {
-        placement: {
-          x: source.x,
-          y: source.y,
-          ...(source.width === undefined ? {} : { width: source.width }),
-          ...(source.height === undefined ? {} : { height: source.height }),
-        },
-        frames: framesOf(source.boardId),
-        ...(edge.sourceConnector === undefined ? {} : { connectorId: edge.sourceConnector }),
+      /**
+       * One end as the kind reads it. A card end carries its placement and
+       * connectors; a Board end carries the frame's id, and the resolver below
+       * turns it into the rect the wall is taken from.
+       */
+      const endOfEdge = (
+        id: string,
+        kind: GraphEdge["sourceKind"],
+        connectorId: string | undefined,
+      ): SuiteEdgeEnd | null => {
+        if (kind === "board") return { boardId: id, frames: [] };
+        const placement = placementOf(id);
+        if (placement === undefined) return null;
+        return {
+          placement: {
+            x: placement.x,
+            y: placement.y,
+            ...(placement.width === undefined ? {} : { width: placement.width }),
+            ...(placement.height === undefined ? {} : { height: placement.height }),
+          },
+          frames: framesOf(placement.boardId),
+          // Without the card's connectors a named connector cannot be resolved,
+          // and `anchorWorld` falls back to the card's centre — a link that says
+          // it left the east connector would leave the middle instead.
+          connectors: workspace.getCard(id)?.connectors ?? [],
+          ...(connectorId === undefined ? {} : { connectorId }),
+        };
       };
-      const to = {
-        placement: {
-          x: target.x,
-          y: target.y,
-          ...(target.width === undefined ? {} : { width: target.width }),
-          ...(target.height === undefined ? {} : { height: target.height }),
-        },
-        frames: framesOf(target.boardId),
-        ...(edge.targetConnector === undefined ? {} : { connectorId: edge.targetConnector }),
-      };
+      const from = endOfEdge(edge.source, edge.sourceKind, edge.sourceConnector);
+      const to = endOfEdge(edge.target, edge.targetKind, edge.targetConnector);
+      if (from === null || to === null) continue;
 
+      // The link is drawn on its frame's plane, so both anchors come off the
+      // world and the object is spawned inside that frame — the object's own
+      // coordinates are frame-local, and the kind resolves the same frame while
+      // the viewer is on the plane.
+      const origin = boardWorldRect(boards, frame.boardId) ?? { x: 0, y: 0 };
+      const parent = matOf(frame.boardId);
+      const sourceRect =
+        edge.sourceKind === "board" ? boardWorldRect(boards, edge.source) : undefined;
+      const targetRect =
+        edge.targetKind === "board" ? boardWorldRect(boards, edge.target) : undefined;
+      if (edge.sourceKind === "board" && sourceRect === undefined) continue;
+      if (edge.targetKind === "board" && targetRect === undefined) continue;
+      // A frame end leaves by the wall facing the other end, so each side is
+      // measured against the other's middle before either anchor is taken.
+      // A card end's middle is `anchorWorld` with no connector, which is the
+      // card's centre; a frame end's is its rect's.
+      const cardCentre = (end: SuiteEdgeEnd) =>
+        anchorWorld({ placement: end.placement ?? { x: 0, y: 0 }, frames: end.frames });
+      const cardAnchor = (end: SuiteEdgeEnd) =>
+        anchorWorld({
+          placement: end.placement ?? { x: 0, y: 0 },
+          frames: end.frames,
+          ...(end.connectors === undefined ? {} : { connectors: end.connectors }),
+          ...(end.connectorId === undefined ? {} : { connectorId: end.connectorId }),
+        });
+      const sourceCentre = sourceRect === undefined ? cardCentre(from) : rectCentre(sourceRect);
+      const targetCentre = targetRect === undefined ? cardCentre(to) : rectCentre(targetRect);
+      // A card end keeps its own anchor — the connector it names, or its centre —
+      // and only a frame end is aimed at the other end's wall.
+      const worldFrom =
+        sourceRect === undefined ? cardAnchor(from) : boardSideAnchor(sourceRect, targetCentre);
+      const worldTo =
+        targetRect === undefined ? cardAnchor(to) : boardSideAnchor(targetRect, sourceCentre);
+      const localFrom = { x: worldFrom.x - origin.x, y: worldFrom.y - origin.y };
+      const localTo = { x: worldTo.x - origin.x, y: worldTo.y - origin.y };
       const spawn = suiteEdgeSpawn({
         edgeId: edge.id,
         kind: edge.kind,
         path: edge.path,
-        from: anchorWorld(from),
-        to: anchorWorld(to),
+        from: localFrom,
+        to: localTo,
         arrow: edge.bidirectional,
       });
       try {
-        // An edge is not a thing *inside* a Board — it is a line drawn across the
-        // desk, so it spawns on the root plane in world coordinates. `anchorWorld`
-        // already folded every frame into world, and the LCA is only the check
-        // that both ends belong to the same View (`frame` above).
         spawned.set(
           edge.id,
           engine.ops.spawnWidget(spawn.type, {
@@ -862,9 +1019,24 @@ function spawnLinkEdges(
             h: spawn.h,
             props: spawn.props,
             undoable: false,
+            ...(parent === undefined ? {} : { parent }),
           }),
         );
-        links.set(edge.id, { source: from, target: to } as SuiteEdgeLink);
+        links.set(edge.id, {
+          source: withFrame(from),
+          target: withFrame(to),
+          ...(origin.x === 0 && origin.y === 0 ? {} : { origin }),
+        } as SuiteEdgeLink);
+        drawn.set(edge.id, {
+          edgeId: edge.id,
+          frame: frame.boardId,
+          from: localFrom,
+          to: localTo,
+          kind: edge.kind,
+          label: edge.label ?? null,
+          sourceKind: edge.sourceKind ?? null,
+          targetKind: edge.targetKind ?? null,
+        });
       } catch (error) {
         // A refused link must not take the canvas with it: the sheet still draws,
         // and the reason is said once so a broken kind is not silent.
@@ -877,6 +1049,12 @@ function spawnLinkEdges(
   setLinkOf((edgeId) => links.get(edgeId));
 
   return {
+    sync,
+    debug: () =>
+      [...drawn.values()].map((edge) => ({
+        ...edge,
+        entity: spawned.get(edge.edgeId) as Entity,
+      })),
     dispose() {
       setLinkOf(undefined);
       for (const entity of spawned.values()) {
@@ -889,6 +1067,7 @@ function spawnLinkEdges(
       }
       spawned.clear();
       links.clear();
+      drawn.clear();
     },
   };
 }
@@ -992,6 +1171,12 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   // The desk follows the app's theme: the mat is neutral in both, and the only
   // coloured things on it are what the user put down (see `suiteDeskTheme.ts`).
   const theme = useThemeStore((state) => state.theme);
+  /**
+   * The whole workspace, for the two things the surface must follow rather than
+   * write: which Boards exist (pointer attribution) and when the document moved
+   * under it (a peer's commit). The desk itself stays imperative.
+   */
+  const snapshot = useWorkspaceSnapshot();
   const pendingPinFocus = useUiStore((state) => state.pendingPinFocus);
   const dropPinRequest = useUiStore((state) => state.dropPinRequest);
   const actorId = useRef(`local-${Math.random().toString(36).slice(2, 10)}`);
@@ -1001,11 +1186,20 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     doc?: DocSession;
     gpu?: EngineGpu;
     clearCardRenderer?: (() => void) | undefined;
-    edges?: { dispose(): void } | undefined;
+    edges?: EdgeSpawns | undefined;
   }>({});
   const pendingFailure = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingFit = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seededEntities = useRef<readonly Entity[]>([]);
+  /**
+   * The Board tree, for pointer attribution ("which Board is this peer in") and
+   * for the reconcile that follows a document change. Kept beside the snapshot
+   * rather than read from Loro per sample: a pointer moves at 30 Hz, a Board
+   * list changes when someone edits the tree.
+   */
+  const boardsRef = useRef<readonly Board[]>([]);
+  /** The screen-space layer host: presence and connectors, above the desk. */
+  const overlaysRef = useRef<HTMLDivElement | null>(null);
   const clearPendingFailure = useCallback(() => {
     if (pendingFailure.current === undefined) return;
     clearTimeout(pendingFailure.current);
@@ -1400,6 +1594,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   } | null>(null);
   const [portalPath, setPortalPath] = useState<readonly string[]>([]);
   const portalDepth = useRef(0);
+  /** The same path with ids, which the frame contract and the debug bridge need. */
+  const portalFramesRef = useRef<readonly { id: string; name: string }[]>([]);
   const [whiteboard, setWhiteboard] = useState<{
     cardId: string;
     box: { left: number; top: number; width: number; height: number; scale: number };
@@ -1414,11 +1610,14 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   const flightRef = useRef<{ plan: FlightPlan; startedAt: number } | null>(null);
 
   /**
-   * The one way to read and move the camera. ICE stores the *world* coordinate
-   * of the screen's top-left, while every planner in this surface (and the
-   * context menu) works in `cameraOf`'s `{x, y, zoom}` with
-   * `world = (screen - x) / zoom`; the flip between them lives here and
-   * nowhere else.
+   * The one way to read and move the camera, in **ICE's own convention**: the
+   * camera is the world point at the viewport's top-left, so
+   * `screen = (world - camera) * zoom` and `world = screen / zoom + camera`.
+   *
+   * This is the surface's only camera convention now. It used to publish a
+   * screen-offset camera while the projection and the overlays applied ICE's
+   * formula, which put every peer dot and presence ring a zoom-factor away from
+   * the card it belonged to. A camera read here can be handed to ICE unchanged.
    */
   const cameraApi = useMemo(() => {
     if (phase.kind !== "ready") return null;
@@ -1429,7 +1628,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       const view = world.getResource(core.Camera);
       if (view === undefined) return null;
       const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
-      return { x: -view.x * zoom, y: -view.y * zoom, zoom };
+      return { x: view.x, y: view.y, zoom };
     };
     const viewportOf = (): FlightViewport | null => {
       const world = worldOf(engine);
@@ -1447,8 +1646,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       if (world === undefined) return;
       if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) return;
       core.writeRuntimeResource(world, core.Camera, {
-        x: -camera.x / camera.zoom,
-        y: -camera.y / camera.zoom,
+        x: camera.x,
+        y: camera.y,
         zoom: camera.zoom,
         gesturing: false,
       });
@@ -1481,6 +1680,35 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     [cameraApi],
   );
 
+  // The Board tree is attribution data and content bounds; a pointer sample
+  // reads it 30 times a second, so it is cached rather than rebuilt.
+  useEffect(() => {
+    boardsRef.current = snapshot.boards;
+  }, [snapshot.boards]);
+
+  /**
+   * Convergence: a document change this seat did not make — a peer's drag, a
+   * link drawn elsewhere, an undo — has to reach the desk. The projection is
+   * derived, so the answer is always "reconcile from the document", coalesced to
+   * one pass per frame because a sync of a 5k workspace is not a keystroke cost.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the snapshot arrays are the trigger; reconcile reads the document directly.
+  useEffect(() => {
+    if (phase.kind !== "ready" || seed === null || layerReady === 0) return;
+    if (!workspaceMode || liveWorkspace === null) return;
+    const handle = requestAnimationFrame(() => commandsRef.current?.reconcile());
+    return () => cancelAnimationFrame(handle);
+  }, [
+    snapshot.cards,
+    snapshot.edges,
+    snapshot.boards,
+    phase.kind,
+    seed,
+    layerReady,
+    workspaceMode,
+    liveWorkspace,
+  ]);
+
   // The editable root board: drag and resize commit once per gesture, delete is
   // one trash write, and undo/redo are Loro's. ICE's own history is never read.
   useEffect(() => {
@@ -1488,22 +1716,24 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     if (!workspaceMode || liveWorkspace === null || rootBoardId === null) return;
     const root = surfaceRef.current;
     const desk = deskLayerRef.current;
-    if (root === null || desk === null) return;
+    const overlays = overlaysRef.current;
+    if (root === null || desk === null || overlays === null) return;
 
     const { engine, core } = phase;
     const slots = seed.entitySlots;
 
-    const cameraOf = () => {
-      const view = engine.world.getResource(core.Camera);
-      if (view === undefined) return null;
-      const zoom = Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1;
-      return { x: -view.x * zoom, y: -view.y * zoom, zoom };
-    };
+    /** One camera convention, and it is ICE's: see `cameraApi` above. */
+    const cameraOf = () => cameraApi?.cameraOf() ?? null;
 
     // The committed rect is the widget's own `Position`/`Size`, never the
     // paper's drawn extents: `half` is "as drawn", so it carries the hold's
     // lift and would commit a shifted card.
     const rectOf = (entity: Entity) => {
+      // A projected slot can outlive its entity for one tick (a replace, a
+      // teardown, a peer's delete); reading a missing component throws, so the
+      // box is asked for only when the entity still carries one.
+      if (!phase.engine.world.has(entity, phase.core.Position)) return null;
+      if (!phase.engine.world.has(entity, phase.core.Size)) return null;
       const position = phase.engine.world.read(entity, phase.core.Position);
       const size = phase.engine.world.read(entity, phase.core.Size);
       if (position === undefined || size === undefined) return null;
@@ -1624,8 +1854,36 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       // kind in place.
       keyOf: (placement) => `${placement.text ?? ""}\u001f${cardScaleOf(placement)}`,
     });
+
+    /** The View's live placements, in the shape the projection reconciles. */
+    const canonicalPlacements = (): CanonicalPlacement[] =>
+      livePlacements().map((placement) => ({
+        boardId: placement.boardId,
+        cardId: placement.cardId,
+        x: placement.x,
+        y: placement.y,
+        text: faceText(placement.cardId),
+        ...(placement.width !== undefined ? { width: placement.width } : {}),
+        ...(placement.height !== undefined ? { height: placement.height } : {}),
+        ...(placement.typeScale !== undefined ? { typeScale: placement.typeScale } : {}),
+      }));
+
+    // Seed the projection with the *same* render key a reconcile computes, or
+    // the first reconcile would replace every card it was handed: the key is
+    // text plus rung, and a registration that carried only the text would not
+    // match itself.
+    const seededPlacements = new Map(
+      canonicalPlacements().map((placement) => [placement.cardId, placement]),
+    );
     for (const [entity, slot] of seed.entitySlots) {
-      projection.register(entity, slot.cardId, slot.boardId, faceText(slot.cardId));
+      const placement = seededPlacements.get(slot.cardId);
+      const text = faceText(slot.cardId);
+      projection.register(
+        entity,
+        slot.cardId,
+        slot.boardId,
+        placement === undefined ? text : `${text}\u001f${cardScaleOf(placement)}`,
+      );
     }
 
     /**
@@ -1646,18 +1904,22 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       return Math.min(proposed, fitted);
     }
 
+    /** Re-apply the shell's selection after entities were spawned or removed. */
+    const restoreSelection = (): void => {
+      const selected = useUiStore
+        .getState()
+        .selectedNodeIds.map((cardId) => projection.entityOf(cardId))
+        .filter((entity): entity is Entity => entity !== undefined);
+      try {
+        if (selected.length > 0) engine.ops.setSelection(selected);
+      } catch {
+        // A refused selection is cosmetic; the next click repairs it.
+      }
+    };
+
     /** The card faces: one widget per live placement. */
     const reconcileCards = () => {
-      const placements = livePlacements().map((placement) => ({
-        boardId: placement.boardId,
-        cardId: placement.cardId,
-        x: placement.x,
-        y: placement.y,
-        text: faceText(placement.cardId),
-        ...(placement.width !== undefined ? { width: placement.width } : {}),
-        ...(placement.height !== undefined ? { height: placement.height } : {}),
-      }));
-      const report = projection.reconcile(placements, {
+      const report = projection.reconcile(canonicalPlacements(), {
         width: DEFAULT_CARD_WIDTH,
         height: DEFAULT_CARD_HEIGHT,
       });
@@ -1672,21 +1934,22 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       // dropped. Re-derive it from the card ids: the projection is the only
       // place that knows which entity now stands for which card.
       if (report.spawned.length > 0 || report.moved.length > 0 || report.removed.length > 0) {
-        const selected = useUiStore
-          .getState()
-          .selectedNodeIds.map((cardId) => projection.entityOf(cardId))
-          .filter((entity): entity is Entity => entity !== undefined);
-        try {
-          if (selected.length > 0) engine.ops.setSelection(selected);
-        } catch {
-          // A refused selection is cosmetic; the next click repairs it.
-        }
+        restoreSelection();
       }
     };
 
-    /** A document change: re-derive the cards from the new truth. */
+    /**
+     * A document change: re-derive what the desk draws from the new truth.
+     * Cards and links both, because a link is document data too — one a peer
+     * drew must appear here without a reload, and one they deleted must go.
+     */
     const reconcile = () => {
       reconcileCards();
+      const edges = owned.current.edges;
+      if (edges !== undefined) {
+        edges.sync((entity) => removeEntities([entity]));
+        restoreSelection();
+      }
     };
 
     /**
@@ -1754,7 +2017,24 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       movePin: (pinId, point) => {
         liveWorkspace.movePin(pinId, point);
       },
+      // A mat drag or handle writes the Board's rect, not a card placement.
+      boardSlots: new Map(
+        [...seed.boardMats].map(([entity, mat]) => [
+          entity,
+          { boardId: mat.boardId, parentBoardId: mat.parentBoardId },
+        ]),
+      ),
+      frameOriginOf: (parentBoardId) => {
+        const rect = boardWorldRect(boardsRef.current, parentBoardId);
+        return rect === undefined ? { x: 0, y: 0 } : { x: rect.x, y: rect.y };
+      },
     });
+
+    /**
+     * The link gesture's abort, assigned below once the gesture state exists.
+     * Escape asks it first: while a link is being drawn it owns the pointer.
+     */
+    let cancelLinkDrag: (() => boolean) | null = null;
 
     commandsRef.current = {
       undo: () => {
@@ -1770,11 +2050,14 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       },
       reconcile,
       escape: () => {
+        // A link drag is the first thing Escape abandons: it owns the pointer.
+        if (cancelLinkDrag?.() === true) return;
         // Escape is the return gesture: out of a mat before out of a gesture.
         if (portalDepth.current > 0) {
           try {
             engine.ops.exitContainer();
             portalDepth.current -= 1;
+            portalFramesRef.current = portalFramesRef.current.slice(0, -1);
             setPortalPath((path) => path.slice(0, -1));
           } catch {
             // A refused exit leaves the camera where it is.
@@ -1788,6 +2071,545 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     };
 
     const detach = attachIcePointerEditing(root, controller);
+
+    const presence = usePresenceStore.getState();
+    const roleCaps = presenceRoleCaps(caps.role);
+    boardsRef.current = liveWorkspace.listBoards();
+
+    const localPoint = (event: PointerEvent): { x: number; y: number } => {
+      const bounds = root.getBoundingClientRect();
+      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    };
+
+    /* ---------------------------------------------------------------- *
+     * Drawing a link
+     *
+     * A press within a connector's hotspot starts a link instead of a
+     * card move. The claim is made in the capture phase on the surface
+     * root, before ICE's own listener on the desk below it, so the card
+     * is never picked up: a link drag and a move cannot both start.
+     *
+     * One commit at pointer-up through the bridge planner, then the
+     * ordinary reconcile draws it. Nothing is written while the drag is
+     * in flight; the preview is a line in an inert layer.
+     * ---------------------------------------------------------------- */
+    const canLink = caps.bridge.write && roleCaps.drag;
+    let linkDrag: LinkDragState | null = null;
+    let hover: { readonly entity: Entity; readonly anchors: readonly ConnectorAnchor[] } | null =
+      null;
+    let lastHoverAt = 0;
+
+    /**
+     * The anchors an entity offers a link. A card offers its connectors; a Board
+     * offers the midpoints of its four walls, because a frame has no perimeter
+     * to hang a connector on (ADR-0041).
+     */
+    const connectorsOf = (entity: Entity): ConnectorAnchor[] => {
+      const rect = rectOf(entity);
+      if (rect === null) return [];
+      const mat = seed.boardMats.get(entity);
+      if (mat !== undefined) return boardAnchors(rect);
+      const slot = slots.get(entity);
+      if (slot === undefined) return [];
+      const card = liveWorkspace.getCard(slot.cardId);
+      if (card === undefined) return [];
+      return connectorAnchors(card.connectors, rect);
+    };
+
+    /** What an entity is, as a link end: a card's id, or a Board's. */
+    const endOf = (entity: Entity): { id: string; kind: "card" | "board" } | null => {
+      const mat = seed.boardMats.get(entity);
+      if (mat !== undefined) return { id: mat.boardId, kind: "board" };
+      const slot = slots.get(entity);
+      return slot === undefined ? null : { id: slot.cardId, kind: "card" };
+    };
+
+    const linkLayer = createSuiteConnectorLayer({
+      container: overlays,
+      camera: () => cameraApi?.cameraOf() ?? null,
+      anchors: () => hover?.anchors ?? [],
+      drag: () =>
+        linkDrag === null
+          ? null
+          : {
+              from: linkDrag.anchor,
+              pointer: linkDrag.pointer,
+              target: linkDrag.target?.point ?? null,
+            },
+    });
+    overlays.append(linkLayer.layer);
+
+    const cancelLink = (): boolean => {
+      if (linkDrag === null) return false;
+      linkDrag = null;
+      hover = null;
+      presence.setConnect(null);
+      linkLayer.sync();
+      return true;
+    };
+    cancelLinkDrag = cancelLink;
+
+    const finishLink = (): void => {
+      if (linkDrag === null) return;
+      const intent = endLinkDrag(linkDrag);
+      linkDrag = null;
+      hover = null;
+      presence.setConnect(null);
+      linkLayer.sync();
+      if (intent === null) return;
+      try {
+        const plan = planEdgeCreate(intent, { capabilities: caps.bridge });
+        if (plan.status === "commit") {
+          applyCanonicalWrite(workspaceWriter(liveWorkspace), plan.write);
+        }
+      } catch (error) {
+        // A refused link leaves the document untouched; the desk already
+        // dropped the preview, so there is nothing to undo.
+        console.warn("[ice] could not draw link", describeError(error));
+      }
+      reconcile();
+    };
+
+    const updateLink = (
+      screen: { x: number; y: number },
+      world: { x: number; y: number },
+    ): void => {
+      if (linkDrag === null) return;
+      const entity = pickEntity(screen);
+      let target: LinkDragTarget | null = null;
+      if (entity !== null) {
+        const anchors = connectorsOf(entity);
+        const end = endOf(entity);
+        if (anchors.length > 0) hover = { entity, anchors };
+        if (end !== null && !(end.kind === linkDrag.source.kind && end.id === linkDrag.source.id)) {
+          const nearest = nearestConnector(anchors, world);
+          if (nearest !== null) {
+            target = {
+              kind: end.kind,
+              id: end.id,
+              ...(end.kind === "card" ? { connectorId: nearest.connectorId } : {}),
+              point: nearest.point,
+            };
+          }
+        }
+      } else if (hover !== null) {
+        hover = null;
+      }
+      linkDrag = moveLinkDrag(linkDrag, world, target);
+      presence.setConnect(connectSample(linkDrag));
+      linkLayer.sync();
+    };
+
+    const onLinkDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || !canLink) return;
+      const camera = cameraApi?.cameraOf() ?? null;
+      if (camera === null) return;
+      const screen = localPoint(event);
+      const world = screenToWorld(screen, camera);
+      // A dot sits *on* the edge, so the press can land a hair outside the
+      // object: the entity under the pointer answers first, then the one the
+      // dots were offered for.
+      const picked = pickEntity(screen);
+      const candidates = [picked, hover?.entity ?? null].filter(
+        (entity): entity is Entity => entity !== null,
+      );
+      let started: LinkDragState | null = null;
+      let startedOn: { entity: Entity; anchors: ConnectorAnchor[] } | null = null;
+      for (const entity of candidates) {
+        const end = endOf(entity);
+        if (end === null) continue;
+        const anchors = connectorsOf(entity);
+        const anchor = connectorAt(anchors, world, linkHotspotRadius(camera.zoom));
+        if (anchor === null) continue;
+        started = beginLinkDrag({
+          boardId: rootBoardId,
+          id: end.id,
+          kind: end.kind,
+          connectorId: anchor.connectorId,
+          anchor: anchor.point,
+          pointer: world,
+          minTravel: linkMinTravel(camera.zoom),
+        });
+        if (started !== null) {
+          startedOn = { entity, anchors };
+          break;
+        }
+      }
+      if (started === null || startedOn === null) return;
+      linkDrag = started;
+      hover = startedOn;
+      // Claim the press before ICE's desk sees it, and keep the moves coming
+      // when the pointer leaves the surface mid-drag.
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        root.setPointerCapture(event.pointerId);
+      } catch {
+        // No capture available: the root's own listeners still see the drag
+        // while the pointer is over it, and Escape abandons the rest.
+      }
+      presence.setConnect(connectSample(started));
+      presence.setPointer(null);
+      linkLayer.sync();
+    };
+
+    const onLinkUp = (event: PointerEvent): void => {
+      if (linkDrag === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        root.releasePointerCapture(event.pointerId);
+      } catch {
+        // The capture may already be gone; releasing twice is not an error.
+      }
+      finishLink();
+    };
+
+    const onLinkCancel = (): void => {
+      cancelLink();
+    };
+
+    root.addEventListener("pointerdown", onLinkDown, true);
+    root.addEventListener("pointerup", onLinkUp, true);
+    root.addEventListener("pointercancel", onLinkCancel, true);
+
+    /* ---------------------------------------------------------------- *
+     * Peer presence
+     *
+     * Presence is published from the surface that owns the camera: a peer
+     * sample is a point in the document, and only ICE knows where the
+     * document is on screen. Three rules hold it together:
+     *
+     * - the seat's role decides what may be published (a viewer points and
+     *   selects, never drags or draws a marquee);
+     * - a sample is throttled to a peer redraw rate, not a frame rate;
+     * - `board` stays the View so peers on one View always see each other,
+     *   while `boardOf` carries the deepest Board under the pointer — the
+     *   attribution a flattened View cannot express.
+     * ---------------------------------------------------------------- */
+
+    const paintPointer = (event: PointerEvent): void => {
+      if (!roleCaps.pointer) return;
+      const camera = cameraApi?.cameraOf() ?? null;
+      if (camera === null) return;
+      const point = screenToWorld(localPoint(event), camera);
+      presence.setPointer(pointerSample(point, camera));
+      presence.setBoardOf(ownerBoardAt(boardsRef.current, rootBoardId, point));
+    };
+
+    let press: ReturnType<typeof beginPresencePress> = null;
+    let pressEntity: Entity | null = null;
+    let lastMarquee: { x: number; y: number; width: number; height: number } | null = null;
+    let dragPublished = false;
+    let watchHandle = 0;
+    let lastWatchAt = 0;
+    let lastPointerAt = 0;
+    const PRESENCE_INTERVAL_MS = 33;
+
+    /** The in-flight gesture pass: a drag ghost and a marquee, at peer rate. */
+    const watch = (now: number): void => {
+      watchHandle = requestAnimationFrame(watch);
+      if (now - lastWatchAt < PRESENCE_INTERVAL_MS) return;
+      lastWatchAt = now;
+
+      if (press === null || pressEntity === null) {
+        if (dragPublished) {
+          dragPublished = false;
+          presence.setDragging(null);
+        }
+      } else {
+        const drag = presenceDragFor(
+          press,
+          rectOf(pressEntity),
+          useUiStore.getState().selectedNodeIds,
+        );
+        if (drag !== null) {
+          dragPublished = true;
+          presence.setDragging(drag);
+        } else if (dragPublished) {
+          // The card came back to where it was pressed: the gesture is over.
+          dragPublished = false;
+          presence.setDragging(null);
+        }
+      }
+
+      if (roleCaps.marquee) {
+        const buffer = phase.engine.stack?.marqueeBuffer?.rect ?? null;
+        const box =
+          buffer === null
+            ? null
+            : marqueeSample({ x: buffer.x, y: buffer.y, width: buffer.w, height: buffer.h });
+        const key = box === null ? "" : `${box.x}:${box.y}:${box.width}:${box.height}`;
+        const previous =
+          lastMarquee === null
+            ? ""
+            : `${lastMarquee.x}:${lastMarquee.y}:${lastMarquee.width}:${lastMarquee.height}`;
+        if (key !== previous) {
+          lastMarquee = box;
+          presence.setSelectionBox(box);
+        }
+      }
+    };
+
+    const startWatch = (): void => {
+      if (watchHandle !== 0) return;
+      watchHandle = requestAnimationFrame(watch);
+    };
+
+    const onPresenceDown = (event: PointerEvent): void => {
+      if (event.button !== 0) return;
+      // A link drag already claimed this press (its listener runs first).
+      if (linkDrag !== null) return;
+      if (!roleCaps.drag && !roleCaps.marquee) return;
+      // A press is not a drag: the ghost only exists once the card moved, and
+      // the watch loop is what notices that.
+      startWatch();
+      if (!roleCaps.drag) return;
+      const entity = pickEntity(localPoint(event));
+      if (entity === null) return;
+      const slot = slots.get(entity);
+      if (slot === undefined) return;
+      press = beginPresencePress({
+        cardId: slot.cardId,
+        planeId: rootBoardId,
+        box: rectOf(entity),
+      });
+      pressEntity = press === null ? null : entity;
+    };
+
+    /** Show a card's connectors while the pointer rests on it. */
+    const updateHover = (event: PointerEvent): void => {
+      // A seat that cannot draw a link is not offered one: the dots are a
+      // promise the press keeps.
+      if (!canLink) return;
+      const now = performance.now();
+      if (now - lastHoverAt < 50) return;
+      lastHoverAt = now;
+      // A Board mat is an end too, so the test is "can this take a link", not
+      // "is this a card".
+      const screen = localPoint(event);
+      const entity = pickEntity(screen);
+      if (entity === null && hover !== null) {
+        // The dots sit on the edge, so reaching for one takes the pointer just
+        // outside the object it belongs to. The offer stays while the pointer is
+        // within a hotspot of it; only leaving that clears it.
+        const camera = cameraApi?.cameraOf() ?? null;
+        const radius = camera === null ? 0 : linkHotspotRadius(camera.zoom) * 2;
+        if (
+          camera !== null &&
+          connectorAt(hover.anchors, screenToWorld(screen, camera), radius) !== null
+        ) {
+          return;
+        }
+      }
+      if (entity === null || endOf(entity) === null) {
+        if (hover !== null) {
+          hover = null;
+          linkLayer.sync();
+        }
+        return;
+      }
+      hover = { entity, anchors: connectorsOf(entity) };
+      linkLayer.sync();
+    };
+
+    let pointerFrame = 0;
+    const onPresenceMove = (event: PointerEvent): void => {
+      if (linkDrag !== null) {
+        const camera = cameraApi?.cameraOf() ?? null;
+        if (camera === null) return;
+        const screen = localPoint(event);
+        updateLink(screen, screenToWorld(screen, camera));
+        return;
+      }
+      updateHover(event);
+      if (!roleCaps.pointer || press !== null || pointerFrame !== 0) return;
+      const now = performance.now();
+      if (now - lastPointerAt < PRESENCE_INTERVAL_MS) return;
+      lastPointerAt = now;
+      // One sample per frame at most: pointermove can arrive far faster than a
+      // peer can draw, and every publish is an awareness message.
+      pointerFrame = requestAnimationFrame(() => {
+        pointerFrame = 0;
+        paintPointer(event);
+      });
+    };
+
+    const endPresenceGesture = (): void => {
+      if (dragPublished) presence.setDragging(null);
+      dragPublished = false;
+      press = null;
+      pressEntity = null;
+      if (watchHandle !== 0) {
+        cancelAnimationFrame(watchHandle);
+        watchHandle = 0;
+      }
+      if (lastMarquee !== null) {
+        lastMarquee = null;
+        presence.setSelectionBox(null);
+      }
+    };
+
+    const onPresenceLeave = (): void => {
+      // A link drag keeps its pointer state: leaving the surface is the drag
+      // passing over the shell, not the reader abandoning the gesture.
+      if (linkDrag === null && hover !== null) {
+        hover = null;
+        linkLayer.sync();
+      }
+      presence.setPointer(null);
+      presence.setBoardOf(null);
+    };
+
+    const onPresenceUp = (): void => endPresenceGesture();
+
+    root.addEventListener("pointerdown", onPresenceDown, true);
+    root.addEventListener("pointermove", onPresenceMove);
+    root.addEventListener("pointerup", onPresenceUp, true);
+    root.addEventListener("pointercancel", onPresenceUp, true);
+    root.addEventListener("pointerleave", onPresenceLeave);
+
+    // A selection is state, not a gesture: publish it when it changes, never on
+    // a frame. A viewer keeps this bit; the ghost and the marquee are withheld.
+    const unsubscribeSelection = useUiStore.subscribe((state, previous) => {
+      if (
+        state.selectedNodeIds === previous.selectedNodeIds &&
+        state.selectedEdgeIds === previous.selectedEdgeIds
+      ) {
+        return;
+      }
+      presence.setSelection(selectionSample(state.selectedNodeIds, state.selectedEdgeIds));
+    });
+
+    /* ---------------------------------------------------------------- *
+     * The presence layer
+     *
+     * One inert DOM layer over the desk. It is painted from the same
+     * projection the peers are published through, so what this seat draws
+     * and what a peer draws cannot drift. The instances are the entities
+     * the desk actually holds, in board units — the camera is the only
+     * thing that turns them into screen pixels.
+     * ---------------------------------------------------------------- */
+    const presenceLayer = createIcePresenceLayer({
+      container: overlays,
+      peers: () => usePresenceStore.getState().peers,
+      boardId: rootBoardId,
+      camera: () => cameraApi?.cameraOf() ?? null,
+      instances: () => {
+        const list: IcePresenceInstance[] = [];
+        for (const [entity, slot] of slots) {
+          const rect = rectOf(entity);
+          if (rect === null) continue;
+          list.push({
+            instanceKey: `card:${slot.cardId}`,
+            cardId: slot.cardId,
+            boardId: rootBoardId,
+            rect,
+          });
+        }
+        return list;
+      },
+      boardName: (boardId) => boardsRef.current.find((board) => board.id === boardId)?.name,
+      viewport: () => cameraApi?.viewportOf() ?? null,
+      anchorOf: (cardId, connectorId) => {
+        const placement = liveWorkspace.listPlacements().find((entry) => entry.cardId === cardId);
+        if (placement === undefined) return null;
+        const card = liveWorkspace.getCard(cardId);
+        if (card === undefined) return null;
+        return anchorWorld({
+          placement: {
+            x: placement.x,
+            y: placement.y,
+            ...(placement.width === undefined ? {} : { width: placement.width }),
+            ...(placement.height === undefined ? {} : { height: placement.height }),
+          },
+          frames: boardFrames(boardsRef.current, placement.boardId),
+          connectors: card.connectors,
+          connectorId,
+        });
+      },
+    });
+    overlays.append(presenceLayer.layer);
+
+    // 20 Hz: peers publish at roughly that rate, and a cursor that moves one
+    // frame late is invisible, while a layer rebuilt every frame is not free.
+    let presenceSyncHandle = 0;
+    let lastPresenceSync = 0;
+    const syncPresence = (now: number): void => {
+      presenceSyncHandle = requestAnimationFrame(syncPresence);
+      if (now - lastPresenceSync < 50) return;
+      lastPresenceSync = now;
+      presenceLayer.sync();
+      // Connectors ride the same clock: a pan or a peer's drag moves their
+      // world anchors, and a dot that lags the card is a dot that lies.
+      linkLayer.sync();
+
+      // The lab runner reads this; a production page never builds it.
+      if (import.meta.env.DEV) {
+        const boards = boardsRef.current;
+        const slotStates: IceDebugSlot[] = [];
+        for (const [entity, slot] of slots) {
+          // ICE reports a widget's Position in world units, even for a child of
+          // a Board; the plane rect is what it is, and the local one is what a
+          // commit writes (the placement is frame-local).
+          const world = rectOf(entity);
+          if (world === null) continue;
+          const board = boardWorldRect(boards, slot.boardId);
+          slotStates.push({
+            entity,
+            cardId: slot.cardId,
+            boardId: slot.boardId,
+            local:
+              board === undefined
+                ? world
+                : { ...world, x: world.x - board.x, y: world.y - board.y },
+            world,
+          });
+        }
+        publishIceDebug(
+          buildIceDebugSnapshot({
+            at: now,
+            camera: cameraApi?.cameraOf() ?? null,
+            entered: portalFramesRef.current,
+            boards: boards.flatMap((board) => {
+              const world = boardWorldRect(boards, board.id);
+              if (world === undefined) return [];
+              return [
+                {
+                  id: board.id,
+                  name: board.name,
+                  parentBoardId: board.parentBoardId ?? null,
+                  depth: boardDepth(boards, board.id),
+                  world,
+                  mat: (() => {
+                    for (const [entity, entry] of seed.boardMats) {
+                      if (entry.boardId === board.id) return rectOf(entity);
+                    }
+                    return null;
+                  })(),
+                },
+              ];
+            }),
+            slots: slotStates,
+            edges: (owned.current.edges?.debug() ?? []).map((edge) => ({
+              edgeId: edge.edgeId,
+              frame: edge.frame,
+              from: edge.from,
+              to: edge.to,
+              kind: edge.kind,
+              label: edge.label,
+              sourceKind: edge.sourceKind,
+              targetKind: edge.targetKind,
+              box: rectOf(edge.entity),
+            })),
+            overlays: readIceOverlays(overlays),
+            peers: usePresenceStore.getState().peers,
+            selection: useUiStore.getState().selectedNodeIds,
+          }),
+        );
+      }
+    };
+    presenceSyncHandle = requestAnimationFrame(syncPresence);
 
     // A mini mat is a doorway: a double click moves the camera inside it rather
     // than swapping boards. ICE owns the flight and the frame; this only routes
@@ -1808,6 +2630,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         try {
           engine.ops.enterContainer(entity);
           portalDepth.current += 1;
+          portalFramesRef.current = [
+            ...portalFramesRef.current,
+            { id: mat.boardId, name: mat.title },
+          ];
           setPortalPath((path) => [...path, mat.title]);
         } catch {
           // A refused entry leaves the camera where it is.
@@ -1916,11 +2742,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           camera:
             view === undefined
               ? { x: 0, y: 0, zoom: 1 }
-              : {
-                  x: -view.x * (view.zoom || 1),
-                  y: -view.y * (view.zoom || 1),
-                  zoom: view.zoom || 1,
-                },
+              : { x: view.x, y: view.y, zoom: view.zoom || 1 },
           target,
         }),
       );
@@ -2006,12 +2828,31 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       root.removeEventListener("contextmenu", onContextMenu);
       root.removeEventListener("pointerdown", onMiddleDown, true);
       root.removeEventListener("auxclick", onMiddleAux);
+      root.removeEventListener("pointerdown", onPresenceDown, true);
+      root.removeEventListener("pointermove", onPresenceMove);
+      root.removeEventListener("pointerup", onPresenceUp, true);
+      root.removeEventListener("pointercancel", onPresenceUp, true);
+      root.removeEventListener("pointerleave", onPresenceLeave);
+      root.removeEventListener("pointerdown", onLinkDown, true);
+      root.removeEventListener("pointerup", onLinkUp, true);
+      root.removeEventListener("pointercancel", onLinkCancel, true);
+      cancelLink();
+      cancelLinkDrag = null;
+      linkLayer.dispose();
+      unsubscribeSelection();
+      if (pointerFrame !== 0) cancelAnimationFrame(pointerFrame);
+      endPresenceGesture();
+      presence.setPointer(null);
+      presence.setBoardOf(null);
+      cancelAnimationFrame(presenceSyncHandle);
+      presenceLayer.dispose();
       middlePan = null;
       stopMiddleListeners();
       detach();
       controller.cancel();
       commandsRef.current = null;
       portalDepth.current = 0;
+      portalFramesRef.current = [];
       setPortalPath([]);
     };
   }, [
@@ -2022,6 +2863,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     liveWorkspace,
     rootBoardId,
     caps.controllerRole,
+    caps.role,
+    caps.bridge,
     cameraApi,
     flyTo,
   ]);
@@ -2186,6 +3029,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           />
         </ready.EngineProvider>
       )}
+
+      <div ref={overlaysRef} className="ice-surface__overlays" aria-hidden="true" />
 
       {workspaceMode && ready !== null ? (
         <div className="ice-surface__zoom">

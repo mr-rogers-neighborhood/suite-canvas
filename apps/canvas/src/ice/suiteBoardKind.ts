@@ -118,14 +118,17 @@ export const SUITE_BOARD_DEFAULTS = {
 } as const;
 
 /**
- * Selectable and movable — a Board's move is a document write the surface makes,
- * never a projection fact — never resized yet, snapped on both sides, and
+ * Selectable, movable and resizable — a Board's rect is a document write the
+ * surface makes, never a projection fact — snapped on both sides, and
  * containable ("into" is ICE's name for "may be dropped inside a container").
+ *
+ * The frame is free within the document's floor (80×60): a Board is a region of
+ * the desk, and how much desk it takes is the reader's call.
  */
 export const SUITE_BOARD_INTERACTION = {
   selectable: true,
   movable: true,
-  resizable: false,
+  resizable: true,
   snap: "both",
   drop: "into",
 } as const;

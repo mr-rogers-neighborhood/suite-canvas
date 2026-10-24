@@ -27,6 +27,7 @@ import {
   type IceInstanceIndex,
   type IcePlan,
   type IceUndoAdapter,
+  planBoardRectCommit,
   planResizeCommit,
 } from "./iceBridge";
 import {
@@ -42,6 +43,13 @@ export interface IceEditableSlot {
   readonly boardId: string;
   /** What the card says, when the caller knows: the fit reading measures it. */
   readonly text?: string | undefined;
+}
+
+/** A Board's mat: the entity is a frame, so its gesture writes the Board's rect. */
+export interface IceBoardSlot {
+  readonly boardId: string;
+  /** The Board that holds this frame; a top-level Board names its View root. */
+  readonly parentBoardId: string;
 }
 
 /** How the controller reaches the engine and the document. */
@@ -73,6 +81,13 @@ export interface IceEditingOptions extends IceEditingAdapters {
    * selected card, so a null pick with one selected card is that card's resize.
    */
   readonly selection?: () => readonly string[];
+  /** Marker entity → the Board it frames, so a drag or a handle writes one rect. */
+  readonly boardSlots?: ReadonlyMap<number, IceBoardSlot>;
+  /**
+   * A Board's parent frame origin in world units — the frame's rect is stored
+   * in its parent's frame, while ICE reports the mat's box in the world.
+   */
+  readonly frameOriginOf?: (parentBoardId: string) => { x: number; y: number };
   /** Marker entity → pin id, so a dragged pin writes one `movePin`. */
   readonly pinSlots?: ReadonlyMap<number, string>;
   /** Writes the pin's new point; one call per gesture. */
@@ -172,6 +187,14 @@ interface PendingPin {
   travelled: boolean;
 }
 
+interface PendingBoard {
+  readonly pointerId: number;
+  readonly entity: number;
+  readonly slot: IceBoardSlot;
+  /** The frame's rect in its parent's frame, where the write goes. */
+  readonly start: Rect;
+}
+
 /**
  * Build the controller. All I/O is injected, so tests drive it with plain
  * functions and the surface drives it with ICE adapters.
@@ -179,6 +202,7 @@ interface PendingPin {
 export function createIceEditingController(options: IceEditingOptions): IceEditingController {
   let pending: Pending | null = null;
   let pendingPin: PendingPin | null = null;
+  let pendingBoard: PendingBoard | null = null;
   const capabilities = toCapabilities(options.role);
 
   const clear = (): void => {
@@ -207,6 +231,25 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
       if (camera === null) return false;
       const picked = options.pick(screen);
       if (picked !== null) {
+        const board = options.boardSlots?.get(picked);
+        const boardRect = board === undefined ? null : options.rectOf(picked);
+        if (board !== undefined && boardRect !== null) {
+          // A Board's mat is a frame, not a card: the gesture moves or resizes
+          // the frame itself, and the write is one rect in the parent's frame.
+          const origin = options.frameOriginOf?.(board.parentBoardId) ?? { x: 0, y: 0 };
+          pendingBoard = {
+            pointerId,
+            entity: picked,
+            slot: board,
+            start: {
+              x: boardRect.x - origin.x,
+              y: boardRect.y - origin.y,
+              width: boardRect.width,
+              height: boardRect.height,
+            },
+          };
+          return true;
+        }
         const pinId = options.pinSlots?.get(picked);
         const pinRect = options.rectOf(picked);
         if (pinId !== undefined && pinRect !== null) {
@@ -243,6 +286,29 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
     },
 
     pointerUp(pointerId, screen, shiftKey = false, altKey = false) {
+      const board = pendingBoard;
+      if (board !== null && board.pointerId === pointerId) {
+        pendingBoard = null;
+        if (!finitePoint(screen)) return false;
+        const box = options.rectOf(board.entity);
+        if (box === null) return false;
+        const origin = options.frameOriginOf?.(board.slot.parentBoardId) ?? { x: 0, y: 0 };
+        return commit(
+          planBoardRectCommit(
+            {
+              boardId: board.slot.boardId,
+              start: board.start,
+              final: {
+                x: box.x - origin.x,
+                y: box.y - origin.y,
+                width: box.width,
+                height: box.height,
+              },
+            },
+            { capabilities },
+          ),
+        );
+      }
       const pin = pendingPin;
       if (pin !== null && pin.pointerId === pointerId) {
         pendingPin = null;
@@ -301,6 +367,10 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
     },
 
     pointerCancel(pointerId) {
+      if (pendingBoard !== null && pendingBoard.pointerId === pointerId) {
+        pendingBoard = null;
+        return;
+      }
       if (pendingPin !== null && pendingPin.pointerId === pointerId) {
         pendingPin = null;
         return;

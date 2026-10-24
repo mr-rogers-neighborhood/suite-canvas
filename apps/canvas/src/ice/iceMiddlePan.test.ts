@@ -8,7 +8,7 @@ import {
   updateMiddlePan,
 } from "./iceMiddlePan";
 
-/** The camera at `x`/`y` screen offset of the world origin, at `zoom`. */
+/** ICE's camera: the world point at the viewport's top-left, at `zoom`. */
 const at = (x: number, y: number, zoom: number) => ({ x, y, zoom });
 
 /** A press that the module accepted; a refusal is a test failure, not a null. */
@@ -18,9 +18,9 @@ function begin(pointer: MiddlePanPointer, camera = at(0, 0, 1)): MiddlePanState 
   return state;
 }
 
-/** The world point under a screen point, in the surface's own convention. */
+/** The world point under a screen x, in ICE's convention. */
 function worldAt(camera: { x: number; y: number; zoom: number }, screenX: number): number {
-  return (screenX - camera.x) / camera.zoom;
+  return screenX / camera.zoom + camera.x;
 }
 
 describe("beginMiddlePan", () => {
@@ -49,11 +49,11 @@ describe("beginMiddlePan", () => {
 });
 
 describe("updateMiddlePan", () => {
-  it("moves the camera by the pointer delta on both axes", () => {
+  it("moves the camera opposite the pointer, so the content follows the hand", () => {
     const state = begin({ x: 100, y: 100 });
     const move = updateMiddlePan(state, { x: 140, y: 70 });
     expect(move).toEqual({
-      camera: { x: 40, y: -30, zoom: 1 },
+      camera: { x: -40, y: 30, zoom: 1 },
       moved: true,
     });
   });
@@ -67,12 +67,8 @@ describe("updateMiddlePan", () => {
     const move = updateMiddlePan(state, { x: 400, y: 300 });
     // …is still under the pointer 100 px later, which is what 1:1 means.
     expect(worldAt(move.camera, 400)).toBeCloseTo(grabbed);
-    // The offset is screen px, so it is not divided again by the zoom.
-    expect(move.camera.x).toBeCloseTo(600);
-    // In ICE's own world-space camera the top-left does move by delta / zoom.
-    const worldBefore = -pressed.x / pressed.zoom;
-    const worldAfter = -move.camera.x / move.camera.zoom;
-    expect(worldAfter - worldBefore).toBeCloseTo(-100 / pressed.zoom);
+    // The camera is a world coordinate now, so the top-left moves by -delta / zoom.
+    expect(move.camera.x).toBeCloseTo(500 - 100 / pressed.zoom);
   });
 
   it("does not pan until the press travels past the threshold", () => {
@@ -82,14 +78,14 @@ describe("updateMiddlePan", () => {
 
     const atThreshold = updateMiddlePan(state, { x: MIDDLE_PAN_THRESHOLD, y: 0 });
     expect(atThreshold.moved).toBe(true);
-    expect(atThreshold.camera.x).toBeCloseTo(10 + MIDDLE_PAN_THRESHOLD);
+    expect(atThreshold.camera.x).toBeCloseTo(10 - MIDDLE_PAN_THRESHOLD);
   });
 
   it("carries the whole delta once it starts, never a threshold-sized jump", () => {
     const state = begin({ x: 0, y: 0 }, at(0, 0, 1));
     const move = updateMiddlePan(state, { x: 3, y: 4 });
     // 5 px travelled: the camera moves all 5, not 5 minus the threshold.
-    expect(move.camera).toEqual({ x: 3, y: 4, zoom: 1 });
+    expect(move.camera).toEqual({ x: -3, y: -4, zoom: 1 });
   });
 
   it("ignores a sample that is not the pressed pointer or has no numbers", () => {

@@ -33,7 +33,7 @@
  * `position: fixed`, so `x`/`y` are the raw client coordinates. `flowPosition`
  * is the board point under the pointer instead — the surface container's
  * viewport rect is subtracted, then the camera is undone
- * (`board = (screen - camera) / zoom`). ICE nests boards inside mats, but
+ * (`board = (screen - left) / zoom + camera`, ICE's convention). ICE nests boards inside mats, but
  * this mapping is identity on the root board: an instance transform is the
  * surface's business, and the shared menu acts on the active board, whose
  * coordinates at the root are the same numbers.
@@ -301,8 +301,8 @@ function boardPointOf(input: ContextMenuStateInput, client: MenuClientPoint): Me
   const cameraX = finiteOr(input.camera?.x, 0);
   const cameraY = finiteOr(input.camera?.y, 0);
   return {
-    x: (client.x - left - cameraX) / scale,
-    y: (client.y - top - cameraY) / scale,
+    x: (client.x - left) / scale + cameraX,
+    y: (client.y - top) / scale + cameraY,
   };
 }
 

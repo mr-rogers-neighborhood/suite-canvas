@@ -29,6 +29,8 @@ interface PresenceState {
   peers: Record<string, PeerPresence>;
   bind: (store: EphemeralStore, peerId: string) => void;
   setBoard: (boardId: string | null) => void;
+  /** The deepest Board under this pointer; attribution beside `setBoard`. */
+  setBoardOf: (boardId: string | null) => void;
   setPointer: (pointer: PointerState | null) => void;
   setFocus: (focus: FocusState | null) => void;
   setDragging: (dragging: DraggingState | null) => void;
@@ -117,6 +119,7 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     },
 
     setBoard: (boardId) => publish(AWARENESS_FIELDS.board, boardId),
+    setBoardOf: (boardId) => publish(AWARENESS_FIELDS.boardOf, boardId),
     setPointer: (pointer) => {
       if (hasLocalInteraction()) return;
       publish(AWARENESS_FIELDS.pointer, pointer);

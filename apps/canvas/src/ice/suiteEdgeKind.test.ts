@@ -10,6 +10,7 @@ import {
   SUITE_EDGE_ARROW_LENGTH,
   SUITE_EDGE_DEFAULT_THICKNESS,
   SUITE_EDGE_FACE,
+  SUITE_EDGE_HALO,
   SUITE_EDGE_HIT_PX,
   SUITE_EDGE_INTERACTION,
   SUITE_EDGE_KIND,
@@ -55,13 +56,17 @@ function edgeContext(overrides: {
   readonly props?: Readonly<Record<string, unknown>>;
   readonly zoom?: number;
   readonly pens?: Readonly<Record<string, readonly [number, number, number]>>;
+  readonly papers?: Readonly<Record<string, readonly [number, number, number]>>;
 }): ObjectContext {
   return {
     entity: 1 as unknown as Entity,
     props: { thickness: SUITE_EDGE_DEFAULT_THICKNESS, ...overrides.props },
     local: overrides.polyline === undefined ? undefined : { polylineOf: () => overrides.polyline },
     view: { zoom: overrides.zoom ?? 1 },
-    look: { pens: overrides.pens ?? { card: [0.2, 0.2, 0.2] } },
+    look: {
+      pens: overrides.pens ?? { card: [0.2, 0.2, 0.2] },
+      papers: overrides.papers ?? { card: [1, 1, 1] },
+    },
   } as unknown as ObjectContext;
 }
 
@@ -332,7 +337,13 @@ describe("resolve and record", () => {
     const plain = kind?.resolve(edgeContext({ polyline: elbow })) as SuiteEdgeGeometry;
     expect(plain.quads).toHaveLength(3);
     expect(plain.arrow).toBe(false);
-    expect(plain.box).toEqual({ x: -1, y: -1, width: 102, height: 102 });
+    // The box holds the halo too, so the record is never clipped by the cull.
+    expect(plain.box).toEqual({
+      x: -1 - SUITE_EDGE_HALO.grow,
+      y: -1 - SUITE_EDGE_HALO.grow,
+      width: 102 + SUITE_EDGE_HALO.grow * 2,
+      height: 102 + SUITE_EDGE_HALO.grow * 2,
+    });
 
     const armed = kind?.resolve(
       edgeContext({ polyline: flat, props: { thickness: 2, arrow: true } }),
@@ -348,13 +359,23 @@ describe("resolve and record", () => {
     expect(suiteEdgeHitTest(geometry, 0, 0)).toBe(false);
   });
 
-  it("should hand the paper pass one flat sheet per quad", () => {
+  it("should hand the paper pass a halo and then one flat sheet per quad", () => {
     const context = edgeContext({ polyline: flat, props: { kind: "relates-to", thickness: 2 } });
     const geometry = kind?.resolve(context) as SuiteEdgeGeometry;
     const sheets = kind?.record(geometry, context) ?? [];
 
-    expect(sheets).toHaveLength(1);
-    const sheet = sheets[0] as {
+    expect(sheets).toHaveLength(2);
+    const halo = sheets[0] as {
+      geometry: { half: readonly [number, number]; radius: number; alpha: number };
+      paper: readonly [number, number, number];
+    };
+    // The sheet colour, laid whole and wider than the ink on both sides.
+    expect(halo.geometry.alpha).toBe(1);
+    expect(halo.geometry.half).toEqual([51, 1 + SUITE_EDGE_HALO.grow]);
+    expect(halo.geometry.radius).toBe(1 + SUITE_EDGE_HALO.grow);
+    expect(halo.paper).toEqual([1, 1, 1]);
+
+    const sheet = sheets[sheets.length - 1] as {
       geometry: { radius: number; lift: number; alpha: number; half: readonly [number, number] };
       paper: readonly [number, number, number];
       grain: number;
@@ -362,21 +383,27 @@ describe("resolve and record", () => {
     expect(sheet.geometry.half).toEqual([51, 1]);
     expect(sheet.geometry.radius).toBe(1);
     expect(sheet.geometry.lift).toBe(0);
-    expect(sheet.geometry.alpha).toBe(SUITE_EDGE_TONE["relates-to"]);
-    expect(sheet.paper).toEqual([0.2, 0.2, 0.2]);
+    // Laid whole, with the tone mixed into the ink: 90% of [0.2…] over white.
+    expect(sheet.geometry.alpha).toBe(1);
+    expect(sheet.paper[0]).toBeCloseTo(1 - 0.8 * SUITE_EDGE_TONE["relates-to"], 9);
+    expect(sheet.paper[1]).toBeCloseTo(1 - 0.8 * SUITE_EDGE_TONE["relates-to"], 9);
+    expect(sheet.paper[2]).toBeCloseTo(1 - 0.8 * SUITE_EDGE_TONE["relates-to"], 9);
     expect(sheet.grain).toBe(0);
   });
 
   it("should tone each relation differently and fall back to references", () => {
-    const alphaOf = (kindName: string) => {
+    // The tone reads out of the ink: too little of the sheet mixed in means more
+    // ink, so a quieter relation has the lighter stroke.
+    const inkOf = (kindName: string) => {
       const context = edgeContext({ polyline: flat, props: { kind: kindName } });
       const geometry = kind?.resolve(context) as SuiteEdgeGeometry;
       const sheets = kind?.record(geometry, context) ?? [];
-      return (sheets[0] as { geometry: { alpha: number } }).geometry.alpha;
+      // Every halo comes first, so the ink is the last sheet of the run.
+      return (sheets[sheets.length - 1] as { paper: readonly [number, number, number] }).paper[0];
     };
-    expect(alphaOf("references")).toBe(SUITE_EDGE_TONE.references);
-    expect(alphaOf("tagged")).toBe(SUITE_EDGE_TONE.tagged);
-    expect(alphaOf("nonsense")).toBe(SUITE_EDGE_TONE.references);
+    expect(inkOf("references")).toBeGreaterThan(inkOf("tagged"));
+    expect(inkOf("tagged")).toBeGreaterThan(inkOf("relates-to"));
+    expect(inkOf("nonsense")).toBe(inkOf("references"));
   });
 });
 
@@ -390,7 +417,12 @@ describe("suiteEdgeSpawn", () => {
       to: { x: 110, y: 20 },
     });
     expect(spawn.type).toBe(SUITE_EDGE_TYPE);
-    expect(spawn).toMatchObject({ x: 9, y: 19, w: 102, h: 2 });
+    expect(spawn).toMatchObject({
+      x: 10 - SUITE_EDGE_DEFAULT_THICKNESS / 2 - SUITE_EDGE_HALO.grow,
+      y: 20 - SUITE_EDGE_DEFAULT_THICKNESS / 2 - SUITE_EDGE_HALO.grow,
+      w: 100 + SUITE_EDGE_DEFAULT_THICKNESS + SUITE_EDGE_HALO.grow * 2,
+      h: SUITE_EDGE_DEFAULT_THICKNESS + SUITE_EDGE_HALO.grow * 2,
+    });
     expect(spawn.props).toEqual({
       edgeId: "edge-1",
       kind: "relates-to",
@@ -429,7 +461,7 @@ describe("suiteEdgeSpawn", () => {
       from: { x: 0, y: 0 },
       to: { x: 100, y: 0 },
     });
-    expect(horizontal.h).toBe(SUITE_EDGE_DEFAULT_THICKNESS);
+    expect(horizontal.h).toBe(SUITE_EDGE_DEFAULT_THICKNESS + SUITE_EDGE_HALO.grow * 2);
 
     const vertical = suiteEdgeSpawn({
       edgeId: "edge-4",
@@ -438,7 +470,7 @@ describe("suiteEdgeSpawn", () => {
       from: { x: 5, y: 0 },
       to: { x: 5, y: 100 },
     });
-    expect(vertical.w).toBe(SUITE_EDGE_DEFAULT_THICKNESS);
+    expect(vertical.w).toBe(SUITE_EDGE_DEFAULT_THICKNESS + SUITE_EDGE_HALO.grow * 2);
   });
 
   it("should never spawn a zero-thickness link", () => {
@@ -532,8 +564,13 @@ describe("the driver's recompute policy", () => {
       expect(first?.from).toEqual({ x: 5, y: 5 });
       expect(first?.to).toEqual({ x: 105, y: 5 });
       expect(remakes).toBe(1);
-      // The box is the polyline's bounds grown by half the ink.
-      expect(rect).toEqual({ x: 4, y: 4, w: 102, h: 2 });
+      // The box is the polyline's bounds grown by the ink's reach.
+      expect(rect).toEqual({
+        x: 5 - 1 - SUITE_EDGE_HALO.grow,
+        y: 5 - 1 - SUITE_EDGE_HALO.grow,
+        w: 100 + 2 + SUITE_EDGE_HALO.grow * 2,
+        h: 2 + SUITE_EDGE_HALO.grow * 2,
+      });
       expect(writes.count).toBeGreaterThan(0);
 
       // Nothing moved: the side table is not touched, the record is not remade,
@@ -551,7 +588,12 @@ describe("the driver's recompute policy", () => {
       expect(local.traceOf(entity)?.from).toEqual({ x: 5, y: 205 });
       expect(remakes).toBe(2);
       // The link now runs (5,205) → (105,5): the box grows to hold both ends.
-      expect(rect).toEqual({ x: 4, y: 4, w: 102, h: 202 });
+      expect(rect).toEqual({
+        x: 5 - 1 - SUITE_EDGE_HALO.grow,
+        y: 5 - 1 - SUITE_EDGE_HALO.grow,
+        w: 100 + 2 + SUITE_EDGE_HALO.grow * 2,
+        h: 200 + 2 + SUITE_EDGE_HALO.grow * 2,
+      });
     } finally {
       setSuiteEdgeLinkOf(undefined);
       driver?.dispose?.();

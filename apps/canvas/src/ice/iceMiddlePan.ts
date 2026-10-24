@@ -14,11 +14,10 @@
  * - **release** says whether the press was a click, so a middle click is not
  *   swallowed as a zero-length drag.
  *
- * Cameras are the surface's own (`cameraOf()`): `{x, y, zoom}` with
- * `world = (screen - x) / zoom`. A pointer delta is therefore already a camera
- * delta, and `x + dx` moves the content exactly as far as the hand at any
- * zoom. (The same pan is `-dx / zoom` in ICE's world-space `Camera`; the
- * division by the zoom lives in the conversion between the two, not here.)
+ * Cameras are ICE's own: `{x, y, zoom}` with `screen = (world - x) * zoom`, so
+ * `x` is a world coordinate. Dragging the hand by `dx` screen pixels therefore
+ * moves the camera by `-dx / zoom`, which moves the content exactly as far as
+ * the hand at any zoom.
  */
 
 import type { FlightCamera } from "./iceCameraFlight";
@@ -110,8 +109,9 @@ export function updateMiddlePan(state: MiddlePanState, pointer: MiddlePanPointer
   const dy = pointer.y - state.origin.y;
   const moved = state.moved || Math.hypot(dx, dy) >= MIDDLE_PAN_THRESHOLD;
   if (!moved) return { camera: state.camera, moved: false };
+  const zoom = state.camera.zoom;
   return {
-    camera: { x: state.camera.x + dx, y: state.camera.y + dy, zoom: state.camera.zoom },
+    camera: { x: state.camera.x - dx / zoom, y: state.camera.y - dy / zoom, zoom },
     moved: true,
   };
 }

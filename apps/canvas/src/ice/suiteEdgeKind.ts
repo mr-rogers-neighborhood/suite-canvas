@@ -50,7 +50,7 @@
  * truth is `graphEdgeSchema` in `@suite/graph`.
  */
 
-import { type EdgeKind, type EdgePath, edgeKinds, edgePaths } from "@suite/graph";
+import { boardSideAnchor, type EdgeKind, type EdgePath, edgeKinds, edgePaths } from "@suite/graph";
 import {
   type Component,
   defineQuery,
@@ -62,6 +62,7 @@ import {
   type World,
 } from "@vibecook/ice";
 import {
+  CONTAINABLE,
   DESK_OBJECT,
   defineObject,
   type KindDriver,
@@ -143,10 +144,12 @@ const ZOOM_MIN = 0.01;
 const ZOOM_MAX = 100;
 
 /**
- * The opacity a link's ink is laid at, by the relation it draws: a link is
- * quieter than the cards it joins, and a reference (a derived index) is the
- * quietest of the three. The colour is the palette's ink (`pens.card`), never a
- * literal — a link is a stroke on the desk, not a surface.
+ * How much of the ink a link keeps, by the relation it draws: a link is quieter
+ * than the cards it joins, and a reference (a derived index) is the quietest of
+ * the three. The rest is the sheet's colour, so the tone is mixed into the ink
+ * rather than laid over it — a stroke is a run of overlapping segments, and an
+ * alpha would darken every joint. The colour is the palette's ink (`pens.card`),
+ * never a literal: a link is a stroke on the desk, not a surface.
  */
 /** The ink a link falls back to when the palette names none (the shell's `--ink`). */
 const DEFAULT_EDGE_INK: readonly [number, number, number] = [0.11, 0.11, 0.12];
@@ -156,6 +159,21 @@ export const SUITE_EDGE_TONE: Readonly<Record<EdgeKind, number>> = {
   "relates-to": 0.9,
   tagged: 0.7,
 };
+
+/**
+ * The halo a link's ink lies on: a stroke of the *sheet* colour, wider than the
+ * ink on both sides, so the same line reads on paper and on a dark Board — the
+ * desk's own keyline trick (`MARKS.inks.keyline`) applied to object ink instead
+ * of chrome. Without it a link crossing a Board's face is ink on ink, and the
+ * one thing a link must do is stay visible while it is being read.
+ */
+export const SUITE_EDGE_HALO = {
+  /** World units the halo reaches past the ink's edge, each side. */
+  grow: 1.5,
+} as const;
+
+/** The halo's ink when the palette names no sheet (the shell's `--surface`). */
+const DEFAULT_EDGE_HALO_INK: readonly [number, number, number] = [0.99, 0.99, 0.98];
 
 /**
  * Selectable, never moved or resized — an edge's endpoints are its authority,
@@ -216,7 +234,7 @@ export interface SuiteEdgeSpawn {
 export function suiteEdgeSpawn(input: SuiteEdgeSpawnInput): SuiteEdgeSpawn {
   const thickness = saneThickness(input.thickness ?? SUITE_EDGE_DEFAULT_THICKNESS);
   const polyline = routeEdge({ from: input.from, to: input.to, path: input.path });
-  const box = polylineBounds(polyline, thickness / 2);
+  const box = polylineBounds(polyline, edgeInkReach(thickness));
   return {
     type: SUITE_EDGE_TYPE,
     x: box.x,
@@ -399,12 +417,25 @@ export interface SuiteEdgeEnd {
   readonly frames: readonly Rect[];
   readonly connectors?: readonly EdgeConnector[] | undefined;
   readonly connectorId?: string | undefined;
+  /**
+   * A Board end (ADR-0041): the frame this end names. The surface resolves it to
+   * `frame` on every call, so a frame a peer moved carries its link with it.
+   */
+  readonly boardId?: string | undefined;
+  /** That frame's rect in world units, filled in by the resolver. */
+  readonly frame?: Rect | undefined;
 }
 
 /** A link's two ends. */
 export interface SuiteEdgeLink {
   readonly source: SuiteEdgeEnd;
   readonly target: SuiteEdgeEnd;
+  /**
+   * The frame the link is drawn in, as that frame's origin in world units: the
+   * object is a child of the frame's mat, so the polyline it holds is
+   * frame-local. Absent on the root plane, where world *is* local.
+   */
+  readonly origin?: Point | undefined;
 }
 
 /**
@@ -483,6 +514,30 @@ function sheetGeometry(quad: EdgeQuad, alpha: number): PaperRecordGeometry {
     alpha,
     scale: 1,
   };
+}
+
+/** How far a link's drawing reaches past its polyline: the ink's half width plus the halo. */
+function edgeInkReach(thickness: number): number {
+  return thickness / 2 + SUITE_EDGE_HALO.grow;
+}
+
+/** `tone` of the ink over the sheet: what a link's stroke is, mixed rather than alpha-laid. */
+function mixedInk(
+  ink: readonly [number, number, number],
+  sheet: readonly [number, number, number],
+  tone: number,
+): readonly [number, number, number] {
+  const keep = Math.min(Math.max(tone, 0), 1);
+  return [
+    sheet[0] + (ink[0] - sheet[0]) * keep,
+    sheet[1] + (ink[1] - sheet[1]) * keep,
+    sheet[2] + (ink[2] - sheet[2]) * keep,
+  ];
+}
+
+/** The same capsule, wider by `grow` on every side — the halo a quad's ink lies on. */
+function widerQuad(quad: EdgeQuad, grow: number): EdgeQuad {
+  return { ...quad, thickness: quad.thickness + grow * 2 };
 }
 
 /** Our records are one *list* of sheets per object; the paper pass's are one sheet per record. */
@@ -586,25 +641,44 @@ const suiteEdgeKind: ObjectKind<SuiteEdgeGeometry, readonly PaperRecord[]> = {
       thickness,
       zoom,
       arrow,
-      box: polylineBounds(polyline, thickness / 2),
+      box: polylineBounds(polyline, edgeInkReach(thickness)),
       // A screen-space slop, taken back into world units: six CSS px of miss is
       // six world units at zoom 1 and sixty at zoom 0.1.
       hitSlop: Math.max(thickness / 2, SUITE_EDGE_HIT_PX / zoom),
     };
   },
-  // One sheet per quad: a link is ink on the desk, so the sheet *is* the stroke
-  // and its fibre, curl and shadow are all zeroed.
+  // One halo per quad, then the ink: a link is a stroke on the desk, so the
+  // sheet *is* the stroke and its fibre, curl and shadow are all zeroed. The
+  // halo takes the palette's sheet colour — the same value a card is painted
+  // with — so it holds against whatever ground the link crosses.
   record(geometry, ctx) {
     const look = ctx.look as PaperLook | undefined;
     const ink = look?.pens.card ?? Object.values(look?.pens ?? {})[0] ?? DEFAULT_EDGE_INK;
+    const sheet =
+      look?.papers?.card ?? Object.values(look?.papers ?? {})[0] ?? DEFAULT_EDGE_HALO_INK;
     const tone = SUITE_EDGE_TONE[propEdgeKind(ctx.props)] ?? SUITE_EDGE_TONE.references;
-    return geometry.quads.map((quad) => ({
-      geometry: sheetGeometry(quad, tone),
-      paper: ink,
-      ink,
+    const stroke = mixedInk(ink, sheet, tone);
+    // Every halo first, then every stroke: a segment's halo overlaps its
+    // neighbour's cap, so interleaving them would lighten the ink at each joint.
+    // Both are laid whole (`alpha` 1) for the same reason — the segments overlap
+    // by design, and a joint a peer can see as a darker knot is not a stroke.
+    const sheets: PaperRecord[] = geometry.quads.map((quad) => ({
+      geometry: sheetGeometry(widerQuad(quad, SUITE_EDGE_HALO.grow), 1),
+      paper: sheet,
+      ink: sheet,
       grain: 0,
       inkDensity: 0,
     }));
+    for (const quad of geometry.quads) {
+      sheets.push({
+        geometry: sheetGeometry(quad, 1),
+        paper: stroke,
+        ink: stroke,
+        grain: 0,
+        inkDensity: 0,
+      });
+    }
+    return sheets;
   },
   hit(geometry, wx, wy): ObjectHit | null {
     return suiteEdgeHitTest(geometry, wx, wy) ? "content" : null;
@@ -649,7 +723,10 @@ export const SuiteEdge = defineObject({
   size: SUITE_EDGE_SIZE,
   kind: suiteEdgeKind,
   interaction: SUITE_EDGE_INTERACTION,
-  provides: [DESK_OBJECT],
+  // `CONTAINABLE` is what lets a link be spawned *inside* its frame's mat: a
+  // container only accepts what provides it. `drop: "never"` still means no
+  // gesture may put a link into a Board.
+  provides: [DESK_OBJECT, CONTAINABLE],
   drivers: (host) => {
     const local = host.local as SuiteEdgeLocal | undefined;
     if (local === undefined) return undefined;
@@ -699,8 +776,21 @@ function createSuiteEdgeLocal(
   };
 }
 
-/** An endpoint's world anchor this frame, or undefined when it has left the desk. */
-function anchorOf(world: World, end: SuiteEdgeEnd): Point | undefined {
+/**
+ * An endpoint's world anchor this frame, or undefined when it has left the desk.
+ *
+ * A card end answers from its own placement and connectors, so it does not care
+ * what it is linked to. A Board end has no single anchor: it leaves by the wall
+ * facing `toward`, which is why the caller hands in the other end's centre.
+ */
+function anchorOf(world: World, end: SuiteEdgeEnd, toward?: Point): Point | undefined {
+  if (end.frame !== undefined) {
+    const centre = {
+      x: end.frame.x + end.frame.width / 2,
+      y: end.frame.y + end.frame.height / 2,
+    };
+    return toward === undefined ? centre : boardSideAnchor(end.frame, toward);
+  }
   const placement = end.entity === undefined ? end.placement : livePlacement(world, end.entity);
   if (placement === undefined) return undefined;
   return anchorWorld({
@@ -748,14 +838,30 @@ function followSuiteEdges(host: KindDriverHost, local: SuiteEdgeLocal): void {
       local.dropTrace(entity);
       continue;
     }
-    const from = anchorOf(world, link.source);
-    const to = anchorOf(world, link.target);
-    if (from === undefined || to === undefined) {
+    // Each end first answers where its own middle is: a Board end needs the
+    // other end's direction to know which wall it leaves by, and a card end
+    // ignores the hint entirely, so the two orders cannot disagree.
+    const sourceCentre = anchorOf(world, link.source);
+    const targetCentre = anchorOf(world, link.target);
+    const worldFrom =
+      sourceCentre === undefined
+        ? undefined
+        : anchorOf(world, link.source, targetCentre ?? sourceCentre);
+    const worldTo =
+      targetCentre === undefined
+        ? undefined
+        : anchorOf(world, link.target, sourceCentre ?? targetCentre);
+    if (worldFrom === undefined || worldTo === undefined) {
       // An end has left the desk (a card on a plane this slot does not draw):
       // the link is dormant and draws nothing until both ends resolve again.
       local.dropTrace(entity);
       continue;
     }
+    // The anchors are world; the object sits inside its frame, so the polyline
+    // is the anchor less the frame's origin.
+    const origin = link.origin ?? { x: 0, y: 0 };
+    const from = { x: worldFrom.x - origin.x, y: worldFrom.y - origin.y };
+    const to = { x: worldTo.x - origin.x, y: worldTo.y - origin.y };
 
     const last = local.traceOf(entity);
     const moved =
@@ -771,7 +877,7 @@ function followSuiteEdges(host: KindDriverHost, local: SuiteEdgeLocal): void {
         from,
         to,
         path: face.path,
-        box: polylineBounds(polyline, thickness / 2),
+        box: polylineBounds(polyline, edgeInkReach(thickness)),
       });
       // The box may come out identical (a card moving between two corners of
       // the same bounds), so the record is remade by hand as well: the builder's

@@ -129,7 +129,7 @@ function seedWorkspace(id: string, cards = 2): void {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
   workspace.markSeeded();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   for (let index = 0; index < cards; index += 1) {
     workspace.createCard({
       id: `${id}-card-${index}`,
@@ -1053,7 +1053,7 @@ describe("admin mutations", () => {
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
     workspace.markSeeded();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     const card = workspace.createCard({ id: "ws-img-card", typeId: "note", boardId: board.id });
     seedBodyImage(workspace, card.id, ATTACHMENT_ID);
     documents.save(loroDocumentKey("ws-img"), workspace.doc.export({ mode: "snapshot" }));

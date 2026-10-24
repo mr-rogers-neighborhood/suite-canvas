@@ -35,6 +35,7 @@ const OTHER_BOARDS = [board("board-2", "Board 2"), board("board-3", "Board 3")];
 function makeSnapshot(): WorkspaceSnapshot {
   return {
     boards: [board(ACTIVE_BOARD, "Board 1"), ...OTHER_BOARDS],
+    views: [],
     cards: [],
     placements: [],
     edges: [],
@@ -82,11 +83,9 @@ function makeInput(
     createNoteAt: vi.fn(),
     createWhiteboardAt: vi.fn(),
     createSectionAt: vi.fn(),
-    createPortalAt: vi.fn(),
-    createPortalToNewBoard: vi.fn(),
+    createBoardAt: vi.fn(),
     duplicateCards: vi.fn(),
     startEdgeDescription: vi.fn(),
-    enterPortal: vi.fn(),
     moveCardToBoard: vi.fn(),
     unplaceSelected: vi.fn(),
     trashSelected: vi.fn(),
@@ -136,7 +135,7 @@ describe("useCanvasMenuItems canvas menu", () => {
       "New whiteboard",
       "New section",
       "Arrange fractally",
-      "New portal",
+      "New board",
     ]);
 
     item(items, "New note").onSelect?.();
@@ -155,12 +154,7 @@ describe("useCanvasMenuItems canvas menu", () => {
 
   it("declines the section entries on a surface with no section layer", () => {
     const items = renderMenu(makeInput(canvasMenu({ x: 1, y: 2 }), { supportsSections: false }));
-    expect(labels(items)).toEqual([
-      "New note",
-      "New whiteboard",
-      "Arrange fractally",
-      "New portal",
-    ]);
+    expect(labels(items)).toEqual(["New note", "New whiteboard", "Arrange fractally", "New board"]);
 
     // A selection on a sectionless surface offers no "new section from …" either.
     const selected = renderMenu(
@@ -187,30 +181,18 @@ describe("useCanvasMenuItems canvas menu", () => {
     expect(labels(items)).not.toContain("Arrange fractally");
   });
 
-  it("lists every other board plus a new board in the portal submenu", () => {
+  it("plants a board at the clicked point", () => {
     const flowPosition = { x: 12, y: 34 };
     const input = makeInput(canvasMenu(flowPosition));
-    const portalItems = item(renderMenu(input), "New portal").items ?? [];
 
-    expect(labels(portalItems)).toEqual(["Board 2", "Board 3", "New board and portal"]);
+    item(renderMenu(input), "New board").onSelect?.();
 
-    item(portalItems, "Board 2").onSelect?.();
-    expect(input.createPortalAt).toHaveBeenCalledWith(flowPosition, "board-2");
-
-    item(portalItems, "New board and portal").onSelect?.();
-    expect(input.createPortalToNewBoard).toHaveBeenCalledWith(flowPosition);
-  });
-
-  it("never lists the active board as a portal target", () => {
-    const portalItems = item(renderMenu(makeInput(canvasMenu())), "New portal").items ?? [];
-    expect(labels(portalItems)).not.toContain("Board 1");
+    expect(input.createBoardAt).toHaveBeenCalledWith(flowPosition);
   });
 
   it("hides the new-board entry without the board capability", () => {
     const items = renderMenu(makeInput(canvasMenu(), { canCreateBoards: false }));
-    const portalItems = item(items, "New portal").items ?? [];
-
-    expect(labels(portalItems)).toEqual(["Board 2", "Board 3"]);
+    expect(labels(items)).not.toContain("New board");
   });
 
   it("wraps the current selection in a new section", () => {

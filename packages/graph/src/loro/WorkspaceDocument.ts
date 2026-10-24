@@ -11,6 +11,16 @@ import {
   type Value,
 } from "loro-crdt";
 import {
+  boardDescendants,
+  boardPath,
+  boardRootId,
+  canNestBoard,
+  findBoard,
+  ownerBoardAt,
+  sectionsFromBoards,
+  sortBoards,
+} from "../boards.js";
+import {
   createConnectorId,
   defaultConnectors,
   nextFreeAnchor,
@@ -49,6 +59,8 @@ import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
   type Board,
+  type BoardColor,
+  boardColorSchema,
   boardSchema,
   type Card,
   type CardType,
@@ -56,6 +68,7 @@ import {
   cardSchema,
   cardTypeSchema,
   DEFAULT_TYPE_ID,
+  DEFAULT_VIEW_CAMERA,
   entityIdSchema,
   type FieldDefinition,
   fieldDefinitionSchema,
@@ -70,19 +83,27 @@ import {
   selectOptionSchema,
   type Tag,
   tagSchema,
+  type View,
+  type ViewCamera,
+  viewSchema,
 } from "../schema.js";
 import { normalizeTemplate } from "../template.js";
 import type { SavedView, ViewQuery } from "../views.js";
 import { savedViewSchema } from "../views.js";
 
+/**
+ * Root collections that raise change events. `views` and `boards` are the
+ * ADR-0039 pair: a View is a camera, a Board is a container. `sections` is
+ * gone — it is derived from the Boards now, so it has nothing to observe.
+ */
 export type WorkspaceSection =
+  | "views"
   | "boards"
   | "cards"
   | "placements"
   | "edges"
   | "types"
   | "tags"
-  | "sections"
   | "references";
 export type WorkspaceAction = "add" | "update" | "delete";
 export type LayerAction = "forward" | "front" | "backward" | "back";
@@ -92,7 +113,7 @@ export interface WorkspaceChange {
   action: WorkspaceAction;
   key: string;
   /** `references` changes carry the card's sorted target ids instead of a record. */
-  value: Board | Card | Placement | GraphEdge | CardType | Tag | Section | string[] | null;
+  value: View | Board | Card | Placement | GraphEdge | CardType | Tag | string[] | null;
 }
 
 /** Shared text containers for one card, stable until the cards map changes. */
@@ -105,31 +126,11 @@ export interface CreateCardInput {
   id?: string;
   /** Primary type; defaults to the built-in note type. */
   typeId?: string;
-  /** Place the card on this board straight away; omit to create it in the inbox. */
+  /** Place the card on this Board (or View plane) straight away; omit for the inbox. */
   boardId?: string;
   position?: { x: number; y: number };
   /** Preserve an existing connector layout; defaults to a fresh card layout. */
   connectors?: Connector[];
-}
-
-/**
- * What `WorkspaceDocument.createPortalCard` needs: the board the portal sits on
- * and the board it opens.
- */
-export interface CreatePortalCardInput {
-  /** Board that holds the portal card. */
-  boardId: string;
-  /** Board the portal points at; the `board` value stores this id. */
-  targetBoardId: string;
-  /** Placement on `boardId`; defaults to the top-left corner. */
-  position?: { x: number; y: number };
-  /**
-   * Card size in flow units. A portal opens a real board, so its card is sized
-   * to that board's shape when the caller can measure it; omitting this leaves
-   * the card at its natural size, exactly like any other card.
-   */
-  size?: { width: number; height: number };
-  id?: string;
 }
 
 export interface DuplicateCardOptions {
@@ -180,6 +181,10 @@ const placementMoveSchema = placementSchema.pick({ cardId: true, x: true, y: tru
 /** Shared empty target list; reference arrays are read-only to callers. */
 const NO_REFERENCES: string[] = [];
 
+/**
+ * What `createSection` takes. Kept as the compatibility door the React Flow and
+ * scene surfaces still use; it creates a Board under the given View.
+ */
 export interface CreateSectionInput {
   id?: string;
   boardId: string;
@@ -189,6 +194,19 @@ export interface CreateSectionInput {
   width?: number;
   height?: number;
   color?: Section["color"];
+}
+
+/** What a caller supplies to plant a Board. */
+export interface CreateBoardInput {
+  id?: string;
+  name?: string;
+  /** The containing Board, or the View id that plants it on its plane. */
+  parentBoardId: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  color?: BoardColor;
 }
 
 /**
@@ -217,8 +235,15 @@ export interface UpdatePinPatch {
   target?: PinTarget | null;
 }
 
+/** What a caller supplies to open a View. A View is a camera and a name. */
+export interface CreateCameraViewInput {
+  id?: string;
+  name?: string;
+  camera?: ViewCamera;
+}
+
 /** A saved query, plus where it sits in the Views menu. */
-export interface CreateViewInput {
+export interface CreateSavedViewInput {
   id?: string;
   name: string;
   /** Defaults to the end of the list. */
@@ -226,14 +251,15 @@ export interface CreateViewInput {
   query: ViewQuery;
 }
 
-/** Deterministic id so every client seeds the same default board. */
-export const DEFAULT_BOARD_ID = "board-1";
-/** The built-in type of a card that stands for another board. */
-export const PORTAL_TYPE_ID = "portal";
-/** Stable field id for the portal's board value; the UI and seeds rely on it. */
-export const PORTAL_BOARD_FIELD_ID = "portal-board";
-/** Spatial sections start at version 4. */
-export const SCHEMA_VERSION = 4;
+/** Deterministic id so every client seeds the same first View. */
+export const DEFAULT_VIEW_ID = "board-1";
+/** @deprecated A View replaced the tab-board; the old name still names its id. */
+export const DEFAULT_BOARD_ID = DEFAULT_VIEW_ID;
+/**
+ * Boards and Views start at version 5: Sections became Boards, tab-boards
+ * became Views, and the Portal card type was removed.
+ */
+export const SCHEMA_VERSION = 5;
 /** Shown for a workspace that has never been named and has no board to borrow from. */
 export const DEFAULT_WORKSPACE_NAME = "Untitled workspace";
 export const WORKSPACE_NAME_MAX_LENGTH = 80;
@@ -258,6 +284,48 @@ export function cleanWorkspaceName(name: string): string {
   const problem = workspaceNameProblem(name);
   if (problem) throw new Error(problem);
   return name.trim();
+}
+
+/** The retired portal card type; only the migration reads it now. */
+const LEGACY_PORTAL_TYPE_ID = "portal";
+/** Its single board field: the View the portal card opened. */
+const LEGACY_PORTAL_FIELD_ID = "portal-board";
+
+/** Origin of the one-shot migration's writes; its own undo boundary. */
+export const MIGRATION_ORIGIN = "struct:migrate";
+
+/** A stored colour that no longer names a palette entry reads as no colour. */
+function boardColorOf(value: string | undefined): BoardColor | undefined {
+  return value === undefined ? undefined : boardColorSchema.safeParse(value).data;
+}
+
+/** One placement the migration could not honour, reported rather than swallowed. */
+export interface MigrationFallback {
+  readonly cardId: string;
+  readonly boardId: string;
+  readonly reason: "missing-board" | "duplicate-placement" | "portal-target-missing";
+}
+
+/**
+ * What a one-shot migration did. `migrate()` returns it once per document and
+ * keeps it on `lastMigrationReport`, so a surface can say "12 boards moved,
+ * 1 card fell back to the root" instead of the change happening silently.
+ */
+export interface MigrationReport {
+  readonly fromVersion: number;
+  readonly toVersion: number;
+  /** Sections turned into Boards. */
+  readonly boards: number;
+  /** Portal cards turned into nested Boards. */
+  readonly portals: number;
+  /** Placements re-homed into the Board that owns their card. */
+  readonly placements: number;
+  /** Views whose camera was materialised. */
+  readonly views: number;
+  /** Placements dropped because a card may only sit in one Board. */
+  readonly droppedPlacements: number;
+  readonly fallbacks: readonly MigrationFallback[];
+  readonly notes: readonly string[];
 }
 
 /** Below this gap two ranks are one float step apart; the board renumbers. */
@@ -784,7 +852,14 @@ function drawingOrderIds(list: unknown): string[] {
 }
 
 export class WorkspaceDocument {
+  /**
+   * The View map keeps its historical root name (`boards`): the tab-board
+   * records became the Views, and keeping the key means a document opens with
+   * every View id intact — `?board=<id>` still selects one.
+   */
   static readonly BOARDS_KEY = "boards";
+  /** Board records (ADR-0039). `sections` is the migration-only predecessor. */
+  static readonly BOARD_KEY = "frames";
   static readonly CARDS_KEY = "cards";
   static readonly PLACEMENTS_KEY = "placements";
   static readonly EDGES_KEY = "edges";
@@ -800,13 +875,15 @@ export class WorkspaceDocument {
   static readonly PINS_KEY = "pins";
 
   readonly doc: LoroDoc;
+  /** Views: one camera and a name per row. */
+  private readonly views: LoroMap;
+  /** Boards: the container tree. */
   private readonly boards: LoroMap;
   private readonly cards: LoroMap;
   private readonly placements: LoroMap;
   private readonly edges: LoroMap;
   private readonly types: LoroMap;
   private readonly tags: LoroMap;
-  private readonly sections: LoroMap;
   private readonly content: LoroMap;
   private readonly titles: LoroMap;
   private readonly references: LoroMap;
@@ -820,9 +897,10 @@ export class WorkspaceDocument {
   private readonly boardCache = new Map<string, Board>();
   private readonly typeCache = new Map<string, CardType>();
   private readonly tagCache = new Map<string, Tag>();
-  private readonly sectionCache = new Map<string, Section>();
   private readonly pinCache = new Map<string, Pin>();
-  private readonly viewCache = new Map<string, SavedView>();
+  private readonly viewCache = new Map<string, View>();
+  private readonly savedViewCache = new Map<string, SavedView>();
+  private migrationReport: MigrationReport | null = null;
   private readonly referenceCache = new Map<string, string[]>();
   private readonly pendingReferences = new Set<string>();
   private referencesScheduled = false;
@@ -831,8 +909,8 @@ export class WorkspaceDocument {
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
-  private readonly viewListeners = new Set<() => void>();
-  private viewRevision = 0;
+  private readonly savedViewListeners = new Set<() => void>();
+  private savedViewRevision = 0;
   private readonly pinListeners = new Set<() => void>();
   private pinRevision = 0;
   private readonly containerCache = new Map<string, CardContainers>();
@@ -841,13 +919,13 @@ export class WorkspaceDocument {
 
   constructor(doc: LoroDoc = new LoroDoc()) {
     this.doc = doc;
-    this.boards = doc.getMap(WorkspaceDocument.BOARDS_KEY);
+    this.views = doc.getMap(WorkspaceDocument.BOARDS_KEY);
+    this.boards = doc.getMap(WorkspaceDocument.BOARD_KEY);
     this.cards = doc.getMap(WorkspaceDocument.CARDS_KEY);
     this.placements = doc.getMap(WorkspaceDocument.PLACEMENTS_KEY);
     this.edges = doc.getMap(WorkspaceDocument.EDGES_KEY);
     this.types = doc.getMap(WorkspaceDocument.TYPES_KEY);
     this.tags = doc.getMap(WorkspaceDocument.TAGS_KEY);
-    this.sections = doc.getMap(WorkspaceDocument.SECTIONS_KEY);
     this.content = doc.getMap(WorkspaceDocument.CONTENT_KEY);
     this.titles = doc.getMap(WorkspaceDocument.TITLES_KEY);
     this.references = doc.getMap(WorkspaceDocument.REFERENCES_KEY);
@@ -856,13 +934,13 @@ export class WorkspaceDocument {
     this.drawings = doc.getMap(WorkspaceDocument.DRAWINGS_KEY);
     this.pins = doc.getMap(WorkspaceDocument.PINS_KEY);
     this.known = {
+      views: new Set(this.views.keys()),
       boards: new Set(this.boards.keys()),
       cards: new Set(this.cards.keys()),
       placements: new Set(this.placements.keys()),
       edges: new Set(this.edges.keys()),
       types: new Set(this.types.keys()),
       tags: new Set(this.tags.keys()),
-      sections: new Set(this.sections.keys()),
       references: new Set(this.references.keys()),
     };
 
@@ -897,17 +975,24 @@ export class WorkspaceDocument {
         }
         if (
           root !== WorkspaceDocument.BOARDS_KEY &&
+          root !== WorkspaceDocument.BOARD_KEY &&
           root !== WorkspaceDocument.CARDS_KEY &&
           root !== WorkspaceDocument.PLACEMENTS_KEY &&
           root !== WorkspaceDocument.EDGES_KEY &&
           root !== WorkspaceDocument.TYPES_KEY &&
           root !== WorkspaceDocument.TAGS_KEY &&
-          root !== WorkspaceDocument.SECTIONS_KEY &&
           root !== WorkspaceDocument.REFERENCES_KEY
         ) {
           continue;
         }
-        const section = root as WorkspaceSection;
+        // Two root maps feed the "views" and "boards" streams: the View map
+        // keeps its legacy name, the Board map is `frames`.
+        const section: WorkspaceSection =
+          root === WorkspaceDocument.BOARDS_KEY
+            ? "views"
+            : root === WorkspaceDocument.BOARD_KEY
+              ? "boards"
+              : (root as WorkspaceSection);
         const keys = touched.get(section) ?? new Set<string>();
         if (typeof event.path[1] === "string") {
           keys.add(event.path[1]);
@@ -938,9 +1023,9 @@ export class WorkspaceDocument {
         this.scheduleReferences();
       }
       if (savedViews.size > 0) {
-        for (const viewId of savedViews) this.viewCache.delete(viewId);
-        this.viewRevision += 1;
-        for (const listener of this.viewListeners) listener();
+        for (const viewId of savedViews) this.savedViewCache.delete(viewId);
+        this.savedViewRevision += 1;
+        for (const listener of this.savedViewListeners) listener();
       }
       if (changedPins.size > 0) {
         for (const pinId of changedPins) this.pinCache.delete(pinId);
@@ -969,8 +1054,27 @@ export class WorkspaceDocument {
     this.undoManager = new UndoManager(doc, {
       mergeInterval: 0,
       maxUndoSteps: 100,
-      excludeOriginPrefixes: [TEXT_ORIGIN_PREFIX, INIT_ORIGIN, "text:", INDEX_ORIGIN],
+      // A migration is a schema fix-up, not an edit: it must never be undone
+      // back into the old shape by a Cmd-Z.
+      excludeOriginPrefixes: [
+        TEXT_ORIGIN_PREFIX,
+        INIT_ORIGIN,
+        "text:",
+        INDEX_ORIGIN,
+        MIGRATION_ORIGIN,
+      ],
     });
+
+    // A document opened from an older build lands on the current schema before
+    // anyone reads it. A fresh, empty document migrates lazily, on its first
+    // seed, so opening one writes nothing.
+    const version = this.meta.get("schemaVersion");
+    const carriesContent =
+      this.views.size > 0 ||
+      this.boards.size > 0 ||
+      this.cards.size > 0 ||
+      doc.getMap(WorkspaceDocument.SECTIONS_KEY).size > 0;
+    if (version === undefined ? carriesContent : version !== SCHEMA_VERSION) this.migrate();
   }
 
   /**
@@ -996,6 +1100,9 @@ export class WorkspaceDocument {
 
   private invalidate(section: WorkspaceSection, key: string): void {
     switch (section) {
+      case "views":
+        this.viewCache.delete(key);
+        break;
       case "boards":
         this.boardCache.delete(key);
         break;
@@ -1014,9 +1121,6 @@ export class WorkspaceDocument {
       case "tags":
         this.tagCache.delete(key);
         break;
-      case "sections":
-        this.sectionCache.delete(key);
-        break;
       case "references":
         this.referenceCache.delete(key);
         break;
@@ -1025,6 +1129,8 @@ export class WorkspaceDocument {
 
   private readSection(section: WorkspaceSection, key: string): WorkspaceChange["value"] {
     switch (section) {
+      case "views":
+        return this.getView(key) ?? null;
       case "boards":
         return this.getBoard(key) ?? null;
       case "cards":
@@ -1037,8 +1143,6 @@ export class WorkspaceDocument {
         return this.getType(key) ?? null;
       case "tags":
         return this.getTag(key) ?? null;
-      case "sections":
-        return this.getSection(key) ?? null;
       case "references": {
         const targets = this.referencesFor(key);
         return targets.length > 0 ? targets : null;
@@ -1092,7 +1196,7 @@ export class WorkspaceDocument {
       const trimmed = stored.trim();
       if (trimmed.length > 0) return trimmed;
     }
-    const first = this.listBoards()[0]?.name.trim();
+    const first = this.listViews()[0]?.name.trim();
     return first && first.length > 0 ? first : DEFAULT_WORKSPACE_NAME;
   }
 
@@ -1104,82 +1208,132 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}rename-workspace`);
   }
 
-  // ---------------------------------------------------------------- boards
+  // ---------------------------------------------------------------- views
 
-  private cachedBoard(id: string): Board | undefined {
-    const cached = this.boardCache.get(id);
+  private cachedView(id: string): View | undefined {
+    const cached = this.viewCache.get(id);
     if (cached) return cached;
-    const value = this.boards.get(id);
+    const value = this.views.get(id);
     if (!isMap(value)) return undefined;
-    const board = boardSchema.parse({
+    const parsed = viewSchema.safeParse({
       id,
-      name: readString(value, "name") ?? "Board",
+      name: readString(value, "name") ?? "View",
+      camera: {
+        x: readNumber(value, "cameraX") ?? DEFAULT_VIEW_CAMERA.x,
+        y: readNumber(value, "cameraY") ?? DEFAULT_VIEW_CAMERA.y,
+        zoom: readNumber(value, "cameraZoom") ?? DEFAULT_VIEW_CAMERA.zoom,
+      },
       createdAt: readNumber(value, "createdAt") ?? 0,
       updatedAt: readNumber(value, "updatedAt") ?? 0,
     });
-    this.boardCache.set(id, board);
-    return board;
+    if (!parsed.success) return undefined;
+    this.viewCache.set(id, parsed.data);
+    return parsed.data;
   }
 
-  listBoards(): Board[] {
-    return this.boards
+  listViews(): View[] {
+    return this.views
       .keys()
-      .map((id) => this.cachedBoard(id))
-      .filter((board): board is Board => board !== undefined)
+      .map((id) => this.cachedView(id))
+      .filter((view): view is View => view !== undefined)
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
-  getBoard(id: string): Board | undefined {
-    return this.cachedBoard(id);
+  getView(id: string): View | undefined {
+    return this.cachedView(id);
   }
 
-  createBoard(input: { id?: string; name?: string } = {}): Board {
+  /** True when the id names a View (a camera), not a Board. */
+  hasView(id: string): boolean {
+    return this.views.get(id) !== undefined;
+  }
+
+  createView(input: CreateCameraViewInput = {}): View {
     const now = Date.now();
-    const board: Board = {
+    const view: View = {
       id: input.id ?? crypto.randomUUID(),
-      name: input.name ?? `Board ${this.boards.size + 1}`,
+      name: input.name?.trim() || `View ${this.views.size + 1}`,
+      camera: input.camera ?? { ...DEFAULT_VIEW_CAMERA },
       createdAt: now,
       updatedAt: now,
     };
-    const fields = this.boards.ensureMergeableMap(board.id);
-    fields.set("name", board.name);
-    fields.set("createdAt", board.createdAt);
-    fields.set("updatedAt", board.updatedAt);
-    this.commit(`${STRUCT_ORIGIN}create-board`);
-    return board;
+    const fields = this.views.ensureMergeableMap(view.id);
+    this.writeViewFields(fields, view);
+    this.commit(`${STRUCT_ORIGIN}create-view`);
+    return view;
   }
 
-  renameBoard(id: string, name: string): void {
-    const board = this.getBoard(id);
-    if (!board) return;
+  private writeViewFields(fields: LoroMap, view: View): void {
+    fields.set("name", view.name);
+    fields.set("cameraX", view.camera.x);
+    fields.set("cameraY", view.camera.y);
+    fields.set("cameraZoom", view.camera.zoom);
+    fields.set("createdAt", view.createdAt);
+    fields.set("updatedAt", view.updatedAt);
+  }
+
+  renameView(id: string, name: string): void {
+    const view = this.getView(id);
+    if (!view) return;
     const trimmed = name.trim();
-    if (trimmed.length === 0) return;
-    const fields = this.boards.get(id);
+    if (trimmed.length === 0 || trimmed === view.name) return;
+    const fields = this.views.get(id);
     if (!isMap(fields)) return;
     fields.set("name", trimmed);
     fields.set("updatedAt", Date.now());
-    this.commit(`${STRUCT_ORIGIN}rename-board`);
+    this.commit(`${STRUCT_ORIGIN}rename-view`);
   }
 
-  deleteBoard(id: string, options: { cards?: "keep" | "trash" } = {}): void {
+  /** Remembers where the camera was; one write per gesture, one commit. */
+  setViewCamera(id: string, camera: ViewCamera): void {
+    const view = this.getView(id);
+    if (!view) return;
+    if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) return;
+    if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) return;
+    if (
+      view.camera.x === camera.x &&
+      view.camera.y === camera.y &&
+      view.camera.zoom === camera.zoom
+    ) {
+      return;
+    }
+    const fields = this.views.get(id);
+    if (!isMap(fields)) return;
+    fields.set("cameraX", camera.x);
+    fields.set("cameraY", camera.y);
+    fields.set("cameraZoom", camera.zoom);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}view-camera`);
+  }
+
+  /**
+   * Deletes a View. Until Views are pure cameras, a View still owns the Board
+   * tree planted on its plane, so that tree and its placements go with it;
+   * `cards` decides whether the freed cards are kept in the inbox or trashed.
+   */
+  deleteView(id: string, options: { cards?: "keep" | "trash" } = {}): void {
+    if (this.views.get(id) === undefined) return;
     const cardsOption = options.cards ?? "keep";
+    const boards = this.listBoards();
+    const doomed = new Set([
+      id,
+      ...boards.filter((board) => boardRootId(boards, board.id) === id).map((board) => board.id),
+    ]);
     for (const key of [...this.placements.keys()]) {
       const fields = this.placements.get(key);
-      if (isMap(fields) && readString(fields, "boardId") === id) this.placements.delete(key);
+      const owner = isMap(fields) ? readString(fields, "boardId") : undefined;
+      if (owner !== undefined && doomed.has(owner)) this.placements.delete(key);
     }
     for (const edgeId of [...this.edges.keys()]) {
       const fields = this.edges.get(edgeId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.edges.delete(edgeId);
     }
-    for (const sectionId of [...this.sections.keys()]) {
-      const fields = this.sections.get(sectionId);
-      if (isMap(fields) && readString(fields, "boardId") === id) this.sections.delete(sectionId);
-    }
+    for (const boardId of doomed) this.boards.delete(boardId);
     for (const pinId of [...this.pins.keys()]) {
       const fields = this.pins.get(pinId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.pins.delete(pinId);
     }
-    this.boards.delete(id);
+    this.views.delete(id);
 
     if (cardsOption === "trash") {
       const now = Date.now();
@@ -1189,19 +1343,604 @@ export class WorkspaceDocument {
         this.mutateCard(card.id, (fields) => fields.set("deletedAt", now), false);
       }
     }
+    this.commit(`${STRUCT_ORIGIN}delete-view`);
+  }
+
+  ensureView(): View {
+    const [first] = this.listViews();
+    if (first) return first;
+    return this.createView({ id: DEFAULT_VIEW_ID, name: "Board 1" });
+  }
+
+  // ---------------------------------------------------------------- boards
+
+  private cachedBoard(id: string): Board | undefined {
+    const cached = this.boardCache.get(id);
+    if (cached) return cached;
+    const value = this.boards.get(id);
+    if (!isMap(value)) return undefined;
+    const rect = value.get("rect");
+    const parsed = boardSchema.safeParse({
+      id,
+      name: readString(value, "name") ?? "",
+      color: readString(value, "color"),
+      rect: isMap(rect)
+        ? {
+            x: readNumber(rect, "x"),
+            y: readNumber(rect, "y"),
+            width: readNumber(rect, "width"),
+            height: readNumber(rect, "height"),
+          }
+        : undefined,
+      z: readNumber(value, "z") ?? 0,
+      parentBoardId: readString(value, "parentBoardId"),
+      createdAt: readNumber(value, "createdAt") ?? 0,
+      updatedAt: readNumber(value, "updatedAt") ?? 0,
+    });
+    if (!parsed.success) return undefined;
+    this.boardCache.set(id, parsed.data);
+    return parsed.data;
+  }
+
+  /** Boards, bottom first. `rootBoardId` narrows to one View's tree. */
+  listBoards(rootBoardId?: string): Board[] {
+    const boards = sortBoards(
+      this.boards
+        .keys()
+        .map((id) => this.cachedBoard(id))
+        .filter((board): board is Board => board !== undefined),
+    );
+    if (rootBoardId === undefined) return boards;
+    return boards.filter((board) => boardRootId(boards, board.id) === rootBoardId);
+  }
+
+  getBoard(id: string): Board | undefined {
+    return this.cachedBoard(id);
+  }
+
+  /** The Board tree's root for a Board id, or the id itself for a View. */
+  boardRoot(id: string): string {
+    return boardRootId(this.listBoards(), id);
+  }
+
+  /** Root-first ids: the View, then every Board down to this one. */
+  boardPath(id: string): string[] {
+    return boardPath(this.listBoards(), id);
+  }
+
+  /** A Board's rect in its View's plane, ancestors' origins accumulated. */
+  boardWorldRect(id: string): { x: number; y: number; width: number; height: number } | null {
+    const board = this.getBoard(id);
+    if (board === undefined) return null;
+    let x = board.rect.x;
+    let y = board.rect.y;
+    for (const ancestorId of this.boardPath(id).slice(0, -1)) {
+      const ancestor = this.getBoard(ancestorId);
+      if (ancestor === undefined) continue;
+      x += ancestor.rect.x;
+      y += ancestor.rect.y;
+    }
+    return { x, y, width: board.rect.width, height: board.rect.height };
+  }
+
+  listBoardChildren(id: string): Board[] {
+    return this.listBoards().filter((board) => board.parentBoardId === id);
+  }
+
+  /**
+   * Plants a Board. The parent is a Board or a View id (the View's implicit
+   * root plane); the rect is given in that parent's frame.
+   */
+  createBoard(input: CreateBoardInput): Board {
+    const parentBoardId = input.parentBoardId;
+    if (
+      this.views.get(parentBoardId) === undefined &&
+      this.boards.get(parentBoardId) === undefined
+    ) {
+      throw new Error(`Unknown board parent: ${parentBoardId}`);
+    }
+    const now = Date.now();
+    const siblings = this.listBoardChildren(parentBoardId);
+    const board = boardSchema.parse({
+      id: input.id ?? crypto.randomUUID(),
+      name: input.name?.trim() ?? "",
+      rect: {
+        x: input.x ?? 0,
+        y: input.y ?? 0,
+        width: Math.max(80, input.width ?? 360),
+        height: Math.max(60, input.height ?? 260),
+      },
+      z: siblings.length > 0 ? (siblings.at(-1)?.z ?? 0) + 1 : 0,
+      parentBoardId,
+      createdAt: now,
+      updatedAt: now,
+      ...(input.color === undefined ? {} : { color: input.color }),
+    });
+    this.writeBoard(board);
+    this.commit(`${STRUCT_ORIGIN}create-board`);
+    return board;
+  }
+
+  renameBoard(id: string, name: string): void {
+    const board = this.getBoard(id);
+    if (!board) return;
+    const trimmed = name.trim();
+    if (trimmed === board.name) return;
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    fields.set("name", trimmed);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}rename-board`);
+  }
+
+  setBoardColor(id: string, color: BoardColor | null): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    if (color) fields.set("color", color);
+    else fields.delete("color");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-color`);
+  }
+
+  /** Moves and/or resizes a Board in its parent's frame. One commit. */
+  updateBoardRect(
+    id: string,
+    rect: Partial<{ x: number; y: number; width: number; height: number }>,
+  ): void {
+    const board = this.getBoard(id);
+    const fields = this.boards.get(id);
+    if (!board || !isMap(fields)) return;
+    const nextRect = fields.ensureMergeableMap("rect");
+    if (rect.x !== undefined) nextRect.set("x", rect.x);
+    if (rect.y !== undefined) nextRect.set("y", rect.y);
+    if (rect.width !== undefined) nextRect.set("width", Math.max(80, rect.width));
+    if (rect.height !== undefined) nextRect.set("height", Math.max(60, rect.height));
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-rect`);
+  }
+
+  /**
+   * Re-parents a Board. The rect is translated so the Board keeps its place on
+   * screen; a cycle is refused rather than written.
+   */
+  nestBoard(id: string, parentBoardId: string): void {
+    const boards = this.listBoards();
+    const board = findBoard(boards, id);
+    if (board === undefined) return;
+    if (
+      this.views.get(parentBoardId) === undefined &&
+      findBoard(boards, parentBoardId) === undefined
+    ) {
+      throw new Error(`Unknown board parent: ${parentBoardId}`);
+    }
+    if (!canNestBoard(boards, id, parentBoardId)) {
+      throw new Error(`A board cannot contain itself: ${id}`);
+    }
+    if (board.parentBoardId === parentBoardId) return;
+    const world = this.boardWorldRect(id);
+    const parent = findBoard(boards, parentBoardId);
+    const parentWorld = parent === undefined ? null : this.boardWorldRect(parentBoardId);
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    const rect = fields.ensureMergeableMap("rect");
+    if (world !== null && parent !== undefined) {
+      const originX = parentWorld?.x ?? 0;
+      const originY = parentWorld?.y ?? 0;
+      rect.set("x", world.x - originX);
+      rect.set("y", world.y - originY);
+    }
+    fields.set("parentBoardId", parentBoardId);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}nest-board`);
+  }
+
+  /** Deletes a Board, everything nested in it, and the placements it owns. */
+  deleteBoard(id: string): void {
+    if (this.boards.get(id) === undefined) return;
+    const boards = this.listBoards();
+    const doomed = new Set([id, ...boardDescendants(boards, id).map((board) => board.id)]);
+    for (const key of [...this.placements.keys()]) {
+      const fields = this.placements.get(key);
+      const owner = isMap(fields) ? readString(fields, "boardId") : undefined;
+      if (owner !== undefined && doomed.has(owner)) this.placements.delete(key);
+    }
+    for (const boardId of doomed) this.boards.delete(boardId);
     this.commit(`${STRUCT_ORIGIN}delete-board`);
   }
 
-  ensureBoard(): Board {
-    const [first] = this.listBoards();
-    if (first) return first;
-    return this.createBoard({ id: DEFAULT_BOARD_ID, name: "Board 1" });
+  /** One commit for a Board drag: the subtree and the placements it owns. */
+  moveBoardBatch(
+    id: string,
+    position: { x: number; y: number },
+    placements?: readonly { boardId: string; cardId: string; x: number; y: number }[],
+  ): void {
+    const board = this.getBoard(id);
+    const fields = this.boards.get(id);
+    if (board === undefined || !isMap(fields)) return;
+    const rect = fields.ensureMergeableMap("rect");
+    rect.set("x", position.x);
+    rect.set("y", position.y);
+    fields.set("updatedAt", Date.now());
+    for (const next of placements ?? []) {
+      const placementFields = this.placements.get(placementKey(next.boardId, next.cardId));
+      if (!isMap(placementFields)) continue;
+      placementFields.set("x", next.x);
+      placementFields.set("y", next.y);
+    }
+    this.commit(`${STRUCT_ORIGIN}move-board`);
   }
 
-  // ---------------------------------------------------------------- views
+  private writeBoard(board: Board): void {
+    const fields = this.boards.ensureMergeableMap(board.id);
+    fields.set("name", board.name);
+    const rect = fields.ensureMergeableMap("rect");
+    rect.set("x", board.rect.x);
+    rect.set("y", board.rect.y);
+    rect.set("width", board.rect.width);
+    rect.set("height", board.rect.height);
+    fields.set("z", board.z);
+    fields.set("createdAt", board.createdAt);
+    fields.set("updatedAt", board.updatedAt);
+    if (board.parentBoardId !== undefined) fields.set("parentBoardId", board.parentBoardId);
+    if (board.color !== undefined) fields.set("color", board.color);
+  }
 
-  private cachedView(id: string): SavedView | undefined {
-    const cached = this.viewCache.get(id);
+  /** True when the id names a place cards can sit: a Board or a View plane. */
+  hasPlane(id: string): boolean {
+    return this.views.get(id) !== undefined || this.boards.get(id) !== undefined;
+  }
+
+  /** The report the one-shot migration produced on this document, if any. */
+  get lastMigrationReport(): MigrationReport | null {
+    return this.migrationReport;
+  }
+
+  /**
+   * The one-shot schema migration (ADR-0039), idempotent and version-guarded.
+   *
+   * - every Section becomes a Board, its rect, title and colour preserved;
+   * - every Portal card becomes a Board nested at the portal's placement, and
+   *   the View it opened is emptied into it;
+   * - every placement keeps one position, re-homed into the Board that owns it;
+   * - a placement whose Board is missing falls back to the root and is
+   *   reported, never silently dropped.
+   *
+   * Returns `null` when the document already runs the current schema.
+   */
+  migrate(): MigrationReport | null {
+    const stored = this.meta.get("schemaVersion");
+    const fromVersion = typeof stored === "number" ? stored : 0;
+    if (fromVersion >= SCHEMA_VERSION) return null;
+
+    const fallbacks: MigrationFallback[] = [];
+    const notes: string[] = [];
+    let boards = 0;
+    let portals = 0;
+    let placements = 0;
+    let views = 0;
+
+    this.batch(MIGRATION_ORIGIN, () => {
+      const now = Date.now();
+      const legacySections = this.doc.getMap(WorkspaceDocument.SECTIONS_KEY);
+      const viewIdOf = (id: string): string | undefined =>
+        this.views.get(id) === undefined ? undefined : id;
+
+      const ensureRootView = (): string => {
+        const [first] = this.listViews();
+        if (first) return first.id;
+        return this.createView({ id: DEFAULT_VIEW_ID, name: "Board 1" }).id;
+      };
+
+      // 1. Sections become Boards. Ids are reused, so nothing that pointed at a
+      // section has to be rewritten except placements (step 3).
+      for (const sectionId of [...legacySections.keys()]) {
+        const fields = legacySections.get(sectionId);
+        if (!isMap(fields)) {
+          legacySections.delete(sectionId);
+          continue;
+        }
+        const parent = viewIdOf(readString(fields, "boardId") ?? "");
+        const parentBoardId = parent ?? ensureRootView();
+        if (parent === undefined) {
+          notes.push(`Section "${sectionId}" belonged to a missing View; re-rooted.`);
+        }
+        if (this.boards.get(sectionId) === undefined) {
+          const siblings = this.listBoardChildren(parentBoardId);
+          const color = boardColorOf(readString(fields, "color"));
+          const board: Board = {
+            id: sectionId,
+            name: readString(fields, "title") ?? "",
+            rect: {
+              x: readNumber(fields, "x") ?? 0,
+              y: readNumber(fields, "y") ?? 0,
+              width: Math.max(80, readNumber(fields, "width") ?? 360),
+              height: Math.max(60, readNumber(fields, "height") ?? 260),
+            },
+            z: readNumber(fields, "z") ?? siblings.length,
+            parentBoardId,
+            createdAt: readNumber(fields, "createdAt") ?? now,
+            updatedAt: readNumber(fields, "updatedAt") ?? now,
+            ...(color === undefined ? {} : { color }),
+          };
+          this.writeBoard(board);
+          boards += 1;
+        }
+        legacySections.delete(sectionId);
+      }
+
+      // 2. Portal cards become nested Boards. The View a portal opened is
+      // emptied into its new frame, translated so its content lands inside it.
+      const consumedViews = new Set<string>();
+      for (const card of this.listCards()) {
+        if (!card.typeIds.includes(LEGACY_PORTAL_TYPE_ID)) continue;
+        const target = card.properties[LEGACY_PORTAL_FIELD_ID];
+        const targetViewId = typeof target === "string" && target.length > 0 ? target : undefined;
+        const ownPlacements = this.listCardPlacements(card.id);
+        const [position] = ownPlacements;
+        if (position !== undefined) {
+          const parentBoardId = this.hasPlane(position.boardId)
+            ? position.boardId
+            : ensureRootView();
+          const frameId = crypto.randomUUID();
+          const targetView = targetViewId === undefined ? undefined : this.getView(targetViewId);
+          const alreadyNested = targetView !== undefined && consumedViews.has(targetView.id);
+          if (targetView === undefined) {
+            fallbacks.push({
+              cardId: card.id,
+              boardId: targetViewId ?? position.boardId,
+              reason: "portal-target-missing",
+            });
+          } else if (alreadyNested) {
+            notes.push(`Portal "${card.id}" reopened "${targetView.id}", already nested once.`);
+          } else {
+            consumedViews.add(targetView.id);
+          }
+          const frame: Board = {
+            id: frameId,
+            name: targetView?.name ?? this.displayTitle(card.id),
+            rect: {
+              x: position.x,
+              y: position.y,
+              width: Math.max(80, position.width ?? 320),
+              height: Math.max(60, position.height ?? 240),
+            },
+            z: this.listBoardChildren(parentBoardId).length,
+            parentBoardId,
+            createdAt: now,
+            updatedAt: now,
+          };
+          this.writeBoard(frame);
+          if (targetView !== undefined && !alreadyNested) {
+            this.moveViewContentInto(targetView.id, frameId, position);
+          }
+          portals += 1;
+        } else {
+          notes.push(`Portal "${card.id}" had no placement; the card was removed.`);
+        }
+        for (const placement of ownPlacements) {
+          this.placements.delete(placementKey(placement.boardId, placement.cardId));
+        }
+        this.cards.delete(card.id);
+        this.content.delete(card.id);
+        this.titles.delete(card.id);
+        this.drawings.delete(card.id);
+      }
+
+      // 3. One position per card, owned by a Board. A placement on a View plane
+      // is re-homed to the innermost Board that contains it; a placement that
+      // names nothing falls back to the root and is reported.
+      for (const placement of this.listPlacements()) {
+        const boardsNow = this.listBoards();
+        if (findBoard(boardsNow, placement.boardId) !== undefined) continue;
+        let plane = this.views.get(placement.boardId) === undefined ? undefined : placement.boardId;
+        if (plane === undefined) {
+          plane = ensureRootView();
+          fallbacks.push({
+            cardId: placement.cardId,
+            boardId: placement.boardId,
+            reason: "missing-board",
+          });
+        }
+        const owner = ownerBoardAt(boardsNow, plane, { x: placement.x, y: placement.y });
+        if (owner === plane) {
+          if (placement.boardId !== plane) {
+            this.movePlacement(placement, plane, { x: placement.x, y: placement.y });
+            placements += 1;
+          }
+          continue;
+        }
+        const world = this.boardWorldRect(owner);
+        if (world === null) continue;
+        if (this.placements.get(placementKey(owner, placement.cardId)) !== undefined) {
+          fallbacks.push({
+            cardId: placement.cardId,
+            boardId: owner,
+            reason: "duplicate-placement",
+          });
+          this.placements.delete(placementKey(placement.boardId, placement.cardId));
+          continue;
+        }
+        this.movePlacement(placement, owner, {
+          x: placement.x - world.x,
+          y: placement.y - world.y,
+        });
+        placements += 1;
+      }
+
+      // 4. Views carry their camera explicitly from now on.
+      for (const id of this.views.keys()) {
+        const fields = this.views.get(id);
+        if (!isMap(fields)) continue;
+        if (fields.get("cameraX") === undefined) {
+          fields.set("cameraX", DEFAULT_VIEW_CAMERA.x);
+          fields.set("cameraY", DEFAULT_VIEW_CAMERA.y);
+          fields.set("cameraZoom", DEFAULT_VIEW_CAMERA.zoom);
+          views += 1;
+        }
+      }
+
+      // 5. The portal type is deleted: nothing creates one any more.
+      if (this.types.get(LEGACY_PORTAL_TYPE_ID) !== undefined) {
+        this.types.delete(LEGACY_PORTAL_TYPE_ID);
+        this.typeCache.delete(LEGACY_PORTAL_TYPE_ID);
+        notes.push("Removed the built-in portal type.");
+      }
+
+      this.meta.set("schemaVersion", SCHEMA_VERSION);
+    });
+
+    const report: MigrationReport = {
+      fromVersion,
+      toVersion: SCHEMA_VERSION,
+      boards,
+      portals,
+      placements,
+      views,
+      droppedPlacements: fallbacks.filter((entry) => entry.reason === "duplicate-placement").length,
+      fallbacks,
+      notes,
+    };
+    this.migrationReport = report;
+    return report;
+  }
+
+  /** Moves a View's whole plane into a Board frame: boards, then placements. */
+  private moveViewContentInto(
+    viewId: string,
+    frameId: string,
+    origin: { x: number; y: number },
+  ): void {
+    for (const board of this.listBoardChildren(viewId)) {
+      // The frame the content is moving into is never one of its own children.
+      if (board.id === frameId) continue;
+      const fields = this.boards.get(board.id);
+      if (!isMap(fields)) continue;
+      const rect = fields.ensureMergeableMap("rect");
+      rect.set("x", board.rect.x - origin.x);
+      rect.set("y", board.rect.y - origin.y);
+      fields.set("parentBoardId", frameId);
+      fields.set("updatedAt", Date.now());
+    }
+    for (const placement of this.listPlacements()) {
+      if (placement.boardId !== viewId) continue;
+      this.movePlacement(placement, frameId, {
+        x: placement.x - origin.x,
+        y: placement.y - origin.y,
+      });
+    }
+  }
+
+  /** Rewrites one placement under a new owner, keeping its size and order. */
+  private movePlacement(
+    placement: Placement,
+    boardId: string,
+    position: { x: number; y: number },
+  ): void {
+    this.placements.delete(placementKey(placement.boardId, placement.cardId));
+    const fields = this.placements.ensureMergeableMap(placementKey(boardId, placement.cardId));
+    fields.set("boardId", boardId);
+    fields.set("cardId", placement.cardId);
+    fields.set("x", position.x);
+    fields.set("y", position.y);
+    fields.set("z", placement.z);
+    fields.set("createdAt", placement.createdAt);
+    if (placement.width !== undefined) fields.set("width", placement.width);
+    if (placement.height !== undefined) fields.set("height", placement.height);
+  }
+
+  // ------------------------------------------------- sections (compatibility)
+
+  /**
+   * The Section projection of the Board tree, kept for the React Flow and
+   * scene surfaces while they are the reference implementation. Read-only:
+   * Sections are no longer stored, and every write below lands on a Board.
+   */
+  listSections(rootBoardId?: string): Section[] {
+    const boards = this.listBoards();
+    const sections = sectionsFromBoards(boards);
+    const viewIds = new Set(this.views.keys());
+    const kept = sections.filter((section) => viewIds.has(section.boardId));
+    const scoped =
+      rootBoardId === undefined ? kept : kept.filter((entry) => entry.boardId === rootBoardId);
+    return scoped.map((entry) => this.sectionOf(entry));
+  }
+
+  private sectionOf(section: ReturnType<typeof sectionsFromBoards>[number]): Section {
+    return sectionSchema.parse(section);
+  }
+
+  getSection(id: string): Section | undefined {
+    const board = this.getBoard(id);
+    if (board === undefined) return undefined;
+    const derived = sectionsFromBoards(this.listBoards()).find((entry) => entry.id === id);
+    return derived === undefined ? undefined : this.sectionOf(derived);
+  }
+
+  createSection(input: CreateSectionInput): Section {
+    const board = this.createBoard({
+      ...(input.id === undefined ? {} : { id: input.id }),
+      name: input.title ?? "",
+      parentBoardId: input.boardId,
+      x: input.x,
+      y: input.y,
+      ...(input.width === undefined ? {} : { width: input.width }),
+      ...(input.height === undefined ? {} : { height: input.height }),
+      ...(input.color === undefined ? {} : { color: input.color }),
+    });
+    const created = this.getSection(board.id);
+    if (created === undefined) throw new Error(`Board ${board.id} did not read back`);
+    return created;
+  }
+
+  renameSection(id: string, title: string): void {
+    this.renameBoard(id, title);
+  }
+
+  setSectionColor(id: string, color: Section["color"] | null): void {
+    this.setBoardColor(id, color ?? null);
+  }
+
+  updateSectionGeometry(id: string, rect: Pick<Section, "x" | "y" | "width" | "height">): void {
+    this.updateBoardRect(id, rect);
+  }
+
+  /**
+   * One commit for a section drag: the region, any sections contained by it and
+   * every member placement. Kept for the legacy surfaces; a new gesture should
+   * call `moveBoardBatch` and re-parent with `nestBoard`.
+   */
+  moveSectionsBatch(input: {
+    sections: { id: string; x: number; y: number; width?: number; height?: number }[];
+    placements?: { boardId: string; cardId: string; x: number; y: number }[];
+  }): void {
+    const now = Date.now();
+    for (const next of input.sections) {
+      const fields = this.boards.get(next.id);
+      if (!isMap(fields)) continue;
+      const rect = fields.ensureMergeableMap("rect");
+      rect.set("x", next.x);
+      rect.set("y", next.y);
+      if (next.width !== undefined) rect.set("width", Math.max(80, next.width));
+      if (next.height !== undefined) rect.set("height", Math.max(60, next.height));
+      fields.set("updatedAt", now);
+    }
+    for (const next of input.placements ?? []) {
+      const fields = this.placements.get(placementKey(next.boardId, next.cardId));
+      if (!isMap(fields)) continue;
+      fields.set("x", next.x);
+      fields.set("y", next.y);
+    }
+    this.commit(`${STRUCT_ORIGIN}move-section`);
+  }
+
+  deleteSection(id: string): void {
+    this.deleteBoard(id);
+  }
+
+  // ----------------------------------------------------------- saved views
+
+  private cachedSavedView(id: string): SavedView | undefined {
+    const cached = this.savedViewCache.get(id);
     if (cached) return cached;
     const fields = this.viewsMap.get(id);
     if (!isMap(fields)) return undefined;
@@ -1224,29 +1963,29 @@ export class WorkspaceDocument {
     // A hand-edited or corrupt view is skipped, not thrown on: the rest of the
     // document still opens.
     if (!parsed.success) return undefined;
-    this.viewCache.set(id, parsed.data);
+    this.savedViewCache.set(id, parsed.data);
     return parsed.data;
   }
 
   /** Saved views in menu order: position, then id so every client agrees. */
-  listViews(): SavedView[] {
+  listSavedViews(): SavedView[] {
     return this.viewsMap
       .keys()
-      .map((id) => this.cachedView(id))
+      .map((id) => this.cachedSavedView(id))
       .filter((view): view is SavedView => view !== undefined)
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
   }
 
-  getView(id: string): SavedView | undefined {
-    return this.cachedView(id);
+  getSavedView(id: string): SavedView | undefined {
+    return this.cachedSavedView(id);
   }
 
-  createView(input: CreateViewInput): SavedView {
+  createSavedView(input: CreateSavedViewInput): SavedView {
     const name = input.name.trim();
     if (!name) throw new Error("A view needs a name");
     const id = input.id ?? crypto.randomUUID();
     if (this.viewsMap.get(id) !== undefined) throw new Error(`View already exists: ${id}`);
-    const existing = this.listViews();
+    const existing = this.listSavedViews();
     const last = existing.at(-1);
     const view = savedViewSchema.parse({
       id,
@@ -1254,17 +1993,17 @@ export class WorkspaceDocument {
       position: input.position ?? (last ? last.position + 1 : 0),
       query: input.query,
     });
-    this.writeView(view);
-    this.commit(`${STRUCT_ORIGIN}create-view`);
+    this.writeSavedView(view);
+    this.commit(`${STRUCT_ORIGIN}create-saved-view`);
     return view;
   }
 
   /**
-   * Renames a view and/or replaces its query. The query is a whole record: a
-   * view is one saved query, so a facet edit is a new query, not a merge.
+   * Renames a saved view and/or replaces its query. The query is a whole
+   * record: a saved view is one saved query, so a facet edit is a new query.
    */
-  updateView(id: string, patch: { name?: string; query?: ViewQuery }): SavedView | undefined {
-    const current = this.getView(id);
+  updateSavedView(id: string, patch: { name?: string; query?: ViewQuery }): SavedView | undefined {
+    const current = this.getSavedView(id);
     if (!current) return undefined;
     const name = patch.name === undefined ? current.name : patch.name.trim();
     if (!name) throw new Error("A view needs a name");
@@ -1273,22 +2012,22 @@ export class WorkspaceDocument {
       name,
       query: patch.query ?? current.query,
     });
-    this.writeView(view);
-    this.commit(`${STRUCT_ORIGIN}update-view`);
+    this.writeSavedView(view);
+    this.commit(`${STRUCT_ORIGIN}update-saved-view`);
     return view;
   }
 
   /** Removes the saved query; no card is touched. */
-  deleteView(id: string): void {
+  deleteSavedView(id: string): void {
     if (this.viewsMap.get(id) === undefined) return;
     this.viewsMap.delete(id);
-    this.commit(`${STRUCT_ORIGIN}delete-view`);
+    this.commit(`${STRUCT_ORIGIN}delete-saved-view`);
   }
 
-  /** Moves a view to `position` in the menu, renumbering the rest in one commit. */
-  moveView(id: string, position: number): void {
+  /** Moves a saved view to `position` in the menu, renumbering the rest in one commit. */
+  moveSavedView(id: string, position: number): void {
     if (!Number.isFinite(position)) return;
-    const views = this.listViews();
+    const views = this.listSavedViews();
     const from = views.findIndex((view) => view.id === id);
     const moving = views[from];
     if (!moving) return;
@@ -1299,10 +2038,10 @@ export class WorkspaceDocument {
       const fields = this.viewsMap.get(view.id);
       if (isMap(fields)) fields.set("position", index);
     });
-    this.commit(`${STRUCT_ORIGIN}move-view`);
+    this.commit(`${STRUCT_ORIGIN}move-saved-view`);
   }
 
-  private writeView(view: SavedView): void {
+  private writeSavedView(view: SavedView): void {
     const fields = this.viewsMap.ensureMergeableMap(view.id);
     fields.set("name", view.name);
     fields.set("position", view.position);
@@ -1322,16 +2061,16 @@ export class WorkspaceDocument {
    * configuration that no board, card or paragraph mutation touches, so the
    * snapshot stream and every content subscriber stay as they were.
    */
-  observeViews(listener: () => void): () => void {
-    this.viewListeners.add(listener);
+  observeSavedViews(listener: () => void): () => void {
+    this.savedViewListeners.add(listener);
     return () => {
-      this.viewListeners.delete(listener);
+      this.savedViewListeners.delete(listener);
     };
   }
 
-  /** Monotonic count of views-map changes, the snapshot for `useSyncExternalStore`. */
-  get viewsRevision(): number {
-    return this.viewRevision;
+  /** Monotonic count of saved-view changes, the snapshot for `useSyncExternalStore`. */
+  get savedViewsRevision(): number {
+    return this.savedViewRevision;
   }
 
   // ----------------------------------------------------------------- types
@@ -1423,16 +2162,11 @@ export class WorkspaceDocument {
 
   /**
    * Deletes a type and reassigns the cards that used it. One commit, so the
-   * whole command is one undo step. The built-in note and portal types cannot
-   * be deleted: the portal's board field is the only handle a portal has on its
-   * target board.
+   * whole command is one undo step. The built-in note type cannot be deleted.
    */
   deleteType(id: string, options: { reassignTo?: string } = {}): number {
     if (id === DEFAULT_TYPE_ID) {
       throw new Error("The note type cannot be deleted");
-    }
-    if (id === PORTAL_TYPE_ID) {
-      throw new Error("The portal type cannot be deleted");
     }
     const type = this.getType(id);
     if (!type) return 0;
@@ -1464,7 +2198,7 @@ export class WorkspaceDocument {
     return reassigned;
   }
 
-  /** Idempotent: the starter types, including the built-in portal, exist in every workspace. */
+  /** Idempotent: the starter types exist in every workspace. */
   ensureDefaultTypes(): void {
     const defaults: CreateTypeInput[] = [
       { id: DEFAULT_TYPE_ID, name: "Note", glyph: "\u25a1" },
@@ -1477,43 +2211,12 @@ export class WorkspaceDocument {
       this.createTypeInternal(definition, false);
       changed = true;
     }
-    if (this.seedPortalType()) changed = true;
+    if (this.migrate() !== null) changed = true;
     if (this.meta.get("schemaVersion") !== SCHEMA_VERSION) {
       this.meta.set("schemaVersion", SCHEMA_VERSION);
       changed = true;
     }
     if (changed) this.commit(`${STRUCT_ORIGIN}seed`);
-  }
-
-  /**
-   * Seeds the built-in portal type with its single board field. Idempotent and
-   * deliberately shallow: an existing portal type is left exactly as it is,
-   * renames included, so a user's edit is never clobbered on load. Writes no
-   * commit of its own; the caller commits once for the whole seed.
-   */
-  private seedPortalType(): boolean {
-    if (this.getType(PORTAL_TYPE_ID)) return false;
-    this.createTypeInternal(
-      {
-        id: PORTAL_TYPE_ID,
-        name: "Portal",
-        pluralName: "Portals",
-        glyph: "\u25c9",
-      },
-      false,
-    );
-    const fields = this.typeFields(PORTAL_TYPE_ID);
-    if (fields) {
-      const board = fields.ensureMergeableMap(PORTAL_BOARD_FIELD_ID);
-      board.set("name", "Board");
-      board.set("kind", "board");
-      board.set("required", true);
-      board.set("order", 0);
-    }
-    // `createTypeInternal` cached an empty field list; the new field is already
-    // in the document, but the cached type would keep lying until a commit.
-    this.typeCache.delete(PORTAL_TYPE_ID);
-    return true;
   }
 
   private typeFields(typeId: string): LoroMap | undefined {
@@ -1571,15 +2274,8 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}field`);
   }
 
-  /**
-   * Removes the definition only; card values stay dormant and can be revived.
-   * The portal's board field is refused: without it a portal has nothing to
-   * point at, and the built-in type is a single-field type by design.
-   */
+  /** Removes the definition only; card values stay dormant and can be revived. */
   removeField(typeId: string, fieldId: string): void {
-    if (typeId === PORTAL_TYPE_ID && fieldId === PORTAL_BOARD_FIELD_ID) {
-      throw new Error("The portal board field cannot be removed");
-    }
     const fields = this.typeFields(typeId);
     if (!fields || fields.get(fieldId) === undefined) return;
     fields.delete(fieldId);
@@ -1727,137 +2423,6 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}tag`);
   }
 
-  // -------------------------------------------------------------- sections
-
-  private cachedSection(id: string): Section | undefined {
-    const cached = this.sectionCache.get(id);
-    if (cached) return cached;
-    const value = this.sections.get(id);
-    if (!isMap(value)) return undefined;
-    const section = sectionFromMap(id, value);
-    this.sectionCache.set(id, section);
-    return section;
-  }
-
-  listSections(boardId?: string): Section[] {
-    return this.sections
-      .keys()
-      .map((id) => this.cachedSection(id))
-      .filter((section): section is Section => section !== undefined)
-      .filter((section) => boardId === undefined || section.boardId === boardId)
-      .sort((a, b) => a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  }
-
-  getSection(id: string): Section | undefined {
-    return this.cachedSection(id);
-  }
-
-  createSection(input: CreateSectionInput): Section {
-    if (!this.boards.get(input.boardId)) {
-      throw new Error(`Unknown board: ${input.boardId}`);
-    }
-    const now = Date.now();
-    const existing = this.listSections(input.boardId);
-    const section = sectionSchema.parse({
-      id: input.id ?? crypto.randomUUID(),
-      boardId: input.boardId,
-      title: input.title ?? "",
-      x: input.x,
-      y: input.y,
-      width: Math.max(80, input.width ?? 360),
-      height: Math.max(60, input.height ?? 260),
-      z: existing.length > 0 ? (existing.at(-1)?.z ?? 0) + 1 : 0,
-      createdAt: now,
-      updatedAt: now,
-      ...(input.color ? { color: input.color } : {}),
-    });
-    this.writeSection(section);
-    this.commit(`${STRUCT_ORIGIN}create-section`);
-    return section;
-  }
-
-  renameSection(id: string, title: string): void {
-    const fields = this.sections.get(id);
-    if (!isMap(fields)) return;
-    fields.set("title", title);
-    fields.set("updatedAt", Date.now());
-    this.commit(`${STRUCT_ORIGIN}rename-section`);
-  }
-
-  setSectionColor(id: string, color: Section["color"] | null): void {
-    const fields = this.sections.get(id);
-    if (!isMap(fields)) return;
-    if (color) fields.set("color", color);
-    else fields.delete("color");
-    fields.set("updatedAt", Date.now());
-    this.commit(`${STRUCT_ORIGIN}section-color`);
-  }
-
-  updateSectionGeometry(id: string, rect: Pick<Section, "x" | "y" | "width" | "height">): void {
-    const fields = this.sections.get(id);
-    if (!isMap(fields)) return;
-    fields.set("x", rect.x);
-    fields.set("y", rect.y);
-    fields.set("width", Math.max(80, rect.width));
-    fields.set("height", Math.max(60, rect.height));
-    fields.set("updatedAt", Date.now());
-    this.commit(`${STRUCT_ORIGIN}resize-section`);
-  }
-
-  /**
-   * One commit for a section drag: the region, any sections contained by it and
-   * every member placement. Members are supplied by the caller from stored
-   * geometry so peers and the drag leader agree without extra presence payload.
-   */
-  moveSectionsBatch(input: {
-    sections: {
-      id: string;
-      x: number;
-      y: number;
-      width?: number;
-      height?: number;
-    }[];
-    placements?: { boardId: string; cardId: string; x: number; y: number }[];
-  }): void {
-    const now = Date.now();
-    for (const next of input.sections) {
-      const fields = this.sections.get(next.id);
-      if (!isMap(fields)) continue;
-      fields.set("x", next.x);
-      fields.set("y", next.y);
-      if (next.width !== undefined) fields.set("width", Math.max(80, next.width));
-      if (next.height !== undefined) fields.set("height", Math.max(60, next.height));
-      fields.set("updatedAt", now);
-    }
-    for (const next of input.placements ?? []) {
-      const fields = this.placements.get(placementKey(next.boardId, next.cardId));
-      if (!isMap(fields)) continue;
-      fields.set("x", next.x);
-      fields.set("y", next.y);
-    }
-    this.commit(`${STRUCT_ORIGIN}move-section`);
-  }
-
-  deleteSection(id: string): void {
-    if (this.sections.get(id) === undefined) return;
-    this.sections.delete(id);
-    this.commit(`${STRUCT_ORIGIN}delete-section`);
-  }
-
-  private writeSection(section: Section): void {
-    const fields = this.sections.ensureMergeableMap(section.id);
-    fields.set("boardId", section.boardId);
-    fields.set("title", section.title);
-    fields.set("x", section.x);
-    fields.set("y", section.y);
-    fields.set("width", section.width);
-    fields.set("height", section.height);
-    fields.set("z", section.z);
-    fields.set("createdAt", section.createdAt);
-    fields.set("updatedAt", section.updatedAt);
-    if (section.color) fields.set("color", section.color);
-  }
-
   // ----------------------------------------------------------------- pins
 
   /**
@@ -1887,8 +2452,8 @@ export class WorkspaceDocument {
         : {}),
     });
     if (!parsed.success) return undefined;
-    // A pin on a board that no longer exists has nowhere to render.
-    if (this.boards.get(parsed.data.boardId) === undefined) return undefined;
+    // A pin on a plane that no longer exists has nowhere to render.
+    if (!this.hasPlane(parsed.data.boardId)) return undefined;
     this.pinCache.set(id, parsed.data);
     return parsed.data;
   }
@@ -1914,7 +2479,7 @@ export class WorkspaceDocument {
    * an unknown board throws, because these are caller bugs, not stored data.
    */
   createPin(input: CreatePinInput): Pin {
-    if (this.boards.get(input.boardId) === undefined) {
+    if (!this.hasPlane(input.boardId)) {
       throw new Error(`Unknown board: ${input.boardId}`);
     }
     const pin = pinSchema.parse({
@@ -2165,45 +2730,6 @@ export class WorkspaceDocument {
   }
 
   /**
-   * Creates a portal: a card of the built-in portal type whose board field
-   * points at `targetBoardId`, placed on `boardId`.
-   *
-   * `createCard` and `setProperty` each commit on their own, so the two writes
-   * are wrapped in one batch: the portal lands as a single commit and is never
-   * observable without its target board.
-   */
-  createPortalCard(input: CreatePortalCardInput): Card {
-    if (!this.getBoard(input.targetBoardId)) {
-      throw new Error(`Unknown board: ${input.targetBoardId}`);
-    }
-    if (!this.getBoard(input.boardId)) {
-      throw new Error(`Unknown board: ${input.boardId}`);
-    }
-    const id = input.id ?? crypto.randomUUID();
-    this.batch(`${STRUCT_ORIGIN}create-portal`, () => {
-      // A document that has not been seeded yet still gets a usable portal.
-      this.seedPortalType();
-      this.createCard({
-        id,
-        typeId: PORTAL_TYPE_ID,
-        boardId: input.boardId,
-        position: input.position ?? { x: 0, y: 0 },
-      });
-      this.setProperty(id, PORTAL_BOARD_FIELD_ID, input.targetBoardId);
-      if (input.size) {
-        this.updatePlacementGeometry(input.boardId, id, {
-          ...(input.position ?? { x: 0, y: 0 }),
-          width: input.size.width,
-          height: input.size.height,
-        });
-      }
-    });
-    const card = this.getCard(id);
-    if (!card) throw new Error(`Unknown card: ${id}`);
-    return card;
-  }
-
-  /**
    * Copies a card into a new object with a fresh id. Type, tags, properties and
    * the title/body rich-text trees come along — the containers are deep-copied,
    * marks included — while connectors and the original's placements stay behind
@@ -2214,7 +2740,7 @@ export class WorkspaceDocument {
     const source = this.getCard(cardId);
     if (!source) throw new Error(`Unknown card: ${cardId}`);
     if (source.deletedAt) throw new Error(`Cannot duplicate a trashed card: ${cardId}`);
-    if (options.boardId && !this.getBoard(options.boardId)) {
+    if (options.boardId && !this.hasPlane(options.boardId)) {
       throw new Error(`Unknown board: ${options.boardId}`);
     }
 
@@ -2267,7 +2793,7 @@ export class WorkspaceDocument {
    */
   moveCardToBoard(cardId: string, boardId: string, position?: { x: number; y: number }): Placement {
     if (!this.getCard(cardId)) throw new Error(`Unknown card: ${cardId}`);
-    if (!this.getBoard(boardId)) throw new Error(`Unknown board: ${boardId}`);
+    if (!this.hasPlane(boardId)) throw new Error(`Unknown board: ${boardId}`);
 
     const existing = this.getPlacement(boardId, cardId);
     const home = this.listCardPlacements(cardId)[0];
@@ -2794,8 +3320,24 @@ export class WorkspaceDocument {
     return this.listCardPlacements(cardId)[0]?.boardId ?? null;
   }
 
+  /**
+   * Placements on a plane. Given a View id this is the whole View — every
+   * Board in its tree, translated into the View's own coordinates, which is
+   * what the reference surfaces and a share both expect. Given a Board id it
+   * is that Board's direct children, in the Board's frame.
+   */
   listBoardPlacements(boardId: string): Placement[] {
-    return sortByLayer(this.listPlacements().filter((placement) => placement.boardId === boardId));
+    const direct = this.listPlacements().filter((placement) => placement.boardId === boardId);
+    if (this.views.get(boardId) === undefined) return sortByLayer(direct);
+    const boards = this.listBoards();
+    const placed = this.listPlacements()
+      .filter((placement) => boardRootId(boards, placement.boardId) === boardId)
+      .map((placement) => {
+        const world = this.boardWorldRect(placement.boardId);
+        if (world === null) return placement;
+        return { ...placement, x: placement.x + world.x, y: placement.y + world.y };
+      });
+    return sortByLayer(placed);
   }
 
   listBoardCards(boardId: string): Card[] {
@@ -2830,7 +3372,7 @@ export class WorkspaceDocument {
     cardId: string,
     position: { x: number; y: number },
   ): Placement | null {
-    if (!this.cards.get(cardId) || !this.boards.get(boardId)) return null;
+    if (!this.cards.get(cardId) || !this.hasPlane(boardId)) return null;
 
     const existing = this.getPlacement(boardId, cardId);
     if (existing) {
@@ -2944,9 +3486,9 @@ export class WorkspaceDocument {
   applyLayoutPlan(plan: LayoutPlan, options: ApplyLayoutPlanOptions = {}): LayoutPlanSummary {
     const parsed = parseLayoutPlan(plan);
     const issues = layoutPlanIssues(parsed, {
-      hasBoard: (id) => this.boards.get(id) !== undefined,
+      hasBoard: (id) => this.hasPlane(id),
       hasCard: (id) => this.cards.get(id) !== undefined,
-      hasSection: (id) => this.sections.get(id) !== undefined,
+      hasSection: (id) => this.getBoard(id) !== undefined,
       placedBoards: (cardId) => this.listCardPlacements(cardId).map((entry) => entry.boardId),
     });
     if (issues.length > 0) throw new LayoutPlanError(issues);
@@ -3101,12 +3643,13 @@ export class WorkspaceDocument {
       }
       const now = Date.now();
       for (const change of sectionChanges) {
-        const fields = this.sections.get(change.id);
+        const fields = this.boards.get(change.id);
         if (!isMap(fields)) continue;
-        fields.set("x", change.x);
-        fields.set("y", change.y);
-        fields.set("width", change.width);
-        fields.set("height", change.height);
+        const rect = fields.ensureMergeableMap("rect");
+        rect.set("x", change.x);
+        rect.set("y", change.y);
+        rect.set("width", change.width);
+        rect.set("height", change.height);
         fields.set("updatedAt", now);
       }
     });

@@ -4,7 +4,7 @@ import { WorkspaceDocument } from "./WorkspaceDocument.js";
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.ensureDefaultTypes();
   const project = workspace.createType({ name: "Project", glyph: "P" });
   const owner = workspace.addField(project.id, { name: "Owner", kind: "text" });

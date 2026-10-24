@@ -31,14 +31,7 @@
  * Everything (ordering, ids, coordinates, pen/vinyl/seed choices) is derived
  * from the graph alone, so two builds of the same seed produce identical plans.
  */
-import {
-  type Board,
-  type Card,
-  type Placement,
-  PORTAL_BOARD_FIELD_ID,
-  PORTAL_TYPE_ID,
-  WorkspaceDocument,
-} from "@suite/graph";
+import { type Board, type Card, type Placement, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { seedExampleWorkspace } from "../demo/seedExample";
 
@@ -57,8 +50,26 @@ export const SUITE_MAX_DEPTH = 2;
 const NOTE_PENS = ["felt", "ball", "fountain", "red"] as const;
 /** The vinyl a mini mat wears, by depth: depth 1 and below differ from the desk. */
 const MINIMAT_VINYLS: Readonly<Record<number, string>> = { 1: "charcoal", 2: "slate" };
-/** A portal without a stored size is the seed's own portal size (see `demo/seedExample`). */
-const DEFAULT_MINIMAT_SIZE = { width: 288, height: 256 } as const;
+
+/**
+ * `desk.minimat` sells three vinyls (`sage`, `slate`, `charcoal`) and its `vinyl`
+ * prop is a closed `p.enum`, so a Board's palette colour cannot be passed
+ * through: an unknown name fails the spawn and takes the Board's cards with it.
+ * Each Board colour is therefore mapped onto the nearest vinyl, on purpose —
+ * green is the desk's own green mat, cool hues the blue-grey slate, warm ones the
+ * green-black charcoal. A Board's own colour coming back needs a `suite.board`
+ * kind of our own (pinned in the plan), not another palette entry.
+ */
+export const MINIMAT_VINYL_NAMES = ["sage", "slate", "charcoal"] as const;
+type MiniMatVinyl = (typeof MINIMAT_VINYL_NAMES)[number];
+const MINIMAT_VINYL_BY_COLOR: Readonly<Record<NonNullable<Board["color"]>, MiniMatVinyl>> = {
+  slate: "slate",
+  blue: "slate",
+  violet: "slate",
+  green: "sage",
+  amber: "charcoal",
+  rose: "charcoal",
+};
 
 export type IceSuiteObjectKind = "note" | "card" | "minimat";
 export type IceSuiteSkipKind = "portal" | "section";
@@ -130,10 +141,11 @@ export interface IceSuiteMiniMat {
   readonly type: typeof SUITE_MINIMAT_TYPE;
   /** The board this mat opens. */
   readonly boardId: string;
-  /** The board whose portal card placed this mat. */
+  /** The Board that contains this one (its parent frame). */
   readonly parentBoardId: string;
-  readonly portalCardId: string;
-  /** The portal card's own `displayTitle`. */
+  /** A Board is a container, not a card: there is no portal card to name. */
+  readonly portalCardId: null;
+  /** The Board's own name. */
   readonly title: string;
   /** Board depth below the root: a root portal is 1. */
   readonly depth: number;
@@ -220,7 +232,6 @@ export interface IceSuiteSpawnReport<TEntity> {
 
 interface ParentMat {
   readonly objectId: string;
-  readonly portalCardId: string;
 }
 
 function objectId(parent: ParentMat | undefined, kind: IceSuiteObjectKind, id: string): string {
@@ -238,13 +249,6 @@ export function snippetOf(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= SUITE_BODY_SNIPPET_LENGTH) return flat;
   return `${flat.slice(0, SUITE_BODY_SNIPPET_LENGTH).trimEnd()}…`;
-}
-
-/** The board a portal card opens; `undefined` for a card that is not a portal. */
-function portalTarget(card: Card): string | undefined {
-  if (!card.typeIds.includes(PORTAL_TYPE_ID)) return undefined;
-  const value = card.properties[PORTAL_BOARD_FIELD_ID];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function placementSize(placement: Placement): { width?: number; height?: number } {
@@ -321,30 +325,38 @@ function suiteCardFrom(
   };
 }
 
+/**
+ * A Board is a container now (ADR-0039): its mat is spawned from the Board's own
+ * rect, not from a card that pointed at it. The rect is given in the parent's
+ * frame, which is exactly what a frame-local child needs.
+ */
 function minimatFrom(
-  placement: Placement,
-  card: Card,
   board: Board,
   parentBoardId: string,
   parent: ParentMat | undefined,
   depth: number,
-  title: string,
 ): IceSuiteMiniMat {
   return {
     kind: "minimat",
-    id: objectId(parent, "minimat", card.id),
+    id: objectId(parent, "minimat", board.id),
     type: SUITE_MINIMAT_TYPE,
     boardId: board.id,
     parentBoardId,
-    portalCardId: card.id,
-    title,
+    portalCardId: null,
+    title: board.name.length > 0 ? board.name : "Board",
     depth,
-    x: placement.x,
-    y: placement.y,
-    width: placement.width ?? DEFAULT_MINIMAT_SIZE.width,
-    height: placement.height ?? DEFAULT_MINIMAT_SIZE.height,
+    x: board.rect.x,
+    y: board.rect.y,
+    width: board.rect.width,
+    height: board.rect.height,
     ...(parent === undefined ? {} : { parentId: parent.objectId }),
-    props: { name: board.name, vinyl: MINIMAT_VINYLS[depth] ?? "slate" },
+    props: {
+      name: board.name.length > 0 ? board.name : "Board",
+      vinyl:
+        (board.color === undefined ? undefined : MINIMAT_VINYL_BY_COLOR[board.color]) ??
+        MINIMAT_VINYLS[depth] ??
+        "slate",
+    },
   };
 }
 
@@ -359,7 +371,7 @@ export function projectWorkspaceToIce(
   rootBoardId: string,
   options: IceSuiteProjectionOptions = {},
 ): IceSuiteSeed {
-  const root = workspace.getBoard(rootBoardId);
+  const root = workspace.getView(rootBoardId);
   const objects: IceSuiteObject[] = [];
   const boards: IceSuiteBoard[] = [];
   const cards: IceSuiteCard[] = [];
@@ -367,6 +379,13 @@ export function projectWorkspaceToIce(
   const cardKind: IceSuiteCardKind = options.cardKind ?? "note";
   let noteIndex = 0;
 
+  /**
+   * Walk one Board: its cards, then its child Boards as nested mats.
+   *
+   * A card's placement is frame-local to the Board that owns it, and a child
+   * Board's rect is frame-local to its parent — so the projection hands ICE
+   * exactly the coordinates the document stores, and ICE does the nesting.
+   */
   const visit = (
     boardId: string,
     path: readonly string[],
@@ -374,7 +393,8 @@ export function projectWorkspaceToIce(
     depth: number,
   ): void => {
     const board = workspace.getBoard(boardId);
-    if (board === undefined) {
+    const view = board === undefined ? workspace.getView(boardId) : undefined;
+    if (board === undefined && view === undefined) {
       skipped.push({
         kind: "portal",
         id: boardId,
@@ -384,89 +404,60 @@ export function projectWorkspaceToIce(
       });
       return;
     }
+    const name = board?.name ?? view?.name ?? boardId;
 
     boards.push({
-      id: board.id,
-      name: board.name,
+      id: boardId,
+      name,
       depth,
       matId: parent?.objectId ?? null,
-      portalCardId: parent?.portalCardId ?? null,
+      portalCardId: null,
     });
 
-    // Sections are geometry, not ownership, and ICE has no section kind: the
-    // mat's name is the only label the projection can honestly carry.
-    for (const section of workspace.listSections(boardId)) {
-      skipped.push({
-        kind: "section",
-        id: section.id,
-        boardId,
-        reason: "section",
-        detail: `Section "${section.title}" has no ICE equivalent; the mini mat is labelled with the board name.`,
-      });
-    }
-
-    for (const placement of workspace.listBoardPlacements(boardId)) {
+    // `listBoardPlacements` flattens a View's whole tree into plane coordinates;
+    // the walk spawns the tree itself, so only the cards this frame owns are
+    // taken here. A Board answers with its own placements already.
+    for (const placement of workspace
+      .listBoardPlacements(boardId)
+      .filter((entry) => entry.boardId === boardId)) {
       const card = workspace.getCard(placement.cardId);
       if (card === undefined) continue;
-      const targetBoardId = portalTarget(card);
-      const title = workspace.displayTitle(card.id);
-
-      if (targetBoardId === undefined) {
-        if (cardKind === "card") {
-          const image = suiteCardFrom(workspace, placement, card, boardId, parent, noteIndex);
-          objects.push(image);
-          cards.push({ cardId: card.id, objectId: image.id, boardId, kind: "card" });
-        } else {
-          const note = noteFrom(workspace, placement, card, boardId, parent, noteIndex);
-          objects.push(note);
-          cards.push({ cardId: card.id, objectId: note.id, boardId, kind: "note" });
-        }
-        noteIndex += 1;
-        continue;
+      if (cardKind === "card") {
+        const image = suiteCardFrom(workspace, placement, card, boardId, parent, noteIndex);
+        objects.push(image);
+        cards.push({ cardId: card.id, objectId: image.id, boardId, kind: "card" });
+      } else {
+        const note = noteFrom(workspace, placement, card, boardId, parent, noteIndex);
+        objects.push(note);
+        cards.push({ cardId: card.id, objectId: note.id, boardId, kind: "note" });
       }
+      noteIndex += 1;
+    }
 
-      if (path.includes(targetBoardId)) {
+    for (const child of workspace.listBoardChildren(boardId)) {
+      if (path.includes(child.id)) {
         skipped.push({
           kind: "portal",
-          id: card.id,
+          id: child.id,
           boardId,
           reason: "cycle",
-          detail: `Portal "${title}" reopens a board already on the path (${path.join(" → ")}).`,
+          detail: `Board "${child.name}" nests a board already on the path (${path.join(" → ")}).`,
         });
         continue;
       }
-
       if (depth + 1 > SUITE_MAX_DEPTH) {
         skipped.push({
           kind: "portal",
-          id: card.id,
+          id: child.id,
           boardId,
           reason: "depth",
-          detail: `Portal "${title}" would open board depth ${depth + 1}; the projection stops at ${SUITE_MAX_DEPTH}.`,
+          detail: `Board "${child.name}" would sit at depth ${depth + 1}; the projection stops at ${SUITE_MAX_DEPTH}.`,
         });
         continue;
       }
-
-      const target = workspace.getBoard(targetBoardId);
-      if (target === undefined) {
-        skipped.push({
-          kind: "portal",
-          id: card.id,
-          boardId,
-          reason: "missing",
-          detail: `Portal "${title}" opens "${targetBoardId}", which is not in the workspace.`,
-        });
-        continue;
-      }
-
-      const mat = minimatFrom(placement, card, target, boardId, parent, depth + 1, title);
+      const mat = minimatFrom(child, boardId, parent, depth + 1);
       objects.push(mat);
-      visit(
-        target.id,
-        [...path, target.id],
-        { objectId: mat.id, portalCardId: card.id },
-        depth + 1,
-      );
+      visit(child.id, [...path, child.id], { objectId: mat.id }, depth + 1);
     }
   };
 

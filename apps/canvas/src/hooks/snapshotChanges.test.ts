@@ -22,9 +22,11 @@ const card = (id: string, updatedAt = 0): Card => ({
   properties: {},
 });
 
-const board = (id: string, createdAt = 0): Board => ({
+const board = (id: string, createdAt = 0, z = 0): Board => ({
   id,
   name: id,
+  rect: { x: 0, y: 0, width: 360, height: 260 },
+  z,
   createdAt,
   updatedAt: createdAt,
 });
@@ -58,6 +60,7 @@ const edge = (id: string, updatedAt = 0): GraphEdge => ({
 function snapshot(overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot {
   return {
     boards: [],
+    views: [],
     cards: [],
     placements: [],
     edges: [],
@@ -301,6 +304,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
     const read = (): WorkspaceSnapshot => ({
       boards: workspace.listBoards(),
+      views: workspace.listViews(),
       cards: workspace.listCards(),
       placements: workspace.listPlacements(),
       edges: workspace.listEdges(),
@@ -315,8 +319,8 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
       snapshot = applyWorkspaceChange(snapshot, change);
     });
 
-    const board = workspace.createBoard({ id: "b1", name: "One" });
-    const second = workspace.createBoard({ id: "b2", name: "Two" });
+    const board = workspace.createView({ id: "b1", name: "One" });
+    const second = workspace.createView({ id: "b2", name: "Two" });
     const first = workspace.createCard({ id: "c1", boardId: board.id, position: { x: 4, y: 5 } });
     const other = workspace.createCard({ id: "c2", boardId: board.id });
     workspace.placeCard(second.id, first.id, { x: 10, y: 20 });
@@ -324,8 +328,8 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     workspace.addEdge({ boardId: board.id, source: first.id, target: other.id });
     workspace.trashCard(other.id);
     workspace.unplaceCard(board.id, first.id);
-    workspace.renameBoard(board.id, "Renamed");
-    workspace.deleteBoard(second.id);
+    workspace.renameView(board.id, "Renamed");
+    workspace.deleteView(second.id);
     workspace.ensureDefaultTypes();
     const project = workspace.createType({ id: "project", name: "Project" });
     const field = workspace.addField(project.id, { name: "Status", kind: "text" });
@@ -344,12 +348,13 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     const docB = new LoroDoc();
     const local = new WorkspaceDocument(docA);
     const remote = new WorkspaceDocument(docB);
-    const board = local.createBoard({ id: "b1", name: "One" });
+    const board = local.createView({ id: "b1", name: "One" });
     const card = local.createCard({ id: "c1", boardId: board.id });
     docB.import(docA.export({ mode: "update" }));
 
     const read = (): WorkspaceSnapshot => ({
       boards: remote.listBoards(),
+      views: remote.listViews(),
       cards: remote.listCards(),
       placements: remote.listPlacements(),
       edges: remote.listEdges(),
@@ -365,7 +370,7 @@ describe("applyWorkspaceChange over WorkspaceDocument.observe", () => {
     });
 
     local.updatePlacementPosition(board.id, card.id, { x: 12, y: 34 });
-    local.renameBoard(board.id, "Renamed");
+    local.renameView(board.id, "Renamed");
     local.trashCard(card.id);
     docB.import(docA.export({ mode: "update" }));
     stop();

@@ -108,7 +108,7 @@ export function createWorkspaceFile(
     workspaceId,
     document: bytesToBase64(workspace.doc.export({ mode: "snapshot" })),
     manifest: {
-      boards: workspace.listBoards().length,
+      boards: workspace.listViews().length,
       cards: workspace.listCards().length,
       types: workspace.listTypes().length,
       tags: workspace.listTags().length,

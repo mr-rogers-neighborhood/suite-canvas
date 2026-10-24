@@ -135,7 +135,7 @@ function setPeers(...peers: PeerPresence[]) {
 
 beforeAll(() => {
   useCanvasStore.setState({ ready: true, synced: true });
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   boardId = board.id;
   cardId = workspace.createCard({ typeId: "note", boardId, position: { x: 0, y: 0 } }).id;
   writeTitle(cardId, "ICE card title");
@@ -183,7 +183,7 @@ describe("createWorkspaceCardSlotRenderer", () => {
       "Body line for the ICE overlay.",
     );
     // The slot is filled with the product face at the geometry's world size.
-    expect(container.querySelector('[data-testid="scene-card-view"]')).toHaveStyle({
+    expect(container.querySelector('[data-testid="card-surface"]')).toHaveStyle({
       width: "288px",
       height: "240px",
     });
@@ -432,7 +432,7 @@ describe("the compact band", () => {
 
     // No product face, no editor, no text containers.
     expect(container.querySelector('[data-testid="node-card"]')).toBeNull();
-    expect(container.querySelector('[data-testid="scene-card-view"]')).toBeNull();
+    expect(container.querySelector('[data-testid="card-surface"]')).toBeNull();
     expect(container.querySelector('[data-testid="card-body"]')).toBeNull();
     expect(container.querySelector(".ProseMirror")).toBeNull();
 
@@ -488,7 +488,7 @@ describe("the icon band", () => {
     expect(container.querySelector('[data-testid="suite-card-glyph"]')?.textContent).toBeTruthy();
     expect(container.textContent).not.toContain("Ignored title");
     expect(container.querySelector('[data-testid="node-card"]')).toBeNull();
-    expect(container.querySelector('[data-testid="scene-card-view"]')).toBeNull();
+    expect(container.querySelector('[data-testid="card-surface"]')).toBeNull();
 
     act(() => teardown()?.());
     unsubscribe();

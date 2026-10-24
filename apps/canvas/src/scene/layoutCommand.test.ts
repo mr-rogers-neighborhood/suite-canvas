@@ -1,16 +1,12 @@
 import { WorkspaceDocument } from "@suite/graph";
 import { DEFAULT_FRACTAL_RECIPE, type FractalRecipe } from "@suite/scene";
 import { describe, expect, it } from "vitest";
-import {
-  applyBoardFractal,
-  type LayoutSnapshot,
-  planBoardFractal,
-  planFractalScene,
-} from "./layoutCommand";
+import { applyBoardFractal, type LayoutSnapshot, planBoardFractal } from "./layoutCommand";
 
 function snapshotOf(workspace: WorkspaceDocument): LayoutSnapshot {
   return {
     boards: workspace.listBoards(),
+    views: workspace.listViews(),
     cards: workspace.listCards(),
     placements: workspace.listPlacements(),
     sections: workspace.listSections(),
@@ -24,45 +20,11 @@ function recipe(overrides: Partial<FractalRecipe> = {}): FractalRecipe {
 
 function gridWorkspace(count = 4) {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const cards = Array.from({ length: count }, (_, index) =>
     workspace.createCard({ boardId: board.id, position: { x: index * 40, y: index * 30 } }),
   );
   return { workspace, board, cards };
-}
-
-function portalWorkspace() {
-  const workspace = new WorkspaceDocument();
-  const root = workspace.ensureBoard();
-  const middle = workspace.createBoard({ name: "Middle" });
-  const leaf = workspace.createBoard({ name: "Leaf" });
-  const rootCard = workspace.createCard({ boardId: root.id, position: { x: 400, y: 400 } });
-  const firstPortal = workspace.createPortalCard({
-    boardId: root.id,
-    targetBoardId: middle.id,
-    position: { x: 800, y: 0 },
-  });
-  const middleCard = workspace.createCard({ boardId: middle.id, position: { x: 10, y: 10 } });
-  const secondPortal = workspace.createPortalCard({
-    boardId: middle.id,
-    targetBoardId: leaf.id,
-    position: { x: 300, y: 10 },
-  });
-  const leafCards = [
-    workspace.createCard({ boardId: leaf.id, position: { x: 0, y: 0 } }),
-    workspace.createCard({ boardId: leaf.id, position: { x: 100, y: 100 } }),
-  ];
-  return {
-    workspace,
-    root,
-    middle,
-    leaf,
-    rootCard,
-    firstPortal,
-    middleCard,
-    secondPortal,
-    leafCards,
-  };
 }
 
 describe("planBoardFractal", () => {
@@ -99,81 +61,42 @@ describe("planBoardFractal", () => {
     ).toEqual(radial);
   });
 
-  it("recurses through portals and sizes their frames", () => {
-    const { workspace, root, middle, leaf, firstPortal, secondPortal, leafCards } =
-      portalWorkspace();
+  it("arranges the plane it is given and leaves a nested board alone", () => {
+    const workspace = new WorkspaceDocument();
+    const view = workspace.ensureView();
+    const board = workspace.createBoard({ name: "Frame", parentBoardId: view.id });
+    const planeCard = workspace.createCard({ boardId: view.id, position: { x: 400, y: 400 } });
+    const inner = [
+      workspace.createCard({ boardId: board.id, position: { x: 5, y: 5 } }),
+      workspace.createCard({ boardId: board.id, position: { x: 40, y: 40 } }),
+    ];
     const snapshot = snapshotOf(workspace);
 
-    const plan = planBoardFractal({
-      snapshot,
-      rootBoardId: root.id,
-      recipe: recipe({ depth: { scale: 0.5, gap: 10, rotate: 0 } }),
-    });
+    const plane = planBoardFractal({ snapshot, rootBoardId: view.id, recipe: recipe() });
+    expect(plane.boards).toEqual([view.id]);
+    expect(plane.placements.map((entry) => entry.cardId)).toEqual([planeCard.id]);
+    expect(plane.portalSizes).toEqual({});
 
-    expect(new Set(plan.boards)).toEqual(new Set([root.id, middle.id, leaf.id]));
-    expect(plan.placements.filter((entry) => entry.boardId === root.id)).toHaveLength(2);
-    expect(plan.placements.filter((entry) => entry.boardId === middle.id)).toHaveLength(2);
-    expect(plan.placements.filter((entry) => entry.boardId === leaf.id)).toHaveLength(2);
-    expect(Object.keys(plan.portalSizes ?? {}).sort()).toEqual(
-      [firstPortal.id, secondPortal.id].sort(),
+    // A Board is its own scope: arranging it arranges the cards it owns.
+    const scoped = planBoardFractal({ snapshot, rootBoardId: board.id, recipe: recipe() });
+    expect(scoped.boards).toEqual([board.id]);
+    expect(new Set(scoped.placements.map((entry) => entry.cardId))).toEqual(
+      new Set(inner.map((card) => card.id)),
     );
-    const leafFrames = plan.placements.filter((entry) => entry.cardId === secondPortal.id);
-    expect(leafFrames[0]?.width).toBeGreaterThan(0);
-    expect(leafCards).toHaveLength(2);
   });
 
-  it("arranges a board reachable by two portals once", () => {
+  it("applies a nested board's layout without touching its parent's plane", () => {
     const workspace = new WorkspaceDocument();
-    const root = workspace.ensureBoard();
-    const middle = workspace.createBoard({ name: "Middle" });
-    const leaf = workspace.createBoard({ name: "Leaf" });
-    workspace.createCard({ boardId: root.id, position: { x: 0, y: 0 } });
-    // Leaf is reachable directly from the root and again through Middle.
-    workspace.createPortalCard({ boardId: root.id, targetBoardId: leaf.id });
-    workspace.createPortalCard({ boardId: root.id, targetBoardId: middle.id });
-    workspace.createPortalCard({ boardId: middle.id, targetBoardId: leaf.id });
-    workspace.createCard({ boardId: leaf.id, position: { x: 0, y: 0 } });
-
-    const snapshot = snapshotOf(workspace);
-    const plan = planBoardFractal({ snapshot, rootBoardId: root.id, recipe: recipe() });
-
-    expect(new Set(plan.boards)).toEqual(new Set([root.id, middle.id, leaf.id]));
-    expect(plan.boards.filter((boardId) => boardId === leaf.id)).toHaveLength(1);
-    expect(plan.placements.filter((entry) => entry.boardId === leaf.id)).toHaveLength(1);
-
-    // The plan is valid, so it can be applied: a duplicate placement would be
-    // rejected outright.
-    expect(() =>
-      applyBoardFractal(workspace, { snapshot, rootBoardId: root.id, recipe: recipe() }),
-    ).not.toThrow();
-  });
-
-  it("stops at a portal cycle and at the depth cap", () => {
-    const workspace = new WorkspaceDocument();
-    const a = workspace.ensureBoard();
-    const b = workspace.createBoard({ name: "B" });
-    workspace.createPortalCard({ boardId: a.id, targetBoardId: b.id, position: { x: 0, y: 0 } });
-    workspace.createPortalCard({ boardId: b.id, targetBoardId: a.id, position: { x: 0, y: 0 } });
+    const view = workspace.ensureView();
+    const board = workspace.createBoard({ name: "Frame", parentBoardId: view.id });
+    const planeCard = workspace.createCard({ boardId: view.id, position: { x: 400, y: 400 } });
+    const inner = workspace.createCard({ boardId: board.id, position: { x: 90, y: 90 } });
     const snapshot = snapshotOf(workspace);
 
-    const plan = planBoardFractal({ snapshot, rootBoardId: a.id, recipe: recipe() });
-    expect(plan.boards).toEqual([a.id, b.id]);
-    expect(plan.placements).toHaveLength(2);
+    applyBoardFractal(workspace, { snapshot, rootBoardId: board.id, recipe: recipe() });
 
-    const scene = planFractalScene({ snapshot, rootBoardId: a.id, recipe: recipe() });
-    const child = scene.portals[0]?.child;
-    expect(child?.issues.map((issue) => issue.code)).toContain("cycle");
-
-    const capped = planBoardFractal({
-      snapshot,
-      rootBoardId: a.id,
-      recipe: recipe(),
-      recursive: false,
-    });
-    expect(capped.boards).toEqual([a.id]);
-    expect(
-      planFractalScene({ snapshot, rootBoardId: a.id, recipe: recipe(), maxDepth: 0 }).issues,
-    ).toEqual(expect.arrayContaining([expect.objectContaining({ code: "depth" })]));
+    expect(workspace.getPlacement(view.id, planeCard.id)).toMatchObject({ x: 400, y: 400 });
+    expect(workspace.getPlacement(board.id, inner.id)).not.toMatchObject({ x: 90, y: 90 });
   });
 
   it("keeps pinned cards and arranges only the selection", () => {

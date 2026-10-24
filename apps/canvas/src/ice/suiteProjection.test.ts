@@ -1,4 +1,4 @@
-import { WorkspaceDocument } from "@suite/graph";
+import { boardColors, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
 import { seedExampleWorkspace } from "../demo/seedExample";
@@ -6,6 +6,7 @@ import {
   buildSuiteSeed,
   type IceSuiteObject,
   type IceSuiteSpawnOptions,
+  MINIMAT_VINYL_NAMES,
   projectWorkspaceToIce,
   SUITE_BODY_SNIPPET_LENGTH,
   SUITE_CARD_TYPE,
@@ -34,47 +35,49 @@ function cardsOf(objects: readonly IceSuiteObject[]) {
 }
 
 describe("suiteProjection", () => {
-  it("should walk the example workspace's three boards", () => {
+  it("should walk the root view's board tree", () => {
     expect(seed.rootBoardId).toBe("board-1");
     expect(seed.seedLabel).toBe("Atlas example");
     expect(seed.boards.map((board) => board.id)).toEqual([
       "board-1",
-      "demo-board-research",
-      "demo-board-sources",
-      "demo-board-sources",
+      "demo-section-atlas-start",
+      "demo-section-atlas-nested",
+      "demo-section-atlas-sketches",
     ]);
     expect(seed.boards.map((board) => board.depth)).toEqual([0, 1, 2, 1]);
     expect(seed.boards.map((board) => board.matId)).toEqual([
       null,
-      "minimat:demo-portal-atlas-research",
-      "minimat:demo-portal-atlas-research/minimat:demo-portal-research-sources",
-      "minimat:demo-portal-atlas-sources",
+      "minimat:demo-section-atlas-start",
+      "minimat:demo-section-atlas-start/minimat:demo-section-atlas-nested",
+      "minimat:demo-section-atlas-sketches",
     ]);
+    // A View is a camera: the other two planes are not on this walk.
+    expect(seed.boards.every((board) => board.portalCardId === null)).toBe(true);
   });
 
   it("should map every card to a native note at its placement coordinates", () => {
     const notes = notesOf(seed.objects);
-    expect(notes).toHaveLength(17);
-    expect(seed.cards).toHaveLength(17);
-    expect(new Set(seed.cards.map((card) => card.cardId)).size).toBe(14);
+    expect(notes).toHaveLength(7);
+    expect(seed.cards).toHaveLength(7);
+    expect(new Set(seed.cards.map((card) => card.cardId)).size).toBe(7);
 
-    const welcome = notes.find((note) => note.cardId === "demo-card-atlas-welcome");
-    expect(welcome).toMatchObject({
+    const capture = notes.find((note) => note.cardId === "demo-card-atlas-capture");
+    expect(capture).toMatchObject({
       kind: "note",
-      id: "note:demo-card-atlas-welcome",
+      id: "note:demo-card-atlas-capture",
       type: "desk.note",
       boardId: "board-1",
-      title: "Welcome to Atlas",
-      x: 64,
+      title: "Capture first, sort later",
+      x: 1040,
       y: 94,
       props: { pen: "felt", seed: 1000 },
     });
-    expect(welcome?.snippet.startsWith("Atlas is the home board")).toBe(true);
-    expect(welcome?.snippet).toHaveLength(SUITE_BODY_SNIPPET_LENGTH + 1);
-    expect(welcome?.snippet.endsWith("…")).toBe(true);
-    expect(welcome?.props.text).toBe(`Welcome to Atlas\n\n${welcome?.snippet ?? ""}`);
-    // The seed's portal cards keep their stored size; plain notes have none.
-    expect(welcome).not.toHaveProperty("width");
+    expect(capture?.snippet.startsWith("Drop a thought on the board")).toBe(true);
+    expect(capture?.snippet).toHaveLength(SUITE_BODY_SNIPPET_LENGTH + 1);
+    expect(capture?.snippet.endsWith("…")).toBe(true);
+    expect(capture?.props.text).toBe(`Capture first, sort later\n\n${capture?.snippet ?? ""}`);
+    // A note with no stored size keeps its natural one.
+    expect(capture).not.toHaveProperty("width");
   });
 
   it("should project real suite.card objects when asked", () => {
@@ -84,102 +87,130 @@ describe("suiteProjection", () => {
     const cardSeed = projectWorkspaceToIce(workspace, summary.rootBoardId, { cardKind: "card" });
     const cards = cardsOf(cardSeed.objects);
 
-    expect(cards).toHaveLength(17);
-    expect(cardSeed.cards).toHaveLength(17);
+    expect(cards).toHaveLength(7);
+    expect(cardSeed.cards).toHaveLength(7);
     expect(cardSeed.cards.every((card) => card.kind === "card")).toBe(true);
     expect(cards[0]).toMatchObject({
       type: SUITE_CARD_TYPE,
       boardId: "board-1",
       props: {
-        cardId: "demo-card-atlas-welcome",
+        cardId: "demo-card-atlas-capture",
         boardId: "board-1",
-        title: "Welcome to Atlas",
+        title: "Capture first, sort later",
         // The card's own sheet and ink from the Suite palette, and the one text
         // flow the paper writes.
         paper: "card",
         pen: "card",
-        text: expect.stringContaining("Welcome to Atlas"),
+        text: expect.stringContaining("Capture first, sort later"),
       },
     });
-    expect(cards[0]?.id).toBe("card:demo-card-atlas-welcome");
+    expect(cards[0]?.id).toBe("card:demo-card-atlas-capture");
   });
 
-  it("should stand a mini mat at each portal and keep child coordinates board-local", () => {
+  it("should stand a mini mat at each board and keep child coordinates board-local", () => {
     const notes = notesOf(seed.objects);
     const mats = matsOf(seed.objects);
     expect(mats.map((mat) => mat.id)).toEqual([
-      "minimat:demo-portal-atlas-research",
-      "minimat:demo-portal-atlas-research/minimat:demo-portal-research-sources",
-      "minimat:demo-portal-atlas-sources",
+      "minimat:demo-section-atlas-start",
+      "minimat:demo-section-atlas-start/minimat:demo-section-atlas-nested",
+      "minimat:demo-section-atlas-sketches",
     ]);
 
-    const research = mats.find((mat) => mat.portalCardId === "demo-portal-atlas-research");
-    expect(research).toMatchObject({
-      boardId: "demo-board-research",
+    const start = mats.find((mat) => mat.boardId === "demo-section-atlas-start");
+    expect(start).toMatchObject({
       parentBoardId: "board-1",
-      title: "Research",
+      title: "Start here",
       depth: 1,
-      x: 552,
-      props: { name: "Research", vinyl: "charcoal" },
+      x: 44,
+      y: 74,
+      width: 816,
+      height: 280,
+      props: { name: "Start here", vinyl: "slate" },
     });
-    expect(research?.y).toBeCloseTo(821.8, 6);
-    expect(research?.width).toBeCloseTo(319.2, 6);
-    expect(research).not.toHaveProperty("parentId");
+    expect(start).not.toHaveProperty("parentId");
 
-    const depthNote = notes.find(
-      (note) => note.id === "minimat:demo-portal-atlas-research/note:demo-card-research-depth",
+    const welcome = notes.find(
+      (note) => note.id === "minimat:demo-section-atlas-start/note:demo-card-atlas-welcome",
     );
-    expect(depthNote).toMatchObject({
-      boardId: "demo-board-research",
-      x: 64,
-      y: 64,
-      parentId: "minimat:demo-portal-atlas-research",
+    expect(welcome).toMatchObject({
+      boardId: "demo-section-atlas-start",
+      x: 20,
+      y: 20,
+      parentId: "minimat:demo-section-atlas-start",
     });
 
     const nested = mats.find((mat) => mat.depth === 2);
-    expect(nested?.id).toBe(
-      "minimat:demo-portal-atlas-research/minimat:demo-portal-research-sources",
-    );
     expect(nested).toMatchObject({
-      boardId: "demo-board-sources",
-      parentBoardId: "demo-board-research",
-      parentId: "minimat:demo-portal-atlas-research",
-      props: { name: "Sources", vinyl: "slate" },
+      boardId: "demo-section-atlas-nested",
+      parentBoardId: "demo-section-atlas-start",
+      parentId: "minimat:demo-section-atlas-start",
+      title: "Nested detail",
+      props: { name: "Nested detail", vinyl: "charcoal" },
     });
+    // A child's rect is stored in its parent's frame, so the mat lands inside it.
+    expect(nested?.x).toBeCloseTo(488, 6);
+    expect(nested?.y).toBeCloseTo(0, 6);
+
     expect(
       notes.find(
         (note) =>
           note.id ===
-          "minimat:demo-portal-atlas-research/minimat:demo-portal-research-sources/note:demo-card-sources-layout",
+          "minimat:demo-section-atlas-start/minimat:demo-section-atlas-nested/note:demo-card-atlas-nesting",
       ),
     ).toMatchObject({
-      boardId: "demo-board-sources",
-      x: 64,
-      y: 72,
-      parentId: "minimat:demo-portal-atlas-research/minimat:demo-portal-research-sources",
+      boardId: "demo-section-atlas-nested",
+      x: 20,
+      y: 20,
+      parentId: "minimat:demo-section-atlas-start/minimat:demo-section-atlas-nested",
     });
+
+    const sketches = mats.find((mat) => mat.boardId === "demo-section-atlas-sketches");
+    expect(sketches).toMatchObject({ depth: 1, props: { vinyl: "charcoal" } });
+    expect(sketches).not.toHaveProperty("parentId");
   });
 
-  it("should skip cycle portals and sections instead of inventing objects", () => {
-    const cycles = seed.skipped.filter((skip) => skip.reason === "cycle");
-    expect(cycles).toHaveLength(2);
-    expect(cycles.map((skip) => skip.id)).toEqual([
-      "demo-portal-sources-atlas",
-      "demo-portal-sources-atlas",
-    ]);
-    expect(cycles[0]?.detail).toContain("board-1");
-
-    const sections = seed.skipped.filter((skip) => skip.reason === "section");
-    expect(sections.map((skip) => skip.id)).toEqual([
-      "demo-section-atlas-start",
-      "demo-section-atlas-sketches",
-      "demo-section-research-questions",
-      "demo-section-sources-reading",
-      // The Sources board opens twice, so its section is refused twice too.
-      "demo-section-sources-reading",
-    ]);
-    expect(seed.skipped.filter((skip) => skip.reason === "depth")).toHaveLength(0);
+  it("should skip nothing in the example, because nesting cannot cycle", () => {
+    expect(seed.skipped).toEqual([]);
     expect(SUITE_MAX_DEPTH).toBe(2);
+  });
+
+  /**
+   * A Board whose `vinyl` ICE does not sell fails to spawn, and every card inside
+   * it is skipped with it — the whole canvas goes empty. The projection therefore
+   * owns the board-colour → vinyl mapping, and this is the guard that keeps it
+   * inside ICE's closed enum for every colour a Board can be.
+   */
+  it("should wear a vinyl that ICE sells for every board colour", () => {
+    for (const color of boardColors) {
+      const workspace = new WorkspaceDocument(new LoroDoc());
+      const view = workspace.ensureView();
+      const board = workspace.createBoard({ name: color, parentBoardId: view.id, color });
+      const card = workspace.createCard({ boardId: board.id });
+
+      const projected = projectWorkspaceToIce(workspace, view.id);
+      const [mat] = matsOf(projected.objects);
+
+      expect(mat?.boardId).toBe(board.id);
+      expect(MINIMAT_VINYL_NAMES).toContain(mat?.props.vinyl);
+      expect(
+        projectWorkspaceToIce(workspace, view.id).cards.some((entry) => entry.cardId === card.id),
+      ).toBe(true);
+    }
+  });
+
+  it("should stop a board tree deeper than the cap", () => {
+    const workspace = new WorkspaceDocument(new LoroDoc());
+    const view = workspace.ensureView();
+    let parent = view.id;
+    for (let depth = 1; depth <= SUITE_MAX_DEPTH + 1; depth += 1) {
+      const board = workspace.createBoard({ name: `Level ${depth}`, parentBoardId: parent });
+      parent = board.id;
+    }
+
+    const deep = projectWorkspaceToIce(workspace, view.id);
+
+    expect(deep.skipped.map((skip) => skip.reason)).toEqual(["depth"]);
+    expect(deep.boards).toHaveLength(SUITE_MAX_DEPTH + 1);
   });
 
   it("should be deterministic across two builds", () => {
@@ -231,42 +262,43 @@ describe("spawnIceSuite", () => {
     const engine = recorder();
     const report = spawnIceSuite(seed, engine);
 
-    expect(report.seeded).toBe(20);
+    expect(report.seeded).toBe(10);
     expect(report.failures).toEqual([]);
-    expect(report.objects.size).toBe(20);
-    expect(report.cards.size).toBe(14);
-    expect(report.boards.size).toBe(2);
+    expect(report.objects.size).toBe(10);
+    expect(report.cards.size).toBe(7);
+    expect(report.boards.size).toBe(3);
 
-    // Root frame, then one projection per spawned mini mat.
+    // The root, then one projection per spawned mini mat.
     expect(engine.project).toHaveBeenCalledTimes(4);
 
     const first = engine.calls[0];
     expect(first?.type).toBe("desk.note");
-    expect(first?.opts).toMatchObject({ x: 64, y: 94, undoable: false });
+    expect(first?.opts).toMatchObject({ x: 1040, y: 94, undoable: false });
 
     const mat = engine.calls.find((call) => call.type === "desk.minimat");
-    expect(mat?.opts).toMatchObject({ undoable: false, props: { name: "Research" } });
-    expect(mat?.opts.w).toBeCloseTo(319.2, 6);
+    expect(mat?.opts).toMatchObject({ undoable: false, props: { name: "Start here" } });
+    expect(mat?.opts.w).toBeCloseTo(816, 6);
 
-    const researchEntity = report.boards.get("demo-board-research");
+    const startEntity = report.boards.get("demo-section-atlas-start");
     const nested = engine.calls.find(
       (call) =>
         call.type === "desk.note" &&
         call.opts.parent !== undefined &&
-        call.opts.parent.id === researchEntity?.id,
+        call.opts.parent.id === startEntity?.id,
     );
-    expect(nested?.opts.parent).toEqual(researchEntity);
-    expect(report.cards.get("demo-card-atlas-welcome")).toBeDefined();
+    expect(nested?.opts.parent).toEqual(startEntity);
+    expect(report.cards.get("demo-card-atlas-capture")).toBeDefined();
   });
 
   it("should report a refused mat and skip its children", () => {
     const engine = recorder({ refuse: "desk.minimat" });
     const report = spawnIceSuite(seed, engine);
 
-    expect(report.seeded).toBe(7);
-    expect(report.objects.size).toBe(7);
+    // The plane's own cards still spawn; every mat and everything it held does not.
+    expect(report.seeded).toBe(3);
+    expect(report.objects.size).toBe(3);
     expect(report.boards.size).toBe(0);
-    expect(report.failures).toHaveLength(13);
+    expect(report.failures).toHaveLength(7);
     expect(report.failures.some((failure) => failure.includes("refused desk.minimat"))).toBe(true);
     expect(report.failures.some((failure) => failure.includes("its mini mat did not spawn"))).toBe(
       true,

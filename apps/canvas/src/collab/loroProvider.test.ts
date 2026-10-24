@@ -84,7 +84,7 @@ function seedLocalDoc(doc: LoroDoc): void {
   workspace.createCard({
     id: CARD_ID,
     typeId: "note",
-    boardId: workspace.ensureBoard().id,
+    boardId: workspace.ensureView().id,
   });
   doc.commit({ origin: "test:seed" });
 }
@@ -110,7 +110,7 @@ function relayCopyWithServerCard(): Uint8Array {
   workspace.createCard({
     id: SERVER_CARD_ID,
     typeId: "note",
-    boardId: workspace.ensureBoard().id,
+    boardId: workspace.ensureView().id,
   });
   appendToTitle(doc, SERVER_TEXT, SERVER_CARD_ID);
   return doc.export({ mode: "snapshot" });

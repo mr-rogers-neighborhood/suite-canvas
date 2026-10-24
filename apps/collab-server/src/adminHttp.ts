@@ -316,7 +316,7 @@ function countersOf(workspace: WorkspaceDocument | null): WorkspaceCounters {
   if (!workspace) return { cards: 0, boards: 0, sections: 0, types: 0, tags: 0 };
   return {
     cards: workspace.listCards().length,
-    boards: workspace.listBoards().length,
+    boards: workspace.listViews().length,
     sections: workspace.listSections().length,
     types: workspace.listTypes().length,
     tags: workspace.listTags().length,
@@ -1196,7 +1196,7 @@ async function createFixtures(
   const boardIds: string[] = [];
   for (let index = 0; index < numberOfBoards; index += 1) {
     const id = `fx-${run}-b${index + 1}`;
-    workspace.createBoard({ id, name: `Fixture board ${index + 1}` });
+    workspace.createView({ id, name: `Fixture board ${index + 1}` });
     boardIds.push(id);
   }
 

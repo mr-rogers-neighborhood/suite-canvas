@@ -54,9 +54,9 @@ function fixture() {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
   source.markSeeded();
-  const board = source.ensureBoard();
-  source.renameBoard(board.id, "Research");
-  const privateBoard = source.createBoard({ name: "Private" });
+  const board = source.ensureView();
+  source.renameView(board.id, "Research");
+  const privateBoard = source.createView({ name: "Private" });
 
   const summary = source.addField("concept", { name: "Summary", kind: "text", required: true });
   source.updateField("concept", summary.id, { display: "{value}" });
@@ -175,7 +175,7 @@ function rootJson(workspace: WorkspaceDocument): Record<string, unknown> {
 function markedSource() {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  const board = source.ensureBoard();
+  const board = source.ensureView();
   const field = source.addField("note", { name: "Status", kind: "select", options: ["Draft"] });
   const option = source.getType("note")?.fields.find((entry) => entry.id === field.id)?.options[0];
   if (!option) throw new Error("missing select option");
@@ -209,7 +209,7 @@ function markedSource() {
 function equivalenceSource() {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  const board = source.ensureBoard();
+  const board = source.ensureView();
   const summary = source.addField("note", { name: "Summary", kind: "text" });
   const link = source.addField("note", { name: "Link", kind: "card" });
   const tag = source.createTag({ name: "reading", color: "#0f0" });
@@ -264,7 +264,7 @@ function equivalenceSource() {
 function sectionedSource() {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  const board = source.ensureBoard();
+  const board = source.ensureView();
   const outer = source.createSection({
     boardId: board.id,
     title: "Outer",
@@ -303,8 +303,8 @@ describe("projectWorkspace", () => {
       const { source, board, privateBoard, section, edge } = fixture();
       const { workspace } = projectWorkspace(source, { scope: "board", boardId: board.id });
 
-      expect(workspace.listBoards().map((entry) => entry.id)).toEqual([board.id]);
-      expect(workspace.getBoard(privateBoard.id)).toBeUndefined();
+      expect(workspace.listViews().map((entry) => entry.id)).toEqual([board.id]);
+      expect(workspace.getView(privateBoard.id)).toBeUndefined();
 
       expect(
         workspace
@@ -465,7 +465,7 @@ describe("projectWorkspace", () => {
       const { source, summary, status, tag, draft } = fixture();
       const { workspace } = projectWorkspace(source, { scope: "card", cardId: "a" });
 
-      expect(workspace.listBoards()).toEqual([
+      expect(workspace.listViews()).toEqual([
         expect.objectContaining({ id: SHARE_BOARD_ID, name: "Shared card" }),
       ]);
       expect(workspace.listCards().map((card) => card.id)).toEqual(["a"]);
@@ -703,7 +703,7 @@ describe("projectWorkspace", () => {
         cardIds: ["a", "b"],
       });
 
-      expect(workspace.getBoard(board.id)).toBeDefined();
+      expect(workspace.getView(board.id)).toBeDefined();
       expect(workspace.listCards()).toEqual([]);
       expect(workspace.listPlacements()).toEqual([]);
       expect(workspace.listEdges()).toEqual([]);
@@ -749,7 +749,7 @@ describe("projectWorkspace", () => {
       const restored = new WorkspaceDocument(new LoroDoc());
       restored.doc.import(bytes);
 
-      expect(restored.listBoards()).toEqual(workspace.listBoards());
+      expect(restored.listViews()).toEqual(workspace.listViews());
       expect(restored.listPlacements()).toEqual(workspace.listPlacements());
       expect(restored.listSections(board.id)).toEqual(workspace.listSections(board.id));
       expect(restored.listEdges()).toEqual(workspace.listEdges());
@@ -773,7 +773,7 @@ describe("projectWorkspace", () => {
       const restored = new WorkspaceDocument(new LoroDoc());
       restored.doc.import(bytes);
 
-      expect(restored.listBoards()).toEqual(workspace.listBoards());
+      expect(restored.listViews()).toEqual(workspace.listViews());
       expect(restored.listCards()).toEqual(workspace.listCards());
       expect(restored.listBoardPlacements(SHARE_BOARD_ID)).toEqual(
         workspace.listBoardPlacements(SHARE_BOARD_ID),

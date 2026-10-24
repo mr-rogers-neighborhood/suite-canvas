@@ -1,3 +1,19 @@
+export type { BoardSection } from "./boards.js";
+export {
+  boardAt,
+  boardDepth,
+  boardDescendants,
+  boardIsDescendant,
+  boardMovePlan,
+  boardPath,
+  boardRootId,
+  boardWorldRect,
+  canNestBoard,
+  findBoard,
+  ownerBoardAt,
+  sectionsFromBoards,
+  sortBoards,
+} from "./boards.js";
 export type { CardAttachment } from "./cardAttachments.js";
 export { documentAttachmentIds, documentAttachments } from "./cardAttachments.js";
 export {
@@ -41,16 +57,19 @@ export {
 export type {
   CardContainers,
   CardFieldView,
+  CreateBoardInput,
+  CreateCameraViewInput,
   CreateCardInput,
   CreateEdgeInput,
   CreateFieldInput,
   CreatePinInput,
-  CreatePortalCardInput,
+  CreateSavedViewInput,
   CreateSectionInput,
   CreateTypeInput,
-  CreateViewInput,
   DuplicateCardOptions,
   LayerAction,
+  MigrationFallback,
+  MigrationReport,
   PlacementMoveInput,
   UpdatePinPatch,
   WorkspaceAction,
@@ -62,12 +81,12 @@ export {
   cardTypeFromMap,
   cleanWorkspaceName,
   DEFAULT_BOARD_ID,
+  DEFAULT_VIEW_ID,
   DEFAULT_WORKSPACE_NAME,
   fieldFromMap,
   INDEX_ORIGIN,
+  MIGRATION_ORIGIN,
   normalizeCard,
-  PORTAL_BOARD_FIELD_ID,
-  PORTAL_TYPE_ID,
   PROPERTY_BLOCK_NODE_NAME,
   placementKey,
   SCHEMA_VERSION,
@@ -195,13 +214,19 @@ export type {
   SectionColor,
   SelectOption,
   Tag,
+  View,
+  ViewCamera,
 } from "./schema.js";
 export {
+  boardColorSchema,
+  boardColors,
+  boardRectSchema,
   boardSchema,
   cardSchema,
   cardTypeSchema,
   connectorSchema,
   DEFAULT_TYPE_ID,
+  DEFAULT_VIEW_CAMERA,
   edgeKindSchema,
   edgeKinds,
   edgePathSchema,
@@ -220,6 +245,8 @@ export {
   selectOptionSchema,
   tagSchema,
   typePluralName,
+  viewCameraSchema,
+  viewSchema,
 } from "./schema.js";
 export type { SearchField, SearchHit, SearchOptions, SearchRange } from "./search.js";
 export {

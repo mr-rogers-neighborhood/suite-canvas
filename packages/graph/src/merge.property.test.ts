@@ -86,7 +86,7 @@ function writeBlocks(
 function fixture(): Fixture {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  source.ensureBoard();
+  source.ensureView();
   // Fields, tags and edges mint random ids; the fixture captures them and
   // never asserts on their value, so nothing depends on unseeded randomness.
   const owner = source.addField("note", { name: "Owner", kind: "text" });

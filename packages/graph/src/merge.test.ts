@@ -93,7 +93,7 @@ function scanBody(
 function setup(scope: "board" | "card" = "board") {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  source.ensureBoard();
+  source.ensureView();
   const owner = source.addField("note", { name: "Owner", kind: "text" });
   const tag = source.createTag({ name: "Important" });
   const section = source.createSection({

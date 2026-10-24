@@ -17,7 +17,7 @@ function useSelect<T>(select: (snapshot: WorkspaceSnapshot) => T): T {
 
 /**
  * Whole-workspace binding for consumers that genuinely read several sections
- * (`CanvasBoard`, the shell). The snapshot identity only changes when a
+ * (the ICE surface, the shell). The snapshot identity only changes when a
  * section did, and unchanged sections keep their array identity.
  */
 export function useWorkspaceSnapshot(): WorkspaceSnapshot {

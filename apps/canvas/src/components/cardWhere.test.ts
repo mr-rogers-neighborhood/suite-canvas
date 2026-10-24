@@ -5,6 +5,8 @@ import { cardWhere } from "./cardWhere";
 const board = (id: string, name: string): Board => ({
   id,
   name,
+  rect: { x: 0, y: 0, width: 360, height: 260 },
+  z: 0,
   createdAt: 0,
   updatedAt: 0,
 });

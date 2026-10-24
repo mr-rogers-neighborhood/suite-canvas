@@ -1,11 +1,10 @@
-import {
-  type Connector,
-  type DrawingElement,
-  type FieldDefinition,
-  PORTAL_TYPE_ID,
-  type Rect,
-  type Section,
-  type WorkspaceDocument,
+import type {
+  Connector,
+  DrawingElement,
+  FieldDefinition,
+  Rect,
+  Section,
+  WorkspaceDocument,
 } from "@suite/graph";
 import {
   type FractalRecipe,
@@ -21,8 +20,7 @@ import { layoutPlanFromScene } from "../scene/layoutCommand";
  * The example workspace a new scene-stage workspace starts from.
  *
  * Everything here is derived from fixed ids and a fixed recipe, so two runs
- * produce the same shape: the same boards, cards, portal graph, sections and
- * coordinates. Only ids the document API mints itself (tags, fields, options)
+ * produce the same shape: the same views, cards, nested Boards and coordinates. Only ids the document API mints itself (tags, fields, options)
  * differ between runs, which is why the seed's own test compares those by name.
  *
  * Bump `DEMO_SEED_VERSION` whenever the shape changes materially; it is the
@@ -38,7 +36,6 @@ type DemoBoardKey = "atlas" | "research" | "sources";
 
 const NOTE_SIZE = { width: 288, height: 240 } as const;
 const WHITEBOARD_SIZE = { width: 440, height: 300 } as const;
-const PORTAL_SIZE = { width: 288, height: 256 } as const;
 
 /**
  * Grid root, grid children: insertion order keeps the introductions in the top
@@ -79,13 +76,8 @@ interface DemoSectionSpec {
   readonly title: string;
   readonly color: Section["color"];
   readonly members: readonly string[];
-}
-
-interface DemoPortalSpec {
-  readonly id: string;
-  readonly board: DemoBoardKey;
-  readonly target: DemoBoardKey;
-  readonly title: string;
+  /** A Board that holds this one; the demo nests one level to show depth. */
+  readonly parent?: string;
 }
 
 const WELCOME_CARD = "demo-card-atlas-welcome";
@@ -191,7 +183,7 @@ const WHITEBOARD_ELEMENTS: readonly DrawingElement[] = [
     updated: 4,
     isDeleted: false,
     groupIds: [],
-    text: "A portal is a door, not a copy",
+    text: "A board is a door, not a copy",
     fontSize: 20,
     fontFamily: 1,
     textAlign: "left",
@@ -207,7 +199,7 @@ const DEMO_CARDS: readonly DemoCardSpec[] = [
     title: "Welcome to Atlas",
     body: [
       "Atlas is the home board of this example workspace.",
-      "Everything you see is a card: notes, sources, whiteboards, and portals to other boards.",
+      "Everything you see is a card or a board: notes, sources, whiteboards, and boards that hold other boards.",
       "Double-click a card to write in it. Drag it to move it. Nothing here is precious: it is a worked example.",
     ],
     tags: ["demo"],
@@ -221,9 +213,9 @@ const DEMO_CARDS: readonly DemoCardSpec[] = [
     board: "atlas",
     title: "How boards nest",
     body: [
-      "A portal is a card of the Portal type. It points at a board instead of holding text.",
-      "Research and Sources are portals here, and Research opens Sources again. That is depth two.",
-      "Sources links back to Atlas. The layout planner notices the cycle and stops instead of recursing.",
+      "A board is a titled, coloured frame that holds cards and other boards.",
+      "This card sits inside a board that is itself inside the board you are reading.",
+      "Double-click a board to step into it; Escape steps back out to the plane.",
     ],
     tags: ["demo", "concept"],
     connectors: [
@@ -268,7 +260,7 @@ const DEMO_CARDS: readonly DemoCardSpec[] = [
     board: "atlas",
     title: "Weekly review",
     body: [
-      "Open every portal, read what changed, then widen or prune.",
+      "Open every board, read what changed, then widen or prune.",
       "A section is geometry, not ownership: a card belongs to the smallest section that contains its header.",
       "Move the section and its cards come along.",
     ],
@@ -281,7 +273,7 @@ const DEMO_CARDS: readonly DemoCardSpec[] = [
     body: [
       "The scene keeps a card's position per board and its size in flow units.",
       "A fractal recipe decides the shape. The plan is previewed before it is applied, and applying it is one undo step.",
-      "Zoom out far enough and a portal's frame is the child board, scaled down.",
+      "Zoom out far enough and a board's frame is a picture of what it holds.",
     ],
     typeId: "concept",
     tags: ["demo", "strategy"],
@@ -303,10 +295,10 @@ const DEMO_CARDS: readonly DemoCardSpec[] = [
   {
     id: "demo-card-research-portals",
     board: "research",
-    title: "Portals as telescopes",
+    title: "Boards as telescopes",
     body: [
-      "A portal shows a board at a smaller scale, fitted into its frame.",
-      "The same board can appear in several places, and each portal remembers its own frame size.",
+      "A nested board shows its contents at a smaller scale, fitted into its frame.",
+      "Each frame keeps its own size, so the same board reads well at two depths.",
     ],
     tags: ["concept"],
   },
@@ -394,24 +386,16 @@ const DEMO_SECTIONS: readonly DemoSectionSpec[] = [
     color: "green",
     members: ["demo-card-sources-layout", "demo-card-sources-crdt"],
   },
-];
-
-/** Portals, in layout order per board. `sources -> atlas` closes the cycle. */
-const DEMO_PORTALS: readonly DemoPortalSpec[] = [
   {
-    id: "demo-portal-atlas-research",
+    // Depth: a Board inside a Board, which is what a portal card used to be
+    // (ADR-0039). Entering it is ICE's `enterContainer`, not a second document.
+    id: "demo-section-atlas-nested",
     board: "atlas",
-    target: "research",
-    title: "Research",
+    title: "Nested detail",
+    color: "rose",
+    members: [NESTING_CARD],
+    parent: "demo-section-atlas-start",
   },
-  { id: "demo-portal-atlas-sources", board: "atlas", target: "sources", title: "Sources" },
-  {
-    id: "demo-portal-research-sources",
-    board: "research",
-    target: "sources",
-    title: "Sources, one level down",
-  },
-  { id: "demo-portal-sources-atlas", board: "sources", target: "atlas", title: "Back to Atlas" },
 ];
 
 const DEMO_EDGE_LABEL = "leads to";
@@ -437,7 +421,8 @@ export interface DemoSeedSummary {
   /** Every board the seed wrote, root first. */
   readonly boards: readonly string[];
   readonly cards: number;
-  readonly portals: number;
+  /** Boards the seed nested; a Board replaced the portal card (ADR-0039). */
+  readonly nestedBoards: number;
 }
 
 function boardIds(rootBoardId: string): Record<DemoBoardKey, string> {
@@ -510,11 +495,8 @@ function ensureDemoSchema(workspace: WorkspaceDocument): Record<string, FieldDef
   };
 }
 
-/** Cards and portals in layout order, one list per board. */
-function layoutBoards(
-  ids: Record<DemoBoardKey, string>,
-  portals: readonly DemoPortalSpec[],
-): Record<string, LayoutItem[]> {
+/** Cards in layout order, one list per board. */
+function layoutBoards(ids: Record<DemoBoardKey, string>): Record<string, LayoutItem[]> {
   const boards: Record<DemoBoardKey, LayoutItem[]> = { atlas: [], research: [], sources: [] };
   for (const spec of DEMO_CARDS) {
     const size = spec.size ?? NOTE_SIZE;
@@ -524,16 +506,6 @@ function layoutBoards(
       height: size.height,
       typeId: spec.typeId ?? "note",
       createdAt: boards[spec.board].length,
-    });
-  }
-  for (const portal of portals) {
-    boards[portal.board].push({
-      id: portal.id,
-      width: PORTAL_SIZE.width,
-      height: PORTAL_SIZE.height,
-      typeId: PORTAL_TYPE_ID,
-      portalBoardId: ids[portal.target],
-      createdAt: boards[portal.board].length,
     });
   }
   return {
@@ -585,9 +557,9 @@ function sectionRect(board: LayoutPlan, members: readonly string[]): Rect {
 }
 
 /**
- * Writes the example workspace: three boards, fourteen cards, four portals (one
- * of them closing a cycle), four sections, tags, two typed properties, one edge
- * and one whiteboard scene, arranged by the shared fractal planner.
+ * Writes the example workspace: three views, fourteen cards, five Boards (one of
+ * them nested in another), tags, two typed properties, one edge and one
+ * whiteboard scene, arranged by the shared fractal planner.
  *
  * The caller owns `markSeeded()`; this only writes content, so it can also be
  * used to preview the demo in a test document. The workspace's first board is
@@ -598,14 +570,13 @@ export function seedExampleWorkspace(workspace: WorkspaceDocument): DemoSeedSumm
   // Schema first, as its own batch: a type's field list is cached until a
   // commit, so values can only be written once the fields are durable.
   const fields = workspace.batch("demo:schema", () => ensureDemoSchema(workspace));
-  const atlas = workspace.ensureBoard();
+  const atlas = workspace.ensureView();
   const ids = boardIds(atlas.id);
-  const portals = DEMO_PORTALS;
 
   workspace.batch("demo:seed", () => {
-    workspace.renameBoard(atlas.id, "Atlas");
-    workspace.createBoard({ id: ids.research, name: "Research" });
-    workspace.createBoard({ id: ids.sources, name: "Sources" });
+    workspace.renameView(atlas.id, "Atlas");
+    workspace.createView({ id: ids.research, name: "Research" });
+    workspace.createView({ id: ids.sources, name: "Sources" });
 
     for (const spec of DEMO_CARDS) {
       workspace.createCard({
@@ -628,39 +599,57 @@ export function seedExampleWorkspace(workspace: WorkspaceDocument): DemoSeedSumm
     }
   });
 
-  workspace.batch("demo:portals", () => {
-    for (const portal of portals) {
-      workspace.createPortalCard({
-        id: portal.id,
-        boardId: ids[portal.board],
-        targetBoardId: ids[portal.target],
-      });
-      // The card face shows the target board's name; the title is what search,
-      // backlinks and the outline label the portal with.
-      writeTitle(workspace, portal.id, portal.title);
-    }
-  });
-
-  const plan = planFractalLayout({
-    rootBoardId: ids.atlas,
-    boards: layoutBoards(ids, portals),
-    recipe: DEMO_RECIPE,
-    maxDepth: 3,
-  });
-  workspace.applyLayoutPlan(layoutPlanFromScene(plan));
-
-  const planned = plansByBoard(plan);
-  workspace.batch("demo:sections", () => {
-    for (const section of DEMO_SECTIONS) {
+  // One plan per plane. A View is a camera (ADR-0039): the three planes are not
+  // a portal chain any more, so each gets its own arrangement.
+  const planned = new Map<string, LayoutPlan>();
+  for (const key of ["atlas", "research", "sources"] as const) {
+    const plan = planFractalLayout({
+      rootBoardId: ids[key],
+      boards: layoutBoards(ids),
+      recipe: DEMO_RECIPE,
+    });
+    workspace.applyLayoutPlan(layoutPlanFromScene(plan));
+    for (const [boardId, node] of plansByBoard(plan)) planned.set(boardId, node);
+  }
+  // A Section became a Board (ADR-0039): the same rectangle, but the cards it
+  // wraps move inside it, so the demo shows what nesting is for. A Board with a
+  // `parent` is planted inside that Board, one level of depth.
+  let nestedBoards = 0;
+  const frameWorldRect = new Map<string, Rect>();
+  workspace.batch("demo:boards", () => {
+    // Parents first: a child's rect is expressed in its parent's frame.
+    const ordered = [...DEMO_SECTIONS].sort(
+      (first, second) => Number(first.parent !== undefined) - Number(second.parent !== undefined),
+    );
+    for (const section of ordered) {
       const board = planned.get(ids[section.board]);
       if (!board) continue;
-      workspace.createSection({
+      const world = sectionRect(board, section.members);
+      const parentWorld =
+        section.parent === undefined
+          ? { x: 0, y: 0 }
+          : (frameWorldRect.get(section.parent) ?? { x: 0, y: 0 });
+      const rect: Rect = { ...world, x: world.x - parentWorld.x, y: world.y - parentWorld.y };
+      const owner = section.parent ?? ids[section.board];
+      const frame = workspace.createBoard({
         id: section.id,
-        boardId: ids[section.board],
-        title: section.title,
-        color: section.color,
-        ...sectionRect(board, section.members),
+        name: section.title,
+        ...(section.color === undefined ? {} : { color: section.color }),
+        parentBoardId: owner,
+        ...rect,
       });
+      frameWorldRect.set(section.id, world);
+      nestedBoards += 1;
+      for (const cardId of section.members) {
+        // The placement is already in `owner`'s frame, and `rect` is too, so the
+        // card's offset inside the new frame is a plain subtraction.
+        const placement = workspace.getPlacement(owner, cardId);
+        if (!placement) continue;
+        workspace.moveCardToBoard(cardId, frame.id, {
+          x: placement.x - rect.x,
+          y: placement.y - rect.y,
+        });
+      }
     }
   });
 
@@ -680,6 +669,6 @@ export function seedExampleWorkspace(workspace: WorkspaceDocument): DemoSeedSumm
     rootBoardId: ids.atlas,
     boards: [ids.atlas, ids.research, ids.sources],
     cards: DEMO_CARDS.length,
-    portals: portals.length,
+    nestedBoards,
   };
 }

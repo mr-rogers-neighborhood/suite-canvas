@@ -126,7 +126,7 @@ async function withCachedWorkspace<T>(
     const workspace = new WorkspaceDocument(doc);
     // No snapshot and no cards means the relay holds the only copy: writing a
     // name here would fake a local document that Export would then refuse.
-    if (workspace.listBoards().length === 0 && workspace.listCards().length === 0) return null;
+    if (workspace.listViews().length === 0 && workspace.listCards().length === 0) return null;
     return await act(workspace, persistence);
   } finally {
     persistence.destroy();

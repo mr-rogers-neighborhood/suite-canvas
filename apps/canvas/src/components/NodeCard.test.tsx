@@ -1,6 +1,5 @@
 import type { Card, CardType } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it, vi } from "vitest";
 import { NodeCard } from "./NodeCard";
@@ -49,11 +48,7 @@ const base = {
 };
 
 function renderCard(overrides: Partial<Parameters<typeof NodeCard>[0]> = {}) {
-  return render(
-    <ReactFlowProvider>
-      <NodeCard {...base} {...overrides} />
-    </ReactFlowProvider>,
-  );
+  return render(<NodeCard {...base} {...overrides} />);
 }
 
 describe("NodeCard", () => {
@@ -116,11 +111,7 @@ describe("NodeCard", () => {
     fireEvent.click(screen.getByTestId("card-meta-toggle"));
     expect(onToggleMeta).toHaveBeenCalledOnce();
 
-    rerender(
-      <ReactFlowProvider>
-        <NodeCard {...base} meta={withMeta} metaExpanded onToggleMeta={onToggleMeta} />
-      </ReactFlowProvider>,
-    );
+    rerender(<NodeCard {...base} meta={withMeta} metaExpanded onToggleMeta={onToggleMeta} />);
     expect(screen.getByTestId("card-meta")).toHaveTextContent("Active");
     expect(screen.getByTestId("card-meta")).toHaveTextContent("#Research");
   });

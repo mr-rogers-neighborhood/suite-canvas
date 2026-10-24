@@ -52,7 +52,7 @@ interface SeparateRoomsFixture {
 function buildCurrent(count: number): CurrentFixture {
   const doc = new LoroDoc();
   const workspace = new WorkspaceDocument(doc);
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const cardIds: string[] = [];
 
   for (let index = 0; index < count; index += 1) {

@@ -1,16 +1,15 @@
-import {
-  type Board,
-  type Card,
-  type GraphEdge,
-  type LayoutPlan,
-  type LayoutPlanPlacement,
-  type LayoutPlanSize,
-  type LayoutPlanSummary,
-  type Placement,
-  PORTAL_BOARD_FIELD_ID,
-  PORTAL_TYPE_ID,
-  type Section,
-  type WorkspaceDocument,
+import type {
+  Board,
+  Card,
+  GraphEdge,
+  LayoutPlan,
+  LayoutPlanPlacement,
+  LayoutPlanSize,
+  LayoutPlanSummary,
+  Placement,
+  Section,
+  View,
+  WorkspaceDocument,
 } from "@suite/graph";
 import {
   type BuildSceneInput,
@@ -21,7 +20,6 @@ import {
   type LayoutItem,
   type Point,
   planFractalLayout,
-  type SceneCardInput,
   type LayoutPlan as SceneLayoutPlan,
 } from "@suite/scene";
 
@@ -34,6 +32,8 @@ import {
 /** Snapshot-like input; a canvas `WorkspaceSnapshot` satisfies it. */
 export interface LayoutSnapshot {
   readonly boards: readonly Board[];
+  /** Cameras name the root plane each top-level Board hangs from (ADR-0039). */
+  readonly views?: readonly View[] | undefined;
   readonly cards: readonly Card[];
   readonly placements: readonly Placement[];
   readonly sections?: readonly Section[] | undefined;
@@ -63,7 +63,12 @@ const IDENTITY_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
 export function buildLayoutSceneInput(input: PlanBoardFractalInput): BuildSceneInput {
   const { snapshot } = input;
   return {
-    boards: snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
+    // Every placement names either a Board or a View's implicit root plane, so
+    // both appear as scopes: a layout is planned for one of them at a time.
+    boards: [
+      ...(snapshot.views ?? []).map((view) => ({ id: view.id, name: view.name })),
+      ...snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
+    ],
     cards: snapshot.cards.map((card) => ({
       id: card.id,
       primaryTypeId: card.primaryTypeId,
@@ -106,15 +111,6 @@ export function buildLayoutSceneInput(input: PlanBoardFractalInput): BuildSceneI
   };
 }
 
-/** Empty string means "portal with no target"; treat it as a plain card here. */
-function portalTarget(card: SceneCardInput): string | undefined {
-  if (card.primaryTypeId !== PORTAL_TYPE_ID) return undefined;
-  const value = card.properties[PORTAL_BOARD_FIELD_ID];
-  if (typeof value !== "string") return undefined;
-  const target = value.trim();
-  return target.length > 0 ? target : undefined;
-}
-
 function layoutItems(
   scene: BuildSceneInput,
   selection: readonly string[] | undefined,
@@ -135,7 +131,6 @@ function layoutItems(
     const card = cardsById.get(placement.cardId);
     if (!card) continue;
     const isPinned = pinnedIds.has(card.id);
-    const target = portalTarget(card);
     const created = createdAt.get(`${placement.boardId}\u001f${placement.cardId}`);
     const item: LayoutItem = {
       id: card.id,
@@ -151,7 +146,6 @@ function layoutItems(
       ...(created !== undefined ? { createdAt: created } : {}),
       ...(isPinned ? { pinned: true } : {}),
       ...(!isPinned && selectedOnly && !selectedIds.has(card.id) ? { excluded: true } : {}),
-      ...(target !== undefined ? { portalBoardId: target } : {}),
     });
   }
   return boards;

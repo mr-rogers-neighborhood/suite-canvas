@@ -210,7 +210,7 @@ export function LibraryDrawer({
     }
     if (appliedView.current === activeViewId) return;
     appliedView.current = activeViewId;
-    updateQuery(workspace?.getView(activeViewId)?.query.text ?? "");
+    updateQuery(workspace?.getSavedView(activeViewId)?.query.text ?? "");
   }, [activeViewId, workspace, updateQuery]);
 
   useEffect(() => {

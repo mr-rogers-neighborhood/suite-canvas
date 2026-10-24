@@ -1,6 +1,12 @@
-import { PORTAL_BOARD_FIELD_ID, PORTAL_TYPE_ID } from "@suite/graph";
 import { describe, expect, it } from "vitest";
-import { buildScene, cardInstanceKey, DEFAULT_PORTAL_CONFIG, portalInstanceKey } from "./scene.js";
+import {
+  buildScene,
+  cardInstanceKey,
+  DEFAULT_PORTAL_CONFIG,
+  portalInstanceKey,
+  SCENE_PORTAL_BOARD_FIELD_ID,
+  SCENE_PORTAL_TYPE_ID,
+} from "./scene.js";
 import type {
   BuildSceneInput,
   Camera,
@@ -16,8 +22,8 @@ const note = (id: string): SceneCardInput => ({ id, primaryTypeId: "note", prope
 
 const portalCard = (id: string, targetBoardId: string): SceneCardInput => ({
   id,
-  primaryTypeId: PORTAL_TYPE_ID,
-  properties: { [PORTAL_BOARD_FIELD_ID]: targetBoardId },
+  primaryTypeId: SCENE_PORTAL_TYPE_ID,
+  properties: { [SCENE_PORTAL_BOARD_FIELD_ID]: targetBoardId },
 });
 
 function place(

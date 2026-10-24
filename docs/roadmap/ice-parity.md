@@ -24,7 +24,7 @@
 | Native ICE desk seeds and runs on hardware | `/ice.html`; gated `e2e/tests/ice.spec.ts` |
 | Suite graph can be projected read-only | `/ice.html?demo=suite`; `suiteProjection.ts` + tests |
 | The app projects the live workspace read-only | `?canvas=ice` in a workspace; `IceSurface` waits for hydration, then projects the real graph with no writes |
-| Real `NodeCard` overlay in the app | `suiteCardWorkspace.tsx`; `?canvas=ice` workspace mode mounts `SceneCardView` read-only |
+| Real `NodeCard` overlay in the app | `suiteCardWorkspace.tsx`; `?canvas=ice` workspace mode mounts `CardSurface` read-only |
 | Bridge/undo contract | `iceBridge.ts` + 45 tests; not yet wired to gestures |
 | Portal/section/edge plan | `icePortals.ts` + 11 tests; not yet wired to the ICE surface |
 | Pins model | `packages/graph/src/pins.ts` + `WorkspaceDocument` tests; no library UI yet |
@@ -111,7 +111,7 @@ Goal: the real card, not a note impostor.
   coordinates, selection or identity map, stop and fix the projection instead.
 - Render read-only first: title/body, type glyph, tags, property chips, menu affordances disabled.
 - Wire the property inspector to the same canonical card.
-- **Shell unchanged:** the card uses the existing `SceneCardView`/`NodeCard`/global CSS; no card
+- **Shell unchanged:** the card uses the existing `CardSurface`/`NodeCard`/global CSS; no card
   restyle, no replacement inspector, no ICE tray or drawer. ICE supplies geometry only.
 - Keep one DOM root per visible card; release it on LOD unmount; free the local doc only when it is
   a lab doc (never the workspace doc).
@@ -162,7 +162,11 @@ Goal: keep Excalidraw, do not let it become the canvas.
 writes through the same API; opening the property inspector does not create a second editor; zooming
 the workspace does not zoom the card's internal scene.
 
-### Phase 5 — Sections, edges and connectors
+### Phase 5 — Boards, edges and connectors
+
+> **Vocabulary (ADR-0039):** "Section" is now **Board** (a container holding cards and other Boards),
+> the old tab-board is a **View** (a camera only), and the Portal card type is deleted — a Board
+> nested in a Board is the portal.
 
 Goal: parity for the non-card objects.
 
@@ -463,7 +467,7 @@ draws one.
 | Workstream | Status | Next artifact |
 | --- | --- | --- |
 | Decisions and docs | done | ADR-0034/0035/0036 |
-| Real workspace on ICE | done — live graph, real `SceneCardView` overlays, selection mirroring | 5k fixture + reload/camera restore |
+| Real workspace on ICE | done — live graph, real `CardSurface` overlays, selection mirroring | 5k fixture + reload/camera restore |
 | `suite.card` production | done for text via the inspector; the overlay stays read-only | inline Tiptap (deferred) |
 | Interaction bridge | done — drag/resize/delete commit once, Loro undo re-derives the projection | 5k drag budget |
 | Whiteboard | done — inline Excalidraw after an intent dwell, one instance, preview underlay, focus surface retained | measure the mount cost and record the ladder rung |

@@ -11,12 +11,10 @@
  *   and paragraph children — the same shape `WorkspaceDocument` writes;
  * - `cursorStore`/`localUser` may be null for a read-only face; `boardId` is
  *   only used for presence and menus, both inert with `readOnly`;
- * - `ReactFlowProvider` around it (the connector components assume it);
  * - a React root per overlay slot, and the app's global CSS for the card.
  */
 
 import type { Card, CardType } from "@suite/graph";
-import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { createRoot } from "react-dom/client";
 import { NodeCard } from "../components/NodeCard";
@@ -74,23 +72,21 @@ export function createNodeCardSlotRenderer(): SuiteCardSlotRenderer {
       };
 
       root.render(
-        <ReactFlowProvider>
-          <NodeCard
-            card={card}
-            type={CARD_TYPE}
-            meta={CARD_META}
-            cardDoc={doc}
-            contentId={contentMap.id}
-            titleId={titleMap.id}
-            cursorStore={null}
-            localUser={null}
-            boardId="suite-card-lab"
-            width={info.worldWidth}
-            height={info.worldHeight}
-            readOnly
-            showConnectors={false}
-          />
-        </ReactFlowProvider>,
+        <NodeCard
+          card={card}
+          type={CARD_TYPE}
+          meta={CARD_META}
+          cardDoc={doc}
+          contentId={contentMap.id}
+          titleId={titleMap.id}
+          cursorStore={null}
+          localUser={null}
+          boardId="suite-card-lab"
+          width={info.worldWidth}
+          height={info.worldHeight}
+          readOnly
+          showConnectors={false}
+        />,
       );
 
       return () => {

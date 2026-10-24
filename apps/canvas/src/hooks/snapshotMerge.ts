@@ -1,13 +1,20 @@
-import type { Board, Card, CardType, GraphEdge, Placement, Section, Tag } from "@suite/graph";
+import type { Board, Card, CardType, GraphEdge, Placement, Section, Tag, View } from "@suite/graph";
 import { sameTargets } from "@suite/graph";
 
 export interface WorkspaceSnapshot {
+  /** The Board tree: every container, on every View (ADR-0039). */
   boards: Board[];
+  /** Cameras. A View holds no content; the same Boards show in each one. */
+  views: View[];
   cards: Card[];
   placements: Placement[];
   edges: GraphEdge[];
   types: CardType[];
   tags: Tag[];
+  /**
+   * The Board tree read as the legacy frame shape: one Section per Board,
+   * flattened into the View's plane. Derived, never stored (ADR-0039).
+   */
   sections: Section[];
   /** `fromCardId` → mentioned ids. Derived; identity-stable per card. */
   references: Record<string, string[]>;
@@ -60,6 +67,7 @@ export function mergeSnapshots(
 ): WorkspaceSnapshot {
   if (!previous) return next;
   const boards = reuseArray(previous.boards, next.boards);
+  const views = reuseArray(previous.views, next.views);
   const cards = reuseArray(previous.cards, next.cards);
   const placements = reuseArray(previous.placements, next.placements);
   const edges = reuseArray(previous.edges, next.edges);
@@ -69,6 +77,7 @@ export function mergeSnapshots(
   const references = reuseReferences(previous.references, next.references);
   if (
     boards === previous.boards &&
+    views === previous.views &&
     cards === previous.cards &&
     placements === previous.placements &&
     edges === previous.edges &&
@@ -79,5 +88,5 @@ export function mergeSnapshots(
   ) {
     return previous;
   }
-  return { boards, cards, placements, edges, types, tags, sections, references };
+  return { boards, views, cards, placements, edges, types, tags, sections, references };
 }

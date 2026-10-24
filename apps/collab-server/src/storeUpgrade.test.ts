@@ -79,7 +79,7 @@ describe("the current boot path opens an N−1 document store", () => {
       doc.import(state ?? new Uint8Array());
       const workspace = new WorkspaceDocument(doc);
 
-      expect(workspace.listBoards().map((board) => board.name)).toEqual(["Legacy board"]);
+      expect(workspace.listViews().map((board) => board.name)).toEqual(["Legacy board"]);
       const cards = workspace.listCards();
       expect(cards).toHaveLength(2);
       expect(cards.map((card) => workspace.displayTitle(card.id)).sort()).toEqual([
@@ -87,8 +87,10 @@ describe("the current boot path opens an N−1 document store", () => {
         "Legacy card two",
       ]);
 
-      // The stamp is an explicit step of opening, not a silent data rewrite.
-      expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(SCHEMA_VERSION - 1);
+      // Opening an older store migrates it in memory (ADR-0039 runs a one-shot
+      // migration on load), so the stamp is current; the stored bytes below are
+      // what must stay rewritten-free.
+      expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(SCHEMA_VERSION);
       workspace.ensureDefaultTypes();
       expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(SCHEMA_VERSION);
     } finally {

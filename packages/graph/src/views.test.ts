@@ -51,8 +51,8 @@ interface Fixture {
 function fixture(): Fixture {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  const archive = workspace.createBoard({ name: "Archive" });
+  const board = workspace.ensureView();
+  const archive = workspace.createView({ name: "Archive" });
   workspace.createType({ id: "character", name: "Character" });
   const tag = workspace.createTag({ name: "draft" });
 
@@ -260,27 +260,27 @@ describe("runViewQuery scope and order", () => {
 describe("WorkspaceDocument views", () => {
   it("should round-trip a view", () => {
     const workspace = new WorkspaceDocument();
-    const created = workspace.createView({
+    const created = workspace.createSavedView({
       name: " Characters ",
       query: query({ text: "aria", typeIds: ["character"], scope: "board", groupBySection: true }),
     });
 
     expect(created.name).toBe("Characters");
     expect(created.position).toBe(0);
-    expect(workspace.listViews()).toEqual([created]);
-    expect(workspace.getView(created.id)).toEqual(created);
+    expect(workspace.listSavedViews()).toEqual([created]);
+    expect(workspace.getSavedView(created.id)).toEqual(created);
 
-    workspace.updateView(created.id, { name: "People" });
-    expect(workspace.getView(created.id)?.name).toBe("People");
-    expect(workspace.getView(created.id)?.query.typeIds).toEqual(["character"]);
+    workspace.updateSavedView(created.id, { name: "People" });
+    expect(workspace.getSavedView(created.id)?.name).toBe("People");
+    expect(workspace.getSavedView(created.id)?.query.typeIds).toEqual(["character"]);
 
-    workspace.deleteView(created.id);
-    expect(workspace.listViews()).toEqual([]);
+    workspace.deleteSavedView(created.id);
+    expect(workspace.listSavedViews()).toEqual([]);
   });
 
   it("should keep a view's query across a reopen", () => {
     const workspace = new WorkspaceDocument();
-    const created = workspace.createView({
+    const created = workspace.createSavedView({
       name: "Drafts",
       query: query({
         text: "grading",
@@ -295,7 +295,7 @@ describe("WorkspaceDocument views", () => {
     const reopened = new WorkspaceDocument();
     reopened.importSnapshot(workspace.exportSnapshot());
 
-    expect(reopened.listViews()).toEqual([created]);
+    expect(reopened.listSavedViews()).toEqual([created]);
   });
 
   it("should sync a view through an update export", () => {
@@ -303,80 +303,82 @@ describe("WorkspaceDocument views", () => {
     const target = new WorkspaceDocument();
     target.importUpdate(source.exportUpdate());
 
-    const created = source.createView({ name: "Shared", query: query({ text: "timeline" }) });
+    const created = source.createSavedView({ name: "Shared", query: query({ text: "timeline" }) });
     target.importUpdate(source.exportUpdate());
 
-    expect(target.getView(created.id)?.query.text).toBe("timeline");
+    expect(target.getSavedView(created.id)?.query.text).toBe("timeline");
   });
 
   it("should refuse an unnamed view", () => {
     const workspace = new WorkspaceDocument();
-    expect(() => workspace.createView({ name: "   ", query: emptyViewQuery() })).toThrow(
+    expect(() => workspace.createSavedView({ name: "   ", query: emptyViewQuery() })).toThrow(
       "A view needs a name",
     );
-    const created = workspace.createView({ name: "Named", query: emptyViewQuery() });
-    expect(() => workspace.updateView(created.id, { name: "" })).toThrow("A view needs a name");
+    const created = workspace.createSavedView({ name: "Named", query: emptyViewQuery() });
+    expect(() => workspace.updateSavedView(created.id, { name: "" })).toThrow(
+      "A view needs a name",
+    );
   });
 
   it("should refuse an invalid query", () => {
     const workspace = new WorkspaceDocument();
     const broken = { ...emptyViewQuery(), scope: "everywhere" } as unknown as ViewQuery;
-    expect(() => workspace.createView({ name: "Broken", query: broken })).toThrow();
+    expect(() => workspace.createSavedView({ name: "Broken", query: broken })).toThrow();
 
-    const created = workspace.createView({ name: "Fine", query: emptyViewQuery() });
+    const created = workspace.createSavedView({ name: "Fine", query: emptyViewQuery() });
     const badOrder = { ...emptyViewQuery(), order: "newest" } as unknown as ViewQuery;
-    expect(() => workspace.updateView(created.id, { query: badOrder })).toThrow();
+    expect(() => workspace.updateSavedView(created.id, { query: badOrder })).toThrow();
   });
 
   it("should refuse a duplicate id", () => {
     const workspace = new WorkspaceDocument();
-    workspace.createView({ id: "v1", name: "One", query: emptyViewQuery() });
-    expect(() => workspace.createView({ id: "v1", name: "Two", query: emptyViewQuery() })).toThrow(
-      "View already exists: v1",
-    );
+    workspace.createSavedView({ id: "v1", name: "One", query: emptyViewQuery() });
+    expect(() =>
+      workspace.createSavedView({ id: "v1", name: "Two", query: emptyViewQuery() }),
+    ).toThrow("View already exists: v1");
   });
 
   it("should move a view to a position and renumber the rest", () => {
     const workspace = new WorkspaceDocument();
-    const a = workspace.createView({ name: "A", query: emptyViewQuery() });
-    const b = workspace.createView({ name: "B", query: emptyViewQuery() });
-    const c = workspace.createView({ name: "C", query: emptyViewQuery() });
+    const a = workspace.createSavedView({ name: "A", query: emptyViewQuery() });
+    const b = workspace.createSavedView({ name: "B", query: emptyViewQuery() });
+    const c = workspace.createSavedView({ name: "C", query: emptyViewQuery() });
 
-    workspace.moveView(c.id, 0);
-    expect(workspace.listViews().map((entry) => entry.name)).toEqual(["C", "A", "B"]);
-    expect(workspace.getView(c.id)?.position).toBe(0);
-    expect(workspace.getView(a.id)?.position).toBe(1);
-    expect(workspace.getView(b.id)?.position).toBe(2);
+    workspace.moveSavedView(c.id, 0);
+    expect(workspace.listSavedViews().map((entry) => entry.name)).toEqual(["C", "A", "B"]);
+    expect(workspace.getSavedView(c.id)?.position).toBe(0);
+    expect(workspace.getSavedView(a.id)?.position).toBe(1);
+    expect(workspace.getSavedView(b.id)?.position).toBe(2);
 
-    workspace.moveView(a.id, 99);
-    expect(workspace.listViews().map((entry) => entry.name)).toEqual(["C", "B", "A"]);
+    workspace.moveSavedView(a.id, 99);
+    expect(workspace.listSavedViews().map((entry) => entry.name)).toEqual(["C", "B", "A"]);
   });
 
   it("should never touch a view when a card is trashed or purged", () => {
     const { workspace } = fixture();
-    const saved = workspace.createView({ name: "Grading", query: query({ text: "grading" }) });
+    const saved = workspace.createSavedView({ name: "Grading", query: query({ text: "grading" }) });
 
     workspace.trashCard("c2");
     workspace.purgeCard("c2");
 
-    expect(workspace.listViews()).toEqual([saved]);
+    expect(workspace.listSavedViews()).toEqual([saved]);
     expect(runView(workspace, saved).cardIds).toEqual([]);
   });
 
   it("should notify view listeners and bump the revision", () => {
     const workspace = new WorkspaceDocument();
     let calls = 0;
-    const stop = workspace.observeViews(() => {
+    const stop = workspace.observeSavedViews(() => {
       calls += 1;
     });
-    const before = workspace.viewsRevision;
-    workspace.createView({ name: "One", query: emptyViewQuery() });
+    const before = workspace.savedViewsRevision;
+    workspace.createSavedView({ name: "One", query: emptyViewQuery() });
 
     expect(calls).toBe(1);
-    expect(workspace.viewsRevision).toBe(before + 1);
+    expect(workspace.savedViewsRevision).toBe(before + 1);
 
     stop();
-    workspace.createView({ name: "Two", query: emptyViewQuery() });
+    workspace.createSavedView({ name: "Two", query: emptyViewQuery() });
     expect(calls).toBe(1);
   });
 });

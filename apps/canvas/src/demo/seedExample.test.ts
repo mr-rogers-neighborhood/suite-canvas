@@ -1,11 +1,4 @@
-import {
-  type Card,
-  PORTAL_BOARD_FIELD_ID,
-  PORTAL_TYPE_ID,
-  type PropertyValue,
-  sectionMembership,
-  WorkspaceDocument,
-} from "@suite/graph";
+import { type Card, type PropertyValue, sectionMembership, WorkspaceDocument } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import { DEMO_SEED_VERSION, seedExampleWorkspace, seedModeFor } from "./seedExample";
 
@@ -18,11 +11,6 @@ function seeded(): {
 } {
   const workspace = new WorkspaceDocument();
   return { workspace, summary: seedExampleWorkspace(workspace) };
-}
-
-function portalTarget(card: Card | undefined): string | undefined {
-  const value = card?.properties[PORTAL_BOARD_FIELD_ID];
-  return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -54,7 +42,7 @@ function propertyFingerprint(
 /** Everything the seed decides, in a comparable order. */
 function fingerprint(workspace: WorkspaceDocument) {
   const boards = workspace
-    .listBoards()
+    .listViews()
     .map((board) => ({ id: board.id, name: board.name }))
     .sort((first, second) => first.id.localeCompare(second.id));
 
@@ -125,7 +113,7 @@ function fingerprint(workspace: WorkspaceDocument) {
 }
 
 describe("seedExampleWorkspace", () => {
-  it("seeds three named boards and the documented card and portal counts", () => {
+  it("seeds three named views, fourteen cards and five boards", () => {
     const { workspace, summary } = seeded();
 
     expect(DEMO_SEED_VERSION).toBe(1);
@@ -133,79 +121,82 @@ describe("seedExampleWorkspace", () => {
     expect(summary.rootBoardId).toBe(summary.boards[0]);
     expect(
       workspace
-        .listBoards()
-        .map((board) => board.name)
+        .listViews()
+        .map((view) => view.name)
         .sort(),
     ).toEqual(["Atlas", "Research", "Sources"]);
     expect(summary.cards).toBe(14);
-    expect(summary.portals).toBe(4);
-    expect(workspace.listCards()).toHaveLength(summary.cards + summary.portals);
-    expect(workspace.listCardsOfType(PORTAL_TYPE_ID)).toHaveLength(summary.portals);
+    expect(workspace.listCards()).toHaveLength(summary.cards);
+    // No card plays the part of a container any more: a Board is the frame.
+    expect(summary.nestedBoards).toBe(5);
+    expect(workspace.listBoards()).toHaveLength(summary.nestedBoards);
   });
 
-  it("gives every card a title, and every content card a body", () => {
+  it("gives every card a title and a body", () => {
     const { workspace } = seeded();
 
     for (const card of workspace.listCards()) {
       expect(workspace.displayTitle(card.id)).not.toBe("Untitled");
-      if (card.primaryTypeId === PORTAL_TYPE_ID) continue;
       expect(workspace.cardText(card.id).length).toBeGreaterThan(0);
     }
   });
 
-  it("links the boards with portals, including a depth-two hop and a cycle", () => {
-    const { workspace, summary } = seeded();
-    const cards = new Map(workspace.listCards().map((card) => [card.id, card]));
-    const research = "demo-board-research";
-    const sources = "demo-board-sources";
+  it("nests one board inside another to show depth", () => {
+    const { workspace } = seeded();
+    const nested = workspace.getBoard("demo-section-atlas-nested");
+    const outer = workspace.getBoard("demo-section-atlas-start");
 
-    expect(portalTarget(cards.get("demo-portal-atlas-research"))).toBe(research);
-    expect(portalTarget(cards.get("demo-portal-atlas-sources"))).toBe(sources);
-    // Depth two: Atlas opens Research, and Research opens Sources.
-    expect(portalTarget(cards.get("demo-portal-research-sources"))).toBe(sources);
-    expect(workspace.getCard("demo-portal-research-sources")?.primaryTypeId).toBe(PORTAL_TYPE_ID);
-    expect(workspace.getPlacement(research, "demo-portal-research-sources")).toBeDefined();
-    // The cycle: Sources points back at the root board.
-    expect(portalTarget(cards.get("demo-portal-sources-atlas"))).toBe(summary.rootBoardId);
-    expect(workspace.getPlacement(sources, "demo-portal-sources-atlas")).toBeDefined();
+    expect(nested?.parentBoardId).toBe(outer?.id);
+    expect(workspace.boardPath("demo-section-atlas-nested")).toEqual([
+      workspace.boardRoot("demo-section-atlas-nested"),
+      "demo-section-atlas-start",
+      "demo-section-atlas-nested",
+    ]);
+    // The card moved into the inner frame, not a copy of it.
+    expect(
+      workspace.getPlacement("demo-section-atlas-nested", "demo-card-atlas-nesting"),
+    ).toBeDefined();
+    expect(
+      workspace.getPlacement("demo-section-atlas-start", "demo-card-atlas-welcome"),
+    ).toBeDefined();
   });
 
-  it("wraps the sections around their cards and nothing else", () => {
+  it("wraps each board around the cards it owns", () => {
     const { workspace } = seeded();
-    const members = new Map<string, string[]>();
-    // Membership is derived per board: two boards may overlap geometrically.
-    for (const board of workspace.listBoards()) {
-      const membership = sectionMembership(
-        workspace.listBoardPlacements(board.id),
-        workspace.listSections(board.id),
-      );
-      for (const [cardId, sectionId] of membership) {
-        members.set(sectionId, [...(members.get(sectionId) ?? []), cardId]);
-      }
+    const owners = new Map<string, string[]>();
+    for (const placement of workspace.listPlacements()) {
+      owners.set(placement.boardId, [...(owners.get(placement.boardId) ?? []), placement.cardId]);
     }
 
-    expect([...members.keys()].sort()).toEqual([
-      "demo-section-atlas-sketches",
-      "demo-section-atlas-start",
-      "demo-section-research-questions",
-      "demo-section-sources-reading",
-    ]);
-    expect((members.get("demo-section-atlas-start") ?? []).sort()).toEqual([
-      "demo-card-atlas-nesting",
+    // A card belongs to exactly one Board now (ADR-0039): nesting replaced the
+    // portal card, so the frames are ownership, not just geometry.
+    expect((owners.get("demo-section-atlas-start") ?? []).sort()).toEqual([
       "demo-card-atlas-welcome",
     ]);
-    expect((members.get("demo-section-atlas-sketches") ?? []).sort()).toEqual([
+    expect(owners.get("demo-section-atlas-nested")).toEqual(["demo-card-atlas-nesting"]);
+    expect((owners.get("demo-section-atlas-sketches") ?? []).sort()).toEqual([
       "demo-card-atlas-links",
       WHITEBOARD_CARD,
     ]);
-    expect((members.get("demo-section-research-questions") ?? []).sort()).toEqual([
+    expect((owners.get("demo-section-research-questions") ?? []).sort()).toEqual([
       "demo-card-research-depth",
       "demo-card-research-portals",
     ]);
-    expect((members.get("demo-section-sources-reading") ?? []).sort()).toEqual([
+    expect((owners.get("demo-section-sources-reading") ?? []).sort()).toEqual([
       "demo-card-sources-crdt",
       "demo-card-sources-layout",
     ]);
+    // Every other atlas card stays on the plane itself.
+    const atlasPlane = workspace.listViews()[0]?.id ?? "";
+    expect(owners.get(atlasPlane)?.length).toBeGreaterThan(0);
+
+    // The root-plane frame still contains its card's anchor: geometry and
+    // ownership agree for a card that is not nested.
+    const membership = sectionMembership(
+      workspace.listBoardPlacements(atlasPlane),
+      workspace.listSections(atlasPlane),
+    );
+    expect(membership.get("demo-card-atlas-welcome")).toBe("demo-section-atlas-start");
   });
 
   it("stores the whiteboard scene on the drawing card", () => {
@@ -259,19 +250,25 @@ describe("seedExampleWorkspace", () => {
   it("lays every board out on distinct coordinates", () => {
     const { workspace, summary } = seeded();
 
-    for (const board of workspace.listBoards()) {
+    for (const board of workspace.listViews()) {
       const placements = workspace.listBoardPlacements(board.id);
       expect(placements.length).toBeGreaterThan(0);
       const spots = new Set(placements.map((placement) => `${placement.x},${placement.y}`));
       expect(spots.size).toBe(placements.length);
     }
-    // The root board's two portals are sized by the layout planner, so a child
-    // board's frame fits inside them.
-    for (const cardId of ["demo-portal-atlas-research", "demo-portal-atlas-sources"]) {
-      const placement = workspace.getPlacement(summary.rootBoardId, cardId);
-      expect(placement?.width).toBeGreaterThan(0);
-      expect(placement?.height).toBeGreaterThan(0);
+    // The nested Board sits inside its parent's world rect: depth is geometric,
+    // not a second document.
+    const outer = workspace.boardWorldRect("demo-section-atlas-start");
+    const inner = workspace.boardWorldRect("demo-section-atlas-nested");
+    expect(outer).not.toBeNull();
+    expect(inner).not.toBeNull();
+    if (outer && inner) {
+      expect(inner.x).toBeGreaterThanOrEqual(outer.x);
+      expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+      expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 1);
+      expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 1);
     }
+    expect(summary.rootBoardId).toBe(workspace.boardRoot("demo-section-atlas-nested"));
   });
 
   it("produces the same workspace on two runs", () => {
@@ -280,13 +277,13 @@ describe("seedExampleWorkspace", () => {
 
   it("reuses an existing board as the root instead of leaving an empty one behind", () => {
     const workspace = new WorkspaceDocument();
-    const existing = workspace.createBoard({ name: "Mine" });
+    const existing = workspace.createView({ name: "Mine" });
 
     const summary = seedExampleWorkspace(workspace);
 
     expect(summary.rootBoardId).toBe(existing.id);
-    expect(workspace.listBoards()).toHaveLength(3);
-    expect(workspace.getBoard(existing.id)?.name).toBe("Atlas");
+    expect(workspace.listViews()).toHaveLength(3);
+    expect(workspace.getView(existing.id)?.name).toBe("Atlas");
   });
 });
 

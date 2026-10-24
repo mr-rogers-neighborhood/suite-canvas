@@ -440,10 +440,10 @@ export function projectWorkspace(
     if (!card) throw new Error(`Unknown card: ${options.cardId}`);
     if (card.deletedAt) throw new Error(`Card is in the trash: ${options.cardId}`);
     boardId = SHARE_BOARD_ID;
-    workspace.createBoard({ id: SHARE_BOARD_ID, name: SHARE_BOARD_NAME });
+    workspace.createView({ id: SHARE_BOARD_ID, name: SHARE_BOARD_NAME });
     copied.add(card.id);
   } else {
-    const board = source.getBoard(options.boardId);
+    const board = source.getView(options.boardId);
     if (!board) throw new Error(`Unknown board: ${options.boardId}`);
     boardId = board.id;
     copyEntry(
@@ -456,18 +456,24 @@ export function projectWorkspace(
       if (selected && !selected.has(card.id)) continue;
       copied.add(card.id);
     }
-    placements = source
-      .listBoardPlacements(board.id)
-      .filter((placement) => copied.has(placement.cardId));
+    // The Board tree travels with the View; a selection keeps only the Boards
+    // that hold a copied card, plus their ancestors.
+    const tree = source.listBoards(board.id);
     const sections = source.listSections(board.id);
-    const keptSections = selected ? selectionSections(placements, sections) : sections;
-    for (const section of keptSections) {
+    const placementsInView = source
+      .listPlacements()
+      .filter((placement) => copied.has(placement.cardId));
+    const keptSections = selected ? selectionSections(placementsInView, sections) : sections;
+    const keptIds = new Set(keptSections.map((section) => section.id));
+    for (const entry of tree) {
+      if (!keptIds.has(entry.id)) continue;
       copyEntry(
-        source.doc.getMap(WorkspaceDocument.SECTIONS_KEY),
-        doc.getMap(WorkspaceDocument.SECTIONS_KEY),
-        section.id,
+        source.doc.getMap(WorkspaceDocument.BOARD_KEY),
+        doc.getMap(WorkspaceDocument.BOARD_KEY),
+        entry.id,
       );
     }
+    placements = placementsInView;
   }
 
   copyCards(source, doc, copied);
@@ -514,6 +520,7 @@ const PROJECTION_ROOTS = [
   WorkspaceDocument.EDGES_KEY,
   WorkspaceDocument.TYPES_KEY,
   WorkspaceDocument.TAGS_KEY,
+  WorkspaceDocument.BOARD_KEY,
   WorkspaceDocument.SECTIONS_KEY,
   WorkspaceDocument.CONTENT_KEY,
   WorkspaceDocument.TITLES_KEY,

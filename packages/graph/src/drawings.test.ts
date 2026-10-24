@@ -34,7 +34,7 @@ function seeded(): WorkspaceDocument {
 
 function boardWithDrawing() {
   const source = new WorkspaceDocument();
-  const board = source.ensureBoard();
+  const board = source.ensureView();
   source.createCard({ id: "w", boardId: board.id, position: { x: 0, y: 0 } });
   source.createCard({ id: "plain", boardId: board.id, position: { x: 200, y: 0 } });
   source.createCard({ id: "hidden" });

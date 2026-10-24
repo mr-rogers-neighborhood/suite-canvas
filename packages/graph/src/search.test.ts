@@ -36,8 +36,8 @@ interface Fixture {
 function fixture(): Fixture {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  const otherBoard = workspace.createBoard({ name: "Archive" });
+  const board = workspace.ensureView();
+  const otherBoard = workspace.createView({ name: "Archive" });
 
   workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
   addText(workspace.getTitle("c1"), "Mastering the timeline");
@@ -80,7 +80,7 @@ describe("a card with a link image", () => {
     const { workspace } = fixture();
     workspace.createCard({
       id: "link",
-      boardId: workspace.ensureBoard().id,
+      boardId: workspace.ensureView().id,
       position: { x: 0, y: 0 },
     });
     addText(workspace.getTitle("link"), "Wiring plan");

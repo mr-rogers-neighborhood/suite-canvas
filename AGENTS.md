@@ -10,10 +10,10 @@ Claude Code, …). Read it first; keep it high-signal.
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
   Zustand (UI state), Tiptap 3 (every node is an editor). The target surface is ICE
   (`@vibecook/ice`, WebGPU) hosting the pure `@suite/scene` projection and the real `NodeCard` in a
-  screen-space DOM overlay ([ADR-0034](docs/decisions/0034-ice-primary-rendering-engine.md)). The
-  React Flow scene is the reference implementation until the P0 parity gate; `?canvas=ice` mounts
-  the port, `?canvas=scene` the reference, and `?canvas=flow` the older single-board surface for
-  development only. There is no user-facing React Flow fallback.
+  screen-space DOM overlay ([ADR-0034](docs/decisions/0034-ice-primary-rendering-engine.md)). ICE is
+  the only canvas surface: the React Flow boards and the scene surface were removed once the port
+  reached parity, and `?canvas=` no longer selects an engine. React Flow survives only as the
+  package `NodeCard`/`Connector` import for `Handle`, inside the ICE card roots.
 
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
@@ -49,9 +49,9 @@ pnpm storybook        # storybook dev server
 
 ## Architecture in one paragraph
 
-A single `LoroDoc` per workspace is the source of truth. `boards`, `cards`, `placements`,
-`sections`, `types`, `tags`, `edges`, the derived `references` index, `views`, and per-card rich
-text (`content`/`titles`) live in the same doc; the planned `pins` map joins them under
+A single `LoroDoc` per workspace is the source of truth. `boards` (containers — ADR-0039), `views`
+(cameras), `cards`, `placements`, `types`, `tags`, `edges`, the derived `references` index, and
+per-card rich text (`content`/`titles`) live in the same doc; the `pins` map joins them under
 [ADR-0035](docs/decisions/0035-views-pins-and-portals.md). `@suite/graph` validates every write with
 Zod before it reaches the CRDT. The doc is persisted offline as a Loro
 snapshot plus an update log in IndexedDB and synced by the `loro-websocket` provider when online.

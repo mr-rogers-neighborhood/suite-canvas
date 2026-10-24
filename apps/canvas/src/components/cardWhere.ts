@@ -4,12 +4,15 @@ import {
   type Section,
   sectionForCard,
   sectionLineage,
+  type View,
 } from "@suite/graph";
 import type { CardWhere, CardWhereSection } from "./CardPanel";
 
 /** The parts of a workspace snapshot that answer "where is this card?". */
 export interface CardWhereSnapshot {
   boards: Board[];
+  /** A placement on a View names the View: its implicit root plane owns the card. */
+  views?: View[] | undefined;
   placements: Placement[];
   sections: Section[];
 }
@@ -47,14 +50,16 @@ export function cardWhere(
   const placements = snapshot.placements.filter((entry) => entry.cardId === cardId);
   if (placements.length === 0) return { unplaced: true, entries: [] };
 
-  const boardsById = new Map(snapshot.boards.map((board) => [board.id, board]));
+  const holders = new Map<string, { id: string; name: string }>();
+  for (const view of snapshot.views ?? []) holders.set(view.id, { id: view.id, name: view.name });
+  for (const board of snapshot.boards) holders.set(board.id, { id: board.id, name: board.name });
   const ordered = [...placements].sort(
     (a, b) => a.createdAt - b.createdAt || a.boardId.localeCompare(b.boardId),
   );
   const homeId = ordered[0]?.boardId ?? null;
   const entries = ordered
     .flatMap((placement) => {
-      const board = boardsById.get(placement.boardId);
+      const board = holders.get(placement.boardId);
       if (!board) return [];
       const sections = snapshot.sections.filter((entry) => entry.boardId === board.id);
       const match = sectionForCard(placement, sections);

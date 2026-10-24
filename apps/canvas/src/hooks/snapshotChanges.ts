@@ -6,10 +6,11 @@ import type {
   Placement,
   Section,
   Tag,
+  View,
   WorkspaceAction,
   WorkspaceChange,
 } from "@suite/graph";
-import { DEFAULT_TYPE_ID, placementKey, sameTargets } from "@suite/graph";
+import { DEFAULT_TYPE_ID, placementKey, sameTargets, sectionsFromBoards } from "@suite/graph";
 import type { WorkspaceSnapshot } from "./snapshotMerge";
 
 /**
@@ -17,9 +18,12 @@ import type { WorkspaceSnapshot } from "./snapshotMerge";
  * with its record type; these guards just make that contract explicit.
  */
 function boardValue(value: WorkspaceChange["value"]): Board | null {
-  return value !== null && "name" in value && "updatedAt" in value && !("glyph" in value)
-    ? value
-    : null;
+  return value !== null && "rect" in value ? value : null;
+}
+
+/** A camera; `camera` is unique to the View record. */
+function viewValue(value: WorkspaceChange["value"]): View | null {
+  return value !== null && "camera" in value ? value : null;
 }
 
 function cardValue(value: WorkspaceChange["value"]): Card | null {
@@ -27,7 +31,7 @@ function cardValue(value: WorkspaceChange["value"]): Card | null {
 }
 
 function placementValue(value: WorkspaceChange["value"]): Placement | null {
-  return value !== null && "cardId" in value && "z" in value ? value : null;
+  return value !== null && "cardId" in value && !("title" in value) ? value : null;
 }
 
 function edgeValue(value: WorkspaceChange["value"]): GraphEdge | null {
@@ -44,12 +48,22 @@ function tagValue(value: WorkspaceChange["value"]): Tag | null {
     : null;
 }
 
-function sectionValue(value: WorkspaceChange["value"]): Section | null {
-  return value !== null && "title" in value && "width" in value ? value : null;
+function compareBoards(a: Board, b: Board): number {
+  return a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 
-function compareBoards(a: Board, b: Board): number {
+function compareViews(a: View, b: View): number {
   return a.createdAt - b.createdAt || a.id.localeCompare(b.id);
+}
+
+/**
+ * The legacy frame shape, re-derived from the Board tree. Boards are the only
+ * stored frames now, so a Boards change is what moves a Section; the View list
+ * decides which roots are real (an orphan Board has no plane to sit on).
+ */
+function deriveSections(boards: Board[], views: View[]): Section[] {
+  const viewIds = new Set(views.map((view) => view.id));
+  return sectionsFromBoards(boards).filter((section) => viewIds.has(section.boardId));
 }
 
 function compareTypes(a: CardType, b: CardType): number {
@@ -62,10 +76,6 @@ function compareTypes(a: CardType, b: CardType): number {
 
 function compareTags(a: Tag, b: Tag): number {
   return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
-}
-
-function compareSections(a: Section, b: Section): number {
-  return a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id);
 }
 
 /** Insertion point in a list already sorted like the matching `list*` read. */
@@ -137,6 +147,19 @@ export function applyWorkspaceChange(
   change: WorkspaceChange,
 ): WorkspaceSnapshot {
   switch (change.section) {
+    case "views": {
+      const views = changeSorted(
+        snapshot.views,
+        change.action,
+        change.key,
+        viewValue(change.value),
+        (view) => view.id,
+        compareViews,
+      );
+      if (views === snapshot.views) return snapshot;
+      const sections = deriveSections(snapshot.boards, views);
+      return { ...snapshot, views, sections };
+    }
     case "boards": {
       const boards = changeSorted(
         snapshot.boards,
@@ -146,7 +169,9 @@ export function applyWorkspaceChange(
         (board) => board.id,
         compareBoards,
       );
-      return boards === snapshot.boards ? snapshot : { ...snapshot, boards };
+      if (boards === snapshot.boards) return snapshot;
+      const sections = deriveSections(boards, snapshot.views);
+      return { ...snapshot, boards, sections };
     }
     case "cards": {
       const cards = changeKeyed(
@@ -199,17 +224,6 @@ export function applyWorkspaceChange(
       );
       return tags === snapshot.tags ? snapshot : { ...snapshot, tags };
     }
-    case "sections": {
-      const sections = changeSorted(
-        snapshot.sections,
-        change.action,
-        change.key,
-        sectionValue(change.value),
-        (section) => section.id,
-        compareSections,
-      );
-      return sections === snapshot.sections ? snapshot : { ...snapshot, sections };
-    }
     case "references": {
       const targets = Array.isArray(change.value) ? [...change.value].sort() : [];
       const existing = snapshot.references[change.key];
@@ -222,5 +236,9 @@ export function applyWorkspaceChange(
       if (existing !== undefined && sameTargets(existing, targets)) return snapshot;
       return { ...snapshot, references: { ...snapshot.references, [change.key]: targets } };
     }
+    default:
+      // A section this build does not fold (a peer's newer schema) leaves the
+      // snapshot alone rather than dropping it.
+      return snapshot;
   }
 }

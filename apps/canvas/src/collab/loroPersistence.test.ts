@@ -177,7 +177,7 @@ describe("two tabs on one workspace", () => {
     const docA = new LoroDoc();
     docA.setPeerId(1n);
     const workspaceA = workspaceOf(docA);
-    const board = workspaceA.createBoard({ id: "board-1", name: "Board" });
+    const board = workspaceA.createView({ id: "board-1", name: "Board" });
     const persistenceA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
     await persistenceA.open();
     expect(await persistenceA.compact()).toBe("compacted");
@@ -216,7 +216,7 @@ describe("two tabs on one workspace", () => {
     const persistenceB2 = new LoroIndexeddbPersistence(WORKSPACE, reloaded, { tabId: "tab-b" });
     await persistenceB2.load();
     const workspaceReloaded = workspaceOf(reloaded);
-    expect(workspaceReloaded.listBoards().map((entry) => entry.name)).toEqual(["Board"]);
+    expect(workspaceReloaded.listViews().map((entry) => entry.name)).toEqual(["Board"]);
     const titles = workspaceReloaded
       .listCards()
       .map((card) => workspaceReloaded.displayTitle(card.id));
@@ -233,7 +233,7 @@ describe("two tabs on one workspace", () => {
     // Tab A leads and has a snapshot on disk.
     const docA = new LoroDoc();
     docA.setPeerId(1n);
-    workspaceOf(docA).createBoard({ id: "board-1", name: "Board" });
+    workspaceOf(docA).createView({ id: "board-1", name: "Board" });
     const persistenceA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
     await persistenceA.load();
     expect(await persistenceA.compact()).toBe("compacted");
@@ -319,7 +319,7 @@ describe("two tabs on one workspace", () => {
     const docA = new LoroDoc();
     const persistenceA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
     await persistenceA.load();
-    workspaceOf(docA).createBoard({ id: "board-1", name: "Board" });
+    workspaceOf(docA).createView({ id: "board-1", name: "Board" });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect((await rows()).length).toBeGreaterThan(0);
 
@@ -370,7 +370,7 @@ describe("without the Web Locks API", () => {
     const workspaceA = workspaceOf(docA);
     const persistenceA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
     await persistenceA.load();
-    workspaceA.createBoard({ id: "board-1", name: "Board" });
+    workspaceA.createView({ id: "board-1", name: "Board" });
     expect(await persistenceA.compact()).toBe("compacted");
 
     const docB = new LoroDoc();
@@ -398,7 +398,7 @@ describe("without the Web Locks API", () => {
     const persistenceB2 = new LoroIndexeddbPersistence(WORKSPACE, reloaded, { tabId: "tab-b" });
     await persistenceB2.load();
     const restored = workspaceOf(reloaded);
-    expect(restored.listBoards().map((entry) => entry.name)).toEqual(["Board"]);
+    expect(restored.listViews().map((entry) => entry.name)).toEqual(["Board"]);
     expect(restored.listCards().map((entry) => restored.displayTitle(entry.id))).toContain(
       "Written without a lock",
     );
@@ -412,7 +412,7 @@ describe("without the Web Locks API", () => {
 
     const docA = new LoroDoc();
     docA.setPeerId(1n);
-    workspaceOf(docA).createBoard({ id: "board-1", name: "Board" });
+    workspaceOf(docA).createView({ id: "board-1", name: "Board" });
     const persistenceA = new LoroIndexeddbPersistence(WORKSPACE, docA, { tabId: "tab-a" });
     await persistenceA.load();
     expect(await persistenceA.compact()).toBe("compacted");
@@ -421,7 +421,7 @@ describe("without the Web Locks API", () => {
     // snapshot would drop everything the stored one has, so it must not write.
     const docC = new LoroDoc();
     docC.setPeerId(3n);
-    workspaceOf(docC).createBoard({ id: "board-c", name: "Elsewhere" });
+    workspaceOf(docC).createView({ id: "board-c", name: "Elsewhere" });
     const persistenceC = new LoroIndexeddbPersistence(WORKSPACE, docC, { tabId: "tab-c" });
     await persistenceC.open();
     expect(await persistenceC.compact()).toBe("skipped");
@@ -454,7 +454,7 @@ describe("the local database name", () => {
   it("starts from the new database and never reads the previous stage's cache", async () => {
     // A document cached by the previous build, under the old database name.
     const legacyDoc = new LoroDoc();
-    workspaceOf(legacyDoc).createBoard({ id: "board-legacy", name: "Legacy" });
+    workspaceOf(legacyDoc).createView({ id: "board-legacy", name: "Legacy" });
     const legacyBytes = legacyDoc.export({ mode: "snapshot" });
     const legacy = await openNamed(LEGACY_DB_NAME, (db) => {
       db.createObjectStore("snapshots", { keyPath: "id" });
@@ -479,10 +479,10 @@ describe("the local database name", () => {
     const persistence = new LoroIndexeddbPersistence(WORKSPACE, doc, { tabId: "tab-a" });
     await persistence.load();
     // The rename is the reset: the old snapshot is not imported.
-    expect(workspaceOf(doc).listBoards()).toHaveLength(0);
+    expect(workspaceOf(doc).listViews()).toHaveLength(0);
 
     // Writes and deletes use the new name, so "Forget this browser" still works.
-    workspaceOf(doc).createBoard({ id: "board-new", name: "New" });
+    workspaceOf(doc).createView({ id: "board-new", name: "New" });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect((await rows()).length).toBeGreaterThan(0);
     await deleteWorkspaceDocument(WORKSPACE);

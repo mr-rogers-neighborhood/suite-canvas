@@ -1,15 +1,12 @@
 import { sectionForCard, sectionMembership } from "@suite/graph";
-import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
-import { CanvasBoard } from "./canvas/CanvasBoard";
+import { DEFAULT_BOARD_SIZE } from "./canvas/boardSize";
 import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
-import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
-import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
 import { BootSkeleton } from "./components/BootSkeleton";
 import { CardFocusHost } from "./components/CardFocusHost";
 import { CardInspectorHost } from "./components/CardInspectorHost";
@@ -23,14 +20,13 @@ import { StoragePanel } from "./components/StoragePanel";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { ViewsBar } from "./components/ViewsBar";
+import { type ViewPresence, ViewTabs } from "./components/ViewTabs";
 import { seedExampleWorkspace, seedModeFor } from "./demo/seedExample";
 import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
-import { SceneBoard } from "./scene/SceneBoard";
-import { currentCanvasSurface } from "./scene/surfaceFlag";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
 import {
@@ -75,11 +71,7 @@ export default function App() {
   const workspaceId = session.workspaceId;
   if (!workspaceId) return <WorkspaceLauncher />;
 
-  return (
-    <ReactFlowProvider>
-      <WorkspaceShell workspaceId={workspaceId} share={session.share} />
-    </ReactFlowProvider>
-  );
+  return <WorkspaceShell workspaceId={workspaceId} share={session.share} />;
 }
 
 function WorkspaceShell({
@@ -99,9 +91,7 @@ function WorkspaceShell({
   const synced = useCanvasStore((state) => state.synced);
   const boot = useBootGate(ready);
   const [leaving, setLeaving] = useState(false);
-  const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
-  const canvasSurface = currentCanvasSurface();
 
   countRender("shell");
 
@@ -142,7 +132,7 @@ function WorkspaceShell({
   // presence changes, so this memo is stable between pointer ticks; `useShallow`
   // is not enough because each board's label/colour pair is a new object.
   const peers = usePresenceStore((state) => state.peers);
-  const peersByBoard = useMemo(() => {
+  const peersByView = useMemo(() => {
     const names = new Map<string, Set<string>>();
     const colors = new Map<string, string>();
     for (const peer of Object.values(peers)) {
@@ -152,7 +142,7 @@ function WorkspaceShell({
       names.set(peer.board, set);
       if (!colors.has(peer.board)) colors.set(peer.board, peer.user.color);
     }
-    const map: Record<string, BoardPresence> = {};
+    const map: Record<string, ViewPresence> = {};
     for (const [boardId, set] of names) {
       map[boardId] = {
         label: [...set].sort().join(", "),
@@ -162,8 +152,6 @@ function WorkspaceShell({
     return map;
   }, [peers]);
   const activateBoard = useUiStore((state) => state.activateBoard);
-  const goBackBoard = useUiStore((state) => state.goBackBoard);
-  const boardHistory = useUiStore((state) => state.boardHistory);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
 
   // The live workspace surface — dock, library, boards and schema — belongs to
@@ -213,11 +201,11 @@ function WorkspaceShell({
       }
       const seedMode = seedModeFor(window.location.search);
       if (seedMode === "blank") {
-        workspace.ensureBoard();
+        workspace.ensureView();
       } else if (seedMode === "example") {
         seedExampleWorkspace(workspace);
       } else {
-        const board = workspace.ensureBoard();
+        const board = workspace.ensureView();
         if (workspace.listCards().length === 0) {
           workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
           // One card width plus a gap, so the two starters read as two cards and a
@@ -271,22 +259,24 @@ function WorkspaceShell({
     }
   }, [ready, synced, share, readOnly, workspace, workspaceId]);
 
-  // Resolve the board from the URL, falling back to the first one.
+  // Resolve the view from the URL, falling back to the first one. A View is a
+  // camera (ADR-0039), so this is which place the reader is standing in, not
+  // what the document holds.
   useEffect(() => {
     if (!ready || !synced) return;
-    const boards = snapshot.boards;
-    if (boards.length === 0) {
+    const views = snapshot.views;
+    if (views.length === 0) {
       // A projection can arrive a moment after the room joins; wait for it
-      // instead of minting a board the share may not write.
-      if (!share && !readOnly) workspace.ensureBoard();
+      // instead of minting a view the share may not write.
+      if (!share && !readOnly) workspace.ensureView();
       return;
     }
-    if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
+    if (activeBoardId && views.some((view) => view.id === activeBoardId)) return;
 
     const requested = resolveBoardId();
-    const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
+    const next = views.find((view) => view.id === requested)?.id ?? views[0]?.id ?? null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace, readOnly, share]);
+  }, [ready, synced, snapshot.views, activeBoardId, setActiveBoardId, workspace, readOnly, share]);
 
   // Keep the URL shareable without a reload. A share keeps its token and never
   // gains a workspace id: the link is the whole credential.
@@ -315,10 +305,10 @@ function WorkspaceShell({
     if (!activeBoardId || share) return;
     rememberWorkspace({
       id: workspaceId,
-      title: snapshot.boards.find((board) => board.id === activeBoardId)?.name,
+      title: snapshot.views.find((view) => view.id === activeBoardId)?.name,
       boardId: activeBoardId,
     });
-  }, [workspaceId, activeBoardId, snapshot.boards, share]);
+  }, [workspaceId, activeBoardId, snapshot.views, share]);
 
   // A card link opens on that card. The projection may still be syncing, so wait
   // for the card to exist; once opened, closing the panel is the reader's choice.
@@ -340,16 +330,21 @@ function WorkspaceShell({
     setFocus(editingNodeId ? { nodeId: editingNodeId, field: editingField } : null);
   }, [editingNodeId, editingField, setFocus]);
 
-  const canvasPoint = useCallback(
-    (clientPoint?: { x: number; y: number }) => {
-      if (clientPoint) return screenToFlowPosition(clientPoint);
-      const rect = document.querySelector('[data-testid="canvas-board"]')?.getBoundingClientRect();
-      const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-      const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-      return screenToFlowPosition({ x, y });
-    },
-    [screenToFlowPosition],
-  );
+  /**
+   * A point on the plane, in plane units. ICE owns the camera, so the shell
+   * converts a client point to the surface's own box instead of applying a
+   * viewport transform of its own: both are the identity on the root plane,
+   * which is where the shell places things.
+   */
+  const canvasPoint = useCallback((clientPoint?: { x: number; y: number }) => {
+    const rect = document.querySelector('[data-testid="ice-surface"]')?.getBoundingClientRect();
+    const left = rect?.left ?? 0;
+    const top = rect?.top ?? 0;
+    const width = rect?.width ?? window.innerWidth;
+    const height = rect?.height ?? window.innerHeight;
+    if (clientPoint) return { x: clientPoint.x - left, y: clientPoint.y - top };
+    return { x: width / 2, y: height / 2 };
+  }, []);
 
   const placeCard = useCallback(
     (cardId: string, point?: { x: number; y: number }) => {
@@ -384,33 +379,33 @@ function WorkspaceShell({
   );
 
   /**
-   * Dock-created portals land at the viewport centre, centred on the pointer
-   * the way a placed card is. The card and its target are one commit.
+   * Plants an empty Board on the plane the reader is standing on: one commit,
+   * no card behind it (ADR-0039). The frame lands centred on the surface.
    */
-  const createPortal = useCallback(
-    (targetBoardId: string) => {
-      if (!activeBoardId || !canCreateContent) return;
-      const centre = canvasPoint();
-      const card = workspace.createPortalCard({
-        boardId: activeBoardId,
-        targetBoardId,
-        position: {
-          x: centre.x - DEFAULT_PORTAL_SIZE.width / 2,
-          y: centre.y - DEFAULT_PORTAL_SIZE.height / 2,
-        },
-      });
-      setSelectedNodeIds([card.id]);
-    },
-    [activeBoardId, canvasPoint, workspace, canCreateContent, setSelectedNodeIds],
-  );
+  const createBoardHere = useCallback(() => {
+    if (!activeBoardId || !canCreateContent || !canCreateBoards) return;
+    const centre = canvasPoint();
+    const board = workspace.createBoard({
+      name: `Board ${workspace.listBoardChildren(activeBoardId).length + 1}`,
+      parentBoardId: activeBoardId,
+      x: centre.x - DEFAULT_BOARD_SIZE.width / 2,
+      y: centre.y - DEFAULT_BOARD_SIZE.height / 2,
+      width: DEFAULT_BOARD_SIZE.width,
+      height: DEFAULT_BOARD_SIZE.height,
+      color: "slate",
+    });
+    useUiStore.getState().selectSection(board.id);
+    setSelectedNodeIds([]);
+  }, [
+    activeBoardId,
+    canvasPoint,
+    workspace,
+    canCreateContent,
+    canCreateBoards,
+    setSelectedNodeIds,
+  ]);
 
-  const createBoardPortal = useCallback(() => {
-    if (!activeBoardId || !canCreateBoards) return;
-    const board = workspace.createBoard();
-    createPortal(board.id);
-  }, [activeBoardId, canCreateBoards, workspace, createPortal]);
-
-  const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
+  const activeBoardName = snapshot.views.find((view) => view.id === activeBoardId)?.name ?? null;
   const boardSections = useMemo(
     () =>
       activeBoardId ? snapshot.sections.filter((section) => section.boardId === activeBoardId) : [],
@@ -471,9 +466,12 @@ function WorkspaceShell({
       return {
         id: cardId,
         title: workspace.displayTitle(cardId),
+        // `placement.boardId` names the owning Board, or the View whose
+        // implicit root plane owns the card (ADR-0039).
         boards: workspace.listCardPlacements(cardId).flatMap((placement) => {
-          const board = workspace.getBoard(placement.boardId);
-          return board ? [{ id: board.id, name: board.name }] : [];
+          const holder =
+            workspace.getBoard(placement.boardId) ?? workspace.getView(placement.boardId);
+          return holder ? [{ id: holder.id, name: holder.name }] : [];
         }),
         typeIds: card?.typeIds ?? [],
         tagIds: card?.tags ?? [],
@@ -566,49 +564,25 @@ function WorkspaceShell({
             <div className="views-bar">
               <ViewsBar canManage={canManageSchema} />
             </div>
-            {/*
-              A way back exists only where the reader was *taken* somewhere: a
-              portal entry. Tab clicks already leave every board one click away,
-              so a chevron for those was a second, single-direction control in
-              the busiest corner of the bar.
-            */}
-            {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
-              <button
-                type="button"
-                data-testid="portal-back"
-                aria-label={`Back to ${
-                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                    ?.name ?? "the previous board"
-                }`}
-                title={`Back to ${
-                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                    ?.name ?? "the previous board"
-                }`}
-                className="portal-back"
-                onClick={() => goBackBoard()}
-              >
-                <span aria-hidden="true">{"\u2039"}</span>
-              </button>
-            ) : null}
-            <BoardTabs
-              boards={snapshot.boards}
-              activeBoardId={activeBoardId}
+            <ViewTabs
+              views={snapshot.views}
+              activeViewId={activeBoardId}
               onSelect={activateBoard}
-              peersByBoard={peersByBoard}
-              canCreateBoards={canCreateBoards}
-              canManageBoards={canManageBoards}
+              peersByView={peersByView}
+              canCreateViews={canCreateBoards}
+              canManageViews={canManageBoards}
               onCreate={() => {
-                const board = workspace.createBoard();
-                activateBoard(board.id);
+                const view = workspace.createView();
+                activateBoard(view.id);
               }}
-              onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-              onDeleteRequest={(boardId) => {
-                // Nothing to lose on an empty board, so skip the dialog.
-                if (workspace.listBoardCards(boardId).length === 0) {
-                  workspace.deleteBoard(boardId);
+              onRename={(viewId, name) => workspace.renameView(viewId, name)}
+              onDeleteRequest={(viewId) => {
+                // Nothing to lose on an empty view, so skip the dialog.
+                if (workspace.listBoardCards(viewId).length === 0) {
+                  workspace.deleteView(viewId);
                   return;
                 }
-                setBoardToDelete(boardId);
+                setBoardToDelete(viewId);
               }}
             />
           </>
@@ -616,19 +590,10 @@ function WorkspaceShell({
       </TitleBar>
 
       <main className="relative z-10 min-h-0 flex-1">
-        {canvasSurface === "scene" ? (
-          <SceneBoard />
-        ) : canvasSurface === "ice" ? (
-          <Suspense fallback={null}>
-            <IceSurface
-              workspace={ready && synced ? workspace : null}
-              rootBoardId={activeBoardId}
-            />
-          </Suspense>
-        ) : (
-          <CanvasBoard />
-        )}
-        {canvasSurface === "flow" && workspaceSurface && canCreateContent && boardEmpty ? (
+        <Suspense fallback={null}>
+          <IceSurface workspace={ready && synced ? workspace : null} rootBoardId={activeBoardId} />
+        </Suspense>
+        {workspaceSurface && canCreateContent && boardEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -648,7 +613,7 @@ function WorkspaceShell({
             </div>
           </div>
         ) : null}
-        {canvasSurface === "flow" && sharedEmpty ? (
+        {sharedEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -672,11 +637,8 @@ function WorkspaceShell({
           libraryOpen={libraryOpen}
           onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
           types={snapshot.types}
-          boards={snapshot.boards}
-          activeBoardId={activeBoardId}
           onCreateCard={(typeId) => createCard(typeId)}
-          onCreatePortal={createPortal}
-          onCreateBoardPortal={createBoardPortal}
+          onCreateBoard={createBoardHere}
           onManageTypes={openTypeSettings}
           canManageSchema={canManageSchema}
           canCreateContent={canCreateContent}
@@ -734,17 +696,17 @@ function WorkspaceShell({
 
       {boardToDelete ? (
         <Dialog
-          title="Delete board?"
-          description={`${workspace.getBoard(boardToDelete)?.name ?? "This board"} has ${
+          title="Delete view?"
+          description={`${workspace.getView(boardToDelete)?.name ?? "This view"} has ${
             workspace.listBoardCards(boardToDelete).length
-          } card(s) on it. Cards can stay in the library, or move to the trash with the board.`}
+          } card(s) on its plane. Cards can stay in the library, or move to the trash with the view.`}
           onClose={() => setBoardToDelete(null)}
           actions={[
             {
               label: "Keep cards",
               primary: true,
               onSelect: () => {
-                workspace.deleteBoard(boardToDelete, { cards: "keep" });
+                workspace.deleteView(boardToDelete, { cards: "keep" });
                 setBoardToDelete(null);
               },
             },
@@ -752,7 +714,7 @@ function WorkspaceShell({
               label: "Trash cards",
               danger: true,
               onSelect: () => {
-                workspace.deleteBoard(boardToDelete, { cards: "trash" });
+                workspace.deleteView(boardToDelete, { cards: "trash" });
                 setBoardToDelete(null);
               },
             },

@@ -21,7 +21,7 @@ afterEach(() => {
 describe("workspace name in the document", () => {
   it("round-trips a rename and survives a reopen", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
-    workspace.createBoard({ id: "board-1", name: "Board 1" });
+    workspace.createView({ id: "board-1", name: "Board 1" });
 
     // Before the workspace is named it borrows its first board's name.
     expect(workspace.workspaceName()).toBe("Board 1");
@@ -37,14 +37,14 @@ describe("workspace name in the document", () => {
     expect(DEFAULT_WORKSPACE_NAME).toBe("Untitled workspace");
 
     const workspace = new WorkspaceDocument(new LoroDoc());
-    workspace.createBoard({ id: "board-a", name: "Planning" });
-    workspace.createBoard({ id: "board-b", name: "Later" });
+    workspace.createView({ id: "board-a", name: "Planning" });
+    workspace.createView({ id: "board-b", name: "Later" });
     expect(workspace.workspaceName()).toBe("Planning");
   });
 
   it("refuses empty, whitespace, control characters and overlong names with a reason", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
-    workspace.createBoard({ id: "board-1", name: "Board 1" });
+    workspace.createView({ id: "board-1", name: "Board 1" });
 
     const cases = [
       ["", /A workspace name cannot be empty/],

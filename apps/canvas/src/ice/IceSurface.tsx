@@ -93,6 +93,7 @@ import {
   unionRect,
   zoomedCamera,
 } from "./iceGraphBand";
+import { beginMiddlePan, endMiddlePan, type MiddlePanState, updateMiddlePan } from "./iceMiddlePan";
 import { planCardLanding } from "./iceSelectionLanding";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { SuiteWhiteboardStage } from "./SuiteWhiteboardStage";
@@ -187,21 +188,20 @@ interface SeedReport {
    * its entity in place.
    */
   readonly entitySlots: Map<Entity, { cardId: string; boardId: string }>;
-  /** Mini-mat entity → the portal that opened it, for camera entry. */
-  readonly portalMats: Map<Entity, PortalMat>;
-  /** Cycle/depth/missing portal stubs drawn as labelled markers. */
+  /** Mat entity → the Board it stands for, for camera entry. */
+  readonly boardMats: Map<Entity, BoardMat>;
+  /** Markers the projection could not resolve; always 0 for the live document. */
   readonly stubs: number;
   /** Pin id → its marker entity on the root board. */
   readonly pinEntities: Map<string, Entity>;
   /** Boards the seed walked: 0 for the native demo, the example's 3 for Suite. */
   readonly boards: number;
-  /** Things the seed deliberately did not map (cycles, depth caps, sections). */
+  /** Things the seed deliberately did not map, with a reason each. */
   readonly skipped: readonly SeedSkip[];
 }
 
-/** A portal's mini mat: what it opens and where it was placed. */
-interface PortalMat {
-  readonly portalCardId: string;
+/** A Board's mat on the desk: the frame a double click enters (ADR-0039). */
+interface BoardMat {
   readonly boardId: string;
   readonly parentBoardId: string;
   readonly title: string;
@@ -569,7 +569,7 @@ function seedDemoDocument(engine: CanvasEngine): SeedReport {
     failures,
     entities,
     entitySlots: new Map(),
-    portalMats: new Map(),
+    boardMats: new Map(),
     stubs: 0,
     pinEntities: new Map(),
     boards: 0,
@@ -596,7 +596,7 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
       failures: [`suite projection: ${describeError(error)}`],
       entities: [],
       entitySlots: new Map(),
-      portalMats: new Map(),
+      boardMats: new Map(),
       stubs: 0,
       pinEntities: new Map(),
       boards: 0,
@@ -610,15 +610,14 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
   const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
-  const portalMats = new Map<Entity, PortalMat>();
+  const boardMats = new Map<Entity, BoardMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
     if (object?.kind === "card" || object?.kind === "note") {
       entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
     }
     if (object?.kind === "minimat") {
-      portalMats.set(entity, {
-        portalCardId: object.portalCardId,
+      boardMats.set(entity, {
         boardId: object.boardId,
         parentBoardId: object.parentBoardId,
         title: object.title,
@@ -635,10 +634,9 @@ function seedSuiteDocument(engine: CanvasEngine): SeedReport {
     failures: report.failures,
     entities: [...report.objects.values()],
     entitySlots,
-    portalMats,
+    boardMats,
     stubs: 0,
     pinEntities: new Map(),
-    // Boards are counted by identity: the same board can open in several mats.
     boards: new Set(seed.boards.map((board) => board.id)).size,
     skipped: seed.skipped.map((skip) => ({ reason: skip.reason, detail: skip.detail })),
   };
@@ -666,7 +664,7 @@ function seedWorkspaceDocument(
       failures: [`workspace projection: ${describeError(error)}`],
       entities: [],
       entitySlots: new Map(),
-      portalMats: new Map(),
+      boardMats: new Map(),
       stubs: 0,
       pinEntities: new Map(),
       boards: 0,
@@ -680,15 +678,14 @@ function seedWorkspaceDocument(
   });
   const byObjectId = new Map(seed.objects.map((object) => [object.id, object]));
   const entitySlots = new Map<Entity, { cardId: string; boardId: string }>();
-  const portalMats = new Map<Entity, PortalMat>();
+  const boardMats = new Map<Entity, BoardMat>();
   for (const [objectId, entity] of report.objects) {
     const object = byObjectId.get(objectId);
     if (object?.kind === "card" || object?.kind === "note") {
       entitySlots.set(entity, { cardId: object.cardId, boardId: object.boardId });
     }
     if (object?.kind === "minimat") {
-      portalMats.set(entity, {
-        portalCardId: object.portalCardId,
+      boardMats.set(entity, {
         boardId: object.boardId,
         parentBoardId: object.parentBoardId,
         title: object.title,
@@ -735,7 +732,7 @@ function seedWorkspaceDocument(
     failures: [...report.failures, ...stubFailures],
     entities: [...report.objects.values(), ...stubEntities],
     entitySlots,
-    portalMats,
+    boardMats,
     stubs,
     pinEntities: spawnPins(engine, workspace, rootBoardId, stubFailures),
     boards: new Set(seed.boards.map((board) => board.id)).size,
@@ -1834,7 +1831,7 @@ export function IceSurface({
       }
       if (picked === null) return;
       const entity = picked;
-      const mat = seed.portalMats.get(entity);
+      const mat = seed.boardMats.get(entity);
       if (mat !== undefined) {
         try {
           engine.ops.enterContainer(entity);
@@ -1907,18 +1904,22 @@ export function IceSurface({
               },
         slots,
         pins: pinSlots,
-        portals: seed.portalMats,
+        boards: seed.boardMats,
         sections: new Map(),
         edges: new Map(),
       });
       const store = useUiStore.getState();
       // The menu acts on the selection, so a right-click selects what it hit.
-      if (target?.kind === "node" || target?.kind === "portal") {
+      if (target?.kind === "node") {
         const cardId = target.cardId;
         if (cardId !== undefined && !store.selectedNodeIds.includes(cardId)) {
           store.selectSection(null);
           store.setSelectedNodeIds([cardId]);
         }
+      } else if (target?.kind === "board") {
+        // A mat is a Board: selecting it selects the frame it stands for.
+        store.selectSection(target.boardId ?? null);
+        store.setSelectedNodeIds([]);
       } else if (target?.kind === "section") {
         store.selectSection(target.sectionId ?? null);
       } else if (target?.kind === "edge") {
@@ -1954,6 +1955,77 @@ export function IceSurface({
     };
     root.addEventListener("contextmenu", onContextMenu);
 
+    /* ---------------------------------------------------------------- *
+     * Middle-button panning (iceMiddlePan)
+     *
+     * ICE reaches its `buttons & 4` check only for a press that landed on
+     * the bare canvas: a press captured by a widget with `Position` is
+     * routed as a move first. A capture-phase listener on the surface root
+     * runs before the desk's own listener, so a middle press over a card, a
+     * mat or any overlay is taken here, and ICE never sees it at all — its
+     * pan cannot compete with this one.
+     * ---------------------------------------------------------------- */
+    let middlePan: MiddlePanState | null = null;
+
+    function onMiddleMove(event: PointerEvent): void {
+      if (middlePan === null) return;
+      const move = updateMiddlePan(middlePan, {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+      });
+      middlePan = { ...middlePan, moved: move.moved };
+      // Sub-threshold travel is a click in waiting: nothing is written.
+      if (!move.moved) return;
+      cameraApi?.write(move.camera);
+    }
+
+    function stopMiddleListeners(): void {
+      window.removeEventListener("pointermove", onMiddleMove);
+      window.removeEventListener("pointerup", onMiddleUp);
+      window.removeEventListener("pointercancel", onMiddleUp);
+    }
+
+    function onMiddleUp(event: PointerEvent): void {
+      if (middlePan === null) return;
+      const { pointerId } = middlePan;
+      if (pointerId !== undefined && event.pointerId !== pointerId) return;
+      // A click never moved the camera and a drag was already written move by
+      // move, so releasing changes nothing either way.
+      endMiddlePan(middlePan);
+      middlePan = null;
+      stopMiddleListeners();
+    }
+
+    function onMiddleDown(event: PointerEvent): void {
+      if (event.button !== 1) return;
+      // Before the desk: no move gesture, no focus change, no browser
+      // autoscroll. The capture phase is what makes this work over a card.
+      event.preventDefault();
+      event.stopPropagation();
+      middlePan = beginMiddlePan(
+        {
+          x: event.clientX,
+          y: event.clientY,
+          pointerId: event.pointerId,
+          isPrimary: event.isPrimary,
+        },
+        cameraApi?.cameraOf() ?? null,
+      );
+      if (middlePan === null) return;
+      window.addEventListener("pointermove", onMiddleMove);
+      window.addEventListener("pointerup", onMiddleUp);
+      window.addEventListener("pointercancel", onMiddleUp);
+    }
+
+    root.addEventListener("pointerdown", onMiddleDown, true);
+    // A middle click over the canvas opens the browser's autoscroll widget
+    // unless the press and the `auxclick` that follows are both refused.
+    const onMiddleAux = (event: MouseEvent): void => {
+      if (event.button === 1) event.preventDefault();
+    };
+    root.addEventListener("auxclick", onMiddleAux);
+
     // A revision can move cards and add types; while the projection is open it
     // is rebuilt too. Per change, never per frame.
     const stopObserving = liveWorkspace.observe(() => {
@@ -1968,6 +2040,10 @@ export function IceSurface({
       root.removeEventListener("pointerup", suspendOff, true);
       root.removeEventListener("pointercancel", suspendOff, true);
       root.removeEventListener("contextmenu", onContextMenu);
+      root.removeEventListener("pointerdown", onMiddleDown, true);
+      root.removeEventListener("auxclick", onMiddleAux);
+      middlePan = null;
+      stopMiddleListeners();
       stopObserving();
       detach();
       controller.cancel();
@@ -2212,19 +2288,6 @@ export function IceSurface({
           canManageTrash={canManageTrash && caps.canWriteLayout}
           canManageLinks={canManageSchema}
           reconcile={() => commandsRef.current?.reconcile()}
-          enterPortal={(cardId) => {
-            const entity = [...(seed?.portalMats.keys() ?? [])].find(
-              (candidate) => seed?.entitySlots.get(candidate)?.cardId === cardId,
-            );
-            if (entity === undefined || phase.kind !== "ready") return;
-            try {
-              phase.engine.ops.enterContainer(entity);
-              portalDepth.current += 1;
-              setPortalPath((path) => [...path, seed?.portalMats.get(entity)?.title ?? "Board"]);
-            } catch {
-              // A refused entry leaves the camera where it is.
-            }
-          }}
         />
       ) : null}
 

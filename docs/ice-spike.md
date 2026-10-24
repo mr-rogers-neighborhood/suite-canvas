@@ -18,7 +18,7 @@ The desk seeds one of two demos, chosen in the HUD or with `?demo=suite`:
 When the surface is mounted inside the app (`?canvas=ice` in a real workspace), it does **not** use
 a demo: it waits for the workspace to hydrate, then projects the live graph read-only. The HUD says
 `ICE workspace` and `Read-only projection — not document truth`. Real cards mount the existing
-`SceneCardView`/`NodeCard` in a screen-space overlay; the shell and property inspector are the Suite
+`CardSurface`/`NodeCard` in a screen-space overlay; the shell and property inspector are the Suite
 ones. Editing, canonical writes and Loro undo are the next phase in the parity roadmap.
 
 ## Diagnosis: the machine is capable, the launch mode is the blocker
@@ -188,7 +188,7 @@ The **Suite demo** is the first parity step, and it is deliberately one-way
   notes show their paper, ink strokes and layout, not lettered glyphs.
 - **Custom kinds and DOM in the projection.** The standalone Suite demo still uses only
   `desk.note` and `desk.minimat`. The app workspace path mounts the real Suite card through the
-  custom `suite.card` kind (`SceneCardView`/`NodeCard`) read-only; the lab
+  custom `suite.card` kind (`CardSurface`/`NodeCard`) read-only; the lab
   (`/src/ice/suite-card-lab.html`) remains the isolated proof. Editing, typed-field writes, edges,
   permissions, mention chips and canonical undo are still absent, and the React Flow scene is
   untouched.

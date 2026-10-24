@@ -21,8 +21,8 @@ function addText(parent: LoroMap, text: string): void {
 function fixture() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  workspace.renameBoard(board.id, "Research");
+  const board = workspace.ensureView();
+  workspace.renameView(board.id, "Research");
   const status = workspace.addField("note", {
     name: "Status",
     kind: "select",
@@ -72,7 +72,7 @@ describe("portable export", () => {
   it("should keep a link image in both projections, as a URL and a label", () => {
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ id: "link", boardId: board.id, position: { x: 0, y: 0 } });
     addText(workspace.getTitle("link"), "Wiring plan");
     const paragraph = addNode(workspace.getContent("link"), "paragraph");

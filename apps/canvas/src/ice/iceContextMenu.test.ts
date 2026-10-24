@@ -15,7 +15,7 @@ import {
 const CARD = 1;
 const SECTION = 2;
 const PIN = 3;
-const PORTAL = 4;
+const MAT = 4;
 const EDGE = 5;
 
 function input(overrides: Partial<MenuTargetInput> = {}): MenuTargetInput {
@@ -23,7 +23,7 @@ function input(overrides: Partial<MenuTargetInput> = {}): MenuTargetInput {
     pick: null,
     slots: new Map([[CARD, { cardId: "card-1", boardId: "board-1" }]]),
     pins: new Map([[PIN, "pin-1"]]),
-    portals: new Map([[PORTAL, { portalCardId: "card-portal", boardId: "board-root" }]]),
+    boards: new Map([[MAT, { boardId: "board-nested" }]]),
     sections: new Map([[SECTION, { sectionId: "section-1", boardId: "board-1" }]]),
     edges: new Map([[EDGE, { edgeId: "edge-1", boardId: "board-1" }]]),
     ...overrides,
@@ -107,11 +107,10 @@ describe("menuTargetFromPick", () => {
     });
   });
 
-  it("maps a portal mat to a portal and keeps the canonical card id", () => {
-    expect(menuTargetFromPick(input({ pick: { entity: PORTAL, type: "desk.minimat" } }))).toEqual({
-      kind: "portal",
-      cardId: "card-portal",
-      boardId: "board-root",
+  it("maps a board mat to the board it draws", () => {
+    expect(menuTargetFromPick(input({ pick: { entity: MAT, type: "desk.minimat" } }))).toEqual({
+      kind: "board",
+      boardId: "board-nested",
     });
   });
 
@@ -270,23 +269,33 @@ describe("contextMenuStateFor", () => {
     });
   });
 
-  it("opens the canvas menu for pins and portals, without forwarding their ids", () => {
+  it("opens the canvas menu for pins, without forwarding their ids", () => {
     const geometry = { client: { x: 100, y: 100 }, container: CONTAINER, camera: CAMERA };
     const pin = contextMenuStateFor({
       ...geometry,
       target: { kind: "pin", pinId: "pin-1", boardId: null },
     });
-    const portal = contextMenuStateFor({
-      ...geometry,
-      target: { kind: "portal", cardId: "card-portal", boardId: "board-root" },
-    });
 
     expect(pin).toEqual({ x: 100, y: 100, kind: "canvas", flowPosition: { x: -80, y: 60 } });
-    expect(portal).toEqual({ x: 100, y: 100, kind: "canvas", flowPosition: { x: -80, y: 60 } });
     expect(pin.nodeId).toBeUndefined();
-    expect(portal.nodeId).toBeUndefined();
     expect(pin.sectionId).toBeUndefined();
-    expect(portal.sectionId).toBeUndefined();
+  });
+
+  it("opens the frame menu for a board mat, named by its board id", () => {
+    const menu = contextMenuStateFor({
+      client: { x: 100, y: 100 },
+      container: CONTAINER,
+      camera: CAMERA,
+      target: { kind: "board", boardId: "board-nested" },
+    });
+
+    expect(menu).toEqual({
+      x: 100,
+      y: 100,
+      kind: "section",
+      sectionId: "board-nested",
+      flowPosition: { x: -80, y: 60 },
+    });
   });
 
   it("opens the canvas menu when there is no target", () => {
@@ -311,7 +320,7 @@ describe("menuItemsAvailable", () => {
   it("offers creation, layout and share on empty canvas", () => {
     expect(menuItemsAvailable(targetOf("canvas"))).toEqual([
       "create-card",
-      "create-portal",
+      "create-board",
       "arrange-fractally",
       "create-section",
       "share",
@@ -352,9 +361,12 @@ describe("menuItemsAvailable", () => {
     ] satisfies MenuSectionId[]);
   });
 
-  it("offers the canvas sections for pins and portals, because they open that menu", () => {
+  it("offers the canvas sections for pins, because they open that menu", () => {
     expect(menuItemsAvailable(targetOf("pin"))).toEqual(menuItemsAvailable(targetOf("canvas")));
-    expect(menuItemsAvailable(targetOf("portal"))).toEqual(menuItemsAvailable(targetOf("canvas")));
+  });
+
+  it("offers the frame entries on a board mat", () => {
+    expect(menuItemsAvailable(targetOf("board"))).toEqual(["rename", "color", "layer", "trash"]);
   });
 
   it("publishes the same table it serves", () => {

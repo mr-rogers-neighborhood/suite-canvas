@@ -6,8 +6,8 @@ import { PinsPanel } from "./PinsPanel";
 /** Two boards and one pin on each: enough to prove grouping and order. */
 function fixture() {
   const workspace = new WorkspaceDocument();
-  const home = workspace.ensureBoard();
-  const drafts = workspace.createBoard({ name: "Drafts" });
+  const home = workspace.ensureView();
+  const drafts = workspace.createView({ name: "Drafts" });
   const homePin = workspace.createPin({
     id: "pin-home",
     boardId: home.id,
@@ -175,7 +175,7 @@ describe("PinsPanel", () => {
     act(() => {
       workspace.createPin({
         id: "pin-new",
-        boardId: workspace.ensureBoard().id,
+        boardId: workspace.ensureView().id,
         x: 4,
         y: 8,
         label: "Fresh mark",

@@ -32,7 +32,7 @@ async function flush(): Promise<void> {
 
 function setup(cardIds: string[] = ["a", "b"]) {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   for (const cardId of cardIds) workspace.createCard({ id: cardId, boardId: board.id });
   return { workspace, board };
 }
@@ -139,7 +139,7 @@ describe("reference index", () => {
 
   it("should converge when two clients mention different cards at once", async () => {
     const a = new WorkspaceDocument();
-    const board = a.ensureBoard();
+    const board = a.ensureView();
     for (const id of ["hub", "left", "right"]) a.createCard({ id, boardId: board.id });
     const b = new WorkspaceDocument();
     b.importSnapshot(a.exportSnapshot());

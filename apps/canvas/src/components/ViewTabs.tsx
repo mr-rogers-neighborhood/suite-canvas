@@ -1,39 +1,46 @@
-import type { Board } from "@suite/graph";
+import type { View } from "@suite/graph";
 import { useState } from "react";
 
-/** Peers whose active board is this one, named for the tab's tooltip. */
-export interface BoardPresence {
+/** Peers whose active view is this one, named for the tab's tooltip. */
+export interface ViewPresence {
   label: string;
   color: string;
 }
 
-export interface BoardTabsProps {
-  boards: Board[];
-  activeBoardId: string | null;
-  onSelect: (boardId: string) => void;
+export interface ViewTabsProps {
+  views: View[];
+  activeViewId: string | null;
+  onSelect: (viewId: string) => void;
   onCreate: () => void;
-  onRename: (boardId: string, name: string) => void;
-  onDeleteRequest: (boardId: string) => void;
-  /** Viewers and board/card shares may switch boards but not add one. */
-  canCreateBoards?: boolean;
-  /** Renaming and deleting a board belongs to the workspace surface, not a draft. */
-  canManageBoards?: boolean;
-  /** Cross-board presence, keyed by board id; no transport of its own. */
-  peersByBoard?: Record<string, BoardPresence>;
+  onRename: (viewId: string, name: string) => void;
+  onDeleteRequest: (viewId: string) => void;
+  /** Viewers and board/card shares may switch views but not add one. */
+  canCreateViews?: boolean;
+  /** Renaming and deleting a view belongs to the workspace surface, not a draft. */
+  canManageViews?: boolean;
+  /** Cross-view presence, keyed by view id; no transport of its own. */
+  peersByView?: Record<string, ViewPresence>;
 }
 
-/** Board switcher in the app bar: one tab per board, plus create and delete. */
-export function BoardTabs({
-  boards,
-  activeBoardId,
+/**
+ * View switcher in the app bar: one tab per camera, plus create and delete.
+ *
+ * A View is a camera only (ADR-0039): every Board is on every View, so a tab
+ * moves the reader rather than changing what the document holds. The test ids
+ * keep their historical `board-tab` prefix because the e2e suite and the visual
+ * baselines select on it.
+ */
+export function ViewTabs({
+  views,
+  activeViewId,
   onSelect,
   onCreate,
   onRename,
   onDeleteRequest,
-  canCreateBoards = true,
-  canManageBoards = true,
-  peersByBoard,
-}: BoardTabsProps) {
+  canCreateViews = true,
+  canManageViews = true,
+  peersByView,
+}: ViewTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -42,27 +49,23 @@ export function BoardTabs({
     setRenamingId(null);
   };
 
-  const activeBoard = boards.find((board) => board.id === activeBoardId);
+  const activeView = views.find((view) => view.id === activeViewId);
 
   return (
-    // The tablist owns the tabs and nothing else; the per-board delete and the
-    // "new board" button live beside it instead of inside it.
+    // The tablist owns the tabs and nothing else; the per-view delete and the
+    // "new view" button live beside it instead of inside it.
     <div className="group flex min-w-0 items-center gap-1">
-      <div
-        className="board-tabs flex min-w-0 items-center gap-1"
-        role="tablist"
-        aria-label="Boards"
-      >
-        {boards.map((board) => {
-          const active = board.id === activeBoardId;
-          const presence = peersByBoard?.[board.id];
-          return renamingId === board.id ? (
+      <div className="board-tabs flex min-w-0 items-center gap-1" role="tablist" aria-label="Views">
+        {views.map((view) => {
+          const active = view.id === activeViewId;
+          const presence = peersByView?.[view.id];
+          return renamingId === view.id ? (
             <input
-              key={board.id}
+              key={view.id}
               // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
               autoFocus
               value={draft}
-              aria-label={`Rename ${board.name}`}
+              aria-label={`Rename ${view.name}`}
               className="w-28 rounded px-2 py-1 text-[12px] outline-none ring-1 ring-blue-400"
               onChange={(event) => setDraft(event.target.value)}
               onBlur={commit}
@@ -73,29 +76,29 @@ export function BoardTabs({
             />
           ) : (
             <button
-              key={board.id}
+              key={view.id}
               type="button"
               role="tab"
               aria-selected={active}
-              data-testid={`board-tab-${board.id}`}
+              data-testid={`board-tab-${view.id}`}
               data-active={active ? "true" : undefined}
-              title={canManageBoards ? "Double-click to rename" : board.name}
+              title={canManageViews ? "Double-click to rename" : view.name}
               className={`inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
                 active
                   ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
                   : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
               }`}
-              onClick={() => onSelect(board.id)}
+              onClick={() => onSelect(view.id)}
               onDoubleClick={() => {
-                if (!canManageBoards) return;
-                setRenamingId(board.id);
-                setDraft(board.name);
+                if (!canManageViews) return;
+                setRenamingId(view.id);
+                setDraft(view.name);
               }}
             >
-              <span className="min-w-0 truncate">{board.name}</span>
+              <span className="min-w-0 truncate">{view.name}</span>
               {presence ? (
                 <span
-                  data-testid="board-tab-peer-dot"
+                  data-testid="view-tab-peer-dot"
                   className="board-tab-peer-dot"
                   role="img"
                   aria-label={`${presence.label} here now`}
@@ -108,22 +111,22 @@ export function BoardTabs({
         })}
       </div>
 
-      {canManageBoards && activeBoard ? (
+      {canManageViews && activeView ? (
         <button
           type="button"
-          aria-label={`Delete ${activeBoard.name}`}
+          aria-label={`Delete ${activeView.name}`}
           className="shrink-0 rounded px-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-white/10"
-          onClick={() => onDeleteRequest(activeBoard.id)}
+          onClick={() => onDeleteRequest(activeView.id)}
         >
           {"\u00d7"}
         </button>
       ) : null}
 
-      {canCreateBoards ? (
+      {canCreateViews ? (
         <button
           type="button"
-          aria-label="New board"
-          data-testid="board-create"
+          aria-label="New view"
+          data-testid="view-create"
           className="shrink-0 rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
           onClick={onCreate}
         >

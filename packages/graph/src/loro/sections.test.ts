@@ -11,14 +11,14 @@ function sync(a: LoroDoc, b: LoroDoc): void {
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   return { workspace, board };
 }
 
 describe("sections", () => {
   it("creates, reads and lists sections per board", () => {
     const { workspace, board } = setup();
-    const other = workspace.createBoard({ name: "Other" });
+    const other = workspace.createView({ name: "Other" });
     const section = workspace.createSection({
       boardId: board.id,
       title: "Research",
@@ -94,7 +94,7 @@ describe("sections", () => {
     const { workspace, board } = setup();
     const section = workspace.createSection({ boardId: board.id, x: 0, y: 0 });
 
-    workspace.deleteBoard(board.id, { cards: "keep" });
+    workspace.deleteView(board.id, { cards: "keep" });
 
     expect(workspace.getSection(section.id)).toBeUndefined();
   });
@@ -102,7 +102,7 @@ describe("sections", () => {
   it("converges concurrent renames and moves", () => {
     const a = new WorkspaceDocument();
     const b = new WorkspaceDocument();
-    const board = a.ensureBoard();
+    const board = a.ensureView();
     b.doc.import(a.doc.export({ mode: "update" }));
     const section = a.createSection({ boardId: board.id, title: "A", x: 0, y: 0 });
     b.doc.import(a.doc.export({ mode: "update" }));

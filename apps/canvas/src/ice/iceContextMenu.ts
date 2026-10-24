@@ -21,11 +21,11 @@
  *   that connector instead of the card.
  * - **The card wins over the section under it.** A section is a backdrop; a
  *   right-click that lands on a card belongs to the card.
- * - **A pin or a portal opens the canvas menu.** The shared menu has no pin or
- *   portal kind yet (`ContextMenuState.kind` is
- *   `canvas | node | section | edge | connector`), so a pin or a portal mat opens
- *   the canvas menu at the pointer. The canonical ids stay on the target, so a
- *   future pin/portal kind needs no new pick plumbing.
+ * - **A pin opens the canvas menu, a mat opens the frame menu.** The shared menu
+ *   has no pin kind (`ContextMenuState.kind` is
+ *   `canvas | node | section | edge | connector`), so a pin opens the canvas
+ *   menu at the pointer. A `suite.minimat` pick is a Board (ADR-0039), so it
+ *   resolves to the `board` kind and the menu's section entries act on it.
  *
  * ## Coordinates
  *
@@ -33,7 +33,7 @@
  * `position: fixed`, so `x`/`y` are the raw client coordinates. `flowPosition`
  * is the board point under the pointer instead — the surface container's
  * viewport rect is subtracted, then the camera is undone
- * (`board = (screen - camera) / zoom`). ICE nests boards inside portal mats, but
+ * (`board = (screen - camera) / zoom`). ICE nests boards inside mats, but
  * this mapping is identity on the root board: an instance transform is the
  * surface's business, and the shared menu acts on the active board, whose
  * coordinates at the root are the same numbers.
@@ -62,9 +62,8 @@ export interface MenuCardSlot {
   readonly boardId: string;
 }
 
-/** A portal mat: a mini mat drawn for the portal card that opens its board. */
-export interface MenuPortalSlot {
-  readonly portalCardId: string;
+/** A Board's mat on the desk: the frame that opens the Board when entered. */
+export interface MenuBoardSlot {
   readonly boardId: string;
 }
 
@@ -80,20 +79,13 @@ export interface MenuEdgeSlot {
 
 /**
  * What a pick resolved to. `kind` is the menu's own vocabulary plus the two
- * kinds the shared menu cannot express yet (`pin`, `portal`).
+ * kind the shared menu cannot express yet (`pin`).
  */
-export type MenuTargetKind =
-  | "canvas"
-  | "node"
-  | "section"
-  | "edge"
-  | "connector"
-  | "pin"
-  | "portal";
+export type MenuTargetKind = "canvas" | "node" | "board" | "section" | "edge" | "connector" | "pin";
 
 export interface MenuTarget {
   readonly kind: MenuTargetKind;
-  /** The canonical card id: a card, a connector's card, or a portal's card. */
+  /** The canonical card id: a card, or the card a connector belongs to. */
   readonly cardId?: string | undefined;
   readonly sectionId?: string | undefined;
   readonly edgeId?: string | undefined;
@@ -112,7 +104,8 @@ export interface MenuTargetInput {
   readonly slots: ReadonlyMap<number, MenuCardSlot>;
   /** Pin id by entity. */
   readonly pins: ReadonlyMap<number, string>;
-  readonly portals: ReadonlyMap<number, MenuPortalSlot>;
+  /** Mat entity → the Board it draws, for a `suite.minimat` pick. */
+  readonly boards: ReadonlyMap<number, MenuBoardSlot>;
   readonly sections: ReadonlyMap<number, MenuSectionSlot>;
   readonly edges: ReadonlyMap<number, MenuEdgeSlot>;
 }
@@ -131,8 +124,8 @@ export function connectorIdFromPart(part: string | undefined): string | null {
 /**
  * Resolve one pick to the menu target it belongs to.
  *
- * Lookup order is the precedence: connector part on a card, card, pin, portal,
- * section, edge, then canvas. A pick that names nothing the surface knows — a
+ * Lookup order is the precedence: connector part on a card, card, pin, Board
+ * mat, section, edge, then canvas. A pick that names nothing the surface knows — a
  * stale entity, a widget with no menu, or `null` — is the canvas at worst; a
  * `null` pick is `null`, because there is nothing to open a menu on.
  */
@@ -160,10 +153,10 @@ export function menuTargetFromPick(input: MenuTargetInput): MenuTarget | null {
     return { kind: "pin", pinId, boardId: null };
   }
 
-  const portal = input.portals.get(pick.entity);
-  if (portal !== undefined) {
-    // Keep the canonical card id: the mat is a view of the portal card.
-    return { kind: "portal", cardId: portal.portalCardId, boardId: portal.boardId };
+  const mat = input.boards.get(pick.entity);
+  if (mat !== undefined) {
+    // A mat is a Board: the pick names the frame itself, not a card behind it.
+    return { kind: "board", boardId: mat.boardId };
   }
 
   const section = input.sections.get(pick.entity);
@@ -188,7 +181,7 @@ export function menuTargetFromPick(input: MenuTargetInput): MenuTarget | null {
  */
 export type MenuSectionId =
   | "create-card"
-  | "create-portal"
+  | "create-board"
   | "arrange-fractally"
   | "create-section"
   | "share"
@@ -209,8 +202,8 @@ export type MenuSectionId =
 const CANVAS_SECTIONS: readonly MenuSectionId[] = [
   // New note, new whiteboard.
   "create-card",
-  // New portal to an existing board, and new board + portal.
-  "create-portal",
+  // A Board planted on the plane (the portal card's job, now a frame).
+  "create-board",
   // Arrange fractally, one entry per layout pattern.
   "arrange-fractally",
   // New section, and new section from the current selection: a section is drawn
@@ -223,9 +216,9 @@ const CANVAS_SECTIONS: readonly MenuSectionId[] = [
  * Which sections each target can offer, capability-neutral: a viewer still gets
  * the same shape, and the builder drops what the session may not do.
  *
- * A pin or a portal mat opens the canvas menu (see the module note), so both
- * offer the canvas sections; `menuItemsAvailable` answers for the menu that will
- * actually open, not for the target's theoretical kind.
+ * A pin opens the canvas menu (see the module note), so it offers the canvas
+ * sections; `menuItemsAvailable` answers for the menu that will actually open,
+ * not for the target's theoretical kind.
  */
 export const MENU_SECTIONS: Readonly<Record<MenuTargetKind, readonly MenuSectionId[]>> = {
   canvas: CANVAS_SECTIONS,
@@ -241,11 +234,12 @@ export const MENU_SECTIONS: Readonly<Record<MenuTargetKind, readonly MenuSection
     // Add connector.
     "connectors",
   ],
+  // A Board is a frame, so it offers exactly what a section offered.
+  board: ["rename", "color", "layer", "trash"],
   section: ["rename", "color", "layer", "trash"],
   edge: ["description", "delete"],
   connector: ["reposition", "delete"],
   pin: CANVAS_SECTIONS,
-  portal: CANVAS_SECTIONS,
 };
 
 /**
@@ -319,10 +313,11 @@ function boardPointOf(input: ContextMenuStateInput, client: MenuClientPoint): Me
  * `flowPosition` is the board point under it, so a create or arrange entry acts
  * where the user clicked.
  *
- * The kind mapping is deliberately lossy: a pin or a portal mat opens the canvas
- * menu, because the shared `ContextMenuState` has no pin or portal kind yet.
- * That keeps the ICE surface on the same builder the scene uses; when the shared
- * menu gains those kinds, only this switch changes.
+ * The kind mapping is deliberately lossy: a pin opens the canvas menu, because
+ * the shared `ContextMenuState` has no pin kind yet. A Board mat maps onto the
+ * menu's `section` kind, which is the frame vocabulary the shared builder
+ * already speaks. When the shared menu gains a board kind, only this switch
+ * changes.
  */
 export function contextMenuStateFor(input: ContextMenuStateInput): ContextMenuState {
   const client = {
@@ -355,6 +350,16 @@ export function contextMenuStateFor(input: ContextMenuStateInput): ContextMenuSt
         ...(target.connectorId === undefined ? {} : { connectorId: target.connectorId }),
         flowPosition,
       };
+    case "board":
+      // The shared menu acts on a frame by its section id; a Board and the
+      // section it projects to share the id.
+      return {
+        x: client.x,
+        y: client.y,
+        kind: "section",
+        ...(target.boardId === null ? {} : { sectionId: target.boardId }),
+        flowPosition,
+      };
     case "section":
       return {
         x: client.x,
@@ -372,12 +377,11 @@ export function contextMenuStateFor(input: ContextMenuStateInput): ContextMenuSt
         flowPosition,
       };
     case "pin":
-    case "portal":
     case "canvas":
       break;
   }
 
-  // A pin, a portal mat and empty canvas all open the canvas menu; the target's
-  // canonical ids are not forwarded, because the canvas menu would ignore them.
+  // A pin and empty canvas both open the canvas menu; the target's canonical
+  // ids are not forwarded, because the canvas menu would ignore them.
   return { x: client.x, y: client.y, kind: "canvas", flowPosition };
 }

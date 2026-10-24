@@ -1,4 +1,3 @@
-import { PORTAL_BOARD_FIELD_ID, PORTAL_TYPE_ID } from "@suite/graph";
 import {
   effectiveScale,
   fitTransform,
@@ -176,10 +175,21 @@ function placementRect(placement: ScenePlacementInput, config: SceneConfig): Rec
   };
 }
 
+/**
+ * The portal card's legacy vocabulary.
+ *
+ * `@suite/graph` retired the portal type (ADR-0039: a portal is a Board nested
+ * inside a Board), so a current document cannot produce one. The scene
+ * projection still knows how to draw a card that opens another board, so the
+ * two ids live here; only data written before the change reaches this path.
+ */
+export const SCENE_PORTAL_TYPE_ID = "portal";
+export const SCENE_PORTAL_BOARD_FIELD_ID = "portal-board";
+
 /** Empty string means "portal card, but no target"; null means "not a portal". */
 function portalTargetId(card: SceneCardInput): string | null {
-  if (card.primaryTypeId !== PORTAL_TYPE_ID) return null;
-  const value = card.properties[PORTAL_BOARD_FIELD_ID];
+  if (card.primaryTypeId !== SCENE_PORTAL_TYPE_ID) return null;
+  const value = card.properties[SCENE_PORTAL_BOARD_FIELD_ID];
   return typeof value === "string" ? value.trim() : "";
 }
 

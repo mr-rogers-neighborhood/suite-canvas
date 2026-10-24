@@ -10,7 +10,7 @@ afterEach(() => {
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   return { workspace, board };
 }
 
@@ -62,7 +62,7 @@ describe("pins", () => {
 
   it("defaults the colour and lists pins per board", () => {
     const { workspace, board } = setup();
-    const other = workspace.createBoard({ name: "Other" });
+    const other = workspace.createView({ name: "Other" });
     workspace.createPin({
       id: "here",
       boardId: board.id,
@@ -129,7 +129,7 @@ describe("pins", () => {
     const { workspace, board } = setup();
     const card = workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const section = workspace.createSection({ boardId: board.id, x: 0, y: 0 });
-    const view = workspace.createView({ name: "Timeline", query: emptyQuery() });
+    const view = workspace.createSavedView({ name: "Timeline", query: emptyQuery() });
 
     for (const [kind, id] of [
       ["card", card.id],
@@ -285,7 +285,7 @@ describe("pins", () => {
       createdBy: "u",
     });
 
-    workspace.deleteBoard(board.id);
+    workspace.deleteView(board.id);
 
     expect(workspace.getPin("gone")).toBeUndefined();
     expect(workspace.listPins()).toEqual([]);
@@ -368,7 +368,7 @@ describe("pins", () => {
 
     const workspace = new WorkspaceDocument(old);
 
-    expect(workspace.getBoard("board-1")?.name).toBe("Old board");
+    expect(workspace.getView("board-1")?.name).toBe("Old board");
     expect(workspace.listPins()).toEqual([]);
     expect(workspace.getPin("anything")).toBeUndefined();
 
@@ -405,7 +405,7 @@ describe("pins", () => {
   it("converges concurrent rename and move on one pin", () => {
     const a = new WorkspaceDocument();
     const b = new WorkspaceDocument();
-    const board = a.ensureBoard();
+    const board = a.ensureView();
     b.doc.import(a.doc.export({ mode: "update" }));
     const pin = a.createPin({
       id: "pin-1",

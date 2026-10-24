@@ -16,7 +16,13 @@ function reset(name: string): DatabaseSync {
   const doc = new LoroDoc();
   doc.setPeerId(1n);
   const workspace = new WorkspaceDocument(doc);
-  const board = workspace.createBoard({ id: "board-legacy", name: "Legacy board" });
+  // A Board hangs from a plane, so the fixture names the default View it sits on.
+  const view = workspace.ensureView();
+  const board = workspace.createBoard({
+    id: "board-legacy",
+    name: "Legacy board",
+    parentBoardId: view.id,
+  });
   const one = workspace.createCard({
     id: "card-one",
     boardId: board.id,

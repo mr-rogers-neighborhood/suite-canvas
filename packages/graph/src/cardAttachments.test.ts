@@ -47,7 +47,7 @@ const imageAttrs = { id: IMAGE_ID, mime: "image/png", name: "beach.png", width: 
 function twoCards(): { workspace: WorkspaceDocument; first: string; second: string } {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const first = workspace.createCard({ boardId: board.id }).id;
   const second = workspace.createCard({ boardId: board.id }).id;
   writeTitle(workspace, first, "Trip plan");

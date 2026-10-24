@@ -109,7 +109,7 @@ describe("planPublish card text limit", () => {
     // check can catch this draft.
     const source = new WorkspaceDocument();
     source.ensureDefaultTypes();
-    const board = source.ensureBoard();
+    const board = source.ensureView();
     source.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
     writeRich(source, source.getTitle("c1"), "aaaaaa");
     writeRich(source, source.getContent("c1"), "bbbbbb");
@@ -132,7 +132,7 @@ describe("planPublish card text limit", () => {
     // unchanged and under the cap, so only the title branch can flag it.
     const source = new WorkspaceDocument();
     source.ensureDefaultTypes();
-    const board = source.ensureBoard();
+    const board = source.ensureView();
     source.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
     writeRich(source, source.getTitle("c1"), "aaaaaaa");
     writeRich(source, source.getContent("c1"), "bbbb");
@@ -153,7 +153,7 @@ describe("planPublish card text limit", () => {
     // Kills `bytes > cap -> bytes >= cap`: the boundary itself is publishable.
     const source = new WorkspaceDocument();
     source.ensureDefaultTypes();
-    const board = source.ensureBoard();
+    const board = source.ensureView();
     source.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
     writeRich(source, source.getTitle("c1"), "aaaaa");
     writeRich(source, source.getContent("c1"), "bbbbb");

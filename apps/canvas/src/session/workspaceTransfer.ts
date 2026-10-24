@@ -337,7 +337,7 @@ export async function downloadWorkspaceById(
   try {
     await persistence.load();
     const workspace = new WorkspaceDocument(doc);
-    if (workspace.listBoards().length === 0 && workspace.listCards().length === 0) {
+    if (workspace.listViews().length === 0 && workspace.listCards().length === 0) {
       throw new Error(
         "This workspace is not stored on this device yet. Open it once, then export.",
       );
@@ -407,7 +407,7 @@ export async function importWorkspaceFile(
   const doc = workspace.doc;
   await (options.persist ?? persistWithIndexedDb)(id, doc);
   const restored = new WorkspaceDocument(doc);
-  const board = restored.listBoards().sort((left, right) => left.createdAt - right.createdAt)[0];
+  const board = restored.listViews().sort((left, right) => left.createdAt - right.createdAt)[0];
   const title = board?.name?.trim() || "Imported workspace";
   rememberWorkspace({ id, title, boardId: board?.id ?? null });
   return { id, title, ...(board ? { boardId: board.id } : {}) };

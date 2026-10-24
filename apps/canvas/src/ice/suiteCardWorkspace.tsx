@@ -2,7 +2,7 @@
  * Production slot renderer for the `suite.card` kind: mounts the real Suite card
  * shell over ICE's GPU object.
  *
- * The card UI is not re-implemented here. `SceneCardView` already is the product
+ * The card UI is not re-implemented here. `CardSurface` already is the product
  * face — the real `NodeCard`, its Tiptap title/body bound to the workspace's Loro
  * containers, its type glyph, its property/tag chips, its menu and inspector
  * wiring, and the app's global CSS. This module supplies only the two things the
@@ -11,7 +11,7 @@
  *
  * Read-only: ICE owns pointer input on the desk (the overlay is
  * `pointer-events:none`), and the workspace surface beside it may be editing the
- * same card. `readOnly` on `SceneCardView` keeps the twin from offering a second
+ * same card. `readOnly` on `CardSurface` keeps the twin from offering a second
  * editor or a second menu; the renderer creates no document and writes nothing
  * on mount.
  *
@@ -29,14 +29,13 @@
  */
 
 import type { CardType, Tag } from "@suite/graph";
-import { ReactFlowProvider } from "@xyflow/react";
 import { type CSSProperties, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
 import type { PeerPresence } from "../collab/presence";
+import { CardSurface } from "../components/CardSurface";
 import { useBoardPeers } from "../hooks/useBoardPeers";
-import { SceneCardView } from "../scene/SceneCardView";
 import { useCard, useWorkspaceSnapshot } from "../store/workspaceStore";
 import type { SuiteCardBand, SuiteCardInfo, SuiteCardSlotRenderer } from "./suiteCardOverlay";
 
@@ -430,7 +429,7 @@ export function SuiteCardWorkspaceView({
       data-testid="suite-card-workspace"
       style={{ position: "relative", width: "100%", height: "100%" }}
     >
-      <SceneCardView
+      <CardSurface
         card={card}
         type={type}
         meta={meta}
@@ -457,16 +456,14 @@ export function createWorkspaceCardSlotRenderer(): SuiteCardSlotRenderer {
       if (info.cardId.length === 0) return undefined;
       const root = createRoot(content);
       root.render(
-        <ReactFlowProvider>
-          <SuiteCardWorkspaceView
-            cardId={info.cardId}
-            boardId={info.boardId}
-            band={bandOf(info)}
-            title={info.title}
-            width={info.worldWidth}
-            height={info.worldHeight}
-          />
-        </ReactFlowProvider>,
+        <SuiteCardWorkspaceView
+          cardId={info.cardId}
+          boardId={info.boardId}
+          band={bandOf(info)}
+          title={info.title}
+          width={info.worldWidth}
+          height={info.worldHeight}
+        />,
       );
       return () => root.unmount();
     },

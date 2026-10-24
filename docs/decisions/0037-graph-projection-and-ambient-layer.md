@@ -207,3 +207,24 @@ band, you do not switch to it, and a cut would teach the user that the band is a
 - [ADR-0036](./0036-fractal-lod-and-icon-graph.md) supplies the bands, hysteresis and the icon field.
   This ADR continues that ladder below `icon`: the icon field is the last *card* LOD, and the graph
   band is the band after it.
+
+## Amendment (2026-10-23): the projection is a lens, not a place
+
+Opening the projection must **not move the camera**. It is an overlay over whatever the camera is
+looking at, and its job is to make structure legible that the canvas hides — connections first, type
+clusters second. An earlier version flew the camera to frame the graph, which made the projection a
+destination and put it in competition with Fit View; that is withdrawn.
+
+- **No camera movement on open.** The remembered camera stays only for the two explicit actions
+  *inside* the projection (frame this type, go to this cluster), which are clicks the user makes.
+- **The canvas is dimmed slightly** while it is open. Cards stay visible underneath: the overlay
+  annotates the canvas rather than replacing it.
+- **Edges are part of the projection.** "See the connections" is not achievable without them, which is
+  why the connector/edge work is a prerequisite rather than a nicety.
+- **Connector handles are visible on hover or selection only**, so the canvas stays clean.
+- **Depth is a render channel, not an axis.** Selection lifts a card a few world units; peer ghosts
+  float above the cards; a focused card rises while its siblings recede. All of it is per-instance,
+  ephemeral and render-only — the same category as the interaction overrides map — so it cannot become
+  a second layout. The test: *depth should answer a question the flat canvas answers badly ("what
+  contains what", "what is selected", "what is stacked here") and never change where anything is, what
+  the camera can do, or what a collaborator sees.*

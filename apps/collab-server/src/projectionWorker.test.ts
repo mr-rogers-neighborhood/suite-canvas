@@ -105,8 +105,8 @@ function seedSource(): WorkspaceDocument {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
   source.markSeeded();
-  const board = source.ensureBoard();
-  source.renameBoard(board.id, "Research");
+  const board = source.ensureView();
+  source.renameView(board.id, "Research");
   source.createCard({ id: "a", typeId: "note", boardId: board.id, position: { x: 10, y: 20 } });
   source.createCard({ id: "b", typeId: "note", boardId: board.id, position: { x: 30, y: 40 } });
   source.createCard({ id: "c", typeId: "note" });
@@ -297,7 +297,7 @@ describe("projection worker", () => {
 
       const projected = viewer.workspace();
       expect(boardCards(viewer)).toEqual(["a", "b"]);
-      expect(projected.getBoard(BOARD_ID)?.name).toBe("Research");
+      expect(projected.getView(BOARD_ID)?.name).toBe("Research");
       expect(projected.displayTitle("a")).toBe("Alpha");
       expect(projected.cardText("a")).toBe("Body of A");
       expect(projected.getCard("c")).toBeUndefined();
@@ -359,7 +359,7 @@ describe("projection worker", () => {
       const projected = viewer.workspace();
       expect(projected.listCards().map((card) => card.id)).toEqual(["a"]);
       expect(projected.displayTitle("a")).toBe("Alpha");
-      expect(projected.getBoard(BOARD_ID)).toBeUndefined();
+      expect(projected.getView(BOARD_ID)).toBeUndefined();
     } finally {
       await viewer.room.leave().catch(() => undefined);
       viewer.client.close();
@@ -530,7 +530,7 @@ describe("lazy rooms", () => {
 
       // An owner edit must reach that open room and still must not open the
       // sibling links: a reader of one link does not make the other two live.
-      state.source.renameBoard(BOARD_ID, "After the edit");
+      state.source.renameView(BOARD_ID, "After the edit");
       appendText(state.source.getContent("a"), "Lazy update");
       state.source.doc.commit({ origin: "owner:edit" });
       saveSource(state);
@@ -866,7 +866,7 @@ describe("selection shares", () => {
       ).toEqual(["a", "b"]);
       expect(projected.getCard("c")).toBeUndefined();
       // The selection keeps the real board, not a stand-in like a card share.
-      expect(projected.getBoard(BOARD_ID)?.name).toBe("Research");
+      expect(projected.getView(BOARD_ID)?.name).toBe("Research");
       expect(projected.displayTitle("a")).toBe("Alpha");
       expect(projected.cardText("a")).toBe("Body of A");
       expect(projected.getPlacement(BOARD_ID, "a")).toMatchObject({ x: 10, y: 20 });

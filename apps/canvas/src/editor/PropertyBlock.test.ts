@@ -53,7 +53,7 @@ const schema = new Schema({
 
 function setupWorkspace() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.ensureDefaultTypes();
   const project = workspace.createType({ name: "Project", glyph: "P" });
   const owner = workspace.addField(project.id, { name: "Owner", kind: "text" });

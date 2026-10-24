@@ -26,8 +26,8 @@ function sync(a: LoroDoc, b: LoroDoc): void {
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
-  const other = workspace.createBoard({ name: "Other" });
+  const board = workspace.ensureView();
+  const other = workspace.createView({ name: "Other" });
   const first = workspace.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
   const second = workspace.createCard({ boardId: board.id, position: { x: 200, y: 40 } });
   const third = workspace.createCard({ boardId: board.id, position: { x: 400, y: 300 } });
@@ -317,7 +317,7 @@ describe("applyLayoutPlan no-ops", () => {
 describe("applyLayoutPlan concurrency", () => {
   it("merges concurrent plans to different cards", () => {
     const left = new WorkspaceDocument();
-    const board = left.ensureBoard();
+    const board = left.ensureView();
     const first = left.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const second = left.createCard({ boardId: board.id, position: { x: 300, y: 0 } });
 

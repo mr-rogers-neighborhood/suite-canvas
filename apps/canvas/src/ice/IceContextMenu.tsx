@@ -17,7 +17,7 @@
  */
 import type { LayerAction, WorkspaceDocument } from "@suite/graph";
 import { useCallback } from "react";
-import { portalSizeForBounds } from "../canvas/PortalCard";
+import { boardSizeForBounds } from "../canvas/boardSize";
 import { boardBounds } from "../canvas/portalMiniature";
 import { useCanvasMenuItems } from "../canvas/useCanvasMenuItems";
 import { ensureWhiteboardType } from "../cards/whiteboard";
@@ -31,8 +31,6 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 export interface IceContextMenuActions {
   /** Re-derive the ICE entities from the document. */
   readonly reconcile: () => void;
-  /** Open a portal card's board on the canvas. */
-  readonly enterPortal: (cardId: string) => void;
 }
 
 export interface IceContextMenuProps extends IceContextMenuActions {
@@ -60,7 +58,6 @@ export function IceContextMenu({
   canManageTrash,
   canManageLinks,
   reconcile,
-  enterPortal,
 }: IceContextMenuProps) {
   const liveSnapshot = useWorkspaceSnapshot();
   const snapshot = snapshotProp ?? liveSnapshot;
@@ -112,28 +109,27 @@ export function IceContextMenu({
     [createCardAt, workspace],
   );
 
-  const createPortalAt = useCallback(
-    (position: { x: number; y: number }, targetBoardId: string) => {
-      if (!canCreateContent) return;
-      const cards = snapshot.placements.filter((entry) => entry.boardId === targetBoardId);
-      const card = workspace.createPortalCard({
-        boardId: rootBoardId,
-        targetBoardId,
-        position,
-        size: portalSizeForBounds(boardBounds([], cards)),
-      });
-      setSelectedNodeIds([card.id]);
-    },
-    [canCreateContent, rootBoardId, setSelectedNodeIds, snapshot, workspace],
-  );
-
-  const createPortalToNewBoard = useCallback(
+  /**
+   * Plants an empty Board on the plane at the click: a Board is a frame, not a
+   * card, so there is no portal card and no second write (ADR-0039).
+   */
+  const createBoardAt = useCallback(
     (position: { x: number; y: number }) => {
       if (!canCreateContent || !canCreateBoards) return;
-      const board = workspace.createBoard();
-      createPortalAt(position, board.id);
+      const cards = snapshot.placements.filter((entry) => entry.boardId === rootBoardId);
+      const size = boardSizeForBounds(boardBounds([], cards));
+      const board = workspace.createBoard({
+        name: `Board ${workspace.listBoardChildren(rootBoardId).length + 1}`,
+        parentBoardId: rootBoardId,
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+      });
+      setSelectedNodeIds([]);
+      useUiStore.getState().selectSection(board.id);
     },
-    [canCreateBoards, canCreateContent, createPortalAt, workspace],
+    [canCreateBoards, canCreateContent, rootBoardId, setSelectedNodeIds, snapshot, workspace],
   );
 
   const duplicateCards = useCallback(
@@ -210,11 +206,9 @@ export function IceContextMenu({
     createNoteAt,
     createWhiteboardAt,
     createSectionAt: NOOP_POINT,
-    createPortalAt,
-    createPortalToNewBoard,
+    createBoardAt,
     duplicateCards,
     startEdgeDescription: NOOP_EDGE,
-    enterPortal,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,

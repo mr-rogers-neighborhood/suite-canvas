@@ -84,8 +84,8 @@ function fixture(cards: number): Fixture {
 function buildWorkspace(cards: number): Fixture {
   const workspace = new WorkspaceDocument(new LoroDoc());
   workspace.ensureDefaultTypes();
-  const board = workspace.createBoard({ id: MAIN_BOARD_ID, name: "Bench board" });
-  workspace.createBoard({ id: SIDE_BOARD_ID, name: "Side board" });
+  const board = workspace.createView({ id: MAIN_BOARD_ID, name: "Bench board" });
+  workspace.createView({ id: SIDE_BOARD_ID, name: "Side board" });
 
   const status = workspace.addField("concept", {
     name: "Status",

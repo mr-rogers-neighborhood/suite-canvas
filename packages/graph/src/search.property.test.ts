@@ -38,7 +38,7 @@ function addBody(workspace: WorkspaceDocument, text: string): void {
 function card(title: readonly string[], body: readonly string[]): WorkspaceDocument {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.createCard({ id: CARD_ID, boardId: board.id, position: { x: 0, y: 0 } });
   addTitle(workspace, title.join(" "));
   addBody(workspace, body.join(" "));

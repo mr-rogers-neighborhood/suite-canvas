@@ -374,11 +374,11 @@ ICE surface (WebGPU world, the target default)
 Live `NodeCard` at full LOD + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
 ```
 
-[ADR-0034](./decisions/0034-ice-primary-rendering-engine.md) makes ICE the primary engine. In the
-current tree the React Flow scene is still the default surface while the P0 parity gate is open:
-`?canvas=ice` mounts the ICE port, `?canvas=scene` mounts the reference scene, and `?canvas=flow`
-keeps the older single-board surface reachable for development. The pure layer is `packages/scene`
-(`@suite/scene`). Interaction is described in
+[ADR-0034](./decisions/0034-ice-primary-rendering-engine.md) makes ICE the primary engine, and it is
+now the **only** one: `@xyflow/react` and the React Flow surfaces are gone, `?canvas=` no longer
+selects an engine (`?canvas=ice` is accepted and harmless), and the pure layer that survives is
+`packages/scene` (`@suite/scene`) — the projection the overlay and the type graph read.
+Interaction is described in
 [ADR-0033](./decisions/0033-interactive-scene-surface.md); the ICE port is tracked in
 [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md) and the sections below record what is
 implemented and where the parity gaps still are.
@@ -474,7 +474,7 @@ layer, positioned in page space from the projection; none of them is a React Flo
   selection overlay, not by the cards; handles reach past the box edge so they win the pick over the
   body. An edge is redrawn thicker on top when selected, and its label stays readable.
 - Connector handles come from the overlay and appear only for the single selected card, because
-  `SceneCardView` turns `NodeCard`'s own dots off. Dragging one onto another card on the same board
+  `CardSurface` turns `NodeCard`'s own dots off. Dragging one onto another card on the same board
   commits one edge with the canonical anchors; the connector menu (reposition, delete) is therefore
   reachable only on the flow surface, and connectors stay invisible until a card is selected.
 - Every write path is gated by the same capability flags the flow surface uses (`canEditLayout`,
@@ -525,14 +525,14 @@ the gesture ends.
 
 ### The live card layer
 
-`SceneCardView` is the real `NodeCard` inside the box the layer positions: Tiptap title and body,
+`CardSurface` is the real `NodeCard` inside the box the layer positions: Tiptap title and body,
 card menu, move targets, duplicate, trash, inspector and focus actions, and peer chips. It takes no
 pointer or drag handlers on its wrapper and runs no effect that writes on mount, so mounting an
 instance that just reached `full` is a pure render. A card whose text containers have
 not arrived shows a neutral placeholder and adopts them when the observer reports one — mounting a
 card never creates a container.
 
-- **One editable surface per card, still.** `SceneCardView` reads `editingSurface`; while the panel
+- **One editable surface per card, still.** `CardSurface` reads `editingSurface`; while the panel
   owns editing, the scene twin is read-only and does not publish carets. Starting editing from the
   scene sets `editingSurface: "canvas"` through the same store, so the existing rule holds.
 - **Whiteboards** mount the cached preview and a double click opens the existing card focus surface;
@@ -626,7 +626,7 @@ root board.
 `canvasSurfaceFromSearch` (`apps/canvas/src/scene/surfaceFlag.ts`) returns `scene` unless the URL
 asks for `flow` or `ice`, so a normal workspace and a share still open on the React Flow scene while
 the ICE port is under the P0 gate. The scene badge shows board/card/portal counts, the focused path
-and a link back to `?canvas=flow`.
+and a link back to the ICE surface.
 
 `?canvas=ice` mounts the ICE port tracked by
 [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md). The intended end state is ICE for every
@@ -647,7 +647,7 @@ deletes it. Server rooms are untouched and re-sync on open.
 
 The seam is the pure `Scene` value plus the gesture contract: `SceneBoard` owns the camera,
 LOD/gate state, focus path and pointer gestures; `SceneLayer` paints the frame from the scene,
-`SceneCardView` mounts the real card at `full`. This is the reference implementation while ICE
+`CardSurface` mounts the real card at `full`. This is the reference implementation while ICE
 reaches parity. The target adapter is an ICE host that consumes the same projection, owns the
 camera/spatial index/input, and mounts the same `NodeCard` through the `suite.card` overlay
 ([ADR-0034](./decisions/0034-ice-primary-rendering-engine.md)). LOD proxies, card faces and

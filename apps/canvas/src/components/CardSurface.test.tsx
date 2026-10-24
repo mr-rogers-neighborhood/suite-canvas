@@ -1,13 +1,12 @@
 import { type Card, WorkspaceDocument } from "@suite/graph";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { ReactFlowProvider } from "@xyflow/react";
 import { LoroList, LoroMap, LoroText } from "loro-crdt";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FALLBACK_CARD_TYPE } from "../cards/cardTypes";
 import { WHITEBOARD_TYPE_ID } from "../cards/whiteboard";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { SceneCardView } from "./SceneCardView";
+import { CardSurface } from "./CardSurface";
 
 // ProseMirror reads client rects when a new selection scrolls into view. jsdom
 // has no layout engine, and neither a text node nor a Range has rect methods, so
@@ -90,23 +89,21 @@ function bodyEditor(container: HTMLElement): HTMLElement {
   return element as HTMLElement;
 }
 
-function renderView(overrides: Partial<Parameters<typeof SceneCardView>[0]> = {}) {
+function renderView(overrides: Partial<Parameters<typeof CardSurface>[0]> = {}) {
   return render(
-    <ReactFlowProvider>
-      <SceneCardView
-        card={currentCard()}
-        type={FALLBACK_CARD_TYPE}
-        meta={EMPTY_META}
-        boardId={boardId}
-        {...overrides}
-      />
-    </ReactFlowProvider>,
+    <CardSurface
+      card={currentCard()}
+      type={FALLBACK_CARD_TYPE}
+      meta={EMPTY_META}
+      boardId={boardId}
+      {...overrides}
+    />,
   );
 }
 
 beforeAll(() => {
   useCanvasStore.setState({ ready: true, synced: true });
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   boardId = board.id;
   cardId = workspace.createCard({ typeId: "note", boardId, position: { x: 0, y: 0 } }).id;
   writeTitle(cardId, "Scene card title");
@@ -134,11 +131,11 @@ afterAll(() => {
   cleanup();
 });
 
-describe("SceneCardView", () => {
+describe("CardSurface", () => {
   it("should render the live card face for a workspace card", async () => {
     renderView({ width: 320, height: 260 });
 
-    const view = screen.getByTestId("scene-card-view");
+    const view = screen.getByTestId("card-surface");
     expect(view).toHaveAttribute("data-card-id", cardId);
     expect(view).toHaveStyle({ width: "320px", height: "260px" });
 
@@ -229,14 +226,7 @@ describe("SceneCardView", () => {
     try {
       renderView();
       render(
-        <ReactFlowProvider>
-          <SceneCardView
-            card={bare}
-            type={FALLBACK_CARD_TYPE}
-            meta={EMPTY_META}
-            boardId={boardId}
-          />
-        </ReactFlowProvider>,
+        <CardSurface card={bare} type={FALLBACK_CARD_TYPE} meta={EMPTY_META} boardId={boardId} />,
       );
     } finally {
       unsubscribe();
@@ -259,14 +249,12 @@ describe("SceneCardView", () => {
     if (!card) throw new Error("whiteboard fixture missing");
 
     render(
-      <ReactFlowProvider>
-        <SceneCardView card={card} type={FALLBACK_CARD_TYPE} meta={EMPTY_META} boardId={boardId} />
-      </ReactFlowProvider>,
+      <CardSurface card={card} type={FALLBACK_CARD_TYPE} meta={EMPTY_META} boardId={boardId} />,
     );
 
     // A drawing has no rich-text body, so no Tiptap editor is mounted for it.
     expect(screen.queryByTestId("node-card")).not.toBeInTheDocument();
-    const face = screen.getByTestId("scene-card-whiteboard");
+    const face = screen.getByTestId("card-surface-whiteboard");
     expect(within(face).getByTestId("whiteboard-preview")).toBeInTheDocument();
 
     fireEvent.doubleClick(face);
@@ -287,12 +275,10 @@ describe("SceneCardView", () => {
     if (!card) throw new Error("pending fixture missing");
 
     render(
-      <ReactFlowProvider>
-        <SceneCardView card={card} type={FALLBACK_CARD_TYPE} meta={EMPTY_META} boardId={boardId} />
-      </ReactFlowProvider>,
+      <CardSurface card={card} type={FALLBACK_CARD_TYPE} meta={EMPTY_META} boardId={boardId} />,
     );
 
-    expect(screen.getByTestId("scene-card-placeholder")).toHaveTextContent("Untitled");
+    expect(screen.getByTestId("card-surface-placeholder")).toHaveTextContent("Untitled");
     expect(screen.queryByTestId("node-card")).not.toBeInTheDocument();
   });
 

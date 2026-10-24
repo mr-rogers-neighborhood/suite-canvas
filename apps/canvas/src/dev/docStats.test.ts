@@ -6,7 +6,7 @@ import { readDocStats } from "./docStats";
 describe("readDocStats", () => {
   it("should count every record and report an encoded size", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
-    const board = workspace.createBoard({ id: "b1" });
+    const board = workspace.createView({ id: "b1" });
     const card = workspace.createCard({ id: "c1", boardId: board.id });
     const second = workspace.createCard({ id: "c2", boardId: board.id });
     workspace.addEdge({ boardId: board.id, source: card.id, target: second.id });

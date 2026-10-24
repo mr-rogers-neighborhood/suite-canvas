@@ -5,6 +5,7 @@ import { mergeSnapshots, type WorkspaceSnapshot } from "../hooks/snapshotMerge";
 export function readWorkspace(workspace: WorkspaceDocument): WorkspaceSnapshot {
   return {
     boards: workspace.listBoards(),
+    views: workspace.listViews(),
     cards: workspace.listCards(),
     placements: workspace.listPlacements(),
     edges: workspace.listEdges(),

@@ -407,7 +407,7 @@ describe("IceSurface", () => {
     stubGpu({ requestAdapter: async () => ADAPTER });
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ boardId: board.id, position: { x: 12, y: 34 } });
 
     render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
@@ -617,7 +617,7 @@ describe("IceSurface", () => {
 
     fireEvent.click(screen.getByTestId("ice-demo-suite"));
 
-    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(30));
+    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(20));
     expect(ice.createCanvasEngine).toHaveBeenCalledTimes(2);
     expect(ice.close).toHaveBeenCalledTimes(1);
     expect(ice.dispose).toHaveBeenCalledTimes(1);
@@ -627,19 +627,20 @@ describe("IceSurface", () => {
     expect(screen.getByTestId("ice-demo-suite")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("ice-demo-native")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
-      "Suite demo: 20 objects / 3 boards",
+      "Suite demo: 10 objects / 4 boards",
     );
-    expect(screen.getByTestId("ice-seed")).toHaveTextContent("20/20 objects seeded");
-    expect(screen.getByTestId("ice-demo-skipped")).toHaveTextContent("skipped: 2 cycle, 5 section");
+    expect(screen.getByTestId("ice-seed")).toHaveTextContent("10/10 objects seeded");
+    // Nesting cannot cycle, so the example has nothing to skip.
+    expect(screen.queryByTestId("ice-demo-skipped")).not.toBeInTheDocument();
 
     const suiteTypes = ice.spawnWidget.mock.calls.slice(10).map(([type]) => type);
-    expect(suiteTypes.filter((type) => type === "desk.note")).toHaveLength(17);
+    expect(suiteTypes.filter((type) => type === "desk.note")).toHaveLength(7);
     expect(suiteTypes.filter((type) => type === "desk.minimat")).toHaveLength(3);
     expect(ice.step).toHaveBeenCalledTimes(3 + 4);
 
     // Switching back is another reset, with the native count again.
     fireEvent.click(screen.getByTestId("ice-demo-native"));
-    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(40));
+    await waitFor(() => expect(ice.spawnWidget).toHaveBeenCalledTimes(30));
     expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent("Native demo: 10 objects");
     expect(screen.queryByTestId("ice-demo-skipped")).not.toBeInTheDocument();
     expect(ice.close).toHaveBeenCalledTimes(2);
@@ -655,7 +656,7 @@ describe("IceSurface", () => {
     stubReducedMotion();
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     ice.cameraWorld.enabled = true;
 
@@ -684,7 +685,7 @@ describe("IceSurface", () => {
     stubReducedMotion();
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     ice.cameraWorld.enabled = true;
     ice.cameraWorld.camera = { x: 300, y: 120, zoom: 1.4, gesturing: false };
@@ -716,7 +717,7 @@ describe("IceSurface", () => {
     stubReducedMotion();
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     ice.cameraWorld.enabled = true;
 
@@ -735,7 +736,7 @@ describe("IceSurface", () => {
     stubReducedMotion();
     const workspace = new WorkspaceDocument();
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     ice.cameraWorld.enabled = true;
 
@@ -758,6 +759,107 @@ describe("IceSurface", () => {
     expect(screen.queryByTestId("ice-band-types")).toBeNull();
   });
 
+  it("should pan on a middle press over a card and never start a gesture", async () => {
+    stubGpu({ requestAdapter: async () => ADAPTER });
+    const workspace = new WorkspaceDocument();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureView();
+    workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    ice.cameraWorld.enabled = true;
+    ice.cameraWorld.camera = { x: 100, y: 50, zoom: 1, gesturing: false };
+
+    render(<IceSurface workspace={workspace} rootBoardId={board.id} />);
+    await settled();
+
+    const desk = screen.getByTestId("ice-desk-mock");
+    const surface = screen.getByTestId("ice-surface");
+    // A stand-in for ICE's own listener: it lives below the surface root, so a
+    // capture-phase press that stops propagation never reaches it.
+    const reachedDesk = vi.fn();
+    desk.addEventListener("pointerdown", reachedDesk);
+
+    const spawned = ice.spawnWidget.mock.calls.length;
+    const writes = ice.writeRuntimeResource.mock.calls.length;
+
+    // A middle press on a card is a pan, not a move: the surface takes it
+    // before the desk can route it.
+    const down = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 1,
+      buttons: 4,
+      clientX: 200,
+      clientY: 200,
+      pointerId: 7,
+      isPrimary: true,
+    });
+    await act(async () => {
+      desk.dispatchEvent(down);
+    });
+    expect(down.defaultPrevented).toBe(true);
+    expect(reachedDesk).not.toHaveBeenCalled();
+
+    const move = (clientX: number, clientY: number): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          button: 1,
+          buttons: 4,
+          clientX,
+          clientY,
+          pointerId: 7,
+        }),
+      );
+    };
+
+    // A sub-threshold wobble writes nothing at all: it is still a click.
+    await act(async () => move(201, 200));
+    expect(ice.writeRuntimeResource).toHaveBeenCalledTimes(writes);
+
+    // One write per move, and the content follows the hand: +40 px of pointer
+    // moves the camera +40 px, whatever the zoom.
+    await act(async () => move(240, 210));
+    expect(ice.writeRuntimeResource).toHaveBeenCalledTimes(writes + 1);
+    expect(ice.cameraWorld.camera.x).toBeCloseTo(60);
+    expect(ice.cameraWorld.camera.y).toBeCloseTo(40);
+    expect(ice.cameraWorld.camera.zoom).toBeCloseTo(1);
+
+    await act(async () => move(260, 230));
+    expect(ice.writeRuntimeResource).toHaveBeenCalledTimes(writes + 2);
+    expect(ice.cameraWorld.camera.x).toBeCloseTo(40);
+    expect(ice.cameraWorld.camera.y).toBeCloseTo(20);
+
+    // Once it is a drag it stays one: the last small step still follows.
+    await act(async () => move(261, 230));
+    expect(ice.writeRuntimeResource).toHaveBeenCalledTimes(writes + 3);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          button: 1,
+          clientX: 261,
+          clientY: 230,
+          pointerId: 7,
+        }),
+      );
+    });
+
+    // No card moved, no selection gesture, no engine pan of its own.
+    expect(ice.spawnWidget.mock.calls.length).toBe(spawned);
+    expect(ice.cancelActiveGestures).not.toHaveBeenCalled();
+    expect(ice.cameraWorld.camera.x).toBeCloseTo(39);
+    expect(ice.cameraWorld.camera.y).toBeCloseTo(20);
+    expect(ice.cameraWorld.camera.zoom).toBeCloseTo(1);
+
+    // The middle click that follows must not open the autoscroll widget.
+    const aux = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+    await act(async () => {
+      surface.dispatchEvent(aux);
+    });
+    expect(aux.defaultPrevented).toBe(true);
+  });
+
   it("should open the Suite demo directly when ?demo=suite is in the URL", async () => {
     window.history.replaceState({}, "", "/ice.html?demo=suite");
     stubGpu({ requestAdapter: async () => ADAPTER });
@@ -768,9 +870,9 @@ describe("IceSurface", () => {
     expect(screen.getByTestId("ice-demo-suite")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("ice-demo-native")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByTestId("ice-demo-summary")).toHaveTextContent(
-      "Suite demo: 20 objects / 3 boards",
+      "Suite demo: 10 objects / 4 boards",
     );
-    expect(ice.spawnWidget).toHaveBeenCalledTimes(20);
+    expect(ice.spawnWidget).toHaveBeenCalledTimes(10);
     expect(ice.spawnWidget.mock.calls.some(([type]) => type === "desk.board")).toBe(false);
     expect(screen.getByTestId("ice-hud")).toHaveTextContent("not document truth");
   });

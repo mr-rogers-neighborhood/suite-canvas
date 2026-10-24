@@ -18,13 +18,13 @@ import { UNSORTED_SECTION } from "./libraryFilters";
  */
 export function useSavedViews(workspace: WorkspaceDocument | null | undefined): SavedView[] {
   const subscribe = useCallback(
-    (onChange: () => void) => (workspace ? workspace.observeViews(onChange) : () => {}),
+    (onChange: () => void) => (workspace ? workspace.observeSavedViews(onChange) : () => {}),
     [workspace],
   );
-  const getSnapshot = useCallback(() => workspace?.viewsRevision ?? 0, [workspace]);
+  const getSnapshot = useCallback(() => workspace?.savedViewsRevision ?? 0, [workspace]);
   const revision = useSyncExternalStore(subscribe, getSnapshot);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the revision is the invalidation signal.
-  return useMemo(() => (workspace ? workspace.listViews() : []), [workspace, revision]);
+  return useMemo(() => (workspace ? workspace.listSavedViews() : []), [workspace, revision]);
 }
 
 export interface ViewsBarProps {
@@ -136,7 +136,7 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
       groupBySection,
       order: text.length > 0 ? "relevance" : "title",
     };
-    const created = workspace.createView({ name, query: saved });
+    const created = workspace.createSavedView({ name, query: saved });
     applyView(created.id, appliedQuery(workspace, created.query));
     close();
   };
@@ -159,7 +159,7 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
       setRenamingId(null);
       return;
     }
-    workspace.updateView(view.id, { name });
+    workspace.updateSavedView(view.id, { name });
     setRenamingId(null);
   };
 
@@ -229,7 +229,7 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
                       data-testid="views-delete-confirm"
                       className="rounded px-1.5 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:hover:bg-red-500/15"
                       onClick={() => {
-                        workspace?.deleteView(view.id);
+                        workspace?.deleteSavedView(view.id);
                         if (activeViewId === view.id) exitView();
                         setConfirmId(null);
                       }}

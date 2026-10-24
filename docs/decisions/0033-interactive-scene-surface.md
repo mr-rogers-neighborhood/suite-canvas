@@ -1,6 +1,6 @@
 # ADR-0033: The interactive scene surface
 
-- **Status:** accepted; amended by [ADR-0034](./0034-ice-primary-rendering-engine.md) — this surface becomes the reference implementation, not the product target
+- **Status:** superseded in practice — [ADR-0034](./0034-ice-primary-rendering-engine.md) made ICE the engine and [ADR-0039](./0039-boards-are-containers-views-are-cameras.md) removed the Portal card; the React Flow scene and its `SceneLayer`/`SceneCardView` are deleted, and `SceneCardView`'s surviving face is `apps/canvas/src/components/CardSurface.tsx`. Kept as the record of the reference implementation and the reasoning that shaped the ICE surface.
 - **Date:** 2026-10-23
 - **Related:** [ADR-0029](./0029-portal-board-field.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), [ADR-0032](./0032-ice-engine-deferral.md), [ADR-0034](./0034-ice-primary-rendering-engine.md), [`docs/architecture.md`](../architecture.md) §Rendering, [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.3
 

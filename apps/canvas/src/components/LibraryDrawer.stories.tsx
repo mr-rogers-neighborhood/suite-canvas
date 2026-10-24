@@ -25,8 +25,8 @@ function addText(parent: LoroMap, text: string): void {
 const searchWorkspace = (() => {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  workspace.renameBoard(board.id, "Research");
+  const board = workspace.ensureView();
+  workspace.renameView(board.id, "Research");
 
   workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
   addText(workspace.getTitle("c1"), "Mastering the timeline");

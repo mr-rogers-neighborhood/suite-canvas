@@ -313,53 +313,6 @@ body {
   transform: scale(1.01);
 }
 
-/* React Flow chrome, themed through its CSS variables. */
-.react-flow__controls {
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  box-shadow: var(--card-shadow);
-}
-
-.react-flow__controls-button {
-  background: var(--surface);
-  border-bottom: 1px solid var(--hairline);
-  color: var(--ink);
-}
-
-.react-flow__controls-button svg {
-  fill: var(--ink);
-}
-
-.react-flow__controls-button:hover {
-  background: var(--segmented-bg);
-}
-
-.react-flow__controls-button:last-child {
-  border-bottom: none;
-}
-
-/*
- * React Flow ships a light control panel. The base rules above lose to its
- * stylesheet when both have the same specificity, so the dark overrides are
- * scoped to `.dark` and repeat the container, button, icon and hover rules.
- */
-.dark .react-flow__controls,
-.dark .react-flow__controls-button {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--hairline);
-}
-
-.dark .react-flow__controls-button svg {
-  fill: var(--ink);
-}
-
-.dark .react-flow__controls-button:hover {
-  background: var(--segmented-bg);
-}
-
 /*
  * Native selects keep the OS palette for the closed control and the popup.
  * Components use `bg-transparent` deliberately; in dark mode that leaves the
@@ -371,39 +324,16 @@ body {
   color: var(--ink);
 }
 
-.react-flow__attribution {
-  background: transparent;
-  color: var(--ink-muted);
-}
-
-.react-flow__attribution a {
-  color: inherit;
-}
-
-.react-flow__handle {
-  width: 7px;
-  height: 7px;
-  background: var(--surface);
-  border: 1px solid var(--ink-muted);
-}
-
-/* Draw links above cards so they are not hidden by card stacking order. */
-.react-flow__edges {
-  z-index: 4;
-}
-
-.react-flow__nodes {
-  z-index: 3;
-}
-
-/* Connectors: a dot to select, plus a dashed grab handle to reposition it. */
-/* Doubles as a React Flow handle, so the position rules below win over its defaults. */
-.connector-dot.react-flow__handle {
+/* Connectors: a dot to select, plus a dashed grab handle to reposition it.
+   The position comes from the connector's own box (perimeter fractions), so the
+   dot is a plain absolutely-positioned face element. */
+.connector-dot {
   position: absolute;
   width: 10px;
   height: 10px;
   min-width: 0;
   min-height: 0;
+  padding: 0;
   z-index: 30;
   border: 2px solid #94a3b8;
   border-radius: 9999px;
@@ -470,19 +400,6 @@ body {
   cursor: grabbing;
 }
 
-/* While a connector is selected its grab ring must win over link hit-areas
-   (including React Flow's reconnect handles, which sit on the connector). */
-.connector-active .react-flow__edge,
-.connector-active .react-flow__edge-interaction,
-.connector-active .react-flow__edgeupdater {
-  pointer-events: none;
-}
-
-/* Links */
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke-width: 2.5;
-}
-
 /* Remote carets rendered by loro-prosemirror (LoroEphemeralCursorPlugin). */
 .ProseMirror-loro-cursor {
   position: relative;
@@ -519,11 +436,6 @@ body {
 [data-testid="card-body"],
 [data-testid="card-body"] * {
   cursor: text;
-}
-
-.react-flow__node.dragging [data-testid="card-body"],
-.react-flow__node.dragging [data-testid="card-body"] * {
-  cursor: grabbing;
 }
 
 /* Names attached to the element a peer is actively manipulating. */
@@ -666,7 +578,6 @@ body {
 /* Tiptap block typography. Tailwind Preflight removes heading sizes and list
    markers, so the editor restores the document styles explicitly. Scoped to the
    body editor: the title keeps its single-line chrome typography. */
-/* biome-ignore lint/style/noDescendingSpecificity: scoped to the body editor; the later title rules target a different element. */
 .node-card-editor > * + * {
   margin-top: 0.375rem;
 }
@@ -1130,13 +1041,7 @@ body {
 }
 
 /* Sections: a background region under the cards and a header/handle layer above
-   them, both inside React Flow's transformed viewport. */
-/* The portal wrapper itself must not cover the pane; interactive children
-   re-enable pointer events explicitly. */
-.react-flow__viewport-portal {
-  pointer-events: none;
-}
-
+   them, both in the surface's own coordinate space. */
 .section-background-layer,
 .section-header-layer {
   position: absolute;
@@ -1247,71 +1152,6 @@ body {
 .section-resize-handle[data-direction="e"],
 .section-resize-handle[data-direction="w"] {
   cursor: ew-resize;
-}
-
-/* Link descriptions. The chip lives in React Flow's label renderer (flow
-   coordinates), is counter-scaled by the edge component, and sits *on* the line:
-   a canvas-coloured halo opens a gap in the stroke around it. It is its own hit
-   target, so it must paint above the edge layer (which the app raises to z-index
-   4 so links are not hidden behind cards). */
-.react-flow__edgelabel-renderer {
-  z-index: 5;
-}
-.edge-description {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.edge-description-chip {
-  position: relative;
-  display: block;
-  max-width: 180px;
-  padding: 0 6px;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: var(--surface);
-  color: var(--ink);
-  /* First shadow is the gap in the line, second is the chip's own lift. */
-  box-shadow:
-    0 0 0 4px var(--canvas-bg),
-    0 2px 6px -2px rgba(0, 0, 0, 0.35);
-  font-size: 11px;
-  line-height: 16px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-  cursor: grab;
-  touch-action: none;
-}
-
-.edge-description-chip:hover {
-  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
-}
-
-.edge-description-chip[data-dragging="true"] {
-  cursor: grabbing;
-  box-shadow: 0 3px 10px -2px rgba(0, 0, 0, 0.35);
-}
-
-/* A peer sliding this label: their colour on the chip, their name above it. */
-.edge-description-chip[data-peer-name] {
-  border-style: dashed;
-  border-width: 1.5px;
-  background: var(--surface);
-}
-
-.edge-description-peer {
-  position: absolute;
-  bottom: calc(100% + 3px);
-  left: 50%;
-  transform-origin: 50% 100%;
-  translate: -50% 0;
-  pointer-events: none;
 }
 
 /* Inline editor, anchored on the click that opened it. */

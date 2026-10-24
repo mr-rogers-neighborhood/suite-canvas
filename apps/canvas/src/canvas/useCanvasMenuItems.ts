@@ -1,7 +1,6 @@
 import { type LayerAction, sectionColors, type WorkspaceDocument } from "@suite/graph";
 import { DEFAULT_FRACTAL_RECIPE, LAYOUT_PATTERNS, type LayoutPattern } from "@suite/scene";
 import { useMemo } from "react";
-import { portalTargetId } from "../cards/portal";
 import type { ContextMenuItem } from "../components/ContextMenu";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { applyBoardFractal } from "../scene/layoutCommand";
@@ -38,11 +37,10 @@ export interface CanvasMenuItemsInput {
   createNoteAt: (position: MenuPoint) => void;
   createWhiteboardAt: (position: MenuPoint) => void;
   createSectionAt: (position: MenuPoint, wrapSelection?: boolean) => void;
-  createPortalAt: (position: MenuPoint, targetBoardId: string) => void;
-  createPortalToNewBoard: (position: MenuPoint) => void;
+  /** Plants an empty Board on the plane at `position` (ADR-0039). */
+  createBoardAt: (position: MenuPoint) => void;
   duplicateCards: (ids: string[]) => void;
   startEdgeDescription: (edgeId: string, point: MenuPoint) => void;
-  enterPortal: (nodeId: string, targetBoardId: string) => void;
   moveCardToBoard: (cardId: string, boardId: string) => void;
   unplaceSelected: () => void;
   trashSelected: () => void;
@@ -95,11 +93,9 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
     createNoteAt,
     createWhiteboardAt,
     createSectionAt,
-    createPortalAt,
-    createPortalToNewBoard,
+    createBoardAt,
     duplicateCards,
     startEdgeDescription,
-    enterPortal,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,
@@ -133,24 +129,6 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
   if (contextMenu.kind === "canvas") {
     if (!canCreateContent) return [];
     const flowPosition = contextMenu.flowPosition ?? { x: 0, y: 0 };
-    // Every board is a possible target; creating one requires the board
-    // capability, so a board share without it only sees existing boards.
-    const portalItems: ContextMenuItem[] = [
-      ...snapshot.boards
-        .filter((board) => board.id !== activeBoardId)
-        .map((board) => ({
-          label: board.name,
-          onSelect: () => createPortalAt(flowPosition, board.id),
-        })),
-      ...(canCreateBoards
-        ? [
-            {
-              label: "New board and portal",
-              onSelect: () => createPortalToNewBoard(flowPosition),
-            },
-          ]
-        : []),
-    ];
     return [
       {
         label: "New note",
@@ -181,11 +159,11 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
             },
           ]
         : []),
-      ...(portalItems.length > 0
+      ...(canCreateBoards
         ? [
             {
-              label: "New portal",
-              items: portalItems,
+              label: "New board",
+              onSelect: () => createBoardAt(flowPosition),
             },
           ]
         : []),
@@ -401,18 +379,7 @@ export function buildCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuIt
   const moveTargets = snapshot.boards
     .filter((board) => board.id !== activeBoardId)
     .map((board) => ({ id: board.id, name: board.name }));
-  const portalTarget = nodeId
-    ? portalTargetId(snapshot.cards.find((card) => card.id === nodeId))
-    : null;
   return [
-    ...(nodeId && portalTarget
-      ? [
-          {
-            label: "Open portal",
-            onSelect: () => enterPortal(nodeId, portalTarget),
-          },
-        ]
-      : []),
     ...(canCreateContent
       ? [
           {
@@ -522,11 +489,9 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
     createNoteAt,
     createWhiteboardAt,
     createSectionAt,
-    createPortalAt,
-    createPortalToNewBoard,
+    createBoardAt,
     duplicateCards,
     startEdgeDescription,
-    enterPortal,
     moveCardToBoard,
     unplaceSelected,
     trashSelected,
@@ -563,11 +528,9 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
         createNoteAt,
         createWhiteboardAt,
         createSectionAt,
-        createPortalAt,
-        createPortalToNewBoard,
+        createBoardAt,
         duplicateCards,
         startEdgeDescription,
-        enterPortal,
         moveCardToBoard,
         unplaceSelected,
         trashSelected,
@@ -599,11 +562,9 @@ export function useCanvasMenuItems(input: CanvasMenuItemsInput): ContextMenuItem
       createNoteAt,
       createWhiteboardAt,
       createSectionAt,
-      createPortalAt,
-      createPortalToNewBoard,
+      createBoardAt,
       duplicateCards,
       startEdgeDescription,
-      enterPortal,
       moveCardToBoard,
       unplaceSelected,
       trashSelected,

@@ -22,7 +22,7 @@ interface FakeEntity {
 function documentWithCard() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const card = workspace.createCard({ boardId: board.id, position: { x: 100, y: 120 } });
   return { workspace, board, card };
 }

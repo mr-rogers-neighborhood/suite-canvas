@@ -5,7 +5,7 @@ import { WorkspaceSnapshotStore, workspaceSnapshotStore } from "./workspaceSnaps
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.createCard({ id: "a", boardId: board.id });
   return { workspace, board };
 }

@@ -276,7 +276,7 @@ export function exportPortable(
   workspace: WorkspaceDocument,
   exportedAt = new Date().toISOString(),
 ): PortableWorkspace {
-  const boards = workspace.listBoards();
+  const boards = workspace.listViews();
   const types = workspace.listTypes();
   const tags = workspace.listTags();
   const typesById = new Map(types.map((type) => [type.id, type]));

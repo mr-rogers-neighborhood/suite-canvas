@@ -1,18 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ReactFlowProvider } from "@xyflow/react";
 import { Connector } from "./Connector";
 
 const meta = {
   title: "Components/Connector",
   component: Connector,
   parameters: { layout: "centered" },
-  decorators: [
-    (Story) => (
-      <ReactFlowProvider>
-        <Story />
-      </ReactFlowProvider>
-    ),
-  ],
   tags: ["autodocs"],
 } satisfies Meta<typeof Connector>;
 

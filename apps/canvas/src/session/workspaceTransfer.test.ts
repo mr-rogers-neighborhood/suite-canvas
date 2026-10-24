@@ -98,8 +98,8 @@ function writeBodyImage(
 function workspaceWithImage() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  workspace.renameBoard(board.id, "Research");
+  const board = workspace.ensureView();
+  workspace.renameView(board.id, "Research");
   workspace.createCard({ id: "card-1", boardId: board.id, position: { x: 0, y: 0 } });
   writeTitle(workspace, "card-1", "Trip plan");
   writeBodyImage(workspace, "card-1", {

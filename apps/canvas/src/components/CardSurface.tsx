@@ -6,7 +6,6 @@ import { WhiteboardPreview } from "../cards/WhiteboardPreview";
 import { isWhiteboardCard } from "../cards/whiteboard";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers } from "../hooks/useCardContainers";
@@ -15,16 +14,17 @@ import { useReferenceCount } from "../hooks/useReferenceCounts";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
-import "./sceneCardView.css";
+import { type ConnectorPeerState, NodeCard } from "./NodeCard";
+import "./CardSurface.css";
 
 /**
  * A duplicate lands down-right of its source, like a paper copy: the offset is a
  * tenth of the card box so a copy always steps clear of the original, at any
- * zoom. Same rule as the React Flow surface.
+ * zoom.
  */
 const DUPLICATE_OFFSET = { x: DEFAULT_CARD_WIDTH / 10, y: DEFAULT_CARD_HEIGHT / 10 };
 
-export interface SceneCardViewProps {
+export interface CardSurfaceProps {
   /** Canonical card record; the scene layer resolves it from the instance. */
   card: Card;
   /** Resolved primary type, for the glyph and its label. */
@@ -48,29 +48,31 @@ export interface SceneCardViewProps {
 }
 
 /**
- * The live card face of the scene surface: the real `NodeCard` with its Tiptap
- * title and body, its menu, and the connectors drawn around it.
+ * The card face: the real `NodeCard` with its Tiptap title and body, its menu,
+ * and the connectors drawn around it. It is the only card face the app has —
+ * the ICE surface mounts it in its screen-space overlay, and the scene layer
+ * mounts it for full-LOD instances.
  *
- * The scene layer owns geometry. This component is the card *inside* the box the
- * layer positions: it takes no pointer or drag handlers on its wrapper, keeps no
- * per-frame state, and runs no effect that writes on mount, so mounting a card
- * for a newly full-LOD instance is a pure render. Only ever mount it for
- * instances at the `full` LOD band — the layer's culling and hysteresis are the
- * mounted-editor budget, and there is no second budget here.
+ * The surrounding surface owns geometry. This component is the card *inside*
+ * the box the surface positions: it takes no pointer or drag handlers on its
+ * wrapper, keeps no per-frame state, and runs no effect that writes on mount, so
+ * mounting a card for a newly full-LOD instance is a pure render. Only ever
+ * mount it for instances at the `full` LOD band — the layer's culling and
+ * hysteresis are the mounted-editor budget, and there is no second budget here.
  *
- * Hovering, dragging and resizing belong to `SceneLayer`; a card rendered here
+ * Hovering, dragging and resizing belong to the surface that mounts it; a card rendered here
  * still owns its own clicks (open info, start editing, connector menus).
  *
- * The ICE surface mounts this same view as a read-only twin of a card in its
+ * The ICE surface mounts this same face as a read-only twin of a card in its
  * `suite.card` DOM overlay: same shell, same global CSS, `readOnly` set so the
  * twin offers no editing or menu that would write from two places.
  *
  * Whiteboard cards render a read-only `WhiteboardPreview` with a double-click
  * that opens the existing focus surface, because a drawing has no Tiptap body to
- * mount. `SceneLayer` may keep routing whiteboards to its own preview instead;
+ * mount. The surface may keep routing whiteboards to its own preview instead;
  * whichever path runs, only one preview is mounted per instance.
  */
-export function SceneCardView({
+export function CardSurface({
   card,
   type,
   meta,
@@ -80,8 +82,8 @@ export function SceneCardView({
   selected = false,
   className,
   readOnly = false,
-}: SceneCardViewProps) {
-  countRender("scene-card");
+}: CardSurfaceProps) {
+  countRender("card-surface");
 
   const workspace = useCanvasStore((state) => state.workspace);
   const cursorStore = useCanvasStore((state) => state.cursors);
@@ -222,13 +224,13 @@ export function SceneCardView({
     width: width ?? DEFAULT_CARD_WIDTH,
     height: height ?? DEFAULT_CARD_HEIGHT,
   };
-  const wrapperClass = ["scene-card-view", className].filter(Boolean).join(" ");
+  const wrapperClass = ["card-surface", className].filter(Boolean).join(" ");
 
   if (whiteboard) {
     const title = workspace.displayTitle(card.id);
     return (
       <div
-        data-testid="scene-card-view"
+        data-testid="card-surface"
         data-card-id={card.id}
         data-variant="whiteboard"
         className={wrapperClass}
@@ -236,14 +238,14 @@ export function SceneCardView({
       >
         {/* biome-ignore lint/a11y/noStaticElementInteractions: the scene layer owns pointer gestures; this face only opens the focus surface on a double click. */}
         <div
-          className="scene-card-view__whiteboard"
+          className="card-surface__whiteboard"
           onDoubleClick={openFocus}
-          data-testid="scene-card-whiteboard"
+          data-testid="card-surface-whiteboard"
         >
           <WhiteboardPreview
             elements={drawing?.elements ?? []}
             label={`${title} preview`}
-            className="scene-card-view__drawing"
+            className="card-surface__drawing"
           />
         </div>
       </div>
@@ -253,13 +255,13 @@ export function SceneCardView({
   if (!containers.contentId || !containers.titleId) {
     return (
       <div
-        data-testid="scene-card-view"
+        data-testid="card-surface"
         data-card-id={card.id}
         data-variant="pending"
         className={wrapperClass}
         style={boxStyle}
       >
-        <div className="scene-card-view__placeholder" data-testid="scene-card-placeholder">
+        <div className="card-surface__placeholder" data-testid="card-surface-placeholder">
           {workspace.displayTitle(card.id)}
         </div>
       </div>
@@ -270,7 +272,7 @@ export function SceneCardView({
 
   return (
     <div
-      data-testid="scene-card-view"
+      data-testid="card-surface"
       data-card-id={card.id}
       data-variant="card"
       className={wrapperClass}

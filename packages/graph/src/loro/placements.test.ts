@@ -21,7 +21,7 @@ function countCommits(workspace: WorkspaceDocument): () => number {
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const first = workspace.createCard({ boardId: board.id, position: { x: 10, y: 10 } });
   const second = workspace.createCard({ boardId: board.id, position: { x: 200, y: 40 } });
   const third = workspace.createCard({ boardId: board.id, position: { x: 400, y: 300 } });
@@ -68,7 +68,7 @@ describe("movePlacements", () => {
 
   it("ignores unknown card ids, unplaced cards and no-op coordinates", () => {
     const { workspace, board, first, second } = setup();
-    const otherBoard = workspace.createBoard({ name: "Other" });
+    const otherBoard = workspace.createView({ name: "Other" });
     const commits = countCommits(workspace);
 
     workspace.movePlacements(board.id, [
@@ -120,7 +120,7 @@ describe("movePlacements", () => {
 
   it("converges when one client moves a batch while the other edits a property", () => {
     const left = new WorkspaceDocument();
-    const board = left.ensureBoard();
+    const board = left.ensureView();
     left.ensureDefaultTypes();
     const field = left.addField(DEFAULT_TYPE_ID, { name: "Status", kind: "text" });
     const first = left.createCard({ boardId: board.id, position: { x: 10, y: 10 } });
@@ -146,7 +146,7 @@ describe("movePlacements", () => {
 
   it("merges two clients moving the same batch without duplicating placements", () => {
     const left = new WorkspaceDocument();
-    const board = left.ensureBoard();
+    const board = left.ensureView();
     const first = left.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
 
     const right = new WorkspaceDocument();

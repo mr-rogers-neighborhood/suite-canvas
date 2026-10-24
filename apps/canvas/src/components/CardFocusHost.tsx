@@ -1,5 +1,4 @@
-import { useReactFlow, type Viewport } from "@xyflow/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
 import { WhiteboardFocus } from "../cards/WhiteboardFocus";
 import { isWhiteboardCard } from "../cards/whiteboard";
@@ -15,8 +14,10 @@ const FOCUS_RETRY_FRAMES = 60;
 /**
  * The card-focus mode: the inspector's Edit action and a double-click on a
  * non-portal card both land here. It expands over the canvas area, keeps the
- * app chrome, edits the same card object through the same `CardPanel`, and puts
- * the viewport back where it was when the surface closes.
+ * app chrome, and edits the same card object through the same `CardPanel`.
+ *
+ * The camera is the surface's, not this host's: the focus sheet is a DOM overlay
+ * that never moves the board, so there is no viewport to save or restore here.
  */
 export function CardFocusHost() {
   const cardFocusId = useUiStore((state) => state.cardFocusId);
@@ -32,21 +33,7 @@ export function CardFocusHost() {
 
   const model = useCardPanelModel(cardFocusId, "focus");
   const whiteboard = model ? isWhiteboardCard(model.card) : false;
-  const { getViewport, setViewport } = useReactFlow();
-  const savedViewport = useRef<Viewport | null>(null);
   const cardId = model?.card.id ?? null;
-
-  // The board is never moved underneath the surface, so closing it can restore
-  // the exact camera the reader came from — including after a pan behind it.
-  useEffect(() => {
-    if (!cardId) return;
-    savedViewport.current = getViewport();
-    return () => {
-      const saved = savedViewport.current;
-      savedViewport.current = null;
-      if (saved) void setViewport(saved, { duration: 0 });
-    };
-  }, [cardId, getViewport, setViewport]);
 
   // Focus is an editing gesture: the body editor takes the caret as soon as the
   // panel has mounted it, and the title/body stay the panel's editors.

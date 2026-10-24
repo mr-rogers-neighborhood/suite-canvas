@@ -11,7 +11,7 @@ function sync(a: LoroDoc, b: LoroDoc): void {
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.ensureDefaultTypes();
   const project = workspace.createType({ name: "Project", glyph: "P" });
   workspace.createCard({ id: "c1", typeId: project.id, boardId: board.id });
@@ -28,7 +28,7 @@ describe("types", () => {
       .sort();
     workspace.ensureDefaultTypes();
 
-    expect(first).toEqual(["concept", "note", "portal", "source"]);
+    expect(first).toEqual(["concept", "note", "source"]);
     expect(
       workspace
         .listTypes()

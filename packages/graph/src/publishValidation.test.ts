@@ -93,7 +93,7 @@ function writeMultiSelect(
 function setup() {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
-  source.ensureBoard();
+  source.ensureView();
   const text = source.addField("note", { name: "Owner", kind: "text" });
   const count = source.addField("note", { name: "Count", kind: "number" });
   const due = source.addField("note", { name: "Due", kind: "date" });

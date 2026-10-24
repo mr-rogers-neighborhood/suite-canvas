@@ -26,7 +26,7 @@ function snapshot(workspace: WorkspaceDocument) {
   const byKey = <T extends { id: string }>(entries: T[]) =>
     [...entries].sort((left, right) => left.id.localeCompare(right.id));
   return {
-    boards: byKey(workspace.listBoards()),
+    boards: byKey(workspace.listViews()),
     cards: byKey(
       workspace.listCards().map((card) => ({
         ...card,
@@ -148,7 +148,7 @@ describe("workspace convergence", () => {
       const a = new WorkspaceDocument(docA);
       const b = new WorkspaceDocument(docB);
 
-      a.createBoard({ id: BOARDS[0] as string });
+      a.createView({ id: BOARDS[0] as string });
       a.ensureDefaultTypes();
       a.createType({ id: "project", name: "Project" });
       a.addField("project", { name: "Status", kind: "text" });

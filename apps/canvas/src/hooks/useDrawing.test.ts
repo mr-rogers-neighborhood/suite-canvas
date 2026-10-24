@@ -5,7 +5,7 @@ import { useDrawing } from "./useDrawing";
 
 function fixture() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   const card = workspace.createCard({ typeId: "note", boardId: board.id });
   workspace.setDrawing(card.id, [
     { id: "rect-1", type: "rectangle", x: 0, y: 0, width: 100, height: 60 },

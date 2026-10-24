@@ -153,7 +153,7 @@ describe("useTypeTable", () => {
   function seedWorkspace() {
     const workspace = useCanvasStore.getState().workspace;
     workspace.ensureDefaultTypes();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     workspace.createCard({ typeId: "note", boardId: board.id, position: { x: 0, y: 0 } });
     workspace.createCard({ typeId: "note", boardId: board.id, position: { x: 0, y: 10 } });
     workspace.createCard({ typeId: "concept", boardId: board.id, position: { x: 0, y: 20 } });
@@ -172,7 +172,7 @@ describe("useTypeTable", () => {
 
   it("should follow an explicit board over the active one", () => {
     const board = seedWorkspace();
-    const drafts = useCanvasStore.getState().workspace.createBoard({ name: "Drafts" });
+    const drafts = useCanvasStore.getState().workspace.createView({ name: "Drafts" });
     useUiStore.setState({ activeBoardId: board.id });
 
     render(createElement(Probe, { boardId: drafts.id }));

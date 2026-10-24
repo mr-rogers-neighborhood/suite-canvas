@@ -81,7 +81,7 @@ function seedWorkspace(): { source: WorkspaceDocument; snapshot: Uint8Array } {
   const source = new WorkspaceDocument();
   source.ensureDefaultTypes();
   source.markSeeded();
-  const board = source.createBoard({ id: BOARD_ID, name: "Load" });
+  const board = source.createView({ id: BOARD_ID, name: "Load" });
   for (const [index, cardId] of CARD_IDS.entries()) {
     source.createCard({
       id: cardId,

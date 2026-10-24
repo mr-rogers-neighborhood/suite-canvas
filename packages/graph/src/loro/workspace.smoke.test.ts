@@ -5,7 +5,7 @@ import { WorkspaceDocument } from "./WorkspaceDocument.js";
 describe("Loro workspace smoke", () => {
   it("creates, updates and converges a board", () => {
     const left = new WorkspaceDocument(new LoroDoc());
-    const board = left.ensureBoard();
+    const board = left.ensureView();
     const card = left.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
 
     expect(left.listBoardCards(board.id)).toHaveLength(1);
@@ -16,7 +16,7 @@ describe("Loro workspace smoke", () => {
 
     const right = new WorkspaceDocument(new LoroDoc());
     right.importUpdate(left.exportUpdate());
-    expect(right.listBoards()).toHaveLength(1);
+    expect(right.listViews()).toHaveLength(1);
     expect(right.listBoardCards(board.id)).toHaveLength(1);
     expect(right.getPlacement(board.id, card.id)?.x).toBe(40);
   });
@@ -24,7 +24,7 @@ describe("Loro workspace smoke", () => {
   it("merges concurrent field edits", () => {
     const left = new WorkspaceDocument(new LoroDoc());
     const right = new WorkspaceDocument(new LoroDoc());
-    const board = left.ensureBoard();
+    const board = left.ensureView();
     const card = left.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
 
     right.importUpdate(left.exportUpdate());
@@ -51,7 +51,7 @@ describe("Loro workspace smoke", () => {
 
   it("creates connectors and links", () => {
     const workspace = new WorkspaceDocument(new LoroDoc());
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     const first = workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const second = workspace.createCard({ boardId: board.id, position: { x: 400, y: 0 } });
     const connector = workspace.addConnector(first.id);

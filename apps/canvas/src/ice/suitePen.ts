@@ -65,7 +65,7 @@ export function handForScale(scale: number): HandLaw {
  * Off: the sheet IS the card. The engine draws its text at the band the zoom
  * asks for and greeks it far away, so the card is part of the canvas at every
  * distance, with no overlay to pop in or scale against it. On: the read-only
- * `SceneCardView` twin is mounted in the slot instead, which is the older path
+ * `CardSurface` twin is mounted in the slot instead, which is the older path
  * kept for comparison — it is a second renderer of the same card, so anything
  * that writes must never run from there.
  */

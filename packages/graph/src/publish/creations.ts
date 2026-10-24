@@ -53,7 +53,7 @@ export function planCreations(
 ): void {
   if (scope.scope !== "board") return;
   const boardId = scope.boardId;
-  const sourceBoard = source.getBoard(boardId);
+  const sourceBoard = source.getView(boardId);
   const draftCards = new Set(draft.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
   const baselineCards = new Set(baseline.doc.getMap(WorkspaceDocument.CARDS_KEY).keys());
   const baselineSections = new Set(baseline.listSections(boardId).map((section) => section.id));

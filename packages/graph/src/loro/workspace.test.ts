@@ -62,30 +62,30 @@ describe("safeParse", () => {
 describe("WorkspaceDocument boards", () => {
   it("creates a default board when the workspace is empty", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.ensureBoard();
+    const board = workspace.ensureView();
     expect(board.id).toBe(DEFAULT_BOARD_ID);
-    expect(workspace.listBoards()).toHaveLength(1);
-    expect(workspace.ensureBoard().id).toBe(DEFAULT_BOARD_ID);
+    expect(workspace.listViews()).toHaveLength(1);
+    expect(workspace.ensureView().id).toBe(DEFAULT_BOARD_ID);
   });
 
   it("renames boards but ignores blank names", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard({ name: "Research" });
-    workspace.renameBoard(board.id, "Research 2026");
-    expect(workspace.getBoard(board.id)?.name).toBe("Research 2026");
-    workspace.renameBoard(board.id, "   ");
-    expect(workspace.getBoard(board.id)?.name).toBe("Research 2026");
+    const board = workspace.createView({ name: "Research" });
+    workspace.renameView(board.id, "Research 2026");
+    expect(workspace.getView(board.id)?.name).toBe("Research 2026");
+    workspace.renameView(board.id, "   ");
+    expect(workspace.getView(board.id)?.name).toBe("Research 2026");
   });
 
   it("deletes a board's placements and edges but keeps its cards", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id });
     workspace.addEdge({ boardId: board.id, source: card.id, target: card.id });
 
-    workspace.deleteBoard(board.id);
+    workspace.deleteView(board.id);
 
-    expect(workspace.getBoard(board.id)).toBeUndefined();
+    expect(workspace.getView(board.id)).toBeUndefined();
     expect(workspace.getCard(card.id)).toBeDefined();
     expect(workspace.listCardPlacements(card.id)).toHaveLength(0);
     expect(workspace.listEdges()).toHaveLength(0);
@@ -93,15 +93,15 @@ describe("WorkspaceDocument boards", () => {
 
   it("trashes only the cards left without a board when asked", () => {
     const workspace = new WorkspaceDocument();
-    const shared = workspace.createBoard({ name: "Shared" });
-    const doomed = workspace.createBoard({ name: "Doomed" });
+    const shared = workspace.createView({ name: "Shared" });
+    const doomed = workspace.createView({ name: "Doomed" });
     const survivor = workspace.createCard({ boardId: shared.id });
     const orphan = workspace.createCard({ boardId: shared.id });
     workspace.placeCard(doomed.id, survivor.id, { x: 10, y: 10 });
     workspace.placeCard(doomed.id, orphan.id, { x: 40, y: 40 });
     workspace.unplaceCard(shared.id, orphan.id);
 
-    workspace.deleteBoard(doomed.id, { cards: "trash" });
+    workspace.deleteView(doomed.id, { cards: "trash" });
 
     expect(workspace.isTrashed(orphan.id)).toBe(true);
     expect(workspace.isTrashed(survivor.id)).toBe(false);
@@ -119,7 +119,7 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("creates a card directly on a board", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id, position: { x: 12, y: 8 } });
     const placement = workspace.getPlacement(board.id, card.id);
     expect(placement).toMatchObject({ x: 12, y: 8 });
@@ -128,7 +128,7 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("allows one placement per card and board", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id });
 
     workspace.placeCard(board.id, card.id, { x: 100, y: 100 });
@@ -139,8 +139,8 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("shares one card across boards and derives home from the oldest placement", () => {
     const workspace = new WorkspaceDocument();
-    const first = workspace.createBoard({ name: "First" });
-    const second = workspace.createBoard({ name: "Second" });
+    const first = workspace.createView({ name: "First" });
+    const second = workspace.createView({ name: "Second" });
     const card = workspace.createCard({ boardId: first.id });
     workspace.placeCard(second.id, card.id, { x: 50, y: 50 });
 
@@ -153,8 +153,8 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("keeps layer order per board", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
-    const other = workspace.createBoard();
+    const board = workspace.createView();
+    const other = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     workspace.createCard({ boardId: other.id });
@@ -177,7 +177,7 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("orders forward, backward, front and back against the neighbours", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const cards = ["a", "b", "c"].map((id) => workspace.createCard({ id, boardId: board.id }));
     const order = () => workspace.listBoardCards(board.id).map((card) => card.id);
     const middle = cards[1]?.id ?? "";
@@ -199,7 +199,7 @@ describe("WorkspaceDocument cards and placements", () => {
 
   it("renumbers only when ranks run out of float precision", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const cards = ["a", "b", "c"].map((id) => workspace.createCard({ id, boardId: board.id }));
     const order = () => workspace.listBoardCards(board.id).map((card) => card.id);
     const [first, middle, last] = cards.map((card) => card.id) as [string, string, string];
@@ -259,8 +259,8 @@ describe("WorkspaceDocument fragments and sizes", () => {
 
   it("records a resized card per placement", () => {
     const workspace = new WorkspaceDocument();
-    const first = workspace.createBoard({ name: "First" });
-    const second = workspace.createBoard({ name: "Second" });
+    const first = workspace.createView({ name: "First" });
+    const second = workspace.createView({ name: "Second" });
     const card = workspace.createCard({ boardId: first.id });
     workspace.placeCard(second.id, card.id, { x: 0, y: 0 });
 
@@ -273,7 +273,7 @@ describe("WorkspaceDocument fragments and sizes", () => {
 
   it("records a corner resize as one position-and-size change", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id, position: { x: 10, y: 20 } });
 
     workspace.updatePlacementGeometry(board.id, card.id, {
@@ -302,7 +302,7 @@ describe("WorkspaceDocument fragments and sizes", () => {
 describe("WorkspaceDocument trash", () => {
   it("hides trashed cards from boards but keeps their placements", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id });
 
     workspace.trashCard(card.id);
@@ -317,7 +317,7 @@ describe("WorkspaceDocument trash", () => {
 
   it("purges a card, its placements, content, title and edges", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const card = workspace.createCard({ boardId: board.id });
     const other = workspace.createCard({ boardId: board.id });
     workspace.addEdge({ boardId: board.id, source: card.id, target: other.id });
@@ -348,8 +348,8 @@ describe("WorkspaceDocument trash", () => {
 describe("WorkspaceDocument edges", () => {
   it("only draws edges whose endpoints are placed on the board", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
-    const other = workspace.createBoard();
+    const board = workspace.createView();
+    const other = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     const edge = workspace.addEdge({ boardId: board.id, source: a.id, target: b.id });
@@ -369,7 +369,7 @@ describe("WorkspaceDocument edges", () => {
 
   it("hides edges that touch a trashed card", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     workspace.addEdge({ boardId: board.id, source: a.id, target: b.id });
@@ -383,7 +383,7 @@ describe("WorkspaceDocument edges", () => {
 
   it("stores where a label sits along the link, clamped, and clears it", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     const edge = workspace.addEdge({ boardId: board.id, source: a.id, target: b.id });
@@ -408,7 +408,7 @@ describe("WorkspaceDocument edges", () => {
 
   it("refuses self links and supports reconnection and reversal", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     const c = workspace.createCard({ boardId: board.id });
@@ -517,7 +517,7 @@ describe("WorkspaceDocument undo", () => {
 
   it("undoes and redoes structure changes", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard({ id: "board-1" });
+    const board = workspace.createView({ id: "board-1" });
     const card = workspace.createCard({ id: "card-1", boardId: board.id });
     step(workspace);
     workspace.updatePlacementPosition(board.id, card.id, { x: 40, y: 60 });
@@ -532,7 +532,7 @@ describe("WorkspaceDocument undo", () => {
 
   it("undoes an unplace, a trash and a connector move", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard({ id: "board-1" });
+    const board = workspace.createView({ id: "board-1" });
     const card = workspace.createCard({ boardId: board.id, id: "card-1" });
     const [connector] = card.connectors;
     if (!connector) throw new Error("expected a connector");
@@ -562,7 +562,7 @@ describe("WorkspaceDocument undo", () => {
     const docB = new LoroDoc();
     const a = new WorkspaceDocument(docA);
     const b = new WorkspaceDocument(docB);
-    const board = a.createBoard({ id: "board-1" });
+    const board = a.createView({ id: "board-1" });
     const card = a.createCard({ id: "card-1", boardId: board.id });
     const [connector] = card.connectors;
     if (!connector) throw new Error("expected a connector");
@@ -594,7 +594,7 @@ describe("WorkspaceDocument.observe", () => {
       changes.push(`${change.section}:${change.action}:${change.key}`);
     });
 
-    const board = workspace.createBoard({ id: "b1" });
+    const board = workspace.createView({ id: "b1" });
     const card = workspace.createCard({ id: "c1", boardId: board.id });
     workspace.trashCard(card.id);
     stop();
@@ -602,7 +602,7 @@ describe("WorkspaceDocument.observe", () => {
 
     expect(changes).toEqual(
       expect.arrayContaining([
-        "boards:add:b1",
+        "views:add:b1",
         "cards:add:c1",
         "placements:add:b1/c1",
         "cards:update:c1",
@@ -625,7 +625,7 @@ describe("WorkspaceDocument concurrency", () => {
     const docB = new LoroDoc();
     const a = new WorkspaceDocument(docA);
     const b = new WorkspaceDocument(docB);
-    const board = a.createBoard({ id: "board-1" });
+    const board = a.createView({ id: "board-1" });
     const card = a.createCard({ id: "card-1", boardId: board.id });
     sync(docA, docB);
     return { docA, docB, a, b, card };
@@ -716,7 +716,7 @@ describe("WorkspaceDocument concurrency", () => {
 
   it("keeps record identity until that record changes", () => {
     const workspace = new WorkspaceDocument();
-    const board = workspace.createBoard();
+    const board = workspace.createView();
     const a = workspace.createCard({ boardId: board.id });
     const b = workspace.createCard({ boardId: board.id });
     const [connector] = a.connectors;

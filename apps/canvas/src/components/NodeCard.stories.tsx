@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Card, CardType } from "@suite/graph";
-import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
 import { NodeCard } from "./NodeCard";
 
@@ -37,13 +36,6 @@ const meta = {
   title: "Components/NodeCard",
   component: NodeCard,
   parameters: { layout: "centered" },
-  decorators: [
-    (Story) => (
-      <ReactFlowProvider>
-        <Story />
-      </ReactFlowProvider>
-    ),
-  ],
   tags: ["autodocs"],
 } satisfies Meta<typeof NodeCard>;
 

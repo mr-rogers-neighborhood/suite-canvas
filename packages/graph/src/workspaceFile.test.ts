@@ -11,8 +11,8 @@ import {
 function workspace() {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
-  workspace.renameBoard(board.id, "Research");
+  const board = workspace.ensureView();
+  workspace.renameView(board.id, "Research");
   workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
   workspace.createTag({ name: "reading" });
   workspace.addField("note", { name: "Status", kind: "text" });
@@ -30,7 +30,7 @@ describe("workspace file", () => {
 
     const { workspace: restored, file: parsed } = readWorkspaceFile(json);
     expect(parsed.workspaceId).toBe("ws-1");
-    expect(restored.listBoards().map((board) => board.name)).toEqual(["Research"]);
+    expect(restored.listViews().map((board) => board.name)).toEqual(["Research"]);
     expect(restored.getCard("c1")?.id).toBe("c1");
     expect(restored.listTags().map((tag) => tag.name)).toEqual(["reading"]);
   });

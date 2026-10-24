@@ -15,7 +15,7 @@
  *
  * The DOM half's *content* is a pluggable slot renderer (`setSuiteCardSlotRenderer`):
  * - `createWorkspaceCardSlotRenderer()` (production) mounts the existing
- *   `SceneCardView`/`NodeCard` shell for the live card named by this object's
+ *   `CardSurface`/`NodeCard` shell for the live card named by this object's
  *   `cardId` prop, read-only. It reads the workspace document and writes
  *   nothing; ICE supplies geometry only.
  * - `createNodeCardSlotRenderer()` (the `suite-card-lab.html` harness) mints a

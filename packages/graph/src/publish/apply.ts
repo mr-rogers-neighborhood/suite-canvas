@@ -272,7 +272,7 @@ function applyChange(
       if (value.kind !== "create-section") return false;
       const section = value.section;
       if (source.getSection(section.id)) return false;
-      if (!source.getBoard(section.boardId)) return false;
+      if (!source.getView(section.boardId)) return false;
       source.createSection({
         id: section.id,
         boardId: section.boardId,
@@ -283,7 +283,7 @@ function applyChange(
         height: section.height,
         ...(section.color ? { color: section.color } : {}),
       });
-      const fields = source.doc.getMap(WorkspaceDocument.SECTIONS_KEY).get(section.id);
+      const fields = source.doc.getMap(WorkspaceDocument.BOARD_KEY).get(section.id);
       if (isMap(fields)) fields.set("z", section.z);
       return true;
     }
@@ -292,7 +292,7 @@ function applyChange(
       if (value.kind !== "create-edge") return false;
       const edge = value.edge;
       if (source.getEdge(edge.id)) return false;
-      if (!source.getBoard(edge.boardId)) return false;
+      if (!source.getView(edge.boardId)) return false;
       if (!source.getCard(edge.source) || !source.getCard(edge.target)) return false;
       source.setEdge(edge);
       return true;

@@ -22,7 +22,7 @@ function addText(parent: LoroMap, text: string): void {
 function fixture(): WorkspaceDocument {
   const workspace = new WorkspaceDocument();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
   addText(workspace.getTitle("c1"), "Grading notes");
   addText(addNode(workspace.getContent("c1"), "paragraph"), "colour grading in the second pass");
@@ -65,7 +65,7 @@ describe("ViewsBar", () => {
     fireEvent.change(input, { target: { value: "Grading pass" } });
     fireEvent.click(screen.getByTestId("views-save-commit"));
 
-    const [saved] = workspace.listViews();
+    const [saved] = workspace.listSavedViews();
     expect(saved?.name).toBe("Grading pass");
     expect(saved?.query).toMatchObject({
       text: "grading",
@@ -93,7 +93,7 @@ describe("ViewsBar", () => {
 
   it("should rename and delete a view inline, with delete confirmed", () => {
     const workspace = fixture();
-    const saved = workspace.createView({
+    const saved = workspace.createSavedView({
       name: "Drafts",
       query: {
         text: "grading",
@@ -112,19 +112,19 @@ describe("ViewsBar", () => {
     const input = screen.getByTestId("views-rename-input");
     fireEvent.change(input, { target: { value: "Colour" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(workspace.getView(saved.id)?.name).toBe("Colour");
+    expect(workspace.getSavedView(saved.id)?.name).toBe("Colour");
 
     fireEvent.click(screen.getByTestId(`views-delete-${saved.id}`));
     // Nothing is deleted until the inline confirmation is used.
-    expect(workspace.getView(saved.id)?.name).toBe("Colour");
+    expect(workspace.getSavedView(saved.id)?.name).toBe("Colour");
     fireEvent.click(screen.getByTestId("views-delete-confirm"));
-    expect(workspace.listViews()).toEqual([]);
+    expect(workspace.listSavedViews()).toEqual([]);
     expect(screen.getByTestId("views-empty")).toBeInTheDocument();
   });
 
   it("should exit the active view when its own record is deleted", () => {
     const workspace = fixture();
-    const saved = workspace.createView({
+    const saved = workspace.createSavedView({
       name: "Drafts",
       query: {
         text: "grading",
@@ -149,7 +149,7 @@ describe("ViewsBar", () => {
 
   it("should not offer saving, renaming or deleting to a viewer", () => {
     const workspace = fixture();
-    const saved = workspace.createView({
+    const saved = workspace.createSavedView({
       name: "Drafts",
       query: {
         text: "grading",
@@ -172,7 +172,7 @@ describe("ViewsBar", () => {
     // A viewer may still open the saved query read-only.
     fireEvent.click(screen.getByTestId(`views-item-${saved.id}`));
     expect(useUiStore.getState().activeViewId).toBe(saved.id);
-    expect(workspace.listViews()).toHaveLength(1);
+    expect(workspace.listSavedViews()).toHaveLength(1);
   });
 
   it("should offer no save action when the library has no query or facets", () => {
@@ -195,7 +195,7 @@ describe("ViewsBar", () => {
       sectionIds: [],
       properties: {},
     };
-    const saved = workspace.createView({
+    const saved = workspace.createSavedView({
       name: "Colour",
       query: {
         text: "grading",

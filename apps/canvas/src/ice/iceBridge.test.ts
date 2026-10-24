@@ -932,7 +932,7 @@ describe("iceBridge create, delete and edges", () => {
 describe("iceBridge workspace adapter", () => {
   function createDoc() {
     const doc = new WorkspaceDocument(new LoroDoc());
-    doc.createBoard({ id: "board-1", name: "Board" });
+    doc.createView({ id: "board-1", name: "Board" });
     doc.createCard({ id: "card-a", boardId: "board-1", position: { x: 10, y: 10 } });
     return doc;
   }

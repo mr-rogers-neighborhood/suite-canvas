@@ -86,9 +86,7 @@ export function PinsPanel({ workspace, activeBoardId, onFocusPin, canManage }: P
   // `blur` follows Escape on some browsers; the ref makes the cancel win.
   const cancelled = useRef<string | null>(null);
 
-  const boardNames = new Map(
-    (workspace?.listBoards() ?? []).map((board) => [board.id, board.name]),
-  );
+  const boardNames = new Map((workspace?.listViews() ?? []).map((board) => [board.id, board.name]));
   const groups = groupPinsByBoard(pins, boardNames, activeBoardId);
 
   const startRename = (pin: Pin) => {

@@ -44,6 +44,7 @@ const edge = (id: string): GraphEdge => ({
 function snapshot(cards: Card[], base?: WorkspaceSnapshot): WorkspaceSnapshot {
   return {
     boards: base?.boards ?? [],
+    views: base?.views ?? [],
     cards,
     placements: base?.placements ?? cards.map((entry) => placement(entry.id)),
     edges: base?.edges ?? [edge("e1")],

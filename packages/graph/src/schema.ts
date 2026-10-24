@@ -12,12 +12,16 @@ export const fieldKinds = [
   "card",
   "board",
 ] as const;
-export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
+export const boardColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
+/** @deprecated Boards own the colour palette now; the name is kept for older imports. */
+export const sectionColors = boardColors;
 
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
 export const fieldKindSchema = z.enum(fieldKinds);
-export const sectionColorSchema = z.enum(sectionColors);
+export const boardColorSchema = z.enum(boardColors);
+/** @deprecated Use `boardColorSchema`. */
+export const sectionColorSchema = boardColorSchema;
 
 export const entityIdSchema = z.string().min(1);
 
@@ -36,9 +40,52 @@ export const connectorSchema = z.object({
   y: z.number().min(0).max(1),
 });
 
-export const boardSchema = z.object({
+/**
+ * A View is a camera and nothing else (ADR-0039). It carries no content: the
+ * same Boards are on every View, and switching a View only moves the camera.
+ * `camera` reads as `{x: 0, y: 0, zoom: 1}` for a View that has never moved.
+ */
+export const viewCameraSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  zoom: z.number().positive(),
+});
+
+export const viewSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
+  camera: viewCameraSchema,
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+});
+
+/** The camera a View starts on: the world origin, unzoomed. */
+export const DEFAULT_VIEW_CAMERA = { x: 0, y: 0, zoom: 1 } as const;
+
+/** A Board's rectangle, in its parent's frame (the View's plane when top-level). */
+export const boardRectSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
+/**
+ * A Board is a titled, coloured frame holding cards and other Boards
+ * (ADR-0039). It replaces the Section: a Section was geometry only, a Board is
+ * a container, so a placement names the Board that owns its card.
+ *
+ * `parentBoardId` is the containing Board. A top-level Board names the View
+ * that plants it, whose root board is implicit and shares the View's id.
+ */
+export const boardSchema = z.object({
+  id: entityIdSchema,
+  name: z.string(),
+  color: boardColorSchema.optional(),
+  rect: boardRectSchema,
+  /** Paint order among sibling Boards; cards always paint above a Board. */
+  z: z.number().finite(),
+  parentBoardId: entityIdSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -138,7 +185,11 @@ export const cardSchema = z.object({
   properties: z.record(z.string(), propertyValueSchema),
 });
 
-/** Where a card sits on a board. One placement per (board, card) pair. */
+/**
+ * Where a card sits. `boardId` names the Board that owns the card (ADR-0039);
+ * a Board's own id, or the View id whose implicit root Board is the plane the
+ * card lives on. One placement per (board, card) pair.
+ */
 export const placementSchema = z.object({
   boardId: entityIdSchema,
   cardId: entityIdSchema,
@@ -153,8 +204,9 @@ export const placementSchema = z.object({
 });
 
 /**
- * A labeled region on one board. Sections never own cards: membership is
- * derived from placement geometry, so deleting a section cannot delete one.
+ * @deprecated The Section is retired (ADR-0039): a Section became a Board, and
+ * this shape survives only as the read-only projection the React Flow and
+ * scene surfaces still consume (`listSections`). It is never stored.
  */
 export const sectionSchema = z.object({
   id: entityIdSchema,
@@ -192,7 +244,10 @@ export const graphEdgeSchema = z.object({
 });
 
 export type Connector = z.infer<typeof connectorSchema>;
+export type View = z.infer<typeof viewSchema>;
+export type ViewCamera = z.infer<typeof viewCameraSchema>;
 export type Board = z.infer<typeof boardSchema>;
+export type BoardRect = z.infer<typeof boardRectSchema>;
 export type Card = z.infer<typeof cardSchema>;
 export type CardType = z.infer<typeof cardTypeSchema>;
 export type Tag = z.infer<typeof tagSchema>;
@@ -201,8 +256,11 @@ export type FieldKind = z.infer<typeof fieldKindSchema>;
 export type SelectOption = z.infer<typeof selectOptionSchema>;
 export type PropertyValue = z.infer<typeof propertyValueSchema>;
 export type Placement = z.infer<typeof placementSchema>;
+/** @deprecated A Board replaces the Section; this is the derived compat shape. */
 export type Section = z.infer<typeof sectionSchema>;
+/** @deprecated Use `BoardColor`. */
 export type SectionColor = z.infer<typeof sectionColorSchema>;
+export type BoardColor = z.infer<typeof boardColorSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;

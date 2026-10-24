@@ -1,5 +1,4 @@
 import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/graph";
-import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { PeerNameTag } from "./PeerNameTag";
@@ -90,32 +89,24 @@ function isAnchor(position: Point): boolean {
   return CONNECTOR_ANCHORS.some((anchor) => anchor.x === position.x && anchor.y === position.y);
 }
 
-/**
- * React Flow routes an edge according to the handle's declared side. Connectors
- * can sit anywhere on the perimeter, so the side is derived from the position —
- * otherwise every edge would enter vertically and hook into the dot.
- */
 /** The card side a connector sits on, so links leave it perpendicular to the edge. */
-export function sideOf(position: Point): Position {
+export type ConnectorSide = "top" | "right" | "bottom" | "left";
+
+/** A connector can sit anywhere on the perimeter, so its side is derived. */
+export function sideOf(position: Point): ConnectorSide {
   const dx = position.x - 0.5;
   const dy = position.y - 0.5;
-  if (Math.abs(dy) >= Math.abs(dx)) {
-    return dy <= 0 ? Position.Top : Position.Bottom;
-  }
-  return dx <= 0 ? Position.Left : Position.Right;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy <= 0 ? "top" : "bottom";
+  return dx <= 0 ? "left" : "right";
 }
 
-const SIDE_NAME: Record<Position, string> = {
-  [Position.Top]: "top",
-  [Position.Right]: "right",
-  [Position.Bottom]: "bottom",
-  [Position.Left]: "left",
-};
-
 /**
- * A node connector. The dot is a React Flow handle, so dragging it draws a
- * connection; the dashed ring underneath is a separate grab handle used to
- * reposition the connector along the card perimeter.
+ * A card connector: the dot that selects it, plus the dashed grab ring that
+ * repositions it along the card perimeter. The position is a fraction of the
+ * card box (`connector.x`/`connector.y` in 0..1), so the face needs nothing
+ * from the surface that mounts it but the box it already lives in. Routing the
+ * link is the surface's job: `sideOf` and `data-side` tell it which edge to
+ * leave from.
  */
 export function Connector({
   connector,
@@ -136,7 +127,6 @@ export function Connector({
   const [livePosition, setLivePosition] = useState<Point | null>(null);
   const [peerLive, setPeerLive] = useState<Point | null>(null);
   const shell = useRef<HTMLDivElement | null>(null);
-  const updateNodeInternals = useUpdateNodeInternals();
   const movingPeer = movingPeers[0];
   const peerIndicator = movingPeer
     ? { user: movingPeer, state: "moving" as const }
@@ -148,7 +138,7 @@ export function Connector({
   const side = sideOf(position);
 
   // A peer's drag arrives as a stream of targets; ease toward the newest one so
-  // the connector glides, and re-measure so their links follow it.
+  // the connector glides instead of jumping between throttled updates.
   const peerTarget = useRef<Point | null>(null);
   const easedPeer = useRef<Point | null>(null);
   const peerFrame = useRef<number | null>(null);
@@ -178,12 +168,11 @@ export function Connector({
           };
       easedPeer.current = next;
       setPeerLive(next);
-      updateNodeInternals(nodeId);
       peerFrame.current = settled ? null : requestAnimationFrame(tick);
     };
 
     peerFrame.current = requestAnimationFrame(tick);
-  }, [peerPosition, nodeId, updateNodeInternals]);
+  }, [peerPosition]);
 
   useEffect(
     () => () => {
@@ -207,22 +196,10 @@ export function Connector({
       onMove?.({ x: connector.x, y: connector.y });
       let lastSent = performance.now();
 
-      // Edges are measured from the handle's DOM box, so re-measure while the
-      // connector moves; otherwise links would only catch up on release.
-      let frame: number | null = null;
-      const scheduleRemeasure = () => {
-        if (frame !== null) return;
-        frame = requestAnimationFrame(() => {
-          frame = null;
-          updateNodeInternals(nodeId);
-        });
-      };
-
       const move = (moveEvent: PointerEvent) => {
         const projected = projectToPerimeter(rect, moveEvent.clientX, moveEvent.clientY);
         const next = magnetize(projected, rect);
         setLivePosition(next);
-        scheduleRemeasure();
 
         const now = performance.now();
         if (now - lastSent < MOVE_THROTTLE_MS) return;
@@ -239,8 +216,6 @@ export function Connector({
         onMove?.(finalPosition);
         onMoveEnd(connector.id, finalPosition);
         onMoveFinished?.();
-        if (frame !== null) cancelAnimationFrame(frame);
-        updateNodeInternals(nodeId);
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
       };
@@ -248,17 +223,7 @@ export function Connector({
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     },
-    [
-      connector.id,
-      connector.x,
-      connector.y,
-      nodeId,
-      onMove,
-      onMoveEnd,
-      onMoveFinished,
-      onMoveStart,
-      updateNodeInternals,
-    ],
+    [connector.id, connector.x, connector.y, onMove, onMoveEnd, onMoveFinished, onMoveStart],
   );
 
   return (
@@ -269,10 +234,11 @@ export function Connector({
       data-selected={selected ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
       data-anchored={isAnchor(position) ? "true" : "false"}
-      data-side={SIDE_NAME[side]}
+      data-side={side}
+      data-node-id={nodeId}
       data-peer={movingPeer ? "true" : undefined}
       data-peer-selected={peerIndicator ? "true" : undefined}
-      className="nodrag nopan absolute z-20"
+      className="absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
       {peerIndicator ? (
@@ -305,10 +271,9 @@ export function Connector({
         />
       ) : null}
 
-      <Handle
-        id={connector.id}
-        type="source"
-        position={side}
+      <button
+        type="button"
+        aria-label="Select connector"
         data-testid="connector-dot"
         className="connector-dot"
         style={{

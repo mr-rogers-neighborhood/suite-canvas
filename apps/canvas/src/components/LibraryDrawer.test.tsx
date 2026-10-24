@@ -28,7 +28,7 @@ interface Fixture {
 function fixture(): Fixture {
   const workspace = new Document();
   workspace.ensureDefaultTypes();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
 
   workspace.createCard({ id: "c1", boardId: board.id, position: { x: 0, y: 0 } });
   addText(workspace.getTitle("c1"), "Mastering the timeline");
@@ -151,7 +151,7 @@ describe("LibraryDrawer search", () => {
     expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
 
     // A card added to the live document after that first build.
-    const boardId = workspace.listBoards()[0]?.id ?? "";
+    const boardId = workspace.listViews()[0]?.id ?? "";
     workspace.createCard({ id: "c3", boardId, position: { x: 640, y: 0 } });
     addText(workspace.getTitle("c3"), "Freshly written retrospective");
     workspace.doc.commit({ origin: "test" });

@@ -1,4 +1,3 @@
-import { ReactFlowProvider } from "@xyflow/react";
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ShareUnavailable } from "./components/ShareUnavailable";
@@ -189,11 +188,7 @@ async function boot() {
     });
   }
 
-  render(
-    <ReactFlowProvider>
-      <App />
-    </ReactFlowProvider>,
-  );
+  render(<App />);
 }
 
 void boot();

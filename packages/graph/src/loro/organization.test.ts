@@ -37,7 +37,7 @@ function writeTitle(workspace: WorkspaceDocument, cardId: string, text: string) 
 
 function setup() {
   const workspace = new WorkspaceDocument();
-  const board = workspace.ensureBoard();
+  const board = workspace.ensureView();
   workspace.ensureDefaultTypes();
   const type = workspace.createType({ name: "Task" });
   const field = workspace.addField(type.id, { name: "Status", kind: "text" });
@@ -53,7 +53,7 @@ function setup() {
   writeTitle(workspace, card.id, "Plan the week");
   writeBody(workspace, card.id, "Monday");
 
-  const other = workspace.createBoard({ name: "Ideas" });
+  const other = workspace.createView({ name: "Ideas" });
   return { workspace, board, other, type, field, tag, card };
 }
 

@@ -70,6 +70,7 @@ import { TypeTable } from "../components/TypeTable";
 import { getSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { IceContextMenu } from "./IceContextMenu";
+import { applySuiteAmbient, type SuiteAmbientDesk } from "./iceAmbient";
 import { workspaceWriter } from "./iceBridge";
 import {
   type FlightCamera,
@@ -1151,7 +1152,13 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
         if (!active) return;
         setEngineState(status.state);
         clearPendingFailure();
-        if (status.state === "ready") frameDemo();
+        if (status.state === "ready") {
+          // Suite's own light: a cloud plate instead of the desk's hard tree
+          // wedge, drifting on the engine's wind clock (no per-frame work of
+          // ours). The first `ready` is the first frame the ground exists.
+          quietly(() => applySuiteAmbient(layer as SuiteAmbientDesk));
+          frameDemo();
+        }
         if (status.state !== "failed") return;
         pendingFailure.current = setTimeout(() => {
           pendingFailure.current = undefined;
@@ -1516,8 +1523,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
 
     const projection = new CardProjection<Entity>({
       spawn: (placement: CanonicalPlacement) => {
-        // The rung follows the card's own extent, so resizing is the control.
-        const entity = engine.ops.spawnWidget(cardTypeForScale(scaleForExtent(placement)), {
+        // The rung is the card's own: a reflow resize stores one, and every
+        // other card derives it from its extent. Same function either way, so a
+        // freshly dropped card and a reflowed one cannot disagree.
+        const entity = engine.ops.spawnWidget(cardTypeForScale(cardScaleOf(placement)), {
           x: placement.x,
           y: placement.y,
           ...(placement.width !== undefined && placement.height !== undefined
@@ -1549,10 +1558,15 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       // Text and the type rung both need a replace rather than a move: a
       // resize that crosses a rung changes the *kind*, and a card cannot change
       // kind in place.
-      keyOf: (placement) => `${placement.text ?? ""}\u001f${scaleForExtent(placement)}`,
+      keyOf: (placement) => `${placement.text ?? ""}\u001f${cardScaleOf(placement)}`,
     });
     for (const [entity, slot] of seed.entitySlots) {
       projection.register(entity, slot.cardId, slot.boardId, faceText(slot.cardId));
+    }
+
+    /** The rung a card's writing is laid out at: stored if a reflow pinned it. */
+    function cardScaleOf(placement: CanonicalPlacement): number {
+      return placement.typeScale ?? scaleForExtent(placement);
     }
 
     /** Cards only — the projection the band suppresses while the graph is drawn. */

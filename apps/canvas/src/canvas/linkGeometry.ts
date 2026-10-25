@@ -183,6 +183,45 @@ export function rectContains(rect: LinkRect, point: LinkAnchor): boolean {
   );
 }
 
+/**
+ * True when a link's straight run crosses a box, which is what a selection box
+ * catches. The drawn path bends a little, but the anchors are what a reader aims
+ * at: a box drawn over the line's ends or across its span both count.
+ */
+export function segmentCrossesRect(from: LinkAnchor, to: LinkAnchor, rect: LinkRect): boolean {
+  if (rectContains(rect, from) || rectContains(rect, to)) return true;
+  const left = rect.x;
+  const right = rect.x + rect.width;
+  const top = rect.y;
+  const bottom = rect.y + rect.height;
+  // Liang–Barsky: clip the segment to each edge's half-plane in turn.
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  let enter = 0;
+  let exit = 1;
+  const edges: readonly [number, number][] = [
+    [-dx, from.x - left],
+    [dx, right - from.x],
+    [-dy, from.y - top],
+    [dy, bottom - from.y],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) {
+      if (t > exit) return false;
+      if (t > enter) enter = t;
+    } else {
+      if (t < enter) return false;
+      if (t < exit) exit = t;
+    }
+  }
+  return true;
+}
+
 /** The topmost endpoint under a point, so a dropped link knows what it hit. */
 export function endpointAtPoint(
   point: LinkAnchor,

@@ -10,6 +10,7 @@ import {
   linkAnchors,
   nearestSideAnchor,
   rectContains,
+  segmentCrossesRect,
 } from "./linkGeometry";
 
 const BOARD = "board-1";
@@ -289,5 +290,18 @@ describe("rectContains and endpointAtPoint", () => {
 
   it("returns null on empty canvas", () => {
     expect(endpointAtPoint({ x: 5000, y: 5000 }, BOARD, scene())).toBeNull();
+  });
+
+  it("catches a link whose ends or span a box covers", () => {
+    const box = { x: 100, y: 100, width: 100, height: 50 };
+    // Both ends inside.
+    expect(segmentCrossesRect({ x: 110, y: 110 }, { x: 190, y: 140 }, box)).toBe(true);
+    // One end inside.
+    expect(segmentCrossesRect({ x: 50, y: 50 }, { x: 150, y: 120 }, box)).toBe(true);
+    // The span crosses the box with both ends outside.
+    expect(segmentCrossesRect({ x: 0, y: 125 }, { x: 400, y: 125 }, box)).toBe(true);
+    // A line that passes beside the box is untouched.
+    expect(segmentCrossesRect({ x: 0, y: 300 }, { x: 400, y: 300 }, box)).toBe(false);
+    expect(segmentCrossesRect({ x: 0, y: 0 }, { x: 90, y: 90 }, box)).toBe(false);
   });
 });

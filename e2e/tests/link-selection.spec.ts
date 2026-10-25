@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { beginMarquee, finishMarquee } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
 import { cards } from "./support";
 
@@ -180,4 +181,28 @@ test("a selected section link's ends are draggable onto another dot", async ({ p
   await expect(page.getByTestId("link-inspector")).toBeVisible();
   await expect(page.getByTestId("link-end-source")).toContainText("dot 2 of 4");
   await expect(page.getByTestId("link-end-target")).toContainText("dot 4 of 4");
+});
+
+test("a marquee across a section link selects it with the entities it touches", async ({
+  page,
+}) => {
+  await boardWithSectionLink(page, "marquee");
+
+  // A box drawn across the middle of the line, avoiding both of its ends: only
+  // the span of the link is inside it.
+  const mid = await pointOnLine(page, '[data-testid="section-link-hit"]');
+  await beginMarquee(page, { x: mid.x - 6, y: mid.y - 90 }, { x: mid.x + 6, y: mid.y + 90 });
+  await finishMarquee(page);
+  await expect(sectionLink(page)).toHaveClass(/is-selected/);
+
+  // Delete takes it, exactly as clicking it would.
+  await page.keyboard.press("Delete");
+  await expect(sectionLink(page)).toHaveCount(0);
+
+  // A box that crosses no link leaves the selection empty.
+  const empty = { x: 40, y: 120 };
+  await beginMarquee(page, empty, { x: empty.x + 40, y: empty.y + 40 });
+  await finishMarquee(page);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+  await expect(sectionLink(page).and(page.locator(".is-selected"))).toHaveCount(0);
 });

@@ -57,6 +57,7 @@ import {
   type LinkEndpointRef,
   type LinkScene,
   linkAnchors,
+  segmentCrossesRect,
 } from "./linkGeometry";
 import { linkEndConnector } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
@@ -894,6 +895,12 @@ export function CanvasBoard() {
    */
   const marqueeScope = useRef<{ sectionId: string; applied: boolean } | null>(null);
   /**
+   * The box React Flow is drawing, in flow coordinates. React Flow clears its
+   * own rectangle on pointerup, so this is the only copy left when the gesture
+   * closes — and a link the box crossed is only knowable from the box.
+   */
+  const marqueeBox = useRef<Rect | null>(null);
+  /**
    * The rendered (eased) positions of this client's drag. React Flow paints the
    * pointer sample; this eases it, so the board does not step on a dropped
    * frame. `null` outside a drag and when reduced motion is requested.
@@ -1151,7 +1158,20 @@ export function CanvasBoard() {
    * The final selection is React Flow's, so the store is reconciled once, here,
    * instead of on every pointer frame the box reports.
    */
+  /** Section links a box covers. They are drawn by the canvas, so React Flow
+   * never reports them; the box is what decides they are selected. */
+  const sectionLinksInBox = useCallback(
+    (rect: { x: number; y: number; width: number; height: number }) =>
+      projectedLinks.sections
+        .filter((link) => segmentCrossesRect(link.anchors.source, link.anchors.target, rect))
+        .map((link) => link.edge.id),
+    [projectedLinks],
+  );
+
   const endMarquee = useCallback(() => {
+    const box = marqueeBox.current;
+    marqueeBox.current = null;
+    const boxedLinks = box ? sectionLinksInBox(box) : [];
     // React Flow clears its own selection state in the pane's pointerup handler,
     // which never runs when the pointer is released outside the pane or over a
     // panel. Left set, `userSelectionActive` keeps the pane in selection mode and
@@ -1173,7 +1193,23 @@ export function CanvasBoard() {
     paintedSelection.current = ids.join(",");
     setSelectedNodeIds(ids);
     applyBoardNodes(ids);
-  }, [applyBoardNodes, liveSelectedIds, releaseMarqueeScope, setSelectedNodeIds, store]);
+    // The marquee owns the selection: a box that crosses a section link picks it
+    // up, and a box that crosses none drops the ones picked before.
+    sectionLinkSelection.current = boxedLinks;
+    const flowEdgeIds = store
+      .getState()
+      .edges.filter((edge) => edge.selected)
+      .map((edge) => edge.id);
+    setSelectedEdgeIds([...new Set([...flowEdgeIds, ...boxedLinks])]);
+  }, [
+    applyBoardNodes,
+    liveSelectedIds,
+    releaseMarqueeScope,
+    sectionLinksInBox,
+    setSelectedEdgeIds,
+    setSelectedNodeIds,
+    store,
+  ]);
 
   // The listener effect must not re-subscribe when `endMarquee` changes: its
   // cleanup used to drop `marqueeActive`, so the first rebuild during a gesture
@@ -1492,20 +1528,24 @@ export function CanvasBoard() {
       setSelectionBox(null);
       return;
     }
-    const now = performance.now();
-    if (now - lastBoxSent.current < DRAG_THROTTLE_MS) return;
-    lastBoxSent.current = now;
     const start = screenToFlowPosition({ x: selectionRect.x, y: selectionRect.y });
     const end = screenToFlowPosition({
       x: selectionRect.x + selectionRect.width,
       y: selectionRect.y + selectionRect.height,
     });
-    setSelectionBox({
+    const box = {
       x: Math.min(start.x, end.x),
       y: Math.min(start.y, end.y),
       width: Math.abs(end.x - start.x),
       height: Math.abs(end.y - start.y),
-    });
+    };
+    // Kept unthrottled: the closing gesture reads this, and a frame that lands
+    // inside the throttle window is still part of the box the user drew.
+    marqueeBox.current = box;
+    const now = performance.now();
+    if (now - lastBoxSent.current < DRAG_THROTTLE_MS) return;
+    lastBoxSent.current = now;
+    setSelectionBox(box);
   }, [selectionRect, screenToFlowPosition, setSelectionBox]);
 
   // The scope a box began under: every card outside the section loses its
@@ -3078,6 +3118,7 @@ export function CanvasBoard() {
         selectionMode={SelectionMode.Partial}
         onSelectionStart={() => {
           marqueeActive.current = true;
+          marqueeBox.current = null;
           const press = marqueePress.current;
           const inside = press ? sectionsAt(press, boardSections)[0] : undefined;
           marqueeScope.current = inside ? { sectionId: inside.id, applied: false } : null;

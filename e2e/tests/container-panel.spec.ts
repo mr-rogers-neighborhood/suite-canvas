@@ -75,7 +75,9 @@ test("a portal's header opens the container panel, and its board is one action a
   await expect(cards(page)).toHaveCount(2);
   await boardWithPortal(page);
 
-  await page.getByTestId("portal-info").click();
+  // Clicking the miniature — the part people aim at — opens the panel. It used to
+  // be inert: only a thin header strip responded.
+  await page.getByTestId("portal-node").click();
   await expect(panel(page)).toBeVisible();
   await expect(panel(page)).toHaveAttribute("data-kind", "portal");
   await expect(page.getByTestId("container-title")).toHaveText("Board 2");
@@ -89,7 +91,7 @@ test("a portal's header opens the container panel, and its board is one action a
   await expect(page.getByTestId("container-color-rose")).toHaveAttribute("aria-pressed", "true");
   await page.reload();
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("portal-info").click();
+  await page.getByTestId("portal-node").click();
   await expect(page.getByTestId("container-color-rose")).toHaveAttribute("aria-pressed", "true");
 
   // Open board is the panel's primary action: it steps through the portal.
@@ -159,4 +161,37 @@ test("closing the container panel leaves nothing open", async ({ page }) => {
     .click({ position: { x: 40, y: 14 } });
   await expect(page.getByTestId("card-inspector")).toBeVisible();
   await expect(panel(page)).toHaveCount(0);
+});
+
+test("a portal opens its panel on a click, not on a drag, and still walks through on a double click", async ({
+  page,
+}) => {
+  await page.goto(workspaceUrl("gesture"));
+  await expect(cards(page)).toHaveCount(2);
+  await boardWithPortal(page);
+  const portal = page.getByTestId("portal-node");
+  await expect(portal).toBeVisible();
+  // Nothing selected: no drawer.
+  await expect(panel(page)).toHaveCount(0);
+
+  // A drag moves the card and must not also open the drawer.
+  const before = await portal.boundingBox();
+  if (!before) throw new Error("portal is not measurable");
+  await page.mouse.move(before.x + before.width * 0.5, before.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width * 0.5 + 70, before.y + 58, { steps: 10 });
+  await page.mouse.up();
+  const after = await portal.boundingBox();
+  if (!after) throw new Error("portal vanished");
+  expect(Math.abs(after.y - before.y)).toBeGreaterThan(20);
+  await expect(panel(page)).toHaveCount(0);
+
+  // A plain click reads it.
+  await portal.click();
+  await expect(panel(page)).toBeVisible();
+
+  // And the doorway still works: a double click steps through, closing the panel
+  // with the board switch.
+  await portal.dblclick();
+  await expect(boardTabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
 });

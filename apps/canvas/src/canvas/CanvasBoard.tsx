@@ -1791,6 +1791,12 @@ export function CanvasBoard() {
 
       if (event.key === "Escape" && state.selectedSectionId) {
         state.selectSection(null);
+        state.closeContainerInspector();
+        return;
+      }
+
+      if (event.key === "Escape" && state.containerInspector) {
+        state.closeContainerInspector();
         return;
       }
 
@@ -2961,6 +2967,8 @@ export function CanvasBoard() {
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
           handleSelectSection(null);
+          // Empty canvas closes the drawer: nothing is selected any more.
+          useUiStore.getState().closeContainerInspector();
         }}
         onNodeClick={() => {
           // React Flow also reports a connector press as a node click, so this

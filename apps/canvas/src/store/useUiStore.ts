@@ -455,7 +455,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectSection: (selectedSectionId) =>
     set({
       selectedSectionId,
-      containerInspector: selectedSectionId ? { kind: "section", id: selectedSectionId } : null,
+      // Selecting a section opens its panel. Deselecting does not close the
+      // drawer by itself: a click on a portal card deselects the section on its
+      // way to opening the portal's own panel, and closing here would undo it a
+      // frame later. Closing is a pane click or Escape, which call
+      // `closeContainerInspector`.
+      ...(selectedSectionId
+        ? { containerInspector: { kind: "section", id: selectedSectionId } }
+        : {}),
       ...(selectedSectionId
         ? {
             selectedNodeIds: [],

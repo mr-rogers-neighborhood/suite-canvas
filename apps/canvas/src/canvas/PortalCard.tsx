@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
@@ -42,7 +43,7 @@ export interface PortalCardProps {
   height?: number | null;
   /** Double-click or Enter: the canvas plays the camera transition. */
   onOpen?: (() => void) | undefined;
-  /** Click on the header: read the portal in the container panel. */
+  /** A click anywhere on the card: read the portal in the container panel. */
   onOpenInfo?: (() => void) | undefined;
 }
 
@@ -64,6 +65,7 @@ export function PortalCard({
   onOpenInfo,
 }: PortalCardProps) {
   const names = peers.map((peer) => peer.name).join(", ");
+  const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
   const unavailable = boardName === null;
   const count = model.cardCount;
 
@@ -87,6 +89,19 @@ export function PortalCard({
         width: width ?? DEFAULT_PORTAL_SIZE.width,
         height: height ?? DEFAULT_PORTAL_SIZE.height,
       }}
+      onPointerDown={(event) => {
+        pointerOrigin.current = { x: event.clientX, y: event.clientY };
+      }}
+      // A click reads the portal, a double click walks through it — the same split
+      // a note has between its info click and its double click. Anywhere on the
+      // card, not just the header: the miniature is what people aim at.
+      onClick={(event) => {
+        const origin = pointerOrigin.current;
+        const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
+        // A drag moves the card; it does not also open a panel.
+        if (moved > 4) return;
+        onOpenInfo?.();
+      }}
       onDoubleClick={(event) => {
         if (unavailable) return;
         event.preventDefault();
@@ -101,21 +116,7 @@ export function PortalCard({
       }}
     >
       <span className="sr-only">Portal to </span>
-      {/* The header reads the portal, the body walks through it: the same split a
-          card has between its info click and its double-click. The overlay is not
-          a control: the portal itself is the button, and a nested one would be a
-          focus trap for anyone using assistive technology. */}
       <header className="portal-card__header">
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: the portal is the control; this is its header's hit area. */}
-        <span
-          data-testid="portal-info"
-          aria-hidden="true"
-          className="portal-card__info absolute inset-0 cursor-default"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenInfo?.();
-          }}
-        />
         <span aria-hidden="true" className="portal-card__glyph">
           {glyph}
         </span>

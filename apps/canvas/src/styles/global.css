@@ -1932,15 +1932,6 @@ body {
   padding: 0 2px;
 }
 
-/* The header's whole area reads the portal: an overlay button, so a click on the
-   name, the glyph or the avatars all open the same panel. It sits under the
-   avatars' own chrome but over the header's empty space. */
-.portal-card__info {
-  z-index: 1;
-  border-radius: 4px;
-  background: transparent;
-}
-
 .portal-card__glyph {
   flex: none;
   font-size: 12px;

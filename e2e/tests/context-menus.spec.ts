@@ -44,7 +44,7 @@ async function createNote(page: Page, title: string): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const point = await emptyCanvasPoint(page, attempt);
     await page.mouse.click(point.x, point.y, { button: "right" });
-    const newNote = page.getByRole("menuitem", { name: "New note" });
+    const newNote = page.getByRole("menuitem", { name: "New card" });
     // A click can land on a card that mounted after the scan; try elsewhere.
     if (!(await newNote.isVisible({ timeout: 800 }).catch(() => false))) {
       await page.keyboard.press("Escape");

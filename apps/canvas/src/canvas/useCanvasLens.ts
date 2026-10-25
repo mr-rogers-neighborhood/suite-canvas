@@ -32,13 +32,26 @@ export function useCanvasLens(): CanvasLens {
 
   const view = activeViewId === null ? null : (views.find((v) => v.id === activeViewId) ?? null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the snapshot is the invalidation signal; the query reads the document directly.
+  // The query reads the document directly, so what it must depend on are the
+  // collections it reads. Depending on the whole snapshot would rebuild the set
+  // whenever the snapshot object changed identity, and every consumer of the
+  // lens would repaint for no visible reason.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the collections are the invalidation signal.
   const cardIds = useMemo(() => {
     if (!view || !workspace) return NO_IDS;
     const query: ViewQuery = view.query;
     const result = runViewQuery(workspace, query, { boardId: activeBoardId });
     return new Set(result.cardIds);
-  }, [view, workspace, activeBoardId, snapshot]);
+  }, [
+    view,
+    workspace,
+    activeBoardId,
+    snapshot.cards,
+    snapshot.placements,
+    snapshot.sections,
+    snapshot.types,
+    snapshot.tags,
+  ]);
 
   // Consumers put this in effect dependencies, so its identity must only change
   // when the lens actually changes. A fresh object per render would re-run the
@@ -61,9 +74,9 @@ export function lensSelects(lens: CanvasLens, cardId: string): boolean {
 export function useLensReferenceRepair(active: boolean): void {
   const workspace = useCanvasStore((state) => state.workspace);
   const snapshot = useWorkspaceSnapshot();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new snapshot is what makes the repair worth re-running.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: new cards are what make the repair worth re-running.
   useEffect(() => {
     if (!active || !workspace) return;
     workspace.ensureReferences();
-  }, [active, workspace, snapshot]);
+  }, [active, workspace, snapshot.cards]);
 }

@@ -14,7 +14,7 @@ async function createCard(page: Page): Promise<void> {
   await page.mouse.click(board.x + board.width * 0.5, board.y + board.height * 0.75, {
     button: "right",
   });
-  await page.getByRole("menuitem", { name: "New note" }).click();
+  await page.getByRole("menuitem", { name: "New card" }).click();
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.press("Escape");
 }

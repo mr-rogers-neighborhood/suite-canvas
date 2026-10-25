@@ -44,7 +44,7 @@ async function createNote(page: Page, title: string): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const point = await emptyCanvasPoint(page, attempt);
     await page.mouse.click(point.x, point.y, { button: "right" });
-    const newNote = page.getByRole("menuitem", { name: "New note" });
+    const newNote = page.getByRole("menuitem", { name: "New card" });
     if (!(await newNote.isVisible({ timeout: 800 }).catch(() => false))) {
       await page.keyboard.press("Escape");
       await page.waitForTimeout(150);
@@ -369,7 +369,7 @@ test("board editor creates content but has no library, board or schema chrome", 
   // A canvas right-click offers the existing creation gestures.
   const point = await emptyCanvasPoint(editor);
   await editor.mouse.click(point.x, point.y, { button: "right" });
-  await expect(editor.getByRole("menuitem", { name: "New note" })).toBeVisible();
+  await expect(editor.getByRole("menuitem", { name: "New card" })).toBeVisible();
   await expect(editor.getByRole("menuitem", { name: "New section" })).toBeVisible();
   await editor.keyboard.press("Escape");
 

@@ -34,7 +34,7 @@ async function emptyCanvasPoint(page: Page): Promise<{ x: number; y: number }> {
 async function createNote(page: Page): Promise<void> {
   const point = await emptyCanvasPoint(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
-  await page.getByRole("menuitem", { name: "New note" }).click();
+  await page.getByRole("menuitem", { name: "New card" }).click();
   // New cards focus their title; waiting for that focus (and for two frames, so
   // ProseMirror has painted) keeps the first keystrokes from racing the mount.
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);

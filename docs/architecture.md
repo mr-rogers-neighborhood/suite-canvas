@@ -353,18 +353,13 @@ miniature and a camera transition that swaps `activeBoardId` (ADR-0029); it does
 Whiteboard cards render an Excalidraw surface (ADR-0031). Presence and drag positions ride the
 `EphemeralStore` and are drawn in a `ViewportPortal`, never written to the document.
 
-**The pure layout planner is the one engine-free piece.** `packages/scene` (`@suite/scene`) keeps
-`geometry.ts` and `layout.ts`: fractal recipes, spacing, ordering and cycle/depth guards computed
-into a plan. The board's **Arrange fractally** command plans with it and commits the whole plan as
-one field-granular batch in one undo step. Planning is pure and never writes; there is no live
-reflow mode.
-
 ### Graph truth, derived board
 
 `@suite/graph` is the only document truth. The board view is recomputed from a graph snapshot; it is
-never edited, persisted or synced. That keeps one document and one undo stack. The layout planner
-consumes plain values only — no React, DOM, engine or Loro imports — so its transforms and recipes
-are unit-testable without a renderer.
+never edited, persisted or synced. That keeps one document and one undo stack. Layout planning is
+pure: `packages/graph/src/layoutPlan.ts` turns plain placement values into a plan, and
+`applyLayoutPlan` commits the whole plan as one field-granular batch, so an Arrange is one undo step
+and never a live reflow.
 
 ### Retrieval: the palette and the lens
 

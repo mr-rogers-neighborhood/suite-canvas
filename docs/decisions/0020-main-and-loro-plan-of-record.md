@@ -2,22 +2,22 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-22
-- **Supersedes:** the October 20 "from a blank page" memo (kept as history, not instructions)
 
 ## Context
 
-The October 20 memo proposed a hard fork: a new `next` branch starting from an empty tree, Yjs and
-Hocuspocus, one note object, and no types, fields, tags or sections. That work was not started.
-Instead, `main` continued, migrated the sync stack from Yjs to Loro
-([ADR-0015](./0015-loro-as-crdt-engine.md)), and added the semantic surfaces the memo excluded:
-typed cards, fields, properties, tags, sections, references, mentions, property blocks, display
-templates and multi-object selection. Local `main` is 33 commits ahead of `origin/main`, and the
-only other branch, `pivot/loro`, is an ancestor of `main`.
+Two directions were on the table. One was a hard fork: a new branch from an empty tree, a different
+CRDT, one note object, and no types, fields, tags or sections. The other was to keep extending the
+existing tree.
 
-Planning against the memo would therefore plan a product that no longer exists. At the same time,
-the current branch has real gaps: a workspace cannot be exported or imported, card-level sharing is
-not implemented, some in-flight surfaces are under-tested, and the editor's block styles are lost to
-Tailwind Preflight (headings render at body size, lists lose their markers).
+The fork was never started. `main` continued, migrated the sync stack to Loro
+([ADR-0015](./0015-loro-as-crdt-engine.md)), and added the semantic surfaces the fork excluded:
+typed cards, fields, properties, tags, sections, references, mentions, property blocks, display
+templates and multi-object selection.
+
+The fork memo is not in this repository and the branch comparison that motivated this decision is
+long settled, so the question this ADR answers is narrower than when it was written: **when the
+existing tree and a proposed clean restart disagree, which one is the product?** Planning against a
+restart would plan a product that no longer exists.
 
 ## Decision
 

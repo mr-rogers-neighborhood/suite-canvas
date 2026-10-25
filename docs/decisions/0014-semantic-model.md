@@ -1,6 +1,9 @@
 # ADR-0014: Semantic model — types, fields, relations, sections and views
 
-- **Status:** accepted; types, fields, tags and properties implemented by [ADR-0016](./0016-semantic-core.md)
+- **Status:** accepted in part. Types, fields, tags and properties were implemented by
+  [ADR-0016](./0016-semantic-core.md), with two changes: a card carries a set of types plus a
+  primary id rather than one `typeId`, and the `relations` family below was **rejected** by
+  [ADR-0019](./0019-references-not-typed-links.md)
 - **Date:** 2026-10-21
 
 ## Context
@@ -48,11 +51,14 @@ that are confirmed.
    per tag id, so concurrent add/remove of different tags never clobbers) and every record family
    below.
 
-4. **A relation is a workspace-level typed statement.** `relations` holds `id`, `relationTypeId`,
+4. ~~**A relation is a workspace-level typed statement.**~~ **Rejected** by
+   [ADR-0019](./0019-references-not-typed-links.md): a relation is a reference, not a fourth record
+   family. The rest of this point is kept as the record of what was considered. `relations` holds `id`, `relationTypeId`,
    `fromCardId`, `toCardId`, optional typed properties and `createdAt`. A relation exists whether or
    not any board draws it; it is therefore not scoped to a board and not created by drawing.
 
-5. **Relation types are workspace records, not a closed enum.** A relation type defines its label
+5. ~~**Relation types are workspace records, not a closed enum.**~~ **Rejected** with point 4;
+   edge labels are display overrides on a reference. A relation type defines its label
    and inverse label, directed/symmetric behaviour and optional constraints (allowed source and
    target types, cardinality). "References", "relates to" and "tagged" become seeded relation types,
    so adding "contradicts" needs no schema release. A label on a drawing is a display override, not

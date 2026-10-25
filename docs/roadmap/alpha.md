@@ -82,7 +82,7 @@ The verdict rests on two comparisons: why this is past pre-alpha, and why it is 
 | Operational thinking exists | Boot-time config validation (`config.ts`, 522 lines), quotas that never drop a save (`limits.ts:9`), 429 + `Retry-After`, `/metrics`, health probe, admin status, backup with integrity checks | ✅ |
 | The security basics are right | `timingSafeEqual`, 32-byte random capabilities, SHA-256 at rest, per-room capability scoping, 15-minute share sessions, revocation that closes live sockets | ◐ (mechanics read; end-to-end not re-tested here) |
 | Architecture is enforced by tests | `packages/graph/src/purity.test.ts` parses the AST to keep the core DOM-free; `apps/canvas/src/session/mode.test.ts` forbids `fetch`/`WebSocket` outside relay modules; `apps/collab-server/src/patchGuard.test.ts` fails if a dependency patch vanishes | ✅ |
-| Documentation is a design artifact | 30 ADRs with statuses and supersession chains, 990-line architecture doc, 952-line operations runbook | ✅ |
+| Documentation is a design artifact | 32 ADRs with statuses and supersession chains, 990-line architecture doc, 952-line operations runbook | ✅ |
 
 A pre-alpha would not have a purity test, a convergence fuzz test, or an ADR that says "this
 decision was reversed, here is why". Those are the habits of a project that has already survived its
@@ -196,7 +196,7 @@ as a whole. A product is as ready as the weakest dimension a stranger will touch
 | 9 | **Release management** | **Alpha** | `0.2.0-alpha.1`; `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`; no release tag yet (the one tag marks a spike); 124 commits | ✅ |
 | 10 | **Scale evidence** | **Alpha** | Single replica by design; SQLite; in-process rooms/presence/projection/rate limits; benchmarks exist (`packages/graph/bench/workspace.bench.ts`, `projection.bench.ts`) but are not gated | ✅ |
 | 11 | **UX / onboarding** | Alpha | Polished visuals, real keyboard/ARIA work, but no accounts, no mobile layout beyond one `max-width: 640px` rule ◐, no i18n, and a recovery model with five terms for three artifacts ◐ | ◐ |
-| 12 | **Docs** | Beta-ish, drifting | ~9,800 lines, 30 ADRs, real runbooks; counts, store counts and engine names were re-checked on 2026-10-25 (§9) | ✅ |
+| 12 | **Docs** | Beta-ish, drifting | ~9,800 lines, 32 ADRs, real runbooks; counts, store counts and engine names were re-checked on 2026-10-25 (§9) | ✅ |
 
 ### 3.1 Reading the scorecard
 
@@ -364,8 +364,7 @@ Ten properties that are better than the norm, each with a pointer. These are why
    (`tsconfig.base.json`). Biome raises `noFloatingPromises` to an error and bans `noConsole` outside
    the logger (`biome.jsonc`). No `any`, no `@ts-ignore`, no SQL string interpolation, no
    `dangerouslySetInnerHTML`, no `eval` in source. ✅
-10. **Docs are design artifacts.** 30 ADRs with statuses and supersession chains (`0001 → 0015`,
-    `0021 → 0022`), a mermaid data flow, performance budgets, explicit non-goals, and an
+10. **Docs are design artifacts.** 32 ADRs with statuses and supersession chains (`0021 → 0022`), a mermaid data flow, performance budgets, explicit non-goals, and an
     open-questions table that admits what is undecided. This roadmap exists to extend that habit. ✅
 
 **The through-line:** the project records its reasoning and encodes it as a test. That makes the
@@ -1024,7 +1023,7 @@ the drift that audit missed (D12–D17).
 | D12 | "No `LICENSE`, no `SECURITY.md`, no `CHANGELOG.md`, no `CONTRIBUTING.md`, no tags … 89 commits" | All five identity files exist at `0.2.0-alpha.1`; 124 commits; one tag, and it marks a spike rather than a release | `docs/roadmap/alpha.md` §1.2, §3 row 9 | ✅ (fixed 2026-10-25) |
 | D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 138 Vitest files / 1,727 tests; 32 Playwright specs; 75 billing tests; 27 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
 | D14 | "`compose.yaml` configures five … attachments defaults to CWD; settings and licences default to `:memory:`" | All six stores are under `/data` with `SUITE_REQUIRE_DURABLE_STORES=1`, and boot refuses a split layout | `docs/roadmap/alpha.md` §4.4, §7.1 A1 | ✅ (fixed 2026-10-25) |
-| D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 30 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
+| D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 32 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
 | D16 | A derived "scene" was described as the product of record; `?canvas=ice` named a surface | The scene was a read-only preview with no editing path and it is removed; `?canvas=ice` is gone from the parser, and the scene surface and its modules are deleted (2026-10-25) | `docs/architecture.md` §Rendering, `AGENTS.md` | ✅ (fixed 2026-10-25) |
 | D17 | "64 `node --test` tests" in billing | 75 | `README.md:70` | ✅ (fixed 2026-10-25) |
 

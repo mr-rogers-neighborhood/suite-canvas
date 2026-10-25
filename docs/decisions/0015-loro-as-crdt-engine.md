@@ -2,12 +2,11 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-21
-- **Supersedes:** [ADR-0001](./0001-yjs-source-of-truth.md) for the CRDT engine and sync stack
 
 ## Context
 
-ADR-0001 chose Yjs because it was the mature local-first CRDT. After the canvas and typed graph were
-working, two limits became concrete:
+The first engine choice was Yjs, because it was the mature local-first CRDT. After the canvas and
+typed graph were working, two limits became concrete:
 
 - **History and snapshot cost.** Yjs replays history and full snapshots grow with every edit. Large
   workspaces pay for history they do not need, and the card/index split that card-level sharing

@@ -1,7 +1,9 @@
-# ADR-0000: Title
+# ADR-NNNN: Title
 
 - **Status:** proposed | accepted | superseded
 - **Date:** YYYY-MM-DD
+- **Supersedes / Superseded by:** link, or delete this line
+- **Related:** adrs, code, docs this decision depends on
 
 ## Context
 

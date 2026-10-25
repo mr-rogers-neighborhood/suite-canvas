@@ -1,6 +1,6 @@
 # ADR-0027: Crash reporting and privacy
 
-- **Status:** Accepted
+- **Status:** accepted
 - **Date:** 2026-10-23
 - **Gate:** A6
 - **Related:** ADR-0025 (client durability)

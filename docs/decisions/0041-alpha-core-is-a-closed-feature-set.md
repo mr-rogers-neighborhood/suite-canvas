@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-25
-- **Related:** [ADR-0017](./0017-spatial-sections.md), [ADR-0029](./0029-portal-board-field.md), [ADR-0038](./0038-a-type-template-is-a-card.md), [ADR-0039](./0039-a-link-points-at-an-endpoint-of-a-kind.md), [ADR-0040](./0040-a-board-and-a-section-are-identities.md), [ADR-0042](./0042-media-metadata-is-fields.md), [ADR-0043](./0043-a-view-is-a-lens-a-database-or-a-render.md), [ADR-0044](./0044-one-target-primitive.md), [ADR-0045](./0045-handbook-articles-are-cards.md), [ADR-0046](./0046-the-shell-derives-its-colour.md), [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.5
+- **Related:** [ADR-0017](./0017-spatial-sections.md), [ADR-0029](./0029-portal-board-field.md), [ADR-0038](./0038-a-type-template-is-a-card.md), [ADR-0039](./0039-a-link-points-at-an-endpoint-of-a-kind.md), [ADR-0040](./0040-a-board-and-a-section-are-identities.md), [ADR-0042](./0042-media-metadata-is-fields.md), [ADR-0043](./0043-a-view-is-a-lens-a-database-or-a-render.md), [ADR-0044](./0044-one-target-primitive.md), [ADR-0045](./0045-handbook-articles-are-cards.md), [ADR-0046](./0046-the-shell-derives-its-colour.md), [ADR-0047](./0047-a-view-can-be-a-card-and-an-embed-is-one-concept.md), [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.5
 
 ## Context
 
@@ -47,6 +47,7 @@ evidence. A surface is *core* if it is named here. Anything not named here is po
 | **Auto-layout across levels** without reflowing a collaborator's board | planned | ADR-0041 |
 | **Metadata as fields**, replacing media card types | planned | ADR-0042 |
 | **Views: lens, database, render** over one query | planned | ADR-0043 |
+| **View cards and embeds**: a card that paints a saved view, and one `embed` field (card, view, sketch, section, board) rendered by one registry | planned | ADR-0047 |
 | **One target primitive** behind presence, Follow, Goto and the handbook | planned | ADR-0044 |
 | **Handbook**: contextual articles on a designated board | planned | ADR-0045 |
 | **Chat** with Follow and Goto | planned | ADR-0044 |

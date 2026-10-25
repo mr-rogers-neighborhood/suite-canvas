@@ -341,16 +341,26 @@ describe("Library shortcut", () => {
     render(<Shell />);
   }
 
-  it("should open the library on Cards and focus the search box from Cmd+K", () => {
+  it("should open the library on Cards and focus the search box from Cmd+Shift+K", () => {
     const { workspace, items } = fixture();
     renderShell(workspace, items);
 
     expect(screen.queryByTestId("library-search")).not.toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true, shiftKey: true });
 
     expect(useUiStore.getState().libraryOpen).toBe(true);
     expect(useUiStore.getState().libraryTab).toBe("cards");
     expect(screen.getByTestId("library-search")).toHaveFocus();
+  });
+
+  it("should open the command palette from Cmd+K instead of the library", () => {
+    const { workspace, items } = fixture();
+    renderShell(workspace, items);
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+
+    expect(useUiStore.getState().paletteOpen).toBe(true);
+    expect(useUiStore.getState().libraryOpen).toBe(false);
   });
 });

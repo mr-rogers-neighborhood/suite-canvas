@@ -13,20 +13,23 @@ import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
 import { BootSkeleton } from "./components/BootSkeleton";
 import { CardFocusHost } from "./components/CardFocusHost";
 import { CardInspectorHost } from "./components/CardInspectorHost";
+import { CommandPaletteHost } from "./components/CommandPalette";
 import { sectionPath } from "./components/cardWhere";
 import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
+import { buildPaletteItems } from "./components/paletteProviders";
 import { SharePublishButton } from "./components/SharePublishButton";
 import { StoragePanel } from "./components/StoragePanel";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
-import { ViewsBar } from "./components/ViewsBar";
+import { useSavedViews, ViewsBar } from "./components/ViewsBar";
 import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
+import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
@@ -39,7 +42,7 @@ import { rememberWorkspace } from "./session/workspaceTransfer";
 import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
-import { initTheme } from "./theme/useThemeStore";
+import { initTheme, useThemeStore } from "./theme/useThemeStore";
 
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
@@ -103,6 +106,13 @@ function WorkspaceShell({
   const libraryOpen = useUiStore((state) => state.libraryOpen);
   const libraryTab = useUiStore((state) => state.libraryTab);
   const setLibraryOpen = useUiStore((state) => state.setLibraryOpen);
+  const requestShare = useUiStore((state) => state.requestShare);
+  const setPaletteOpen = useUiStore((state) => state.setPaletteOpen);
+  const openCardFocus = useUiStore((state) => state.openCardFocus);
+  const selectSection = useUiStore((state) => state.selectSection);
+  const savedViews = useSavedViews(workspace);
+  const themeMode = useThemeStore((state) => state.mode);
+  const setThemeMode = useThemeStore((state) => state.setMode);
   const setLibraryTab = useUiStore((state) => state.setLibraryTab);
   const startEditing = useUiStore((state) => state.startEditing);
   const openTypeSettings = useUiStore((state) => state.openTypeSettings);
@@ -393,6 +403,78 @@ function WorkspaceShell({
     [activeBoardId, canvasPoint, workspace, canCreateContent, setSelectedNodeIds],
   );
 
+  /**
+   * The palette's entries. Navigation and creation are wired to the same store
+   * actions and helpers the shell already uses, so the palette cannot drift from
+   * the controls it duplicates.
+   */
+  const paletteItems = useMemo(
+    () =>
+      buildPaletteItems({
+        boards: snapshot.boards,
+        cards: snapshot.cards,
+        types: snapshot.types,
+        sections: snapshot.sections,
+        views: savedViews,
+        activeBoardId,
+        titleOf: (cardId) => workspace.displayTitle(cardId),
+        typeNameOf: (cardId) => {
+          const card = workspace.getCard(cardId);
+          const type = card ? workspace.getType(card.primaryTypeId) : undefined;
+          return type?.name ?? "Card";
+        },
+        canCreateContent,
+        canCreateBoards,
+        canManageSchema,
+        actions: {
+          goToBoard: (boardId) => activateBoard(boardId),
+          goToSection: (sectionId) => {
+            const section = workspace.getSection(sectionId);
+            if (!section) return;
+            activateBoard(section.boardId);
+            selectSection(section.id);
+          },
+          focusCard: (cardId) => openCardFocus(cardId),
+          createCard: (typeId) => createCard(typeId),
+          createBoard: () => {
+            const board = workspace.createBoard();
+            activateBoard(board.id);
+          },
+          openLibrary: () => setLibraryOpen(true),
+          openTypes: () => openTypeSettings(),
+          openShare: () => requestShare("workspace"),
+          toggleTheme: () => setThemeMode(themeMode === "dark" ? "light" : "dark"),
+          openLibrarySearch: () => {
+            setLibraryOpen(true);
+            setLibraryTab("cards");
+            window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+          },
+        },
+      }),
+    [
+      snapshot.boards,
+      snapshot.cards,
+      snapshot.types,
+      snapshot.sections,
+      savedViews,
+      activeBoardId,
+      workspace,
+      canCreateContent,
+      canCreateBoards,
+      canManageSchema,
+      activateBoard,
+      selectSection,
+      openCardFocus,
+      createCard,
+      setLibraryOpen,
+      openTypeSettings,
+      requestShare,
+      setThemeMode,
+      themeMode,
+      setLibraryTab,
+    ],
+  );
+
   const createBoardPortal = useCallback(() => {
     if (!activeBoardId || !canCreateBoards) return;
     const board = workspace.createBoard();
@@ -503,6 +585,7 @@ function WorkspaceShell({
     >
       <TitleBar
         onNavigateHome={goHome}
+        onOpenSearch={() => setPaletteOpen(true)}
         // A standalone build never opens a socket, so "Syncing" would be a lie;
         // the status slot reports the connection it has (none) beside the note.
         status={standalone ? "disconnected" : status}
@@ -663,6 +746,8 @@ function WorkspaceShell({
       ) : null}
 
       {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
+
+      {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
 
       {workspaceSurface && !readOnly ? (
         <LibraryDrawer

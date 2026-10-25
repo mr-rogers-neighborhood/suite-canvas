@@ -163,6 +163,8 @@ interface UiState extends SessionCapabilities {
   exitView: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
+  /** The command palette: one surface for navigation and actions from `⌘K`. */
+  paletteOpen: boolean;
   contextMenu: ContextMenuState | null;
   selectedConnector: SelectedConnector | null;
   /** Scope a canvas gesture asked the app-bar dialog to open on; consumed once. */
@@ -207,6 +209,8 @@ interface UiState extends SessionCapabilities {
   closeInspector: () => void;
   toggleCardMeta: (id: string) => void;
   openTypeSettings: () => void;
+  /** The command palette: one surface for navigation and actions from `⌘K`. */
+  setPaletteOpen: (open: boolean) => void;
   closeTypeSettings: () => void;
   toggleLibraryType: (id: string) => void;
   toggleLibraryTag: (id: string) => void;
@@ -244,6 +248,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   inspectorFieldId: null,
   expandedCardMeta: {},
   typeSettingsOpen: false,
+  paletteOpen: false,
   libraryTypeFilter: [],
   libraryTagFilter: [],
   librarySectionFilter: [],
@@ -412,6 +417,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       expandedCardMeta: { ...state.expandedCardMeta, [id]: !state.expandedCardMeta[id] },
     })),
   openTypeSettings: () => set({ typeSettingsOpen: true }),
+  setPaletteOpen: (paletteOpen) =>
+    set((state) => (state.paletteOpen === paletteOpen ? state : { paletteOpen })),
   closeTypeSettings: () => set({ typeSettingsOpen: false }),
   toggleLibraryType: (id) =>
     set((state) => ({

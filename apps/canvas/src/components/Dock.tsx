@@ -49,20 +49,25 @@ export function Dock({
   const [portalOpen, setPortalOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
 
-  // Ctrl/Cmd+K is the one shortcut that reaches across the whole app: it opens
-  // the library on Cards and asks the drawer to focus its search box.
+  // Two shortcuts reach across the whole app. `Mod+K` opens the command palette
+  // (navigation and actions); `Mod+Shift+K` keeps the library search it used to
+  // own, so the habit still lands somewhere.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       // The editor owns Mod-K while it is focused.
       if (event.defaultPrevented) return;
       if (event.key.toLowerCase() !== "k") return;
       if (!event.metaKey && !event.ctrlKey) return;
-      if (event.altKey || event.shiftKey) return;
+      if (event.altKey) return;
       event.preventDefault();
       const ui = useUiStore.getState();
-      ui.setLibraryOpen(true);
-      ui.setLibraryTab("cards");
-      window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+      if (event.shiftKey) {
+        ui.setLibraryOpen(true);
+        ui.setLibraryTab("cards");
+        window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+        return;
+      }
+      ui.setPaletteOpen(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -218,7 +223,7 @@ export function Dock({
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
                           onClick={createBoardPortal}
                         >
-                          <span className="min-w-0 flex-1 truncate">New board and portal</span>
+                          <span className="min-w-0 flex-1 truncate">New board</span>
                         </button>
                       ) : null}
                     </div>

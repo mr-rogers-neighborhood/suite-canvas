@@ -36,6 +36,30 @@ describe("TitleBar", () => {
   });
 });
 
+describe("TitleBar command bar", () => {
+  it("should open the palette from the search trigger", () => {
+    const onOpenSearch = vi.fn();
+    bar({ status: "connected", onOpenSearch });
+
+    fireEvent.click(screen.getByTestId("command-bar"));
+
+    expect(onOpenSearch).toHaveBeenCalledOnce();
+  });
+
+  it("should render no trigger when the shell does not offer one", () => {
+    bar({ status: "connected" });
+    expect(screen.queryByTestId("command-bar")).toBeNull();
+  });
+
+  it("should advertise the shortcut it opens", () => {
+    bar({ status: "connected", onOpenSearch: vi.fn() });
+    expect(screen.getByTestId("command-bar")).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Meta+K Control+K",
+    );
+  });
+});
+
 describe("TitleBar home gesture", () => {
   it("should route a plain brand click through the exit animation", () => {
     const onNavigateHome = vi.fn();

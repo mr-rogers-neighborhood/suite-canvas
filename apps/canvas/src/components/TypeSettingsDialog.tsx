@@ -10,7 +10,12 @@ export interface TypeSettingsDialogProps {
   onCreateType: (input: { name: string; glyph: string }) => string;
   onUpdateType: (
     id: string,
-    patch: { name?: string; pluralName?: string | null; glyph?: string },
+    patch: {
+      name?: string;
+      pluralName?: string | null;
+      glyph?: string;
+      templateCardId?: string | null;
+    },
   ) => void;
   onDeleteType: (id: string, reassignTo: string) => void;
   onAddField: (typeId: string, input: CreateFieldInput) => void;
@@ -24,6 +29,14 @@ export interface TypeSettingsDialogProps {
   onAddOption: (typeId: string, fieldId: string, label: string) => void;
   onUpdateOption: (typeId: string, fieldId: string, optionId: string, label: string) => void;
   onRemoveOption: (typeId: string, fieldId: string, optionId: string) => void;
+  /**
+   * Template wiring (ADR-0038). A template is an ordinary card, so these are
+   * card operations: create one in the inbox, point the type at it, or open it.
+   */
+  templateFor: (typeId: string) => { id: string; title: string } | undefined;
+  onCreateTemplate: (typeId: string) => void;
+  onOpenTemplate: (cardId: string) => void;
+  onClearTemplate: (typeId: string) => void;
 }
 
 const inputClass =
@@ -104,6 +117,10 @@ export function TypeSettingsDialog({
   onAddOption,
   onUpdateOption,
   onRemoveOption,
+  templateFor,
+  onCreateTemplate,
+  onOpenTemplate,
+  onClearTemplate,
 }: TypeSettingsDialogProps) {
   const [selectedId, setSelectedId] = useState(types[0]?.id ?? null);
   const [newTypeName, setNewTypeName] = useState("");
@@ -148,6 +165,7 @@ export function TypeSettingsDialog({
   };
 
   const displayField = selected?.fields.find((field) => field.id === displayFieldId);
+  const templateCard = selected ? templateFor(selected.id) : undefined;
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -280,6 +298,60 @@ export function TypeSettingsDialog({
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {selected ? (
               <>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+                  Template
+                </p>
+                <div
+                  className="mb-4 rounded-lg border border-[var(--hairline)] p-2"
+                  data-testid="type-template"
+                >
+                  {templateCard ? (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="min-w-0 flex-1 truncate text-[12px]"
+                        title={templateCard.title}
+                      >
+                        {templateCard.title}
+                      </span>
+                      <button
+                        type="button"
+                        className={smallButton}
+                        data-testid="type-template-open"
+                        onClick={() => onOpenTemplate(templateCard.id)}
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        className={smallButton}
+                        data-testid="type-template-clear"
+                        onClick={() => onClearTemplate(selected.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <p className="min-w-0 flex-1 text-[11px] leading-4 text-[var(--ink-muted)]">
+                        A new {selected.name.toLowerCase()} starts blank. A template gives it a
+                        title, a body and starting values.
+                      </p>
+                      <button
+                        type="button"
+                        className={smallButton}
+                        data-testid="type-template-create"
+                        onClick={() => onCreateTemplate(selected.id)}
+                      >
+                        Create
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[10px] leading-4 text-[var(--ink-muted)]">
+                    The template is a card: edit it like any other, with the slash menu for
+                    properties. Use {"{{Field}}"} in a plain title to fill a value in.
+                  </p>
+                </div>
+
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
                   Fields
                 </p>

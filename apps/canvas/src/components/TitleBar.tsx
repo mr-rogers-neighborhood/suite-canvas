@@ -23,6 +23,12 @@ export interface TitleBarProps {
   actions?: React.ReactNode;
   /** Intercepts the brand link so the shell can animate before leaving. */
   onNavigateHome?: () => void;
+  /**
+   * The command bar's trigger. It fills whatever the tabs and the status group
+   * leave free and opens the command palette, so the bar has one search surface
+   * instead of a second, parallel one.
+   */
+  onOpenSearch?: (() => void) | undefined;
 }
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -51,6 +57,7 @@ export function TitleBar({
   children,
   actions,
   onNavigateHome,
+  onOpenSearch,
 }: TitleBarProps) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workspaceName ?? "");
@@ -142,7 +149,27 @@ export function TitleBar({
         </span>
       ) : null}
 
-      {children ? <div className="ml-2 flex min-w-0 flex-1 items-center">{children}</div> : null}
+      {children ? (
+        <div className="ml-2 flex min-w-0 shrink items-center overflow-hidden">{children}</div>
+      ) : null}
+
+      {onOpenSearch ? (
+        <button
+          type="button"
+          data-testid="command-bar"
+          aria-label="Search or run a command"
+          aria-keyshortcuts="Meta+K Control+K"
+          title="Search or run a command (⌘K)"
+          onClick={onOpenSearch}
+          className="command-bar"
+        >
+          <span aria-hidden="true" className="command-bar__glyph">
+            {"\u2315"}
+          </span>
+          <span className="command-bar__label">{"Search or jump to\u2026"}</span>
+          <kbd className="command-bar__key">{"\u2318K"}</kbd>
+        </button>
+      ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-3">
         <span

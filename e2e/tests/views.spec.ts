@@ -108,3 +108,34 @@ test("a saved view reopens the library on the Cards tab", async ({ page }) => {
   await expect(libraryRows(page)).toContainText("Grading pass");
   await expect(cardByTitle(page, "Grading pass")).toHaveCount(1);
 });
+
+/**
+ * A view is a lens over the canvas (ADR-0037): applying it keeps every card and
+ * dims the ones the view did not select, so the arrangement survives.
+ */
+test("an applied view dims the cards it did not select", async ({ page }) => {
+  await page.goto(workspaceUrl("lens"));
+  await expect(cards(page)).toHaveCount(2);
+  await createNote(page, "Grading pass");
+
+  await openLibrary(page, "cards");
+  await search(page).fill("grading");
+  await viewsButton(page).click();
+  await page.getByTestId("views-save").click();
+  await page.getByTestId("views-save-input").fill("Grading");
+  await page.getByTestId("views-save-commit").click();
+
+  // Saving applies the view, so the board is already a lens: two starters are
+  // off it and the matching note is not.
+  await expect(page.locator(".node-card.is-off-lens")).toHaveCount(2);
+  await expect(cardByTitle(page, "Grading pass")).not.toHaveClass(/is-off-lens/);
+
+  // Leaving the view clears the lens as well as the library filters.
+  await page.getByTestId("library-exit-view").click();
+  await expect(page.locator(".node-card.is-off-lens")).toHaveCount(0);
+
+  // Re-applying it from the menu brings the lens back without the drawer's help.
+  await viewsButton(page).click();
+  await page.locator('[data-testid^="views-item-"]').first().click();
+  await expect(page.locator(".node-card.is-off-lens")).toHaveCount(2);
+});

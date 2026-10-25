@@ -139,6 +139,17 @@ export interface DuplicateCardOptions {
   boardId?: string;
   /** Offset from the source card's position on that board; defaults to 24, 24. */
   offset?: { x: number; y: number };
+  /**
+   * Connector layout for the copy. Omit for a fresh card layout; pass the
+   * source's connectors when links will be re-attached to the copy, since a
+   * link names its connectors by id.
+   */
+  connectors?: Connector[];
+}
+
+export interface DuplicateBoardOptions {
+  /** Name for the new board; defaults to the source's name plus " copy". */
+  name?: string;
 }
 
 export interface CreateTypeInput {
@@ -1205,6 +1216,132 @@ export class WorkspaceDocument {
     return this.createBoard({ id: DEFAULT_BOARD_ID, name: "Board 1" });
   }
 
+  /**
+   * Copies a board and everything drawn on it: sections, the cards placed
+   * there, their placements and the links between them.
+   *
+   * Cards are workspace objects, so each one is copied once even when it also
+   * sits on other boards — only its placement on the new board is added. Links
+   * are board-scoped, so an edge comes along only when both ends are reproduced
+   * here; a link whose far end lives elsewhere stays behind with the source.
+   *
+   * Everything lands in one commit, so a single undo removes the whole board.
+   */
+  duplicateBoard(sourceId: string, options: DuplicateBoardOptions = {}): Board | null {
+    const source = this.getBoard(sourceId);
+    if (!source) return null;
+
+    const requested = options.name?.trim() ?? "";
+    const name = requested.length > 0 ? requested : `${source.name} copy`;
+    const now = Date.now();
+
+    return this.batch(`${STRUCT_ORIGIN}duplicate-board`, () => {
+      const board = this.createBoard({ name });
+      // Connector ids are what links name, so copies keep the source layout
+      // and every id is minted here, giving the old→new map edges remap with.
+      const cardIds = new Map<string, string>();
+      const sectionIds = new Map<string, string>();
+      const connectorIds = new Map<string, string>();
+      const copyConnectors = (connectors: readonly Connector[]): Connector[] =>
+        connectors.map((connector) => {
+          const id = createConnectorId();
+          connectorIds.set(connector.id, id);
+          return { id, x: connector.x, y: connector.y };
+        });
+
+      for (const section of this.listSections(sourceId)) {
+        const copy = sectionSchema.parse({
+          ...section,
+          id: crypto.randomUUID(),
+          boardId: board.id,
+          connectors: copyConnectors(section.connectors ?? []),
+          createdAt: now,
+          updatedAt: now,
+        });
+        this.writeSection(copy);
+        sectionIds.set(section.id, copy.id);
+      }
+
+      for (const placement of this.listBoardPlacements(sourceId)) {
+        const card = this.getCard(placement.cardId);
+        if (!card || card.deletedAt || cardIds.has(card.id)) continue;
+        const copy = this.duplicateCard(card.id, { connectors: copyConnectors(card.connectors) });
+        cardIds.set(card.id, copy.id);
+        const placed = this.placeCardInternal(board.id, copy.id, {
+          x: placement.x,
+          y: placement.y,
+        });
+        if (placed) this.copyPlacementLayout(board.id, copy.id, placement);
+      }
+
+      for (const edge of this.listBoardEdges(sourceId)) {
+        const ends = edgeEndpoints(edge);
+        const sourceEnd = this.remapEndpoint(ends.source, cardIds, sectionIds);
+        const targetEnd = this.remapEndpoint(ends.target, cardIds, sectionIds);
+        if (!sourceEnd || !targetEnd) continue;
+        const sourceConnector = edge.sourceConnector
+          ? connectorIds.get(edge.sourceConnector)
+          : undefined;
+        const targetConnector = edge.targetConnector
+          ? connectorIds.get(edge.targetConnector)
+          : undefined;
+        // A connector that was not copied would leave a dangling attachment.
+        if (edge.sourceConnector && !sourceConnector) continue;
+        if (edge.targetConnector && !targetConnector) continue;
+
+        const copy = graphEdgeSchema.parse({
+          ...edge,
+          id: crypto.randomUUID(),
+          boardId: board.id,
+          source: sourceEnd.id,
+          target: targetEnd.id,
+          sourceKind: sourceEnd.kind,
+          targetKind: targetEnd.kind,
+          ...(sourceConnector ? { sourceConnector } : {}),
+          ...(targetConnector ? { targetConnector } : {}),
+          createdAt: now,
+          updatedAt: now,
+        });
+        this.applyEdge(copy);
+        // `applyEdge` persists the label but not its offset, which the copy keeps.
+        if (copy.labelOffset !== undefined) {
+          const fields = this.edges.get(copy.id);
+          if (isMap(fields)) fields.set("labelOffset", copy.labelOffset);
+        }
+      }
+
+      return board;
+    });
+  }
+
+  /** A link endpoint on the copied board, or null when it was not reproduced. */
+  private remapEndpoint(
+    endpoint: LinkEndpoint,
+    cardIds: ReadonlyMap<string, string>,
+    sectionIds: ReadonlyMap<string, string>,
+  ): LinkEndpoint | null {
+    if (endpoint.kind === "card") {
+      const id = cardIds.get(endpoint.id);
+      return id ? { kind: "card", id } : null;
+    }
+    if (endpoint.kind === "section") {
+      const id = sectionIds.get(endpoint.id);
+      return id ? { kind: "section", id } : null;
+    }
+    // Boards are not copied: a board endpoint is drawn through the portal card,
+    // which came along, and keeps naming the same board.
+    return { kind: "board", id: endpoint.id };
+  }
+
+  /** Keeps the copied placement's layer rank and size, computed fresh by `placeCard`. */
+  private copyPlacementLayout(boardId: string, cardId: string, source: Placement): void {
+    const fields = this.placements.get(placementKey(boardId, cardId));
+    if (!isMap(fields)) return;
+    fields.set("z", source.z);
+    if (source.width !== undefined) fields.set("width", source.width);
+    if (source.height !== undefined) fields.set("height", source.height);
+  }
+
   // ---------------------------------------------------------------- views
 
   private cachedView(id: string): SavedView | undefined {
@@ -2211,9 +2348,11 @@ export class WorkspaceDocument {
   /**
    * Copies a card into a new object with a fresh id. Type, tags, properties and
    * the title/body rich-text trees come along — the containers are deep-copied,
-   * marks included — while connectors and the original's placements stay behind
-   * because they are per-board chrome, not card content. The copy can land on a
-   * board, offset from where the source sits there.
+   * marks included — while the original's placements stay behind because they
+   * are per-board chrome, not card content. Connectors start fresh unless the
+   * caller supplies a layout, which board duplication does so links keep their
+   * attachment points. The copy can land on a board, offset from where the
+   * source sits there.
    */
   duplicateCard(cardId: string, options: DuplicateCardOptions = {}): Card {
     const source = this.getCard(cardId);
@@ -2232,7 +2371,7 @@ export class WorkspaceDocument {
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
-      connectors: defaultConnectors(),
+      connectors: options.connectors ?? defaultConnectors(),
     });
 
     return this.batch(`${STRUCT_ORIGIN}duplicate-card`, () => {

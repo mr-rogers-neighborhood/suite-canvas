@@ -31,6 +31,7 @@ export function CardInspectorHost() {
   const model = useCardPanelModel(inspectorNodeId, "panel");
   const container = useContainerPanelModel();
   const workspace = useCanvasStore((state) => state.workspace);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
   const closeContainerInspector = useUiStore((state) => state.closeContainerInspector);
   const requestPortalOpen = useUiStore((state) => state.requestPortalOpen);
   const focusCard = useUiStore((state) => state.focusCard);
@@ -119,8 +120,28 @@ export function CardInspectorHost() {
           }
           workspace.setSectionColor(container.id, color);
         }}
+        onSetCover={(attachmentId) => {
+          if (container.kind === "portal" && container.board) {
+            workspace.setBoardCover(container.board.id, attachmentId);
+          }
+        }}
         onRename={(title) => {
           if (container.kind === "section") workspace.renameSection(container.id, title);
+        }}
+        onNavigate={(target) => {
+          navigateTo(target);
+        }}
+        // An orphaned portal is a dead end unless the panel can point it
+        // somewhere: a new board, or off this one.
+        onRetarget={(boardId) => {
+          if (!canEditLayout) return;
+          workspace.setPortalTarget(container.id, boardId);
+        }}
+        onRemove={() => {
+          if (!canEditLayout || !activeBoardId) return;
+          workspace.unplaceCard(activeBoardId, container.id);
+          // Nothing is drawn where the panel was pointing, so the drawer goes too.
+          closeContainerInspector();
         }}
       />
     );

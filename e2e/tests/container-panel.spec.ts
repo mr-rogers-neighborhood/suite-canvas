@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { cards } from "./support";
+import { cardByTitle, cards, createNote } from "./support";
 
 /**
  * A portal and a section are containers, not cards (ADR-0040): they have no
@@ -194,4 +194,164 @@ test("a portal opens its panel on a click, not on a drag, and still walks throug
   // with the board switch.
   await portal.dblclick();
   await expect(boardTabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+});
+
+/** A portal to `target`, dropped where the pointer was. */
+async function portalAt(
+  page: Page,
+  point: { x: number; y: number },
+  target: string,
+): Promise<void> {
+  await page.mouse.click(point.x, point.y, { button: "right" });
+  await expect(page.getByTestId("context-menu")).toBeVisible();
+  await page.getByRole("menuitem", { name: "New portal" }).click();
+  await page.getByTestId("context-submenu").getByRole("menuitem", { name: target }).click();
+  await expect(page.getByTestId("portal-node")).toBeVisible();
+}
+
+/** The id in the selected board tab's test id, i.e. the board just created. */
+async function currentBoardId(page: Page): Promise<string> {
+  const testId = await page
+    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .getAttribute("data-testid");
+  if (!testId) throw new Error("the selected tab has no board id");
+  return testId.replace("board-tab-", "");
+}
+
+test("a section member row navigates to the card it names", async ({ page }) => {
+  await page.goto(workspaceUrl("member-row"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await cards(page).last().click();
+  await page.keyboard.press("Control+g");
+  await expect(page.locator(".section-header")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(panel(page)).toBeVisible();
+  const row = page.getByTestId("container-member-row");
+  await expect(row).toHaveCount(1);
+
+  // Zoom out first: a reveal that lands exactly where the camera already is
+  // would let this test pass without navigating anywhere.
+  for (let step = 0; step < 3; step += 1) {
+    await page.getByRole("button", { name: "Zoom Out" }).click();
+  }
+  await settleViewport(page);
+  const viewport = page.locator('[data-testid="canvas-board"] .react-flow__viewport');
+  const before = await viewport.getAttribute("style");
+
+  await row.click();
+  await expect.poll(async () => viewport.getAttribute("style")).not.toBe(before);
+  // Reading a row does not close the panel: it is still the section's panel.
+  await expect(panel(page)).toHaveAttribute("data-kind", "section");
+});
+
+test("a portal's panel lists the target board, and a row opens it", async ({ page }) => {
+  await page.goto(workspaceUrl("contents"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await page.getByTestId("board-create").click();
+  await expect(boardTabs(page)).toHaveCount(2);
+  await createNote(page, "Inside board two");
+  await page.getByRole("tab", { name: "Board 1" }).click();
+
+  for (let step = 0; step < 3; step += 1) {
+    await page.getByRole("button", { name: "Zoom Out" }).click();
+  }
+  await settleViewport(page);
+  await portalAt(page, await roomyPoint(page), "Board 2");
+
+  await page.getByTestId("portal-node").click();
+  await expect(panel(page)).toBeVisible();
+  const contents = page.getByTestId("container-contents");
+  await expect(contents).toBeVisible();
+  // Board 2 has one card and no sections, so it reads as one loose group.
+  await expect(page.getByTestId("container-contents-section")).toHaveCount(1);
+  await expect(contents).toContainText("Loose cards");
+  await expect(page.getByTestId("container-contents-count")).toHaveText("1 card");
+  await expect(page.getByTestId("container-contents-card")).toHaveText("Inside board two");
+
+  // The row switches boards and reveals the card, so the panel's outline is a
+  // way in, not a dead list.
+  await page.getByTestId("container-contents-card").click();
+  await expect(boardTabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(cardByTitle(page, "Inside board two")).toBeVisible();
+});
+
+/** The library drawer is a toggle; only click it when it is actually open. */
+async function closeLibrary(page: Page): Promise<void> {
+  if ((await page.getByTestId("library-drawer").count()) === 0) return;
+  await page.getByTestId("dock-library").click();
+  await expect(page.getByTestId("library-drawer")).toHaveCount(0);
+}
+
+/** Deletes a board from the library, answering the one question it asks. */
+async function deleteBoard(page: Page, boardId: string): Promise<void> {
+  if ((await page.getByTestId("library-drawer").count()) === 0) {
+    await page.getByTestId("dock-library").click();
+  }
+  await page.getByTestId("library-tab-boards").click();
+  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await expect(page.getByTestId("dialog")).toBeVisible();
+  await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
+  await closeLibrary(page);
+}
+
+test("an orphaned portal reads as empty, and can be pointed at a board or removed", async ({
+  page,
+}) => {
+  await page.goto(workspaceUrl("orphan"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // Two boards besides Board 1: one to lose, one to point at afterwards.
+  await page.getByTestId("board-create").click();
+  await expect(boardTabs(page)).toHaveCount(2);
+  const lostBoardId = await currentBoardId(page);
+  await page.getByTestId("board-create").click();
+  await expect(boardTabs(page)).toHaveCount(3);
+  const spareBoardId = await currentBoardId(page);
+  await page.getByRole("tab", { name: "Board 1" }).click();
+
+  for (let step = 0; step < 3; step += 1) {
+    await page.getByRole("button", { name: "Zoom Out" }).click();
+  }
+  await settleViewport(page);
+  await portalAt(page, await roomyPoint(page), "Board 2");
+  await expect(page.getByTestId("portal-node")).toHaveCount(1);
+
+  // Deleting a board asks once, in the library; the portal that opened it stays.
+  await deleteBoard(page, lostBoardId);
+  await expect(page.getByRole("tab", { name: "Board 1" })).toHaveAttribute("aria-selected", "true");
+
+  // The card paints a state, not a broken miniature.
+  const portal = page.getByTestId("portal-node");
+  await expect(portal).toHaveCount(1);
+  await expect(portal).toHaveAttribute("data-unavailable", "true");
+  await expect(page.getByTestId("portal-unavailable")).toContainText(
+    "The board this portal opened was removed.",
+  );
+
+  // Clicking an unavailable card still reads it, and its panel is an empty state.
+  await portal.click({ force: true });
+  await expect(panel(page)).toBeVisible();
+  await expect(page.getByTestId("container-orphan")).toBeVisible();
+  await expect(page.getByTestId("container-orphan")).toContainText("Empty — source removed");
+
+  // Choose a board lists the boards that still exist, and restores the portal.
+  await page.getByTestId("container-choose-board").click();
+  await expect(page.getByTestId("container-board-options")).toBeVisible();
+  await expect(page.getByTestId(`container-board-option-${spareBoardId}`)).toHaveText("Board 3");
+  await page.getByTestId(`container-board-option-${spareBoardId}`).click();
+  await expect(page.getByTestId("container-title")).toHaveText("Board 3");
+  await expect(page.getByTestId("container-orphan")).toHaveCount(0);
+  await expect(page.getByTestId("portal-unavailable")).toHaveCount(0);
+  await expect(portal).toContainText("Board 3");
+
+  // Delete that board too: the same portal is a dead end again, and this time
+  // the way out is off the board rather than through it.
+  await deleteBoard(page, spareBoardId);
+  await portal.click({ force: true });
+  await expect(page.getByTestId("container-orphan")).toBeVisible();
+  await page.getByTestId("container-remove-from-board").click();
+  await expect(page.getByTestId("portal-node")).toHaveCount(0);
+  await expect(panel(page)).toHaveCount(0);
 });

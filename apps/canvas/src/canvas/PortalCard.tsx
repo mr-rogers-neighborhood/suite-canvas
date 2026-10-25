@@ -36,6 +36,8 @@ export interface PortalCardProps {
   glyph: string;
   model: BoardMiniatureModel;
   dots?: readonly MiniatureDot[];
+  /** A chosen cover image; it stands in for the live picture while it resolves. */
+  cover?: string | null;
   /** Peers whose active board is the target, shown on the card and in its title. */
   peers?: readonly PresenceUser[];
   selected?: boolean;
@@ -57,6 +59,7 @@ export function PortalCard({
   glyph,
   model,
   dots = [],
+  cover = null,
   peers = [],
   selected = false,
   width,
@@ -135,9 +138,29 @@ export function PortalCard({
         }}
       >
         {unavailable ? (
-          <p className="portal-card__missing" data-testid="portal-unavailable">
-            Unavailable board
-          </p>
+          // A missing target is a state, not a broken drawing: the frame keeps
+          // the card's shape, turns dashed, and says what happened.
+          <div
+            className="portal-card__missing"
+            data-testid="portal-unavailable"
+            style={{
+              flexDirection: "column",
+              gap: 4,
+              padding: "0 14px",
+              border: "1px dashed color-mix(in srgb, var(--ink-muted) 55%, transparent)",
+              borderRadius: 8,
+              textAlign: "center",
+            }}
+          >
+            <span>Unavailable board</span>
+            <span style={{ fontStyle: "normal", fontSize: 10 }}>
+              The board this portal opened was removed.
+            </span>
+          </div>
+        ) : cover ? (
+          // A cover is a still picture of the board the way its author chose to
+          // show it; the miniature would cost a redraw of somebody else's board.
+          <img src={cover} alt={`${boardName} cover`} className="portal-cover" />
         ) : (
           <BoardMiniature model={model} dots={dots} label={`${boardName} miniature`} />
         )}

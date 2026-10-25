@@ -1,9 +1,15 @@
-import type { Board, Card, GraphEdge, Section } from "@suite/graph";
+import type { Board, Card, GraphEdge, Placement, Section } from "@suite/graph";
 import { edgeEndpoints, PORTAL_BOARD_FIELD_ID, sectionMembership } from "@suite/graph";
 import { useMemo } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+
+/** One card as a panel row reads it. */
+export interface ContainerCardRow {
+  id: string;
+  title: string;
+}
 
 /** One drawn link as the container panel reads it: the other end, and its label. */
 export interface ContainerLinkRow {
@@ -14,8 +20,26 @@ export interface ContainerLinkRow {
   /** Glyph for the other end's kind, so the list reads like the link itself. */
   glyph: string;
   kind: "card" | "board" | "section";
+  /** The other end's id: what the row names, and where clicking it navigates. */
+  otherId: string;
   description?: string | undefined;
 }
+
+/**
+ * A slice of a portal's target board: one section, or the cards in no section at
+ * all. A portal's contents are an outline of the board it opens, which is the one
+ * thing its miniature cannot say in words.
+ */
+export interface ContainerContentsGroup {
+  /** The section this group reads, or null for the cards outside every section. */
+  sectionId: string | null;
+  title: string;
+  color?: Section["color"];
+  cards: ContainerCardRow[];
+}
+
+/** The group title for cards that belong to no section on their board. */
+export const LOOSE_CARDS_TITLE = "Loose cards";
 
 /**
  * Everything the container panel paints, for one portal card or one section.
@@ -33,13 +57,24 @@ export interface ContainerPanelModel {
   /** A section's record; null for a portal. */
   section: Section | null;
   color: Section["color"] | null;
-  /** Cards whose placement sits inside a section. */
-  memberTitles: string[];
+  /** Cards whose placement sits inside this section. */
+  members: ContainerCardRow[];
   links: ContainerLinkRow[];
+  /** A portal's target board grouped by section; empty for a section or a lost board. */
+  contents: ContainerContentsGroup[];
+  /** A portal whose board is gone: the boards it could point at instead. */
+  boardOptions: Array<{ id: string; name: string }>;
+  /** What the portal's `board` field stores, whether or not it resolves. */
+  targetBoardId: string | null;
   /** The board holding this container, for Locate. */
   boardId: string | null;
   readOnly: boolean;
   canEditLayout: boolean;
+  /**
+   * A portal whose target board no longer exists. Its panel reads as empty — the
+   * record is still there, but there is nothing behind it to show.
+   */
+  orphan: boolean;
 }
 
 const KIND_GLYPH = { card: "\u25a1", board: "\u25c9", section: "\u25ad" } as const;
@@ -50,6 +85,99 @@ export function portalBoard(card: Card | undefined, boards: readonly Board[]): B
   const value = card.properties[PORTAL_BOARD_FIELD_ID];
   if (typeof value !== "string") return null;
   return boards.find((board) => board.id === value) ?? null;
+}
+
+/** What a portal's `board` field stores, resolved or not. */
+export function portalTargetId(card: Card | undefined): string | null {
+  const value = card?.properties[PORTAL_BOARD_FIELD_ID];
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * Sections on one board in the order the board paints them, which is the order
+ * the outline reads them: the stack, then creation, then id so every client
+ * derives the same list from the same record.
+ */
+function boardSections(boardId: string, sections: readonly Section[]): Section[] {
+  return sections
+    .filter((section) => section.boardId === boardId)
+    .sort((a, b) => a.z - b.z || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+}
+
+/** Placements on one board, in paint order, for the cards that still exist. */
+function boardPlacements(
+  boardId: string,
+  placements: readonly Placement[],
+  cards: readonly Card[],
+): Placement[] {
+  const live = new Set(cards.filter((card) => !card.deletedAt).map((card) => card.id));
+  return placements
+    .filter((placement) => placement.boardId === boardId && live.has(placement.cardId))
+    .sort((a, b) => a.z - b.z || a.createdAt - b.createdAt || a.cardId.localeCompare(b.cardId));
+}
+
+export interface PortalContentsInput {
+  /** The target board, or null when the portal points at nothing. */
+  boardId: string | null;
+  sections: readonly Section[];
+  placements: readonly Placement[];
+  cards: readonly Card[];
+  displayTitle: (cardId: string) => string;
+}
+
+/**
+ * A portal's panel reads the target board the way that board's outline does: its
+ * sections in paint order with their members under them, and the cards in no
+ * section last. Derived from the snapshot on every render — nothing cached and no
+ * second copy of the document to keep in step.
+ */
+export function portalContents(input: PortalContentsInput): ContainerContentsGroup[] {
+  const { boardId } = input;
+  if (!boardId) return [];
+  const sections = boardSections(boardId, input.sections);
+  const placements = boardPlacements(boardId, input.placements, input.cards);
+  const membership = sectionMembership([...placements], sections);
+
+  const groups: ContainerContentsGroup[] = sections.map((section) => ({
+    sectionId: section.id,
+    title: section.title || "Untitled section",
+    ...(section.color ? { color: section.color } : {}),
+    cards: [],
+  }));
+  const groupBySection = new Map(groups.map((group) => [group.sectionId, group]));
+  const loose: ContainerCardRow[] = [];
+
+  for (const placement of placements) {
+    const row: ContainerCardRow = {
+      id: placement.cardId,
+      title: input.displayTitle(placement.cardId),
+    };
+    const owner = membership.get(placement.cardId);
+    const group = owner ? groupBySection.get(owner) : undefined;
+    if (group) group.cards.push(row);
+    else loose.push(row);
+  }
+
+  // Loose cards only get a heading when there are some: an empty "Loose cards"
+  // group would read as a place to put something rather than a fact.
+  if (loose.length > 0) {
+    groups.push({ sectionId: null, title: LOOSE_CARDS_TITLE, cards: loose });
+  }
+  return groups;
+}
+
+/**
+ * The boards an orphaned portal could point at instead. The board it already
+ * names is left out: it is gone, so offering it back would be a dead end.
+ */
+export function retargetOptions(
+  boards: readonly Board[],
+  currentBoardId: string | null,
+): Array<{ id: string; name: string }> {
+  return boards
+    .filter((board) => board.id !== currentBoardId)
+    .map((board) => ({ id: board.id, name: board.name }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
 /**
@@ -86,6 +214,7 @@ export function containerLinks(
       title,
       glyph: KIND_GLYPH[other.kind],
       kind: other.kind,
+      otherId: other.id,
       ...(edge.label ? { description: edge.label } : {}),
     });
   }
@@ -106,11 +235,11 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
 
   return useMemo(() => {
     if (!target) return null;
-    const { edges, boards, sections, placements } = snapshot;
+    const { edges, boards, sections, placements, cards } = snapshot;
     const displayTitle = (cardId: string) => workspace.displayTitle(cardId);
 
     if (target.kind === "portal") {
-      const card = snapshot.cards.find((entry) => entry.id === target.id && !entry.deletedAt);
+      const card = cards.find((entry) => entry.id === target.id && !entry.deletedAt);
       if (!card) return null;
       const board = portalBoard(card, boards);
       const placement = placements.find((entry) => entry.cardId === card.id);
@@ -121,22 +250,29 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
         board,
         section: null,
         color: board?.color ?? null,
-        memberTitles: [],
+        members: [],
         links: board
           ? containerLinks("board", board.id, { edges, boards, sections, displayTitle })
           : [],
+        contents: board
+          ? portalContents({ boardId: board.id, sections, placements, cards, displayTitle })
+          : [],
+        boardOptions: board ? [] : retargetOptions(boards, portalTargetId(card)),
+        targetBoardId: portalTargetId(card),
         boardId: placement?.boardId ?? null,
         readOnly,
         canEditLayout,
+        orphan: board === null,
       };
     }
 
     const section = sections.find((entry) => entry.id === target.id);
     if (!section) return null;
-    const membership = sectionMembership([...placements], [...sections]);
-    const memberIds = [...membership]
-      .filter(([, sectionId]) => sectionId === section.id)
-      .map(([cardId]) => cardId);
+    // Membership is geometric, so only this board's sections and placements may
+    // take part: another board's cards share the coordinate space but not the map.
+    const onBoard = boardPlacements(section.boardId, placements, cards);
+    const membership = sectionMembership([...onBoard], boardSections(section.boardId, sections));
+    const inside = onBoard.filter((placement) => membership.get(placement.cardId) === section.id);
     return {
       kind: "section" as const,
       id: section.id,
@@ -144,11 +280,18 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
       board: null,
       section,
       color: section.color ?? null,
-      memberTitles: memberIds.map(displayTitle),
+      members: inside.map((placement) => ({
+        id: placement.cardId,
+        title: displayTitle(placement.cardId),
+      })),
       links: containerLinks("section", section.id, { edges, boards, sections, displayTitle }),
+      contents: [],
+      boardOptions: [],
+      targetBoardId: null,
       boardId: section.boardId,
       readOnly,
       canEditLayout,
+      orphan: false,
     };
   }, [target, snapshot, workspace, readOnly, canEditLayout]);
 }

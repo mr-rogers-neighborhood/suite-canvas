@@ -41,7 +41,9 @@ genuinely not the same question — browsing articles is not inspecting the thin
    rather than adding a field per kind. "Reveal this field" is the same target carrying a `fieldId`,
    which is why the card's reveal path does not need a second open flag. A `Target`
    ([ADR-0044](./0044-one-target-primitive.md)) is the vocabulary; the drawer's target is the subset
-   it can render.
+   it can render. A link is the one kind that needs no new flag: exactly one selected edge already
+   says "inspect this link", so the drawer reads that and a second open flag would only be a way for
+   the two to disagree.
 3. **The shell is shared, the body is per kind.** Header, close, focus and keyboard, the read-only
    rendering and the empty-when-nothing-selected state live once. A new inspectable kind is one
    renderer keyed by the target's kind, never a new surface.

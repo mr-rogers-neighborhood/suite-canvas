@@ -2,6 +2,7 @@ import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "
 import { useCallback, useMemo, useRef, useState } from "react";
 import { portalTargetId } from "../cards/portal";
 import { usePresenceStore } from "../collab/usePresenceStore";
+import { useAttachmentSource } from "../components/useBoardCover";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -31,6 +32,10 @@ export function PortalNode({ id, data, selected }: NodeProps) {
   const board = targetBoardId
     ? snapshot.boards.find((entry) => entry.id === targetBoardId)
     : undefined;
+
+  // Falls back to the live picture whenever the bytes are not here: an
+  // attachment travels beside the document, so a peer may not have it yet.
+  const cover = useAttachmentSource(board?.coverAttachmentId);
 
   const targetPlacements = useMemo(
     () =>
@@ -153,6 +158,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
         glyph={type.glyph || "\u25c9"}
         model={model}
         dots={dots}
+        cover={cover}
         peers={peerUsers}
         selected={Boolean(selected)}
         width={width}

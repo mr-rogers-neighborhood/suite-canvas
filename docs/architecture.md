@@ -401,7 +401,7 @@ templates. Composition between them is expressed by links.
 
 Alpha's remaining core surfaces are decided and tracked, not speculative:
 [ADR-0041](./decisions/0041-alpha-core-is-a-closed-feature-set.md) is the closed list, and
-[`docs/roadmap/alpha.md` §7.5](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a34) is the gate
+[`docs/roadmap/alpha.md` §7.5](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a35) is the gate
 tracker. Four of them change a model this document describes, so the decisions are recorded now and the
 code follows:
 
@@ -430,7 +430,7 @@ code follows:
 ### Home, new tab, and closing the last board
 
 Two optional board ids on the workspace, distinct because they answer different questions
-([A24](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a34)):
+([A24](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a35)):
 
 | Setting | Question it answers | Used by |
 | --- | --- | --- |
@@ -449,6 +449,9 @@ neither is a special board kind.
 | `EdgeStyle` | a value of `SurfaceStyle.sides` | `paint`, `width`, `colour`, `flow`, `speed` |
 | Link route | `edges.<id>.bends` + `edges.<id>.layer` | a polyline of flow points relative to the source anchor; `below` or `above` |
 | Tour step | a block in a tutorial card's body | `targets` (at least one, first is primary), `viewport`, `caption`, `advance` |
+| Card strips | `cards.<id>.strips` (planned) | at most one per side — `top`, `right`, `bottom`, `left` — ordered within the side ([ADR-0060](./decisions/0060-shape-strip-and-rollup.md)) |
+| Rolled up | `collapsed` on a card or a section (planned) | document state, so a collaborator sees the same board; a collapsed section keeps its cards' placements and membership |
+| Custom outline | a route whose two ends are one connector (planned) | bends are the outline; rendered as paint on an underlay, never as a clip on content |
 
 None of these is a new root map: the style is a value on records that already exist, the route is two
 fields on an edge, and a step is content in a card's own body.

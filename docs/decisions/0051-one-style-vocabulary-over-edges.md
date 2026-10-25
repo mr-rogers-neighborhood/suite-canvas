@@ -113,3 +113,13 @@ interface EdgeStyle {
 - **Opacity without a floor.** The author asked for it and the failure mode is a card that is invisible to
   its owner and, worse, to a collaborator who did not set it.
 - **Two independent dash directions on every surface.** Chaotic in practice; geometry owns the default.
+
+## Amendment 2026-10-25: the silhouette is painted behind the content
+
+§7 said a shape is paint, not structure. That was right and the first
+implementation was wrong: `clip-path` sat on the surface element, which clips
+every descendant, so a diamond card sliced the corners off its own title. The
+fill, the outline and the silhouette now live on an underlay behind the content
+and the element's own box stays a plain rectangle
+([ADR-0060](./0060-shape-strip-and-rollup.md) §5). A shape must never make its own
+text unreadable, and the same rule applies to a portal's miniature.

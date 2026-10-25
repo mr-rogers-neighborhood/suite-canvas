@@ -1,5 +1,11 @@
-import type { Card, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
-import { sectionColors, sectionMembership, sectionMovePlan, unionRect } from "@suite/graph";
+import type { Card, EdgeEndpointKind, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
+import {
+  edgeEndpoints,
+  sectionColors,
+  sectionMembership,
+  sectionMovePlan,
+  unionRect,
+} from "@suite/graph";
 import {
   Background,
   type Connection,
@@ -21,6 +27,7 @@ import {
   useReactFlow,
   useStore,
   useStoreApi,
+  ViewportPortal,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +45,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
+import { endpointAtPoint, type LinkAnchor, type LinkScene, linkAnchors } from "./linkGeometry";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
   DEFAULT_CARD_HEIGHT,
@@ -59,6 +67,7 @@ import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
+import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
 import { WhiteboardNode } from "./WhiteboardNode";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
@@ -153,6 +162,8 @@ function followPointer(
 
 function toFlowEdge(
   edge: GraphEdge,
+  /** React Flow node ids both ends are drawn through (a portal stands in for a board). */
+  link: { source: string; target: string },
   selected: boolean,
   data: Pick<EdgeDescriptionData, "onLabelDrag" | "onLabelEdit">,
   peerColor?: string,
@@ -166,8 +177,8 @@ function toFlowEdge(
 
   return {
     id: edge.id,
-    source: edge.source,
-    target: edge.target,
+    source: link.source,
+    target: link.target,
     type: "description",
     // One edge component renders every routing style; path and label placement
     // travel with it, along with the callbacks that make the label draggable.
@@ -184,6 +195,110 @@ function toFlowEdge(
     markerEnd: marker,
     ...(edge.bidirectional ? { markerStart: marker } : {}),
   };
+}
+
+/** A link drawn in flow space because one of its ends is a section. */
+interface SectionLink {
+  edge: GraphEdge;
+  anchors: { source: LinkAnchor; target: LinkAnchor };
+  offLens: boolean;
+}
+
+/** A link React Flow draws between two of this board's nodes. */
+interface FlowLink {
+  edge: GraphEdge;
+  source: string;
+  target: string;
+  offLens: boolean;
+}
+
+/** A gentle horizontal curve between two anchors, in flow coordinates. */
+function sectionLinkPath(anchors: { source: LinkAnchor; target: LinkAnchor }): string {
+  const { source, target } = anchors;
+  const bend = Math.max(32, Math.min(160, Math.abs(target.x - source.x) / 2));
+  const direction = target.x >= source.x ? 1 : -1;
+  return `M ${source.x},${source.y} C ${source.x + bend * direction},${source.y} ${
+    target.x - bend * direction
+  },${target.y} ${target.x},${target.y}`;
+}
+
+/**
+ * Links with a section end: a section is not a React Flow node, so its lines are
+ * drawn here in flow space, anchored by the same geometry the cards use.
+ */
+function SectionLinkLayer({
+  links,
+  selectedEdgeIds,
+  onSelectEdge,
+  onEdgeContextMenu,
+}: {
+  links: SectionLink[];
+  selectedEdgeIds: ReadonlySet<string>;
+  onSelectEdge: (edgeId: string) => void;
+  onEdgeContextMenu: (event: React.MouseEvent, edgeId: string) => void;
+}) {
+  if (links.length === 0) return null;
+
+  return (
+    <ViewportPortal>
+      <svg
+        className="section-link-layer"
+        data-testid="section-link-layer"
+        // Purely decorative: the links themselves are selectable through the hit
+        // paths below, and the edge menu carries their accessible actions.
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <marker
+            id="section-link-arrow"
+            viewBox="0 0 18 18"
+            markerWidth="12"
+            markerHeight="12"
+            refX="9"
+            refY="9"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 18 9 L 0 18 z" className="section-link-arrow" />
+          </marker>
+        </defs>
+        {links.map((link) => {
+          const selected = selectedEdgeIds.has(link.edge.id);
+          return (
+            <g key={link.edge.id} data-edge-id={link.edge.id}>
+              {/* A section is not a React Flow node, so this line needs its own
+                  hit area and click handling to be selectable like any edge. */}
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}
+              <path
+                className="section-link__hit"
+                d={sectionLinkPath(link.anchors)}
+                data-testid="section-link-hit"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectEdge(link.edge.id);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelectEdge(link.edge.id);
+                  onEdgeContextMenu(event, link.edge.id);
+                }}
+              />
+              <path
+                data-testid="section-link"
+                data-edge-id={link.edge.id}
+                className={`section-link${link.offLens ? " is-off-lens" : ""}${
+                  selected ? " is-selected" : ""
+                }`}
+                d={sectionLinkPath(link.anchors)}
+                markerEnd="url(#section-link-arrow)"
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
 }
 
 export function CanvasBoard() {
@@ -290,12 +405,11 @@ export function CanvasBoard() {
 
   const boardEdges: GraphEdge[] = useMemo(() => {
     if (!activeBoardId) return [];
-    const placed = new Set(boardCards.map((card) => card.id));
-    return snapshot.edges.filter(
-      (edge) =>
-        edge.boardId === activeBoardId && placed.has(edge.source) && placed.has(edge.target),
-    );
-  }, [snapshot, boardCards, activeBoardId]);
+    // Which links are drawable is decided when they are projected (an endpoint
+    // may be a section or a board, not just a card); the document keeps links
+    // whose ends are simply not on this board.
+    return snapshot.edges.filter((edge) => edge.boardId === activeBoardId);
+  }, [snapshot.edges, activeBoardId]);
 
   const boardPlacementList = useMemo(() => [...boardPlacements.values()], [boardPlacements]);
 
@@ -306,6 +420,86 @@ export function CanvasBoard() {
     if (!activeBoardId) return [];
     return snapshot.sections.filter((section) => section.boardId === activeBoardId);
   }, [snapshot.sections, activeBoardId]);
+
+  /** The first portal on this board per target board, in paint order. */
+  const portalByTargetBoard = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const card of boardCards) {
+      const target = portalTargetId(card);
+      if (target && !map.has(target)) map.set(target, card.id);
+    }
+    return map;
+  }, [boardCards]);
+
+  /** Placements of live cards only, so a trashed card cannot anchor a line. */
+  const linkPlacements = useMemo(
+    () =>
+      boardCards.flatMap((card) => {
+        const placement = boardPlacements.get(card.id);
+        return placement ? [placement] : [];
+      }),
+    [boardCards, boardPlacements],
+  );
+
+  /**
+   * Everything a link endpoint resolves against, in flow coordinates. A board
+   * endpoint has no position of its own: it is drawn through the portal that
+   * opens it, which is why the portals travel with the scene.
+   */
+  const linkScene = useMemo<LinkScene>(
+    () => ({
+      placements: linkPlacements,
+      sections: boardSections,
+      cards: snapshot.cards,
+      portals: activeBoardId
+        ? [...portalByTargetBoard].map(([targetBoardId, cardId]) => ({
+            boardId: activeBoardId,
+            cardId,
+            targetBoardId,
+          }))
+        : [],
+    }),
+    [linkPlacements, boardSections, snapshot.cards, portalByTargetBoard, activeBoardId],
+  );
+
+  /**
+   * The React Flow node an endpoint is drawn through: a card is its own node, a
+   * board is the portal standing in for it, and a section has no node at all.
+   */
+  const nodeIdForEndpoint = useCallback(
+    (endpoint: { kind: EdgeEndpointKind; id: string }): string | null => {
+      if (endpoint.kind === "card") return endpoint.id;
+      if (endpoint.kind === "board") return portalByTargetBoard.get(endpoint.id) ?? null;
+      return null;
+    },
+    [portalByTargetBoard],
+  );
+
+  /**
+   * Every link on this board, resolved: cards and portals become React Flow
+   * edges, anything touching a section becomes a flow-space line. A link whose
+   * ends are not both here is simply not drawn — it stays in the document.
+   */
+  const projectedLinks = useMemo(() => {
+    const flow: FlowLink[] = [];
+    const sections: SectionLink[] = [];
+    if (!activeBoardId) return { flow, sections };
+
+    const onLens = (endpoint: { kind: EdgeEndpointKind; id: string }) =>
+      endpoint.kind !== "card" || lens.cardIds.has(endpoint.id);
+
+    for (const edge of boardEdges) {
+      const endpoints = edgeEndpoints(edge);
+      const anchors = linkAnchors(endpoints, activeBoardId, linkScene);
+      if (!anchors) continue;
+      const offLens = lens.view !== null && !(onLens(endpoints.source) && onLens(endpoints.target));
+      const source = nodeIdForEndpoint(endpoints.source);
+      const target = nodeIdForEndpoint(endpoints.target);
+      if (source && target) flow.push({ edge, source, target, offLens });
+      else sections.push({ edge, anchors, offLens });
+    }
+    return { flow, sections };
+  }, [boardEdges, activeBoardId, linkScene, nodeIdForEndpoint, lens]);
 
   const sectionMembershipMap = useMemo(
     () => sectionMembership(boardPlacementList, boardSections),
@@ -320,6 +514,47 @@ export function CanvasBoard() {
     sectionId: string;
     rect: Rect;
   } | null>(null);
+  // A section is not a node, so its connector selection is board-local state
+  // rather than the store's `selectedConnector` (which names a node id).
+  const [selectedSectionConnector, setSelectedSectionConnector] = useState<{
+    sectionId: string;
+    connectorId: string;
+  } | null>(null);
+
+  // Connector dots appear while a link is being dragged: the drop targets have
+  // to be visible mid-gesture. W2 will fold this into the link tool's state.
+  const setLinkDraftActive = useLinkDraftStore((state) => state.setDraftActive);
+  const revealState = useConnectorRevealState();
+  useEffect(() => {
+    setLinkDraftActive(Boolean(connecting) || Boolean(reconnecting));
+    return () => setLinkDraftActive(false);
+  }, [connecting, reconnecting, setLinkDraftActive]);
+
+  // A press on a connector is a draft gesture even when the pointer never moves;
+  // React Flow only reports an end for a real drag, so the release is observed
+  // here. Otherwise a click would leave the draft — and every dot — showing.
+  useEffect(() => {
+    if (!connecting && !reconnecting) return;
+    const clear = () => {
+      reconnectGesture.current = false;
+      setConnecting(null);
+      setConnect(null);
+      setReconnecting(null);
+      setReconnect(null);
+    };
+    // `mouseup`, not `pointerup`: React Flow finishes the gesture on the mouse
+    // event, so observing the pointer event first would clear the draft before
+    // the drop could read it. Both listeners are bubble-phase on window, which
+    // is after React Flow's document handlers.
+    window.addEventListener("mouseup", clear);
+    window.addEventListener("touchend", clear);
+    window.addEventListener("pointercancel", clear);
+    return () => {
+      window.removeEventListener("mouseup", clear);
+      window.removeEventListener("touchend", clear);
+      window.removeEventListener("pointercancel", clear);
+    };
+  }, [connecting, reconnecting, setConnect, setReconnect]);
   const lastSectionPublish = useRef(0);
 
   const sectionGestures = useMemo(() => {
@@ -392,6 +627,8 @@ export function CanvasBoard() {
   const locallyResizing = useRef(new Set<string>());
   /** React Flow reports edge-updater drags through onConnectStart too. */
   const reconnectGesture = useRef(false);
+  /** True when `onConnect` already created this drag's link, so the drop is done. */
+  const connectCommitted = useRef(false);
   const lastPointerSent = useRef(0);
   const lastDragSent = useRef(0);
   const selectedKey = selectedNodeIds.join(",");
@@ -873,22 +1110,21 @@ export function CanvasBoard() {
       if (peer.reconnect) reconnecting.add(peer.reconnect.edgeId);
     }
 
-    const flowEdges: Edge[] = boardEdges.map((edge) => {
+    const flowEdges: Edge[] = projectedLinks.flow.map((link) => {
       const flowEdge = toFlowEdge(
-        edge,
-        selectedEdges.has(edge.id),
+        link.edge,
+        link,
+        selectedEdges.has(link.edge.id),
         labelHandlers,
-        peerByEdge.get(edge.id),
+        peerByEdge.get(link.edge.id),
       );
       // An arrow leaves the lens when either endpoint does: a line to a card the
       // view excluded is context, not a result.
-      const offLens =
-        lens.view !== null && !(lens.cardIds.has(edge.source) && lens.cardIds.has(edge.target));
-      const painted = offLens ? { ...flowEdge, className: "is-off-lens" } : flowEdge;
-      return reconnecting.has(edge.id) ? { ...painted, hidden: true } : painted;
+      const painted = link.offLens ? { ...flowEdge, className: "is-off-lens" } : flowEdge;
+      return reconnecting.has(link.edge.id) ? { ...painted, hidden: true } : painted;
     });
     setEdges(flowEdges);
-  }, [boardEdges, peers, selectedEdgeIds, setEdges, labelHandlers, lens]);
+  }, [projectedLinks, peers, selectedEdgeIds, setEdges, labelHandlers]);
 
   // React Flow registers this handler in an effect keyed on its identity, and
   // unregisters it during the cleanup phase of every commit that re-renders this
@@ -1538,20 +1774,74 @@ export function CanvasBoard() {
     cardsById,
   ]);
 
+  /**
+   * What a drop on `hit` should link to. A portal card stands in for the board
+   * it opens, so a link released on one points at the board, not at the card
+   * that shows it; a section points at itself; a card stays a card.
+   */
+  const endpointForDrop = useCallback(
+    (hit: { kind: EdgeEndpointKind; id: string }): { kind: EdgeEndpointKind; id: string } => {
+      if (hit.kind !== "card") return hit;
+      const targetBoard = portalTargetId(cardsById.get(hit.id));
+      return targetBoard ? { kind: "board", id: targetBoard } : hit;
+    },
+    [cardsById],
+  );
+
+  /** Resolves a flow point to what a link released there should point at. */
+  const resolveLinkTarget = useCallback(
+    (point: LinkAnchor): { kind: EdgeEndpointKind; id: string } | null => {
+      if (!activeBoardId) return null;
+      const hit = endpointAtPoint(point, activeBoardId, linkScene);
+      return hit ? endpointForDrop(hit) : null;
+    },
+    [activeBoardId, linkScene, endpointForDrop],
+  );
+
+  const onSectionLinkCommit = useCallback(
+    (
+      sectionId: string,
+      connectorId: string,
+      target: { kind: EdgeEndpointKind; id: string },
+      origin: LinkAnchor,
+    ) => {
+      if (!canCreateContent || !activeBoardId) return;
+      void origin;
+      workspace.addEdge({
+        boardId: activeBoardId,
+        source: sectionId,
+        sourceKind: "section",
+        target: target.id,
+        targetKind: target.kind,
+        sourceConnector: connectorId,
+      });
+    },
+    [workspace, activeBoardId, canCreateContent],
+  );
+
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!canCreateContent) return;
       if (!connection.source || !connection.target) return;
       if (!activeBoardId) return;
+      // The release also reaches onConnectEnd; the link already exists.
+      connectCommitted.current = true;
+      const target = endpointForDrop({ kind: "card", id: connection.target });
+      // A duplicate or a self-link comes back null; drawing one twice is a
+      // quiet no-op, not an error.
       workspace.addEdge({
         boardId: activeBoardId,
         source: connection.source,
-        target: connection.target,
+        target: target.id,
+        targetKind: target.kind,
         ...(connection.sourceHandle ? { sourceConnector: connection.sourceHandle } : {}),
+        // A board target is drawn at its portal, so the portal's connector is
+        // the anchor; dropping it here is what made every portal link land on
+        // the top dot regardless of where it was released.
         ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
       });
     },
-    [workspace, activeBoardId, canCreateContent],
+    [workspace, activeBoardId, canCreateContent, endpointForDrop],
   );
 
   // React Flow reports nothing while a reconnect drag moves, so follow the
@@ -1674,10 +1964,63 @@ export function CanvasBoard() {
     [screenToFlowPosition, setConnect, setReconnect, canCreateContent],
   );
 
-  const onConnectEnd = useCallback<OnConnectEnd>(() => {
-    setConnecting(null);
-    setConnect(null);
-  }, [setConnect]);
+  const onConnectEnd = useCallback<OnConnectEnd>(
+    (event, connectionState) => {
+      const draft = connecting;
+      const committed = connectCommitted.current;
+      connectCommitted.current = false;
+      setConnecting(null);
+      setConnect(null);
+      // Released on a connector dot: `onConnect` already wrote the link.
+      if (!draft || committed) return;
+      if (!canCreateContent || !activeBoardId) return;
+
+      const client = clientPoint(event);
+      // The event's own coordinates are the release point; `connectionState.pointer`
+      // can lag a sample behind, which lands the drop on whatever was under the
+      // pointer a frame earlier. A synthetic event carries 0,0, so fall back then.
+      const usable = client && (client.x !== 0 || client.y !== 0) ? client : null;
+      const point = usable ? screenToFlowPosition(usable) : (connectionState?.pointer ?? null);
+      if (!point) return;
+      // A section or a portal body has no handle to snap to, so the drop is
+      // resolved geometrically. Releasing over a plain card keeps today's
+      // behaviour: a card links from its dots, not its body.
+      // React Flow knows which node the pointer was over; prefer it, because a
+      // portal and the card beneath it overlap and geometry alone can disagree
+      // with what the user aimed at.
+      const overNodeId = connectionState?.toNode?.id;
+      const hit: { kind: EdgeEndpointKind; id: string } | null = overNodeId
+        ? { kind: "card", id: overNodeId }
+        : endpointAtPoint(point, activeBoardId, linkScene);
+      if (!hit) return;
+      const target = endpointForDrop(hit);
+      if (target.kind === "card") return;
+
+      const from = { kind: "card" as const, id: draft.nodeId };
+      const source = draft.anchorEnd === "target" ? target : from;
+      const other = draft.anchorEnd === "target" ? from : target;
+      workspace.addEdge({
+        boardId: activeBoardId,
+        source: source.id,
+        sourceKind: source.kind,
+        target: other.id,
+        targetKind: other.kind,
+        ...(draft.anchorEnd === "target"
+          ? { targetConnector: draft.connectorId }
+          : { sourceConnector: draft.connectorId }),
+      });
+    },
+    [
+      connecting,
+      canCreateContent,
+      activeBoardId,
+      screenToFlowPosition,
+      linkScene,
+      endpointForDrop,
+      workspace,
+      setConnect,
+    ],
+  );
 
   const onReconnectStart = useCallback(
     (event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
@@ -1720,9 +2063,18 @@ export function CanvasBoard() {
           : "source";
       const nodeId = end === "source" ? connection.source : connection.target;
       const connectorId = end === "source" ? connection.sourceHandle : connection.targetHandle;
-      workspace.reconnectEdge(oldEdge.id, end, nodeId, connectorId ?? undefined);
+      // Reconnecting onto a portal retargets the board it opens, the same way a
+      // fresh drop does; any other node stays a card endpoint.
+      const target = endpointForDrop({ kind: "card", id: nodeId });
+      workspace.reconnectEdge(
+        oldEdge.id,
+        end,
+        target.id,
+        target.kind === "card" ? (connectorId ?? undefined) : undefined,
+        target.kind,
+      );
     },
-    [workspace, canEditLayout],
+    [workspace, canEditLayout, endpointForDrop],
   );
 
   /**
@@ -1870,11 +2222,18 @@ export function CanvasBoard() {
         ...(canManageStructure
           ? [
               {
+                label: "Add connector",
+                onSelect: () => {
+                  workspace.addSectionConnector(sectionId);
+                },
+              },
+              {
                 label: "Delete section",
                 danger: true,
                 onSelect: () => {
                   workspace.deleteSection(sectionId);
                   selectSection(null);
+                  setSelectedSectionConnector(null);
                 },
               },
             ]
@@ -1941,6 +2300,24 @@ export function CanvasBoard() {
 
     if (contextMenu.kind === "connector") {
       if (!canManageStructure) return [];
+      // Section connectors address a section, card connectors address a node.
+      if (contextMenu.sectionId && contextMenu.connectorId) {
+        const { sectionId, connectorId } = contextMenu;
+        return [
+          {
+            label: "Reposition Connector",
+            onSelect: () => setSelectedSectionConnector({ sectionId, connectorId }),
+          },
+          {
+            label: "Delete connector",
+            danger: true,
+            onSelect: () => {
+              workspace.removeSectionConnector(sectionId, connectorId);
+              setSelectedSectionConnector(null);
+            },
+          },
+        ];
+      }
       return [
         {
           label: "Reposition Connector",
@@ -2224,7 +2601,10 @@ export function CanvasBoard() {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
-        onEdgeClick={() => setSelectedConnector(null)}
+        onEdgeClick={() => {
+          setSelectedConnector(null);
+          setSelectedSectionConnector(null);
+        }}
         onNodeDoubleClick={(event, node) => {
           // A portal is a doorway: the camera transition replaces the board in
           // place. Any other card opens the full-canvas focus surface.
@@ -2306,10 +2686,12 @@ export function CanvasBoard() {
         }}
         onPaneClick={() => {
           setSelectedConnector(null);
+          setSelectedSectionConnector(null);
           handleSelectSection(null);
         }}
         onNodeClick={() => {
           setSelectedConnector(null);
+          setSelectedSectionConnector(null);
           handleSelectSection(null);
         }}
         onNodeContextMenu={(event, node) => {
@@ -2382,6 +2764,42 @@ export function CanvasBoard() {
               kind: "section",
               sectionId,
             });
+          }}
+          threadMode={revealState.threadMode}
+          draftActive={revealState.draftActive}
+          selectedConnector={selectedSectionConnector}
+          onConnectorSelect={(sectionId, connectorId) => {
+            setSelectedSectionConnector({ sectionId, connectorId });
+            setSelectedConnector(null);
+          }}
+          onConnectorMoveEnd={(sectionId, connectorId, position) => {
+            if (!canManageStructure) return;
+            workspace.moveSectionConnector(sectionId, connectorId, position);
+          }}
+          onConnectorContextMenu={(event, sectionId, connectorId) => {
+            if (!canManageStructure) return;
+            openContextMenu({
+              x: event.clientX,
+              y: event.clientY,
+              kind: "connector",
+              sectionId,
+              connectorId,
+            });
+          }}
+          resolveLinkTarget={resolveLinkTarget}
+          onLinkCommit={onSectionLinkCommit}
+        />
+        <SectionLinkLayer
+          links={projectedLinks.sections}
+          selectedEdgeIds={new Set(selectedEdgeIds)}
+          onSelectEdge={(edgeId) => {
+            setSelectedConnector(null);
+            setSelectedSectionConnector(null);
+            setSelectedEdgeIds([edgeId]);
+          }}
+          onEdgeContextMenu={(event, edgeId) => {
+            if (!canEditLayout) return;
+            openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId });
           }}
         />
         <Background color="var(--rf-dot)" />

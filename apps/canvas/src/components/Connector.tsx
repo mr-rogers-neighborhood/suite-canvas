@@ -27,7 +27,7 @@ export interface ConnectorProps {
 }
 
 /** Magnetic radius around a corner/side midpoint, in screen pixels. */
-const MAGNET_RADIUS = 20;
+export const MAGNET_RADIUS = 20;
 
 /** Share of the remaining distance covered per frame when easing toward a peer. */
 const PEER_SMOOTHING = 0.22;
@@ -40,10 +40,17 @@ export interface Point {
   y: number;
 }
 
-/** Projects a pointer position onto the card perimeter, in 0..1 fractions. */
-function projectToPerimeter(rect: DOMRect, clientX: number, clientY: number): Point {
-  const px = Math.min(rect.width, Math.max(0, clientX - rect.left));
-  const py = Math.min(rect.height, Math.max(0, clientY - rect.top));
+/**
+ * Projects a point onto the closest perimeter edge of a box, in 0..1 fractions.
+ * The box is a plain rect, so flow-space callers (the section layer) reuse the
+ * same maths the card dots use.
+ */
+export function projectToPerimeter(
+  rect: { x: number; y: number; width: number; height: number },
+  point: Point,
+): Point {
+  const px = Math.min(rect.width, Math.max(0, point.x - rect.x));
+  const py = Math.min(rect.height, Math.max(0, point.y - rect.y));
 
   const edges = [
     { edge: "top" as const, distance: Math.abs(py) },
@@ -69,13 +76,17 @@ function projectToPerimeter(rect: DOMRect, clientX: number, clientY: number): Po
 }
 
 /** Attracts a free perimeter position to a nearby anchor; otherwise leaves it alone. */
-function magnetize(position: Point, rect: DOMRect): Point {
+export function magnetizeToAnchors(
+  position: Point,
+  size: { width: number; height: number },
+  radius: number = MAGNET_RADIUS,
+): Point {
   let best: Point | null = null;
-  let bestDistance = MAGNET_RADIUS;
+  let bestDistance = radius;
 
   for (const anchor of CONNECTOR_ANCHORS) {
-    const dx = (anchor.x - position.x) * rect.width;
-    const dy = (anchor.y - position.y) * rect.height;
+    const dx = (anchor.x - position.x) * size.width;
+    const dy = (anchor.y - position.y) * size.height;
     const distance = Math.hypot(dx, dy);
     if (distance <= bestDistance) {
       best = anchor;
@@ -84,6 +95,10 @@ function magnetize(position: Point, rect: DOMRect): Point {
   }
 
   return best ? { ...best } : position;
+}
+
+function magnetize(position: Point, rect: DOMRect): Point {
+  return magnetizeToAnchors(position, rect);
 }
 
 function isAnchor(position: Point): boolean {
@@ -198,7 +213,9 @@ export function Connector({
       event.preventDefault();
       event.stopPropagation();
 
-      const rect = shell.current?.closest("[data-testid='node-card']")?.getBoundingClientRect();
+      // The node face marks its own box, so a portal or a sketch measures the
+      // same rect a note does, whatever chrome it paints inside.
+      const rect = shell.current?.closest("[data-connector-surface]")?.getBoundingClientRect();
       if (!rect) return;
 
       (event.target as HTMLElement).setPointerCapture(event.pointerId);
@@ -219,7 +236,7 @@ export function Connector({
       };
 
       const move = (moveEvent: PointerEvent) => {
-        const projected = projectToPerimeter(rect, moveEvent.clientX, moveEvent.clientY);
+        const projected = projectToPerimeter(rect, { x: moveEvent.clientX, y: moveEvent.clientY });
         const next = magnetize(projected, rect);
         setLivePosition(next);
         scheduleRemeasure();
@@ -231,7 +248,7 @@ export function Connector({
       };
 
       const up = (upEvent: PointerEvent) => {
-        const projected = projectToPerimeter(rect, upEvent.clientX, upEvent.clientY);
+        const projected = projectToPerimeter(rect, { x: upEvent.clientX, y: upEvent.clientY });
         const finalPosition = magnetize(projected, rect);
         setLivePosition(null);
         setDragging(false);

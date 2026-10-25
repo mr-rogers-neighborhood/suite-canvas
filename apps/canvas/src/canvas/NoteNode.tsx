@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { type ConnectorPeerState, NodeCard } from "../components/NodeCard";
+import { NodeCard } from "../components/NodeCard";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers } from "../hooks/useCardContainers";
@@ -14,6 +14,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
 /**
  * A duplicate lands down-right of its source, like a paper copy. The offset is
@@ -38,7 +39,6 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const boards = useBoards();
   const peers = useBoardPeers(placement.boardId);
   const localUser = usePresenceStore((state) => state.localUser);
-  const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
   const setResizing = usePresenceStore((state) => state.setResizing);
 
   const editingNodeId = useUiStore((state) => state.editingNodeId);
@@ -46,18 +46,12 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const editingSurface = useUiStore((state) => state.editingSurface);
   const startEditing = useUiStore((state) => state.startEditing);
   const stopEditing = useUiStore((state) => state.stopEditing);
-  const selectedConnector = useUiStore((state) => state.selectedConnector);
-  const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
-  const openContextMenu = useUiStore((state) => state.openContextMenu);
   const openInspector = useUiStore((state) => state.openInspector);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
-  // Connectors are workspace structure, not draft objects: moving or removing
-  // one follows the trash row of the matrix, so a board or card draft cannot.
-  const canManageStructure = canManageTrash;
   const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
 
@@ -95,31 +89,6 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     [peers, id],
   );
 
-  const movingConnectorPeers = useMemo<Record<string, ConnectorPeerState>>(() => {
-    const result: Record<string, ConnectorPeerState> = {};
-    for (const peer of peers) {
-      const moving = peer.connector;
-      if (moving?.nodeId !== id) continue;
-      const entry = result[moving.connectorId] ?? { users: [], position: null };
-      entry.users.push(peer.user);
-      entry.position = entry.position ?? moving.position ?? null;
-      result[moving.connectorId] = entry;
-    }
-    return result;
-  }, [peers, id]);
-
-  const selectingConnectorPeers = useMemo<Record<string, PresenceUser[]>>(() => {
-    const result: Record<string, PresenceUser[]> = {};
-    for (const peer of peers) {
-      const selected = peer.selection?.connector;
-      if (selected?.nodeId !== id) continue;
-      const list = result[selected.connectorId] ?? [];
-      list.push(peer.user);
-      result[selected.connectorId] = list;
-    }
-    return result;
-  }, [peers, id]);
-
   const selectingPeers = useMemo<PresenceUser[]>(
     () => peers.filter((peer) => peer.selection?.nodeIds.includes(id)).map((peer) => peer.user),
     [peers, id],
@@ -129,6 +98,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     () => peers.filter((peer) => peer.resizing?.nodeId === id).map((peer) => peer.user),
     [peers, id],
   );
+  // One wiring for every node kind: the same dots, gestures and peer rings a
+  // portal or a sketch gets.
+  const connectors = useNodeConnectorWiring(card, placement.boardId);
+
   const peerResize = peers.find((peer) => peer.resizing?.nodeId === id)?.resizing ?? null;
   const peerSize = useSmoothedSize(
     peerResize ? { width: peerResize.width, height: peerResize.height } : null,
@@ -241,8 +214,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         showDragLabel={!draggingGroup}
         selectingPeers={selectingPeers}
         resizingPeers={resizingPeers}
-        movingConnectorPeers={movingConnectorPeers}
-        selectingConnectorPeers={selectingConnectorPeers}
+        threadMode={connectors.threadMode}
+        draftActive={connectors.draftActive}
+        movingConnectorPeers={connectors.movingConnectorPeers}
+        selectingConnectorPeers={connectors.selectingConnectorPeers}
         canEditContent={canEditContent}
         canEditLayout={canEditLayout}
         canManageTrash={canManageTrash}
@@ -257,33 +232,13 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         {...(canCreateContent ? { onDuplicate: duplicate } : {})}
         {...(canEditLayout ? { moveTargets, onMoveToBoard: moveToBoard } : {})}
         {...(canManageTrash ? { onTrash: () => workspace.trashCard(id) } : {})}
-        onConnectorMoveStart={(connectorId) => {
-          if (!canManageStructure) return;
-          setMovingConnector({ nodeId: id, connectorId });
-        }}
-        onConnectorMove={(connectorId, position) => {
-          if (!canManageStructure) return;
-          setMovingConnector({ nodeId: id, connectorId, position });
-        }}
-        onConnectorMoveFinished={() => setMovingConnector(null)}
-        selectedConnectorId={
-          selectedConnector?.nodeId === id ? selectedConnector.connectorId : null
-        }
-        onConnectorSelect={(connectorId) => setSelectedConnector({ nodeId: id, connectorId })}
-        onConnectorMoveEnd={(connectorId, position) => {
-          if (!canManageStructure) return;
-          workspace.moveConnector(id, connectorId, position);
-        }}
-        onConnectorContextMenu={(event, connectorId) => {
-          if (!canManageStructure) return;
-          openContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            kind: "connector",
-            nodeId: id,
-            connectorId,
-          });
-        }}
+        onConnectorMoveStart={connectors.onMoveStart}
+        onConnectorMove={connectors.onMove}
+        onConnectorMoveFinished={connectors.onMoveFinished}
+        selectedConnectorId={connectors.selectedConnectorId}
+        onConnectorSelect={connectors.onSelect}
+        onConnectorMoveEnd={connectors.onMoveEnd}
+        onConnectorContextMenu={connectors.onContextMenu}
       />
     </div>
   );

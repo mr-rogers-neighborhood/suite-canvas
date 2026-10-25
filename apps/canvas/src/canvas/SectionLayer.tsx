@@ -1,9 +1,17 @@
-import type { Rect, Section, SectionColor } from "@suite/graph";
+import type { Connector, Rect, Section, SectionColor } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../collab/presence";
+import {
+  MAGNET_RADIUS,
+  magnetizeToAnchors,
+  type Point,
+  projectToPerimeter,
+} from "../components/Connector";
 import { PeerNameTag } from "../components/PeerNameTag";
+import { revealConnectors } from "./NodeConnectors";
 import type { SectionOffset } from "./sectionLayout";
+import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
 type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -30,6 +38,12 @@ const STROKE: Record<SectionColor, string> = {
   violet: "var(--section-violet)",
 };
 
+/** What a link dragged out of a section connector landed on. */
+export interface SectionLinkTarget {
+  kind: "card" | "board" | "section";
+  id: string;
+}
+
 export interface SectionLayerProps {
   sections: Section[];
   /** Sections whose every card is off the active lens; dimmed, never hidden. */
@@ -49,6 +63,29 @@ export interface SectionLayerProps {
   onResize: (id: string, rect: Rect) => void;
   onResizeEnd: (id: string, rect: Rect) => void;
   onContextMenu: (event: React.MouseEvent, id: string) => void;
+  /** The section connector showing its dashed grab ring, if any. */
+  selectedConnector?: { sectionId: string; connectorId: string } | null;
+  onConnectorSelect?: (sectionId: string, connectorId: string) => void;
+  /** Persisted once on release, so a drag never writes to the CRDT per frame. */
+  onConnectorMoveEnd?: (sectionId: string, connectorId: string, position: Point) => void;
+  onConnectorContextMenu?: (
+    event: React.MouseEvent,
+    sectionId: string,
+    connectorId: string,
+  ) => void;
+  /** Where a link released at this flow point should point, if anywhere. */
+  resolveLinkTarget?: (point: { x: number; y: number }) => SectionLinkTarget | null;
+  /** A link dragged out of a section connector, released on a target. */
+  onLinkCommit?: (
+    sectionId: string,
+    connectorId: string,
+    target: SectionLinkTarget,
+    origin: { x: number; y: number },
+  ) => void;
+  /** W2: thread mode reveals the connector dots on unselected sections too. */
+  threadMode?: boolean;
+  /** A link is being dragged, so every section shows its drop targets. */
+  draftActive?: boolean;
   /** A viewer may select a section, never move, resize or rename it. */
   readOnly?: boolean;
 }
@@ -71,6 +108,14 @@ export function SectionLayer({
   onResize,
   onResizeEnd,
   onContextMenu,
+  selectedConnector = null,
+  onConnectorSelect,
+  onConnectorMoveEnd,
+  onConnectorContextMenu,
+  resolveLinkTarget,
+  onLinkCommit,
+  threadMode = false,
+  draftActive = false,
   readOnly = false,
 }: SectionLayerProps) {
   const { screenToFlowPosition } = useReactFlow();
@@ -79,6 +124,19 @@ export function SectionLayer({
   const cleanup = useRef<(() => void) | null>(null);
   const titleInput = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState("");
+  // Live positions of the section connectors this client is dragging, keyed
+  // `${sectionId}:${connectorId}`; the CRDT only sees the drop.
+  const [liveConnectors, setLiveConnectors] = useState<Record<string, Point>>({});
+  /** The link being dragged out of a section connector, in flow coordinates. */
+  const [linkDraft, setLinkDraft] = useState<{ from: Point; to: Point } | null>(null);
+  /**
+   * The section whose *own empty area* the pointer is over. Hovering a card, a
+   * header pill or a link inside the section is not this: the section only shows
+   * its connectors when nothing else is under the pointer, so the innermost
+   * thing wins and a section never wires up behind a card.
+   */
+  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+  const setDraftActive = useLinkDraftStore((state) => state.setDraftActive);
 
   const members = useMemo(() => {
     const counts = new Map<string, number>();
@@ -218,6 +276,79 @@ export function SectionLayer({
     );
   };
 
+  /**
+   * A link dragged out of a section connector. Sections are not React Flow
+   * nodes, so there is no handle for React Flow to start a connection from: the
+   * gesture, its preview and the drop resolution all live here.
+   */
+  const startConnectorLink = (
+    event: React.PointerEvent,
+    section: Section,
+    connector: Connector,
+  ) => {
+    if (readOnly || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onConnectorSelect?.(section.id, connector.id);
+
+    const rect = rectFor(section);
+    const position = liveConnectors[`${section.id}:${connector.id}`] ?? connector;
+    const origin = { x: rect.x + rect.width * position.x, y: rect.y + rect.height * position.y };
+    setLinkDraft({ from: origin, to: origin });
+    setDraftActive(true);
+
+    const flowPoint = (pointer: PointerEvent) =>
+      screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
+
+    startWindowGesture(
+      (pointer) => {
+        const to = flowPoint(pointer);
+        setLinkDraft({ from: origin, to });
+      },
+      (pointer) => {
+        const to = flowPoint(pointer);
+        const target = resolveLinkTarget?.(to) ?? null;
+        setLinkDraft(null);
+        setDraftActive(false);
+        if (target) onLinkCommit?.(section.id, connector.id, target, origin);
+      },
+    );
+  };
+
+  const startConnectorMove = (
+    event: React.PointerEvent,
+    section: Section,
+    connector: Connector,
+  ) => {
+    if (readOnly || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onConnectorSelect?.(section.id, connector.id);
+
+    const rect = rectFor(section);
+    const key = `${section.id}:${connector.id}`;
+    // The magnet radius is a screen distance, so scale it into flow units;
+    // otherwise a zoomed-in board would snap from far away.
+    const radius = MAGNET_RADIUS / (zoom || 1);
+    const positionAt = (pointer: PointerEvent) => {
+      const point = screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
+      return magnetizeToAnchors(projectToPerimeter(rect, point), rect, radius);
+    };
+
+    startWindowGesture(
+      (pointer) => setLiveConnectors((live) => ({ ...live, [key]: positionAt(pointer) })),
+      (pointer) => {
+        const position = positionAt(pointer);
+        setLiveConnectors((live) => {
+          const next = { ...live };
+          delete next[key];
+          return next;
+        });
+        onConnectorMoveEnd?.(section.id, connector.id, position);
+      },
+    );
+  };
+
   const commitTitle = (section: Section) => {
     onCommitRename(section.id, draft);
   };
@@ -259,11 +390,122 @@ export function SectionLayer({
                   event.stopPropagation();
                   onSelect(section.id);
                 }}
+                onPointerEnter={() => setHoveredSectionId(section.id)}
+                onPointerLeave={() =>
+                  setHoveredSectionId((current) => (current === section.id ? null : current))
+                }
                 onContextMenu={(event) => onContextMenu(event, section.id)}
               />
             );
           })}
         </div>
+      </ViewportPortal>
+
+      <ViewportPortal>
+        {/* Section connectors ride the same perimeter maths as card dots, drawn
+            here because a section is not a React Flow node. Like a card's dots
+            they appear on selection (or in thread mode), never permanently. */}
+        <div className="section-connector-layer" data-testid="section-connector-layer">
+          {sections
+            .filter((section) =>
+              // The same predicate the node faces use, so section dots cannot
+              // follow a different reveal rule than a card's.
+              revealConnectors({
+                selected: section.id === selectedSectionId,
+                threadMode,
+                draftActive,
+                hovered: section.id === hoveredSectionId,
+              }),
+            )
+            .flatMap((section) => {
+              const rect = rectFor(section);
+              return (section.connectors ?? []).map((connector) => {
+                const key = `${section.id}:${connector.id}`;
+                const position = liveConnectors[key] ?? connector;
+                const selected =
+                  selectedConnector?.sectionId === section.id &&
+                  selectedConnector.connectorId === connector.id;
+                return (
+                  // biome-ignore lint/a11y/noStaticElementInteractions: the dot is a canvas control; its menu and drag are pointer gestures on a flow-space marker.
+                  <div
+                    key={key}
+                    data-testid="section-connector"
+                    data-section-id={section.id}
+                    data-connector-id={connector.id}
+                    data-selected={selected ? "true" : undefined}
+                    className="section-connector"
+                    style={{
+                      left: rect.x + rect.width * position.x,
+                      top: rect.y + rect.height * position.y,
+                    }}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      onConnectorSelect?.(section.id, connector.id);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (readOnly) return;
+                      onConnectorContextMenu?.(event, section.id, connector.id);
+                    }}
+                  >
+                    <div
+                      className="section-connector__chrome"
+                      style={{ transform: `scale(${inverseZoom})` }}
+                    >
+                      <button
+                        type="button"
+                        data-testid="section-connector-dot"
+                        aria-label="Draw a link from this connector"
+                        className="section-connector__dot"
+                        // The dot draws a link. It must never also start the
+                        // section drag, so the press is claimed here.
+                        onPointerDown={(event) => startConnectorLink(event, section, connector)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onConnectorContextMenu?.(event, section.id, connector.id);
+                        }}
+                      />
+                      {selected ? (
+                        <button
+                          type="button"
+                          aria-label="Move connector"
+                          data-testid="section-connector-grab"
+                          className="connector-grab -translate-x-1/2 -translate-y-1/2"
+                          title="Move connector"
+                          onPointerDown={(event) => startConnectorMove(event, section, connector)}
+                          onClick={(event) => event.stopPropagation()}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onConnectorContextMenu?.(event, section.id, connector.id);
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              });
+            })}
+        </div>
+        {linkDraft ? (
+          <svg className="section-link-preview-layer" aria-hidden="true" focusable="false">
+            <line
+              className="section-link-preview"
+              x1={linkDraft.from.x}
+              y1={linkDraft.from.y}
+              x2={linkDraft.to.x}
+              y2={linkDraft.to.y}
+            />
+            <circle
+              className="section-link-preview__origin"
+              cx={linkDraft.from.x}
+              cy={linkDraft.from.y}
+              r={4}
+            />
+          </svg>
+        ) : null}
       </ViewportPortal>
 
       <ViewportPortal>

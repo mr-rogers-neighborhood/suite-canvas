@@ -1,13 +1,13 @@
-import type { Card, CardType, Connector as ConnectorModel } from "@suite/graph";
+import type { Card, CardType } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
+import { NodeConnectors } from "../canvas/NodeConnectors";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
-import { Connector } from "./Connector";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PeerNameTag } from "./PeerNameTag";
 import { PresenceAvatars } from "./PresenceAvatars";
@@ -91,6 +91,10 @@ export interface NodeCardProps {
   canManageTrash?: boolean;
   /** Shorthand for a viewer: no menu and no editing gesture at all. */
   readOnly?: boolean;
+  /** W2: thread mode reveals the connector dots on unselected cards too. */
+  threadMode?: boolean;
+  /** A link is being dragged, so this card's dots must show even unselected. */
+  draftActive?: boolean;
 }
 
 export function NodeCard({
@@ -138,6 +142,8 @@ export function NodeCard({
   canEditLayout,
   canManageTrash,
   readOnly = false,
+  threadMode = false,
+  draftActive = false,
 }: NodeCardProps) {
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
@@ -246,6 +252,7 @@ export function NodeCard({
     // biome-ignore lint/a11y/useKeyWithClickEvents: the card is a canvas node; keyboard open is handled by Enter on the selected node.
     <div
       data-testid="node-card"
+      data-connector-surface="true"
       data-node-id={card.id}
       data-dragging={draggingPeer ? "true" : undefined}
       data-selected-by-peer={selectingPeer ? "true" : undefined}
@@ -443,24 +450,23 @@ export function NodeCard({
         />
       </div>
 
-      {card.connectors.map((connector: ConnectorModel) => (
-        <Connector
-          key={connector.id}
-          connector={connector}
-          nodeId={card.id}
-          color={focusedBy?.color ?? draggingPeer?.color}
-          selected={selectedConnectorId === connector.id}
-          onSelect={(id) => onConnectorSelect?.(id)}
-          onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
-          movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
-          selectingPeers={selectingConnectorPeers[connector.id] ?? []}
-          peerPosition={movingConnectorPeers[connector.id]?.position ?? null}
-          onMoveStart={() => onConnectorMoveStart?.(connector.id)}
-          onMove={(position) => onConnectorMove?.(connector.id, position)}
-          onMoveFinished={onConnectorMoveFinished}
-          onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
-        />
-      ))}
+      <NodeConnectors
+        nodeId={card.id}
+        connectors={card.connectors}
+        selected={selected}
+        threadMode={threadMode}
+        draftActive={draftActive}
+        color={focusedBy?.color ?? draggingPeer?.color}
+        selectedConnectorId={selectedConnectorId}
+        movingConnectorPeers={movingConnectorPeers}
+        selectingConnectorPeers={selectingConnectorPeers}
+        onSelect={(id) => onConnectorSelect?.(id)}
+        onMoveStart={(id) => onConnectorMoveStart?.(id)}
+        onMove={(id, position) => onConnectorMove?.(id, position)}
+        onMoveFinished={onConnectorMoveFinished}
+        onMoveEnd={(id, position) => onConnectorMoveEnd?.(id, position)}
+        onContextMenu={(event, id) => onConnectorContextMenu?.(event, id)}
+      />
 
       {menu ? (
         // The menu is portalled, but React still bubbles its clicks through this

@@ -23,7 +23,21 @@ export function WhiteboardCardFace({
         className="whiteboard-card__preview"
         data-testid="whiteboard-card-open"
         aria-label={`Open ${label}`}
-        onClick={onOpen}
+        // A sketch opens like a portal: double-click, never a single click. A
+        // plain click is React Flow's own select (and shift-click still extends
+        // the selection), and the pointerdown is left alone so a drag can start.
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpen();
+        }}
+        onKeyDown={(event) => {
+          // Keyboard users keep a direct way in.
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onOpen();
+        }}
       >
         <WhiteboardPreview
           elements={drawing?.elements ?? []}

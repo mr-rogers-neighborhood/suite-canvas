@@ -141,10 +141,25 @@ describe("endpointConnector", () => {
     ).toBeUndefined();
   });
 
-  it("has no connector for a board endpoint", () => {
-    expect(endpointConnector({ kind: "board", id: OTHER, connectorId: "x" }, BOARD, scene())).toBe(
-      undefined,
-    );
+  it("resolves a board endpoint's connector on the portal that opens it", () => {
+    const withPortal = scene({
+      portals: [{ boardId: BOARD, cardId: "card-1", targetBoardId: OTHER }],
+    });
+    expect(
+      endpointConnector({ kind: "board", id: OTHER, connectorId: "c-right" }, BOARD, withPortal),
+    ).toMatchObject({ x: 1, y: 0.5 });
+  });
+
+  it("has no connector for a board with no portal, or an unknown dot", () => {
+    expect(
+      endpointConnector({ kind: "board", id: OTHER, connectorId: "c-right" }, BOARD, scene()),
+    ).toBeUndefined();
+    const withPortal = scene({
+      portals: [{ boardId: BOARD, cardId: "card-1", targetBoardId: OTHER }],
+    });
+    expect(
+      endpointConnector({ kind: "board", id: OTHER, connectorId: "gone" }, BOARD, withPortal),
+    ).toBeUndefined();
   });
 });
 
@@ -235,6 +250,32 @@ describe("rectContains and endpointAtPoint", () => {
     expect(endpointAtPoint({ x: 460, y: 60 }, BOARD, overlapping)).toEqual({
       kind: "card",
       id: "card-1",
+    });
+  });
+
+  it("picks the topmost card when two overlap, matching what the user sees", () => {
+    const stacked = scene({
+      placements: [
+        placement({ cardId: "card-1", x: 0, y: 0, z: 0, createdAt: 10 }),
+        placement({ cardId: "portal-1", x: 40, y: 40, z: 1, createdAt: 20 }),
+      ],
+    });
+    expect(endpointAtPoint({ x: 100, y: 100 }, BOARD, stacked)).toEqual({
+      kind: "card",
+      id: "portal-1",
+    });
+  });
+
+  it("breaks a paint-order tie by the newer placement", () => {
+    const tied = scene({
+      placements: [
+        placement({ cardId: "card-1", x: 0, y: 0, z: 1, createdAt: 10 }),
+        placement({ cardId: "portal-1", x: 40, y: 40, z: 1, createdAt: 20 }),
+      ],
+    });
+    expect(endpointAtPoint({ x: 100, y: 100 }, BOARD, tied)).toEqual({
+      kind: "card",
+      id: "portal-1",
     });
   });
 

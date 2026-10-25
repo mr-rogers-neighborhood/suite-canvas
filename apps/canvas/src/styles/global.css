@@ -399,6 +399,28 @@ body {
   z-index: 3;
 }
 
+/* Every node kind mounts the same connector layer over its own box: a note, a
+   portal and a sketch differ in their chrome, never in their dots. */
+.node-connectors {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  /* Let a drag on the card body reach React Flow; only the dots grab. */
+  pointer-events: none;
+}
+
+/* Hidden dots are still measured handles, so they must never grab a pointer:
+   an invisible dot that swallows a click is worse than no dot at all. */
+.node-connectors[data-revealed="false"] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* A portal's node shell is the box its connector layer is measured against. */
+.portal-node-shell {
+  display: block;
+}
+
 /* Connectors: a dot to select, plus a dashed grab handle to reposition it. */
 /* Doubles as a React Flow handle, so the position rules below win over its defaults. */
 .connector-dot.react-flow__handle {
@@ -471,6 +493,11 @@ body {
 
 .connector-grab:active {
   cursor: grabbing;
+}
+
+.node-connectors .react-flow__handle,
+.node-connectors .connector-grab {
+  pointer-events: auto;
 }
 
 /* While a connector is selected its grab ring must win over link hit-areas
@@ -1223,6 +1250,130 @@ body {
   color: var(--ink-muted);
   font-size: 10px;
   line-height: 15px;
+}
+
+/* Section connectors: dots on a section perimeter, drawn in flow space because
+   a section is not a React Flow node. The chrome is counter-scaled so a dot
+   keeps its size at any zoom, exactly like the header pill. */
+.section-connector-layer {
+  position: absolute;
+  inset: 0;
+  /* Above the header layer (100000): a dot near a corner must be pressable
+     instead of handing the pointerdown to the section's drag handle. */
+  z-index: 100001;
+  pointer-events: none;
+}
+
+.section-connector {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+}
+
+.section-connector__chrome {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.section-connector__dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #94a3b8;
+  border-radius: 9999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.65);
+  cursor: crosshair;
+  transition: box-shadow 120ms ease;
+}
+
+.dark .section-connector__dot {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+}
+
+.section-connector:hover .section-connector__dot {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 5px rgba(10, 132, 255, 0.35);
+}
+
+.section-connector[data-selected="true"] .section-connector__dot {
+  border-color: var(--section-blue);
+  background: var(--section-blue);
+}
+
+/* Links whose ends include a section, drawn in the viewport portal. */
+.section-link-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  /* Below the nodes, exactly like React Flow's own edge layer: a link passing
+     over a card must never take the click that belongs to the card. Its hit
+     stroke is only reachable where nothing sits on top of it. */
+  z-index: 0;
+  pointer-events: none;
+}
+
+.section-link {
+  fill: none;
+  stroke: var(--ink-muted);
+  stroke-width: 1.5;
+  /* The layer lets the canvas pan; the stroke itself is clickable. */
+  pointer-events: stroke;
+}
+
+/* A wider invisible stroke so a 1.5px line can actually be clicked. */
+.section-link__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.section-link.is-selected {
+  stroke: var(--accent, #0a84ff);
+  stroke-width: 2.5;
+}
+
+.section-link-preview-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  z-index: 100002;
+  pointer-events: none;
+}
+
+.section-link-preview {
+  stroke: var(--accent, #0a84ff);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.section-link-preview__origin {
+  fill: var(--accent, #0a84ff);
+}
+
+.section-link-arrow {
+  fill: var(--ink-muted);
+}
+
+.section-link.is-off-lens {
+  opacity: 0.35;
 }
 
 .section-resize-handle {

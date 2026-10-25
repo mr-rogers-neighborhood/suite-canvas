@@ -7,9 +7,11 @@ import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
-import { PortalCard } from "./PortalCard";
+import { DEFAULT_PORTAL_SIZE, PortalCard } from "./PortalCard";
 import { boardMiniature, miniatureDots } from "./portalMiniature";
+import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
 /**
  * A portal as React Flow sees it. The card is one node among the board's cards
@@ -70,6 +72,10 @@ export function PortalNode({ id, data, selected }: NodeProps) {
     });
   }, [board, id, requestPortalEntry, targetBoardId]);
 
+  // A portal is a card, so it carries the same connectors and gestures a note
+  // does; the dots live on the node's own box, above the miniatures chrome.
+  const connectors = useNodeConnectorWiring(card, placement.boardId);
+
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
   const lastResizeSent = useRef(0);
 
@@ -112,7 +118,16 @@ export function PortalNode({ id, data, selected }: NodeProps) {
   const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
 
   return (
-    <div ref={cardRef}>
+    <div
+      ref={cardRef}
+      data-connector-surface="true"
+      className="portal-node-shell"
+      style={{
+        position: "relative",
+        width: width ?? DEFAULT_PORTAL_SIZE.width,
+        height: height ?? DEFAULT_PORTAL_SIZE.height,
+      }}
+    >
       <NodeResizer
         isVisible={canEditLayout && Boolean(selected)}
         minWidth={200}
@@ -133,6 +148,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
         height={height}
         onOpen={open}
       />
+      <NodeConnectors {...connectors} selected={Boolean(selected)} />
     </div>
   );
 }

@@ -95,8 +95,18 @@ export function endpointConnector(
       );
       return section?.connectors?.find((connector) => connector.id === endpoint.connectorId);
     }
-    // A board endpoint is anchored at its portal; that portal's own connectors
-    // are addressed as card endpoints on the portal card.
+    case "board": {
+      // A board is drawn at its portal, so the connector the user released on is
+      // the portal's connector. Without this the line always falls back to the
+      // side nearest the other end, which is never the dot that was aimed at.
+      const portal = scene.portals.find(
+        (entry) => entry.boardId === boardId && entry.targetBoardId === endpoint.id,
+      );
+      if (!portal) return undefined;
+      return scene.cards
+        .find((card) => card.id === portal.cardId)
+        ?.connectors.find((connector) => connector.id === endpoint.connectorId);
+    }
     default:
       return undefined;
   }
@@ -180,12 +190,23 @@ export function endpointAtPoint(
   scene: LinkScene,
 ): LinkEndpointRef | null {
   const onBoard = scene.sections.filter((section) => section.boardId === boardId);
-  // Cards paint above sections, so a card wins when the point is in both.
+  // Cards paint above sections, so a card wins when the point is in both. Among
+  // cards the topmost one wins: paint order is `z`, then creation, which is what
+  // the user sees when a portal sits over the card that opened it.
+  let topmost: { cardId: string; z: number; createdAt: number } | null = null;
   for (const placement of scene.placements) {
     if (placement.boardId !== boardId) continue;
     const rect = endpointRect({ kind: "card", id: placement.cardId }, boardId, scene);
-    if (rect && rectContains(rect, point)) return { kind: "card", id: placement.cardId };
+    if (!rect || !rectContains(rect, point)) continue;
+    const above =
+      topmost === null ||
+      placement.z > topmost.z ||
+      (placement.z === topmost.z && placement.createdAt >= topmost.createdAt);
+    if (above) {
+      topmost = { cardId: placement.cardId, z: placement.z, createdAt: placement.createdAt };
+    }
   }
+  if (topmost) return { kind: "card", id: topmost.cardId };
   for (const section of onBoard) {
     const rect = { x: section.x, y: section.y, width: section.width, height: section.height };
     if (rectContains(rect, point)) return { kind: "section", id: section.id };

@@ -5,7 +5,9 @@ import { useCardTitle } from "../hooks/useCardContainers";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
+import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
 /** A whiteboard card on the canvas: a cheap preview that opens the focus surface. */
 export function WhiteboardNode({ data, selected }: NodeProps) {
@@ -15,6 +17,8 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const title = useCardTitle(card.id);
   const drawing = useDrawing(card.id);
+  // A sketch is a card too: same connector dots, same gestures as a note.
+  const connectors = useNodeConnectorWiring(card, placement.boardId);
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
 
   const handleResize = useCallback((_event: unknown, params: ResizeParams) => {
@@ -38,7 +42,12 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const height = liveSize?.height ?? placement.height ?? 240;
 
   return (
-    <div className="whiteboard-node" data-testid="whiteboard-node" style={{ width, height }}>
+    <div
+      className="whiteboard-node"
+      data-testid="whiteboard-node"
+      data-connector-surface="true"
+      style={{ width, height, position: "relative" }}
+    >
       <NodeResizer
         isVisible={canEditLayout && Boolean(selected)}
         minWidth={200}
@@ -53,6 +62,7 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
         label={title || "Whiteboard"}
         onOpen={() => openCardFocus(card.id)}
       />
+      <NodeConnectors {...connectors} selected={Boolean(selected)} />
     </div>
   );
 }

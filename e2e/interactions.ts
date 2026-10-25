@@ -54,3 +54,39 @@ export async function expectPeersConnected(pageA: Page, pageB: Page): Promise<vo
     await expect(page.getByTestId("node-card")).toHaveCount(2);
   }
 }
+
+/**
+ * Clicks a card at a point that genuinely belongs to it.
+ *
+ * Seeded boards place cards close enough to overlap, and a plain `.click()` aims
+ * at the centre, where a card on top would receive the press instead. Selection
+ * is what reveals connector dots, so a test that means "select this card" must
+ * not silently select its neighbour.
+ */
+export async function selectCard(page: Page, card: Locator): Promise<void> {
+  const box = await card.boundingBox();
+  if (!box) throw new Error("card is not measurable");
+
+  const fractions: Array<[number, number]> = [
+    [0.5, 0.5],
+    [0.08, 0.08],
+    [0.92, 0.08],
+    [0.08, 0.92],
+    [0.92, 0.92],
+    [0.5, 0.06],
+    [0.06, 0.5],
+  ];
+
+  for (const [fx, fy] of fractions) {
+    const point = { x: box.x + box.width * fx, y: box.y + box.height * fy };
+    const owns = await card.evaluate(
+      (element, at) => element.contains(document.elementFromPoint(at.x, at.y)),
+      point,
+    );
+    if (!owns) continue;
+    await page.mouse.click(point.x, point.y);
+    return;
+  }
+
+  throw new Error("every point of the card is covered by another element");
+}

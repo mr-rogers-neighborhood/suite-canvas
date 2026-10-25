@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { selectCard } from "../interactions";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now()}-${++sequence}`;
@@ -62,6 +63,9 @@ async function placeFromLibrary(page: Page, title: string): Promise<void> {
 
 /** Drags one connector dot onto another; handles can register a beat late. */
 async function connectCards(page: Page): Promise<void> {
+  // Dots appear on selection; the drag itself reveals the target's dots.
+  await selectCard(page, cards(page).nth(0));
+  await expect(cards(page).nth(0).locator('[data-testid="connector-dot"]')).toHaveCount(4);
   const from = cards(page).nth(0).locator('[data-testid="connector-dot"]').nth(1);
   const to = cards(page).nth(1).locator('[data-testid="connector-dot"]').nth(3);
   const edge = page.locator(".react-flow__edge");

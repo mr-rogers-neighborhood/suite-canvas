@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { expectPeersConnected } from "../interactions";
+import { expectPeersConnected, selectCard } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
@@ -32,6 +32,9 @@ async function boxPair(
 async function connectCards(page: Page): Promise<void> {
   const cards = page.locator('[data-testid="node-card"]');
   await expect(cards).toHaveCount(2);
+  // Dots appear on selection; the drag itself reveals the target's dots.
+  await selectCard(page, cards.nth(0));
+  await expect(cards.nth(0).locator('[data-testid="connector-dot"]')).toHaveCount(4);
   const from = cards.nth(0).locator('[data-testid="connector-dot"]').nth(1);
   const to = cards.nth(1).locator('[data-testid="connector-dot"]').nth(3);
   const edge = page.locator(".react-flow__edge");

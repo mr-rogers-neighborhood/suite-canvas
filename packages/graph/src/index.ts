@@ -242,6 +242,8 @@ export {
   sectionsAt,
   unionRect,
 } from "./sections.js";
+export type { Target } from "./target.js";
+export { sameTarget, targetKey, targetKindSchema, targetKinds, targetSchema } from "./target.js";
 export type {
   DisplayPreset,
   TemplateContext,

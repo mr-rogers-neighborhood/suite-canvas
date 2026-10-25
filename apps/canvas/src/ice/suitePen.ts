@@ -69,7 +69,24 @@ export function handForScale(scale: number): HandLaw {
  * kept for comparison — it is a second renderer of the same card, so anything
  * that writes must never run from there.
  */
-export const SUITE_CARD_DOM_FACE = false;
+export const SUITE_CARD_DOM_FACE = domFaceRequested(
+  typeof window === "undefined" ? "" : window.location.search,
+);
+
+/**
+ * Whether this page asked for the DOM face, from `?face=dom`.
+ *
+ * The face is a question about where reading happens, not a build variant: the
+ * sheet is the card at every distance, and the DOM twin exists so a card big
+ * enough to read can carry real rich text and reach the accessibility tree. It
+ * is a URL flag rather than a constant so the two can be compared in the same
+ * session — `pnpm ice:lab domface` measures both — and so nothing ships on a
+ * face nobody chose.
+ */
+export function domFaceRequested(search: string): boolean {
+  const value = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("face");
+  return value === "dom";
+}
 
 /** The face key the paper kind asks for by default; ours is the shell's family. */
 export const SUITE_FACE = "caveat";

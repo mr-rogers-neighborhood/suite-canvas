@@ -710,6 +710,16 @@ meaning *around* the surface, and that is what landed:
 - the library drawer, the inspector, the zoom cluster, the context menu and the Views bar
   are ordinary DOM and are fully usable by keyboard and screen reader.
 
+**The card itself can be DOM, and that is measured.** `?face=dom` mounts the real card
+(`NodeCard`) for every card past the sheet's sharp ceiling — the ones a reader is actually
+looking at — and leaves the raster underneath at every other zoom. `pnpm ice:lab domface`
+asserts the mounted card carries its text, has focusable elements, is not inside
+`aria-hidden`, and that the desk keeps its frame rate (60 fps at fit, 43 fps at 4× on the
+reference machine, which is the zoom's overdraw rather than the overlay). So the limits
+below are about *the whole canvas* — every card at every zoom, a Tab order across the
+world — not about a card you are reading. The flag is off by default because choosing a
+face is a product decision, not a build variant.
+
 | Capability | React Flow era | ICE today | Gap | Owner |
 | --- | --- | --- | --- | --- |
 | The canvas in the accessibility tree | React Flow nodes were real DOM elements, so titles, chips and buttons were readable and tabbable | The objects are WebGPU rasters; the overlay is `aria-hidden="true"`. The surface carries a name, a description and a live summary, and the library and inspector are the reading path | **P0 remains**: a screen reader gets the surface's summary and nothing per card. Reading a specific card means finding it in the library, which needs a mouse or the ⌘K path — and the drawer is not mounted for a read-only seat | G polish |

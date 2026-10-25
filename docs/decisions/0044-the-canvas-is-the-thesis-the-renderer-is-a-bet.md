@@ -24,7 +24,7 @@ The facts as of `5c318ec`:
 | Share of the app that is engine integration | ~44% |
 | Engine | `@vibecook/ice@0.16.0` — third party, MIT, `vibefield/infinite-canvas-engine` |
 | Engine gaps the app works around | no `setPosition` (entities respawn instead of moving), a container's inside compiled once at spawn, entity identity per frame, **one text raster channel** (rich text is invisible on the sheet), a shared 16 MB ink shelf, card creation superlinear (~3.5 s at 1k, ~90 s at 5k placements) |
-| What the engine makes impossible or expensive | accessibility tree, rich text on the sheet, 5k-class workspaces (unmeasured frame time) |
+| What the engine makes impossible or expensive | a tree for every card at every zoom, rich text *on the raster*, 5k-class workspaces (unmeasured frame time) |
 | What React Flow could not do | one flat node space, so a Board inside a Board was a scaled DOM board inside a camera — a camera trick, not topology ([ADR-0034](./0034-ice-primary-rendering-engine.md)); per-node DOM cost at scale; zoom limits |
 
 ## Decision
@@ -59,9 +59,13 @@ Harder, and knowingly accepted:
 
 - **A rented engine carries ~44% of the codebase.** Its roadmap is not ours; every missing API is a
   workaround with a comment. A fork is possible (MIT) and expensive.
-- **Two capabilities are permanently out of reach while the sheet is a raster**: rich text on the
-  card face (read it in the inspector, [ADR-0043](./0043-what-a-card-face-says.md)) and an
-  accessibility tree for the canvas.
+- **The whole canvas stays outside the accessibility tree, and the sheet carries no rich text.**
+  There is a measured escape hatch: `?face=dom` mounts the real `NodeCard` for every card past the
+  sheet's sharp ceiling, so the card a reader is looking at does carry real text and focusable
+  elements at no measurable frame cost (`pnpm ice:lab domface`: 60 fps at fit, 43 fps at 4×, which is
+  the zoom's overdraw). What no flag fixes is a tree for *every* card at *every* zoom, or a Tab order
+  across the whole world — so [ADR-0043](./0043-what-a-card-face-says.md)'s "read it in the
+  inspector" is a default, not a limit.
 - **The gate is a real session, not a test suite.** Thirteen lab scenarios prove the desk does what
   it says; they cannot prove that a person wants to spend an evening in it.
 

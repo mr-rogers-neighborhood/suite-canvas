@@ -66,6 +66,8 @@ import {
   type Tag,
   tagSchema,
 } from "../schema.js";
+import type { SurfaceStyle } from "../style.js";
+import { isEmptyStyle, surfaceStyleSchema } from "../style.js";
 import { normalizeTemplate } from "../template.js";
 import { expandTitleTemplate, hasTitleToken, titleTemplateValues } from "../templateTitle.js";
 import type { SavedView, ViewQuery } from "../views.js";
@@ -369,6 +371,42 @@ function readNumber(map: LoroMap, key: string): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+/**
+ * Read a paint record back. A malformed or hand-edited style is dropped rather
+ * than thrown: losing a border must never make a card unreadable.
+ */
+export function readBends(fields: LoroMap): { x: number; y: number }[] | undefined {
+  const value = fields.get("bends");
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const bends: { x: number; y: number }[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") return undefined;
+    const { x, y } = entry as { x?: unknown; y?: unknown };
+    if (typeof x !== "number" || typeof y !== "number") return undefined;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+    bends.push({ x, y });
+  }
+  return bends;
+}
+
+/** Write a paint record, or remove it when the style says nothing. */
+function writeSurfaceStyle(fields: LoroMap, style: SurfaceStyle | null): void {
+  if (!style) {
+    fields.delete("style");
+    return;
+  }
+  const parsed = surfaceStyleSchema.parse(style);
+  if (isEmptyStyle(parsed)) fields.delete("style");
+  else fields.set("style", parsed);
+}
+
+export function readSurfaceStyle(fields: LoroMap): SurfaceStyle | undefined {
+  const value = fields.get("style");
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const parsed = surfaceStyleSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function readBoolean(map: LoroMap, key: string): boolean | undefined {
   const value = map.get(key);
   return typeof value === "boolean" ? value : undefined;
@@ -578,6 +616,8 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
     }
   }
 
+  const style = readSurfaceStyle(fields);
+
   return cardSchema.parse({
     id,
     createdAt: readNumber(fields, "createdAt") ?? 0,
@@ -588,6 +628,7 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
     primaryTypeId,
     tags,
     properties,
+    ...(style ? { style } : {}),
   });
 }
 
@@ -663,6 +704,7 @@ export function tagFromMap(id: string, fields: LoroMap): Tag {
 
 export function sectionFromMap(id: string, fields: LoroMap): Section {
   const color = readString(fields, "color");
+  const style = readSurfaceStyle(fields);
   return sectionSchema.parse({
     id,
     boardId: readString(fields, "boardId") ?? "",
@@ -676,6 +718,7 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     ...(color ? { color } : {}),
+    ...(style ? { style } : {}),
   });
 }
 
@@ -742,6 +785,9 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
   const targetConnector = readString(fields, "targetConnector");
   const label = readString(fields, "label");
   const labelOffset = readNumber(fields, "labelOffset");
+  const style = readSurfaceStyle(fields);
+  const bends = readBends(fields);
+  const layer = fields.get("layer");
   const sourceKind = edgeEndpointKindSchema.safeParse(readString(fields, "sourceKind"));
   const targetKind = edgeEndpointKindSchema.safeParse(readString(fields, "targetKind"));
   return normalizeEdge(
@@ -759,6 +805,9 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
       bidirectional: readBoolean(fields, "bidirectional") ?? false,
       ...(label ? { label } : {}),
       ...(typeof labelOffset === "number" ? { labelOffset } : {}),
+      ...(bends ? { bends } : {}),
+      ...(layer === "above" || layer === "below" ? { layer } : {}),
+      ...(style ? { style } : {}),
       createdAt: readNumber(fields, "createdAt") ?? 0,
       updatedAt: readNumber(fields, "updatedAt") ?? 0,
     }),
@@ -1114,6 +1163,7 @@ export class WorkspaceDocument {
     const color = readString(value, "color");
     const coverAttachmentId = readString(value, "coverAttachmentId");
     const template = value.get("template");
+    const style = readSurfaceStyle(value);
     const board = boardSchema.parse({
       id,
       name: readString(value, "name") ?? "Board",
@@ -1124,6 +1174,7 @@ export class WorkspaceDocument {
       ...(color ? { color } : {}),
       ...(coverAttachmentId ? { coverAttachmentId } : {}),
       ...(template === true ? { template } : {}),
+      ...(style ? { style } : {}),
     });
     this.boardCache.set(id, board);
     return board;
@@ -1177,6 +1228,20 @@ export class WorkspaceDocument {
     else fields.delete("color");
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}board-color`);
+  }
+
+  /**
+   * The paint of one surface ([ADR-0051](../../../../docs/decisions/0051-one-style-vocabulary-over-edges.md)).
+   * One method per surface keeps the write path obvious, and each writes the
+   * whole record: a style is edited as a unit, and a partial merge would make
+   * "remove the border" indistinguishable from "never had one".
+   */
+  setBoardStyle(id: string, style: SurfaceStyle | null): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    writeSurfaceStyle(fields, style);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-style`);
   }
 
   /** Whether a board is offered as a template. Never changes what it holds. */
@@ -2011,6 +2076,15 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}section-color`);
   }
 
+  /** Paint for a section's frame. A silhouette never changes what it contains. */
+  setSectionStyle(id: string, style: SurfaceStyle | null): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    writeSurfaceStyle(fields, style);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}section-style`);
+  }
+
   updateSectionGeometry(id: string, rect: Pick<Section, "x" | "y" | "width" | "height">): void {
     const fields = this.sections.get(id);
     if (!isMap(fields)) return;
@@ -2791,6 +2865,11 @@ export class WorkspaceDocument {
    * Replaces the whole type membership. The primary type is kept when it is
    * still a member, otherwise the first remaining type becomes primary.
    */
+  /** Paint for a card. Absent means the surface role, so dropping it is a reset. */
+  setCardStyle(cardId: string, style: SurfaceStyle | null): void {
+    this.mutateCard(cardId, (fields) => writeSurfaceStyle(fields, style));
+  }
+
   setCardTypes(cardId: string, typeIds: string[], primaryTypeId?: string): void {
     const unique = [...new Set(typeIds)];
     if (unique.length === 0) {
@@ -3548,6 +3627,42 @@ export class WorkspaceDocument {
   setEdgePath(id: string, path: GraphEdge["path"]): void {
     if (!this.getEdge(id)) return;
     this.mutateEdge(id, (fields) => fields.set("path", path));
+  }
+
+  /**
+   * A link's route: the bends a reader drew and which side of the cards it paints
+   * on ([ADR-0052](../../../../docs/decisions/0052-a-link-is-a-route.md)). Bends
+   * are stored relative to the source anchor, so a moved card takes them along.
+   */
+  setEdgeRoute(
+    id: string,
+    route: {
+      bends?: { x: number; y: number }[] | undefined;
+      layer?: "below" | "above" | undefined;
+    },
+  ): void {
+    const fields = this.edges.get(id);
+    if (!isMap(fields)) return;
+    const bends = (route.bends ?? []).slice(0, 24);
+    if (bends.length > 0)
+      fields.set(
+        "bends",
+        bends.map((bend) => ({ x: bend.x, y: bend.y })),
+      );
+    else fields.delete("bends");
+    if (route.layer && route.layer !== "below") fields.set("layer", route.layer);
+    else fields.delete("layer");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}edge-route`);
+  }
+
+  /** Stroke paint for a link. */
+  setEdgeStyle(id: string, style: SurfaceStyle | null): void {
+    const fields = this.edges.get(id);
+    if (!isMap(fields)) return;
+    writeSurfaceStyle(fields, style);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}edge-style`);
   }
 
   reconnectEdge(

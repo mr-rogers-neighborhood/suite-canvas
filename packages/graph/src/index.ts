@@ -242,6 +242,34 @@ export {
   sectionsAt,
   unionRect,
 } from "./sections.js";
+export type {
+  EdgeStyle,
+  ResolvedSurfaceStyle,
+  StyleColourRole,
+  StyleEdgeFlow,
+  StyleEdgePaint,
+  StyleShape,
+  StyleSide,
+  SurfaceSides,
+  SurfaceStyle,
+} from "./style.js";
+export {
+  clampStyle,
+  defaultEdgeFlow,
+  edgeStyleSchema,
+  isEmptyStyle,
+  OPACITY_FLOOR,
+  resolveSurfaceStyle,
+  sideEdgeStyle,
+  styleColourRoles,
+  styleEdgeFlows,
+  styleEdgePaints,
+  styleShapes,
+  styleSides,
+  surfaceStyleSchema,
+  TEXT_SCALE_MAX,
+  TEXT_SCALE_MIN,
+} from "./style.js";
 export type { Target } from "./target.js";
 export { sameTarget, targetKey, targetKindSchema, targetKinds, targetSchema } from "./target.js";
 export type {

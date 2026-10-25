@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { surfaceStyleSchema } from "./style.js";
 
 export const edgeKinds = ["references", "relates-to", "tagged"] as const;
 export const edgePaths = ["bezier", "straight", "step", "smoothstep"] as const;
@@ -50,6 +51,8 @@ export const boardSchema = z.object({
    * makes a new board (ADR-0040 — templates are duplication, not a new kind).
    */
   template: z.boolean().optional(),
+  /** Paint for the board's canvas ([ADR-0051](../../../docs/decisions/0051-one-style-vocabulary-over-edges.md)). */
+  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -76,6 +79,8 @@ export const fieldDefinitionSchema = z.object({
    * value alone; it is presentation only and never changes the stored value.
    */
   display: z.string().min(1).max(160).optional(),
+  /** Paint for the field block; styling a field is styling a surface (ADR-0051). */
+  style: surfaceStyleSchema.optional(),
 });
 
 /** A schema-bearing classification. Exactly one is primary on a card. */
@@ -153,6 +158,8 @@ export const cardSchema = z.object({
   primaryTypeId: entityIdSchema,
   tags: z.array(entityIdSchema),
   properties: z.record(z.string(), propertyValueSchema),
+  /** Paint for the card on the canvas (ADR-0051). */
+  style: surfaceStyleSchema.optional(),
 });
 
 /** Where a card sits on a board. One placement per (board, card) pair. */
@@ -186,6 +193,8 @@ export const sectionSchema = z.object({
   color: sectionColorSchema.optional(),
   /** Link attachment points, like a card's; a section can be a link endpoint. */
   connectors: z.array(connectorSchema).optional(),
+  /** Paint for the section's frame (ADR-0051). */
+  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -210,6 +219,16 @@ export const graphEdgeSchema = z.object({
   label: z.string().optional(),
   /** Where the label sits along the path, 0..1; absent means the middle. */
   labelOffset: z.number().min(0).max(1).optional(),
+  /**
+   * Manual route, in flow coordinates **relative to the source anchor**, so a
+   * moved endpoint translates the whole route instead of stranding the bends.
+   * Every path style renders these ([ADR-0052](../../../docs/decisions/0052-a-link-is-a-route.md)).
+   */
+  bends: z.array(positionSchema).max(24).optional(),
+  /** Paint order against the cards. Absent means beneath, the safe default (ADR-0048). */
+  layer: z.enum(["below", "above"]).optional(),
+  /** Stroke paint for the link (ADR-0051). */
+  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

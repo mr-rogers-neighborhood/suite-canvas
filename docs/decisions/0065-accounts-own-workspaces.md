@@ -93,6 +93,49 @@ licence remains the only entitlement.**
 - **Costs and operations grow**: one more process, one more database, one more secret set (Stripe keys,
   SES identity, licence signing key). That is the price of the three costs above and it is accepted.
 
+## Amendment — 2026-10-25: Better Auth Organizations *is* the workspace
+
+The first draft invented a `workspaces` table and a `workspace_members` table beside Better Auth. That
+was a mistake: Better Auth's **organization plugin** already models exactly what a workspace needs —
+an organization with a `name`, a unique `slug`, a `logo`, `metadata`; **members** with roles;
+**invitations** with an inviter, an expiry and a status; an **active organization** on the session; and
+hooks before and after each of those operations. Re-implementing that would be two membership models
+that can disagree, which is the one thing a permissions system must never be.
+
+1. **One organization per workspace, and the document id survives.** Better Auth generates the
+   organization's own id, but a workspace's identity is its *document* id and every share link, owner
+   link and URL fragment already names it. So the workspace id lives in **`organization.slug`** — the
+   plugin's one required, unique, user-chosen string — and `metadata.workspaceId` mirrors it where a
+   slug's charset is too narrow. Claiming a workspace therefore sets a slug, and changes nothing else.
+2. **Roles are asked for at the granularity Better Auth has.** The organization roles are
+   `owner | admin | member`; our capability matrix has eight booleans. One function maps them
+   (`capabilitiesForRole`), and it is the only place the mapping exists: **owner** is the licence
+   holder and schema owner, **admin** edits content and layout and may manage links, **member** reads
+   and edits content. Custom roles are Better Auth's `ac`/`roles` feature, deliberately unused in alpha
+   — a permissions matrix with no UI to explain it is a support burden, not a feature.
+3. **Teams are refused, on purpose.** The plugin offers teams *inside* an organization. Our sync unit
+   is one `LoroDoc` per workspace, so access cannot be finer than the whole document: a "team" that
+   could not be enforced at the relay would be a promise the architecture breaks on the first sync.
+   Per-board access stays what it is — a share projection (ADR-0022), not a permission.
+4. **Two kinds of invitation, because they answer different questions.** An **organization invitation**
+   is email-bound, has an inviter, an expiry and a status, and is the normal way to add a member. An
+   **`invite_key`** is a shareable row (role, expiry, max uses, revoked-at) for a tester you cannot
+   email or do not want to — it is redeemed into the same `member` table, atomically, and it is the
+   one invitation that survives being forwarded. Neither touches the document.
+5. **Billing attaches to the organization, not to a person.** A subscription's
+   `client_reference_id` is the organization id, and the licence's `workspaces` allowance reads as
+   *how many organizations this customer may own* — which is how one agency hosts several clients, and
+   how the self-hosted edition supports many organizations in one deployment without a second concept.
+   A seat is a member of an owned organization; the check stays server-side (§5).
+6. **Hooks carry our policy, never our data.** `beforeCreateOrganization`, `beforeAddMember` and
+   `beforeAcceptInvitation` are where the licence and the invite rules are enforced. A hook that
+   touches a document is a hook that can corrupt one, so none does.
+7. **What this buys.** Hosted: each organization is a customer boundary — seats, licence, usage and
+   support all key off one id. Self-hosted: the same model, with many organizations in one deployment
+   and the account service feature-flagged (beta.md's editions promise survives unchanged). And the
+   browser gets a workspace switcher for free: "the organizations I belong to" is a list Better Auth
+   already returns.
+
 ## Rejected alternatives
 
 - **Invite keys as signed tokens.** A signed token cannot be revoked without a revocation list, and a

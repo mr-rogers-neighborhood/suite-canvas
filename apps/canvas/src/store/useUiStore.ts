@@ -1,7 +1,9 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
 import type { CanvasMode } from "../canvas/linkGesture";
+import { usePlacementRunStore } from "../canvas/placementRun";
 import { DEFAULT_PLACEMENT_OPTIONS, type PlacementOptions } from "../canvas/placeRun";
+import type { CanvasPurpose } from "../canvas/purpose";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 
@@ -213,6 +215,20 @@ interface UiState extends SessionCapabilities {
   libraryFull: boolean;
   setLibraryFull: (full: boolean) => void;
   /**
+   * What the canvas is for ([ADR-0064](../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+   * The second axis, beside `mode`: `mode` says what the next click does, `purpose`
+   * says what the reader is doing at all. Always exactly one, because the control
+   * cycles and because two purposes both claiming the next click is how a canvas
+   * ends up placing a card into a tour.
+   */
+  purpose: CanvasPurpose;
+  /**
+   * Set the purpose, and carry out what it implies: leaving `run` ends the run,
+   * leaving `record` stops recording, and `present` mirrors the tour's own flag so
+   * there is one source of truth for the overlay.
+   */
+  setPurpose: (purpose: CanvasPurpose) => void;
+  /**
    * The numbers a placement run reads: gap, columns, ring radius, section padding
    * ([ADR-0056](../../docs/decisions/0056-card-settings-owns-defaults.md) amendment).
    * They live in UI state because Card Settings — the surface that will own them —
@@ -368,6 +384,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryScope: "all",
   libraryFull: false,
   placementOptions: DEFAULT_PLACEMENT_OPTIONS,
+  purpose: "explore",
   libraryGroupBySection: false,
   activeViewId: null,
   libraryQuery: "",
@@ -650,6 +667,23 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLibraryFull: (libraryFull) => set({ libraryFull }),
   setPlacementOptions: (options) =>
     set((state) => ({ placementOptions: { ...state.placementOptions, ...options } })),
+  setPurpose: (purpose) =>
+    set((state) => {
+      if (state.purpose === purpose) return state;
+      // A purpose that claims clicks cannot share them. `present` is the one
+      // purpose that requires something to present: without a tour there is
+      // nothing to show, so it is refused rather than entered empty.
+      if (purpose === "present" && state.tour === null) return state;
+      // Leaving these purposes ends what they started, which is the same rule as
+      // Escape ending an arm (ADR-0063 §9).
+      if (state.purpose === "run") usePlacementRunStore.getState().finish();
+      return {
+        purpose,
+        // The overlay reads the tour's own flag, so the purpose writes it rather
+        // than duplicating it: `present` is the axis, `presenting` is the overlay.
+        ...(state.tour ? { tour: { ...state.tour, presenting: purpose === "present" } } : {}),
+      };
+    }),
   toggleLibraryGroupBySection: () =>
     set((state) => ({ libraryGroupBySection: !state.libraryGroupBySection })),
   setLibraryQuery: (libraryQuery) => set({ libraryQuery }),

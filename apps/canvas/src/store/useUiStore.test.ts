@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { usePlacementRunStore } from "../canvas/placementRun";
 import { useUiStore } from "./useUiStore";
 
 function resetUiState() {
@@ -14,6 +15,8 @@ function resetUiState() {
     selectedSectionId: null,
     editingSectionId: null,
     selectedConnector: null,
+    purpose: "explore",
+    tour: null,
     libraryTypeFilter: [],
     libraryTagFilter: [],
     librarySectionFilter: [],
@@ -329,5 +332,59 @@ describe("useUiStore card focus", () => {
     useUiStore.getState().openCardFocus("card-a");
     useUiStore.getState().openInspector("card-b");
     expect(useUiStore.getState().cardFocusId).toBeNull();
+  });
+});
+
+describe("useUiStore purpose", () => {
+  beforeEach(resetUiState);
+
+  it("defaults to explore and cycles through the axis", () => {
+    expect(useUiStore.getState().purpose).toBe("explore");
+
+    useUiStore.getState().setPurpose("run");
+    expect(useUiStore.getState().purpose).toBe("run");
+
+    useUiStore.getState().setPurpose("record");
+    expect(useUiStore.getState().purpose).toBe("record");
+  });
+
+  it("refuses to present without a tour, because there is nothing to show", () => {
+    useUiStore.getState().setPurpose("present");
+
+    expect(useUiStore.getState().purpose).toBe("explore");
+  });
+
+  it("mirrors the tour's own presenting flag rather than duplicating it", () => {
+    useUiStore.setState({
+      tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
+    });
+
+    useUiStore.getState().setPurpose("present");
+    expect(useUiStore.getState().purpose).toBe("present");
+    expect(useUiStore.getState().tour?.presenting).toBe(true);
+
+    // Leaving the purpose closes the overlay: one source of truth, two readings.
+    useUiStore.getState().setPurpose("explore");
+    expect(useUiStore.getState().tour?.presenting).toBe(false);
+  });
+
+  it("ends a live run when the purpose leaves run", () => {
+    usePlacementRunStore.getState().start(["a", "b"]);
+    useUiStore.getState().setPurpose("run");
+    expect(usePlacementRunStore.getState().run).not.toBeNull();
+
+    useUiStore.getState().setPurpose("explore");
+
+    // A run is a reading of the purpose, not a thing that outlives it.
+    expect(usePlacementRunStore.getState().run).toBeNull();
+  });
+
+  it("is a no-op when the purpose is already set, so a re-render cannot end a run", () => {
+    usePlacementRunStore.getState().start(["a", "b"]);
+    useUiStore.getState().setPurpose("run");
+
+    useUiStore.getState().setPurpose("run");
+
+    expect(usePlacementRunStore.getState().run).not.toBeNull();
   });
 });

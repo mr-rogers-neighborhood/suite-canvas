@@ -102,16 +102,15 @@ export function PortalCard({
     >
       <span className="sr-only">Portal to </span>
       {/* The header reads the portal, the body walks through it: the same split a
-          card has between its info click and its double-click. It is a button so
-          the affordance is reachable from the keyboard, and it claims only the
-          click, never the double-click that opens the board. */}
+          card has between its info click and its double-click. The overlay is not
+          a control: the portal itself is the button, and a nested one would be a
+          focus trap for anyone using assistive technology. */}
       <header className="portal-card__header">
-        <button
-          type="button"
-          aria-label={`Portal details: ${boardName ?? "unavailable board"}`}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: the portal is the control; this is its header's hit area. */}
+        <span
           data-testid="portal-info"
+          aria-hidden="true"
           className="portal-card__info absolute inset-0 cursor-default"
-          tabIndex={-1}
           onClick={(event) => {
             event.stopPropagation();
             onOpenInfo?.();

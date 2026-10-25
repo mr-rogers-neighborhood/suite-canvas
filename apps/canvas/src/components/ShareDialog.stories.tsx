@@ -4,6 +4,14 @@ import type { Share } from "../session/shares";
 import { type ShareClient, ShareDialog } from "./ShareDialog";
 
 const created = Date.UTC(2026, 0, 15, 9, 30);
+/**
+ * "Last used" is a relative label, so a fixed *timestamp* makes it drift with the
+ * wall clock — a visual snapshot that says "9 months ago" today says "10 months
+ * ago" next month. These fixtures are relative to now instead, which keeps the
+ * label (and the snapshot) still. Creation dates stay absolute: they are dates.
+ */
+const now = Date.now();
+const HOUR = 60 * 60 * 1000;
 
 const links: Share[] = [
   {
@@ -16,7 +24,7 @@ const links: Share[] = [
     createdAt: created,
     revokedAt: null,
     expiresAt: null,
-    lastUsedAt: created + 2 * 60 * 60 * 1000,
+    lastUsedAt: now - 2 * HOUR,
     roomId: "ws-demo",
     cardIds: [],
     cardCount: 0,
@@ -46,7 +54,7 @@ const links: Share[] = [
     createdAt: created - 90_000,
     revokedAt: null,
     expiresAt: null,
-    lastUsedAt: created - 30 * 60 * 1000,
+    lastUsedAt: now - 30 * 60 * 1000,
     roomId: null,
     cardIds: [],
     cardCount: 0,

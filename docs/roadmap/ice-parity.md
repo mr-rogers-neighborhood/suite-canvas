@@ -627,9 +627,9 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | See what is inside a Board | `PortalCard` and `BoardMiniature` drew the target's placements as dots, with a card count and the peers inside | Name and count, and only while selected; no preview and no presence | You cannot see a Board's contents without entering it | G polish |
 | Enter a Board | Portal card → `PortalTransitionLayer` camera trick, `boardHistory`, Escape | Double click a mat → `enterContainer`, HUD path, Escape → `exitContainer` | — (the card type is replaced by nesting, ADR-0039) | — |
 | Create a Board | "New section", and "New board and portal" | Dock, canvas menu, `IceContextMenu.createBoardAt` | — | — |
-| A new Board appears | The section was in the snapshot, so it drew at once | The projection seeds mats once and `reconcile` only touches cards and links | P0: a new Board has no mat until "Reload workspace" | D board tree |
+| A new Board appears | The section was in the snapshot, so it drew at once | Closed: a structural key (`iceBoardTree`) notices the new Board and rebuilds the projection; the mat appears with its inside, and a seat's own Board write records the key so nothing rebuilds for it | — | — |
 | Nest an existing Board | "New board and portal" was the only child maker | `nestBoard` exists in `@suite/graph` with no caller; every new Board is a child of the View root | Boards cannot be nested after creation | D board tree |
-| Board structure converges | Sections were derived from the snapshot on every render | A peer's create, delete, rename or move is not re-projected | P0: the Board tree on screen is the one that loaded | D board tree |
+| Board structure converges | Sections were derived from the snapshot on every render | Closed: any change to the key rebuilds once, keeping the camera, the selection and the entered Board (exiting to the nearest survivor if the Board you were in is gone) | — | — |
 | Multi-placement and portal chains | One card on several boards; a portal whose target was missing, cyclic or too deep drew an unavailable frame | One Board per card; containment is a tree, and `SUITE_MAX_DEPTH` is only a projection budget | Withdrawn by design | — |
 
 ### Selection and keyboard

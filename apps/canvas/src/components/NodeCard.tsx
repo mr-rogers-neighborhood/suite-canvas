@@ -1,9 +1,11 @@
 import type { Card, CardType } from "@suite/graph";
+import { resolveSurfaceStyle } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { NodeConnectors } from "../canvas/NodeConnectors";
+import { surfacePaintVars } from "../canvas/surfacePaint";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
@@ -204,8 +206,17 @@ export function NodeCard({
           ? { boxShadow: `0 0 0 2px ${selectingPeer.color}66` }
           : {};
 
+  /**
+   * The card's own paint, when it has one. An unstyled card passes nothing here,
+   * so the default chrome is unchanged; a styled one paints through the shared
+   * role tokens (ADR-0051).
+   */
+  const paint = surfacePaintVars(resolveSurfaceStyle(card.style, "card"));
+  const painted = Object.keys(paint).length > 0;
+
   const cardClass = [
     "node-card relative flex flex-col rounded-md border border-[var(--hairline)]",
+    painted ? "is-painted" : "",
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
@@ -264,11 +275,14 @@ export function NodeCard({
       // The default box comes from the shared constants, so an unstored card
       // measures exactly what the canvas, the section fit and the drop offset
       // assume. A resized card overrides both from its placement.
-      style={{
-        ...presenceStyle,
-        width: width ?? DEFAULT_CARD_WIDTH,
-        height: height ?? DEFAULT_CARD_HEIGHT,
-      }}
+      style={
+        {
+          ...presenceStyle,
+          ...paint,
+          width: width ?? DEFAULT_CARD_WIDTH,
+          height: height ?? DEFAULT_CARD_HEIGHT,
+        } as CSSProperties
+      }
       onPointerDown={(event) => {
         pointerOrigin.current = { x: event.clientX, y: event.clientY };
       }}

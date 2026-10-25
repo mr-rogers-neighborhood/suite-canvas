@@ -11,7 +11,7 @@ function workspace() {
 describe("surface styles", () => {
   it("writes a style on a card and reads it back through the snapshot", () => {
     const { doc, board } = workspace();
-    const card = doc.createCard({ title: "Styled", boardId: board.id });
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
 
     doc.setCardStyle(card.id, { shape: "pill", textScale: 1.4 });
 
@@ -24,7 +24,7 @@ describe("surface styles", () => {
 
   it("drops an empty record rather than storing a style that says nothing", () => {
     const { doc, board } = workspace();
-    const card = doc.createCard({ title: "Plain", boardId: board.id });
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
 
     doc.setCardStyle(card.id, { shape: "circle" });
     expect(doc.getCard(card.id)?.style).toBeDefined();
@@ -39,7 +39,7 @@ describe("surface styles", () => {
 
   it("refuses a style that names a colour value instead of a role", () => {
     const { doc, board } = workspace();
-    const card = doc.createCard({ title: "Guarded", boardId: board.id });
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
 
     // `surface` only accepts roles; a hex value is a schema error, not a paint.
     expect(() => doc.setCardStyle(card.id, { surface: "#ff0000" as never })).toThrow();
@@ -49,8 +49,8 @@ describe("surface styles", () => {
   it("styles a section, a board and a link independently", () => {
     const { doc, board } = workspace();
     const section = doc.createSection({ boardId: board.id, title: "Region", x: 0, y: 0 });
-    const from = doc.createCard({ title: "From", boardId: board.id });
-    const to = doc.createCard({ title: "To", boardId: board.id });
+    const from = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    const to = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const edge = doc.addEdge({
       boardId: board.id,
       source: from.id,
@@ -70,8 +70,8 @@ describe("surface styles", () => {
 
   it("keeps a link's bends and layer, and clears them again", () => {
     const { doc, board } = workspace();
-    const from = doc.createCard({ title: "A", boardId: board.id });
-    const to = doc.createCard({ title: "B", boardId: board.id });
+    const from = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    const to = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const edge = doc.addEdge({
       boardId: board.id,
       source: from.id,
@@ -101,7 +101,7 @@ describe("surface styles", () => {
 
   it("survives a reload: the style is in the document, not in UI state", () => {
     const { doc, board } = workspace();
-    const card = doc.createCard({ title: "Durable", boardId: board.id });
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     doc.setCardStyle(card.id, { opacity: 0.5 });
 
     const reopened = new WorkspaceDocument();

@@ -82,7 +82,8 @@ export interface SurfaceSides {
 }
 
 export const surfaceStyleSchema = z.object({
-  surface: z.enum(styleColourRoles).optional(),
+  /** A role, or `none` for a seamless surface: bare content on the canvas. */
+  surface: z.union([z.enum(styleColourRoles), z.literal("none")]).optional(),
   ink: z.enum(styleColourRoles).optional(),
   shape: z.enum(styleShapes).optional(),
   radius: z.number().min(0).max(999).optional(),

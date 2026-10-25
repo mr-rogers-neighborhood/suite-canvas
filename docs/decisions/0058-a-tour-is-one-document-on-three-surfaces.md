@@ -73,6 +73,27 @@ has to be right before the first tour is authored.
 | completion | a workspace record on the tutorial card | a collaborator sees "read" ([ADR-0054](./0054-a-tutorial-is-a-card.md) §9) |
 | the camera a step asks for | `viewportRequest` in `useUiStore` | the existing channel; no second camera API |
 
+## Amendment — 2026-10-25: recording is a purpose, and the step verbs author it
+
+Recording got a state (`purpose: record`, ADR-0064) and it did not need a new canvas language: a step
+already holds `targets[]`, so the three gesture verbs describe how an author adds targets.
+
+| Gesture | In `purpose: record` |
+| --- | --- |
+| `place` | one step per click, with the clicked entity as its only target |
+| `thread` | one step per click *in sequence* — each click appends, the tour reads top to bottom |
+| `web` | one step that **accumulates** targets from one origin — several entities spotlighted together |
+
+1. **A tour's order is its step list, never links.** Recording writes step blocks; it draws no edges,
+   so a tour cannot drift out of order because someone tidied the board's links.
+2. **`purpose: record` places the tutorial card first.** Choosing record and placing on an empty board
+   creates the tutorial card (the thing the steps belong to), then arms the step verbs.
+3. **The panel is still the editor.** A recorded step is a step block like any other, so the author can
+   rename it, reorder it, add a caption or drop a target in the Steps tab while recording — the same
+   "author may edit while presenting" rule the third surface already allows.
+4. **Leaving record stops recording and keeps the card.** The tutorial card is a card: it can be
+   unplaced, re-placed and edited exactly as before.
+
 ## Consequences
 
 - **No presentation engine and no fourth panel kind.** The overlay is chrome over the canvas the step

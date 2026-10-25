@@ -176,6 +176,23 @@ from the start.
 This is also what makes the gesture legible before the first placement: a run that begins by holding
 nothing, then dumps five cards, taught the user nothing about what just happened.
 
+## Amendment — 2026-10-25: the gesture axis is one half of a two-slot model
+
+The mode this ADR calls `CanvasMode` is now the **gesture axis**: it answers "what does the next click
+do" and sits beside a new **purpose axis** — `explore · run · record · present` — that answers "what is
+the canvas for" ([ADR-0064](./0064-two-axes-and-a-cursor-that-says-so.md)).
+
+1. **`pattern` stays on the gesture axis.** It is a *placement shape*, and a mind-map is that shape
+   driven by a pattern record (ADR-0049): the fourth gesture, not a third purpose.
+2. **`purpose: run` is the run's own entry point.** Choosing it opens the library **in selection
+   mode**, so the queue a run needs is one click away rather than a mode the reader has to discover.
+   This is the missing half of §6's "sources": the selection surface now appears when the run does.
+3. **A run ends when its purpose does.** §9 already ends a run on Escape, Stop, an empty queue and a
+   board switch; leaving `run` joins that list, because a run is a reading of the purpose, not a
+   separate thing that can outlive it.
+4. **Everything else holds**: a run is UI state, a step may be a set with its own mode, a run may nest,
+   an arrangement is bulk and everything else is held, and no run writes a record.
+
 ## Consequences
 
 - **The word is already the product's word.** A "run" here is the same idea the product wants to use it

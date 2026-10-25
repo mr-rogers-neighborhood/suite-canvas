@@ -590,6 +590,37 @@ While a connector is selected, the board adds `.connector-active`, which disable
 edges, their interaction strokes, and the reconnect handles. Without it the reconnect handle (a
 10 px circle centred on the dot) swallows the drag that is meant to move the connector.
 
+## Presence coverage
+
+What a collaborator can see about another, what is planned, and what is refused on purpose. The
+payload lives in `apps/canvas/src/collab/presence.ts` and rides the Loro `EphemeralStore`; nothing in
+this table is document data ([ADR-0005](./decisions/0005-flow-space-presence.md),
+[ADR-0009](./decisions/0009-live-drag-presence.md), [ADR-0044](./decisions/0044-one-target-primitive.md)).
+
+| Signal | Field | State | Notes |
+| --- | --- | --- | --- |
+| Which board | `board` | shipped | presence from another board is ignored, not aggregated |
+| Identity and colour | `user` | shipped | generated per session; an account adds a stable name ([ADR-0065](./decisions/0065-accounts-own-workspaces.md)) |
+| Pointer | `pointer` | shipped | flow coordinates, so pan and zoom are the renderer's problem |
+| Editing focus | `focus` | shipped (card body/title) → **planned** as a `Target` | a property row and a type-editor row become addressable ([ADR-0044](./decisions/0044-one-target-primitive.md)) |
+| Card drag | `dragging` | shipped | plus `nodeIds`, so a multi-card drag is one payload and the delta is derived |
+| Card resize | `resizing` | shipped | position plus size, because a top/left resize moves the node |
+| Section drag / resize | `sectionDrag`, `sectionResize` | shipped | |
+| Marquee | `selectionBox` | shipped | the box, not the result: the result is derivable and would be stale |
+| Selection | `selection` | shipped | nodes, edges, the clicked connector, the section |
+| Connector move | `connector` | shipped | perimeter fraction, eased on the receiver |
+| Connector click | `selection.connector` | shipped | one publisher, so two nodes cannot fight over the field |
+| Link drag out of a connector | `connect` | shipped | carries the snapped target React Flow already computed |
+| Link end re-attach | `reconnect` | shipped | the anchored end stays, the moving end follows the pointer |
+| Link label slide | `labelDrag` | shipped | path fraction |
+| Library drag | `libraryDrag` | shipped | flow point plus the board it would land on |
+| Gesture liveness | `gestureBeat` | shipped | a counter, so a press-and-hold does not age out |
+| Purpose and gesture | `purpose`, `gesture` | **planned** | what tool a peer is holding ([ADR-0064](./decisions/0064-two-axes-and-a-cursor-that-says-so.md)) |
+| Chat bubble | `bubble` | **planned** | text, timestamp, optional anchor `Target`; ephemeral, capped, explicitly broadcast |
+| Follow | — | **planned** | a subscription to a peer's `Target`; stores nothing |
+| Keystrokes, clipboard | — | **refused** | a privacy decision, not a gap |
+| Chat text on the canvas channel | — | **refused** | chat is its own surface; the canvas channel carries pointers, not prose |
+
 ## Editing and presence
 
 - **Editor:** each card mounts two Tiptap editors (`StarterKit` + `LoroCollaboration`) for its title

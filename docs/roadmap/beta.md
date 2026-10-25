@@ -87,9 +87,14 @@ redefine them.
 **Decision (○):** Beta entry is declared only when A1–A10 each have an evidence artifact linked from
 [alpha.md](./alpha.md), and the commit those artifacts describe is the commit tagged for Beta.
 
-**Decision (○):** Beta takes the capability-link branch. Accounts are optional and may not ship in
-Beta; Better Auth is a V1 requirement (V1-9 through V1-12). If accounts are pulled into Beta, B6 uses
-the account branch and the operator-recovery procedure is retired. Beta does not claim both.
+**Decision (●, superseded 2026-10-25):** Beta takes the **account** branch. Anonymous workspaces and
+capability links stay the default way to make and share one, and an account is the *ownership* layer
+that makes recovery, invitations and billing possible — `ADR-0065` records the model, and gate **A40**
+carries the work. V1-9, V1-10, V1-11, V1-14, V1-15 and V1-17 move into Beta with it; the rest of V1
+stays. The operator-recovery procedure is retired as an *identity* story and kept as an *availability*
+runbook: what to do when the control plane is down, not what to do when someone loses a key. The
+earlier decision took the other branch ("Beta does not claim both"); choosing this one is the record
+that the choice was made, not an oversight.
 
 #### Gate crosswalk
 
@@ -1384,7 +1389,8 @@ is a URL, a committed file, or a test that runs in CI.
 | **B3** | Money is durable, or billing is closed | Test-mode E2E transcript (checkout → webhook → licence → entitlement → cancel) with idempotency and rotation rehearsal; **or** a public "not open" state in UI + docs | 4.4 |
 | **B4** | Data durability, server and client | Container-recreate test for attachments, settings, and licences; backup/restore drill; two-tab compaction test; forced-error boundary test; `persist()` denial test; quota-exceeded test; documented offline scope with a test asserting the documented outcome | 4.1, 4.5 |
 | **B5** | Upgrade path | Migration runner log test; `busy_timeout` contention test; N−1 document and database fixtures; unknown blob tag rejection | 4.2 |
-| **B6** | Recovery is explainable and, when accounts exist, normal | "Workspace access" screen shipped; generation + scoring + KDF benchmark; device list/revoke; claim-existing-workspace test; authorization (`workspace_members`) test. **If accounts are not in Beta:** a written, tested operator-recovery procedure with its risk stated | 4.3 |
+| **B6** | Recovery is explainable and, when accounts exist, normal | "Workspace access" screen shipped; generation + scoring + KDF benchmark; device list/revoke; claim-existing-workspace test; authorization (`workspace_members`) test. **Account branch taken (`ADR-0065`):** claim-existing-workspace keeps the id and every share link; an
+operator-recovery procedure survives only as the control-plane-down runbook | 4.3 |
 | **B7** | The supported browser set is tested | Firefox + WebKit smoke green in CI; one recorded iOS Safari pass; a written mobile in/out decision linked from the limits page | 4.6 |
 | **B8** | Observability a stranger can use | Diagnostics bundle fixture (redacted); crash toggle default-off payload test; status page or an explicit statement; support contact in-app | 4.5, 4.9 |
 | **B9** | Scale evidence and published limits | Load-test artifact naming hardware and recording event-loop lag/RSS/rebuild time; limits page whose every number appears in the artifact | 4.7 |

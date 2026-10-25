@@ -58,6 +58,25 @@ interface Target {
 - **Let the handbook match by DOM selector.** Selectors break on refactor and cannot be authored by a
   user writing an article.
 
+## Amendment — 2026-10-25: presence actually carries the primitive
+
+The primitive shipped (A21, "the primitive only"); presence did not adopt it. It does now, and it
+gains the fields that make a collaborator's *intent* legible ([ADR-0064](./0064-two-axes-and-a-cursor-that-says-so.md)):
+
+1. **`FocusState` is a `Target`.** `{ kind: "field", id: cardId, fieldId }` for a property row and
+   `{ kind: "ui", id: "type-editor:<typeId>", fieldId }` for a schema row, so a caret in a panel is
+   addressable by the same shape as a caret in a card body. The old `{ nodeId, field }` is the
+   `kind: "card"` case of it.
+2. **`purpose` and `gesture` are presence fields.** They say what tool a peer is holding, which is the
+   question twelve gesture channels could not answer; they ride the existing gesture beat rather than
+   a new channel.
+3. **A chat message is a `Target`-carrying bubble, and it is ephemeral first.** `bubble` carries text,
+   a timestamp and an optional `anchor: Target`, on the pointer's channel, capped and aged out. If chat
+   ever becomes document data it becomes a capped record — this ADR's own words — and that is its own
+   decision, not a side effect of adding bubbles.
+4. **What presence must never carry** (recorded here so it is not re-argued): keystrokes, clipboard
+   contents, and chat text on the canvas channel. Each is a privacy decision; none is a limitation.
+
 ## Consequences
 
 - **Presence payloads are refactored onto `Target`.** The existing fields (`nodeIds`, `edgeIds`,

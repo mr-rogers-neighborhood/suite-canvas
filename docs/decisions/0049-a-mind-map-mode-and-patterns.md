@@ -66,6 +66,26 @@ can author, reuse and then break?"
 - **Authoring on the canvas** implies reverse-engineering a rule from a drawn shape. That is the
   hardest part of the idea and the most likely to be cut if it does not feel good in a prototype.
 
+## Amendment — 2026-10-25: where the mode sits now that there are two axes
+
+The canvas grew a second axis ([ADR-0064](./0064-two-axes-and-a-cursor-that-says-so.md)): `purpose`
+(explore · run · record · present) says what the canvas is *for*, `gesture` (place · thread · web ·
+pattern) says what the next click *does*. This ADR's first decision — "a mind-mapping mode, entered
+from the UI and a keybinding" — maps onto that pair without adding a third control:
+
+1. **Mind-mapping is `purpose: run` with `gesture: pattern`.** "Placed by the active pattern rather
+   than at the pointer" is exactly what a `pattern` run does once a pattern record exists; until then
+   `pattern` is a *held* run that alternates branches (ADR-0063's third amendment), which is the same
+   gesture with the rule the engine can honestly offer.
+2. **No third axis for patterns.** A pattern editor is a destination (`run` + `pattern` opens it), not
+   a mode; opening a panel is navigation.
+3. **The ghosts this ADR asks for are the same primitive as the held stack.** "A card-shaped hint at a
+   flow point" is one component: `HeldStackCursor` draws the next card today, and a pattern editor
+   draws several stacked hints with the same renderer.
+4. **Nothing else here changes.** A pattern is still a versioned recipe record, still additive-first,
+   still "a command with memory, never a live constraint", and its record shape is still its own ADR —
+   the open questions above are untouched and remain open.
+
 ## Consequences
 
 - Arrange stays small and honest in the meantime: align and distribute is a command, and nothing in

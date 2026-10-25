@@ -64,6 +64,27 @@ The tree already has the raw material: `global.css` is token-driven (`--surface`
   a rule.
 - **Icons as embedded SVG per entity.** Markup in the document cannot be themed, searched or swapped.
 
+## Amendment — 2026-10-25: state is a token family, not a colour per mode
+
+The two-axis UI ([ADR-0064](./0064-two-axes-and-a-cursor-that-says-so.md)) needs to say "idle",
+"engaged", "recording" and "presenting" in a way that survives a theme, so the modes name a **state
+token** and the theme decides what it looks like:
+
+| Token | Means | Default intent |
+| --- | --- | --- |
+| `--state-idle` | the tool is at rest (place, explore) | the quietest ink the surface allows |
+| `--state-active` | the tool is engaged (thread, run) | full ink, inverted against the surface |
+| `--state-recording` | a live capture is happening | the danger-adjacent hue |
+| `--state-presenting` | the reader is inside something | the success hue |
+
+1. **A mode never names a colour.** `run = black` and `web = blue` are *intents* recorded in ADR-0064;
+   the components read `--state-*`, so a dark theme flips contrast rather than changing what red means.
+2. **Hue is never the only signal.** Every state carries a glyph and a label, because a ring that
+   differs only in hue fails for colour-blind readers and in any monochrome reproduction.
+3. **The contrast floor applies here too.** §4's floor covers a state ring on a hairline surface, not
+   just a card's text on its background; a state that cannot be distinguished at the floor is a state
+   that must change shape (a filled ring, a different glyph), not just hue.
+
 ## Consequences
 
 - **`global.css` is refactored into role tokens**, with the current values becoming the default theme.

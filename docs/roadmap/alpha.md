@@ -4,7 +4,12 @@
 - **Stage:** late Alpha, approaching Beta.
 - **Provenance:** a read-only codebase audit and design discussion (2,544 lines), re-checked against
   the working tree on 2026-10-23. The tree was mid-flight during the audit and is now committed
-  clean (89 commits on `main`). Facts can change; each claim carries a marker.
+  clean (89 commits on `main` at that time).
+- **Re-baselined 2026-10-25** against `main` at 124 commits: file and test counts, the four reasons
+  in §1.2, the scorecard, the store statement in §4.4 and the A1/A4 gate notes were corrected
+  against the tree. §7.3 gate statuses were already current and are unchanged. The analysis
+  sections keep their 2026-10-23 framing; where a claim was overtaken it is marked rather than
+  rewritten. Facts can change; each claim carries a marker.
 - **Scope:** what Alpha means, what is strong, what is broken or unsafe, and the gates that must
   close before Beta.
 - **Companions:** [Beta](./beta.md) · [V1](./v1.md) · [V2](./v2.md) ·
@@ -70,14 +75,14 @@ The verdict rests on two comparisons: why this is past pre-alpha, and why it is 
 | Claim | Evidence | Marker |
 | --- | --- | --- |
 | It runs as a product, not a prototype | Three editions from one codebase — standalone, self-host relay, hosted paid — with build-time feature removal (`docs/architecture.md` §"Build profile: standalone and relay", `apps/canvas/src/session/mode.ts`) | ✅ |
-| The hard correctness work is done | One `LoroDoc` per workspace behind a typed, Zod-validated facade (`packages/graph/src/loro/WorkspaceDocument.ts`, 2,850 lines, 165 methods) | ✅ |
+| The hard correctness work is done | One `LoroDoc` per workspace behind a typed, Zod-validated facade (`packages/graph/src/loro/WorkspaceDocument.ts`, 3,558 lines) | ✅ |
 | Merge correctness is *fuzzed*, not assumed | `packages/graph/src/loro/workspace.convergence.test.ts` converges two documents; property tests on merge, sections, search | ✅ |
 | Sharing is a real projection system, not a flag | `apps/collab-server/src/projectionWorker.ts` (1,468 lines) rebuilds a redacted self-contained document per share room; ADR-0022, ADR-0023 accepted | ✅ |
 | Publish has a plan/apply split | `packages/graph/src/publish/plan.ts` is pure and replayable; `apply.ts` reads only captured values | ✅ |
 | Operational thinking exists | Boot-time config validation (`config.ts`, 522 lines), quotas that never drop a save (`limits.ts:9`), 429 + `Retry-After`, `/metrics`, health probe, admin status, backup with integrity checks | ✅ |
 | The security basics are right | `timingSafeEqual`, 32-byte random capabilities, SHA-256 at rest, per-room capability scoping, 15-minute share sessions, revocation that closes live sockets | ◐ (mechanics read; end-to-end not re-tested here) |
 | Architecture is enforced by tests | `packages/graph/src/purity.test.ts` parses the AST to keep the core DOM-free; `apps/canvas/src/session/mode.test.ts` forbids `fetch`/`WebSocket` outside relay modules; `apps/collab-server/src/patchGuard.test.ts` fails if a dependency patch vanishes | ✅ |
-| Documentation is a design artifact | 23 ADRs with statuses and supersession chains, 840-line architecture doc, 884-line operations runbook | ✅ |
+| Documentation is a design artifact | 30 ADRs with statuses and supersession chains, 990-line architecture doc, 952-line operations runbook | ✅ |
 
 A pre-alpha would not have a purity test, a convergence fuzz test, or an ADR that says "this
 decision was reversed, here is why". Those are the habits of a project that has already survived its
@@ -85,36 +90,41 @@ first rewrite.
 
 ### 1.2 Why it is not Beta yet
 
-Beta means strangers can use it for real work with known limits. Today a stranger can lose data
-without any diagnostic or notice. Four independent reasons, in descending severity:
+Beta means strangers can use it for real work with known limits. The 2026-10-23 audit found two live
+data-loss paths; both are closed as of the 2026-10-25 re-baseline (§7.3). What keeps the product
+out of Beta now is evidence and identity rather than data safety:
 
-1. **Two live data-loss paths exist.** Attachments live outside the data volume and outside backup
-   (§6.1). Multi-tab IndexedDB compaction deletes another tab's unmerged updates (§6.2). These are
-   not "scale" problems; they are "the backup is incomplete and the cache is destructive" problems.
-2. **No commit has ever been gated.** The CI workflow is plausible and complete, but the audit
-   reports that every run in the repository was `startup_failure` with zero jobs; the audit counted
-   19 and a re-check on 2026-10-23 counted 21, attributed to a synthetic
-   `BuildFailed` workflow. ◐ **Re-verify**: `gh run list --workflow=ci.yml`. Whatever the cause, the
-   claim "tests pass" currently rests on local runs, and a stranger has no reason to believe it.
-3. **There is no release identity.** No `LICENSE`, no `SECURITY.md`, no `CHANGELOG.md`, no
-   `CONTRIBUTING.md`, no tags. ✅ (`ls` on the repo root; `git tag` empty; 89 commits, all on `main`.)
-   `README.md` calls the product open source; without a licence that claim is not legally true. A
-   version number of `0.1.0` with no tag means "which build are you running?" has no answer.
-4. **Billing cannot take money, by its own admission.** `services/billing/handler.ts:268` constructs
-   a module-level `memoryStore()`, and the comment above it says the store must be replaced before
-   the endpoint takes real money. ✅ The hosted edition therefore has an entitlement path whose state
-   dies with the Lambda container.
+1. **No commit has ever been gated.** The CI workflow is plausible and complete, but every run in
+   the repository is `startup_failure` with zero jobs — including the latest pushes to `main`. ◐
+   **Re-verify**: `gh run list --workflow=ci.yml`. Whatever the cause, the claim "tests pass" rests
+   on local runs, and a stranger has no reason to believe it. Gate A3 stays `blocked`; §7.1 records
+   why no tree change can unblock it.
+2. **There is no release tag.** `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md` and
+   `CODE_OF_CONDUCT.md` exist, and `package.json` reads `0.2.0-alpha.1`. What is missing is a semver
+   tag on a released commit, so "which build is this?" still has no artifact to roll back to. The
+   repository's single tag (`ice-parity-2026-10-23`) marks a spike, not a release. Gate A4 is
+   `measuring` for that one artifact.
+3. **Billing is closed, and that is the promise being kept.** The durable store exists
+   (`services/billing/store-dynamodb.ts`, behind `SUITE_BILLING_STORE=dynamodb`) and hosted checkout
+   is closed in the UI and the docs. A5 is satisfied by the closed path; the failure mode it exists
+   to prevent — a payment path that appears to work and loses entitlement on a cold start — is gone.
+4. **Three promises still lack an artifact.** The upgrade path has fixtures and a test but no N−1
+   policy statement (A7); the supported browser set is Chromium only (B7); and no second operator has
+   restored the release from the docs alone (B11).
 
-Secondary but real: the client has no durability work (no service worker, no
-`navigator.storage.persist()`, no error boundary — ✅ grep across `apps/canvas/src` returns nothing),
-there is no N−1 document upgrade test, and two reported UX bugs (§6.3, §6.4) make the primary
-interaction feel unreliable.
+**Closed since the audit.** Attachments, settings and licences live on `/data`, are covered by
+backup/restore, and boot refuses a split or `:memory:` layout (`SUITE_REQUIRE_DURABLE_STORES` — A1).
+Multi-tab compaction can no longer delete a peer's unmerged rows, and leadership hands over when the
+leader closes (ADR-0024 — A2). The client requests `navigator.storage.persist()`, shows the grant
+state, handles quota, and renders a diagnostic instead of a white page, with an opt-in crash hook
+(ADR-0025, ADR-0027 — A6). Both reported UX bugs are fixed with e2e coverage (A10).
 
 ### 1.3 The one-sentence position
 
-> The product is real and the correctness culture is unusually good; what is missing is the
-> evidence that it works (CI), the promise that it will keep working (release identity, upgrade
-> path), and the guarantee that it will not eat data (attachments, multi-tab, client storage).
+> The product is real, the correctness culture is unusually good, and the data-loss paths the audit
+> found are closed. What is missing is the evidence that it works (CI), the artifact that names the
+> build (a release tag), and the promises that turn strangers' data into an obligation (upgrade
+> path, browser set, operator restore).
 
 ---
 
@@ -145,14 +155,20 @@ Alpha is satisfied when the people who built it can:
 
 ### 2.2 Unsafe for strangers
 
-Alpha is *not* satisfied — and Beta is not entered — while any of these are true:
+Alpha is *not* satisfied — and Beta is not entered — while any of these are true. Each line is
+marked as it stands on 2026-10-25; the §6 analysis is kept as history.
 
-- A stranger's restore silently drops their images (§6.1). ✅
-- A stranger with two tabs open can lose edits made in the other tab (§6.2). ✅
-- A stranger cannot tell whether the build they run is the build we tested (§1.2 point 3). ✅
-- A stranger who pays gets an entitlement that evaporates on a cold start (§1.2 point 4). ✅
-- A stranger's browser can silently evict the local document (§6.5, P1 row "client storage"). ✅
-- A stranger hits an unknown interaction and gets a blank page with no diagnostic (§6.5). ✅
+- A stranger's restore silently drops their images (§6.1). **Closed** — attachments are on `/data`
+  and in backup/restore.
+- A stranger with two tabs open can lose edits made in the other tab (§6.2). **Closed** — ADR-0024.
+- A stranger cannot tell whether the build they run is the build we tested (§1.2 point 2). **Still
+  true** — no release tag.
+- A stranger who pays gets an entitlement that evaporates on a cold start (§1.2 point 3). **Closed**
+  — billing is closed rather than volatile.
+- A stranger's browser can silently evict the local document (§6.5, P1 row "client storage").
+  **Mitigated** — `persist()` is requested and the grant state is visible.
+- A stranger hits an unknown interaction and gets a blank page with no diagnostic (§6.5). **Closed**
+  — `CanvasErrorBoundary` and the diagnostics bundle.
 
 ### 2.3 The Alpha contract
 
@@ -171,23 +187,25 @@ as a whole. A product is as ready as the weakest dimension a stranger will touch
 | --- | --- | --- | --- | --- |
 | 1 | **Core product loop** | Beta-ish | Workspaces, boards, cards, types/fields/tags, sections, connectors, mentions, references, library/trash, undo/redo, search, views, display styles, attachments, sharing (workspace/board/card/selection), publish drafts, `.suite` export/import, standalone edition | ✅ |
 | 2 | **Data model & correctness** | Beta-ish | One `LoroDoc` per workspace; Zod-validated writes; typed `WorkspaceDocument`; property tests for merge/sections/search; scoped undo; presence in `EphemeralStore`, never persisted | ✅ |
-| 3 | **Test intent** | Beta-ish | 142 test files; ~1,392 unit declarations ◐; ~160 Playwright declarations ◐; 61 billing tests ◐; 24 stories with `a11y: { test: "error" }` ◐; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅/◐ |
-| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Counts in `docs/testing.md:28,30` are stale (104 files / 1,278 / 132 vs 142 files today) | ✅ (staleness) / ◐ (CI) |
+| 3 | **Test intent** | Beta-ish | 144 Vitest files / 1,733 tests; 30 Playwright specs; 29 stories with `a11y: { test: "error" }`; 75 billing `node --test` declarations; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅ |
+| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Local counts were re-derived on 2026-10-25 and `docs/testing.md` matches them (`pnpm test`: 144 files / 1,733 tests) | ✅ (counts) / ◐ (CI) |
 | 5 | **Ops / deploy** | Beta-ish, single node | `compose.yaml` (Caddy → app), TLS + CSP, healthcheck, graceful shutdown, boot-time config validation, `/metrics`, structured redacted logs, admin panel, backup/restore scripts, quota + rate-limit system | ✅ |
 | 6 | **Security model** | Alpha+ | Constant-time comparisons, 32-byte capabilities, SHA-256 at rest, scoped worker tokens, PBKDF2 600k, share-token scoping, live revocation. Missing: threat model, audit trail, expiry *by default*, admin scoping, E2EE | ◐ |
-| 7 | **Billing** | **Pre-alpha** | Module-level in-memory store (`services/billing/handler.ts:268`); no live Stripe webhook E2E; key rotation has a customer-visible window | ✅ |
-| 8 | **Client resilience** | **Alpha** | No service worker, no `navigator.storage.persist()`, no quota/eviction handling, no React error boundary, no crash reporting | ✅ |
-| 9 | **Release management** | **Pre-alpha** | `0.1.0`, zero tags, zero releases, no `CHANGELOG`/`LICENSE`/`SECURITY.md`/`CONTRIBUTING.md`, 89 commits on one branch | ✅ |
+| 7 | **Billing** | **Closed by design** | Hosted checkout is closed in the UI and docs; the durable store exists (`services/billing/store-dynamodb.ts`, flag `SUITE_BILLING_STORE`); Stripe webhook E2E is not run because there is no live endpoint | ✅ |
+| 8 | **Client resilience** | Beta-ish | `navigator.storage.persist()` with a visible grant state (`StoragePanel`), quota handling, `CanvasErrorBoundary`, opt-in crash reporting, diagnostics bundle; ADR-0025, ADR-0027 | ✅ |
+| 9 | **Release management** | **Alpha** | `0.2.0-alpha.1`; `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`; no release tag yet (the one tag marks a spike); 124 commits | ✅ |
 | 10 | **Scale evidence** | **Alpha** | Single replica by design; SQLite; in-process rooms/presence/projection/rate limits; benchmarks exist (`packages/graph/bench/workspace.bench.ts`, `projection.bench.ts`) but are not gated | ✅ |
 | 11 | **UX / onboarding** | Alpha | Polished visuals, real keyboard/ARIA work, but no accounts, no mobile layout beyond one `max-width: 640px` rule ◐, no i18n, and a recovery model with five terms for three artifacts ◐ | ◐ |
-| 12 | **Docs** | Beta-ish, drifting | ~3,700 lines, 23 ADRs, real runbooks; counts, store counts, engine names and class names are stale (§9) | ✅ |
+| 12 | **Docs** | Beta-ish, drifting | ~9,800 lines, 30 ADRs, real runbooks; counts, store counts and engine names were re-checked on 2026-10-25 (§9) | ✅ |
 
 ### 3.1 Reading the scorecard
 
-Only two dimensions are pre-alpha: billing and release management. Both concern the promise around
-the product rather than the product itself. The dimensions with no exercised evidence are test
-evidence and client resilience; both are small changes relative to their impact. The strongest
-property is not in the table: recording decisions and enforcing them with tests (§5).
+No dimension is pre-alpha any more. Billing moved from pre-alpha to closed-by-design (the hosted
+path is off, and says so); release management moved from pre-alpha to alpha (the identity files
+exist, the tag does not); client resilience moved from alpha to beta-ish when `persist()`, quota
+handling, the error boundary and crash reporting landed. What keeps the scorecard from Beta is
+**Test evidence** — the one dimension with no exercised proof, because Actions cannot run. The
+strongest property is not in the table: recording decisions and enforcing them with tests (§5).
 
 ---
 
@@ -292,10 +310,11 @@ What is absent at this stage:
 | A message queue | Saves and rebuilds happen on the event loop | ✅ |
 
 **Canonical store statement.** Six stores exist in code (`documents`, `shares`, `workspaces`,
-`settings`, `licences`, `attachments`). `compose.yaml` configures five. Attachments defaults to the
-process working directory; settings and licences default to `:memory:` (`compose.yaml:40-41`). All
-three are lost when the container is recreated. ✅ This durability finding belongs with §6.1 and is
-covered by gate A1.
+`settings`, `licences`, `attachments`). `compose.yaml` configures all six under `/data` and sets
+`SUITE_REQUIRE_DURABLE_STORES=1`, so a `:memory:`, working-directory or split layout is a boot error
+rather than a quiet loss. `deploy/backup.sh` and `deploy/restore.sh` cover all six, including
+attachment bytes and their ids. ✅ This closes the durability finding that used to live in §6.1 and
+is gate A1.
 
 ---
 
@@ -345,7 +364,7 @@ Ten properties that are better than the norm, each with a pointer. These are why
    (`tsconfig.base.json`). Biome raises `noFloatingPromises` to an error and bans `noConsole` outside
    the logger (`biome.jsonc`). No `any`, no `@ts-ignore`, no SQL string interpolation, no
    `dangerouslySetInnerHTML`, no `eval` in source. ✅
-10. **Docs are design artifacts.** 23 ADRs with statuses and supersession chains (`0001 → 0015`,
+10. **Docs are design artifacts.** 30 ADRs with statuses and supersession chains (`0001 → 0015`,
     `0021 → 0022`), a mermaid data flow, performance budgets, explicit non-goals, and an
     open-questions table that admits what is undecided. This roadmap exists to extend that habit. ✅
 
@@ -369,10 +388,10 @@ risk register below specific rather than vague.
 **Friction to watch.**
 - **Billing imports app source** (`services/billing/issue.ts:6` → `apps/collab-server/src/licence.ts`).
   This is the one clear package-graph violation (P1-5).
-- **Four files carry a large share of the domain:** `WorkspaceDocument.ts` (2,850 lines, 165
-  methods), `CanvasBoard.tsx` (1,914), `adminHttp.ts` (1,516), `projectionWorker.ts` (1,468). They
+- **Four files carry a large share of the domain:** `WorkspaceDocument.ts` (3,558 lines, 140
+  methods), `CanvasBoard.tsx` (2,412), `adminHttp.ts` (1,516), `projectionWorker.ts` (1,468). They
   are internally organized and tested, but they are merge-conflict and review bottlenecks (P1-4).
-- **Review capacity is the main organizational risk.** The tree has 89 commits on one branch, zero
+- **Review capacity is the main organizational risk.** The tree has 124 commits on one branch, zero
   tags, zero releases, and no external issues or pull requests. `CONTRIBUTING.md`, `CODEOWNERS`, and
   a release process do not exist. That is workable for a solo project and insufficient for Beta.
 - **Documentation is not enforced.** `AGENTS.md` still names `GraphDocument` and
@@ -389,6 +408,12 @@ Status vocabulary: `open` (believed present), `open/needs-repro` (reported, not 
 `mitigated` (guard exists, but the class of bug remains), `closed` (fixed with evidence).
 
 ### 6.1 P0 — Live data loss: attachments are not durable in the deployment
+
+> **Status: closed 2026-10-25 (gate A1).** All six stores are on `/data` in `compose.yaml`;
+> `SUITE_REQUIRE_DURABLE_STORES=1` refuses a split, `:memory:` or relative layout at boot;
+> `deploy/backup.sh` and `deploy/restore.sh` snapshot attachments with an id digest;
+> `deploy/drills/attachments-record.md` records the container-recreate drill. The analysis below is
+> kept as the record of the finding.
 
 **Symptom.** Uploaded images survive until the container is recreated, then render as placeholders.
 A restore from backup loses them permanently.
@@ -435,9 +460,15 @@ document because it is both destructive and invisible.
 - `manifest.txt` from the drill contains an attachment count and checksum.
 - `docker compose config` shows `SUITE_ATTACHMENTS_DB` under `/data`.
 
-**Status:** `open`.
+**Status:** `closed` 2026-10-25 (gate A1).
 
 ### 6.2 P0 — Live data loss: multi-tab IndexedDB compaction deletes every workspace update row
+
+> **Status: closed 2026-10-25 (gate A2).** Compaction now runs under leader election
+> ([ADR-0024](../decisions/0024-multi-tab-persistence-and-leader-election.md)); a surviving tab takes
+> leadership over when the leader closes (`loroPersistence.ts`, `destroy()` releases the lease), and
+> the two-instance / leader-takeover suites cover it. The analysis below is kept as the record of the
+> finding.
 
 **Symptom.** With two tabs open on the same workspace, a compaction in one tab destroys the other
 tab's unmerged offline edits.
@@ -497,7 +528,7 @@ was the recovery mechanism and it was deleted.
 - A manual two-tab offline drill: edit in both tabs with the network off, close one, reload the other,
   compare against a third peer's copy.
 
-**Status:** `open`.
+**Status:** `closed` 2026-10-25 (gate A2).
 
 ### 6.3 Reported UX bug — marquee multi-select breaks the page
 
@@ -553,7 +584,7 @@ throws, there is no error boundary (§6.5), so the user sees a blank page. The r
   once per animation frame.
 - A regression note in the changelog once releases exist.
 
-**Status:** `open` — fixed. Both former `test.fixme` cases are real specs in
+**Status:** `closed` 2026-10-25 (gate A10). Both former `test.fixme` cases are real specs in
 `e2e/tests/marquee.spec.ts`; listeners register once and call through a ref, and every termination
 path clears the selection overlay. The specs re-fit and re-measure between gestures so they assert
 selection ownership, not auto-pan or a moved viewport.
@@ -597,7 +628,7 @@ frame-droppy under load. Users judge a canvas by their own drag first.
 - A test asserting exactly one CRDT commit per gesture regardless of smoothing.
 - A test asserting remote smoothing behaviour is unchanged (`0.22` settle path).
 
-**Status:** `open` — implemented in `apps/canvas/src/canvas/localEasing.ts`. It is a time-based
+**Status:** `closed` 2026-10-25 (gate A10). Implemented in `apps/canvas/src/canvas/localEasing.ts`. It is a time-based
 render-only ease (`tau` 12 ms) on the delta; pointer samples only set the target, one rAF paints,
 drop snaps to the pointer and commits once. `prefers-reduced-motion` skips it; remote smoothing is
 unchanged. Unit tests cover the one-commit contract and the reduced-motion path.
@@ -609,7 +640,7 @@ unchanged. Unit tests cover the one-commit contract and the reduced-motion path.
 | P1-1 | **Synchronous full-state SQLite saves on the event loop** | Every room writes a whole-document BLOB, serially, on the main thread | `apps/collab-server/src/persistence.ts` (one `state` BLOB per room, `DatabaseSync`), `server.ts:212` (`saveInterval: 2000`) | At ~12 MB/5,000-card workspace, each save is megabytes of write amplification and blocks every WebSocket message for the duration; several active rooms serialize into visible latency spikes | Persist incremental Loro updates and compact periodically; move SQLite to a worker thread; add `busy_timeout`; measure **event-loop lag**, not save duration | Lag histogram during a save under load; save duration p95; no message interleaving failure | `open` |
 | P1-2 | **Projection rebuild is full clear-and-rewrite per share, single peer, single worker** | Every save rebuilds every projection of that workspace | `apps/collab-server/src/projectionWorker.ts` (1,468 lines); `docs/architecture.md` §"Share projections" documents the LWW-one-peer design | A 2,000-card board with several shares pays the full cost per save; design cannot survive a second worker or multi-replica without a lease | Use publish diff machinery for incremental projection; skip when the source version vector is unchanged; record projection build time per share and cap it; add a per-room lease if a second worker is ever introduced | Per-share build-time metric; skip ratio; a test that an unchanged workspace rebuilds zero shares | `open` |
 | P1-3 | **Module-load singletons make the app one-workspace-per-page-load** | `LoroDoc`, `WorkspaceDocument`, presence stores, persistence and provider are constructed at import; `SESSION` is read at import | `apps/canvas/src/store/useCanvasStore.ts:35-52` | No clean workspace switch without reload; tests must reset modules; accounts/multi-workspace tabs get harder the longer this stays | Introduce a `WorkspaceSession` factory/context created at boot, with doc/persistence/provider injected; remove the `import.meta.env.MODE` standalone workaround | A test that two sessions can exist in one process; a workspace switch without reload | `open` |
-| P1-4 | **God objects** | One class/file owns a whole domain | `WorkspaceDocument.ts` 2,850 lines / **165 methods**; `CanvasBoard.tsx` 1,914; `adminHttp.ts` 1,516; `projectionWorker.ts` 1,468 | Review, onboarding and merge-conflict cost; every change touches a file everyone is editing | Split behind the existing facade by aggregate (cards, boards, types/tags, edges/sections, content); extract canvas gesture hooks; split admin routes and projection phases. Existing tests are the safety net | Line/method counts down; no behaviour change in the suite; import graph shows no cycles | `open` |
+| P1-4 | **God objects** | One class/file owns a whole domain | `WorkspaceDocument.ts` 3,558 lines / **140 methods**; `CanvasBoard.tsx` 2,412; `adminHttp.ts` 1,516; `projectionWorker.ts` 1,468 | Review, onboarding and merge-conflict cost; every change touches a file everyone is editing | Split behind the existing facade by aggregate (cards, boards, types/tags, edges/sections, content); extract canvas gesture hooks; split admin routes and projection phases. Existing tests are the safety net | Line/method counts down; no behaviour change in the suite; import graph shows no cycles | `open` |
 | P1-5 | **Billing imports app source** | `services/billing/issue.ts:6` imports `../../apps/collab-server/src/licence.ts` | Same | Breaks the package graph; the Lambda bundle reaches into an app; two test runners (Vitest in workspace, `node --test` in billing) | Create `packages/licence` (format, sign/verify, types) used by relay, canvas and billing; keep enforcement wrappers in the server | Billing builds without an `apps/` import; one runner; no parser drift test failures | `open` |
 | P1-6 | **Ad-hoc migrations, no `busy_timeout`** | Each store does its own `PRAGMA table_info` + `ALTER TABLE`; no `user_version`, no ordered list | `shares.ts`, `settings.ts`, and peers | Upgrade correctness distributed across six files; an admin command or live `sqlite3` can hit `SQLITE_BUSY` immediately | One small migration runner (shared helper), versioned and logged at boot; `busy_timeout = 5000` on every connection; N−1 fixture tests | N−1 database files open and migrate; a concurrent `sqlite3` read does not error | `open` |
 | P1-7 | **CORS default is `*`; docs say allowlist** | Empty `SUITE_ALLOWED_ORIGINS` yields `["*"]` | `apps/collab-server/src/config.ts:277` | Broader than documented and unnecessary with bearer tokens and no cookies | Default to **no** CORS headers (same-origin); require explicit `*` to opt in; update `.env.example` and security model | Config test asserting no `Access-Control-Allow-Origin` by default; docs match | `open` |
@@ -649,6 +680,9 @@ a derived scene) and **A11b** (fractal layout presets) after
 [ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md) superseded the camera
 transition as the target.
 
+> **Amendment (2026-10-25).** ADR-0036 supersedes ADR-0030: A11a is `deferred` with the scene
+> surface, and A11b continues as the fractal layout command on the React Flow board.
+
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
 | **A1** | Attachments, settings, and licence state are durable | Container-recreate test for all three; backup/restore drill with an attachment; manifest count + checksum; `SUITE_ATTACHMENTS_DB`, `SUITE_SETTINGS_DB`, and `SUITE_LICENCE_DB` all point at `/data` in `compose.yaml` and `.env.example`; **boot refuses a mixed layout** (attachments on CWD while other stores are `/data`, or `:memory:` settings/licences in a composed deployment); ops/security/limits docs corrected | — |
@@ -670,17 +704,16 @@ transition as the target.
 is correct and the compose file is not. Only a test that runs the composed stack can fail when the
 volume mapping regresses.
 
-**A1 also covers the `:memory:` stores.** `compose.yaml:40-41` defaults `SUITE_SETTINGS_DB` and
-`SUITE_LICENCE_DB` to `:memory:`, so operator limit overrides and hosted licence claims do not
-survive a restart. A1 closes only when all three stores (attachments, settings, licences) point at
-`/data` and survive a container recreate. Closing attachments alone leaves a paid customer's
-entitlement as volatile as the attachment bytes.
+**A1 also covers the `:memory:` stores.** Settings and licence claims default to `:memory:` when a
+deployment does not configure them, so operator limit overrides and hosted entitlements did not
+survive a restart. That is now refused: `compose.yaml` sets all six store paths under `/data` and
+`SUITE_REQUIRE_DURABLE_STORES=1`, and `config.ts` fails the boot with a named error for an unset,
+`:memory:`, relative or split layout.
 
-**A1 hardening for the next planning phase.** Refuse the ambiguous deployment at boot instead of
-documenting the trap: if the document/shares/workspaces stores are under `/data` and attachments is
-not, or settings/licences are `:memory:` in a composed deployment, the server should fail with a
-named error. This is cheaper than a runbook warning and is not yet implemented; A1 is not fully
-closed until it is.
+**A1 hardening (implemented).** Rather than documenting the trap, the server refuses the ambiguous
+deployment at boot — the same guard covers the "attachments somewhere else" case. Closing
+attachments alone would have left a paid customer's entitlement as volatile as the attachment
+bytes; A1 covers all six stores.
 
 **A2 — why two instances in one process.** `fake-indexeddb` gives a shared database across two
 `LoroIndexeddbPersistence` objects, which is exactly the browser's situation. A single-instance test
@@ -711,8 +744,11 @@ protection on the free plan); add a payment method or raise the spending limit (
 or attach a self-hosted runner on the operator's machine (no metered minutes, unverified against an
 admission block). The workflow files stay in place and correct so any of these needs no code change.
 
-**A4 — why a tag and not a version field.** `package.json` says `0.1.0` and `git tag` is empty ✅, so
-"which build are you running?" has no answer and no artifact to roll back to. The tag is the artifact.
+**A4 — why a tag and not a version field.** `package.json` now reads `0.2.0-alpha.1` and the identity
+files exist (`LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
+`docs/release.md`), but no semver tag points at a released commit: the repository's only tag
+(`ice-parity-2026-10-23`) marks a spike. The tag is the artifact that answers "which build is this?"
+and gives a rollback target, so A4 stays open until one exists.
 
 **A5 — why "or".** Beta is about strangers doing real work; taking money is a V1 promise. Either
 billing works, or the product says clearly it does not. The failure mode to avoid is a payment path
@@ -752,17 +788,22 @@ owner is the maintainer/operator; no separate review board is implied.
 | A1 | `open` | Six stores on `/data`, backup/restore with attachments, and a recreate drill. `SUITE_REQUIRE_DURABLE_STORES=1` (set in `compose.yaml`) makes boot refuse an unset, `:memory:`, relative, or split store layout and names every offending variable. Evidence: `compose.yaml`; `deploy/backup.sh`; `deploy/restore.sh`; `deploy/drills/attachments-record.md`; `apps/collab-server/src/config.ts` + `config.test.ts` (store-durability suite); `attachmentDurability.test.ts` |
 | A2 | `open` | `apps/canvas/src/collab/loroPersistence.ts`; `loroPersistence.test.ts` (two-instance and leader-takeover); ADR-0024 |
 | A3 | `blocked` | Account entitlement, not code: every run is `startup_failure` with zero jobs, in this repo and a second private one, with no successful run ever. The local gate (`pnpm verify` + `pnpm e2e`) is published in `docs/release.md`. Unlock by public repo, billing, or a self-hosted runner. See §7.1. |
-| A4 | `open` | `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |
+| A4 | `measuring` | Identity files exist; the release tag does not. `LICENSE` (MIT), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, `package.json` at `0.2.0-alpha.1`; ADR-0026 |
 | A5 | `open` | `services/billing/handler.ts` (closed by default, `503` before signature), `docs/billing.md`, `.env.example` |
 | A6 | `open` | `apps/canvas/src/shell/ErrorBoundary.tsx`, `storage/durability.ts`, `components/StoragePanel.tsx`, `crash/*`, `compose.crash.yaml`; ADR-0025, ADR-0027 |
 | A7 | `open` | `apps/collab-server/src/persistence.ts` (`loro-snapshot-v1`), `fixtures/n-1/`, `storeUpgrade.test.ts` |
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
-| A11a | `measuring` | Data model retained: `board` field kind, seeded `portal` type, `createPortalCard`, ADR-0029. Landed behind `?canvas=scene`: pure projection (`packages/scene/src/scene.ts`, `geometry.ts`, `lod.ts`, `outline.ts`, `spatial.ts`), recursive live/impostor portals (`apps/canvas/src/scene/SceneLayer.tsx`), camera-only focus path with checkpoints (`SceneBoard.tsx`), scene outline (`SceneOutline.tsx`, `outlineAdapter.ts`), surface flag in `scene/surfaceFlag.ts`. Component tests cover expanded portals, cycles, missing targets, culling, focus target and Escape restore. Still open: e2e for depth ≥ 2 and one CRDT commit per gesture; the surface is not the default. The superseded camera-transition precedent (`Portal*.tsx`, `BoardMiniature.tsx`, `portalMiniature.ts`, `CardFocus*.tsx`) survives only as the impostor. |
-| A11b | `measuring` | Landed behind `?canvas=scene`: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; pure planner in `apps/canvas/src/scene/layoutCommand.ts`; one batched, one-undo `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts`; **Arrange fractally** menu in `CanvasBoard.tsx`. Still open: preview surface and e2e; output is applied immediately from the menu. |
+| A11a | `deferred` | The live, scaled portal instance was the scene surface's job. [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes that surface: a portal is a doorway again (card + `board` field + miniature + camera transition), and the data model (ADR-0029) is unchanged. Nothing to close here. |
+| A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner moves from `apps/canvas/src/scene/layoutCommand.ts` to `apps/canvas/src/canvas/layoutCommand.ts` when the scene directory goes; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch; **Arrange fractally** stays in `CanvasBoard.tsx`. A preview surface is the one thing never built. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
+
+**Amendment (2026-10-25).** [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the
+live-scene rendering target, so **A11a is withdrawn** and the scene surface is removed. The
+data-model decisions below stand and ship; the "Scene rendering (A11a target)" paragraphs are kept
+as the record of a direction that was not taken.
 
 **Name.** "Portals" is the working name. It is better than "nested canvases" because the user-facing
 object is a doorway, not a container. Alternatives if it ever needs renaming: *Vistas*, *Doorways*,
@@ -840,8 +881,11 @@ of the same plane.
   retired.
 - Tab grouping and cross-board edges are follow-ons, not part of A11a.
 
-**Status:** A11a `measuring` (data model landed; scene primitives exist behind a surface flag but are
-not wired into the canvas; live portals not built). A11b `unopened`.
+**Status (2026-10-25):** A11a `deferred` — the live portal was the scene surface's job, and
+[ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes that surface. A11b `open` — the
+fractal layout planner, the graph `LayoutPlan` batch and the **Arrange fractally** menu ship; only a
+preview surface was never built. The acceptance list below stays as the record of what A11a would
+have required.
 
 **Acceptance for A11a.**
 - A portal can be created from the right-click menu and the Add card/type menu (retained).
@@ -964,7 +1008,8 @@ smallest: it requires reading the cited files and correcting them.
 ## 9. Documentation drift ledger
 
 Docs are one of this project's main trust signals, so stale docs are a *product* problem, not a
-housekeeping one. Each row was re-read on 2026-10-23.
+housekeeping one. Each row was re-read on 2026-10-23, and the ledger was extended on 2026-10-25 with
+the drift that audit missed (D12–D17).
 
 | # | Doc claim | Reality | Where | Marker |
 | --- | --- | --- | --- | --- |
@@ -978,7 +1023,14 @@ housekeeping one. Each row was re-read on 2026-10-23.
 | D8 | `preview-light.png` shows "Yjs" | The engine is Loro (ADR-0015) | `docs/assets/preview-light.png` | ◐ (asset not re-opened) |
 | D9 | "`settings.sqlite` is not part of a snapshot" | `backup.sh` includes it | `deploy/restore.sh:276` vs `deploy/backup.sh:76` | ✅ |
 | D10 | ADR-0020 lists export/import and card sharing as gaps | `.suite` export/import and projection shares now exist | `docs/decisions/0020-…md` (context) | ✅ (as history, not drift to fix) |
-| D11 | Ops doc describes a "three database" backup | Six stores exist; compose configures five; backup covers five; attachments covered by none | `docs/operations.md`, `deploy/backup.sh:70-77` | ✅ |
+| D11 | Ops doc describes a "three database" backup | Six stores exist and compose configures all six; backup covers all six | `docs/operations.md`, `deploy/backup.sh` | ✅ |
+
+| D12 | "No `LICENSE`, no `SECURITY.md`, no `CHANGELOG.md`, no `CONTRIBUTING.md`, no tags … 89 commits" | All five identity files exist at `0.2.0-alpha.1`; 124 commits; one tag, and it marks a spike rather than a release | `docs/roadmap/alpha.md` §1.2, §3 row 9 | ✅ (fixed 2026-10-25) |
+| D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 144 Vitest files / 1,733 tests; 30 Playwright specs; 75 billing tests; 29 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
+| D14 | "`compose.yaml` configures five … attachments defaults to CWD; settings and licences default to `:memory:`" | All six stores are under `/data` with `SUITE_REQUIRE_DURABLE_STORES=1`, and boot refuses a split layout | `docs/roadmap/alpha.md` §4.4, §7.1 A1 | ✅ (fixed 2026-10-25) |
+| D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 30 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
+| D16 | ADR-0030 is "the product of record"; `?canvas=ice` names a surface | The scene is a read-only preview with no editing path, and [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes it; the `ice` value is gone from `surfaceFlag.ts` | `docs/architecture.md` §Rendering, `AGENTS.md`, ADR-0030 | ✅ (fixed 2026-10-25) |
+| D17 | "64 `node --test` tests" in billing | 75 | `README.md:70` | ✅ (fixed 2026-10-25) |
 
 ### 9.1 Closure status
 
@@ -992,6 +1044,7 @@ housekeeping one. Each row was re-read on 2026-10-23.
 | D8 | fixed | the stale `preview-light.png` was removed; README uses `preview-dark.png` |
 | D9 | fixed | backup and restore both cover settings |
 | D10 | history | ADR-0020 remains a dated decision; no rewrite |
+| D12–D17 | fixed 2026-10-25 | Identity, counts, store layout, doc sizes, the surface claim and the billing count were corrected against the tree; ADR-0036 records the surface decision |
 
 **Mechanical guard (A8).** `node scripts/docs-check.mjs` checks relative links and anchors, fenced
 blocks, retired terms, and version consistency. The CI `quality` job runs it. The limits page has
@@ -1218,26 +1271,26 @@ only**, not the document plane. **Topology** is single-node with published limit
 
 What was verified in this pass, and what was not.
 
-| Verified by reading the tree (✅) | Reported but not re-verified (◐) |
+| Verified by reading the tree on 2026-10-25 (✅) | Reported but not re-verified (◐) |
 | --- | --- |
-| `attachments.ts:79-80` default path; `:22-36` MIME allowlist and 16 MiB cap | GitHub Actions run history (`startup_failure`, 21 runs re-checked on 2026-10-23, 0 jobs) |
-| `compose.yaml:37-41` store env vars, no `SUITE_ATTACHMENTS_DB`; `:40-41` `:memory:` defaults | Unit/e2e declaration counts (~1,392 / ~160) |
-| `deploy/backup.sh:70-77`, `deploy/restore.sh:116`, `restore.sh:276` | Storybook story count and a11y gating |
-| `loroPersistence.ts:8, 72-73, 140-145, 160-180` | `timingSafeEqual` / 32-byte capability details in `auth.ts` |
-| `Dockerfile` has no `USER` (runtime stage `:31-57`) | PBKDF2 iteration count and salt derivation |
-| `config.ts:277` → `["*"]`; `server.ts:212` `saveInterval: 2000`; `http.ts:156` 64 KiB | Mobile layout claim (one `max-width: 640px` rule) |
-| `e2e/playwright.config.ts:73` chromium-only | `preview-light.png` still saying "Yjs" |
-| `services/billing/handler.ts:268` `memoryStore()`; `issue.ts:6` app import | Passphrase UX detail in `RecoveryKeyDialog.tsx` / `WorkspaceProtected.tsx` |
-| `useCanvasStore.ts:35-52` module-level singletons | "No `any`/`@ts-ignore` in source" sweeps |
-| `WorkspaceDocument.ts` 2,850 lines, 165 methods, `:1326-1327` schema stamp | Projection rebuild cost figures |
-| `CanvasBoard.tsx` 1,914 / `adminHttp.ts` 1,516 / `projectionWorker.ts` 1,468 | Timing claims about save stalls |
-| `stryker.server.config.mjs:37-41` mutation scope | |
-| No `LICENSE` / `SECURITY.md` / `CHANGELOG.md` / `CONTRIBUTING.md`; `git tag` empty; 89 commits; clean tree | |
-| No service worker / `storage.persist` / error boundary in `apps/canvas/src` | |
-| `testing.md:4,28,30,37`; `README.md:168,183`; `security-model.md:72`; `AGENTS.md:83-84`; `limits.ts:32-33`; `operations.md:80,668` | |
-| ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted | |
+| Six stores under `/data` in `compose.yaml` with `SUITE_REQUIRE_DURABLE_STORES=1`; `config.ts` boot refusal + `config.test.ts` store-durability suite | GitHub Actions run history (every run `startup_failure`, 0 jobs; account-level, see §7.1 A3) |
+| `deploy/backup.sh` snapshots all six stores, attachments with an id digest; `deploy/restore.sh` verifies them; `deploy/drills/attachments-record.md` | `timingSafeEqual` / 32-byte capability details in `auth.ts` |
+| `attachments.ts` MIME allowlist and 16 MiB cap | PBKDF2 iteration count and salt derivation |
+| `loroPersistence.ts` leader election and release-on-destroy; ADR-0024; two-instance and leader-takeover tests | Mobile layout claim (one `max-width: 640px` rule) |
+| `useCanvasStore.ts` module-level singletons; `CanvasBoard.tsx` 2,412 lines; `projectionWorker.ts` 1,468 lines | Projection rebuild cost figures |
+| `WorkspaceDocument.ts` 3,558 lines; schema stamp at open with no migration step | Timing claims about save stalls |
+| `Dockerfile` has no `USER` (runtime stage) | `preview-dark.png` content |
+| `e2e/playwright.config.ts` chromium-only; 30 specs | "No `any`/`@ts-ignore` in source" sweeps |
+| Identity files present (`LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`); `package.json` `0.2.0-alpha.1`; one tag (`ice-parity-2026-10-23`); 124 commits | Billing webhook against a live Stripe endpoint |
+| `navigator.storage.persist()` + `StoragePanel` + `CanvasErrorBoundary` + `crash/*`; no service worker | Storybook story count and a11y gating beyond the 29 files listed |
+| `pnpm test`: 144 files / 1,733 tests; billing `node --test`: 75 declarations | |
+| `stryker.server.config.mjs` mutation scope | |
+| ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted; ADR-0030 superseded by ADR-0036 | |
 | `purity.test.ts`, `mode.test.ts`, `patchGuard.test.ts`, `mutationGaps.test.ts`, `workspace.convergence.test.ts` all exist | |
-| Test file count: 142 | |
+
+The 2026-10-23 rows that were overtaken — attachments in the working directory, five configured
+stores, 2,850-line `WorkspaceDocument`, 1,914-line `CanvasBoard`, missing licence files, no
+`persist()`, 142 test files — are recorded as drift (D12–D17, §9) rather than left as facts.
 
 ### 13.4 Maintenance
 

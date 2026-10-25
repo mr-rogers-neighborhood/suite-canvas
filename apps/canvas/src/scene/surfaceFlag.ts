@@ -1,13 +1,12 @@
-export type CanvasSurface = "flow" | "scene" | "ice";
+export type CanvasSurface = "flow" | "scene";
 
 /**
- * The new surfaces are opt-in while they reach parity. `?canvas=scene` uses
- * the projected scene on React Flow; `?canvas=ice` is the spike surface.
- * Anything else keeps the existing canvas.
+ * The scene surface is opt-in while it reaches parity: `?canvas=scene` uses the
+ * projected scene on React Flow. Anything else keeps the editing canvas.
  */
 export function canvasSurfaceFromSearch(search: string): CanvasSurface {
   const value = new URLSearchParams(search).get("canvas");
-  if (value === "scene" || value === "ice") return value;
+  if (value === "scene") return value;
   return "flow";
 }
 

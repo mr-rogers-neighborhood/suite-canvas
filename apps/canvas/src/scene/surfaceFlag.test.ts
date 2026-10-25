@@ -8,8 +8,12 @@ describe("canvasSurfaceFromSearch", () => {
     expect(canvasSurfaceFromSearch("?canvas=unknown")).toBe("flow");
   });
 
-  it("should opt into the projected scene or the ICE spike", () => {
+  it("should opt into the projected scene", () => {
     expect(canvasSurfaceFromSearch("?canvas=scene")).toBe("scene");
-    expect(canvasSurfaceFromSearch("?workspace=abc&canvas=ice")).toBe("ice");
+    expect(canvasSurfaceFromSearch("?workspace=abc&canvas=scene")).toBe("scene");
+  });
+
+  it("should ignore a surface flag that no longer exists", () => {
+    expect(canvasSurfaceFromSearch("?canvas=ice")).toBe("flow");
   });
 });

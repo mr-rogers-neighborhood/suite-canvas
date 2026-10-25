@@ -7,6 +7,7 @@ import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import { ensureWhiteboardType } from "./cards/whiteboard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
 import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
@@ -15,6 +16,7 @@ import { CardFocusHost } from "./components/CardFocusHost";
 import { CardInspectorHost } from "./components/CardInspectorHost";
 import { CommandPaletteHost } from "./components/CommandPalette";
 import { sectionPath } from "./components/cardWhere";
+import type { Capability } from "./components/commandRegistry";
 import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
 import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
@@ -129,14 +131,24 @@ function WorkspaceShell({
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
   const cardFocusId = useUiStore((state) => state.cardFocusId);
+  const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
+  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
+  const paletteOpen = useUiStore((state) => state.paletteOpen);
+  const activeViewId = useUiStore((state) => state.activeViewId);
+  const applyView = useUiStore((state) => state.applyView);
+  const exitView = useUiStore((state) => state.exitView);
   const editingNodeId = useUiStore((state) => state.editingNodeId);
   const editingField = useUiStore((state) => state.editingField);
   const readOnly = useUiStore((state) => state.readOnly);
+  const canEditContent = useUiStore((state) => state.canEditContent);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
+  const canPublish = useUiStore((state) => state.canPublish);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canCreateBoards = useUiStore((state) => state.canCreateBoards);
   const canManageBoards = useUiStore((state) => state.canManageBoards);
   const canManageSchema = useUiStore((state) => state.canManageSchema);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
+  const canManageLinks = useUiStore((state) => state.canManageLinks);
   const setFocus = usePresenceStore((state) => state.setFocus);
   const setBoard = usePresenceStore((state) => state.setBoard);
   const bindPresence = usePresenceStore((state) => state.bind);
@@ -173,6 +185,17 @@ function WorkspaceShell({
   // the owner and to a workspace editor token. Board and card shares edit one
   // projection and publish it, so they never see it.
   const workspaceSurface = !share || share.scope === "workspace";
+
+  // Opening the library is a request to search it: the drawer owns the input,
+  // so the shell asks it to take the keyboard on every open — the dock button,
+  // ⌘⇧K, a palette row or an applied view all arrive here.
+  const libraryWasOpen = useRef(libraryOpen);
+  useEffect(() => {
+    if (libraryOpen && !libraryWasOpen.current) {
+      window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+    }
+    libraryWasOpen.current = libraryOpen;
+  }, [libraryOpen]);
 
   const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
   const stagger = useRef(0);
@@ -404,76 +427,163 @@ function WorkspaceShell({
   );
 
   /**
-   * The palette's entries. Navigation and creation are wired to the same store
-   * actions and helpers the shell already uses, so the palette cannot drift from
-   * the controls it duplicates.
+   * The palette's entries, built from the command registry. Navigation and
+   * creation are wired to the same store actions and helpers the shell already
+   * uses, so the palette cannot drift from the controls it duplicates.
    */
-  const paletteItems = useMemo(
-    () =>
-      buildPaletteItems({
-        boards: snapshot.boards,
-        cards: snapshot.cards,
-        types: snapshot.types,
-        sections: snapshot.sections,
-        views: savedViews,
+  const paletteItems = useMemo(() => {
+    const capabilities: Capability[] = [];
+    if (canEditContent) capabilities.push("canEditContent");
+    if (canEditLayout) capabilities.push("canEditLayout");
+    if (canPublish) capabilities.push("canPublish");
+    if (canCreateContent) capabilities.push("canCreateContent");
+    if (canCreateBoards) capabilities.push("canCreateBoards");
+    if (canManageBoards) capabilities.push("canManageBoards");
+    if (canManageSchema) capabilities.push("canManageSchema");
+    if (canManageTrash) capabilities.push("canManageTrash");
+    if (canManageLinks) capabilities.push("canManageLinks");
+
+    const targetCardId = cardFocusId ?? inspectorNodeId ?? selectedNodeIds[0] ?? null;
+    const cardPlaced =
+      targetCardId !== null &&
+      activeBoardId !== null &&
+      workspace
+        .listCardPlacements(targetCardId)
+        .some((placement) => placement.boardId === activeBoardId);
+
+    return buildPaletteItems({
+      capabilities,
+      state: {
+        workspaceSurface,
+        readOnly,
+        paletteOpen,
+        libraryOpen,
+        libraryTab,
         activeBoardId,
-        titleOf: (cardId) => workspace.displayTitle(cardId),
-        typeNameOf: (cardId) => {
-          const card = workspace.getCard(cardId);
-          const type = card ? workspace.getType(card.primaryTypeId) : undefined;
-          return type?.name ?? "Card";
+        activeViewId,
+        cardId: targetCardId,
+        cardPlaced,
+        boards: snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
+        views: savedViews.map((view) => ({ id: view.id, name: view.name })),
+        sections: snapshot.sections.map((section) => ({
+          id: section.id,
+          boardId: section.boardId,
+          title: section.title,
+        })),
+        cards: snapshot.cards.map((card) => {
+          const type = workspace.getType(card.primaryTypeId);
+          return {
+            id: card.id,
+            title: workspace.displayTitle(card.id),
+            typeName: type?.name ?? "Card",
+          };
+        }),
+        types: snapshot.types.map((type) => ({ id: type.id, name: type.name })),
+        trashedCount: workspace.listTrashedCards().length,
+      },
+      actions: {
+        openPalette: () => setPaletteOpen(true),
+        openLibrary: () => setLibraryOpen(true),
+        openLibraryTab: (tab) => {
+          setLibraryTab(tab);
+          setLibraryOpen(true);
         },
-        canCreateContent,
-        canCreateBoards,
-        canManageSchema,
-        actions: {
-          goToBoard: (boardId) => activateBoard(boardId),
-          goToSection: (sectionId) => {
-            const section = workspace.getSection(sectionId);
-            if (!section) return;
-            activateBoard(section.boardId);
-            selectSection(section.id);
-          },
-          focusCard: (cardId) => openCardFocus(cardId),
-          createCard: (typeId) => createCard(typeId),
-          createBoard: () => {
-            const board = workspace.createBoard();
-            activateBoard(board.id);
-          },
-          openLibrary: () => setLibraryOpen(true),
-          openTypes: () => openTypeSettings(),
-          openShare: () => requestShare("workspace"),
-          toggleTheme: () => setThemeMode(themeMode === "dark" ? "light" : "dark"),
-          openLibrarySearch: () => {
-            setLibraryOpen(true);
-            setLibraryTab("cards");
-            window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
-          },
+        searchLibrary: () => {
+          setLibraryTab("cards");
+          setLibraryOpen(true);
         },
-      }),
-    [
-      snapshot.boards,
-      snapshot.cards,
-      snapshot.types,
-      snapshot.sections,
-      savedViews,
-      activeBoardId,
-      workspace,
-      canCreateContent,
-      canCreateBoards,
-      canManageSchema,
-      activateBoard,
-      selectSection,
-      openCardFocus,
-      createCard,
-      setLibraryOpen,
-      openTypeSettings,
-      requestShare,
-      setThemeMode,
-      themeMode,
-      setLibraryTab,
-    ],
-  );
+        goToBoard: (boardId) => activateBoard(boardId),
+        goToSection: (sectionId) => {
+          const section = workspace.getSection(sectionId);
+          if (!section) return;
+          activateBoard(section.boardId);
+          selectSection(section.id);
+        },
+        focusCard: (cardId) => openCardFocus(cardId),
+        openCard: (cardId) => openInspector(cardId),
+        applyView: (viewId) => {
+          const view = workspace.getView(viewId);
+          if (view) applyView(view.id, view.query);
+        },
+        exitView: () => exitView(),
+        createCard: (typeId) => createCard(typeId),
+        createCardInInbox: () => {
+          workspace.createCard();
+        },
+        createSketch: () => {
+          const whiteboard = ensureWhiteboardType(workspace);
+          createCard(whiteboard.id);
+        },
+        createSection: () => {
+          if (!activeBoardId) return;
+          const centre = canvasPoint();
+          workspace.createSection({ boardId: activeBoardId, x: centre.x - 180, y: centre.y - 130 });
+        },
+        createBoard: () => {
+          const board = workspace.createBoard();
+          activateBoard(board.id);
+        },
+        editCard: (cardId) => openCardFocus(cardId),
+        setCardType: (cardId, typeId) => workspace.setCardTypes(cardId, [typeId], typeId),
+        trashCard: (cardId) => workspace.trashCard(cardId),
+        restoreCard: (cardId) => workspace.restoreCard(cardId),
+        deleteCardForever: (cardId) => workspace.purgeCard(cardId),
+        emptyTrash: () => workspace.emptyTrash(),
+        duplicateCard: (cardId) => {
+          workspace.duplicateCard(cardId, activeBoardId ? { boardId: activeBoardId } : {});
+        },
+        removeFromBoard: (cardId) => {
+          if (activeBoardId) workspace.unplaceCard(activeBoardId, cardId);
+        },
+        placeCard: (cardId) => placeCard(cardId),
+        openTypes: () => openTypeSettings(),
+        openShare: () => requestShare("workspace"),
+        toggleTheme: () => setThemeMode(themeMode === "dark" ? "light" : "dark"),
+      },
+    });
+  }, [
+    snapshot.boards,
+    snapshot.cards,
+    snapshot.types,
+    snapshot.sections,
+    savedViews,
+    activeBoardId,
+    activeViewId,
+    workspace,
+    workspaceSurface,
+    readOnly,
+    paletteOpen,
+    libraryOpen,
+    libraryTab,
+    cardFocusId,
+    inspectorNodeId,
+    selectedNodeIds,
+    canEditContent,
+    canEditLayout,
+    canPublish,
+    canCreateContent,
+    canCreateBoards,
+    canManageBoards,
+    canManageSchema,
+    canManageTrash,
+    canManageLinks,
+    activateBoard,
+    selectSection,
+    openCardFocus,
+    openInspector,
+    applyView,
+    exitView,
+    createCard,
+    canvasPoint,
+    placeCard,
+    setLibraryOpen,
+    setPaletteOpen,
+    setLibraryTab,
+    openTypeSettings,
+    requestShare,
+    setThemeMode,
+    themeMode,
+  ]);
 
   const createBoardPortal = useCallback(() => {
     if (!activeBoardId || !canCreateBoards) return;

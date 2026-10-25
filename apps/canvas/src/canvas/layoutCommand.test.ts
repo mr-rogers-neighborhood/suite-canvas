@@ -5,7 +5,7 @@ import {
   applyBoardFractal,
   type LayoutSnapshot,
   planBoardFractal,
-  planFractalScene,
+  planFractalTree,
 } from "./layoutCommand";
 
 function snapshotOf(workspace: WorkspaceDocument): LayoutSnapshot {
@@ -13,8 +13,6 @@ function snapshotOf(workspace: WorkspaceDocument): LayoutSnapshot {
     boards: workspace.listBoards(),
     cards: workspace.listCards(),
     placements: workspace.listPlacements(),
-    sections: workspace.listSections(),
-    edges: workspace.listEdges(),
   };
 }
 
@@ -134,7 +132,7 @@ describe("planBoardFractal", () => {
     expect(plan.boards).toEqual([a.id, b.id]);
     expect(plan.placements).toHaveLength(2);
 
-    const scene = planFractalScene({ snapshot, rootBoardId: a.id, recipe: recipe() });
+    const scene = planFractalTree({ snapshot, rootBoardId: a.id, recipe: recipe() });
     const child = scene.portals[0]?.child;
     expect(child?.issues.map((issue) => issue.code)).toContain("cycle");
 
@@ -146,7 +144,7 @@ describe("planBoardFractal", () => {
     });
     expect(capped.boards).toEqual([a.id]);
     expect(
-      planFractalScene({ snapshot, rootBoardId: a.id, recipe: recipe(), maxDepth: 0 }).issues,
+      planFractalTree({ snapshot, rootBoardId: a.id, recipe: recipe(), maxDepth: 0 }).issues,
     ).toEqual(expect.arrayContaining([expect.objectContaining({ code: "depth" })]));
   });
 

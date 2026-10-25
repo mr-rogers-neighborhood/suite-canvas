@@ -1,7 +1,6 @@
 import {
   type Board,
   type Card,
-  type GraphEdge,
   type LayoutPlan,
   type LayoutPlanPlacement,
   type LayoutPlanSize,
@@ -9,21 +8,17 @@ import {
   type Placement,
   PORTAL_BOARD_FIELD_ID,
   PORTAL_TYPE_ID,
-  type Section,
   type WorkspaceDocument,
 } from "@suite/graph";
 import {
-  type BuildSceneInput,
-  type Camera,
   DEFAULT_FRACTAL_RECIPE,
-  DEFAULT_SCENE_CONFIG,
+  type LayoutPlan as FractalPlan,
   type FractalRecipe,
   type LayoutItem,
   type Point,
   planFractalLayout,
-  type SceneCardInput,
-  type LayoutPlan as SceneLayoutPlan,
 } from "@suite/scene";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 
 /**
  * The one-shot fractal layout command. Planning is pure: it reads a snapshot and
@@ -36,8 +31,6 @@ export interface LayoutSnapshot {
   readonly boards: readonly Board[];
   readonly cards: readonly Card[];
   readonly placements: readonly Placement[];
-  readonly sections?: readonly Section[] | undefined;
-  readonly edges?: readonly GraphEdge[] | undefined;
 }
 
 export interface PlanBoardFractalInput {
@@ -54,21 +47,39 @@ export interface PlanBoardFractalInput {
   readonly recursive?: boolean | undefined;
   /** Page-space offset for the arranged root level. */
   readonly origin?: Point | undefined;
-  readonly camera?: Camera | undefined;
 }
 
-const IDENTITY_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
+/** Only what the planner reads: identity, and the field values a portal needs. */
+interface LayoutCardInput {
+  readonly id: string;
+  readonly primaryTypeId: string;
+  readonly properties: Card["properties"];
+}
 
-/** Maps the workspace snapshot onto the scene projection input. */
-export function buildLayoutSceneInput(input: PlanBoardFractalInput): BuildSceneInput {
-  const { snapshot } = input;
+interface LayoutPlacementInput {
+  readonly boardId: string;
+  readonly cardId: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly width?: number | undefined;
+  readonly height?: number | undefined;
+}
+
+interface LayoutInput {
+  readonly boards: readonly { readonly id: string }[];
+  readonly cards: readonly LayoutCardInput[];
+  readonly placements: readonly LayoutPlacementInput[];
+}
+
+/** Maps the workspace snapshot onto the planner's input. */
+function layoutInput(snapshot: LayoutSnapshot): LayoutInput {
   return {
-    boards: snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
+    boards: snapshot.boards.map((board) => ({ id: board.id })),
     cards: snapshot.cards.map((card) => ({
       id: card.id,
       primaryTypeId: card.primaryTypeId,
       properties: card.properties,
-      connectors: card.connectors,
     })),
     placements: snapshot.placements.map((placement) => ({
       boardId: placement.boardId,
@@ -79,35 +90,11 @@ export function buildLayoutSceneInput(input: PlanBoardFractalInput): BuildSceneI
       width: placement.width,
       height: placement.height,
     })),
-    sections: snapshot.sections?.map((section) => ({
-      id: section.id,
-      boardId: section.boardId,
-      title: section.title,
-      x: section.x,
-      y: section.y,
-      width: section.width,
-      height: section.height,
-      z: section.z,
-      color: section.color,
-    })),
-    edges: snapshot.edges?.map((edge) => ({
-      id: edge.id,
-      boardId: edge.boardId,
-      source: edge.source,
-      target: edge.target,
-      kind: edge.kind,
-      path: edge.path,
-      sourceConnector: edge.sourceConnector,
-      targetConnector: edge.targetConnector,
-      label: edge.label,
-    })),
-    rootBoardId: input.rootBoardId,
-    camera: input.camera ?? IDENTITY_CAMERA,
   };
 }
 
 /** Empty string means "portal with no target"; treat it as a plain card here. */
-function portalTarget(card: SceneCardInput): string | undefined {
+function portalTarget(card: LayoutCardInput): string | undefined {
   if (card.primaryTypeId !== PORTAL_TYPE_ID) return undefined;
   const value = card.properties[PORTAL_BOARD_FIELD_ID];
   if (typeof value !== "string") return undefined;
@@ -116,20 +103,20 @@ function portalTarget(card: SceneCardInput): string | undefined {
 }
 
 function layoutItems(
-  scene: BuildSceneInput,
+  input: LayoutInput,
   selection: readonly string[] | undefined,
   pinned: readonly string[] | undefined,
   createdAt: ReadonlyMap<string, number>,
 ): Record<string, LayoutItem[]> {
   const boards: Record<string, LayoutItem[]> = {};
-  for (const board of scene.boards) boards[board.id] = [];
+  for (const board of input.boards) boards[board.id] = [];
 
-  const cardsById = new Map(scene.cards.map((card) => [card.id, card]));
+  const cardsById = new Map(input.cards.map((card) => [card.id, card]));
   const pinnedIds = new Set(pinned ?? []);
   const selectedIds = new Set(selection ?? []);
   const selectedOnly = selectedIds.size > 0;
 
-  for (const placement of scene.placements) {
+  for (const placement of input.placements) {
     const bucket = boards[placement.boardId];
     if (!bucket) continue;
     const card = cardsById.get(placement.cardId);
@@ -139,8 +126,8 @@ function layoutItems(
     const created = createdAt.get(`${placement.boardId}\u001f${placement.cardId}`);
     const item: LayoutItem = {
       id: card.id,
-      width: placement.width ?? DEFAULT_SCENE_CONFIG.cardSize.width,
-      height: placement.height ?? DEFAULT_SCENE_CONFIG.cardSize.height,
+      width: placement.width ?? DEFAULT_CARD_WIDTH,
+      height: placement.height ?? DEFAULT_CARD_HEIGHT,
       z: placement.z,
       x: placement.x,
       y: placement.y,
@@ -157,9 +144,12 @@ function layoutItems(
   return boards;
 }
 
-/** The raw scene plan, including issues and portal fits, for a preview surface. */
-export function planFractalScene(input: PlanBoardFractalInput): SceneLayoutPlan {
-  const scene = buildLayoutSceneInput(input);
+/**
+ * The raw layout plan, including issues and portal frames. This is the shape a
+ * preview surface would read; the app applies `planBoardFractal` directly.
+ */
+export function planFractalTree(input: PlanBoardFractalInput): FractalPlan {
+  const scene = layoutInput(input.snapshot);
   const createdAt = new Map<string, number>();
   for (const placement of input.snapshot.placements) {
     createdAt.set(`${placement.boardId}\u001f${placement.cardId}`, placement.createdAt);
@@ -175,16 +165,16 @@ export function planFractalScene(input: PlanBoardFractalInput): SceneLayoutPlan 
 }
 
 /**
- * Maps a scene plan to the graph layout plan. Recursive portal frames carry the
+ * Maps a layout plan to the graph layout plan. Recursive portal frames carry the
  * size the frame must take to fit the child board; plain placements are moves
  * only, so a card's own size is never rewritten by a layout.
  */
-export function layoutPlanFromScene(plan: SceneLayoutPlan): LayoutPlan {
+export function layoutPlanFromTree(plan: FractalPlan): LayoutPlan {
   const placements: LayoutPlanPlacement[] = [];
   const portalSizes: Record<string, LayoutPlanSize> = {};
   const boards: string[] = [];
 
-  const visit = (board: SceneLayoutPlan): void => {
+  const visit = (board: FractalPlan): void => {
     if (!boards.includes(board.boardId)) boards.push(board.boardId);
     for (const portal of board.portals) {
       portalSizes[portal.cardId] = { width: portal.frame.width, height: portal.frame.height };
@@ -208,7 +198,7 @@ export function layoutPlanFromScene(plan: SceneLayoutPlan): LayoutPlan {
 
 /** Plans only; safe to call on every keystroke, never writes. */
 export function planBoardFractal(input: PlanBoardFractalInput): LayoutPlan {
-  return layoutPlanFromScene(planFractalScene(input));
+  return layoutPlanFromTree(planFractalTree(input));
 }
 
 /** The one write: the whole plan lands as a single undo step. */

@@ -78,3 +78,12 @@ Concretely:
 - **ADR-0029 stands; ADR-0030 is superseded.** The data model for portals was never the problem.
 - **Fewer decisions to keep true.** `docs/architecture.md`, `AGENTS.md` and the alpha roadmap stop
   describing a target surface that does not exist, which is the drift this ADR exists to end.
+
+## Landed
+
+Removed on 2026-10-25: `apps/canvas/src/scene/` (`SceneBoard`, `SceneLayer`, `SceneOutline`, the
+outline adapter, the surface flag and its stylesheet) and the scene modules of `@suite/scene`
+(`scene.ts`, `lod.ts`, `outline.ts`, `spatial.ts` with their tests). The layout command moved to
+`apps/canvas/src/canvas/layoutCommand.ts`; `@suite/scene` now holds geometry and layout only and no
+longer depends on `@suite/graph`; `App.tsx` renders `CanvasBoard` unconditionally. Nine test files
+and two stories went with the surface.

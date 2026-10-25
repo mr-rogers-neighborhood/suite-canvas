@@ -9,8 +9,8 @@ Claude Code, …). Read it first; keep it high-signal.
 - **Monorepo:** pnpm workspaces + Turborepo (task caching)
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
   Zustand (UI state), React Flow (`@xyflow/react`) as **the only canvas surface**, Tiptap 3 (every
-  node is an editor). A read-only scene preview still answers `?canvas=scene`; it is not the default
-  and [ADR-0036](docs/decisions/0036-the-canvas-is-react-flow.md) removes it.
+  node is an editor). There is no second surface and no engine adapter
+  ([ADR-0036](docs/decisions/0036-the-canvas-is-react-flow.md)).
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +
@@ -25,7 +25,7 @@ Claude Code, …). Read it first; keep it high-signal.
 | `apps/canvas` | The React canvas app (launcher, board, editor, collab provider, Zustand store) |
 | `apps/collab-server` | Loro WebSocket sync server |
 | `packages/graph` | `@suite/graph` — schema, types, typed Loro layer, workspace file and portable export |
-| `packages/scene` | `@suite/scene` — pure, engine-free layout planner (geometry + fractal recipes); its scene-projection modules are being removed ([ADR-0036](docs/decisions/0036-the-canvas-is-react-flow.md)) |
+| `packages/scene` | `@suite/scene` — pure, engine-free layout planner (geometry + fractal recipes) behind **Arrange fractally**; no renderer, no graph dependency |
 | `e2e` | Playwright end-to-end tests |
 | `docs/` | Architecture, conventions, ADRs (read [docs/conventions.md](docs/conventions.md) before big changes) |
 | `.github/` | CI, PR/issue templates, [copilot-instructions.md](.github/copilot-instructions.md) |

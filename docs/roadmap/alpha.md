@@ -187,8 +187,8 @@ as a whole. A product is as ready as the weakest dimension a stranger will touch
 | --- | --- | --- | --- | --- |
 | 1 | **Core product loop** | Beta-ish | Workspaces, boards, cards, types/fields/tags, sections, connectors, mentions, references, library/trash, undo/redo, search, views, display styles, attachments, sharing (workspace/board/card/selection), publish drafts, `.suite` export/import, standalone edition | ✅ |
 | 2 | **Data model & correctness** | Beta-ish | One `LoroDoc` per workspace; Zod-validated writes; typed `WorkspaceDocument`; property tests for merge/sections/search; scoped undo; presence in `EphemeralStore`, never persisted | ✅ |
-| 3 | **Test intent** | Beta-ish | 144 Vitest files / 1,733 tests; 30 Playwright specs; 29 stories with `a11y: { test: "error" }`; 75 billing `node --test` declarations; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅ |
-| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Local counts were re-derived on 2026-10-25 and `docs/testing.md` matches them (`pnpm test`: 144 files / 1,733 tests) | ✅ (counts) / ◐ (CI) |
+| 3 | **Test intent** | Beta-ish | 135 Vitest files / 1,671 tests; 30 Playwright specs; 27 stories with `a11y: { test: "error" }`; 75 billing `node --test` declarations; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅ |
+| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Local counts were re-derived on 2026-10-25 and `docs/testing.md` matches them (`pnpm test`: 135 files / 1,671 tests) | ✅ (counts) / ◐ (CI) |
 | 5 | **Ops / deploy** | Beta-ish, single node | `compose.yaml` (Caddy → app), TLS + CSP, healthcheck, graceful shutdown, boot-time config validation, `/metrics`, structured redacted logs, admin panel, backup/restore scripts, quota + rate-limit system | ✅ |
 | 6 | **Security model** | Alpha+ | Constant-time comparisons, 32-byte capabilities, SHA-256 at rest, scoped worker tokens, PBKDF2 600k, share-token scoping, live revocation. Missing: threat model, audit trail, expiry *by default*, admin scoping, E2EE | ◐ |
 | 7 | **Billing** | **Closed by design** | Hosted checkout is closed in the UI and docs; the durable store exists (`services/billing/store-dynamodb.ts`, flag `SUITE_BILLING_STORE`); Stripe webhook E2E is not run because there is no live endpoint | ✅ |
@@ -796,7 +796,7 @@ owner is the maintainer/operator; no separate review board is implied.
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
 | A11a | `deferred` | The live, scaled portal instance was the scene surface's job. [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes that surface: a portal is a doorway again (card + `board` field + miniature + camera transition), and the data model (ADR-0029) is unchanged. Nothing to close here. |
-| A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner moves from `apps/canvas/src/scene/layoutCommand.ts` to `apps/canvas/src/canvas/layoutCommand.ts` when the scene directory goes; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch; **Arrange fractally** stays in `CanvasBoard.tsx`. A preview surface is the one thing never built. |
+| A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner lives in `apps/canvas/src/canvas/layoutCommand.ts` and the pure recipes stay in `packages/scene`; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch; **Arrange fractally** stays in `CanvasBoard.tsx`. A preview surface is the one thing never built. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -1026,10 +1026,10 @@ the drift that audit missed (D12–D17).
 | D11 | Ops doc describes a "three database" backup | Six stores exist and compose configures all six; backup covers all six | `docs/operations.md`, `deploy/backup.sh` | ✅ |
 
 | D12 | "No `LICENSE`, no `SECURITY.md`, no `CHANGELOG.md`, no `CONTRIBUTING.md`, no tags … 89 commits" | All five identity files exist at `0.2.0-alpha.1`; 124 commits; one tag, and it marks a spike rather than a release | `docs/roadmap/alpha.md` §1.2, §3 row 9 | ✅ (fixed 2026-10-25) |
-| D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 144 Vitest files / 1,733 tests; 30 Playwright specs; 75 billing tests; 29 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
+| D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 135 Vitest files / 1,671 tests; 30 Playwright specs; 75 billing tests; 27 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
 | D14 | "`compose.yaml` configures five … attachments defaults to CWD; settings and licences default to `:memory:`" | All six stores are under `/data` with `SUITE_REQUIRE_DURABLE_STORES=1`, and boot refuses a split layout | `docs/roadmap/alpha.md` §4.4, §7.1 A1 | ✅ (fixed 2026-10-25) |
 | D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 30 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
-| D16 | ADR-0030 is "the product of record"; `?canvas=ice` names a surface | The scene is a read-only preview with no editing path, and [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes it; the `ice` value is gone from `surfaceFlag.ts` | `docs/architecture.md` §Rendering, `AGENTS.md`, ADR-0030 | ✅ (fixed 2026-10-25) |
+| D16 | ADR-0030 is "the product of record"; `?canvas=ice` names a surface | The scene is a read-only preview with no editing path, and [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes it; `?canvas=ice` is gone from the parser, and the scene surface and its modules are deleted (2026-10-25) | `docs/architecture.md` §Rendering, `AGENTS.md`, ADR-0030 | ✅ (fixed 2026-10-25) |
 | D17 | "64 `node --test` tests" in billing | 75 | `README.md:70` | ✅ (fixed 2026-10-25) |
 
 ### 9.1 Closure status
@@ -1283,7 +1283,7 @@ What was verified in this pass, and what was not.
 | `e2e/playwright.config.ts` chromium-only; 30 specs | "No `any`/`@ts-ignore` in source" sweeps |
 | Identity files present (`LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`); `package.json` `0.2.0-alpha.1`; one tag (`ice-parity-2026-10-23`); 124 commits | Billing webhook against a live Stripe endpoint |
 | `navigator.storage.persist()` + `StoragePanel` + `CanvasErrorBoundary` + `crash/*`; no service worker | Storybook story count and a11y gating beyond the 29 files listed |
-| `pnpm test`: 144 files / 1,733 tests; billing `node --test`: 75 declarations | |
+| `pnpm test`: 135 files / 1,671 tests; billing `node --test`: 75 declarations | |
 | `stryker.server.config.mjs` mutation scope | |
 | ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted; ADR-0030 superseded by ADR-0036 | |
 | `purity.test.ts`, `mode.test.ts`, `patchGuard.test.ts`, `mutationGaps.test.ts`, `workspace.convergence.test.ts` all exist | |

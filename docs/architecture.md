@@ -334,114 +334,38 @@ Loro graph remains the truth, and an aborted expansion leaves the portal usable 
 **The editing canvas is React Flow** (`apps/canvas/src/canvas/CanvasBoard.tsx`), and it is the only
 canvas the product ships ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md), which supersedes
 [ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)). Boards are React Flow node
-lists projected from the graph on every change; sections, connectors, portals and whiteboards are
-node types on that surface.
-
-The **scene preview** described below still exists behind `?canvas=scene`: it is a read-only
-projection used to explore the portal/LOD/fractal idea. It cannot edit, it is not the default, and
-it is scheduled for removal with the scene-only parts of `packages/scene`. Everything in this
-section is therefore a description of code that is on its way out, kept until the removal lands so
-the design record stays readable.
+lists derived from the graph on every change:
 
 ```text
 Loro graph (@suite/graph)
   cards · placements · sections · edges · drawings
         │
         ▼
-Scene projection (pure, engine-agnostic) — preview only, being removed
-  board instances · transforms · effective zoom · LOD · portal gates · edges
+Board view (apps/canvas/src/canvas)
+  nodes from placements · edges from connectors · sections · portals · whiteboards
         │
         ▼
-Scene surface (React Flow camera + DOM projection, `?canvas=scene`)
-  SceneBoard (camera, LOD state, focus path) │ SceneLayer (cards, edges, portals)
-        │
-        ▼
-Read-only card faces + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
+React Flow surface (CanvasBoard)
+  NodeCard (Tiptap) · SectionLayer · PortalNode · WhiteboardNode · PresenceLayer
 ```
 
-The one part of `@suite/scene` with a live caller in the shipped product is the pure layout planner
-(`layout.ts` and `geometry.ts`): the board's fractal layout command plans with it and commits the
-plan as one undoable batch.
+There is no second surface and no engine adapter. A portal is a card with a `board` field, a live
+miniature and a camera transition that swaps `activeBoardId` (ADR-0029); it does not expand in place.
+Whiteboard cards render an Excalidraw surface (ADR-0031). Presence and drag positions ride the
+`EphemeralStore` and are drawn in a `ViewportPortal`, never written to the document.
 
-### Graph truth, derived scene
+**The pure layout planner is the one engine-free piece.** `packages/scene` (`@suite/scene`) keeps
+`geometry.ts` and `layout.ts`: fractal recipes, spacing, ordering and cycle/depth guards computed
+into a plan. The board's **Arrange fractally** command plans with it and commits the whole plan as
+one field-granular batch in one undo step. Planning is pure and never writes; there is no live
+reflow mode.
 
-`@suite/graph` remains the only document truth. The scene is recomputed from a graph snapshot plus
-the camera; it is never edited, persisted or synced. That keeps one document and one undo stack, and
-it lets any engine host the same scene. The scene layer consumes graph types and plain values only —
-no React, DOM, engine or Loro imports — so projection, camera math and layout are testable without a
-renderer.
+### Graph truth, derived board
 
-### Board instances
-
-- The active board is the **root instance**. A portal adds a child `BoardInstance` rendered at
-  `{ x, y, scale }` inside its frame, and the same board may appear in several instances at once.
-- Canonical records project to instance types: `CardInstance`, `SectionInstance`, `EdgeInstance`,
-  `PortalInstance`. `path: BoardId[]` identifies an instance and detects cycles.
-- `effectiveScale = camera.zoom × product(ancestor scales)` drives LOD and expansion.
-  `screenToBoard(instance, point)` and `boardToScreen(instance, point)` are the only coordinate
-  conversions; a write inside an instance is inverse-transformed to canonical board coordinates.
-- Instances are disposable identity. Two instances of one card are two renderings of one canonical
-  card and placement: selection resolves by canonical id, and moving an instance moves the canonical
-  placement, so every other instance updates.
-
-### Real portals
-
-- A portal card is a `PortalInstance` whose child board is fitted into the frame
-  (`scale = min(frameW / boardBounds.w, frameH / boardBounds.h) × padding`).
-- Below the expansion gate the portal renders its **impostor** — the existing `BoardMiniature` SVG —
-  and instantiates nothing. Above the gate the target's cards, sections and edges are instantiated at
-  the projected scale and are focusable. Editing inside a portal is Phase 4 parity work; the scene
-surface itself writes nothing.
-- Creating a card inside a portal writes the canonical placement at the inverse-transformed
-  position. Writes stay one CRDT commit per gesture; live drag positions remain presence.
-
-### Effective zoom, LOD bands and hysteresis
-
-| Band | Effective scale | Card | Portal | Section | Edge |
-| --- | --- | --- | --- | --- | --- |
-| `full` | ≥ 0.75 | static `NodeCard` face + whiteboard preview (Tiptap is Phase 4) | live child board | fill + header + handles | full path + label |
-| `compact` | 0.35–0.75 | static title + glyph + chips | live miniature | title chip | simplified path |
-| `icon` | 0.12–0.35 | glyph + layout badge | layout-encoded icon | colour band | hidden |
-| `hidden` | < 0.12 | none | aggregate proxy | none | none |
-
-Downgrade immediately; upgrade only after the higher threshold is crossed and the state has held for
-a dwell time (default 80 ms). The resolved band is stored per instance and is never a continuous
-function recomputed per frame. DOM editors mount only at `full` (and for the focused card in reader
-mode); budgets cap mounted editors, expanded boards, live portal faces and visible nodes.
-
-### Lazy expansion, cycles and depth
-
-- Expansion is lazy: only subtrees the spatial index can show are considered, and only visible
-  instances above the gate instantiate children. Expansion state is per instance and ephemeral.
-- A cycle (`A → B → A`) stops at the repeated board path and renders a stub with a focus link; a hard
-  depth cap (default 6) protects pathological graphs. Both are scene guards, not document
-  constraints — the graph may contain the cycle ([ADR-0029](./decisions/0029-portal-board-field.md)).
-- Icon collapse preserves position and footprint, and a portal icon encodes its child's layout mode,
-  so the recursive arrangement stays legible at distance.
-
-### Focus path and navigation
-
-- The root board stays `activeBoardId`; board tabs keep their meaning and clear the focus path.
-- Entering a portal pushes a camera checkpoint and the instance path onto `focusPath`, then animates
-  the camera to the child instance's bounds. There is no overlay, no board swap and no white flash.
-- Escape or back pops the focus path and restores the exact camera checkpoint.
-- Keyboard focus and search auto-expand ancestors and move the camera to the target.
-  `prefers-reduced-motion` skips camera flights and LOD transitions.
-
-### Scene outline
-
-The **scene outline** is a first-class derived tree: workspace → root board → portal instances →
-target boards → nested portals, carrying the focus path, the per-instance LOD band and
-expanded/collapsed state, peer presence by board, and actions to reveal, expand, enter, go back or
-open in focus. It is a projection of the same graph and scene, never a second document, and it is
-the accessibility path when the spatial canvas is not legible.
-
-### SceneSurface adapter
-
-The seam is the pure `Scene` value: `SceneBoard` owns the camera, LOD/gate state and focus path;
-`SceneLayer` paints the frame. It is a preview surface with no editing path, and
-[ADR-0036](./decisions/0036-the-canvas-is-react-flow.md) removes it rather than growing one; the
-editing surface stays `CanvasBoard`.
+`@suite/graph` is the only document truth. The board view is recomputed from a graph snapshot; it is
+never edited, persisted or synced. That keeps one document and one undo stack. The layout planner
+consumes plain values only — no React, DOM, engine or Loro imports — so its transforms and recipes
+are unit-testable without a renderer.
 
 ### The card layer
 

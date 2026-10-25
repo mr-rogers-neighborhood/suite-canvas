@@ -35,11 +35,11 @@ import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
-import { applyBoardFractal } from "../scene/layoutCommand";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
+import { applyBoardFractal } from "./layoutCommand";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
   DEFAULT_CARD_HEIGHT,

@@ -28,8 +28,6 @@ import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
-import { SceneBoard } from "./scene/SceneBoard";
-import { currentCanvasSurface } from "./scene/surfaceFlag";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
 import {
@@ -98,8 +96,6 @@ function WorkspaceShell({
   const [leaving, setLeaving] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
-  const canvasSurface = currentCanvasSurface();
-
   countRender("shell");
 
   const activeBoardId = useUiStore((state) => state.activeBoardId);
@@ -609,8 +605,8 @@ function WorkspaceShell({
       </TitleBar>
 
       <main className="relative z-10 min-h-0 flex-1">
-        {canvasSurface === "scene" ? <SceneBoard /> : <CanvasBoard />}
-        {canvasSurface !== "scene" && workspaceSurface && canCreateContent && boardEmpty ? (
+        <CanvasBoard />
+        {workspaceSurface && canCreateContent && boardEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"
@@ -630,7 +626,7 @@ function WorkspaceShell({
             </div>
           </div>
         ) : null}
-        {canvasSurface !== "scene" && sharedEmpty ? (
+        {sharedEmpty ? (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
             data-testid="empty-board"

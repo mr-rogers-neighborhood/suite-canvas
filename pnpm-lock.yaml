@@ -386,10 +386,6 @@ importers:
         version: 5.0.5(@types/node@26.6.5)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(jsdom@30.1.3)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/scene:
-    dependencies:
-      '@suite/graph':
-        specifier: workspace:*
-        version: link:../graph
     devDependencies:
       typescript:
         specifier: ~5.9.3

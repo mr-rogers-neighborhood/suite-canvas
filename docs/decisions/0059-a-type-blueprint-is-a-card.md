@@ -122,3 +122,8 @@ story, all of which a card already has. A shelf of primitives is *content*.
   three kinds.
 - **Provenance is recorded and shown** as a row on the installed type ("from Kit X"), because a user who
   cannot see where a schema came from cannot judge whether to trust it. Updates stay manual.
+- **A small shelf ships in the repository**, seeded offline: two or three kits that demonstrate the
+  shape (a research kit, a project kit, a personal-CRM kit) rather than a large curated catalogue. A
+  large shelf is content work with a maintenance tail — every shipped blueprint is a schema we would
+  then want to keep good — and it teaches nothing that three good examples do not. Users and
+  third parties ship the long tail as boards.

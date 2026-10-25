@@ -392,6 +392,12 @@ the inspector. Section ends resolve to the section's rect and attach to its conn
 section is seeded with. `linkGeometry.ts` turns endpoints into rects and anchors with no React, so
 the canvas, drag previews and tests share one answer.
 
+Connector dots are a wiring aid, not decoration: they are revealed by selection, by
+hovering that entity, in thread mode, and while a link is being dragged. Sections use the
+same predicate through their own empty area, so hovering a card inside a section never wires
+up the section behind it. Handles stay mounted while hidden — React Flow only starts a
+connection from a handle it has measured.
+
 Boards and sections are **identities, not types** ([ADR-0040](./decisions/0040-a-board-and-a-section-are-identities.md)):
 they get small fixed inspectors (name, colour, cover image, links) and never types, fields or
 templates. Composition between them is expressed by links.

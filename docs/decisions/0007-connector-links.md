@@ -1,6 +1,6 @@
 # ADR-0007: Links between connectors, with direction control
 
-- **Status:** accepted
+- **Status:** accepted; paint order amended by [ADR-0048](./0048-links-paint-beneath-cards.md)
 - **Date:** 2026-10-20
 
 ## Context

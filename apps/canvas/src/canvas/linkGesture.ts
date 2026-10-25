@@ -34,3 +34,24 @@ export function sameLinkEndpoint(left: LinkEndpointRef, right: LinkEndpointRef):
     (left.connectorId ?? "") === (right.connectorId ?? "")
   );
 }
+
+/**
+ * The connector a finished link stores for one end, given the node it was
+ * released on and the node that end is drawn through.
+ *
+ * A board is drawn through the portal that opens it. When one board is opened by
+ * two portals on the same board, the released portal's dot does not exist on the
+ * node the line is painted through, and React Flow silently drops a link whose
+ * handle id it cannot find — so that dot is not stored. Every other end keeps the
+ * dot it was released on, which is what makes a link land on the port aimed at
+ * rather than the side facing the other end.
+ */
+export function linkEndConnector(
+  releasedNode: string | null | undefined,
+  drawnNode: string | null | undefined,
+  connectorId: string | null | undefined,
+): string | undefined {
+  if (!connectorId) return undefined;
+  if (releasedNode && drawnNode && releasedNode !== drawnNode) return undefined;
+  return connectorId;
+}

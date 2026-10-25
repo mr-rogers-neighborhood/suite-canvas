@@ -7,6 +7,7 @@ import { useCardTitle } from "../hooks/useCardContainers";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
@@ -48,8 +49,11 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
     [workspace, placement.boardId, card.id],
   );
 
-  const width = liveSize?.width ?? placement.width ?? 320;
-  const height = liveSize?.height ?? placement.height ?? 240;
+  // The same defaults the link geometry uses, so a sketch without a stored size
+  // is measured where it is painted. A different fallback here put every dot
+  // half the difference away from where a flow-space link started.
+  const width = liveSize?.width ?? placement.width ?? DEFAULT_CARD_WIDTH;
+  const height = liveSize?.height ?? placement.height ?? DEFAULT_CARD_HEIGHT;
 
   return (
     <div

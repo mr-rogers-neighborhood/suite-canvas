@@ -3416,9 +3416,14 @@ export class WorkspaceDocument {
     const edge = this.getEdge(id);
     if (!edge) return;
 
+    // Swapping ids alone would leave each id paired with the other end's kind,
+    // so a card-to-section link reversed would claim a card id is a section.
+    const ends = edgeEndpoints(edge);
     this.mutateEdge(id, (fields) => {
       fields.set("source", edge.target);
       fields.set("target", edge.source);
+      fields.set("sourceKind", ends.target.kind);
+      fields.set("targetKind", ends.source.kind);
       if (edge.sourceConnector) fields.set("targetConnector", edge.sourceConnector);
       else fields.delete("targetConnector");
       if (edge.targetConnector) fields.set("sourceConnector", edge.targetConnector);

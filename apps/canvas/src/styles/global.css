@@ -399,8 +399,23 @@ body {
   border: 1px solid var(--ink-muted);
 }
 
-/* Draw links above cards so they are not hidden by card stacking order. */
+/* Links paint below the cards, and above a section's own wash (-1).
+   React Flow gives every edge a 20px-wide invisible hit stroke so a 1.5px line
+   can be clicked. Drawing that above the cards made every link crossing a card
+   win the press: the card could not be selected or dragged, a connector dot
+   under the line could not start a connection, and a link that happened to be
+   selected was elevated above the nodes and did the same. A link is a reading
+   aid; the card is the thing you press. */
 .react-flow__edges {
+  z-index: 1;
+}
+
+/* Working with a link is a momentary, deliberate act: while one is selected its
+   layer rises so React Flow's endpoint handles (which live inside this SVG) are
+   reachable and a reconnection can start. Deselect it and the line drops back
+   under the cards, where it can no longer take a press meant for one. */
+.react-flow__edges:has(.react-flow__edge.selected),
+.react-flow__edges:has(.react-flow__edge:hover) {
   z-index: 4;
 }
 
@@ -1293,6 +1308,10 @@ body {
   position: absolute;
   left: 0;
   top: 0;
+  /* Above the grab ring, like a card's dot: the ring is 24px and would
+     otherwise swallow every press on a selected connector's dot, making that
+     section impossible to draw a link from. */
+  z-index: 30;
   width: 10px;
   height: 10px;
   transform: translate(-50%, -50%);
@@ -1327,10 +1346,14 @@ body {
   width: 1px;
   height: 1px;
   overflow: visible;
-  /* Below the nodes, exactly like React Flow's own edge layer: a link passing
-     over a card must never take the click that belongs to the card. Its hit
-     stroke is only reachable where nothing sits on top of it. */
-  z-index: 0;
+  /* Below the nodes (3) and above a section's own background (-1): a link
+     passing over a card must never take the click that belongs to the card, but
+     a link leaving a section must still paint over that section's wash — and be
+     clickable along its whole exposed length. At 0 it tied with the nodes layer
+     and won on paint order, so its 12px hit stroke swallowed presses aimed at
+     connector dots it crossed; at -1 it vanished under the section it started
+     from and could not be selected at all. */
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -1338,8 +1361,10 @@ body {
   fill: none;
   stroke: var(--ink-muted);
   stroke-width: 1.5;
-  /* The layer lets the canvas pan; the stroke itself is clickable. */
-  pointer-events: stroke;
+  /* Painted, never pointed at: the hit stroke below is the affordance. This path
+     is drawn after it, so leaving it clickable meant it sat on top of the hit
+     stroke and swallowed every press aimed at the line it draws. */
+  pointer-events: none;
 }
 
 /* A wider invisible stroke so a 1.5px line can actually be clicked. */

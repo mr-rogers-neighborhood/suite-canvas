@@ -44,6 +44,8 @@ const STROKE: Record<SectionColor, string> = {
 export interface SectionLinkTarget {
   kind: "card" | "board" | "section";
   id: string;
+  /** The dot it was released on, so the line keeps the port that was aimed at. */
+  connectorId?: string | undefined;
 }
 
 export interface SectionLayerProps {
@@ -77,11 +79,14 @@ export interface SectionLayerProps {
   ) => void;
   /** Where a link released at this flow point should point, if anywhere. */
   resolveLinkTarget?: (point: { x: number; y: number }) => SectionLinkTarget | null;
-  /** A link dragged out of a section connector, released on a target. */
+  /**
+   * A link finished from a section: either dragged out of one of its dots and
+   * released on a target, or chained through a thread that may have started at
+   * a card. Both ends travel, so the section is not assumed to be the source.
+   */
   onLinkCommit?: (
-    sectionId: string,
-    connectorId: string,
-    target: SectionLinkTarget,
+    from: SectionLinkTarget,
+    to: SectionLinkTarget,
     origin: { x: number; y: number },
   ) => void;
   /** W2: thread mode reveals the connector dots on unselected sections too. */
@@ -313,11 +318,24 @@ export function SectionLayer({
       },
       (pointer) => {
         const to = flowPoint(pointer);
-        const target = resolveLinkTarget?.(to) ?? null;
+        const hit = resolveLinkTarget?.(to) ?? null;
+        // A release on the section itself is not a target. Its own body is
+        // always under its own dot, and releasing on the dot it started from is
+        // a click, not a drop — treating either as one made every click on a
+        // section connector a refused self-link, so nothing ever chained.
+        const onSelf =
+          hit?.kind === "section" &&
+          hit.id === section.id &&
+          (hit.connectorId === undefined || hit.connectorId === connector.id);
+        const target = onSelf ? null : hit;
         setLinkDraft(null);
         setDraftActive(false);
         if (target) {
-          onLinkCommit?.(section.id, connector.id, target, origin);
+          onLinkCommit?.(
+            { kind: "section", id: section.id, connectorId: connector.id },
+            target,
+            origin,
+          );
           useLinkThreadStore.getState().clear();
           return;
         }
@@ -327,7 +345,8 @@ export function SectionLayer({
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
         const step = stepThread(useLinkThreadStore.getState().armed, clicked);
         if (step.link) {
-          onLinkCommit?.(step.link.from.id, step.link.from.connectorId, step.link.to, origin);
+          // The thread may have started on a card, so both ends come from it.
+          onLinkCommit?.(step.link.from, step.link.to, origin);
         }
         useLinkThreadStore.getState().arm(step.armed);
       },

@@ -421,12 +421,28 @@ test("links connectors with a direction the menu can change", async ({ page }) =
   });
   expect(Math.abs(endTangent.dy)).toBeLessThan(Math.abs(endTangent.dx));
 
-  // Links paint above cards so card stacking order cannot hide them.
-  const layers = await page.evaluate(() => ({
-    edges: Number(getComputedStyle(document.querySelector(".react-flow__edges")).zIndex),
-    nodes: Number(getComputedStyle(document.querySelector(".react-flow__nodes")).zIndex),
-  }));
-  expect(layers.edges).toBeGreaterThan(layers.nodes);
+  // Links paint below the cards, so a link crossing a card never takes the press
+  // that belongs to it — its hit stroke is 20px wide and would otherwise win.
+  // The layer only rises while one link is being worked with (selected, or its
+  // reconnect handles are up), which is what keeps reconnection reachable.
+  const layers = () =>
+    page.evaluate(() => {
+      const edges = document.querySelector(".react-flow__edges");
+      return {
+        edges: Number(edges ? getComputedStyle(edges).zIndex : 0),
+        nodes: Number(getComputedStyle(document.querySelector(".react-flow__nodes")).zIndex),
+      };
+    });
+  // Off the line first: its hover is what mounts the reconnect handles, and a
+  // mounted handle is itself a reason for the layer to stay on top.
+  await page.mouse.move(4, 4);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await layers()).edges).toBeLessThan((await layers()).nodes);
+
+  const mid = await edgeMidpoint(page);
+  await page.mouse.click(mid.x, mid.y);
+  await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
+  await expect.poll(async () => (await layers()).edges).toBeGreaterThan((await layers()).nodes);
 
   // Swapping the endpoints makes React Flow drop the edge for a frame, so a right
   // click can fall through to the pane. Dismiss whatever opened and try again.

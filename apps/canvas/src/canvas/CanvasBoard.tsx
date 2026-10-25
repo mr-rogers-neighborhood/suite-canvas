@@ -47,12 +47,15 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import { LinkModeControl } from "./LinkModeControl";
 import {
+  connectorAtPoint,
   endpointAnchor,
   endpointAtPoint,
   type LinkAnchor,
+  type LinkEndpointRef,
   type LinkScene,
   linkAnchors,
 } from "./linkGeometry";
+import { linkEndConnector } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
@@ -80,6 +83,8 @@ import { WhiteboardNode } from "./WhiteboardNode";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
 const SMOOTHING = 0.22;
+/** Screen-pixel radius that counts as a release on a connector dot. */
+const CONNECTOR_DROP_RADIUS = 14;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
 /** How long a focus request waits for React Flow to register the card's node. */
@@ -330,6 +335,13 @@ function SectionLinkLayer({
                 className="section-link__hit"
                 d={sectionLinkPath(link.anchors)}
                 data-testid="section-link-hit"
+                // React Flow's pane claims the press (it captures the pointer to
+                // drag the camera), so a click that starts here never arrives as
+                // a click on this path. Claiming the press first is what makes a
+                // section link selectable at all.
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectEdge(link.edge.id);
@@ -600,7 +612,14 @@ export function CanvasBoard() {
       endpoint.kind !== "card" || lens.cardIds.has(endpoint.id);
 
     for (const edge of boardEdges) {
-      const endpoints = edgeEndpoints(edge);
+      const ends = edgeEndpoints(edge);
+      // The edge's own dots travel with the endpoints: without them a link that
+      // touches a section (or any end without a React Flow handle) is drawn from
+      // the facing side rather than from the connector it was attached to.
+      const endpoints = {
+        source: { ...ends.source, connectorId: edge.sourceConnector },
+        target: { ...ends.target, connectorId: edge.targetConnector },
+      };
       const anchors = linkAnchors(endpoints, activeBoardId, linkScene);
       if (!anchors) continue;
       const offLens = lens.view !== null && !(onLens(endpoints.source) && onLens(endpoints.target));
@@ -1292,6 +1311,9 @@ export function CanvasBoard() {
   // React Flow owns the marquee rectangle in screen space; publish it in flow
   // coordinates so peers draw the same gesture in the dragger's colour.
   const selectionRect = useStore((state) => state.userSelectionRect);
+  // A dot is a screen-sized target, so its hit radius has to be divided by zoom
+  // to stay the same size on a flow-space diagram.
+  const zoom = useStore((state) => state.transform[2]);
   const lastBoxSent = useRef(0);
   useEffect(() => {
     if (!selectionRect) {
@@ -1904,32 +1926,46 @@ export function CanvasBoard() {
     [cardsById],
   );
 
-  /** Resolves a flow point to what a link released there should point at. */
+  /**
+   * Resolves a flow point to what a link released there should point at. A
+   * release on a dot resolves to that dot, whatever the entity's shape says:
+   * otherwise a section-to-card link always leaves from the side facing the
+   * section and ignores which port was aimed at.
+   */
   const resolveLinkTarget = useCallback(
-    (point: LinkAnchor): { kind: EdgeEndpointKind; id: string } | null => {
+    (point: LinkAnchor): LinkEndpointRef | null => {
       if (!activeBoardId) return null;
-      const hit = endpointAtPoint(point, activeBoardId, linkScene);
-      return hit ? endpointForDrop(hit) : null;
+      const hit =
+        connectorAtPoint(point, activeBoardId, linkScene, CONNECTOR_DROP_RADIUS / zoom) ??
+        endpointAtPoint(point, activeBoardId, linkScene);
+      if (!hit) return null;
+      const endpoint = endpointForDrop(hit);
+      const connectorId = linkEndConnector(
+        hit.kind === "card" ? hit.id : null,
+        nodeIdForEndpoint(endpoint),
+        hit.connectorId,
+      );
+      return connectorId ? { ...endpoint, connectorId } : endpoint;
     },
-    [activeBoardId, linkScene, endpointForDrop],
+    [activeBoardId, linkScene, endpointForDrop, nodeIdForEndpoint, zoom],
   );
 
   const onSectionLinkCommit = useCallback(
-    (
-      sectionId: string,
-      connectorId: string,
-      target: { kind: EdgeEndpointKind; id: string },
-      origin: LinkAnchor,
-    ) => {
+    (from: LinkEndpointRef, to: LinkEndpointRef, origin: LinkAnchor) => {
       if (!canCreateContent || !activeBoardId) return;
       void origin;
+      // Either end may be the section: a thread can start on a card's dot and
+      // finish on a section's, so both kinds and both dots come from the caller.
       workspace.addEdge({
         boardId: activeBoardId,
-        source: sectionId,
-        sourceKind: "section",
-        target: target.id,
-        targetKind: target.kind,
-        sourceConnector: connectorId,
+        source: from.id,
+        sourceKind: from.kind,
+        target: to.id,
+        targetKind: to.kind,
+        ...(from.connectorId ? { sourceConnector: from.connectorId } : {}),
+        // A board end keeps its dot too: the dot belongs to the portal the link
+        // is drawn through, which is exactly what was released on.
+        ...(to.connectorId ? { targetConnector: to.connectorId } : {}),
       });
     },
     [workspace, activeBoardId, canCreateContent],
@@ -1943,6 +1979,20 @@ export function CanvasBoard() {
       // The release also reaches onConnectEnd; the link already exists.
       connectCommitted.current = true;
       const target = endpointForDrop({ kind: "card", id: connection.target });
+      // A board target is drawn at the portal that opens it, so the portal's
+      // connector is the anchor — unless the board has more than one portal here
+      // and the line is painted on a different one, where that dot would be
+      // unknown to React Flow and the link would vanish.
+      const targetConnector = linkEndConnector(
+        connection.target,
+        nodeIdForEndpoint(target),
+        connection.targetHandle,
+      );
+      const sourceConnector = linkEndConnector(
+        connection.source,
+        nodeIdForEndpoint({ kind: "card", id: connection.source }),
+        connection.sourceHandle,
+      );
       // A duplicate or a self-link comes back null; drawing one twice is a
       // quiet no-op, not an error.
       workspace.addEdge({
@@ -1950,14 +2000,11 @@ export function CanvasBoard() {
         source: connection.source,
         target: target.id,
         targetKind: target.kind,
-        ...(connection.sourceHandle ? { sourceConnector: connection.sourceHandle } : {}),
-        // A board target is drawn at its portal, so the portal's connector is
-        // the anchor; dropping it here is what made every portal link land on
-        // the top dot regardless of where it was released.
-        ...(connection.targetHandle ? { targetConnector: connection.targetHandle } : {}),
+        ...(sourceConnector ? { sourceConnector } : {}),
+        ...(targetConnector ? { targetConnector } : {}),
       });
     },
-    [workspace, activeBoardId, canCreateContent, endpointForDrop],
+    [workspace, activeBoardId, canCreateContent, endpointForDrop, nodeIdForEndpoint],
   );
 
   // React Flow reports nothing while a reconnect drag moves, so follow the
@@ -2108,9 +2155,12 @@ export function CanvasBoard() {
       // portal and the card beneath it overlap and geometry alone can disagree
       // with what the user aimed at.
       const overNodeId = connectionState?.toNode?.id;
-      const hit: { kind: EdgeEndpointKind; id: string } | null = overNodeId
+      // A section has no React Flow node, so its dot is resolved geometrically —
+      // with the dot, not just the shape, or the line lands on whichever side
+      // faces the source instead of the connector it was dropped on.
+      const hit: LinkEndpointRef | null = overNodeId
         ? { kind: "card", id: overNodeId }
-        : endpointAtPoint(point, activeBoardId, linkScene);
+        : resolveLinkTarget(point);
       if (!hit) return;
       const target = endpointForDrop(hit);
       if (target.kind === "card") return;
@@ -2118,6 +2168,9 @@ export function CanvasBoard() {
       const from = { kind: "card" as const, id: draft.nodeId };
       const source = draft.anchorEnd === "target" ? target : from;
       const other = draft.anchorEnd === "target" ? from : target;
+      // The dot at the moving end is the one released on; the dot at the anchor
+      // end is the one the gesture started from.
+      const releasedConnector = hit.connectorId;
       workspace.addEdge({
         boardId: activeBoardId,
         source: source.id,
@@ -2127,6 +2180,12 @@ export function CanvasBoard() {
         ...(draft.anchorEnd === "target"
           ? { targetConnector: draft.connectorId }
           : { sourceConnector: draft.connectorId }),
+        ...(draft.anchorEnd === "target" && releasedConnector
+          ? { sourceConnector: releasedConnector }
+          : {}),
+        ...(draft.anchorEnd === "source" && releasedConnector
+          ? { targetConnector: releasedConnector }
+          : {}),
       });
     },
     [
@@ -2134,7 +2193,7 @@ export function CanvasBoard() {
       canCreateContent,
       activeBoardId,
       screenToFlowPosition,
-      linkScene,
+      resolveLinkTarget,
       endpointForDrop,
       workspace,
       setConnect,
@@ -2719,6 +2778,10 @@ export function CanvasBoard() {
           endMarquee();
         }}
         connectionMode={ConnectionMode.Loose}
+        // The layer itself rises while an edge is selected (see `.react-flow__edges`
+        // in global.css); React Flow must not also raise the edge per element, or a
+        // selected link keeps a 20px hit stroke over the cards once deselected.
+        elevateEdgesOnSelect={false}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}

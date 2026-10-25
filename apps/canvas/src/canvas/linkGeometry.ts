@@ -214,6 +214,54 @@ export function endpointAtPoint(
   return null;
 }
 
+/**
+ * The connector dot under a point, on the topmost card or section, within
+ * `radius` flow units. A link released on a dot must keep that dot: resolving
+ * the drop by shape alone loses which of the four sides the user aimed at, and
+ * the line then leaves from whichever edge happens to face the other end.
+ *
+ * Containment is deliberately not required. A dot sits *on* its entity's edge,
+ * so its centre is on the boundary — and half the time a pixel outside it, which
+ * is how a release that visibly landed on a dot resolved to nothing at all.
+ */
+export function connectorAtPoint(
+  point: LinkAnchor,
+  boardId: string,
+  scene: LinkScene,
+  radius: number,
+): LinkEndpointRef | null {
+  const nearest = (connectors: readonly Connector[] | undefined, rect: LinkRect) => {
+    let best: { id: string; distance: number } | null = null;
+    for (const connector of connectors ?? []) {
+      const anchor = anchorOnRect(rect, connector);
+      const distance = Math.hypot(anchor.x - point.x, anchor.y - point.y);
+      if (distance > radius) continue;
+      if (!best || distance < best.distance) best = { id: connector.id, distance };
+    }
+    return best?.id;
+  };
+
+  // Same paint order as `endpointAtPoint`: cards above sections, topmost first.
+  const ranked = scene.placements
+    .filter((placement) => placement.boardId === boardId)
+    .sort((left, right) => right.z - left.z || right.createdAt - left.createdAt);
+  for (const placement of ranked) {
+    const rect = endpointRect({ kind: "card", id: placement.cardId }, boardId, scene);
+    const card = scene.cards.find((entry) => entry.id === placement.cardId);
+    if (!rect || !card) continue;
+    const connectorId = nearest(card.connectors, rect);
+    if (connectorId) return { kind: "card", id: card.id, connectorId };
+  }
+
+  for (const section of scene.sections) {
+    if (section.boardId !== boardId) continue;
+    const rect = { x: section.x, y: section.y, width: section.width, height: section.height };
+    const connectorId = nearest(section.connectors, rect);
+    if (connectorId) return { kind: "section", id: section.id, connectorId };
+  }
+  return null;
+}
+
 function centerOf(rect: LinkRect): LinkAnchor {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }

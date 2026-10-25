@@ -248,7 +248,35 @@ test("hovering a section's empty area reveals its dots, hovering a card does not
   await expect(region).toBeVisible();
   const box = await region.boundingBox();
   if (!box) throw new Error("section is not measurable");
-  await page.mouse.move(box.x + 8, box.y + box.height - 8);
+
+  // Any point that is really the section's own surface: a section hugs its
+  // contents, so only the padded band around the cards is genuinely the
+  // section's, and the outline rail covers part of that band.
+  const ownPoint = await region.evaluate(
+    (element, rect) => {
+      const band = 14;
+      const candidates: Array<[number, number]> = [
+        [rect.x + band, rect.y + rect.height / 2],
+        [rect.x + rect.width / 2, rect.y + rect.height - band],
+        [rect.x + rect.width - band, rect.y + rect.height / 2],
+        [rect.x + rect.width / 2, rect.y + band / 2],
+      ];
+      for (const [x, y] of candidates) {
+        // A section often extends past the pane; a point off-screen has no
+        // element at all, which is not the same as "covered".
+        const inside = x > 8 && y > 8 && x < window.innerWidth - 8 && y < window.innerHeight - 8;
+        if (!inside) continue;
+        const hit = document.elementFromPoint(x, y);
+        // The card face paints children over the region, so "belongs to" is the
+        // right test, not identity.
+        if (hit?.closest(".section-region") === element) return { x, y };
+      }
+      return null;
+    },
+    { x: box.x, y: box.y, width: box.width, height: box.height },
+  );
+  if (!ownPoint) throw new Error("no point of the section is uncovered");
+  await page.mouse.move(ownPoint.x, ownPoint.y);
   await expect(sectionDots).toHaveCount(4);
 
   // A card inside the section is the innermost thing under the pointer, so the

@@ -46,6 +46,22 @@ describe("projectPeers", () => {
     expect(peers[PEER]?.user.name).toBe("Ada");
   });
 
+  it("keeps a held gesture alive on the sender's beat, not on movement", () => {
+    const seen = new Map<string, SeenGesture>();
+    project(1000, seen, { [AWARENESS_FIELDS.gestureBeat]: 1 });
+    // The pointer never moves; only the liveness counter changes.
+    project(3000, seen, { [AWARENESS_FIELDS.gestureBeat]: 3 });
+    const peers = project(3000 + GESTURE_TTL_MS - 1, seen, {
+      [AWARENESS_FIELDS.gestureBeat]: 3,
+    });
+    expect(peers[PEER]?.dragging).toMatchObject({ nodeId: "n1" });
+    // And a sender that goes quiet still expires, beat or no beat.
+    expect(
+      project(3000 + GESTURE_TTL_MS + 1, seen, { [AWARENESS_FIELDS.gestureBeat]: 3 })[PEER]
+        ?.dragging,
+    ).toBeNull();
+  });
+
   it("restarts the clock when the gesture frame changes", () => {
     const seen = new Map<string, SeenGesture>();
     project(1000, seen);

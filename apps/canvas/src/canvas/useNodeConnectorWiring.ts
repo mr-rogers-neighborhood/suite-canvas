@@ -42,6 +42,8 @@ export interface NodeConnectorWiring {
   selectedConnectorId: string | null;
   movingConnectorPeers: Record<string, ConnectorPeerState>;
   selectingConnectorPeers: Record<string, PresenceUser[]>;
+  /** A peer is touching one of these dots, so the layer has to stay visible. */
+  peerActive: boolean;
   onSelect: (connectorId: string, event?: React.MouseEvent) => void;
   onMoveStart: (connectorId: string) => void;
   onMove: (connectorId: string, position: Point) => void;
@@ -209,12 +211,16 @@ export function useNodeConnectorWiring(
     [canManageStructure, nodeId, openContextMenu],
   );
 
+  const peerActive =
+    Object.keys(movingConnectorPeers).length > 0 || Object.keys(selectingConnectorPeers).length > 0;
+
   return {
     nodeId,
     connectors,
     threadMode,
     draftActive,
     armed: threadArmed,
+    peerActive,
     color,
     selectedConnectorId:
       selectedConnector?.nodeId === nodeId ? selectedConnector.connectorId : null,

@@ -211,10 +211,19 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   await expect(grab).toHaveCount(1);
 
   // Grab the ring itself (its centre is the dot, which starts a connection).
+  // The ring is 24px across and can sit on the card's edge, so press the side of
+  // it that is *inside* the card: the other side is off the node, where the
+  // canvas has no grab handle to find.
   const dragGrabTo = async (x: number, y: number) => {
     const handle = await grab.boundingBox();
-    if (!handle) throw new Error("grab handle not visible");
-    await page.mouse.move(handle.x + handle.width - 3, handle.y + handle.height / 2);
+    const cardBox = await card.boundingBox();
+    if (!handle || !cardBox) throw new Error("grab handle not visible");
+    const midY = handle.y + handle.height / 2;
+    const candidates = [handle.x + 3, handle.x + handle.width - 3];
+    const inside = candidates.find(
+      (candidate) => candidate > cardBox.x && candidate < cardBox.x + cardBox.width,
+    );
+    await page.mouse.move(inside ?? candidates[0] ?? handle.x, midY);
     await page.mouse.down();
     await page.mouse.move(x, y, { steps: 10 });
     await page.mouse.up();

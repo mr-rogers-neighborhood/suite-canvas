@@ -89,7 +89,12 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
     connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
     labelDrag: (state[AWARENESS_FIELDS.labelDrag] as LabelDragState | undefined) ?? null,
+    gestureBeat: readBeat(state[AWARENESS_FIELDS.gestureBeat]),
   };
+}
+
+function readBeat(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /** Only the in-flight gestures: selections and carets are state, not gestures. */
@@ -107,6 +112,9 @@ export function gestureSignature(peer: PeerPresence): string {
   ) {
     return "";
   }
+  // The beat is part of the signature on purpose: a gesture that stops arriving
+  // unchanged is a peer who stopped holding it (or stopped existing), and the TTL
+  // is what turns that into "the ghost is gone".
   return JSON.stringify([
     peer.dragging,
     peer.connector,
@@ -117,6 +125,7 @@ export function gestureSignature(peer: PeerPresence): string {
     peer.connect,
     peer.labelDrag,
     peer.selectionBox,
+    peer.gestureBeat ?? 0,
   ]);
 }
 

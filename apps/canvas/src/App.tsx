@@ -1,4 +1,9 @@
-import { PORTAL_BOARD_FIELD_ID, sectionForCard, sectionMembership } from "@suite/graph";
+import {
+  defaultConnectors,
+  PORTAL_BOARD_FIELD_ID,
+  sectionForCard,
+  sectionMembership,
+} from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
@@ -243,13 +248,28 @@ function WorkspaceShell({
       // keep the two-card demo they were seeded with.
       const fresh = new URLSearchParams(window.location.search).get("fresh") === "1";
       if (!fresh && workspace.listCards().length === 0) {
-        workspace.createCard({ id: "starter-1", boardId: board.id, position: { x: 0, y: 0 } });
+        // Connector ids are derived from the card id, not random. Two clients
+        // opening the same new workspace both seed it; the cards carry fixed ids
+        // and converge, so random dot ids would union into eight connectors on
+        // one card instead of four.
+        const starters = (cardId: string) =>
+          defaultConnectors().map((connector, index) => ({
+            ...connector,
+            id: `${cardId}-connector-${index + 1}`,
+          }));
+        workspace.createCard({
+          id: "starter-1",
+          boardId: board.id,
+          position: { x: 0, y: 0 },
+          connectors: starters("starter-1"),
+        });
         // One card width plus a gap, so the two starters read as two cards and a
         // section drawn around the first does not reach into the second.
         workspace.createCard({
           id: "starter-2",
           boardId: board.id,
           position: { x: DEFAULT_CARD_WIDTH + 192, y: 0 },
+          connectors: starters("starter-2"),
         });
       }
       workspace.markSeeded();

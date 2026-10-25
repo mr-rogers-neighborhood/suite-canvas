@@ -23,6 +23,12 @@ export interface ConnectorRevealInput {
    * its target, so every candidate must be visible even in connect mode.
    */
   armed?: boolean | undefined;
+  /**
+   * A collaborator is manipulating one of this node's connectors. Presence is
+   * painted *inside* this layer, so a peer holding a dot would otherwise be
+   * invisible to anyone who is not hovering the card.
+   */
+  peerActive?: boolean | undefined;
 }
 
 /** The single reveal rule for every connector layer, cards and sections alike. */
@@ -32,8 +38,9 @@ export function revealConnectors({
   draftActive = false,
   hovered = false,
   armed = false,
+  peerActive = false,
 }: ConnectorRevealInput): boolean {
-  return selected || threadMode || draftActive || hovered || armed;
+  return selected || threadMode || draftActive || hovered || armed || peerActive;
 }
 
 export interface NodeConnectorsProps {
@@ -55,6 +62,8 @@ export interface NodeConnectorsProps {
   draftActive?: boolean | undefined;
   /** A thread is armed: the next click picks a target, so show every candidate. */
   armed?: boolean | undefined;
+  /** A peer is dragging or has selected a dot here, so the layer must be up. */
+  peerActive?: boolean | undefined;
   /** Override the hover read from the surrounding node (sections have no node). */
   hovered?: boolean | undefined;
   selectedConnectorId?: string | null | undefined;
@@ -92,6 +101,7 @@ export function NodeConnectors({
   threadMode = false,
   draftActive = false,
   armed = false,
+  peerActive = false,
   hovered: hoveredProp,
   selectedConnectorId = null,
   movingConnectorPeers = {},
@@ -121,7 +131,14 @@ export function NodeConnectors({
     };
   }, []);
   const hovered = hoveredProp ?? hoveredSelf;
-  const revealed = revealConnectors({ selected, threadMode, draftActive, hovered, armed });
+  const revealed = revealConnectors({
+    selected,
+    threadMode,
+    draftActive,
+    hovered,
+    armed,
+    peerActive,
+  });
   const count = connectors.length;
 
   // Handles stay mounted whether or not they are visible: React Flow only starts

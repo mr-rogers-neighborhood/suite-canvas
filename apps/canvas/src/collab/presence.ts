@@ -130,6 +130,13 @@ export const AWARENESS_FIELDS = {
   reconnect: "reconnect",
   connect: "connect",
   labelDrag: "labelDrag",
+  /**
+   * Liveness of an in-flight gesture, as a counter the sender bumps while it
+   * holds one. A gesture is refreshed only when its payload *changes*, so a peer
+   * that presses and holds without moving would age out of everyone's view; the
+   * beat is what says "still here" without pretending anything moved.
+   */
+  gestureBeat: "gestureBeat",
 } as const;
 
 export interface PeerPresence {
@@ -150,6 +157,8 @@ export interface PeerPresence {
   reconnect: ReconnectState | null;
   connect: ConnectState | null;
   labelDrag: LabelDragState | null;
+  /** Sender's liveness counter for an in-flight gesture; see `gestureBeat`. */
+  gestureBeat?: number;
 }
 
 /** True while a peer is actively editing or manipulating something. */

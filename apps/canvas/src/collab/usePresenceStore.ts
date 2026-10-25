@@ -43,6 +43,12 @@ interface PresenceState {
   setLabelDrag: (labelDrag: LabelDragState | null) => void;
 }
 
+/**
+ * How often a held gesture re-announces itself. Well inside `GESTURE_TTL_MS`
+ * (3s), so a stationary hold never looks like a dropped peer.
+ */
+const GESTURE_BEAT_MS = 1000;
+
 /** Last gesture signature and arrival time per peer, for the staleness check. */
 const gestureClock = new Map<string, SeenGesture>();
 
@@ -76,6 +82,28 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       (field) => localState[field] !== undefined && localState[field] !== null,
     );
 
+  /**
+   * A gesture is refreshed only when its payload changes, so a peer who presses
+   * and holds without moving would drop out of everyone's view after the TTL.
+   * While a local gesture is live, bump a counter once a second: cheap, and it is
+   * the difference between "still holding" and "gone".
+   */
+  let beatTimer: number | null = null;
+  let beat = 0;
+  const beatNow = () => {
+    beat += 1;
+    publish(AWARENESS_FIELDS.gestureBeat, beat);
+  };
+  const keepAlive = () => {
+    if (beatTimer !== null) return;
+    beatTimer = window.setInterval(beatNow, GESTURE_BEAT_MS);
+  };
+  const stopKeepAlive = () => {
+    if (beatTimer === null) return;
+    window.clearInterval(beatTimer);
+    beatTimer = null;
+  };
+
   const clearPointer = () => {
     if (
       localState[AWARENESS_FIELDS.pointer] !== undefined &&
@@ -94,6 +122,16 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     set({
       peers: projectPeers(states, { selfId: peerId, now: performance.now(), seen: gestureClock }),
     });
+  };
+
+  const publishGesture = (field: string, value: unknown) => {
+    publish(field, value);
+    if (value === null || value === undefined) {
+      if (!hasLocalInteraction()) stopKeepAlive();
+      return;
+    }
+    keepAlive();
+    beatNow();
   };
 
   return {
@@ -147,31 +185,31 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       if (box) clearPointer();
     },
     setMovingConnector: (connector) => {
-      publish(AWARENESS_FIELDS.connector, connector);
+      publishGesture(AWARENESS_FIELDS.connector, connector);
       if (connector) clearPointer();
     },
     setResizing: (resizing) => {
-      publish(AWARENESS_FIELDS.resizing, resizing);
+      publishGesture(AWARENESS_FIELDS.resizing, resizing);
       if (resizing) clearPointer();
     },
     setSectionDrag: (sectionDrag) => {
-      publish(AWARENESS_FIELDS.sectionDrag, sectionDrag);
+      publishGesture(AWARENESS_FIELDS.sectionDrag, sectionDrag);
       if (sectionDrag) clearPointer();
     },
     setSectionResize: (sectionResize) => {
-      publish(AWARENESS_FIELDS.sectionResize, sectionResize);
+      publishGesture(AWARENESS_FIELDS.sectionResize, sectionResize);
       if (sectionResize) clearPointer();
     },
     setReconnect: (reconnect) => {
-      publish(AWARENESS_FIELDS.reconnect, reconnect);
+      publishGesture(AWARENESS_FIELDS.reconnect, reconnect);
       if (reconnect) clearPointer();
     },
     setConnect: (connect) => {
-      publish(AWARENESS_FIELDS.connect, connect);
+      publishGesture(AWARENESS_FIELDS.connect, connect);
       if (connect) clearPointer();
     },
     setLabelDrag: (labelDrag) => {
-      publish(AWARENESS_FIELDS.labelDrag, labelDrag);
+      publishGesture(AWARENESS_FIELDS.labelDrag, labelDrag);
       if (labelDrag) clearPointer();
     },
   };

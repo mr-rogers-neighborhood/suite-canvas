@@ -463,6 +463,12 @@ export function NodeCard({
         selectedConnectorId={selectedConnectorId}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
+        // A peer's dot and name tag live in this layer, so it has to be up while
+        // they are holding one — whoever is looking.
+        peerActive={
+          Object.keys(movingConnectorPeers).length > 0 ||
+          Object.keys(selectingConnectorPeers).length > 0
+        }
         onSelect={(id, event) => onConnectorSelect?.(id, event)}
         onMoveStart={(id) => onConnectorMoveStart?.(id)}
         onMove={(id, position) => onConnectorMove?.(id, position)}

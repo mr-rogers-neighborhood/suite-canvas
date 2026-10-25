@@ -6,7 +6,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
 import { useLinkThreadStore } from "./linkThread";
-import { NodeConnectors } from "./NodeConnectors";
+import { NodeConnectors, revealConnectors } from "./NodeConnectors";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
 // React Flow measures its container; jsdom has no layout engine.
@@ -169,6 +169,13 @@ function isRevealed(container: HTMLElement, nodeId: string): boolean {
 }
 
 describe("connector reveal rule", () => {
+  it("should reveal for a peer's live gesture, even with nothing local happening", () => {
+    // A peer's dot and name tag are painted inside this layer, so hiding it while
+    // they hold one makes their gesture invisible to everyone else.
+    expect(revealConnectors({ peerActive: true })).toBe(true);
+    expect(revealConnectors({})).toBe(false);
+  });
+
   it("should paint no dots on unselected nodes", async () => {
     const { container } = mount();
     await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());

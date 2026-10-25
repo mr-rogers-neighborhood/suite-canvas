@@ -88,6 +88,32 @@ async function selectedTitles(page: Page): Promise<string[]> {
 }
 
 /**
+ * Pans the board down until there is room to place a card above the section.
+ *
+ * Zooming out cannot do this: it eases content toward the viewport centre, so a
+ * frame that sits below centre moves *up* as the scale shrinks. Panning changes
+ * only the translation, which is the one gesture that buys headroom.
+ */
+async function roomAbove(page: Page, needed: number): Promise<void> {
+  const viewport = await page.evaluate(() => innerHeight);
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const frame = await boxOf(sectionRegion(page));
+    const missing = needed + 72 - frame.y;
+    if (missing <= 0) return;
+    const point = await barePanePoint(page);
+    // Drag the pane down by what is missing, capped to the pane so the press
+    // stays on the canvas.
+    const distance = Math.min(missing, viewport / 2);
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    await page.mouse.move(point.x, point.y + distance, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+  }
+  throw new Error("never made room above the section");
+}
+
+/**
  * The section frame, zoomed out until the whole of it is on screen. A marquee
  * that has to stay inside the frame needs both of its corners reachable, and a
  * board that fits one card is drawn at a zoom that puts a section off the edge.
@@ -128,6 +154,7 @@ test("a marquee begun inside a section selects that section only, until it leave
   // while its body dips inside it: a box drawn over the frame touches Beta.
   await addNote(page, "Beta");
   const beta = await boxOf(cardByTitle(page, "Beta"));
+  await roomAbove(page, beta.height);
   const seeded = await boxOf(sectionRegion(page));
   await dragCardTo(page, "Beta", {
     x: Math.round(seeded.x + seeded.width / 2 - beta.width / 2),
@@ -156,15 +183,17 @@ test("a marquee begun inside a section selects that section only, until it leave
   await expect.poll(() => selectedTitles(page)).toEqual(["Alpha", "Beta"]);
 
   // The pair is one selection, so dragging one card moves the other with it.
-  const alphaBefore = await boxOf(cardByTitle(page, "Alpha"));
-  const grabbed = await boxOf(cardByTitle(page, "Beta"));
+  // Grab the card inside the frame: it is the one guaranteed to be on screen
+  // after the fit, and a drag needs a real pointer target.
+  const grabbed = await boxOf(cardByTitle(page, "Alpha"));
+  const betaBefore = await boxOf(cardByTitle(page, "Beta"));
   await page.mouse.move(grabbed.x + 40, grabbed.y + 14);
   await page.mouse.down();
   await page.mouse.move(grabbed.x + 42, grabbed.y + 16, { steps: 1 });
   await page.mouse.move(grabbed.x + 42, grabbed.y + 76, { steps: 8 });
   await page.mouse.up();
   await expect
-    .poll(async () => Math.round((await boxOf(cardByTitle(page, "Alpha"))).y - alphaBefore.y))
+    .poll(async () => Math.round((await boxOf(cardByTitle(page, "Beta"))).y - betaBefore.y))
     .toBeGreaterThan(20);
 
   expect(errors).toEqual([]);

@@ -1,7 +1,6 @@
 import type { Card, EdgeEndpointKind, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
 import {
   edgeEndpoints,
-  rectContainsRect,
   sectionColors,
   sectionMembership,
   sectionMovePlan,
@@ -284,6 +283,35 @@ interface FlowLink {
   offLens: boolean;
 }
 
+/**
+ * The most a fit may magnify. Fitting frames what is on the board; it does not
+ * zoom in to fill the screen with two cards, which reads as the board having
+ * grown and pushes cards under the inspector drawer.
+ */
+const FIT_MAX_ZOOM = 1;
+
+/**
+ * Whether a selection box has genuinely left a section's frame.
+ *
+ * Exact containment is too strict: the geometry runs screen → flow through a
+ * zoom transform, so a box drawn eight pixels inside a border can land a few
+ * units outside it and the scope would lift mid-gesture. A box has to clear the
+ * frame by a visible margin before it stops being "inside".
+ */
+const SCOPE_EXIT_TOLERANCE = 16;
+function leavesSection(
+  section: { x: number; y: number; width: number; height: number },
+  box: { x: number; y: number; width: number; height: number },
+): boolean {
+  const slack = SCOPE_EXIT_TOLERANCE;
+  return (
+    box.x < section.x - slack ||
+    box.y < section.y - slack ||
+    box.x + box.width > section.x + section.width + slack ||
+    box.y + box.height > section.y + section.height + slack
+  );
+}
+
 export function CanvasBoard() {
   countRender("canvas");
 
@@ -375,7 +403,7 @@ export function CanvasBoard() {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
-  const { screenToFlowPosition, setViewport, getViewport, fitView, updateNode } = useReactFlow();
+  const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow();
 
   // While a thread is armed the pointer is the other end of a line that is not
   // drawn yet, so follow it in flow coordinates.
@@ -709,7 +737,7 @@ export function CanvasBoard() {
    * section is about rearranging that section, not the board around it. The
    * scope lifts the moment the box leaves the frame.
    */
-  const marqueeScope = useRef<{ sectionId: string; applied: boolean } | null>(null);
+  const marqueeScope = useRef<{ sectionId: string } | null>(null);
   /**
    * The box React Flow is drawing, in flow coordinates. React Flow clears its
    * own rectangle on pointerup, so this is the only copy left when the gesture
@@ -841,11 +869,20 @@ export function CanvasBoard() {
   // React Flow owns transient state (drag position, selection), the CRDT owns
   // the truth. Re-derive flow nodes whenever either side changes.
   const applyBoardNodes = useCallback(
-    (reconciled?: readonly string[]) => {
+    (
+      reconciled?: readonly string[],
+      /**
+       * Paint during a marquee. Only the scoped-selection flag needs this: it
+       * must change while the box is live, and the caller passes React Flow's
+       * own selection so the rebuild does not clear the box. Every other caller
+       * waits for the gesture to close.
+       */
+      duringGesture = false,
+    ) => {
       // React Flow owns the board for the length of a marquee. Rebuilding the flow
       // nodes mid-gesture hands it a stale `selected` set and clears the box, so
       // the paint waits for the gesture to close and reconciles once, in `endMarquee`.
-      if (marqueeActive.current) return;
+      if (marqueeActive.current && !duringGesture) return;
       // Computed once per pass: an unchanged key means React Flow's live selection
       // is the truth, a changed one means a surface asked for a different set.
       // While a press is down React Flow is processing that press, so the store's
@@ -895,10 +932,17 @@ export function CanvasBoard() {
             previousDim === dim
               ? previous
               : { card, placement, type, meta, ...(dim ? { dim: true } : {}) };
+          // A scoped marquee only boxes this section's cards. The flag has to be
+          // part of the node this function builds, not a one-off `updateNode`:
+          // every rebuild would otherwise hand React Flow a node that is
+          // selectable again and the scope would leak mid-gesture.
+          const scope = marqueeScope.current;
+          const selectable = !scope || sectionMembershipMap.get(card.id) === scope.sectionId;
           if (
             existing &&
             existing.data === data &&
             existing.selected === selected &&
+            existing.selectable === selectable &&
             existing.zIndex === layer &&
             existing.position.x === position.x &&
             existing.position.y === position.y
@@ -911,6 +955,7 @@ export function CanvasBoard() {
               type: isWhiteboardCard(card) ? "whiteboard" : isPortalCard(card) ? "portal" : "note",
               position: { x: position.x, y: position.y },
               selected,
+              selectable,
               zIndex: layer,
               data,
             } satisfies Node,
@@ -918,7 +963,17 @@ export function CanvasBoard() {
         });
       });
     },
-    [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes, lens],
+    [
+      boardCards,
+      boardPlacements,
+      selectedKey,
+      typeMap,
+      metaByCard,
+      cardOffsetsMap,
+      setNodes,
+      lens,
+      sectionMembershipMap,
+    ],
   );
 
   useEffect(() => {
@@ -989,8 +1044,10 @@ export function CanvasBoard() {
   const releaseMarqueeScope = useCallback(() => {
     if (!marqueeScope.current) return;
     marqueeScope.current = null;
-    for (const id of boardCardIds.current) updateNode(id, { selectable: true });
-  }, [updateNode]);
+    // Repaints with React Flow's own selection, so the box survives and every
+    // card becomes boxable again the moment the scope lifts.
+    applyBoardNodes([...liveSelectedIds()], true);
+  }, [applyBoardNodes, liveSelectedIds]);
 
   /**
    * Releases the marquee guard on every termination path, not just the happy
@@ -1015,6 +1072,11 @@ export function CanvasBoard() {
     const box = marqueeBox.current;
     marqueeBox.current = null;
     const boxedLinks = box ? sectionLinksInBox(box) : [];
+    // The scope is enforced here as well as while the box is drawn. `selectable`
+    // only stops a card React Flow has not picked up yet, and whether it lands
+    // before the first box frame depends on gesture timing; the commit cannot be
+    // timing-dependent, so a non-member is dropped from the result outright.
+    const scope = marqueeScope.current;
     // React Flow clears its own selection state in the pane's pointerup handler,
     // which never runs when the pointer is released outside the pane or over a
     // panel. Left set, `userSelectionActive` keeps the pane in selection mode and
@@ -1027,10 +1089,16 @@ export function CanvasBoard() {
         ? { userSelectionRect: null, userSelectionActive: false }
         : state,
     );
+    // Read React Flow's own selection *before* releasing the scope: releasing
+    // rebuilds the nodes, and a rebuild paints the store's last echo over the
+    // live selection (which is still empty at this point in the gesture).
+    const live = [...liveSelectedIds()];
     releaseMarqueeScope();
     if (!marqueeActive.current) return;
     marqueeActive.current = false;
-    const ids = [...liveSelectedIds()];
+    const ids = scope
+      ? live.filter((id) => sectionMembershipMap.get(id) === scope.sectionId)
+      : live;
     // Set before the store write, so the repaint it causes sees an unchanged key
     // and keeps the selection this pass painted.
     paintedSelection.current = ids.join(",");
@@ -1049,6 +1117,7 @@ export function CanvasBoard() {
     liveSelectedIds,
     releaseMarqueeScope,
     sectionLinksInBox,
+    sectionMembershipMap,
     setSelectedEdgeIds,
     setSelectedNodeIds,
     store,
@@ -1415,23 +1484,11 @@ export function CanvasBoard() {
       width: Math.abs(end.x - start.x),
       height: Math.abs(end.y - start.y),
     };
-    if (!rectContainsRect(section, box)) {
+    if (leavesSection(section, box)) {
       releaseMarqueeScope();
       return;
     }
-    if (scope.applied) return;
-    scope.applied = true;
-    for (const id of boardCardIds.current) {
-      updateNode(id, { selectable: sectionMembershipMap.get(id) === scope.sectionId });
-    }
-  }, [
-    selectionRect,
-    boardSections,
-    sectionMembershipMap,
-    releaseMarqueeScope,
-    screenToFlowPosition,
-    updateNode,
-  ]);
+  }, [selectionRect, boardSections, releaseMarqueeScope, screenToFlowPosition]);
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -1756,7 +1813,7 @@ export function CanvasBoard() {
       if (request.viewport) {
         void setViewport(request.viewport, { duration: 0 });
       } else {
-        void fitView({ padding: 0.2, duration: 0 });
+        void fitView({ padding: 0.2, duration: 0, maxZoom: FIT_MAX_ZOOM });
       }
       clearViewportRequest();
     });
@@ -2942,7 +2999,10 @@ export function CanvasBoard() {
       data-testid="canvas-board"
       ref={boardRoot}
       className={`h-full w-full ${selectedConnector ? "connector-active" : ""}`}
-      onPointerDown={(event) => {
+      // Capture, not bubble: React Flow stops the pane's pointerdown from
+      // propagating, so a bubble handler here never sees a press on the canvas at
+      // all — which silently made every box start from "no section".
+      onPointerDownCapture={(event) => {
         marqueePress.current = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       }}
       onPointerMove={(event) => {
@@ -2965,6 +3025,7 @@ export function CanvasBoard() {
         // connectors remeasure when a card scrolls back in.
         onlyRenderVisibleElements
         fitView
+        fitViewOptions={{ maxZoom: FIT_MAX_ZOOM }}
         // The camera reaches far enough out to read a whole board and far enough
         // in to work on one card. Presenting is unclamped, because a tour step
         // asks for the viewport that frames what it is talking about
@@ -2984,11 +3045,16 @@ export function CanvasBoard() {
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         selectionMode={SelectionMode.Partial}
         onSelectionStart={() => {
-          marqueeActive.current = true;
           marqueeBox.current = null;
           const press = marqueePress.current;
           const inside = press ? sectionsAt(press, boardSections)[0] : undefined;
-          marqueeScope.current = inside ? { sectionId: inside.id, applied: false } : null;
+          marqueeScope.current = inside ? { sectionId: inside.id } : null;
+          // Applied here rather than on the first box frame: by then React Flow
+          // has already committed a selection, and a card caught by that frame
+          // stays caught. Flag writes only, so the live box is untouched; the
+          // commit filters again in case a frame slipped through.
+          if (inside) applyBoardNodes([...liveSelectedIds()], true);
+          marqueeActive.current = true;
         }}
         onSelectionEnd={() => {
           // React Flow's final selection is authoritative; `endMarquee` releases

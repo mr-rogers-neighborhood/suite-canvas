@@ -28,6 +28,7 @@ import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { buildPaletteItems } from "./components/paletteProviders";
 import { SharePublishButton } from "./components/SharePublishButton";
 import { StoragePanel } from "./components/StoragePanel";
+import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./components/TemplateGallery";
 import { TitleBar } from "./components/TitleBar";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { useSavedViews, ViewsBar } from "./components/ViewsBar";
@@ -723,6 +724,7 @@ function WorkspaceShell({
       title: board.name,
       open: openBoardIds.includes(board.id),
       cardCount: placed.get(board.id) ?? 0,
+      template: board.template === true,
     }));
   }, [snapshot.boards, snapshot.cards, snapshot.placements, openBoardIds]);
 
@@ -793,6 +795,49 @@ function WorkspaceShell({
       closeBoardTab(boardId);
     },
     [canManageBoards, workspace, closeBoardTab],
+  );
+
+  /**
+   * Using a template *duplicates* it: sections, cards, placements and internal
+   * links land as a new board in one undoable batch, and the template itself is
+   * never written. The drawer closes because the new board is now in front.
+   */
+  const useBoardTemplate = useCallback(
+    (templateId: string) => {
+      if (!canCreateBoards) return;
+      const source = workspace.getBoard(templateId);
+      if (!source) return;
+      const existing = workspace.listBoards().map((board) => board.name);
+      const board = workspace.duplicateBoard(templateId, {
+        name: templateCopyName(source.name, existing),
+      });
+      if (!board) return;
+      activateBoard(board.id);
+      setLibraryOpen(false);
+    },
+    [canCreateBoards, workspace, activateBoard, setLibraryOpen],
+  );
+
+  /** A built-in starter is generated on pick, never on boot. */
+  const useStarter = useCallback(
+    (starterId: string) => {
+      if (!canCreateBoards) return;
+      const existing = workspace.listBoards().map((board) => board.name);
+      const boardId = createStarterBoard(workspace, starterId, existing);
+      if (!boardId) return;
+      activateBoard(boardId);
+      setLibraryOpen(false);
+    },
+    [canCreateBoards, workspace, activateBoard, setLibraryOpen],
+  );
+
+  /** The flag is the whole feature: it never changes what the board holds. */
+  const setBoardTemplate = useCallback(
+    (boardId: string, template: boolean) => {
+      if (!canManageBoards) return;
+      workspace.setBoardTemplate(boardId, template);
+    },
+    [canManageBoards, workspace],
   );
 
   const boardEmpty = !!activeBoardId && workspace.listBoardCards(activeBoardId).length === 0;
@@ -990,6 +1035,14 @@ function WorkspaceShell({
           onDeleteBoard={deleteBoard}
           onLocateCard={locateCard}
           onLocateBoard={locateBoard}
+          {...(canCreateBoards
+            ? {
+                onUseBoardTemplate: useBoardTemplate,
+                onUseStarter: useStarter,
+                starters: BOARD_STARTERS,
+              }
+            : {})}
+          {...(canManageBoards ? { onSetBoardTemplate: setBoardTemplate } : {})}
           onTab={setLibraryTab}
           onClose={() => setLibraryOpen(false)}
           onPlace={placeCard}

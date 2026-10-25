@@ -22,6 +22,7 @@ import {
   type SectionOrderEntry,
   UNSORTED_SECTION,
 } from "./libraryFilters";
+import { type BoardStarter, TemplateGallery } from "./TemplateGallery";
 import { useSavedViews } from "./ViewsBar";
 
 export interface LibraryItem {
@@ -47,6 +48,8 @@ export interface LibraryBoard {
   open: boolean;
   /** Cards placed on this board right now. */
   cardCount: number;
+  /** Offered in the Boards tab's Templates group; using one copies the board. */
+  template?: boolean;
 }
 
 /** What a drawer row can be. Boards are global: they never leave this list. */
@@ -76,6 +79,17 @@ export interface LibraryDrawerProps {
   onLocateCard?: (cardId: string) => boolean;
   /** Pans to this board's portal on the active board, else opens the board. */
   onLocateBoard?: (boardId: string) => boolean;
+  /**
+   * Copies a template into a new board and opens it. Absent when this session
+   * may not create boards, which also hides the Templates group.
+   */
+  onUseBoardTemplate?: (templateId: string) => void;
+  /** Generates a built-in starter as a new board and opens it. */
+  onUseStarter?: (starterId: string) => void;
+  /** Marks or unmarks a board as a template. Absent leaves the rows alone. */
+  onSetBoardTemplate?: (boardId: string, template: boolean) => void;
+  /** Built-in shapes offered under the workspace's own templates. */
+  starters?: readonly BoardStarter[];
   onTab: (tab: LibraryTab) => void;
   onClose: () => void;
   onPlace: (cardId: string) => void;
@@ -168,6 +182,10 @@ export function LibraryDrawer({
   onDeleteBoard = () => {},
   onLocateCard = () => false,
   onLocateBoard = () => false,
+  onUseBoardTemplate,
+  onUseStarter = () => {},
+  onSetBoardTemplate,
+  starters = [],
   onTab,
   onClose,
   onPlace,
@@ -248,6 +266,17 @@ export function LibraryDrawer({
       : boardQuery.length === 0
         ? boards
         : boards.filter((board) => board.title.toLowerCase().includes(boardQuery));
+
+  // The Templates group answers the same query as the list: a search narrows
+  // both halves instead of leaving a gallery of things the reader did not ask for.
+  const matchesBoardQuery = (title: string) =>
+    boardQuery.length === 0 || title.toLowerCase().includes(boardQuery);
+  const visibleTemplates =
+    tab === "boards"
+      ? boards.filter((board) => board.template && matchesBoardQuery(board.title))
+      : [];
+  const visibleStarters =
+    tab === "boards" ? starters.filter((entry) => matchesBoardQuery(entry.title)) : [];
 
   // The app bar offers "save current search"; it reads the live text through
   // the store rather than reaching into this component.
@@ -636,6 +665,16 @@ export function LibraryDrawer({
           >
             Locate
           </button>
+          {onSetBoardTemplate ? (
+            <button
+              type="button"
+              className="library-action"
+              data-testid={`library-board-template-${board.id}`}
+              onClick={() => onSetBoardTemplate(board.id, board.template !== true)}
+            >
+              {board.template === true ? "Stop being a template" : "Save as template"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="library-action"
@@ -943,6 +982,17 @@ export function LibraryDrawer({
       ) : null}
 
       <div className="library-list overflow-y-auto p-1.5">
+        {tab === "boards" &&
+        onUseBoardTemplate &&
+        visibleTemplates.length + visibleStarters.length > 0 ? (
+          <TemplateGallery
+            templates={visibleTemplates}
+            starters={visibleStarters}
+            onUseTemplate={onUseBoardTemplate}
+            onUseStarter={onUseStarter}
+            onEditTemplate={onOpenBoard}
+          />
+        ) : null}
         {entries.length === 0 ? (
           <p
             className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]"

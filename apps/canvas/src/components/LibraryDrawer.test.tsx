@@ -1,5 +1,9 @@
 import type { WorkspaceDocument } from "@suite/graph";
-import { WorkspaceDocument as Document, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
+import {
+  WorkspaceDocument as Document,
+  PORTAL_BOARD_FIELD_ID,
+  sectionMembership,
+} from "@suite/graph";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +15,7 @@ import {
   type LibraryDrawerProps,
   type LibraryItem,
 } from "./LibraryDrawer";
+import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./TemplateGallery";
 
 function addNode(parent: LoroMap, name: string): LoroMap {
   const children = parent.ensureMergeableList("children");
@@ -546,5 +551,197 @@ describe("LibraryDrawer boards", () => {
 
     expect(workspace.getCard("c1")?.deletedAt ?? null).toBeNull();
     expect(workspace.listCardPlacements("c1")).toHaveLength(0);
+  });
+});
+
+describe("LibraryDrawer templates", () => {
+  interface TemplateFixture {
+    workspace: WorkspaceDocument;
+    template: { id: string; name: string };
+    other: { id: string; name: string };
+    entries: () => LibraryBoard[];
+  }
+
+  /**
+   * A workspace with one board worth keeping ("Research": a section and two
+   * cards) and one that is not ("Drafts"). The drawer never reads the document
+   * itself, so every handler here is the one `App` wires.
+   */
+  function templateFixture(): TemplateFixture {
+    const workspace = new Document();
+    workspace.ensureDefaultTypes();
+    const template = workspace.ensureBoard();
+    workspace.renameBoard(template.id, "Research");
+    workspace.createSection({
+      boardId: template.id,
+      title: "Sources",
+      x: 0,
+      y: 0,
+      width: 360,
+      height: 400,
+    });
+    workspace.createCard({ id: "c1", boardId: template.id, position: { x: 40, y: 80 } });
+    addText(workspace.getTitle("c1"), "Reading list");
+    workspace.createCard({ id: "c2", boardId: template.id, position: { x: 40, y: 320 } });
+    addText(workspace.getTitle("c2"), "People to talk to");
+    const other = workspace.createBoard({ name: "Drafts" });
+    workspace.doc.commit({ origin: "test" });
+
+    return {
+      workspace,
+      template: { id: template.id, name: "Research" },
+      other: { id: other.id, name: "Drafts" },
+      entries: () =>
+        workspace.listBoards().map((board) => ({
+          id: board.id,
+          title: board.name,
+          open: false,
+          cardCount: workspace.listBoardCards(board.id).length,
+          template: board.template === true,
+        })),
+    };
+  }
+
+  /** What `App` does when a template is used, minus the drawer close. */
+  const useTemplate = (workspace: WorkspaceDocument) => {
+    return (templateId: string) => {
+      const source = workspace.getBoard(templateId);
+      if (!source) return;
+      const name = templateCopyName(
+        source.name,
+        workspace.listBoards().map((board) => board.name),
+      );
+      const board = workspace.duplicateBoard(templateId, { name });
+      if (board) useUiStore.getState().activateBoard(board.id);
+    };
+  };
+
+  it("should save a board as a template and offer it in the Templates group", () => {
+    const { workspace, template, entries } = templateFixture();
+    const view = renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: entries(),
+      onSetBoardTemplate: (boardId, isTemplate) => workspace.setBoardTemplate(boardId, isTemplate),
+      // Saving and starting are separate capabilities; this test only exercises
+      // saving, but a real drawer has both (App wires them together).
+      onUseBoardTemplate: () => {},
+    });
+
+    // Nothing is a template yet, so the group is not there to be read.
+    expect(screen.queryByTestId("library-templates")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`library-board-template-${template.id}`));
+    expect(workspace.getBoard(template.id)?.template).toBe(true);
+
+    view.rerender({ boards: entries() });
+
+    expect(screen.getByTestId("library-templates")).toBeInTheDocument();
+    expect(screen.getByTestId(`library-template-title-${template.id}`)).toHaveTextContent(
+      "Research",
+    );
+    // The row says what it acts on, so a keyboard or screen-reader user knows.
+    expect(screen.getByRole("button", { name: "Use template Research" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit template Research" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`library-board-template-${template.id}`));
+    expect(workspace.getBoard(template.id)?.template).toBeUndefined();
+  });
+
+  it("should copy a template into a new board and activate it", () => {
+    const { workspace, template, entries } = templateFixture();
+    useUiStore.setState({ activeBoardId: null, openBoardIds: [] });
+    workspace.setBoardTemplate(template.id, true);
+
+    renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: entries(),
+      onUseBoardTemplate: useTemplate(workspace),
+    });
+
+    fireEvent.click(screen.getByTestId(`library-template-use-${template.id}`));
+
+    const copy = workspace.listBoards().find((board) => board.name === "Research 2");
+    expect(copy).toBeDefined();
+    if (!copy) return;
+    // Everything drawn on the template came along...
+    expect(workspace.listSections(copy.id).map((section) => section.title)).toEqual(["Sources"]);
+    expect(
+      workspace.listBoardCards(copy.id).map((card) => workspace.displayTitle(card.id)),
+    ).toEqual(["Reading list", "People to talk to"]);
+    // ...as copies: the source board is untouched.
+    expect(workspace.listBoardCards(template.id)).toHaveLength(2);
+    expect(workspace.getBoard(template.id)?.template).toBe(true);
+    // The copy is not itself a template, and it is the board in front now.
+    expect(copy.template ?? false).toBe(false);
+    expect(useUiStore.getState().activeBoardId).toBe(copy.id);
+  });
+
+  it("should number a copy past a name that is already taken", () => {
+    expect(templateCopyName("Research", ["Research"])).toBe("Research 2");
+    expect(templateCopyName("Research", ["Research", "Research 2"])).toBe("Research 3");
+    expect(templateCopyName("Research", ["Research", "Research 2", "Research 3"])).toBe(
+      "Research 4",
+    );
+  });
+
+  it("should generate a starter board with its sections and cards", () => {
+    const { workspace, entries } = templateFixture();
+    useUiStore.setState({ activeBoardId: null, openBoardIds: [] });
+
+    renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: entries(),
+      starters: BOARD_STARTERS,
+      onUseBoardTemplate: () => {},
+      onUseStarter: (starterId) => {
+        const boardId = createStarterBoard(
+          workspace,
+          starterId,
+          workspace.listBoards().map((board) => board.name),
+        );
+        if (boardId) useUiStore.getState().activateBoard(boardId);
+      },
+    });
+
+    // The starter is offered before anything exists for it.
+    expect(screen.getByTestId("library-starter-title-research")).toHaveTextContent(
+      "Research board",
+    );
+    // Nothing is written until the row is used.
+    expect(workspace.listBoards()).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId("library-starter-use-research"));
+
+    const board = workspace.listBoards().find((candidate) => candidate.name === "Research board");
+    expect(board).toBeDefined();
+    if (!board) return;
+    expect(workspace.listSections(board.id).map((section) => section.title)).toEqual([
+      "Questions",
+      "Sources",
+      "Findings",
+    ]);
+    const onBoard = workspace.listBoardCards(board.id);
+    expect(onBoard).toHaveLength(6);
+    expect(onBoard.map((card) => workspace.displayTitle(card.id))).toContain(
+      "What are we trying to learn?",
+    );
+    // Every card sits inside its own region, which is what membership means.
+    const sections = workspace.listSections(board.id);
+    const membership = sectionMembership(workspace.listBoardPlacements(board.id), sections);
+    expect(membership.size).toBe(6);
+    const byTitle = new Map(sections.map((section) => [section.id, section.title]));
+    expect(
+      onBoard
+        .map((card) => byTitle.get(membership.get(card.id) ?? ""))
+        .filter((title): title is string => title !== undefined)
+        .sort(),
+    ).toEqual(["Findings", "Findings", "Questions", "Questions", "Sources", "Sources"]);
+    expect(useUiStore.getState().activeBoardId).toBe(board.id);
+
+    // A starter is one batch, so a single undo takes the whole board away.
+    workspace.undo();
+    expect(workspace.listBoards().map((candidate) => candidate.name)).not.toContain(
+      "Research board",
+    );
   });
 });

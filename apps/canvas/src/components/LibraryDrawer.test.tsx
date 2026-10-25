@@ -104,6 +104,8 @@ function renderDrawer(
     activeBoardName: null,
     scope: "all",
     onScope: () => {},
+    full: false,
+    onFull: () => {},
     sectionFilter: [],
     onToggleSection: () => {},
     sectionOrder: [],
@@ -129,6 +131,24 @@ function type(text: string): void {
 beforeEach(() => {
   useUiStore.setState({ libraryOpen: false, libraryTab: "inbox" });
 });
+
+/**
+ * Runs one action from a row's ⋯ menu. The menu is the same context menu the
+ * canvas uses, portalled to the body, so its items are queried from `screen`
+ * rather than from the row.
+ */
+function rowAction(id: string, action: string) {
+  fireEvent.click(screen.getByTestId(`library-row-menu-${id}`));
+  fireEvent.click(screen.getByRole("menuitem", { name: action }));
+}
+
+/** The actions a row offers, without running any of them. */
+function rowActions(id: string): string[] {
+  fireEvent.click(screen.getByTestId(`library-row-menu-${id}`));
+  const labels = screen.getAllByRole("menuitem").map((item) => item.textContent ?? "");
+  fireEvent.click(screen.getByLabelText("Close context menu"));
+  return labels;
+}
 
 describe("LibraryDrawer search", () => {
   it("should filter the list while a query is present", () => {
@@ -337,6 +357,8 @@ describe("Library shortcut", () => {
             activeBoardName={null}
             scope="all"
             onScope={() => {}}
+            full={false}
+            onFull={() => {}}
             sectionFilter={[]}
             onToggleSection={() => {}}
             sectionOrder={[]}
@@ -436,7 +458,7 @@ describe("LibraryDrawer boards", () => {
     });
 
     const before = rowIds();
-    fireEvent.click(screen.getByTestId(`library-board-place-${second.id}`));
+    rowAction(second.id, "Place on board");
     view.rerender({ boards: entries() });
 
     // A portal to the board exists on the active board...
@@ -464,7 +486,7 @@ describe("LibraryDrawer boards", () => {
       },
     });
 
-    fireEvent.click(screen.getByTestId(`library-board-unplace-${first.id}`));
+    rowAction(first.id, "Unplace its cards");
 
     expect(workspace.listCardPlacements("c1").map((placement) => placement.boardId)).toEqual([
       second.id,
@@ -477,7 +499,7 @@ describe("LibraryDrawer boards", () => {
     const onDeleteBoard = vi.fn();
     renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
 
-    fireEvent.click(screen.getByTestId(`library-board-delete-${first.id}`));
+    rowAction(first.id, "Delete board\u2026");
 
     expect(screen.getByTestId("dialog")).toBeInTheDocument();
     expect(screen.getByText("Delete board?")).toBeInTheDocument();
@@ -493,7 +515,7 @@ describe("LibraryDrawer boards", () => {
     const onDeleteBoard = vi.fn();
     renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
 
-    fireEvent.click(screen.getByTestId(`library-board-delete-${first.id}`));
+    rowAction(first.id, "Delete board\u2026");
     fireEvent.click(screen.getByRole("button", { name: "Trash cards" }));
 
     expect(onDeleteBoard).toHaveBeenCalledWith(first.id, "trash");
@@ -510,9 +532,9 @@ describe("LibraryDrawer boards", () => {
       onPlace,
     });
 
-    expect(screen.queryByTestId("library-locate-c1")).not.toBeInTheDocument();
-    const row = screen.getByTestId("library-item-c1");
-    fireEvent.click(within(row).getByRole("button", { name: "Place" }));
+    expect(rowActions("c1")).toContain("Place on board");
+    expect(rowActions("c1")).not.toContain("Locate");
+    rowAction("c1", "Place on board");
 
     expect(onPlace).toHaveBeenCalledWith("c1");
     expect(onLocateCard).not.toHaveBeenCalled();
@@ -534,12 +556,9 @@ describe("LibraryDrawer boards", () => {
       onPlace,
     });
 
-    expect(screen.queryByTestId("library-locate-c1")).not.toBeInTheDocument();
-    fireEvent.click(
-      within(screen.getByTestId("library-item-c1")).getByRole("button", {
-        name: "Place",
-      }),
-    );
+    expect(rowActions("c1")).toContain("Place on board");
+    expect(rowActions("c1")).not.toContain("Locate");
+    rowAction("c1", "Place on board");
 
     expect(onPlace).toHaveBeenCalledWith("c1");
   });
@@ -556,9 +575,9 @@ describe("LibraryDrawer boards", () => {
       onPlace,
     });
 
-    const row = screen.getByTestId("library-item-c1");
-    expect(within(row).queryByRole("button", { name: "Place" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("library-locate-c1"));
+    expect(rowActions("c1")).toContain("Locate");
+    expect(rowActions("c1")).not.toContain("Place on board");
+    rowAction("c1", "Locate");
 
     expect(onLocateCard).toHaveBeenCalledWith("c1");
     expect(onPlace).not.toHaveBeenCalled();
@@ -670,7 +689,7 @@ describe("LibraryDrawer templates", () => {
     // Nothing is a template yet, so the group is not there to be read.
     expect(screen.queryByTestId("library-templates")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId(`library-board-template-${template.id}`));
+    rowAction(template.id, "Save as template");
     expect(workspace.getBoard(template.id)?.template).toBe(true);
 
     view.rerender({ boards: entries() });
@@ -683,7 +702,7 @@ describe("LibraryDrawer templates", () => {
     expect(screen.getByRole("button", { name: "Use template Research" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit template Research" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId(`library-board-template-${template.id}`));
+    rowAction(template.id, "Stop being a template");
     expect(workspace.getBoard(template.id)?.template).toBeUndefined();
   });
 
@@ -847,5 +866,102 @@ describe("LibraryDrawer tag lens", () => {
     renderDrawer(workspace, scoped, { tags: workspace.listTags() });
 
     expect(screen.getByTestId(`facet-tag-${tag.id}`)).toHaveTextContent("1");
+  });
+});
+
+describe("row actions", () => {
+  it("keeps every action behind one menu so the title has the row", () => {
+    const { workspace, items } = fixture();
+    const boardId = workspace.listBoards()[0]?.id ?? "";
+    renderDrawer(workspace, items, { tab: "cards", activeBoardId: boardId });
+
+    // The row is a title, its metadata and one button — the actions are not
+    // buttons in the row any more.
+    const row = screen.getByTestId("library-item-c1");
+    expect(within(row).getAllByRole("button")).toHaveLength(1);
+    expect(within(row).getByTestId("library-row-menu-c1")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Locate" })).toBeNull();
+  });
+
+  it("opens the same menu from the row's right-click", () => {
+    const { workspace, items } = fixture();
+    const boardId = workspace.listBoards()[0]?.id ?? "";
+    renderDrawer(workspace, items, { tab: "cards", activeBoardId: boardId });
+
+    fireEvent.contextMenu(screen.getByTestId("library-item-c1"), { clientX: 40, clientY: 40 });
+
+    expect(screen.getByRole("menuitem", { name: "Open details" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Locate" })).toBeInTheDocument();
+  });
+
+  it("offers a trash row Restore and Delete forever, and nothing else", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, {
+      tab: "trash",
+      trash: items,
+      counts: { inbox: 0, cards: 0, trash: 2 },
+    });
+
+    expect(rowActions("c1")).toEqual(["Restore", "Delete forever"]);
+  });
+
+  it("offers no menu at all to a session that may not manage trash", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, { tab: "trash", trash: items, canManageTrash: false });
+
+    fireEvent.click(screen.getByTestId("library-row-menu-c1"));
+
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+  });
+
+  it("opens a card's details, which a row could only do by clicking it", () => {
+    const { workspace, items } = fixture();
+    const onOpenCard = vi.fn();
+    renderDrawer(workspace, items, { tab: "cards", onOpenCard });
+
+    rowAction("c1", "Open details");
+
+    expect(onOpenCard).toHaveBeenCalledWith("c1");
+  });
+
+  it("reads every action a board row can take", () => {
+    const workspace = new Document();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureBoard();
+    const entry = { id: board.id, title: board.name, open: false, cardCount: 0 };
+    renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: [entry],
+      onSetBoardTemplate: vi.fn(),
+    });
+
+    expect(rowActions(board.id)).toEqual([
+      "Open",
+      "Place on board",
+      "Locate",
+      "Save as template",
+      "Unplace its cards",
+      "Delete board\u2026",
+    ]);
+  });
+});
+
+describe("expanded library", () => {
+  it("asks the host to expand, and reports the state it was given", () => {
+    const { workspace, items } = fixture();
+    const onFull = vi.fn();
+    const view = renderDrawer(workspace, items, { tab: "cards", onFull });
+
+    const toggle = screen.getByTestId("library-expand");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(onFull).toHaveBeenCalledWith(true);
+
+    view.rerender({ full: true });
+    expect(screen.getByTestId("library-drawer")).toHaveAttribute("data-full", "true");
+    expect(screen.getByTestId("library-expand")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("library-expand"));
+    expect(onFull).toHaveBeenLastCalledWith(false);
   });
 });

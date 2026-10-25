@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
+import { libraryRowAction } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -105,7 +106,7 @@ test("removes a card to the inbox and places it back on the board", async ({ pag
 
   await openLibrary(page, "inbox");
   const row = page.locator('[data-testid^="library-item-"]').first();
-  await row.getByRole("button", { name: "Place" }).click();
+  await libraryRowAction(row, "Place on board");
 
   await expect(cards(page)).toHaveCount(2);
   await expect(page.getByTestId("dock-inbox-count")).toHaveCount(0);
@@ -122,11 +123,7 @@ test("trashes a card and restores it to its board", async ({ page }) => {
 
   await openLibrary(page, "trash");
   await expect(page.locator('[data-testid^="library-item-"]')).toHaveCount(1);
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Restore" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Restore");
 
   // Trash keeps the placement, so restoring puts the card back on its board.
   await page.getByTestId("library-tab-trash").click();
@@ -143,11 +140,7 @@ test("shares one card across boards and lists both in the inspector", async ({ p
 
   // Place the same card on the new board from the Cards tab.
   await openLibrary(page, "cards");
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Place" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   const card = cards(page).first();
@@ -191,7 +184,7 @@ test("deletes a board from the library and asks once", async ({ page }) => {
 
   // Deletion lives in the library now; the tab strip only closes tabs.
   await openLibrary(page, "boards");
-  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
@@ -208,15 +201,11 @@ test("asks before deleting a board with cards and keeps them in the library", as
 
   // Put a card on the board so the delete has consequences.
   await openLibrary(page, "cards");
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Place" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   await page.getByTestId("library-tab-boards").click();
-  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 

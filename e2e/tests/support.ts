@@ -49,3 +49,15 @@ export async function openLibrary(page: Page, tab: "cards" | "inbox" | "trash"):
  * different (and historically double-counted) thing.
  */
 export const libraryRows = (page: Page) => page.locator("li[data-row-id]");
+
+/**
+ * Runs one action from a library row's menu.
+ *
+ * A row offers up to six actions, which as buttons left no room for the entity's
+ * title in a 460px drawer, so they live behind the ⋯ button (or a right-click) in
+ * the same context menu the canvas uses ({@link ADR-0011} §6).
+ */
+export async function libraryRowAction(row: Locator, action: string): Promise<void> {
+  await row.getByRole("button", { name: /^Actions for / }).click();
+  await row.page().getByRole("menuitem", { name: action }).click();
+}

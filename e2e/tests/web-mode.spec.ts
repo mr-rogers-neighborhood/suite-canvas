@@ -134,7 +134,7 @@ test("holding Control webs without switching the stored mode", async ({ page }) 
   await createCard(page);
 
   const toggle = page.getByTestId("link-mode-toggle");
-  await expect(toggle).toHaveAttribute("data-mode", "connect");
+  await expect(toggle).toHaveAttribute("data-mode", "place");
 
   // Reveal the first card's dots the way a user does. Control, like Shift, is a
   // press-time gesture: it takes an armed origin before every other dot shows.
@@ -151,7 +151,7 @@ test("holding Control webs without switching the stored mode", async ({ page }) 
   await page.keyboard.up("Control");
 
   // The stored mode was never changed: the gesture *was* the mode.
-  await expect(toggle).toHaveAttribute("data-mode", "connect");
+  await expect(toggle).toHaveAttribute("data-mode", "place");
 });
 
 test("Escape clears the armed origin", async ({ page }) => {
@@ -190,6 +190,6 @@ test("the mode button cycles back to connect from web", async ({ page }) => {
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "web");
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "connect");
+  await expect(toggle).toHaveAttribute("data-mode", "place");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
 });

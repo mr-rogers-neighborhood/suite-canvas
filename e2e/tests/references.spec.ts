@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { selectCard } from "../interactions";
+import { libraryRowAction } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now()}-${++sequence}`;
@@ -57,7 +58,7 @@ async function closeLibrary(page: Page): Promise<void> {
 async function placeFromLibrary(page: Page, title: string): Promise<void> {
   await openLibrary(page, "cards");
   const row = page.locator('[data-testid^="library-item-"]').filter({ hasText: title }).first();
-  await row.getByRole("button", { name: "Place" }).click();
+  await libraryRowAction(row, "Place on board");
   await closeLibrary(page);
 }
 

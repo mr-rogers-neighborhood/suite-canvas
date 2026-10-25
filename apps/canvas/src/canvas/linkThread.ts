@@ -1,6 +1,6 @@
 import type { EdgeEndpointKind } from "@suite/graph";
 import { create } from "zustand";
-import type { LinkMode } from "./linkGesture";
+import type { CanvasMode } from "./linkGesture";
 
 /** One connector being chained from or to. */
 export interface LinkConnectorRef {
@@ -25,22 +25,22 @@ export function isChaining(input: {
   shiftKey?: boolean | undefined;
   /** Held Control (or Command) asks for a web, the way Shift asks for a thread. */
   ctrlKey?: boolean | undefined;
-  linkMode: LinkMode;
+  mode: CanvasMode;
 }): boolean {
   if (input.ctrlKey === true) return true;
   if (input.shiftKey === true) return true;
-  return input.linkMode === "thread" || input.linkMode === "web";
+  return input.mode !== "place";
 }
 
 /** Which mode a gesture is being read as, before the stored mode is consulted. */
 export function gestureMode(input: {
   shiftKey?: boolean | undefined;
   ctrlKey?: boolean | undefined;
-  linkMode: LinkMode;
-}): LinkMode {
+  mode: CanvasMode;
+}): CanvasMode {
   if (input.ctrlKey === true) return "web";
   if (input.shiftKey === true) return "thread";
-  return input.linkMode;
+  return input.mode;
 }
 
 export function sameConnector(left: LinkConnectorRef, right: LinkConnectorRef): boolean {
@@ -73,7 +73,7 @@ export function stepWeb(armed: LinkConnectorRef | null, clicked: LinkConnectorRe
 
 /** One click of whichever mode is in force. */
 export function stepLink(
-  mode: LinkMode,
+  mode: CanvasMode,
   armed: LinkConnectorRef | null,
   clicked: LinkConnectorRef,
 ): ThreadStep {

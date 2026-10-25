@@ -1,3 +1,9 @@
+export type { BehaviourTypeId } from "./behaviours.js";
+export {
+  behaviourTypeIdSchema,
+  behaviourTypeIds,
+  isBehaviourType,
+} from "./behaviours.js";
 export type { CardAttachment } from "./cardAttachments.js";
 export { documentAttachmentIds, documentAttachments } from "./cardAttachments.js";
 export {

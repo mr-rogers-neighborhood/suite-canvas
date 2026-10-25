@@ -12,25 +12,40 @@ export interface LinkEndpointRef {
  * chains them. Shift-click chains either way, which is the Autodesk gesture.
  */
 /**
- * How the next click is read ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)):
- * `connect` drags one link, `thread` chains from the previous endpoint, `web`
- * links every click from one fixed origin.
+ * How the next click is read, whichever gesture is about to make it
+ * ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md),
+ * [ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)).
+ *
+ * One slot serves both gestures, because a click cannot mean two things: as a
+ * *link* tool `place` drags one link, `thread` chains from the previous endpoint
+ * and `web` links every click from one fixed origin; as a *placement* tool the
+ * same four make a single drop, a chain, spokes and a tree. `pattern` is the
+ * fourth shape — a chain that branches — and is placement-only today.
  */
-export type LinkMode = "connect" | "thread" | "web";
+export const canvasModes = ["place", "thread", "web", "pattern"] as const;
+export type CanvasMode = (typeof canvasModes)[number];
 
 /** Human name of each mode, for menus and labels. */
-export const LINK_MODE_NAMES: Record<LinkMode, string> = {
-  connect: "connect",
+export const MODE_NAMES: Record<CanvasMode, string> = {
+  place: "place",
   thread: "thread",
   web: "web",
+  pattern: "pattern",
 };
 
 /**
- * The cycle a click walks: connect → thread → web → connect. One reader, so the
- * widget-bar button and the connector menu can never offer different next steps.
+ * The cycle a click walks: place → thread → web → pattern → place. One reader, so
+ * the widget-bar button and the connector menu can never offer different next
+ * steps.
  */
-export function nextLinkMode(mode: LinkMode): LinkMode {
-  return mode === "connect" ? "thread" : mode === "thread" ? "web" : "connect";
+export function nextMode(mode: CanvasMode): CanvasMode {
+  const index = canvasModes.indexOf(mode);
+  return canvasModes[(index + 1) % canvasModes.length] ?? "place";
+}
+
+/** True for the modes that keep drawing instead of placing one thing at a time. */
+export function isChainingMode(mode: CanvasMode): boolean {
+  return mode !== "place";
 }
 
 /** A link being drawn, before it has a second end. */

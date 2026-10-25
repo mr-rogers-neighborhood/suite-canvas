@@ -1,6 +1,6 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
-import type { LinkMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/linkGesture";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 
@@ -203,6 +203,14 @@ interface UiState extends SessionCapabilities {
   /** Sections facet of the board-scoped library; selecting one includes its subtree. */
   librarySectionFilter: string[];
   libraryScope: LibraryScope;
+  /**
+   * The drawer is taking the whole window rather than floating above the dock.
+   * A library with sections for cards, sketches, boards and types is a browser,
+   * and browsing wants room; the floating drawer stays the default because it
+   * lets a row be dragged onto the canvas beside it.
+   */
+  libraryFull: boolean;
+  setLibraryFull: (full: boolean) => void;
   libraryGroupBySection: boolean;
   /** Saved query view applied to the library, if any. */
   activeViewId: string | null;
@@ -229,8 +237,8 @@ interface UiState extends SessionCapabilities {
    * `thread` keeps the chain going. Shift-click chains in either mode, which is
    * the gesture people already know from other tools.
    */
-  linkMode: LinkMode;
-  setLinkMode: (mode: LinkMode) => void;
+  mode: CanvasMode;
+  setMode: (mode: CanvasMode) => void;
   contextMenu: ContextMenuState | null;
   selectedConnector: SelectedConnector | null;
   /** Scope a canvas gesture asked the app-bar dialog to open on; consumed once. */
@@ -344,11 +352,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   expandedCardMeta: {},
   typeSettingsOpen: false,
   paletteOpen: false,
-  linkMode: "connect",
+  mode: "place",
   libraryTypeFilter: [],
   libraryTagFilter: [],
   librarySectionFilter: [],
   libraryScope: "all",
+  libraryFull: false,
   libraryGroupBySection: false,
   activeViewId: null,
   libraryQuery: "",
@@ -605,7 +614,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   openTypeSettings: () => set({ typeSettingsOpen: true }),
   setPaletteOpen: (paletteOpen) =>
     set((state) => (state.paletteOpen === paletteOpen ? state : { paletteOpen })),
-  setLinkMode: (linkMode) => set((state) => (state.linkMode === linkMode ? state : { linkMode })),
+  setMode: (mode) => set((state) => (state.mode === mode ? state : { mode })),
   closeTypeSettings: () => set({ typeSettingsOpen: false }),
   toggleLibraryType: (id) =>
     set((state) => ({
@@ -628,6 +637,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         : [...state.librarySectionFilter, id],
     })),
   setLibraryScope: (libraryScope) => set({ libraryScope }),
+  setLibraryFull: (libraryFull) => set({ libraryFull }),
   toggleLibraryGroupBySection: () =>
     set((state) => ({ libraryGroupBySection: !state.libraryGroupBySection })),
   setLibraryQuery: (libraryQuery) => set({ libraryQuery }),

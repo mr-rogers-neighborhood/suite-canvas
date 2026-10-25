@@ -15,16 +15,16 @@ const c = { kind: "section" as const, id: "section-c", connectorId: "c-top" };
 
 describe("isChaining", () => {
   it("chains when shift is held, in either mode", () => {
-    expect(isChaining({ shiftKey: true, linkMode: "connect" })).toBe(true);
-    expect(isChaining({ shiftKey: true, linkMode: "thread" })).toBe(true);
+    expect(isChaining({ shiftKey: true, mode: "place" })).toBe(true);
+    expect(isChaining({ shiftKey: true, mode: "thread" })).toBe(true);
   });
 
   it("chains on a plain click in thread mode", () => {
-    expect(isChaining({ shiftKey: false, linkMode: "thread" })).toBe(true);
+    expect(isChaining({ shiftKey: false, mode: "thread" })).toBe(true);
   });
 
   it("does not chain on a plain click in connect mode", () => {
-    expect(isChaining({ linkMode: "connect" })).toBe(false);
+    expect(isChaining({ mode: "place" })).toBe(false);
   });
 });
 
@@ -104,22 +104,22 @@ describe("web mode", () => {
   it("stepLink follows the mode it is given", () => {
     expect(stepLink("web", origin, spokeB).armed).toEqual(origin);
     expect(stepLink("thread", origin, spokeB).armed).toEqual(spokeB);
-    expect(stepLink("connect", origin, spokeB).armed).toEqual(spokeB);
+    expect(stepLink("place", origin, spokeB).armed).toEqual(spokeB);
   });
 
   it("reads a held key as the mode it implies", () => {
-    expect(gestureMode({ ctrlKey: true, linkMode: "connect" })).toBe("web");
-    expect(gestureMode({ shiftKey: true, linkMode: "connect" })).toBe("thread");
+    expect(gestureMode({ ctrlKey: true, mode: "place" })).toBe("web");
+    expect(gestureMode({ shiftKey: true, mode: "place" })).toBe("thread");
     // Control is the more specific gesture when both are down.
-    expect(gestureMode({ shiftKey: true, ctrlKey: true, linkMode: "thread" })).toBe("web");
-    expect(gestureMode({ linkMode: "web" })).toBe("web");
-    expect(gestureMode({ linkMode: "connect" })).toBe("connect");
+    expect(gestureMode({ shiftKey: true, ctrlKey: true, mode: "thread" })).toBe("web");
+    expect(gestureMode({ mode: "web" })).toBe("web");
+    expect(gestureMode({ mode: "place" })).toBe("place");
   });
 
   it("chains without a modifier when the mode is web", () => {
-    expect(isChaining({ linkMode: "web" })).toBe(true);
-    expect(isChaining({ linkMode: "thread" })).toBe(true);
-    expect(isChaining({ linkMode: "connect" })).toBe(false);
-    expect(isChaining({ linkMode: "connect", ctrlKey: true })).toBe(true);
+    expect(isChaining({ mode: "web" })).toBe(true);
+    expect(isChaining({ mode: "thread" })).toBe(true);
+    expect(isChaining({ mode: "place" })).toBe(false);
+    expect(isChaining({ mode: "place", ctrlKey: true })).toBe(true);
   });
 });

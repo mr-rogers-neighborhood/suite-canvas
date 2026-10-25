@@ -1,5 +1,5 @@
 import type { CardType, PropertyValue, SearchHit, Tag, WorkspaceDocument } from "@suite/graph";
-import { highlightRanges, typePluralName } from "@suite/graph";
+import { highlightRanges, isBehaviourType, typePluralName } from "@suite/graph";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -14,6 +14,7 @@ import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrar
 import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { Dialog } from "./Dialog";
 import {
   facetCounts,
@@ -119,6 +120,9 @@ export interface LibraryDrawerProps {
   activeBoardName: string | null;
   scope: LibraryScope;
   onScope: (scope: LibraryScope) => void;
+  /** The drawer is taking the whole window; the toggle lives in its header. */
+  full: boolean;
+  onFull: (full: boolean) => void;
   sectionFilter: string[];
   onToggleSection: (id: string) => void;
   /** Sections of the active board in outline order. */
@@ -143,6 +147,46 @@ const TABS: Array<{ id: LibraryTab; label: string }> = [
 ];
 
 const HOLD_THRESHOLD = 4;
+
+/**
+ * The overflow button every row carries.
+ *
+ * A row offered up to six buttons in a drawer a few hundred pixels wide, which
+ * pushed the entity's own title out of the row — the one thing the row exists to
+ * show ([ADR-0011](docs/decisions/0011-library-dock-and-card-chrome.md) §6). The
+ * actions move into the same context menu the canvas uses, opened by this button
+ * or by right-clicking anywhere on the row.
+ */
+function RowMenuButton({
+  id,
+  label,
+  onOpen,
+}: {
+  id: string;
+  label: string;
+  onOpen: (point: { x: number; y: number }) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Actions for ${label}`}
+      aria-haspopup="menu"
+      data-testid={`library-row-menu-${id}`}
+      className="library-action library-row-menu"
+      title="More actions"
+      // The row's press starts a drag-to-place gesture; the menu button must not
+      // arm it, or the menu closes as the row lifts.
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        const box = event.currentTarget.getBoundingClientRect();
+        onOpen({ x: box.right, y: box.bottom });
+      }}
+    >
+      {"\u22ef"}
+    </button>
+  );
+}
 
 /** Highlighted runs of a result title or snippet, straight from the index terms. */
 function Highlighted({ text, terms }: { text: string; terms: readonly string[] }) {
@@ -228,6 +272,8 @@ export function LibraryDrawer({
   activeBoardName,
   scope,
   onScope,
+  full,
+  onFull,
   sectionFilter,
   onToggleSection,
   sectionOrder,
@@ -252,6 +298,17 @@ export function LibraryDrawer({
   const [locateMiss, setLocateMiss] = useState<string | null>(null);
   /** The board whose delete is being asked about; the only place a board is deleted. */
   const [pendingDelete, setPendingDelete] = useState<LibraryBoard | null>(null);
+  /**
+   * The row whose actions menu is open, and where it opened. One piece of state
+   * for both rows and both entry points (the ⋯ button and a right-click), so the
+   * two can never show different actions for the same row.
+   */
+  const [rowMenu, setRowMenu] = useState<{
+    id: string;
+    label: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
   const activeRow = useRef<HTMLLIElement | null>(null);
   const focusPending = useRef(false);
@@ -495,6 +552,66 @@ export function LibraryDrawer({
     setLocateMiss(`\u201c${board.title}\u201d has no portal on this board.`);
   };
 
+  /**
+   * The actions for one row, in one place. The ⋯ button and a right-click both
+   * read this, so the menu can never offer a different set depending on how it
+   * was opened, and the list stays the whole truth about what a row can do.
+   */
+  const menuFor = (id: string): ContextMenuItem[] => {
+    const card = tab === "boards" ? undefined : ordered.find((entry) => entry.id === id);
+    const board = tab === "boards" ? visibleBoards.find((entry) => entry.id === id) : undefined;
+
+    if (board) {
+      return [
+        { label: "Open", onSelect: () => onOpenBoard(board.id) },
+        { label: "Place on board", onSelect: () => onPlaceBoard(board.id) },
+        { label: "Locate", onSelect: () => locateBoard(board) },
+        ...(onSetBoardTemplate
+          ? [
+              {
+                label: board.template === true ? "Stop being a template" : "Save as template",
+                onSelect: () => onSetBoardTemplate(board.id, board.template !== true),
+              },
+            ]
+          : []),
+        { label: "Unplace its cards", onSelect: () => onUnplaceBoardCards(board.id) },
+        { label: "Delete board…", danger: true, onSelect: () => setPendingDelete(board) },
+      ];
+    }
+
+    if (!card) return [];
+    if (tab === "trash") {
+      if (!canManageTrash) return [];
+      return [
+        { label: "Restore", onSelect: () => onRestore(card.id) },
+        { label: "Delete forever", danger: true, onSelect: () => onDeleteForever(card.id) },
+      ];
+    }
+    return [
+      { label: "Open details", onSelect: () => onOpenCard(card.id) },
+      ...(card.boards.length > 0
+        ? [{ label: "Go to board", onSelect: () => onGoToBoard(card.boards[0]?.id ?? "") }]
+        : []),
+      placedHere(card)
+        ? { label: "Locate", onSelect: () => locateCard(card) }
+        : { label: "Place on board", onSelect: () => onPlace(card.id) },
+      ...(canManageTrash
+        ? [{ label: "Move to trash", danger: true, onSelect: () => onTrash(card.id) }]
+        : []),
+    ];
+  };
+
+  const openRowMenu = (
+    id: string,
+    label: string,
+    point: { x: number; y: number },
+    event?: React.MouseEvent,
+  ) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    setRowMenu({ id, label, ...point });
+  };
+
   const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (!searching || ordered.length === 0) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -528,9 +645,13 @@ export function LibraryDrawer({
         aria-current={current ? "true" : undefined}
         ref={current ? activeRow : undefined}
       >
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: the row is a canvas-like list item whose right-click opens the same menu its ⋯ button does; the button is the keyboard path. */}
         <div
           data-testid={`library-item-${item.id}`}
           className="library-row"
+          onContextMenu={(event) =>
+            openRowMenu(item.id, item.title, { x: event.clientX, y: event.clientY }, event)
+          }
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             if (
@@ -589,61 +710,11 @@ export function LibraryDrawer({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {tab === "trash" ? (
-              canManageTrash ? (
-                <>
-                  <button
-                    type="button"
-                    className="library-action"
-                    onClick={() => onRestore(item.id)}
-                  >
-                    Restore
-                  </button>
-                  <button
-                    type="button"
-                    className="library-action text-red-600"
-                    onClick={() => onDeleteForever(item.id)}
-                  >
-                    Delete
-                  </button>
-                </>
-              ) : null
-            ) : (
-              <>
-                {item.boards.length > 0 ? (
-                  <button
-                    type="button"
-                    className="library-action"
-                    onClick={() => onGoToBoard(item.boards[0]?.id ?? "")}
-                  >
-                    Open
-                  </button>
-                ) : null}
-                {placedHere(item) ? (
-                  <button
-                    type="button"
-                    className="library-action"
-                    data-testid={`library-locate-${item.id}`}
-                    onClick={() => locateCard(item)}
-                  >
-                    Locate
-                  </button>
-                ) : (
-                  <button type="button" className="library-action" onClick={() => onPlace(item.id)}>
-                    Place
-                  </button>
-                )}
-                {canManageTrash ? (
-                  <button
-                    type="button"
-                    className="library-action text-red-600"
-                    onClick={() => onTrash(item.id)}
-                  >
-                    Trash
-                  </button>
-                ) : null}
-              </>
-            )}
+            <RowMenuButton
+              id={item.id}
+              label={item.title}
+              onOpen={(point) => setRowMenu({ id: item.id, label: item.title, ...point })}
+            />
           </div>
         </div>
       </li>
@@ -657,10 +728,14 @@ export function LibraryDrawer({
    */
   const renderBoardRow = (board: LibraryBoard) => (
     <li key={board.id} className="library-entry" data-row-id={board.id}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: same as a card row — the ⋯ button is the keyboard path to this menu. */}
       <div
         data-testid={`library-item-${board.id}`}
         data-board-open={board.open ? "true" : "false"}
         className="library-row"
+        onContextMenu={(event) =>
+          openRowMenu(board.id, board.title, { x: event.clientX, y: event.clientY }, event)
+        }
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-[12px]" data-testid={`library-title-${board.id}`}>
@@ -672,60 +747,21 @@ export function LibraryDrawer({
             </span>
             {" \u00b7 "}
             {board.cardCount} {board.cardCount === 1 ? "card" : "cards"}
+            {/* The state moved out of the row's buttons into its menu, so the row
+                says it in words: a template is a fact about the board, not only
+                something you can toggle. */}
+            {board.template === true ? (
+              <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 template"}</span>
+            ) : null}
           </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            className="library-action"
-            data-testid={`library-board-open-${board.id}`}
-            onClick={() => onOpenBoard(board.id)}
-          >
-            Open
-          </button>
-          <button
-            type="button"
-            className="library-action"
-            data-testid={`library-board-place-${board.id}`}
-            onClick={() => onPlaceBoard(board.id)}
-          >
-            Place
-          </button>
-          <button
-            type="button"
-            className="library-action"
-            data-testid={`library-board-locate-${board.id}`}
-            onClick={() => locateBoard(board)}
-          >
-            Locate
-          </button>
-          {onSetBoardTemplate ? (
-            <button
-              type="button"
-              className="library-action"
-              data-testid={`library-board-template-${board.id}`}
-              onClick={() => onSetBoardTemplate(board.id, board.template !== true)}
-            >
-              {board.template === true ? "Stop being a template" : "Save as template"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="library-action"
-            data-testid={`library-board-unplace-${board.id}`}
-            onClick={() => onUnplaceBoardCards(board.id)}
-          >
-            Unplace Cards
-          </button>
-          <button
-            type="button"
-            className="library-action text-red-600"
-            data-testid={`library-board-delete-${board.id}`}
-            onClick={() => setPendingDelete(board)}
-          >
-            Delete
-          </button>
+          <RowMenuButton
+            id={board.id}
+            label={board.title}
+            onOpen={(point) => setRowMenu({ id: board.id, label: board.title, ...point })}
+          />
         </div>
       </div>
     </li>
@@ -766,6 +802,7 @@ export function LibraryDrawer({
       aria-label="Library"
       data-testid="library-drawer"
       data-wide={wide ? "true" : undefined}
+      data-full={full ? "true" : undefined}
       className="library-drawer"
     >
       <div className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5">
@@ -838,6 +875,23 @@ export function LibraryDrawer({
         ) : null}
 
         <div className="ml-auto flex items-center gap-1">
+          {/* The drawer floats so a row can be dragged onto the board beside it; a
+              library with six sections is also a browser, and browsing wants the
+              window. Both are the same component and the same rows, and this is
+              one button in the header's action group rather than a second mode. */}
+          <button
+            type="button"
+            aria-pressed={full}
+            aria-label={full ? "Restore the library drawer" : "Expand the library"}
+            title={full ? "Restore the library drawer" : "Expand the library"}
+            data-testid="library-expand"
+            className="library-action"
+            onClick={() => onFull(!full)}
+          >
+            {/* Bidirectional arrows rather than a box or a cross: a cross next to
+                the drawer's own close button would read as a second close. */}
+            {full ? "\u2921" : "\u2922"}
+          </button>
           {tab === "inbox" ? (
             <button
               type="button"
@@ -905,25 +959,30 @@ export function LibraryDrawer({
         // would be a row of zeroes here even though boards now carry tags.
         style={tab === "boards" ? { display: "none" } : undefined}
       >
-        {types.map((type) => {
-          const count = countsByFacet.types.get(type.id) ?? 0;
-          const active = typeFilter.includes(type.id);
-          return (
-            <button
-              key={type.id}
-              type="button"
-              aria-pressed={active}
-              data-testid={`facet-type-${type.id}`}
-              className="library-tab"
-              data-active={active ? "true" : undefined}
-              onClick={() => onToggleType(type.id)}
-            >
-              <span aria-hidden="true">{type.glyph}</span>
-              {typePluralName(type)}
-              <span className="tabular-nums text-[var(--ink-muted)]">{count}</span>
-            </button>
-          );
-        })}
+        {/* A behaviour is not a facet (ADR-0011 §3): offering Sketch or Portal here
+            reads as "author your own Sketch type", which the model forbids. A
+            sketch is found in its own section; a portal is that board's presence. */}
+        {types
+          .filter((type) => !isBehaviourType(type.id))
+          .map((type) => {
+            const count = countsByFacet.types.get(type.id) ?? 0;
+            const active = typeFilter.includes(type.id);
+            return (
+              <button
+                key={type.id}
+                type="button"
+                aria-pressed={active}
+                data-testid={`facet-type-${type.id}`}
+                className="library-tab"
+                data-active={active ? "true" : undefined}
+                onClick={() => onToggleType(type.id)}
+              >
+                <span aria-hidden="true">{type.glyph}</span>
+                {typePluralName(type)}
+                <span className="tabular-nums text-[var(--ink-muted)]">{count}</span>
+              </button>
+            );
+          })}
 
         {tags.length > 0 ? <span className="h-4 w-px bg-[var(--hairline)]" /> : null}
 
@@ -1073,6 +1132,18 @@ export function LibraryDrawer({
               onSelect: () => onDeleteBoard(pendingDelete.id, "trash"),
             },
           ]}
+        />
+      ) : null}
+
+      {/* One menu for every row, opened by its ⋯ button or by right-clicking it.
+          Rendered through the drawer's own portal so it stacks with the drawer
+          rather than under the canvas. */}
+      {rowMenu ? (
+        <ContextMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          items={menuFor(rowMenu.id)}
+          onClose={() => setRowMenu(null)}
         />
       ) : null}
 

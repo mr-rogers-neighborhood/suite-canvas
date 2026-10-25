@@ -239,6 +239,8 @@ describe("ViewsBar", () => {
           activeBoardName={null}
           scope="all"
           onScope={() => {}}
+          full={false}
+          onFull={() => {}}
           sectionFilter={[]}
           onToggleSection={() => {}}
           sectionOrder={[]}

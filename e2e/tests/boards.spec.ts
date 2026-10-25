@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
+import { libraryRowAction } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -45,11 +46,7 @@ test("closes a board tab with no prompt and reopens it from the library", async 
 
   // Give the board a card of its own, so "intact" means something.
   await openLibrary(page, "cards");
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Place" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   // Close: no dialog, one tab left, and the board's card is out of sight.
@@ -64,7 +61,7 @@ test("closes a board tab with no prompt and reopens it from the library", async 
   await expect(page.getByTestId(`library-item-${boardId}`)).toBeVisible();
 
   // Reopening gives it a tab again and its card is still there.
-  await page.getByTestId(`library-board-open-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Open");
   await expect(tabs(page)).toHaveCount(2);
   await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
   await expect(cards(page)).toHaveCount(1);
@@ -86,7 +83,7 @@ test("places a board as a portal without dropping it from the library", async ({
   const rowsBefore = await page
     .locator("li[data-row-id]")
     .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-row-id")));
-  await page.getByTestId(`library-board-place-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Place on board");
   await expect(page.getByTestId("portal-node")).toHaveCount(1);
 
   // The board is still one row, in the same place: placing is not a move.
@@ -108,20 +105,16 @@ test("unplaces one board's cards and leaves a shared card on the other", async (
 
   // The same card now lives on both boards.
   await openLibrary(page, "cards");
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Place" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
 
   // The card also lives on the first board, so unplacing this board's copy
   // removes only this placement — the card stays where else it was.
   await page.getByTestId("library-tab-boards").click();
-  await page.getByTestId(`library-board-unplace-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Unplace its cards");
   await expect(cards(page)).toHaveCount(0);
   await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
 
-  await page.getByTestId(`library-board-open-${firstBoardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${firstBoardId}`), "Open");
   await expect(cards(page)).toHaveCount(2);
 });

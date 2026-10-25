@@ -65,7 +65,7 @@ export interface NodeConnectorWiring {
  * every node kind and the section layer agree.
  */
 export function useChainingMode(): boolean {
-  return useUiStore((state) => state.linkMode !== "connect");
+  return useUiStore((state) => state.mode !== "place");
 }
 
 /** The reveal inputs for sections and node faces, read from the one place. */
@@ -138,7 +138,7 @@ export function useNodeConnectorWiring(
   }, [peers, nodeId]);
 
   const armThread = useLinkThreadStore((state) => state.arm);
-  const linkMode = useUiStore((state) => state.linkMode);
+  const mode = useUiStore((state) => state.mode);
   const linkEndMove = useUiStore((state) => state.linkEndMove);
   const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
 
@@ -165,15 +165,12 @@ export function useNodeConnectorWiring(
       // An armed thread keeps chaining on plain clicks: Shift starts a chain,
       // and the clicks after it should not each need the modifier.
       const armedNow = useLinkThreadStore.getState().armed !== null;
-      const mode = gestureMode({
+      const gesture = gestureMode({
         shiftKey: event?.shiftKey,
         ctrlKey: event?.ctrlKey,
-        linkMode,
+        mode,
       });
-      if (
-        !armedNow &&
-        !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, linkMode })
-      ) {
+      if (!armedNow && !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, mode })) {
         armThread(null);
         setSelectedConnector({ nodeId, connectorId });
         return;
@@ -181,10 +178,10 @@ export function useNodeConnectorWiring(
 
       // The mode decides what the next click means: a thread moves its armed end,
       // a web keeps it ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
-      const step = stepLink(mode, useLinkThreadStore.getState().armed, clicked);
+      const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
       // A gesture started by a modifier ends when the modifier is released; only a
       // mode chosen in the control survives the key.
-      const by = mode === linkMode ? "mode" : "gesture";
+      const by = gesture === mode ? "mode" : "gesture";
       if (step.link && boardId) {
         workspace.addEdge({
           boardId,
@@ -204,7 +201,7 @@ export function useNodeConnectorWiring(
     [
       nodeId,
       boardId,
-      linkMode,
+      mode,
       armThread,
       setSelectedConnector,
       workspace,

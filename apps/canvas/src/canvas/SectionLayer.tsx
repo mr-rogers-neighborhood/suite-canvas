@@ -200,7 +200,7 @@ export function SectionLayer({
   // The armed end, not merely whether one exists: a section dot is the origin
   // only when the arm names it, and a web returns to that dot click after click.
   const armedEnd = useLinkThreadStore((state) => state.armed);
-  const linkMode = useUiStore((state) => state.linkMode);
+  const mode = useUiStore((state) => state.mode);
 
   const members = useMemo(() => {
     const counts = new Map<string, number>();
@@ -403,22 +403,23 @@ export function SectionLayer({
         }
         // Released without a target: in chaining mode that is a click, so the
         // section connector takes part in a thread like a card's does.
-        if (!isChaining({ shiftKey: pointer.shiftKey, ctrlKey: pointer.ctrlKey, linkMode })) {
+        if (!isChaining({ shiftKey: pointer.shiftKey, ctrlKey: pointer.ctrlKey, mode })) {
           return;
         }
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
         // A web keeps its origin, a thread moves to the connector just clicked.
-        const mode = gestureMode({
+        const gesture = gestureMode({
           shiftKey: pointer.shiftKey,
           ctrlKey: pointer.ctrlKey,
-          linkMode,
+          mode,
         });
-        const step = stepLink(mode, useLinkThreadStore.getState().armed, clicked);
+        const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
         if (step.link) {
           // The thread may have started on a card, so both ends come from it.
           onLinkCommit?.(step.link.from, step.link.to, origin);
         }
-        useLinkThreadStore.getState().arm(step.armed, mode === linkMode ? "mode" : "gesture");
+        // A mode chosen in the control outlives the key; a modifier's does not.
+        useLinkThreadStore.getState().arm(step.armed, gesture === mode ? "mode" : "gesture");
       },
     );
   };

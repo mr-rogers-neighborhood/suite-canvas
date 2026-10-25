@@ -232,6 +232,8 @@ function WorkspaceShell({
   const toggleLibrarySection = useUiStore((state) => state.toggleLibrarySection);
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
+  const libraryFull = useUiStore((state) => state.libraryFull);
+  const setLibraryFull = useUiStore((state) => state.setLibraryFull);
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
   const cardFocusId = useUiStore((state) => state.cardFocusId);
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
@@ -1205,6 +1207,8 @@ function WorkspaceShell({
             activeBoardName={activeBoardName}
             scope={libraryScope}
             onScope={setLibraryScope}
+            full={libraryFull}
+            onFull={setLibraryFull}
             sectionFilter={librarySectionFilter}
             onToggleSection={toggleLibrarySection}
             sectionOrder={sectionOrder}

@@ -113,6 +113,8 @@ const meta = {
     activeBoardName: "Research",
     scope: "all",
     onScope: () => {},
+    full: false,
+    onFull: () => {},
     sectionFilter: [],
     onToggleSection: () => {},
     sectionOrder,

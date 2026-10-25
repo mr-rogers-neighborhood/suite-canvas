@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { cardByTitle, cards, createNote } from "./support";
+import { cardByTitle, cards, createNote, libraryRowAction } from "./support";
 
 /**
  * A portal and a section are containers, not cards (ADR-0040): they have no
@@ -323,7 +323,7 @@ async function deleteBoard(page: Page, boardId: string): Promise<void> {
     await page.getByTestId("dock-library").click();
   }
   await page.getByTestId("library-tab-boards").click();
-  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
   await closeLibrary(page);

@@ -49,7 +49,6 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { AboveLinkLayer } from "./AboveLinkLayer";
 import { type AlignEdge, type DistributeAxis, planAlign, planDistribute } from "./arrangeCommand";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
-import { LinkModeControl } from "./LinkModeControl";
 import {
   connectorAtPoint,
   endpointAnchor,
@@ -60,9 +59,10 @@ import {
   linkAnchors,
   segmentCrossesRect,
 } from "./linkGeometry";
-import { LINK_MODE_NAMES, linkEndConnector, nextLinkMode } from "./linkGesture";
+import { linkEndConnector, MODE_NAMES, nextMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
+import { ModeControl } from "./ModeControl";
 import {
   DEFAULT_CARD_HEIGHT,
   DEFAULT_CARD_WIDTH,
@@ -355,7 +355,7 @@ export function CanvasBoard() {
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
-  const linkMode = useUiStore((state) => state.linkMode);
+  const mode = useUiStore((state) => state.mode);
   /**
    * When the last thread step happened. React Flow reports a connector release as
    * a *node click* too, and clearing the thread there would disarm it in the same
@@ -374,7 +374,7 @@ export function CanvasBoard() {
     connectorId: string;
     anchorEnd: "source" | "target";
   } | null>(null);
-  const setLinkMode = useUiStore((state) => state.setLinkMode);
+  const setMode = useUiStore((state) => state.setMode);
 
   // Releasing the key that started an origin ends it: the modifier was the mode.
   // Shift chains, Control webs, and an origin started from the control keeps
@@ -391,10 +391,10 @@ export function CanvasBoard() {
 
   // A thread belongs to the mode it started in: leaving the mode must not leave
   // a connector armed in a mode that no longer chains on a plain click.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: linkMode is the trigger, not a value read in the effect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mode is the trigger, not a value read in the effect.
   useEffect(() => {
     useLinkThreadStore.getState().clear();
-  }, [linkMode]);
+  }, [mode]);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const stopEditing = useUiStore((state) => state.stopEditing);
@@ -2713,16 +2713,16 @@ export function CanvasBoard() {
       if (!canManageStructure) return [];
       // The same toggle as the widget bar, where the user is already looking when
       // they right-click the dot they mean to start from.
-      const nextMode = nextLinkMode(linkMode);
-      const linkModeItem = {
-        label: `Switch to ${LINK_MODE_NAMES[nextMode]} mode`,
-        onSelect: () => setLinkMode(nextMode),
+      const switched = nextMode(mode);
+      const modeItem = {
+        label: `Switch to ${MODE_NAMES[switched]} mode`,
+        onSelect: () => setMode(switched),
       };
       // Section connectors address a section, card connectors address a node.
       if (contextMenu.sectionId && contextMenu.connectorId) {
         const { sectionId, connectorId } = contextMenu;
         return [
-          linkModeItem,
+          modeItem,
           {
             label: "Reposition Connector",
             onSelect: () => setSelectedSectionConnector({ sectionId, connectorId }),
@@ -2738,7 +2738,7 @@ export function CanvasBoard() {
         ];
       }
       return [
-        linkModeItem,
+        modeItem,
         {
           label: "Reposition Connector",
           onSelect: () => {
@@ -3001,8 +3001,8 @@ export function CanvasBoard() {
     canCreateBoards,
     cardsById,
     enterPortal,
-    linkMode,
-    setLinkMode,
+    mode,
+    setMode,
   ]);
 
   return (
@@ -3373,7 +3373,7 @@ export function CanvasBoard() {
           boardId={activeBoardId}
         />
       ) : null}
-      <LinkModeControl />
+      <ModeControl />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

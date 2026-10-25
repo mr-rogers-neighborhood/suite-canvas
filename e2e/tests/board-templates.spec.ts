@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
+import { libraryRowAction } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -49,20 +50,14 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   const boardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
   await openLibrary(page, "cards");
-  await page
-    .locator('[data-testid^="library-item-"]')
-    .first()
-    .getByRole("button", { name: "Place" })
-    .click();
+  await libraryRowAction(page.locator('[data-testid^="library-item-"]').first(), "Place on board");
   await expect(cards(page)).toHaveCount(1);
   const sourceCardId = await cards(page).first().getAttribute("data-node-id");
   expect(sourceCardId).toBeTruthy();
 
   await page.getByTestId("library-tab-boards").click();
-  await page.getByTestId(`library-board-template-${boardId}`).click();
-  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText(
-    "Stop being a template",
-  );
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Save as template");
+  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText("\u00b7 template");
 
   // It now sits in the Templates group, above the board list.
   await expect(page.getByTestId("library-templates")).toBeVisible();
@@ -90,9 +85,7 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   await expect(cards(page).first()).toHaveAttribute("data-node-id", sourceCardId);
   await openLibrary(page, "boards");
   await expect(page.getByTestId(`library-title-${boardId}`)).toHaveText("Board 2");
-  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText(
-    "Stop being a template",
-  );
+  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText("\u00b7 template");
   await page.getByRole("button", { name: "Close library" }).click();
 
   // Duplication is one undoable batch, so the copy goes away in one step.

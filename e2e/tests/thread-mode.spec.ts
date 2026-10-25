@@ -24,7 +24,7 @@ test("thread mode chains links click after click, without dragging", async ({ pa
 
   // Thread mode reveals every dot, so nothing has to be selected first.
   const toggle = page.getByTestId("link-mode-toggle");
-  await expect(toggle).toHaveAttribute("data-mode", "connect");
+  await expect(toggle).toHaveAttribute("data-mode", "place");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "thread");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -84,8 +84,8 @@ test("the connector menu toggles the same mode as the widget bar", async ({ page
   await expect(toggle).toHaveAttribute("data-mode", "web");
 
   await page.getByTestId("connector-dot").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Switch to connect mode" }).click();
-  await expect(toggle).toHaveAttribute("data-mode", "connect");
+  await page.getByRole("menuitem", { name: "Switch to place mode" }).click();
+  await expect(toggle).toHaveAttribute("data-mode", "place");
 });
 
 test("shift-pressing a connector does not start a selection marquee", async ({ page }) => {
@@ -109,7 +109,7 @@ test("shift-pressing a connector does not start a selection marquee", async ({ p
 
   // The press armed the thread rather than selecting a region.
   await page.mouse.click(start.x + 400, start.y + 400);
-  await expect(page.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "connect");
+  await expect(page.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "place");
 });
 
 test("an armed thread rubber-bands a line to the pointer", async ({ page }) => {

@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useUiStore } from "../store/useUiStore";
-import { type LinkMode, nextLinkMode } from "./linkGesture";
+import { type CanvasMode, nextMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 
 /**
- * The three ways to draw a link ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
- * Each glyph shows the *shape* its mode draws, which is why they read as a set:
- * one line, a chain, a star.
+ * The mode family ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md),
+ * [ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)). Each glyph
+ * shows the *shape* its mode draws, which is why they read as a set: one thing, a
+ * chain, a star, a tree.
  */
-const MODES: Record<LinkMode, { label: string; glyph: string }> = {
-  connect: {
-    label: "Connect mode: drag one link at a time",
+const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
+  place: {
+    label: "Place mode: one at a time — drag a link, or drop a card",
     glyph: "\u2194",
   },
   thread: {
@@ -21,11 +22,15 @@ const MODES: Record<LinkMode, { label: string; glyph: string }> = {
     label: "Web mode: every click links from the same starting connector",
     glyph: "\u273b",
   },
+  pattern: {
+    label: "Pattern mode: each placement branches from the one before it",
+    glyph: "\u22b9",
+  },
 };
 
 /** "Switch to thread mode: click connector after connector to chain links". */
-function switchLabel(mode: LinkMode): string {
-  const target = nextLinkMode(mode);
+function switchLabel(mode: CanvasMode): string {
+  const target = nextMode(mode);
   return `Switch to ${MODES[target].label.charAt(0).toLowerCase()}${MODES[target].label.slice(1)}`;
 }
 
@@ -34,9 +39,9 @@ function switchLabel(mode: LinkMode): string {
  * lets a plain click chain links; shift-click does the same in connect mode,
  * which is why the two live together rather than as separate tools.
  */
-export function LinkModeControl() {
-  const linkMode = useUiStore((state) => state.linkMode);
-  const setLinkMode = useUiStore((state) => state.setLinkMode);
+export function ModeControl() {
+  const mode = useUiStore((state) => state.mode);
+  const setMode = useUiStore((state) => state.setMode);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
 
   const button = useRef<HTMLButtonElement | null>(null);
@@ -62,13 +67,14 @@ export function LinkModeControl() {
     if (!node) return;
     // Ctrl wins over Shift when both are down: it is the more specific gesture,
     // and a web from a fixed origin is what the reader is about to draw.
-    const displayed = ctrlHeld.current ? "web" : shiftHeld.current ? "thread" : linkMode;
+    const displayed = ctrlHeld.current ? "web" : shiftHeld.current ? "thread" : mode;
     node.dataset.hintMode = displayed;
-    node.dataset.hint = displayed === linkMode ? "false" : "true";
+    node.dataset.hint = displayed === mode ? "false" : "true";
     node.classList.toggle("is-thread", displayed === "thread");
     node.classList.toggle("is-web", displayed === "web");
+    node.classList.toggle("is-pattern", displayed === "pattern");
     if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
-  }, [linkMode]);
+  }, [mode]);
 
   // A commit restores the stored class and glyph from JSX, so the hint is
   // re-applied before the browser paints — still without a state update of its
@@ -102,25 +108,25 @@ export function LinkModeControl() {
 
   if (!canCreateContent) return null;
 
-  const current = MODES[linkMode];
-  const active = linkMode !== "connect";
+  const current = MODES[mode];
+  const active = mode !== "place";
 
-  // One button that walks a three-state cycle rather than a segmented control:
-  // the three are one tool with three readings, and three buttons implied three
-  // independent tools.
+  // One button that walks a four-state cycle rather than a segmented control:
+  // the four are one tool with four readings, and four buttons would imply four
+  // independent tools — which is exactly the mistake the second arm would make.
   return (
     <button
       ref={button}
       type="button"
-      className={`link-mode-control${linkMode === "thread" ? " is-thread" : ""}${
-        linkMode === "web" ? " is-web" : ""
-      }`}
+      className={`link-mode-control${mode === "thread" ? " is-thread" : ""}${
+        mode === "web" ? " is-web" : ""
+      }${mode === "pattern" ? " is-pattern" : ""}`}
       aria-pressed={active}
-      aria-label={`${current.label}. ${switchLabel(linkMode)}`}
-      title={`${current.label}. ${switchLabel(linkMode)}`}
+      aria-label={`${current.label}. ${switchLabel(mode)}`}
+      title={`${current.label}. ${switchLabel(mode)}`}
       data-testid="link-mode-toggle"
-      data-mode={linkMode}
-      data-hint-mode={linkMode}
+      data-mode={mode}
+      data-hint-mode={mode}
       data-hint="false"
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
@@ -130,7 +136,7 @@ export function LinkModeControl() {
         // Changing mode must also disarm whatever the old mode armed: an origin
         // from a web means something different once the mode is thread.
         useLinkThreadStore.getState().clear();
-        setLinkMode(nextLinkMode(linkMode));
+        setMode(nextMode(mode));
       }}
     >
       <span ref={glyph} aria-hidden="true">

@@ -1070,9 +1070,58 @@ body {
   color: var(--ink-muted);
 }
 
+/* The row's whole action set lives behind this one button. At rest it is quiet
+   but present: an affordance that only exists on hover is one half the readers
+   never find, and this is now the only way to act on a row. */
+.library-row-menu {
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 18px;
+  opacity: 0.45;
+}
+
+.library-row:hover .library-row-menu,
+.library-row:focus-within .library-row-menu,
+.library-row-menu:focus-visible,
+.library-drawer[data-full="true"] .library-row-menu {
+  opacity: 1;
+}
+
 .library-action:hover {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: var(--ink);
+}
+
+/* Expanded: the library takes the window the way an asset browser would, keeping
+   its header, facets and search where they were. The dock is still visible, so
+   a row can still be switched back rather than trapping the reader in a mode. */
+.library-drawer[data-full="true"] {
+  display: flex;
+  inset: 0 0 56px 0;
+  width: auto;
+  max-height: none;
+  transform: none;
+  flex-direction: column;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+}
+
+.library-drawer[data-full="true"] .library-header,
+.library-drawer[data-full="true"] .library-facets {
+  flex: 0 0 auto;
+}
+
+.library-drawer[data-full="true"] .library-list {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+}
+
+/* Wider reading measure in the expanded view: the same rows, spaced out rather
+   than stretched, so a long title does not sit in a 460px column. */
+.library-drawer[data-full="true"] .library-row {
+  max-width: 1100px;
+  padding: 8px 10px;
 }
 
 .library-ghost {
@@ -2570,6 +2619,15 @@ body {
   color: var(--surface);
   background: var(--accent);
   border-color: var(--accent);
+}
+
+/* Pattern is the widest shape (a tree), so it reads as its own paint rather than
+   a second accent: two modes that share a colour are two modes a reader cannot
+   tell apart. */
+.link-mode-control.is-pattern {
+  color: var(--surface);
+  background: var(--accent-strong, var(--accent));
+  border-color: var(--accent-strong, var(--accent));
 }
 
 .link-mode-control.is-web:hover {

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emptyPanePoint } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { createNote } from "./support";
+import { createNote, libraryRowAction } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -157,7 +157,7 @@ test("marks a portal unavailable instead of breaking when its board is deleted",
   // A tab only ever closes now; deleting a board asks once, in the library.
   await page.getByTestId("dock-library").click();
   await page.getByTestId("library-tab-boards").click();
-  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Delete board\u2026");
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 

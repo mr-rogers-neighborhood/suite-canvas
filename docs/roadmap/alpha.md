@@ -23,8 +23,8 @@ This is a stage contract with evidence. It answers three questions:
 1. Where is the product? Late Alpha.
 2. Why is it not Beta? Two live data-loss paths, no executed CI, no release identity, no durable
    billing, and no client durability work.
-3. What must be true before Beta? Gates A1–A10, plus A11a and A11b (real portals in a derived
-   scene, and fractal layout presets).
+3. What must be true before Beta? Gates A1–A11 (stability, durability, release identity),
+   plus the **core surface gates A12–A27** in §7.5.
 
 It does not answer "when". Sequencing is by dependency and evidence. No dates, durations, or effort
 estimates are used.
@@ -82,7 +82,7 @@ The verdict rests on two comparisons: why this is past pre-alpha, and why it is 
 | Operational thinking exists | Boot-time config validation (`config.ts`, 522 lines), quotas that never drop a save (`limits.ts:9`), 429 + `Retry-After`, `/metrics`, health probe, admin status, backup with integrity checks | ✅ |
 | The security basics are right | `timingSafeEqual`, 32-byte random capabilities, SHA-256 at rest, per-room capability scoping, 15-minute share sessions, revocation that closes live sockets | ◐ (mechanics read; end-to-end not re-tested here) |
 | Architecture is enforced by tests | `packages/graph/src/purity.test.ts` parses the AST to keep the core DOM-free; `apps/canvas/src/session/mode.test.ts` forbids `fetch`/`WebSocket` outside relay modules; `apps/collab-server/src/patchGuard.test.ts` fails if a dependency patch vanishes | ✅ |
-| Documentation is a design artifact | 32 ADRs with statuses and supersession chains, 990-line architecture doc, 952-line operations runbook | ✅ |
+| Documentation is a design artifact | 38 ADRs with statuses and supersession chains, 990-line architecture doc, 952-line operations runbook | ✅ |
 
 A pre-alpha would not have a purity test, a convergence fuzz test, or an ADR that says "this
 decision was reversed, here is why". Those are the habits of a project that has already survived its
@@ -187,8 +187,8 @@ as a whole. A product is as ready as the weakest dimension a stranger will touch
 | --- | --- | --- | --- | --- |
 | 1 | **Core product loop** | Beta-ish | Workspaces, boards, cards, types/fields/tags, sections, connectors, mentions, references, library/trash, undo/redo, search, views, display styles, attachments, sharing (workspace/board/card/selection), publish drafts, `.suite` export/import, standalone edition | ✅ |
 | 2 | **Data model & correctness** | Beta-ish | One `LoroDoc` per workspace; Zod-validated writes; typed `WorkspaceDocument`; property tests for merge/sections/search; scoped undo; presence in `EphemeralStore`, never persisted | ✅ |
-| 3 | **Test intent** | Beta-ish | 138 Vitest files / 1,727 tests; 32 Playwright specs; 27 stories with `a11y: { test: "error" }`; 75 billing `node --test` declarations; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅ |
-| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Local counts were re-derived on 2026-10-25 and `docs/testing.md` matches them (`pnpm test`: 138 files / 1,727 tests) | ✅ (counts) / ◐ (CI) |
+| 3 | **Test intent** | Beta-ish | 143 Vitest files / 1,878 tests; 33 Playwright specs; 27 stories with `a11y: { test: "error" }`; 75 billing `node --test` declarations; mutation configs (`stryker.*.config.mjs`); coverage thresholds on `@suite/graph` | ✅ |
+| 4 | **Test evidence** | **Alpha** | No verifiable green CI run. Local counts were re-derived on 2026-10-25 and `docs/testing.md` matches them (`pnpm test`: 143 files / 1,878 tests) | ✅ (counts) / ◐ (CI) |
 | 5 | **Ops / deploy** | Beta-ish, single node | `compose.yaml` (Caddy → app), TLS + CSP, healthcheck, graceful shutdown, boot-time config validation, `/metrics`, structured redacted logs, admin panel, backup/restore scripts, quota + rate-limit system | ✅ |
 | 6 | **Security model** | Alpha+ | Constant-time comparisons, 32-byte capabilities, SHA-256 at rest, scoped worker tokens, PBKDF2 600k, share-token scoping, live revocation. Missing: threat model, audit trail, expiry *by default*, admin scoping, E2EE | ◐ |
 | 7 | **Billing** | **Closed by design** | Hosted checkout is closed in the UI and docs; the durable store exists (`services/billing/store-dynamodb.ts`, flag `SUITE_BILLING_STORE`); Stripe webhook E2E is not run because there is no live endpoint | ✅ |
@@ -196,7 +196,7 @@ as a whole. A product is as ready as the weakest dimension a stranger will touch
 | 9 | **Release management** | **Alpha** | `0.2.0-alpha.1`; `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`; no release tag yet (the one tag marks a spike); 124 commits | ✅ |
 | 10 | **Scale evidence** | **Alpha** | Single replica by design; SQLite; in-process rooms/presence/projection/rate limits; benchmarks exist (`packages/graph/bench/workspace.bench.ts`, `projection.bench.ts`) but are not gated | ✅ |
 | 11 | **UX / onboarding** | Alpha | Polished visuals, real keyboard/ARIA work, but no accounts, no mobile layout beyond one `max-width: 640px` rule ◐, no i18n, and a recovery model with five terms for three artifacts ◐ | ◐ |
-| 12 | **Docs** | Beta-ish, drifting | ~9,800 lines, 32 ADRs, real runbooks; counts, store counts and engine names were re-checked on 2026-10-25 (§9) | ✅ |
+| 12 | **Docs** | Beta-ish, drifting | ~9,800 lines, 38 ADRs, real runbooks; counts, store counts and engine names were re-checked on 2026-10-25 (§9) | ✅ |
 
 ### 3.1 Reading the scorecard
 
@@ -364,7 +364,7 @@ Ten properties that are better than the norm, each with a pointer. These are why
    (`tsconfig.base.json`). Biome raises `noFloatingPromises` to an error and bans `noConsole` outside
    the logger (`biome.jsonc`). No `any`, no `@ts-ignore`, no SQL string interpolation, no
    `dangerouslySetInnerHTML`, no `eval` in source. ✅
-10. **Docs are design artifacts.** 32 ADRs with statuses and supersession chains (`0021 → 0022`), a mermaid data flow, performance budgets, explicit non-goals, and an
+10. **Docs are design artifacts.** 38 ADRs with statuses and supersession chains (`0021 → 0022`), a mermaid data flow, performance budgets, explicit non-goals, and an
     open-questions table that admits what is undecided. This roadmap exists to extend that habit. ✅
 
 **The through-line:** the project records its reasoning and encodes it as a test. That makes the
@@ -794,7 +794,7 @@ owner is the maintainer/operator; no separate review board is implied.
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
 | A11a | `deferred` | The live, scaled portal instance was the scene surface's job, and that surface is removed: a portal is a doorway again (card + `board` field + miniature + camera transition), and the data model (ADR-0029) is unchanged. Nothing to close here. |
-| A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner lives in `apps/canvas/src/canvas/layoutCommand.ts` and the pure recipes stay in `packages/scene`; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch; **Arrange fractally** stays in `CanvasBoard.tsx`. A preview surface is the one thing never built. |
+| A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner lives in `apps/canvas/src/canvas/layoutCommand.ts` and the pure recipes stay in `packages/scene`; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch. The old **Arrange fractally** menu entry is gone (it reflowed the whole board without being asked, which is a mode, not a gesture); the remaining work is **Arrange on a selection**, tracked as **A17**. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
@@ -878,10 +878,10 @@ of the same plane.
 - Tab grouping and cross-board edges are follow-ons, not part of A11a.
 
 **Status (2026-10-25):** A11a `deferred` — the live portal was the scene surface's job, and that
-surface is removed. A11b `open` — the
-fractal layout planner, the graph `LayoutPlan` batch and the **Arrange fractally** menu ship; only a
-preview surface was never built. The acceptance list below stays as the record of what A11a would
-have required.
+surface is removed. A11b carries on as **A17** (Arrange on a selection): the fractal planner and the
+graph `LayoutPlan` batch ship, the whole-board *Arrange fractally* entry was removed, and what remains
+is the selection gesture. The acceptance list below stays as the record of what A11a would have
+required.
 
 **Acceptance for A11a.**
 - A portal can be created from the right-click menu and the Add card/type menu (retained).
@@ -912,6 +912,35 @@ have required.
 
 **Non-goals for A11a/A11b:** tab grouping, cross-board edges, mobile, live reflow, and portal-aware
 workspace merge-back.
+
+### 7.5 Alpha core surface gates (A12–A27)
+
+> **Added 2026-10-25.** The author's core-feature notes are now the plan of record: every surface
+> named there is a gate below, and [ADR-0041](../decisions/0041-alpha-core-is-a-closed-feature-set.md)
+> is the list itself. Anything not on this page is **post-Alpha**, regardless of what an older roadmap
+> says. Statuses move `planned → in flight → shipped` only.
+
+| Gate | Statement | Required evidence | Depends on |
+| --- | --- | --- | --- |
+| **A12** | **Connections are uniform and complete** | Every node kind (note, portal, sketch) and every section renders the same connector layer with add/remove/move; dots revealed on selection, hover, thread mode and mid-drag, and *hidden dots never break link drawing* (handles stay mounted); links resolve card ↔ section ↔ board; a link keeps the connector it was dropped on. **Shipped:** `NodeConnectors.tsx`, `useNodeConnectorWiring.ts`, `linkGeometry.ts`, `SectionLayer.tsx`, `CanvasBoard.tsx`; `ADR-0039`. **Remaining:** thread mode's widget-bar and connector-menu toggle, and shift-click chaining. | — |
+| **A13** | **A board closes without a decision** | Closing a tab writes nothing and never prompts; the library gains a **Boards** section listing every board; `Place` makes a portal without moving the board in the list; `Unplace Cards` removes this board's placements only; delete asks once, in the library, and offers unplace-or-trash; `Locate` pans to the card or its portal. Evidence: `LibraryDrawer.tsx`, `BoardTabs.tsx`, `deleteBoard` scoped to the board's own cards (already fixed in `WorkspaceDocument.ts`). | A12 |
+| **A14** | **Portals and sections are inspectable** | A portal inspector shows its board, colour, cover image, links in/out, **Open board** as the primary action and Locate; a section inspector shows title, colour, links and Locate; selecting either routes to the container panel, never to a card focus surface. Evidence: `ContainerPanel`, `CardInspectorHost.tsx`; `ADR-0040`. | A12 |
+| **A15** | **Sketches, not whiteboards** | Every user-facing string says Sketch (type id unchanged); a click selects, a double-click opens, Enter opens; framed and seamless display modes stored per card; the sketch editor batches strokes into one commit; a "someone is editing this sketch" presence indicator. Evidence: `WhiteboardCardFace.tsx`, `cards/whiteboard.ts`, `ADR-0031`. | A12 |
+| **A16** | **A portal preview shows its links** | The miniature draws the target board's card-to-card links (plus section and boundary links once they resolve) with the same geometry the board uses; a link whose endpoint is not on the target board is simply absent. Evidence: `apps/canvas/src/canvas/portalMiniature.ts`, `BoardMiniature.tsx`. | A12 |
+| **A17** | **Arrange is one gesture over a selection** | The context menu offers **Arrange** only with a multi-selection; it plans cards *and* sections, commits one undoable batch, never reflows the rest of the board, and never changes section membership (sections grow to fit). Evidence: `packages/scene/src/layout.ts`, `apps/canvas/src/canvas/layoutCommand.ts`, `applyLayoutPlan`; `ADR-0017`. | A12 |
+| **A18** | **Board templates** *(core)* | Duplicating a board copies its sections, cards, placements and internal links in one undoable batch; a template gallery applies a template as a **new** board; the source board is never modified. Evidence: `duplicateBoard` on `WorkspaceDocument`, the gallery surface, `ADR-0040`. | A13, A14 |
+| **A19** | **Metadata is fields** | A card's type may declare metadata-capable fields; a fetch action fills *selected* fields on *this* card only, storing the values as ordinary field values; there are no built-in media card types. Evidence: `ADR-0042`, field definitions, the fetch action's tests. | A14 |
+| **A20** | **Views are three kinds** | A saved view carries `kind: lens \| database \| render` over one `ViewQuery`; a database renders rows/columns with editable cells that use the inspector's own editors; a render draws 2D charts (3D only after the 2D contract holds); `libraryFilters.ts` is folded into `runViewQuery` first. Evidence: `views.ts`, `ADR-0043`. | A14 |
+| **A21** | **One target primitive, with chat** | Presence, Follow, Goto and the handbook all address `Target`; a chat bubble posts persisted messages (capped) and can carry a target; Follow subscribes to a peer's target; Goto navigates through the existing camera/board machinery; a target the receiver cannot see fails quietly. Evidence: `presence.ts`, `ADR-0044`. | A14 |
+| **A22** | **The handbook** | Articles are cards on a designated board with subject fields; the panel lists articles that match what is on screen and shows a count badge; hovering an article draws a line to and outlines its subject, choosing the instance nearest the viewport centre; an "explain this" picker turns the next click into a target; a user can document their own entity the same way. Evidence: `ADR-0045`, handbook card type, the seed. | A21 |
+| **A23** | **Source annotations** | A PDF page or video timecode can carry annotations that project as cards, appear in the library, and drop onto the canvas; an annotation can be detached into an ordinary card and keeps working when the source is removed. Evidence: annotation records, projection, the reader surface. | A19 |
+| **A24** | **Navigation and tabs** | A home board setting with a home control; the pre-tabs nav affordance is removed and navigation moves beside the search bar; board tabs can be grouped and pinned, with pinned tabs collapsing to an icon and closing only from the menu; the library reflects grouping and pinning; the outline expands a section to show its contents and navigates into a portal on double-click; clicking an outline card navigates to it. Evidence: `BoardTabs.tsx`, `BoardOutline.tsx`, `LibraryDrawer.tsx`. | A13 |
+| **A25** | **Theming and icons** | Roles are tokens; the current palette becomes the default theme; the shell reads only those tokens (no shell-owned colours); rules are named records applied globally or per type/kind with derived borders/tints and a contrast floor; icons come from a local preset set with an optional cached Iconify key; boards, sections, types, cards and free canvas icons can carry one. Evidence: `global.css` token refactor, `ADR-0046`. | A24 |
+| **A26** | **Collaborative drag previews** | Dragging a row out of the library shows a local ghost at the pointer and publishes an ephemeral preview so peers see where it will land; the drop is one undoable placement; a viewer's ghost renders but the drop is refused. Evidence: `LibraryDrawer.tsx`, `presence.ts`. | A13 |
+| **A27** | **Schema editing is collaborative** | The type editor and the property inspector publish what the local user is editing, and peers see it (who is in which field, which type is being edited), on the same target primitive; no schema write changes shape because of it. Evidence: `TypeSettingsDialog.tsx`, `CardInspectorHost.tsx`, `ADR-0044`. | A21 |
+
+**Non-goals for §7.5:** real-time co-editing of Excalidraw scenes, a CMS-style routing/slug model, a
+media *library* surface, mobile, and any second canvas or rendering engine.
 
 ---
 
@@ -1021,9 +1050,9 @@ the drift that audit missed (D12–D17).
 | D11 | Ops doc describes a "three database" backup | Six stores exist and compose configures all six; backup covers all six | `docs/operations.md`, `deploy/backup.sh` | ✅ |
 
 | D12 | "No `LICENSE`, no `SECURITY.md`, no `CHANGELOG.md`, no `CONTRIBUTING.md`, no tags … 89 commits" | All five identity files exist at `0.2.0-alpha.1`; 124 commits; one tag, and it marks a spike rather than a release | `docs/roadmap/alpha.md` §1.2, §3 row 9 | ✅ (fixed 2026-10-25) |
-| D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 138 Vitest files / 1,727 tests; 32 Playwright specs; 75 billing tests; 27 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
+| D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 143 Vitest files / 1,878 tests; 33 Playwright specs; 75 billing tests; 27 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
 | D14 | "`compose.yaml` configures five … attachments defaults to CWD; settings and licences default to `:memory:`" | All six stores are under `/data` with `SUITE_REQUIRE_DURABLE_STORES=1`, and boot refuses a split layout | `docs/roadmap/alpha.md` §4.4, §7.1 A1 | ✅ (fixed 2026-10-25) |
-| D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 32 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
+| D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 38 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
 | D16 | A derived "scene" was described as the product of record; `?canvas=ice` named a surface | The scene was a read-only preview with no editing path and it is removed; `?canvas=ice` is gone from the parser, and the scene surface and its modules are deleted (2026-10-25) | `docs/architecture.md` §Rendering, `AGENTS.md` | ✅ (fixed 2026-10-25) |
 | D17 | "64 `node --test` tests" in billing | 75 | `README.md:70` | ✅ (fixed 2026-10-25) |
 
@@ -1278,7 +1307,7 @@ What was verified in this pass, and what was not.
 | `e2e/playwright.config.ts` chromium-only; 30 specs | "No `any`/`@ts-ignore` in source" sweeps |
 | Identity files present (`LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`); `package.json` `0.2.0-alpha.1`; one tag (`ice-parity-2026-10-23`); 124 commits | Billing webhook against a live Stripe endpoint |
 | `navigator.storage.persist()` + `StoragePanel` + `CanvasErrorBoundary` + `crash/*`; no service worker | Storybook story count and a11y gating beyond the 29 files listed |
-| `pnpm test`: 138 files / 1,727 tests; billing `node --test`: 75 declarations | |
+| `pnpm test`: 143 files / 1,878 tests; billing `node --test`: 75 declarations | |
 | `stryker.server.config.mjs` mutation scope | |
 | ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted; the scene surface is removed | |
 | `purity.test.ts`, `mode.test.ts`, `patchGuard.test.ts`, `mutationGaps.test.ts`, `workspace.convergence.test.ts` all exist | |

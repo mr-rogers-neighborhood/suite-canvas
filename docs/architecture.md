@@ -402,6 +402,25 @@ Boards and sections are **identities, not types** ([ADR-0040](./decisions/0040-a
 they get small fixed inspectors (name, colour, cover image, links) and never types, fields or
 templates. Composition between them is expressed by links.
 
+### Planned core surfaces
+
+Alpha's remaining core surfaces are decided and tracked, not speculative:
+[ADR-0041](./decisions/0041-alpha-core-is-a-closed-feature-set.md) is the closed list, and
+[`docs/roadmap/alpha.md` §7.5](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a27) is the gate
+tracker. Four of them change a model this document describes, so the decisions are recorded now and the
+code follows:
+
+- **Metadata is fields, not media types** ([ADR-0042](./decisions/0042-media-metadata-is-fields.md)):
+  a fetch action fills fields on one card; no media card type, no media library.
+- **A view is a lens, a database or a render** ([ADR-0043](./decisions/0043-a-view-is-a-lens-a-database-or-a-render.md))
+  over the one `ViewQuery`; the kind changes the presentation, never the result set.
+- **One target primitive** ([ADR-0044](./decisions/0044-one-target-primitive.md)) underlies presence,
+  Follow, Goto and the handbook, so "here is the thing I mean" has one shape.
+- **The shell has no colours of its own** ([ADR-0046](./decisions/0046-the-shell-derives-its-colour.md)):
+  it reads the same role tokens the canvas does, and the current palette becomes the default theme.
+
+This section describes what is decided, not what is built. Everything above it describes the tree.
+
 ### Types create written cards
 
 A type can name a **template card** (`CardType.templateCardId`), and `createCard` copies it in one

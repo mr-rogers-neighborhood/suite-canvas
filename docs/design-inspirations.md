@@ -354,13 +354,13 @@ rather than surrounding it with chrome.
 - **Board outline** *(current)*: a collapsible left rail listing the active board's section tree in
   reading order with member counts and peer presence dots. Clicking a row selects the section and
   moves the viewport. It is the board's table of contents — Heptabase's precedent — not a filter.
-  The **scene outline** extends the same idea to the derived scene (portal instances, LOD bands,
-  the focus path) once A11a lands; it stays a projection, never a second document.
-- **Sub-boards / portals** *(Alpha A11a)*: a card can show a nested board as a live, scaled
-  **portal instance** once effective zoom crosses a band, and as a miniature outline below it.
-  Entering moves the camera and pushes a focus path checkpoint; it does not swap the board. This is
-  navigation and rendering, not ownership: the nested board is another board in the same workspace
-  and its contents remain ordinary cards.
+  A **scene outline** over portal instances and LOD bands was built behind `?canvas=scene` and
+  withdrawn with that surface ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md)).
+- **Sub-boards / portals** *(current, as a doorway)*: a card with a `board` field shows the target
+  board as a live miniature, and opening it moves the camera through a transition that swaps the
+  active board ([ADR-0029](./decisions/0029-portal-board-field.md)). It references the board, never
+  owns it. The *live, scaled instance inside one continuous scene* was the scene surface's job and
+  is withdrawn ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md)).
 - **Inspector / card info** *(current)*: a floating right panel built on the shared card panel:
   title, type, tags, field values, a **Where** block (`Board › Section › Subsection`, plus the other
   boards it is placed on) and the body editor. A click opens it; clicking the body or title edits it
@@ -419,9 +419,9 @@ This is the main reason the index/card-doc split is architectural rather than a 
   to an external viewer would leak the workspace. A share is served as a **redacted projection**:
   the shared card's summary, its body doc, and relation stubs pointing at other cards (title and
   type only if those cards are also shared, otherwise "private card").
-- **Board sharing** *(open question)* is a different capability: either read-only access to a
-  filtered index or a server-rendered board snapshot. It must not be implemented by sharing the
-  whole index.
+- **Board sharing** *(answered)*: not a filtered index and not a snapshot. [ADR-0022](./decisions/0022-share-projection-links.md)
+  settles it as a live projection room over a redacted, self-contained copy, extended to selections
+  by [ADR-0023](./decisions/0023-selection-projections.md). The whole index is never shared.
 - **Auth is per room.** The Loro sync server authenticates a connection for a room (workspace or
   card) and checks a capability. There is no document-level auth inside one doc; this is the
   decisive argument for separate rooms once sharing exists.
@@ -573,20 +573,23 @@ every web concern lives where it belongs.
 
 ### Thinking tools
 
-- **Views/collections** as saved read-only queries
-- **Relations** separated from **edge placements**
-- Type dashboards, creation templates, command palette
-- Explicit "apply section/view as tags or properties" commands
-- Later card kinds: journal, mindmap, PDF and other embeds
+- **Views/collections** as saved read-only queries *(current, v1 facets)*: a saved query over text,
+  types, tags, sections, board scope and order. Compound predicates (ranges, relations, negation)
+  are still *target* — the v2 query object.
+- **Relations** separated from **edge placements** *(later)*
+- Type dashboards, creation templates, command palette *(target)*
+- Explicit "apply section/view as tags or properties" commands *(later)*
+- Later card kinds: journal, mindmap, PDF and other embeds *(later)*
 
 ### Collaboration and scale
 
 - **Card-level sharing** with per-card ACL and redacted index projection
 - Index/card-document split, lazy card-doc loading
-- Board-level sharing (pending [open question](#11-open-questions))
-- Workspace-wide search over index summaries, body search on demand
+- Board-level sharing *(current)*: a live projection room over a redacted copy
+  ([ADR-0022](./decisions/0022-share-projection-links.md))
+- Workspace-wide search over index summaries, body search on demand *(current)*
 - Performance budgets and instrumentation as a release gate
-- Publishing bundle export and a separate publishing app
+- Publishing bundle export and a separate publishing app *(later)*
 
 ### Non-goals and anti-patterns
 
@@ -608,7 +611,7 @@ every web concern lives where it belongs.
 
 | Question | Current leaning | Why it is unresolved |
 | --- | --- | --- |
-| **Board-level sharing** | Read-only filtered index or a board snapshot room | Neither is free: filtered index risks metadata leaks, snapshots lose live collaboration. |
+| **Board-level sharing** | *Answered*: live projection room over a redacted copy ([ADR-0022](./decisions/0022-share-projection-links.md), [ADR-0023](./decisions/0023-selection-projections.md)) | The filtered index leaked metadata and the snapshot lost live collaboration; the projection room avoids both. |
 | **Exact metadata split** | Title, type, tags and scalars in the index; body in the card doc | Title is text; excerpts, attachments and embeds need a rule before migration. |
 | **External share semantics** | Redacted projection + relation stubs | Need to define revocation, transitive visibility through relations, and whether a viewer can see titles of unshared neighbours. |
 | **Search** | In-memory index over summaries first; body search loads card docs | A central search index conflicts with per-card ACL and local-first availability. |

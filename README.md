@@ -63,12 +63,12 @@ of attempting a request to a relay that is not there.
 
 ## Tests
 
-Counted on 2026-10-23 at `0.2.0-alpha.1`; recount after adding tests:
+Counted on 2026-10-25 at `0.2.0-alpha.1`; recount after adding tests:
 
-- **1,392 Vitest tests** in 108 files across `packages/graph`, `apps/collab-server` and
+- **1,733 Vitest tests** in 144 files across `packages/graph`, `apps/collab-server` and
   `apps/canvas`.
-- **64 `node --test` tests** in `services/billing`, run by `pnpm verify` through Turbo.
-- **159 Playwright tests** in 28 specs, all in the `chromium` project, run by `pnpm e2e`.
+- **75 `node --test` tests** in `services/billing`, run by `pnpm verify` through Turbo.
+- **171 Playwright tests** in 30 specs, all in the `chromium` project, run by `pnpm e2e`.
 
 [docs/testing.md](docs/testing.md) has the layer table, the recount commands, and how to watch a
 run.

@@ -54,21 +54,25 @@ reuses them when they are already running outside CI.
 
 ## Current numbers
 
-Snapshot on 2026-10-23 at `0.2.0-alpha.1` (counts grow as lanes land tests — recount before quoting
+Snapshot on 2026-10-25 at `0.2.0-alpha.1` (counts grow as lanes land tests — recount before quoting
 them):
 
-- Unit and integration: 108 test files — 1,392 Vitest tests across `graph`, `server` and `canvas`,
-  plus 64 `node --test` tests in `services/billing`.
-- End-to-end: 28 Playwright specs containing 159 tests, all in the single `chromium` project.
+- Unit and integration: 144 test files — 1,733 Vitest tests across `graph`, `server` and `canvas`,
+  plus 75 `node --test` tests in `services/billing`.
+- End-to-end: 30 Playwright specs containing 171 tests, all in the single `chromium` project.
 
 Recount them with:
 
 ```sh
-pnpm exec vitest list | wc -l                                        # Vitest tests
-pnpm exec vitest list | sed 's/ >.*//' | sort -u | wc -l             # Vitest test files
-cd services/billing && node --test "*.test.ts" | tail -20           # 64 tests
-pnpm --filter @suite/e2e exec playwright test --list | tail -1      # 159 tests in 28 files
+pnpm test                                                           # authoritative: 144 files, 1,733 tests
+pnpm exec vitest list | wc -l                                       # see the note below before quoting this
+cd services/billing && node --test "*.test.ts" | tail -20           # 75 tests
+pnpm --filter @suite/e2e exec playwright test --list | tail -1       # 171 tests in 30 files
 ```
+
+`vitest list` is the fast approximation, not the total: tests built in a loop appear once while the
+runner counts every case it generates, so it reads a few dozen low (1,687 on 2026-10-25). Quote the
+`pnpm test` totals; use `vitest list` to see names.
 
 ## Watching a run
 

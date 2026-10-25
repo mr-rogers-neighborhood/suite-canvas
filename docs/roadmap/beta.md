@@ -200,21 +200,26 @@ evidence that closes it.
 
 | # | Blocker | Current status | Gate |
 | --- | --- | --- | --- |
-| P0-1 | CI has never executed a job | ✅ 21 runs, all `startup_failure`, 0 jobs | B1 |
-| P0-2 | No release identity | ✅ no `LICENSE`/`SECURITY.md`/`CHANGELOG.md`/`CONTRIBUTING.md`, `0.1.0`, 0 tags, 0 releases | B2 |
-| P0-3 | Billing cannot take money | ✅ process-local store; docs say it **must** be replaced | B3 |
-| P0-4 | Local-first durability incomplete | ✅ no service worker, no `navigator.storage.persist()`, no quota UX, no error boundary | B4 |
+Status column re-read on 2026-10-25; the body sections keep the audit's framing.
+
+| # | Blocker | Current status | Gate |
+| --- | --- | --- | --- |
+| P0-1 | CI has never executed a job | ✅ every run, including pushes on 2026-10-25, is `startup_failure` with 0 jobs | B1 |
+| P0-2 | No release identity | ◐ `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` exist at `0.2.0-alpha.1`; no release tag and no release page | B2 |
+| P0-3 | Billing cannot take money | ✅ closed by design: hosted checkout is off, and the durable store exists behind `SUITE_BILLING_STORE` | B3 |
+| P0-4 | Local-first durability incomplete | ✅ `persist()` with a visible grant state, quota handling, `CanvasErrorBoundary`, opt-in crash hook (ADR-0024/0025/0027); no service worker | B4 |
 | P0-5 | Single-node hard ceiling | ✅ one process owns rooms/presence/projection/rate limits; SQLite local | B9 |
 | P0-6 | Browser matrix is one engine | ✅ Chromium only in Playwright and CI | B8 |
-| P0-7 | Schema evolution has no tested path | ✅ schema version stamped to current on open; no migration/backfill | B5 |
-| P0-8 | No freeze point | ◐ audit saw 49 modified files; ✅ today the tree is clean but nothing is tagged | B1, B2 |
+| P0-7 | Schema evolution has no tested path | ◐ N−1 fixtures and `storeUpgrade.test.ts` exist; no written migration/backfill policy | B5 |
+| P0-8 | No freeze point | ✅ clean tree at 124 commits; no release tag | B1, B2 |
 
 ---
 
 ### P0-1 — CI has never executed a job
 
 **Status.** ✅ Every workflow run in the repository concludes `startup_failure`: the audit counted
-19 and a re-check on 2026-10-23 counted 21, and each lasts 0s. The runs span the whole history of `main`, from
+19, a re-check on 2026-10-23 counted 21, and runs through 2026-10-25 (pushes to `main` and `pixi`)
+continue the same way, each lasting 0s. The runs span the whole history of `main`, from
 the first feature push to the latest commit, and the registered `CI` workflow has never completed.
 ◐ Zero jobs per run is audit-reported. The YAML is valid — `actionlint` exits 0 against
 `.github/workflows/ci.yml` ◐ — and the failure predates the current workflow content, which points
@@ -254,7 +259,11 @@ smallest trust failure to fix and the most costly to leave unresolved.
 
 ### P0-2 — No release identity
 
-**Status.** ✅ There is no `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` at the
+> **Amendment (2026-10-25).** Resolved except for the tag: `LICENSE`, `SECURITY.md`, `CHANGELOG.md`,
+> `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` exist, `package.json` reads `0.2.0-alpha.1`, and
+> `docs/release.md` records the tag/digest/rollback procedure. The tag itself is still missing.
+
+**Status at audit time.** There is no `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` at the
 repository root. `package.json` declares `"version": "0.1.0"` and `"private": true`. There are zero
 git tags and zero GitHub releases (`git tag | wc -l` → 0; `gh release list` → empty). The Dockerfile
 carries `ARG SUITE_VERSION=0.0.0` as a placeholder stamped into `/metrics` and the startup log.
@@ -293,7 +302,12 @@ stage; with them, self-hosting becomes possible without an email thread.
 
 ### P0-3 — Billing cannot take money
 
-**Status.** ✅ `services/billing/handler.ts:268` creates a **module-level** store:
+> **Amendment (2026-10-25).** Closed by the closed path: hosted checkout is off in the UI and the
+> docs, and `SUITE_BILLING_STORE=dynamodb` selects a conditional-write store
+> (`services/billing/store-dynamodb.ts`). The default is still an in-memory store, which is why the
+> flag, not the default, is what makes the paid path durable.
+
+**Status at audit time.** `services/billing/handler.ts` created a **module-level** store:
 `const sharedStore = memoryStore();`. The store itself is a pair of `Map`s
 (`services/billing/store.ts:48-50`) that survive a warm container and nothing else.
 [docs/billing.md:181](../billing.md) is candid: the in-process store *"only survives a warm container
@@ -340,7 +354,12 @@ subscription must attach to *someone*).
 
 ### P0-4 — Local-first durability is incomplete
 
-**Status.** ✅ None of these exist in `apps/canvas`:
+> **Amendment (2026-10-25).** Closed except for the service worker: `navigator.storage.persist()`
+> with a visible grant state (`StoragePanel`), quota handling (`storage/durability.ts`),
+> `CanvasErrorBoundary` and opt-in crash reporting (ADR-0025, ADR-0027) all exist. Offline reload
+> still depends on the browser's HTTP cache rather than a service worker.
+
+**Status at audit time.** None of these existed in `apps/canvas`:
 
 - No service worker, no web manifest, no PWA plugin (`grep` over `apps/canvas/src`, `index.html`,
   `vite.config.ts` returns nothing). Offline reload has no guaranteed app shell.
@@ -442,7 +461,11 @@ the full matrix. Run one real manual pass on iOS Safari and record the result.
 
 ### P0-7 — Schema evolution has policy but no tested upgrade path
 
-**Status.** ✅ `packages/graph/src/loro/WorkspaceDocument.ts:1326-1327` stamps
+> **Amendment (2026-10-25).** Partly closed: `apps/collab-server/src/fixtures/n-1/` and
+> `storeUpgrade.test.ts` exercise an old database, and `persistence.ts` refuses a snapshot tag this
+> build cannot read. A written migration/backfill policy is still missing.
+
+**Status at audit time.** `packages/graph/src/loro/WorkspaceDocument.ts` stamps
 `meta.schemaVersion` to `SCHEMA_VERSION` on open whenever it differs. There is no migration function,
 no backfill, and no recorded per-version transformation. The workspace *file* parser is stricter and
 better: it rejects a newer schema and a newer file version with an explicit message ✅
@@ -471,9 +494,9 @@ declares what it is.
 ### P0-8 — The tree is a moving target
 
 **Status.** At audit time: 49 modified files, +2,922/−2,306, 19 untracked, and 87 commits ◐.
-**Re-verified now:** `git status --porcelain` is empty, `main` has 89 commits, and there are still
-**0 tags** ✅. So the churn has landed — but nothing marks *what* landed, and there is no
-reviewable freeze point.
+**Re-verified on 2026-10-25:** `git status --porcelain` is empty, `main` has 124 commits, and there
+is **no release tag** (the only tag, `ice-parity-2026-10-23`, marks a spike). So the churn has
+landed — but nothing marks *what* landed, and there is no reviewable freeze point.
 
 **Why it blocks Beta.** A stage claim attaches to a commit. Without a tagged, gated, reviewed commit,
 "Beta" describes a working directory, not a release. The audit's own observation is the sharpest
@@ -1137,7 +1160,7 @@ title bar, the board tabs, and the two menus that change what they see.
 | **One theme control** | Replace the three-segment control with one icon button and a menu (Light, Dark, Auto). The icon morphs sun↔moon on change, and the morph is skipped under `prefers-reduced-motion`. |
 | **Views beside the name** | Views sits between the workspace name and the board tabs as a text menu with a divider, so it reads as a scope switch rather than a button crowded against the first tab. |
 | **One control height** | Share, File, Live, Views and the theme control share a single 24 px row height and baseline. Report any surface that cannot meet it. |
-| **No orphan navigation** | Board tabs are root-board navigation, so a tab click leaves every board one click away. The way back out of a portal is the scene outline/breadcrumb plus camera checkpoints ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)), not a one-way chevron; the second single-direction chevron next to Views stays removed. See §4.13. |
+| **No orphan navigation** | Board tabs are root-board navigation, so a tab click leaves every board one click away. The way back out of a portal is its back control and the board tabs ([ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the scene outline), not a one-way chevron; the second single-direction chevron next to Views stays removed. See §4.13. |
 | **Menus follow the keyboard** | Arrow navigation scrolls the active row into view in `/`, `@`, and every menu with a scrollport. A selection never disappears past the end of the list. |
 
 **Why it belongs in Beta.** These are the surfaces a stranger touches before they understand the
@@ -1172,7 +1195,7 @@ implementing as a UI shortcut:
 - Is "closed" a per-user UI state or a workspace fact? A board another client is viewing must not
   vanish because one person closed their tab.
 - Does a closed board keep its portal cards live? A portal to a filed board must still read as
-  available, not *Unavailable board*, and the live scene must say whether it expands.
+  available, not *Unavailable board*, and its miniature must say which board it opens.
 - Where do closed boards sort, and can they be grouped with saved views in one list?
 - Does the Views dropdown show contents (boards, views) or only queries?
 - What is the difference, in the UI, between *close*, *delete*, and *unplace the cards*?
@@ -1184,10 +1207,10 @@ Alpha tab behaviour is not mistaken for a commitment.
 
 Raised after the portal back control turned up beside Views: the bar has no single place for "where
 can I go" and "do a thing", and what it had was a chevron that only moved one direction. The scene
-layer ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)) retires that chevron:
-entering a portal pushes a camera checkpoint and the way back is the focus path, surfaced in the
-scene outline/breadcrumb. Board tabs remain root-board navigation, so the shell still needs one
-navigation home.
+layer ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)) was going to retire
+that chevron; [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the scene layer, so
+the flow surface keeps the camera transition and the back control, and the question stands as
+written. Board tabs remain root-board navigation, so the shell still needs one navigation home.
 
 **The idea.** One **navigation control** in the app bar, replacing ad-hoc navigation buttons:
 
@@ -1212,12 +1235,12 @@ chrome.
 - What happens to the dock's `⌘K` if the command bar claims it? One shortcut must own it.
 - Is Home the launcher, or the workspace's first board?
 - Does the nav menu replace the tab strip at narrow widths, or scroll with it?
-- Does a portal to a filed or closed board expand in the live scene, and should a board share render
-  a live target whose board is filed? Open, and tied to §4.12.
+- Does a portal to a filed or closed board still read as available, and should a board share render
+  a target whose board is filed? Open, and tied to §4.12.
 
 **Not in Beta scope until decided.** The interim change is smaller and honest: remove the
-single-direction chevron; the scene outline/breadcrumb and camera checkpoints own the way back out of
-a portal, and the tab strip stays the only root-board navigation.
+single-direction chevron; a portal's back control and the board tabs own the way back out, and the
+tab strip stays the only root-board navigation.
 
 ---
 ## 5. Free backup options
@@ -1369,6 +1392,24 @@ is a URL, a committed file, or a test that runs in CI.
 | **B9** | Scale evidence and published limits | Load-test artifact naming hardware and recording event-loop lag/RSS/rebuild time; limits page whose every number appears in the artifact | 4.7 |
 | **B10** | Security and docs truth | Threat model + data inventory + incident response + accepted risks merged; CORS deny-by-default test; non-root container proof; admin scope test; `pnpm audit` + SBOM; docs link check green and the drift table empty | 4.8, 4.9 |
 | **B11** | A second operator can restore the release from the docs alone | `deploy/drills/operator.sh` transcript naming the second operator; every command block executed or marked not-drilled; empty `questions.md` ledger; unavailable-operator page; docs-only check green | 4.10 |
+
+**Gate status on 2026-10-25.** Re-read against `main` at 124 commits. `open` = the artifact exists;
+`measuring` = some evidence exists and the named piece does not; `blocked` = cannot be produced from
+this tree.
+
+| Gate | Status | What is on `main` | What is missing |
+| --- | --- | --- | --- |
+| B1 | `blocked` | Local gate documented in `docs/release.md`; workflows are valid and ready | Any executed run — account entitlement (P0-1) |
+| B2 | `measuring` | `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `docs/release.md`, version `0.2.0-alpha.1` | A semver tag, and a release page with upgrade notes |
+| B3 | `open` | Closed path: no checkout in the app, `README.md` and `docs/billing.md` say so; durable store exists behind `SUITE_BILLING_STORE` | — |
+| B4 | `measuring` | `deploy/drills/attachments-record.md`; backup/restore; two-tab compaction tests (ADR-0024); `CanvasErrorBoundary` test; `StoragePanel` grant state (ADR-0025) | A named quota-exceeded test and an explicit offline-scope assertion |
+| B5 | `measuring` | `apps/collab-server/src/fixtures/n-1/`, `storeUpgrade.test.ts`, `busy_timeout`, unknown-snapshot rejection | A written N−1 policy statement |
+| B6 | `measuring` | Owner key, recovery words, `owner-recovery` and `recovery-words` e2e; ADR-0025 | Accounts, or the tested operator-recovery procedure Beta promises instead |
+| B7 | `unopened` | Chromium-only e2e (`e2e/playwright.config.ts`) | Firefox/WebKit smoke, an iOS pass, a written mobile decision |
+| B8 | `measuring` | Diagnostics bundle (`shell/diagnostics.ts`), opt-in crash reporting (ADR-0027) | An in-app support contact or status page |
+| B9 | `measuring` | Generated `docs/limits.md` with `--check` | A load-test artifact naming hardware and recording lag/RSS/rebuild time |
+| B10 | `measuring` | `docs/security-model.md`, CORS allowlist test, docs link check | `Dockerfile` still has no `USER`; no SBOM/audit artifact |
+| B11 | `unopened` | `deploy/drills/` (attachments) and the README | An operator drill transcript and a second operator |
 
 **How to use the gates.** B1 gates everything; B2–B10 can run in parallel once B1 is green; B11 is the
 release-readiness check because it exercises the system the other gates produced. A gate is open only
@@ -1530,8 +1571,8 @@ a claim to re-verify, not a fact.
 
 | Claim | Source | Check |
 | --- | --- | --- |
-| No `LICENSE`, `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md`; version `0.1.0` | repository root; `package.json` | `ls`, `cat` ✅ |
-| 0 tags, 0 releases; 89 commits on `main`; clean tree | git | `git tag`, `gh release list`, `git status --porcelain` ✅ |
+| The five identity files exist and `package.json` reads `0.2.0-alpha.1` (corrected 2026-10-25) | repository root; `package.json` | `ls`, `cat` ✅ |
+| No release tag (`ice-parity-2026-10-23` is a spike marker); 124 commits on `main`; clean tree | git | `git tag`, `gh release list`, `git status --porcelain` ✅ |
 | 21 workflow runs, all `startup_failure`, 0 jobs | GitHub Actions | `gh run list --limit 25` ✅ |
 | CI defines `quality`, `mutation`, `e2e`, `image` jobs | `.github/workflows/ci.yml:18,77,111,142` | read ✅ |
 | Billing store is a module-level memory store | `services/billing/handler.ts:268`; `store.ts:48-50` | read ✅ |

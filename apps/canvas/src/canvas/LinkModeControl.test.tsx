@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useUiStore } from "../store/useUiStore";
 import { LinkModeControl } from "./LinkModeControl";
+import { useLinkThreadStore } from "./linkThread";
 
 beforeEach(() => {
   useUiStore.setState({ linkMode: "connect", canCreateContent: true });
@@ -9,6 +10,7 @@ beforeEach(() => {
 
 afterEach(() => {
   fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
+  fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
 });
 
 describe("LinkModeControl shift hint", () => {
@@ -85,5 +87,64 @@ describe("LinkModeControl shift hint", () => {
     expect(toggle).toHaveAttribute("data-mode", "thread");
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(useUiStore.getState().linkMode).toBe("thread");
+  });
+});
+
+describe("LinkModeControl three-state cycle", () => {
+  it("walks connect → thread → web → connect on repeated clicks", () => {
+    render(<LinkModeControl />);
+    const toggle = screen.getByTestId("link-mode-toggle");
+
+    expect(toggle).toHaveAttribute("data-mode", "connect");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("data-mode", "thread");
+    expect(toggle).toHaveClass("is-thread");
+    expect(toggle).not.toHaveClass("is-web");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("data-mode", "web");
+    expect(toggle).toHaveClass("is-web");
+    expect(toggle).not.toHaveClass("is-thread");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("data-mode", "connect");
+
+    expect(useUiStore.getState().linkMode).toBe("connect");
+  });
+
+  it("previews web mode while Control is held", () => {
+    render(<LinkModeControl />);
+    const toggle = screen.getByTestId("link-mode-toggle");
+
+    fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
+    expect(toggle).toHaveAttribute("data-hint-mode", "web");
+    expect(toggle).toHaveAttribute("data-hint", "true");
+    expect(toggle).toHaveClass("is-web");
+    expect(toggle).toHaveAttribute("data-mode", "connect");
+
+    fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
+    expect(toggle).toHaveAttribute("data-hint-mode", "connect");
+    expect(toggle).not.toHaveClass("is-web");
+  });
+
+  it("prefers web over thread when Control and Shift are both held", () => {
+    render(<LinkModeControl />);
+    const toggle = screen.getByTestId("link-mode-toggle");
+
+    fireEvent.keyDown(window, { key: "Shift", shiftKey: true, ctrlKey: true });
+    expect(toggle).toHaveAttribute("data-hint-mode", "web");
+    expect(toggle).toHaveClass("is-web");
+    expect(toggle).not.toHaveClass("is-thread");
+  });
+
+  it("disarms a pending origin when the mode changes", () => {
+    useLinkThreadStore.setState({
+      armed: { kind: "card", id: "a", connectorId: "a1" },
+      armedBy: "gesture",
+    });
+    render(<LinkModeControl />);
+
+    fireEvent.click(screen.getByTestId("link-mode-toggle"));
+
+    // An origin armed for a web means a different graph once the mode is thread.
+    expect(useLinkThreadStore.getState().armed).toBeNull();
   });
 });

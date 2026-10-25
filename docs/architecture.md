@@ -388,7 +388,9 @@ section is seeded with. `linkGeometry.ts` turns endpoints into rects and anchors
 the canvas, drag previews and tests share one answer.
 
 Connector dots are a wiring aid, not decoration: they are revealed by selection, by
-hovering that entity, in thread mode, and while a link is being dragged. Sections use the
+hovering that entity, in a chaining mode (thread or web — `useChainingMode()` is
+`linkMode !== "connect"`, and both need every dot as a candidate), and while a link is being
+dragged. Sections use the
 same predicate through their own empty area, so hovering a card inside a section never wires
 up the section behind it. Handles stay mounted while hidden — React Flow only starts a
 connection from a handle it has measured.

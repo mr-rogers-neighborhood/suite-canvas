@@ -546,7 +546,7 @@ describe("thread mode", () => {
   it("should reveal the dots of an unselected node", () => {
     render(
       <ReactFlowProvider>
-        <NodeConnectors nodeId="thread-node" connectors={connectors} threadMode />
+        <NodeConnectors nodeId="thread-node" connectors={connectors} chaining />
       </ReactFlowProvider>,
     );
 
@@ -589,7 +589,7 @@ describe("armed threads", () => {
     act(() =>
       useLinkThreadStore
         .getState()
-        .arm({ kind: "card", id: NOTE_ID, connectorId: "some-connector" }, "shift"),
+        .arm({ kind: "card", id: NOTE_ID, connectorId: "some-connector" }, "gesture"),
     );
 
     await waitFor(() => expect(isRevealed(container, PORTAL_ID)).toBe(true));

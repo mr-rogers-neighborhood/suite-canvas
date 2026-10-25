@@ -14,7 +14,7 @@ export interface ConnectorPeerState {
  * link is being dragged out. One predicate, so the node kinds cannot drift. */
 export interface ConnectorRevealInput {
   selected?: boolean | undefined;
-  threadMode?: boolean | undefined;
+  chaining?: boolean | undefined;
   draftActive?: boolean | undefined;
   /** The pointer is over the entity, so its dots come to hand without a click. */
   hovered?: boolean | undefined;
@@ -34,13 +34,13 @@ export interface ConnectorRevealInput {
 /** The single reveal rule for every connector layer, cards and sections alike. */
 export function revealConnectors({
   selected = false,
-  threadMode = false,
+  chaining = false,
   draftActive = false,
   hovered = false,
   armed = false,
   peerActive = false,
 }: ConnectorRevealInput): boolean {
-  return selected || threadMode || draftActive || hovered || armed || peerActive;
+  return selected || chaining || draftActive || hovered || armed || peerActive;
 }
 
 export interface NodeConnectorsProps {
@@ -57,11 +57,13 @@ export interface NodeConnectorsProps {
    * Thread mode: the user is picking link targets, so every node shows its dots.
    * W2 owns the toggle; the layer only reads it.
    */
-  threadMode?: boolean | undefined;
+  chaining?: boolean | undefined;
   /** A link is being dragged right now, so every reachable target must show. */
   draftActive?: boolean | undefined;
   /** A thread is armed: the next click picks a target, so show every candidate. */
   armed?: boolean | undefined;
+  /** The armed end of the chain, when it is one of this node's dots. */
+  armedConnectorId?: string | null | undefined;
   /** A peer is dragging or has selected a dot here, so the layer must be up. */
   peerActive?: boolean | undefined;
   /** Override the hover read from the surrounding node (sections have no node). */
@@ -98,9 +100,10 @@ export function NodeConnectors({
   connectors,
   color,
   selected = false,
-  threadMode = false,
+  chaining = false,
   draftActive = false,
   armed = false,
+  armedConnectorId = null,
   peerActive = false,
   hovered: hoveredProp,
   selectedConnectorId = null,
@@ -133,7 +136,7 @@ export function NodeConnectors({
   const hovered = hoveredProp ?? hoveredSelf;
   const revealed = revealConnectors({
     selected,
-    threadMode,
+    chaining,
     draftActive,
     hovered,
     armed,
@@ -173,6 +176,7 @@ export function NodeConnectors({
           nodeId={nodeId}
           color={color}
           selected={selectedConnectorId === connector.id}
+          armed={armedConnectorId === connector.id}
           onSelect={(id, event) => onSelect?.(id, event)}
           onMoveEnd={(id, position) => onMoveEnd?.(id, position)}
           movingPeers={movingConnectorPeers[connector.id]?.users ?? []}

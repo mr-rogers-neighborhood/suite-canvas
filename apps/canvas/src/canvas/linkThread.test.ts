@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isArmed, isChaining, sameConnector, stepThread } from "./linkThread";
+import {
+  gestureMode,
+  isArmed,
+  isChaining,
+  sameConnector,
+  stepLink,
+  stepThread,
+  stepWeb,
+} from "./linkThread";
 
 const a = { kind: "card" as const, id: "card-a", connectorId: "a-right" };
 const b = { kind: "card" as const, id: "card-b", connectorId: "b-left" };
@@ -55,5 +63,63 @@ describe("sameConnector", () => {
     expect(isArmed(a, b)).toBe(false);
     expect(isArmed(a, a)).toBe(true);
     expect(isArmed(null, a)).toBe(false);
+  });
+});
+
+describe("web mode", () => {
+  const origin = { kind: "card" as const, id: "a", connectorId: "a1" };
+  const spokeB = { kind: "card" as const, id: "b", connectorId: "b1" };
+  const spokeC = { kind: "card" as const, id: "c", connectorId: "c1" };
+
+  it("arms the first click and links every later click from that origin", () => {
+    const first = stepWeb(null, origin);
+    expect(first).toEqual({ armed: origin, link: null });
+
+    const second = stepWeb(first.armed, spokeB);
+    expect(second.link).toEqual({ from: origin, to: spokeB });
+    // The origin stays armed: this is the whole difference from a thread, which
+    // would have moved it to B and recorded B→C next.
+    expect(second.armed).toEqual(origin);
+
+    const third = stepWeb(second.armed, spokeC);
+    expect(third.link).toEqual({ from: origin, to: spokeC });
+    expect(third.armed).toEqual(origin);
+  });
+
+  it("disarms when the origin itself is clicked again", () => {
+    expect(stepWeb(origin, origin)).toEqual({ armed: null, link: null });
+  });
+
+  it("a thread and a web draw different graphs from the same three clicks", () => {
+    const threaded = stepThread(stepThread(null, origin).armed, spokeB);
+    const web = stepWeb(stepWeb(null, origin).armed, spokeB);
+    expect(threaded.link).toEqual({ from: origin, to: spokeB });
+    expect(web.link).toEqual({ from: origin, to: spokeB });
+
+    // The second click is where they diverge: A→C in a web, B→C in a thread.
+    expect(stepWeb(web.armed, spokeC).link).toEqual({ from: origin, to: spokeC });
+    expect(stepThread(threaded.armed, spokeC).link).toEqual({ from: spokeB, to: spokeC });
+  });
+
+  it("stepLink follows the mode it is given", () => {
+    expect(stepLink("web", origin, spokeB).armed).toEqual(origin);
+    expect(stepLink("thread", origin, spokeB).armed).toEqual(spokeB);
+    expect(stepLink("connect", origin, spokeB).armed).toEqual(spokeB);
+  });
+
+  it("reads a held key as the mode it implies", () => {
+    expect(gestureMode({ ctrlKey: true, linkMode: "connect" })).toBe("web");
+    expect(gestureMode({ shiftKey: true, linkMode: "connect" })).toBe("thread");
+    // Control is the more specific gesture when both are down.
+    expect(gestureMode({ shiftKey: true, ctrlKey: true, linkMode: "thread" })).toBe("web");
+    expect(gestureMode({ linkMode: "web" })).toBe("web");
+    expect(gestureMode({ linkMode: "connect" })).toBe("connect");
+  });
+
+  it("chains without a modifier when the mode is web", () => {
+    expect(isChaining({ linkMode: "web" })).toBe(true);
+    expect(isChaining({ linkMode: "thread" })).toBe(true);
+    expect(isChaining({ linkMode: "connect" })).toBe(false);
+    expect(isChaining({ linkMode: "connect", ctrlKey: true })).toBe(true);
   });
 });

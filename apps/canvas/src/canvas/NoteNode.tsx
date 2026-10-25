@@ -214,9 +214,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         showDragLabel={!draggingGroup}
         selectingPeers={selectingPeers}
         resizingPeers={resizingPeers}
-        threadMode={connectors.threadMode}
+        chaining={connectors.chaining}
         draftActive={connectors.draftActive}
         armed={connectors.armed}
+        armedConnectorId={connectors.armedConnectorId}
         movingConnectorPeers={connectors.movingConnectorPeers}
         selectingConnectorPeers={connectors.selectingConnectorPeers}
         canEditContent={canEditContent}

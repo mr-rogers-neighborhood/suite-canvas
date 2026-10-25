@@ -21,8 +21,26 @@ export interface ThreadStep {
  * Shift chains in either mode (the Autodesk gesture people already know);
  * thread mode chains without the modifier.
  */
-export function isChaining(input: { shiftKey?: boolean | undefined; linkMode: LinkMode }): boolean {
-  return input.shiftKey === true || input.linkMode === "thread";
+export function isChaining(input: {
+  shiftKey?: boolean | undefined;
+  /** Held Control (or Command) asks for a web, the way Shift asks for a thread. */
+  ctrlKey?: boolean | undefined;
+  linkMode: LinkMode;
+}): boolean {
+  if (input.ctrlKey === true) return true;
+  if (input.shiftKey === true) return true;
+  return input.linkMode === "thread" || input.linkMode === "web";
+}
+
+/** Which mode a gesture is being read as, before the stored mode is consulted. */
+export function gestureMode(input: {
+  shiftKey?: boolean | undefined;
+  ctrlKey?: boolean | undefined;
+  linkMode: LinkMode;
+}): LinkMode {
+  if (input.ctrlKey === true) return "web";
+  if (input.shiftKey === true) return "thread";
+  return input.linkMode;
 }
 
 export function sameConnector(left: LinkConnectorRef, right: LinkConnectorRef): boolean {
@@ -41,15 +59,39 @@ export function stepThread(armed: LinkConnectorRef | null, clicked: LinkConnecto
   return { armed: clicked, link: { from: armed, to: clicked } };
 }
 
-/** Why a thread is armed: holding Shift, or the mode chosen in the UI. */
-export type ThreadArmSource = "shift" | "mode";
+/**
+ * One click of a web. The first click arms the origin; every later click links
+ * *from that same origin*, so a hub costs one click per spoke instead of writing
+ * a chain that says B→C. Clicking the origin again disarms, which is the only way
+ * to end a web without leaving the mode.
+ */
+export function stepWeb(armed: LinkConnectorRef | null, clicked: LinkConnectorRef): ThreadStep {
+  if (!armed) return { armed: clicked, link: null };
+  if (sameConnector(armed, clicked)) return { armed: null, link: null };
+  return { armed, link: { from: armed, to: clicked } };
+}
+
+/** One click of whichever mode is in force. */
+export function stepLink(
+  mode: LinkMode,
+  armed: LinkConnectorRef | null,
+  clicked: LinkConnectorRef,
+): ThreadStep {
+  return mode === "web" ? stepWeb(armed, clicked) : stepThread(armed, clicked);
+}
+
+/**
+ * Why an origin is armed: a key being held (Shift for a thread, Control for a
+ * web), or a mode chosen in the control. Only a held key ends when it is released.
+ */
+export type ThreadArmSource = "gesture" | "mode";
 
 interface LinkThreadState {
   armed: LinkConnectorRef | null;
   /**
-   * How the thread was started. A shift-armed thread ends when Shift is released
-   * — the modifier *is* the mode. A mode-armed thread lasts until the user turns
-   * the mode off, because nothing physical is being held.
+   * How the origin was armed. A gesture-armed one ends when its key is released
+   * — the modifier *is* the mode. A mode-armed one lasts until the user turns the
+   * mode off, because nothing physical is being held.
    */
   armedBy: ThreadArmSource | null;
   /** When the last arm happened, so a click handler can ignore a gesture's tail. */

@@ -2564,6 +2564,18 @@ body {
   background: var(--ink);
 }
 
+/* Web is the widest-reaching mode, so it reads louder than thread's ink: the
+   accent marks "everything you click is linked from here". */
+.link-mode-control.is-web {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.link-mode-control.is-web:hover {
+  background: var(--accent-strong, var(--accent));
+}
+
 /* The armed end of a thread reads as "the next click goes here". */
 .section-connector[data-armed="true"] .section-connector__dot {
   border-color: var(--accent);

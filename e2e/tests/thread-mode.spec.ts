@@ -77,7 +77,12 @@ test("the connector menu toggles the same mode as the widget bar", async ({ page
   const toggle = page.getByTestId("link-mode-toggle");
   await expect(toggle).toHaveAttribute("data-mode", "thread");
 
-  // And back again from a dot, so the two surfaces can never disagree.
+  // The menu walks the same cycle as the button, so the two surfaces can never
+  // disagree: thread is followed by web, and web by connect.
+  await page.getByTestId("connector-dot").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Switch to web mode" }).click();
+  await expect(toggle).toHaveAttribute("data-mode", "web");
+
   await page.getByTestId("connector-dot").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Switch to connect mode" }).click();
   await expect(toggle).toHaveAttribute("data-mode", "connect");

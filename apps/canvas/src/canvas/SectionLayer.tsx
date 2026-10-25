@@ -11,7 +11,7 @@ import {
 } from "../components/Connector";
 import { PeerNameTag } from "../components/PeerNameTag";
 import { useUiStore } from "../store/useUiStore";
-import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
+import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "./linkThread";
 import { revealConnectors } from "./NodeConnectors";
 import type { SectionOffset } from "./sectionLayout";
 import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
@@ -139,7 +139,7 @@ export interface SectionLayerProps {
     origin: { x: number; y: number },
   ) => void;
   /** W2: thread mode reveals the connector dots on unselected sections too. */
-  threadMode?: boolean;
+  chaining?: boolean;
   /** A link is being dragged, so every section shows its drop targets. */
   draftActive?: boolean;
   /** A thread is armed, so every section shows its connectors as candidates. */
@@ -173,7 +173,7 @@ export function SectionLayer({
   onConnectorContextMenu,
   resolveLinkTarget,
   onLinkCommit,
-  threadMode = false,
+  chaining = false,
   draftActive = false,
   armed = false,
   readOnly = false,
@@ -197,6 +197,9 @@ export function SectionLayer({
    */
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const setDraftActive = useLinkDraftStore((state) => state.setDraftActive);
+  // The armed end, not merely whether one exists: a section dot is the origin
+  // only when the arm names it, and a web returns to that dot click after click.
+  const armedEnd = useLinkThreadStore((state) => state.armed);
   const linkMode = useUiStore((state) => state.linkMode);
 
   const members = useMemo(() => {
@@ -400,14 +403,22 @@ export function SectionLayer({
         }
         // Released without a target: in chaining mode that is a click, so the
         // section connector takes part in a thread like a card's does.
-        if (!isChaining({ shiftKey: pointer.shiftKey, linkMode })) return;
+        if (!isChaining({ shiftKey: pointer.shiftKey, ctrlKey: pointer.ctrlKey, linkMode })) {
+          return;
+        }
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
-        const step = stepThread(useLinkThreadStore.getState().armed, clicked);
+        // A web keeps its origin, a thread moves to the connector just clicked.
+        const mode = gestureMode({
+          shiftKey: pointer.shiftKey,
+          ctrlKey: pointer.ctrlKey,
+          linkMode,
+        });
+        const step = stepLink(mode, useLinkThreadStore.getState().armed, clicked);
         if (step.link) {
           // The thread may have started on a card, so both ends come from it.
           onLinkCommit?.(step.link.from, step.link.to, origin);
         }
-        useLinkThreadStore.getState().arm(step.armed);
+        useLinkThreadStore.getState().arm(step.armed, mode === linkMode ? "mode" : "gesture");
       },
     );
   };
@@ -516,7 +527,7 @@ export function SectionLayer({
               // follow a different reveal rule than a card's.
               revealConnectors({
                 selected: section.id === selectedSectionId,
-                threadMode,
+                chaining,
                 draftActive,
                 armed,
                 hovered: section.id === hoveredSectionId,
@@ -538,6 +549,13 @@ export function SectionLayer({
                     data-section-id={section.id}
                     data-connector-id={connector.id}
                     data-selected={selected ? "true" : undefined}
+                    data-armed={
+                      armedEnd?.kind === "section" &&
+                      armedEnd.id === section.id &&
+                      armedEnd.connectorId === connector.id
+                        ? "true"
+                        : undefined
+                    }
                     className="section-connector nokey"
                     style={{
                       left: rect.x + rect.width * position.x,

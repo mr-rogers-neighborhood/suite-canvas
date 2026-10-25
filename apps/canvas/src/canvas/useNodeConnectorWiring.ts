@@ -7,7 +7,7 @@ import type { Point } from "../components/Connector";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
+import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "./linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
 
 /**
@@ -31,12 +31,18 @@ export const useLinkDraftStore = create<LinkDraftState>((set) => ({
 export interface NodeConnectorWiring {
   nodeId: string;
   connectors: readonly ConnectorModel[];
-  /** W2: true while thread mode is choosing link targets. */
-  threadMode: boolean;
+  /** A chaining mode (thread or web) is on, so every dot is a link target. */
+  chaining: boolean;
   /** True while this client is dragging a link out of (or into) a connector. */
   draftActive: boolean;
   /** True while a thread is armed, so every candidate connector is visible. */
   armed: boolean;
+  /**
+   * The armed end of the chain when it lives on this node: the origin a web keeps
+   * returning to, or the tail a thread moved. Marked so the reader can see where
+   * the next click will link from.
+   */
+  armedConnectorId: string | null;
   /** Peer colour while a peer focuses or drags this node, for the dot outline. */
   color: string | undefined;
   selectedConnectorId: string | null;
@@ -53,26 +59,28 @@ export interface NodeConnectorWiring {
 }
 
 /**
- * Thread mode reveals every node's connectors, because the user is picking link
- * targets. One reader, so every node kind and the section layer agree.
+ * A chaining mode reveals every node's connectors, because the user is picking
+ * link targets one click at a time. Thread and web are the same problem for the
+ * reveal rule — only what a click *does* differs — so both count. One reader, so
+ * every node kind and the section layer agree.
  */
-export function useThreadMode(): boolean {
-  return useUiStore((state) => state.linkMode === "thread");
+export function useChainingMode(): boolean {
+  return useUiStore((state) => state.linkMode !== "connect");
 }
 
 /** The reveal inputs for sections and node faces, read from the one place. */
 export function useConnectorRevealState(): {
-  threadMode: boolean;
+  chaining: boolean;
   draftActive: boolean;
   armed: boolean;
 } {
-  const threadMode = useThreadMode();
+  const chaining = useChainingMode();
   const draftActive = useLinkDraftStore((state) => state.draftActive);
   const threadArmed = useLinkThreadStore((state) => state.armed !== null);
   // Moving a link end is the same problem as arming a thread: every dot is a
   // candidate, so every dot has to be on screen.
   const movingEnd = useUiStore((state) => state.linkEndMove !== null);
-  return { threadMode, draftActive, armed: threadArmed || movingEnd };
+  return { chaining, draftActive, armed: threadArmed || movingEnd };
 }
 
 /**
@@ -87,7 +95,7 @@ export function useNodeConnectorWiring(
 ): NodeConnectorWiring {
   const nodeId = card?.id ?? "";
   const connectors = useMemo(() => card?.connectors ?? [], [card]);
-  const { threadMode, draftActive, armed: threadArmed } = useConnectorRevealState();
+  const { chaining, draftActive, armed: threadArmed } = useConnectorRevealState();
   const workspace = useCanvasStore((state) => state.workspace);
   const peers = useBoardPeers(boardId ?? null);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
@@ -157,14 +165,26 @@ export function useNodeConnectorWiring(
       // An armed thread keeps chaining on plain clicks: Shift starts a chain,
       // and the clicks after it should not each need the modifier.
       const armedNow = useLinkThreadStore.getState().armed !== null;
-      if (!armedNow && !isChaining({ shiftKey: event?.shiftKey, linkMode })) {
+      const mode = gestureMode({
+        shiftKey: event?.shiftKey,
+        ctrlKey: event?.ctrlKey,
+        linkMode,
+      });
+      if (
+        !armedNow &&
+        !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, linkMode })
+      ) {
         armThread(null);
         setSelectedConnector({ nodeId, connectorId });
         return;
       }
 
-      const step = stepThread(useLinkThreadStore.getState().armed, clicked);
-      const by = linkMode === "thread" ? "mode" : "shift";
+      // The mode decides what the next click means: a thread moves its armed end,
+      // a web keeps it ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
+      const step = stepLink(mode, useLinkThreadStore.getState().armed, clicked);
+      // A gesture started by a modifier ends when the modifier is released; only a
+      // mode chosen in the control survives the key.
+      const by = mode === linkMode ? "mode" : "gesture";
       if (step.link && boardId) {
         workspace.addEdge({
           boardId,
@@ -237,15 +257,19 @@ export function useNodeConnectorWiring(
 
   const peerActive =
     Object.keys(movingConnectorPeers).length > 0 || Object.keys(selectingConnectorPeers).length > 0;
+  // Read the arm, not just whether one exists: this node is the origin only when
+  // the armed end names it.
+  const armedEnd = useLinkThreadStore((state) => state.armed);
 
   return {
     nodeId,
     connectors,
-    threadMode,
+    chaining,
     draftActive,
     // Moving a link end makes every dot a candidate: reveal them all, exactly as
     // an armed thread does, or there is nothing to aim at.
     armed: threadArmed || linkEndMove !== null,
+    armedConnectorId: armedEnd && nodeId && armedEnd.id === nodeId ? armedEnd.connectorId : null,
     peerActive,
     color,
     selectedConnectorId:

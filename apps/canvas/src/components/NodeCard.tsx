@@ -92,9 +92,11 @@ export interface NodeCardProps {
   canManageTrash?: boolean;
   /** Shorthand for a viewer: no menu and no editing gesture at all. */
   readOnly?: boolean;
-  /** W2: thread mode reveals the connector dots on unselected cards too. */
-  threadMode?: boolean;
+  /** A chaining mode reveals the connector dots on unselected cards too. */
+  chaining?: boolean;
   armed?: boolean;
+  /** The armed end of a link chain, when it is one of this card's dots. */
+  armedConnectorId?: string | null;
   /** A link is being dragged, so this card's dots must show even unselected. */
   draftActive?: boolean;
 }
@@ -153,8 +155,9 @@ export function NodeCard({
   canEditLayout,
   canManageTrash,
   readOnly = false,
-  threadMode = false,
+  chaining = false,
   armed = false,
+  armedConnectorId = null,
   draftActive = false,
 }: NodeCardProps) {
   const editContent = canEditContent ?? !readOnly;
@@ -487,9 +490,10 @@ export function NodeCard({
         nodeId={card.id}
         connectors={card.connectors}
         selected={selected}
-        threadMode={threadMode}
+        chaining={chaining}
         draftActive={draftActive}
         armed={armed}
+        armedConnectorId={armedConnectorId}
         color={focusedBy?.color ?? draggingPeer?.color}
         selectedConnectorId={selectedConnectorId}
         movingConnectorPeers={movingConnectorPeers}

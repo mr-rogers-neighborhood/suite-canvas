@@ -9,6 +9,8 @@ export interface ConnectorProps {
   nodeId: string;
   color?: string | undefined;
   selected?: boolean;
+  /** The armed end of a link chain: the next click links from here. */
+  armed?: boolean;
   onSelect: (connectorId: string, event?: React.MouseEvent) => void;
   /** Persisted once, on release, so dragging never writes to the CRDT per frame. */
   onMoveEnd: (connectorId: string, position: { x: number; y: number }) => void;
@@ -137,6 +139,7 @@ export function Connector({
   nodeId,
   color = "#94a3b8",
   selected = false,
+  armed = false,
   onSelect,
   onMoveEnd,
   onContextMenu,
@@ -284,6 +287,7 @@ export function Connector({
       data-testid="connector"
       data-connector-id={connector.id}
       data-selected={selected ? "true" : undefined}
+      data-armed={armed ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
       data-anchored={isAnchor(position) ? "true" : "false"}
       data-side={SIDE_NAME[side]}

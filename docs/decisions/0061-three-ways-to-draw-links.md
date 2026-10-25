@@ -1,6 +1,6 @@
 # ADR-0061: Three ways to draw links — connect, thread, web
 
-- **Status:** proposed — direction recorded, nothing built
+- **Status:** accepted — the three modes are built (web mode landed with the armed-origin ring)
 - **Date:** 2026-10-25
 - **Related:** [ADR-0007](./0007-connector-links.md) (connector links),
   [ADR-0039](./0039-a-link-points-at-an-endpoint-of-a-kind.md) (an endpoint of a kind),
@@ -86,6 +86,23 @@ to prevent — "Attach" is the first alternative to try, and this paragraph is t
   `aria-label`/`data-mode`, and the shift-hint behaviour (a modifier previewing a mode) extends to Ctrl.
 - **Discoverability is the risk.** A third state hides behind two clicks or a modifier; the tooltip must
   name all three and the origin ring must be unmistakable.
+
+### What implementing it settled
+
+- **The reveal rule names the family, not one mode.** `threadMode` became `chaining` on every node face,
+  section layer and reveal input, and `useChainingMode()` is `linkMode !== "connect"`. Web needs exactly
+  what thread needed — every dot on screen as a candidate — so a rule named after one mode would have had
+  to be renamed the moment the second one shipped, which is what happened.
+- **The armed origin is marked per dot, not per layer.** `data-armed` is set on the one connector the arm
+  names (cards and sections alike). A layer-level boolean cannot say *which* dot a web will link from, and
+  the section dot had carried a CSS rule for it since ADR-0052 with nothing setting the attribute.
+- **The cycle lives in one place.** `nextLinkMode()` and `LINK_MODE_NAMES` sit next to `LinkMode` itself,
+  so the widget-bar button and the connector context menu walk the same connect → thread → web order. They
+  had already drifted once with a two-state toggle.
+- **Control and Shift are the same kind of thing.** `gestureMode()` reads Control first: a web from a fixed
+  origin is the more specific gesture, and both are press-time (they never write the stored mode).
+- **Neither modifier reveals the dots on its own.** Only a committed first click arms, exactly as Shift has
+  always worked; the indicator previews the mode while the key is held, and the dots follow the arm.
 
 ## Rejected alternatives
 

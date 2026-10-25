@@ -11,7 +11,27 @@ export interface LinkEndpointRef {
  * What a plain click on a connector does. `connect` drags one link; `thread`
  * chains them. Shift-click chains either way, which is the Autodesk gesture.
  */
-export type LinkMode = "connect" | "thread";
+/**
+ * How the next click is read ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)):
+ * `connect` drags one link, `thread` chains from the previous endpoint, `web`
+ * links every click from one fixed origin.
+ */
+export type LinkMode = "connect" | "thread" | "web";
+
+/** Human name of each mode, for menus and labels. */
+export const LINK_MODE_NAMES: Record<LinkMode, string> = {
+  connect: "connect",
+  thread: "thread",
+  web: "web",
+};
+
+/**
+ * The cycle a click walks: connect → thread → web → connect. One reader, so the
+ * widget-bar button and the connector menu can never offer different next steps.
+ */
+export function nextLinkMode(mode: LinkMode): LinkMode {
+  return mode === "connect" ? "thread" : mode === "thread" ? "web" : "connect";
+}
 
 /** A link being drawn, before it has a second end. */
 export interface LinkDraft {

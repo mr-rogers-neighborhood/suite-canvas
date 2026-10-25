@@ -1,19 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useUiStore } from "../store/useUiStore";
+import { type LinkMode, nextLinkMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 
-const MODES = {
+/**
+ * The three ways to draw a link ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
+ * Each glyph shows the *shape* its mode draws, which is why they read as a set:
+ * one line, a chain, a star.
+ */
+const MODES: Record<LinkMode, { label: string; glyph: string }> = {
   connect: {
     label: "Connect mode: drag one link at a time",
-    next: "Switch to thread mode: click connector after connector to chain links",
     glyph: "\u2194",
   },
   thread: {
     label: "Thread mode: click connector after connector to chain links",
-    next: "Switch to connect mode: drag one link at a time",
     glyph: "\u2933",
   },
-} as const;
+  web: {
+    label: "Web mode: every click links from the same starting connector",
+    glyph: "\u273b",
+  },
+};
+
+/** "Switch to thread mode: click connector after connector to chain links". */
+function switchLabel(mode: LinkMode): string {
+  const target = nextLinkMode(mode);
+  return `Switch to ${MODES[target].label.charAt(0).toLowerCase()}${MODES[target].label.slice(1)}`;
+}
 
 /**
  * The link tool in the viewport widget bar, beside zoom and fit. Thread mode
@@ -34,6 +48,8 @@ export function LinkModeControl() {
    * the hint must not cause.
    */
   const shiftHeld = useRef(false);
+  /** Control (or Command) held: the same preview, for the third mode. */
+  const ctrlHeld = useRef(false);
 
   /**
    * Paints the *displayed* mode on the button. `data-mode` and the click path
@@ -44,9 +60,13 @@ export function LinkModeControl() {
   const paintHint = useCallback(() => {
     const node = button.current;
     if (!node) return;
-    const displayed = shiftHeld.current ? "thread" : linkMode;
+    // Ctrl wins over Shift when both are down: it is the more specific gesture,
+    // and a web from a fixed origin is what the reader is about to draw.
+    const displayed = ctrlHeld.current ? "web" : shiftHeld.current ? "thread" : linkMode;
     node.dataset.hintMode = displayed;
+    node.dataset.hint = displayed === linkMode ? "false" : "true";
     node.classList.toggle("is-thread", displayed === "thread");
+    node.classList.toggle("is-web", displayed === "web");
     if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
   }, [linkMode]);
 
@@ -59,13 +79,15 @@ export function LinkModeControl() {
 
   useEffect(() => {
     const sync = (event: KeyboardEvent) => {
-      if (event.shiftKey === shiftHeld.current) return;
+      if (event.shiftKey === shiftHeld.current && event.ctrlKey === ctrlHeld.current) return;
       shiftHeld.current = event.shiftKey;
+      ctrlHeld.current = event.ctrlKey;
       paintHint();
     };
     const release = () => {
-      if (!shiftHeld.current) return;
+      if (!shiftHeld.current && !ctrlHeld.current) return;
       shiftHeld.current = false;
+      ctrlHeld.current = false;
       paintHint();
     };
     window.addEventListener("keydown", sync);
@@ -81,29 +103,34 @@ export function LinkModeControl() {
   if (!canCreateContent) return null;
 
   const current = MODES[linkMode];
-  const thread = linkMode === "thread";
+  const active = linkMode !== "connect";
 
-  // One button that swaps state, not a segmented control: the mode is a toggle,
-  // and two buttons implied two independent tools.
+  // One button that walks a three-state cycle rather than a segmented control:
+  // the three are one tool with three readings, and three buttons implied three
+  // independent tools.
   return (
     <button
       ref={button}
       type="button"
-      className={`link-mode-control${thread ? " is-thread" : ""}`}
-      aria-pressed={thread}
-      aria-label={thread ? current.label : current.next}
-      title={thread ? current.next : current.label}
+      className={`link-mode-control${linkMode === "thread" ? " is-thread" : ""}${
+        linkMode === "web" ? " is-web" : ""
+      }`}
+      aria-pressed={active}
+      aria-label={`${current.label}. ${switchLabel(linkMode)}`}
+      title={`${current.label}. ${switchLabel(linkMode)}`}
       data-testid="link-mode-toggle"
       data-mode={linkMode}
       data-hint-mode={linkMode}
+      data-hint="false"
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
-        // Turning thread mode off must also disarm whatever the mode armed.
+        // Changing mode must also disarm whatever the old mode armed: an origin
+        // from a web means something different once the mode is thread.
         useLinkThreadStore.getState().clear();
-        setLinkMode(thread ? "connect" : "thread");
+        setLinkMode(nextLinkMode(linkMode));
       }}
     >
       <span ref={glyph} aria-hidden="true">

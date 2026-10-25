@@ -59,7 +59,7 @@ import {
   linkAnchors,
   segmentCrossesRect,
 } from "./linkGeometry";
-import { linkEndConnector } from "./linkGesture";
+import { LINK_MODE_NAMES, linkEndConnector, nextLinkMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
@@ -367,13 +367,14 @@ export function CanvasBoard() {
   } | null>(null);
   const setLinkMode = useUiStore((state) => state.setLinkMode);
 
-  // Releasing Shift ends a shift-armed thread: the modifier was the mode. A
-  // thread started from the UI keeps going, because nothing is being held.
+  // Releasing the key that started an origin ends it: the modifier was the mode.
+  // Shift chains, Control webs, and an origin started from the control keeps
+  // going because nothing is being held.
   useEffect(() => {
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key !== "Shift") return;
+      if (event.key !== "Shift" && event.key !== "Control") return;
       const state = useLinkThreadStore.getState();
-      if (state.armedBy === "shift") state.clear();
+      if (state.armedBy === "gesture") state.clear();
     };
     window.addEventListener("keyup", onKeyUp);
     return () => window.removeEventListener("keyup", onKeyUp);
@@ -2703,9 +2704,10 @@ export function CanvasBoard() {
       if (!canManageStructure) return [];
       // The same toggle as the widget bar, where the user is already looking when
       // they right-click the dot they mean to start from.
+      const nextMode = nextLinkMode(linkMode);
       const linkModeItem = {
-        label: linkMode === "thread" ? "Switch to connect mode" : "Switch to thread mode",
-        onSelect: () => setLinkMode(linkMode === "thread" ? "connect" : "thread"),
+        label: `Switch to ${LINK_MODE_NAMES[nextMode]} mode`,
+        onSelect: () => setLinkMode(nextMode),
       };
       // Section connectors address a section, card connectors address a node.
       if (contextMenu.sectionId && contextMenu.connectorId) {
@@ -3261,7 +3263,7 @@ export function CanvasBoard() {
               sectionId,
             });
           }}
-          threadMode={revealState.threadMode}
+          chaining={revealState.chaining}
           draftActive={revealState.draftActive}
           armed={revealState.armed}
           selectedConnector={selectedSectionConnector}

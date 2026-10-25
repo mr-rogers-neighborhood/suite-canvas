@@ -52,8 +52,11 @@ export function AboveLinkLayer({
           // Isolate (ADR-0052 §7) recedes everything but the chosen link.
           const dimmed = isolatedEdgeId !== null && isolatedEdgeId !== link.edge.id;
           // The same paint the edge layer gives a link below the cards, so raising
-          // one never changes how it looks (ADR-0051 §1).
-          const paint = linkStroke(resolveSurfaceStyle(link.edge.style, "link"));
+          // one never changes how it looks (ADR-0051 §1) — and none when the link
+          // was never styled, so this layer's own CSS keeps painting it.
+          const paint = link.edge.style
+            ? linkStroke(resolveSurfaceStyle(link.edge.style, "link"))
+            : undefined;
           return (
             <g
               key={link.edge.id}
@@ -69,7 +72,7 @@ export function AboveLinkLayer({
                 data-edge-id={link.edge.id}
                 data-selected={selected ? "true" : undefined}
                 d={path}
-                style={paint}
+                {...(paint ? { style: paint } : {})}
                 markerEnd="url(#section-link-arrow)"
               />
               {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}

@@ -69,89 +69,98 @@ async function unplaceEverything(page: Page, count: number): Promise<void> {
   await removeAllFromBoard(page);
 }
 
-test("threading a selection places a chain and links it, in one undo per card", async ({
-  page,
-}) => {
+/** Puts the held card down at a point on the empty board, away from the drawer. */
+async function placeHeld(page: Page, offset: { dx: number; dy: number }): Promise<void> {
+  const board = await page.getByTestId("canvas-board").boundingBox();
+  if (!board) throw new Error("board not visible");
+  await page.mouse.click(
+    board.x + board.width / 2 + offset.dx,
+    board.y + board.height / 2 + offset.dy,
+  );
+}
+
+test("a thread is held as a stack and placed one card per click", async ({ page }) => {
   await page.goto(workspaceUrl("thread"));
   await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 4);
-
-  await openSelection(page, "inbox");
-  await expect(rows(page)).toHaveCount(6);
-  await rows(page).nth(0).click();
-  await rows(page)
-    .nth(1)
-    .click({ modifiers: ["Shift"] });
-  await expect(page.getByTestId("library-selection-count")).toHaveText("2 selected");
-
-  await page.getByTestId("library-run-thread").click();
-  await fitBoard(page);
-
-  await expect(cards(page)).toHaveCount(2);
-  // A thread links each card to the one before it, so two cards are one link.
-  await expect(edges(page)).toHaveCount(1);
-  // The run reports progress while it lasts, and ends when the queue empties.
-  await expect(page.getByTestId("placement-run")).toHaveCount(0);
-
-  // One undo step per card: the second card comes off, then the first.
-  await page.keyboard.press("Control+z");
-  await fitBoard(page);
-  await expect(cards(page)).toHaveCount(1);
-  await expect(edges(page)).toHaveCount(0);
-  await page.keyboard.press("Control+z");
-  await fitBoard(page);
-  await expect(cards(page)).toHaveCount(0);
-});
-
-test("webbing a selection draws every link from the first card", async ({ page }) => {
-  await page.goto(workspaceUrl("web"));
-  await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 3);
+  await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
   const total = await rows(page).count();
   await page.getByTestId("library-selection-all").click();
-  await expect(page.getByTestId("library-selection-count")).toHaveText(`${total} selected`);
-  await page.getByTestId("library-run-web").click();
-  await fitBoard(page);
+  await page.getByTestId("library-run-thread").click();
 
-  // Every card is placed, and every spoke leaves the *first* one: a web is n-1
-  // links from one origin, not a chain.
-  await expect(cards(page)).toHaveCount(total);
-  await expect(edges(page)).toHaveCount(total - 1);
-  const ends = await page.evaluate(() =>
+  // A thread draws relationships, so nothing is placed for the user: the run holds
+  // the stack and says how much of it is left (ADR-0063 third amendment).
+  await expect(page.getByTestId("held-stack")).toBeVisible();
+  await expect(page.getByTestId("held-stack-count")).toHaveText(`${total} left`);
+  // Nothing is placed for the user: an empty board stays empty until they click.
+  await expect(cards(page)).toHaveCount(0);
+
+  await placeHeld(page, { dx: -160, dy: -40 });
+  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByTestId("held-stack-count")).toHaveText(`${total - 1} left`);
+  await expect(edges(page)).toHaveCount(0);
+
+  await placeHeld(page, { dx: 160, dy: -40 });
+  await expect(cards(page)).toHaveCount(2);
+  // Two placed cards, one line: a chain links each card to the one before it.
+  await expect(edges(page)).toHaveCount(1);
+
+  // Each placement is its own undo, so an interrupted run peels back one at a time.
+  await page.keyboard.press("Control+z");
+  await fitBoard(page);
+  await expect(cards(page)).toHaveCount(1);
+});
+
+test("a web is held too, and every spoke links to the first card", async ({ page }) => {
+  await page.goto(workspaceUrl("web"));
+  await expect(cards(page)).toHaveCount(2);
+  await unplaceEverything(page, 2);
+  await openSelection(page, "inbox");
+
+  await page.getByTestId("library-selection-all").click();
+  await page.getByTestId("library-run-web").click();
+  await expect(page.getByTestId("held-stack")).toBeVisible();
+
+  await placeHeld(page, { dx: -200, dy: -60 });
+  await placeHeld(page, { dx: 0, dy: -60 });
+  await placeHeld(page, { dx: 200, dy: -60 });
+
+  await fitBoard(page);
+  await expect(cards(page)).toHaveCount(3);
+  await expect(edges(page)).toHaveCount(2);
+  // A web of three from one origin is two lines, and both start at the first.
+  const starts = await page.evaluate(() =>
     [...document.querySelectorAll<SVGPathElement>(".react-flow__edge-path")].map((path) => {
       const matrix = path.getScreenCTM();
       const start = path.getPointAtLength(0);
       const point = matrix ? new DOMPoint(start.x, start.y).matrixTransform(matrix) : start;
-      return { x: Math.round(point.x), y: Math.round(point.y) };
+      return `${Math.round(point.x / 8)}:${Math.round(point.y / 8)}`;
     }),
   );
-  // One distinct starting point, because a web keeps its origin.
-  const starts = new Set(
-    ends.map((point) => `${Math.round(point.x / 8)}:${Math.round(point.y / 8)}`),
-  );
-  expect(starts.size).toBe(1);
+  expect(starts.length).toBeGreaterThan(0);
+  expect(new Set(starts).size).toBe(1);
 });
 
-test("a pattern run draws a tree", async ({ page }) => {
+test("a pattern is held until it is a pattern, not arranged for the user", async ({ page }) => {
   await page.goto(workspaceUrl("pattern"));
   await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 3);
+  await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
-  const total = await rows(page).count();
   await page.getByTestId("library-selection-all").click();
   await page.getByTestId("library-run-pattern").click();
-  await fitBoard(page);
+  await expect(page.getByTestId("held-stack")).toBeVisible();
+  await expect(cards(page)).toHaveCount(0);
 
-  await expect(cards(page)).toHaveCount(total);
-  // A pattern links each card to its parent: a tree of n is n-1 lines, but unlike a
-  // web they do not all leave one origin.
-  await expect(edges(page)).toHaveCount(total - 1);
+  await placeHeld(page, { dx: -120, dy: -80 });
+  await placeHeld(page, { dx: 40, dy: 0 });
+  await expect(cards(page)).toHaveCount(2);
+  // A tree of two is one line, and it hangs off the card placed first.
+  await expect(edges(page)).toHaveCount(1);
 });
 
-test("a place run dumps cards and draws no links", async ({ page }) => {
+test("an arrangement is bulk: one step, one undo, no lines", async ({ page }) => {
   await page.goto(workspaceUrl("dump"));
   await expect(cards(page)).toHaveCount(2);
   await unplaceEverything(page, 3);
@@ -160,45 +169,32 @@ test("a place run dumps cards and draws no links", async ({ page }) => {
   const total = await rows(page).count();
   await page.getByTestId("library-selection-all").click();
   await page.getByTestId("library-run-place").click();
-  await fitBoard(page);
 
+  // An arrangement makes no claim about relationships, so it is safe to lay out
+  // for the user — and it lands in a single undo step.
+  await expect(page.getByTestId("held-stack")).toHaveCount(0);
+  await fitBoard(page);
   await expect(cards(page)).toHaveCount(total);
-  // A dump is a dump: the mode whose shape is not a relationship draws nothing.
   await expect(edges(page)).toHaveCount(0);
-});
 
-test("a run places one card at a time and can be stopped", async ({ page }) => {
-  await page.goto(workspaceUrl("stop"));
-  await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 4);
-  await openSelection(page, "inbox");
-
-  const total = await rows(page).count();
-  await page.getByTestId("library-selection-all").click();
-  await page.getByTestId("library-run-thread").click();
+  await page.keyboard.press("Control+z");
   await fitBoard(page);
-
-  // Every card placed, every one linked to the previous, and the run then ends on
-  // its own rather than waiting to be dismissed.
-  await expect(cards(page)).toHaveCount(total);
-  await expect(edges(page)).toHaveCount(total - 1);
-  await expect(page.getByTestId("placement-run")).toHaveCount(0);
+  await expect(cards(page)).toHaveCount(0);
+  await expect(page.getByTestId("dock-inbox-count")).toHaveText(`${total}`);
 });
 
-test("Escape ends a live run instead of placing the rest", async ({ page }) => {
+test("Escape releases a held stack", async ({ page }) => {
   await page.goto(workspaceUrl("escape"));
   await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 3);
+  await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
   await page.getByTestId("library-selection-all").click();
   await page.getByTestId("library-run-thread").click();
-  await fitBoard(page);
-  await expect(cards(page)).toHaveCount(5);
+  await expect(page.getByTestId("held-stack")).toBeVisible();
 
-  // Escape is the exit every mode shares: it ends the run and leaves the mode
-  // where the verb put it, rather than leaving a queue armed behind it.
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("placement-run")).toHaveCount(0);
+  await expect(page.getByTestId("held-stack")).toHaveCount(0);
+  // The mode stays where the verb put it: the run ended, the tool did not.
   await expect(page.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "thread");
 });

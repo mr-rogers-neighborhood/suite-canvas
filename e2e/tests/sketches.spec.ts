@@ -79,9 +79,12 @@ test("the menus and the library say Sketch, never Whiteboard", async ({ page }) 
 
   await page.getByTestId("dock-library").click();
   await page.getByTestId("library-tab-cards").click();
-  const facet = page.getByTestId("facet-type-whiteboard");
-  await expect(facet).toBeVisible();
-  await expect(facet).toHaveText(/Sketches/);
+  // A sketch is a behaviour, not a facet: offering it in the type row would read as
+  // "author your own Sketch type", which the model forbids (ADR-0011 amendment).
+  await expect(page.getByTestId("facet-type-whiteboard")).toHaveCount(0);
+  // It is still a card, listed in Cards like any other.
+  await expect(page.getByTestId("library-tab-cards")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("li[data-row-id]")).toHaveCount(3);
 });
 
 test("seamless drops the frame the framed card keeps", async ({ page }) => {

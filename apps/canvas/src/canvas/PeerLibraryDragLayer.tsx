@@ -34,6 +34,49 @@ export function usePublishLibraryDrag(): void {
   }, [drag, transform, activeBoardId, setLibraryDrag]);
 }
 
+/**
+ * The reader's own held library card, drawn where it would land.
+ *
+ * The drawer shows the card at the pointer in screen space; this is the other half
+ * of the same gesture — the *board* space outline that says where it will land and
+ * how big it will be. Without it a drag is a title following the cursor and a drop
+ * that lands where nobody expected.
+ */
+export function LibraryDropPreview() {
+  const drag = useUiStore((state) => state.libraryDrag);
+  const canPlace = useUiStore((state) => state.canEditLayout);
+  const workspace = useCanvasStore((state) => state.workspace);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  const transform = useStore((state) => state.transform);
+  const inverseZoom = 1 / (transform[2] || 1);
+  if (!drag || !canPlace || activeBoardId === null) return null;
+
+  const [tx, ty, zoom] = transform;
+  const scale = zoom || 1;
+  const position = {
+    x: (drag.screen.x - tx) / scale,
+    y: (drag.screen.y - ty) / scale,
+  };
+
+  return (
+    <ViewportPortal>
+      <div
+        data-testid="library-drop-preview"
+        className="library-drop-preview"
+        style={{
+          // Centred on the pointer in screen units, then inverted so the frame is a
+          // constant band on screen at any zoom — a frame, not a card.
+          transform: `translate(${position.x}px, ${position.y}px) scale(${inverseZoom})`,
+        }}
+      >
+        <span className="library-drop-preview__title">
+          {workspace.displayTitle(drag.cardId) || "Card"}
+        </span>
+      </div>
+    </ViewportPortal>
+  );
+}
+
 /** A collaborator's held library card, drawn where it would land. */
 export function PeerLibraryDragLayer() {
   const peers = usePresenceStore((state) => state.peers);

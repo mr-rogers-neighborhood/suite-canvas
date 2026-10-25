@@ -16,8 +16,18 @@ import { connectorFacing, planPlacementStep, planRunFrame, planSetOffsets } from
  * the stores itself so a caller cannot forget to pass the document or the mode.
  */
 export interface PlacementEngine {
-  /** Place the next step. */
+  /**
+   * Place the next step at the planner's position — the arrangement reading, and
+   * what a held run falls back to when a caller has no pointer.
+   */
   step: () => void;
+  /**
+   * Place the next step **at this point** in flow space: the held reading, where
+   * the user is choosing the spot (ADR-0063 third amendment).
+   */
+  placeAt: (point: { x: number; y: number }) => void;
+  /** The card at the top of the stack, or null when nothing is held. */
+  held: string | null;
   /** Place everything left, as one undo step. */
   placeAll: () => void;
   /** End the run wherever it is. */
@@ -44,6 +54,8 @@ export function usePlacementEngine(): PlacementEngine {
     (
       step: RunStep,
       run: { placed: string[]; originId: string | null; anchorId: string | null },
+      /** Where the user put it down, for a held run. Absent means "plan it". */
+      held?: { x: number; y: number } | undefined,
     ) => {
       const placements = activeBoardId ? workspace.listBoardPlacements(activeBoardId) : [];
       const placementOf = (id: string | null) =>
@@ -95,12 +107,17 @@ export function usePlacementEngine(): PlacementEngine {
         options: placementOptions,
       });
       const offsets = planSetOffsets(step.ids.length, size, placementOptions);
+      // A held card is centred on the pointer, which is what "put it here" means;
+      // an arrangement keeps the planner's top-left.
+      const base = held
+        ? { x: held.x - size.width / 2, y: held.y - size.height / 2 }
+        : planned.position;
       const boxes = step.ids.map((id, index) => {
         const offset = offsets[index] ?? { x: 0, y: 0 };
         const existing = placementOf(id);
         return {
-          x: planned.position.x + offset.x,
-          y: planned.position.y + offset.y,
+          x: base.x + offset.x,
+          y: base.y + offset.y,
           width: existing?.width ?? DEFAULT_CARD_WIDTH,
           height: existing?.height ?? DEFAULT_CARD_HEIGHT,
         };
@@ -113,78 +130,84 @@ export function usePlacementEngine(): PlacementEngine {
     [activeBoardId, canvasPoint, workspace],
   );
 
-  const step = useCallback(() => {
-    if (!activeBoardId || !canEditLayout) return;
-    const run = usePlacementRunStore.getState().run;
-    if (!run) return;
-    const next = run.queue[0];
-    if (!next) {
-      // A picker loop is *waiting*, not finished: it lives until it is stopped.
-      if (run.source !== "picker") usePlacementRunStore.getState().finish();
-      return;
-    }
-    const plan = planStep(next, run);
-    if (!plan) {
-      usePlacementRunStore.getState().finish();
-      return;
-    }
+  const placeStep = useCallback(
+    (held?: { x: number; y: number } | undefined) => {
+      if (!activeBoardId || !canEditLayout) return;
+      const run = usePlacementRunStore.getState().run;
+      if (!run) return;
+      const next = run.queue[0];
+      if (!next) {
+        // A picker loop is *waiting*, not finished: it lives until it is stopped.
+        if (run.source !== "picker") usePlacementRunStore.getState().finish();
+        return;
+      }
+      const plan = planStep(next, run, held);
+      if (!plan) {
+        usePlacementRunStore.getState().finish();
+        return;
+      }
 
-    let sectionId: string | null = run.sectionId;
-    // One batch: a step's placements, its one line and its section are one undo. A
-    // run of `n` steps is `n` undo steps, which is what makes interrupting one safe
-    // (ADR-0063 §5).
-    workspace.batch("place-run:step", () => {
-      next.ids.forEach((id, index) => {
-        const box = plan.boxes[index];
-        if (box) workspace.placeCard(activeBoardId, id, box);
-      });
-      if (plan.planned.link && plan.linkFrom) {
-        // Ordinary links, leaving and arriving on the sides that face each other: a
-        // line from right dot to right dot loops around a card and reads as a
-        // mistake rather than a chain.
-        const fromDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
-        const toDots = workspace.getCard(plan.head)?.connectors ?? [];
-        const sourceDot = connectorFacing(fromDots, "right");
-        const targetDot = connectorFacing(toDots, plan.planned.link.to);
-        workspace.addEdge({
-          boardId: activeBoardId,
-          source: plan.linkFrom.cardId,
-          target: plan.head,
-          ...(sourceDot ? { sourceConnector: sourceDot.id } : {}),
-          ...(targetDot ? { targetConnector: targetDot.id } : {}),
+      let sectionId: string | null = run.sectionId;
+      // One batch: a step's placements, its one line and its section are one undo. A
+      // run of `n` steps is `n` undo steps, which is what makes interrupting one safe
+      // (ADR-0063 §5).
+      workspace.batch("place-run:step", () => {
+        next.ids.forEach((id, index) => {
+          const box = plan.boxes[index];
+          if (box) workspace.placeCard(activeBoardId, id, box);
         });
-      }
-      if (run.wrap) {
-        const { sectionPadding } = useUiStore.getState().placementOptions;
-        const frame = planRunFrame(
-          [...run.placed, ...next.ids].flatMap((id) => {
-            const placement = workspace.getPlacement(activeBoardId, id);
-            return placement
-              ? [
-                  {
-                    x: placement.x,
-                    y: placement.y,
-                    width: placement.width ?? DEFAULT_CARD_WIDTH,
-                    height: placement.height ?? DEFAULT_CARD_HEIGHT,
-                  },
-                ]
-              : [];
-          }),
-          sectionPadding,
-        );
-        if (!sectionId && frame) {
-          sectionId = workspace.createSection({
+        if (plan.planned.link && plan.linkFrom) {
+          // Ordinary links, leaving and arriving on the sides that face each other: a
+          // line from right dot to right dot loops around a card and reads as a
+          // mistake rather than a chain.
+          const fromDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
+          const toDots = workspace.getCard(plan.head)?.connectors ?? [];
+          const sourceDot = connectorFacing(fromDots, "right");
+          const targetDot = connectorFacing(toDots, plan.planned.link.to);
+          workspace.addEdge({
             boardId: activeBoardId,
-            title: "",
-            ...frame,
-          }).id;
-        } else if (sectionId && frame) {
-          workspace.updateSectionGeometry(sectionId, frame);
+            source: plan.linkFrom.cardId,
+            target: plan.head,
+            ...(sourceDot ? { sourceConnector: sourceDot.id } : {}),
+            ...(targetDot ? { targetConnector: targetDot.id } : {}),
+          });
         }
-      }
-    });
-    usePlacementRunStore.getState().advance(next, sectionId);
-  }, [activeBoardId, canEditLayout, planStep, workspace]);
+        if (run.wrap) {
+          const { sectionPadding } = useUiStore.getState().placementOptions;
+          const frame = planRunFrame(
+            [...run.placed, ...next.ids].flatMap((id) => {
+              const placement = workspace.getPlacement(activeBoardId, id);
+              return placement
+                ? [
+                    {
+                      x: placement.x,
+                      y: placement.y,
+                      width: placement.width ?? DEFAULT_CARD_WIDTH,
+                      height: placement.height ?? DEFAULT_CARD_HEIGHT,
+                    },
+                  ]
+                : [];
+            }),
+            sectionPadding,
+          );
+          if (!sectionId && frame) {
+            sectionId = workspace.createSection({
+              boardId: activeBoardId,
+              title: "",
+              ...frame,
+            }).id;
+          } else if (sectionId && frame) {
+            workspace.updateSectionGeometry(sectionId, frame);
+          }
+        }
+      });
+      usePlacementRunStore.getState().advance(next, sectionId);
+    },
+    [activeBoardId, canEditLayout, planStep, workspace],
+  );
+
+  const step = useCallback(() => placeStep(), [placeStep]);
+  const placeAt = useCallback((point: { x: number; y: number }) => placeStep(point), [placeStep]);
 
   const placeAll = useCallback(() => {
     if (!activeBoardId || !canEditLayout) return;
@@ -208,26 +231,35 @@ export function usePlacementEngine(): PlacementEngine {
   }, []);
 
   /**
-   * Start and carry out a run.
+   * Start a run, then either arrange it or hold it.
    *
-   * A verb over a selection means "place these now", so the queue is walked to the
-   * end — one commit per card, which is the undo granularity ADR-0063 chose. The
-   * picker loop is the other reading: it enqueues and takes *one* step per pick, so
-   * the user chooses each next card from the library.
+   * **An arrangement is bulk**: `place` computes every position from the planner and
+   * lands the set in one commit, because a dump makes no claim about relationships.
+   * **Everything else is held**: `thread`, `web` and `pattern` draw relationships, so
+   * the cards go into the user's hand as a stack and each click puts one down where
+   * they choose (ADR-0063 third amendment).
    */
   const start = useCallback(
     (queue: readonly string[], source: PlacementSource) => {
       if (!canEditLayout || queue.length === 0) return;
       usePlacementRunStore.getState().start(queue, { source });
-      // Bounded by the queue itself: a step that could not advance ends the loop
-      // rather than spinning.
-      for (let index = 0; index < queue.length; index += 1) {
-        if (!usePlacementRunStore.getState().run) break;
-        step();
-      }
+      const arrangement = useUiStore.getState().mode === "place";
+      if (!arrangement) return;
+      workspace.batch("place-run:arrange", () => {
+        // Bounded by the queue itself: a step that could not advance ends the loop
+        // rather than spinning.
+        for (let index = 0; index < queue.length; index += 1) {
+          const before = usePlacementRunStore.getState().run?.queue.length ?? 0;
+          step();
+          const after = usePlacementRunStore.getState().run?.queue.length ?? 0;
+          if (after === before) break;
+        }
+      });
     },
-    [canEditLayout, step],
+    [canEditLayout, step, workspace],
   );
 
-  return { step, placeAll, stop, start };
+  const held = usePlacementRunStore((state) => state.run?.queue[0]?.ids[0] ?? null);
+
+  return { step, placeAt, placeAll, stop, start, held };
 }

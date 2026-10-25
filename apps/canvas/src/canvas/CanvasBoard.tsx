@@ -49,6 +49,7 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { AboveLinkLayer } from "./AboveLinkLayer";
 import { type AlignEdge, type DistributeAxis, planAlign, planDistribute } from "./arrangeCommand";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
+import { HeldStackCursor } from "./HeldStackCursor";
 import {
   connectorAtPoint,
   endpointAnchor,
@@ -74,7 +75,11 @@ import {
 } from "./multiSelect";
 import { nodeTypes } from "./NoteNode";
 import type { CardNodeData } from "./nodeData";
-import { PeerLibraryDragLayer, usePublishLibraryDrag } from "./PeerLibraryDragLayer";
+import {
+  LibraryDropPreview,
+  PeerLibraryDragLayer,
+  usePublishLibraryDrag,
+} from "./PeerLibraryDragLayer";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
@@ -208,12 +213,16 @@ function toFlowEdge(
     ...(peerColor ? { color: peerColor } : {}),
   };
   // A link's own paint (ADR-0051 §1: one stroke, `sides.top`) rides React Flow's
-  // edge style. A peer's colour is presence, not document state, so it wins while
-  // it lasts and the stored stroke returns when they let go.
-  const style = {
-    ...linkStroke(resolveSurfaceStyle(edge.style, "link")),
-    ...(peerColor ? { stroke: peerColor } : {}),
-  };
+  // edge style — but only when the link was actually styled. A peer's colour is
+  // presence, not document state, so it wins while it lasts.
+  const style = edge.style
+    ? {
+        ...linkStroke(resolveSurfaceStyle(edge.style, "link")),
+        ...(peerColor ? { stroke: peerColor } : {}),
+      }
+    : peerColor
+      ? { stroke: peerColor, strokeWidth: 2 }
+      : {};
 
   return {
     id: edge.id,
@@ -3392,6 +3401,8 @@ export function CanvasBoard() {
         />
       ) : null}
       <ModeControl engine={placementEngine} />
+      <HeldStackCursor engine={placementEngine} />
+      <LibraryDropPreview />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

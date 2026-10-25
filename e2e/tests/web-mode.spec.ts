@@ -180,7 +180,7 @@ test("Escape clears the armed origin", async ({ page }) => {
   await expect(edges(page)).toHaveCount(0);
 });
 
-test("the mode button cycles back to connect from web", async ({ page }) => {
+test("the mode button walks all four readings and comes back", async ({ page }) => {
   await page.goto(workspaceUrl("cycle"));
   await expect(cards(page)).toHaveCount(2);
 
@@ -189,6 +189,9 @@ test("the mode button cycles back to connect from web", async ({ page }) => {
   await expect(toggle).toHaveAttribute("data-mode", "thread");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "web");
+  // Pattern is the fourth shape a run can draw (ADR-0063): a chain that branches.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("data-mode", "pattern");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "place");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");

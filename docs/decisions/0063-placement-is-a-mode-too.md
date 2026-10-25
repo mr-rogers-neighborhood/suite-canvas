@@ -1,6 +1,6 @@
 # ADR-0063: Placement is a mode too — a run of cards, in a shape
 
-- **Status:** proposed — direction recorded, nothing built
+- **Status:** accepted — built (runs, four shapes, four sources, a stack)
 - **Date:** 2026-10-25
 - **Related:** [ADR-0061](./0061-three-ways-to-draw-links.md) (the same family, for links),
   [ADR-0011](./0011-library-dock-and-card-chrome.md) (the library, and the selection amendment),
@@ -122,6 +122,59 @@ The second refinement is the harder one, and it is the same idea one level up: *
    interaction stops being cheap enough to be useful.
 5. **Nothing here changes the document.** A stack of runs is still gesture state: no records, no schema,
    no merge story, and a collaborator sees only the placements each step commits.
+
+### What implementing it settled
+
+- **The mode had to be read at step time, not at start time.** A verb sets the mode and starts the run in
+  the same tick, and a React closure would still hold the old mode — which is exactly how a "Thread cards"
+  run first drew no links. The engine reads `useUiStore.getState()` per step, which also makes the control
+  able to steer the *next* card mid-run.
+- **A run's occupied set is the board as it was before the run.** Passing the run's own cards as obstacles
+  would have made a grid walk diagonally off the board; the run's cards are placed apart by construction.
+- **A web needs a radius floor.** Two same-sized cards overlap while their centres are closer than the sum
+  of their half-sizes on both axes, so a configured radius below `half-diagonal + gap` is raised rather than
+  obeyed. `DEFAULT_PLACEMENT_OPTIONS.radius` is the number the floor accepts for a default card, so the
+  setting says what the planner does.
+- **A step is placed as a unit** (`planSetOffsets`): its first card takes the step's position and the rest
+  fill a small grid beside it, so a set reads as one thing the run moved.
+- **A grid is measured from the origin, not from the previous card.** Measured from the previous card it
+  walked one column per card and left the board.
+- **The picker loop is the one run that outlives its queue.** Every other source ends when its last card
+  lands; the loop stays live because being fed is the point. In practice the loop "on empty" and the
+  library's selection verbs place what they were given, so there is no ambiguity about which one you are in
+  — the control's count says so.
+- **Escape in an editor is the editor's.** Ending a title with Escape must not also end the run that created
+  the card, so the run's Escape is guarded by the same typing check the canvas's other shortcuts use.
+- **The library's selection is entered, not inferred.** A plain click opens a card — the drawer's dominant
+  gesture — so bulk selection is a mode with a visible toggle, and its bar appears with the toggle rather
+  than with the first row.
+
+## Amendment — 2026-10-25: only an arrangement is bulk; the rest is held
+
+Carrying out a run made the difference between *shapes* and *arrangements* visible: a run that placed a
+thread in one click was guessing. Two rules follow, and they are the ones the interface should have had
+from the start.
+
+1. **An arrangement is bulk, in one step.** `place` (and later `pattern`, once a saved pattern exists to
+   arrange *by*) computes every position from the planner and lands the whole set in **one** commit — one
+   undo. That is the "put these six in a grid" gesture, and it is safe to do for the user because the shape
+   is not a claim about relationships: a dump draws no links.
+2. **Everything else is held.** `thread` and `web` draw relationships, so the user places each card: the
+   run **holds the stack at the cursor** — a layered ghost of the next card plus a count — and a click puts
+   the top of the stack down. The mode decides only what that placement links to (previous card, or the
+   origin), which is the part the user has already declared. Nothing is inferred about *where* their
+   sequence goes.
+3. **Priority matters.** A held card lands where the pointer is, even over an existing card: the user is
+   looking at the spot they chose. The planner's free-spot search applies to arrangements, where nobody is
+   choosing a position by hand.
+4. **`pattern` is held until it is a pattern.** Until patterns are records the user authors, "pattern" is a
+   rule the engine invented — a tree nobody drew. It behaves like `thread`/`web` (held, one at a time) and
+   becomes bulk on the day there is a stored pattern to lay out.
+5. **The stack is honest about what is left.** It shows the next card's title and how many follow, so an
+   interrupted run is legible: two of six placed, four in hand. Stop and Escape release it.
+
+This is also what makes the gesture legible before the first placement: a run that begins by holding
+nothing, then dumps five cards, taught the user nothing about what just happened.
 
 ## Consequences
 

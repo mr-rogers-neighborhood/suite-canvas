@@ -46,3 +46,95 @@
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: var(--ink);
 }
+
+/* The held stack (ADR-0063 third amendment): the next card of a run, layered over
+   the ones behind it, following the pointer. A run that draws relationships is a
+   run the user places, so it has to be visible in their hand. */
+.held-stack {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  width: 208px;
+}
+
+.held-stack__under {
+  position: absolute;
+  inset: 0;
+  translate: 0 0;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+.held-stack__under--near {
+  translate: 5px 5px;
+}
+
+.held-stack__under--far {
+  translate: 10px 10px;
+  opacity: 0.6;
+}
+
+.held-stack__card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.held-stack__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.held-stack__count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* A loop waiting to be fed has nothing to put down yet: it reads as an invitation
+   rather than a card. */
+.held-stack[data-waiting="true"] .held-stack__card {
+  border-style: dashed;
+  color: var(--ink-muted);
+}
+
+/* Where a held library card would land (ADR-0011 §2, ADR-0026): a frame at the
+   pointer, drawn in board space so it says both place and size. */
+.library-drop-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 288px;
+  height: 240px;
+  translate: -50% -50%;
+  border: 1.5px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  pointer-events: none;
+}
+
+.library-drop-preview__title {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}

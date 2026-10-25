@@ -46,6 +46,14 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   // Over the middle of the canvas, still held.
   await pageA.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2, { steps: 10 });
 
+  // The dragger sees where it will land *on the board*: a frame at the pointer, in
+  // board space, so the drop is not a guess (ADR-0011 §2).
+  await expect(pageA.getByTestId("library-drop-preview")).toHaveCount(1);
+  // The frame names the card being held. The row's text also carries its `⋯`, so
+  // the comparison is on the title line rather than the whole row.
+  await expect(pageA.locator(".library-drop-preview__title")).toHaveText(
+    (await row.locator("p").first().innerText()).trim(),
+  );
   await expect(pageB.getByTestId("peer-library-ghost")).toHaveCount(1);
   // It carries the peer's name, so the ghost is attributable: who is dragging
   // is the useful fact, and the title can still be in flight to this client.
@@ -53,6 +61,7 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
 
   // Releasing places exactly one card, and the ghost goes away on both sides.
   await pageA.mouse.up();
+  await expect(pageA.getByTestId("library-drop-preview")).toHaveCount(0);
   await expect(pageB.getByTestId("peer-library-ghost")).toHaveCount(0);
   await expect(
     pageB.locator('[data-testid="node-card"]').filter({ hasText: "Library card" }),

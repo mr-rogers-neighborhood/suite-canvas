@@ -2621,6 +2621,13 @@ export function CanvasBoard() {
               label: edge?.path === "smoothstep" ? "Smooth step ✓" : "Smooth step",
               onSelect: () => workspace.setEdgePath(edgeId, "smoothstep"),
             },
+            {
+              // Routes around the cards and sections the line would cross. A link
+              // with bends keeps them: the router is only asked when there is no
+              // route drawn by hand (ADR-0052 §6).
+              label: edge?.path === "avoid" ? "Avoid obstacles ✓" : "Avoid obstacles",
+              onSelect: () => workspace.setEdgePath(edgeId, "avoid"),
+            },
           ],
         },
         {

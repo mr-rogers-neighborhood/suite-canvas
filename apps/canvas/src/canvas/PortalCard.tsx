@@ -103,6 +103,8 @@ export function PortalCard({
         const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
         // A drag moves the card; it does not also open a panel.
         if (moved > 4) return;
+        // The second click of a double click is the doorway, not an inspection.
+        if (event.detail > 1) return;
         onOpenInfo?.();
       }}
       onDoubleClick={(event) => {

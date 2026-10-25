@@ -1937,6 +1937,15 @@ export function CanvasBoard() {
   const autoEntered = useRef(new Set<string>());
   /** The board the zoom-entry guards belong to. */
   const autoEnteredBoard = useRef<string | null>(null);
+  // The drawer describes something on the board you were looking at, so a board
+  // change — a portal doorway, a tab, a step back — leaves it behind.
+  const seenBoardId = useRef(activeBoardId);
+  useEffect(() => {
+    if (seenBoardId.current === activeBoardId) return;
+    seenBoardId.current = activeBoardId;
+    useUiStore.getState().closeContainerInspector();
+  }, [activeBoardId]);
+
   useEffect(() => {
     if (autoEnteredBoard.current === activeBoardId) return;
     autoEnteredBoard.current = activeBoardId;

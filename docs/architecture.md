@@ -431,9 +431,7 @@ the accessibility path when the spatial canvas is not legible.
 
 The seam is the pure `Scene` value: `SceneBoard` owns the camera, LOD/gate state and focus path;
 `SceneLayer` paints the frame. The React Flow scene surface is the product of record; any other
-surface must earn the place by passing the measured checklist in
-[ADR-0033](./decisions/0033-a-surface-is-judged-by-a-spike.md), which supersedes the open-ended
-deferral of [ADR-0032](./decisions/0032-ice-engine-deferral.md). LOD proxies and card faces are
+surface must earn the place by passing a measured checklist. LOD proxies and card faces are
 shared, so the engine choice stays reversible and a failed spike costs an adapter rather than a
 document.
 

@@ -45,6 +45,11 @@ export const boardSchema = z.object({
   color: sectionColorSchema.optional(),
   /** Replaces the live miniature inside a portal card when set. */
   coverAttachmentId: entityIdSchema.optional(),
+  /**
+   * Kept as a template: the library offers it as a starting point, and using it
+   * makes a new board (ADR-0040 — templates are duplication, not a new kind).
+   */
+  template: z.boolean().optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });

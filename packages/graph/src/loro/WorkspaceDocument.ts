@@ -1113,6 +1113,7 @@ export class WorkspaceDocument {
     if (!isMap(value)) return undefined;
     const color = readString(value, "color");
     const coverAttachmentId = readString(value, "coverAttachmentId");
+    const template = value.get("template");
     const board = boardSchema.parse({
       id,
       name: readString(value, "name") ?? "Board",
@@ -1122,6 +1123,7 @@ export class WorkspaceDocument {
       // them back, so a colour write was invisible after the next cache fill.
       ...(color ? { color } : {}),
       ...(coverAttachmentId ? { coverAttachmentId } : {}),
+      ...(template === true ? { template } : {}),
     });
     this.boardCache.set(id, board);
     return board;
@@ -1175,6 +1177,38 @@ export class WorkspaceDocument {
     else fields.delete("color");
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}board-color`);
+  }
+
+  /** Whether a board is offered as a template. Never changes what it holds. */
+  setBoardTemplate(id: string, template: boolean): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    if (template) fields.set("template", true);
+    else fields.delete("template");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-template`);
+  }
+
+  /** A board's cover image; null returns the portal to its live miniature. */
+  setBoardCover(id: string, attachmentId: string | null): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    if (attachmentId) fields.set("coverAttachmentId", attachmentId);
+    else fields.delete("coverAttachmentId");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-cover`);
+  }
+
+  /**
+   * Points a portal card at another board, or at none. This is how a portal whose
+   * source board is gone is repaired instead of deleted.
+   */
+  setPortalTarget(cardId: string, boardId: string | null): void {
+    const card = this.getCard(cardId);
+    if (!card || card.deletedAt) return;
+    this.batch(`${STRUCT_ORIGIN}portal-target`, () => {
+      this.setProperty(cardId, PORTAL_BOARD_FIELD_ID, boardId ?? null);
+    });
   }
 
   deleteBoard(id: string, options: { cards?: "keep" | "trash" } = {}): void {

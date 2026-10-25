@@ -23,7 +23,6 @@ import {
   useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { DEFAULT_FRACTAL_RECIPE, LAYOUT_PATTERNS, type LayoutPattern } from "@suite/scene";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
@@ -39,7 +38,6 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
-import { applyBoardFractal } from "./layoutCommand";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
   DEFAULT_CARD_HEIGHT,
@@ -60,6 +58,7 @@ import { PresenceLayer } from "./PresenceLayer";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
+import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { WhiteboardNode } from "./WhiteboardNode";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
@@ -196,6 +195,8 @@ export function CanvasBoard() {
   }, []);
 
   const snapshot = useWorkspaceSnapshot();
+  const lens = useCanvasLens();
+  useLensReferenceRepair(lens.view !== null);
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const peers = useBoardPeers(activeBoardId);
@@ -355,6 +356,23 @@ export function CanvasBoard() {
     () => cardSectionOffsets(sectionMembershipMap, sectionOffsetsMap),
     [sectionMembershipMap, sectionOffsetsMap],
   );
+
+  /**
+   * A section is off the lens when none of its member cards is on it. Sections
+   * stay visible: they are the spatial context a dimmed card sits in.
+   */
+  const dimmedSectionIds = useMemo(() => {
+    if (lens.view === null) return undefined;
+    const sectionsWithMatches = new Set<string>();
+    for (const [cardId, sectionId] of sectionMembershipMap) {
+      if (lens.cardIds.has(cardId)) sectionsWithMatches.add(sectionId);
+    }
+    const dimmed = new Set<string>();
+    for (const sectionId of sectionMembershipMap.values()) {
+      if (!sectionsWithMatches.has(sectionId)) dimmed.add(sectionId);
+    }
+    return dimmed;
+  }, [lens, sectionMembershipMap]);
 
   const typeMap = useMemo(() => typesById(snapshot.types), [snapshot.types]);
   const tagMap = useMemo(() => new Map(snapshot.tags.map((tag) => [tag.id, tag])), [snapshot.tags]);
@@ -552,6 +570,10 @@ export function CanvasBoard() {
           const type = resolveCardType(typeMap, card.primaryTypeId);
           const meta = metaByCard.get(card.id) ?? EMPTY_META;
           const previous = existing?.data as CardNodeData | undefined;
+          // The lens is part of the card's visible state: a view applied or
+          // cleared must repaint, and an unchanged card must keep its object.
+          const dim = lens.view !== null && !lens.cardIds.has(card.id);
+          const previousDim = previous?.dim === true;
           // Reuse the data object (and the node when nothing visible changed), so
           // a card that did not change does not re-render on a peer's edit.
           const data: CardNodeData =
@@ -559,9 +581,10 @@ export function CanvasBoard() {
             previous.card === card &&
             previous.placement === placement &&
             previous.type === type &&
-            previous.meta === meta
+            previous.meta === meta &&
+            previousDim === dim
               ? previous
-              : { card, placement, type, meta };
+              : { card, placement, type, meta, ...(dim ? { dim: true } : {}) };
           if (
             existing &&
             existing.data === data &&
@@ -585,7 +608,7 @@ export function CanvasBoard() {
         });
       });
     },
-    [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes],
+    [boardCards, boardPlacements, selectedKey, typeMap, metaByCard, cardOffsetsMap, setNodes, lens],
   );
 
   useEffect(() => {
@@ -857,10 +880,15 @@ export function CanvasBoard() {
         labelHandlers,
         peerByEdge.get(edge.id),
       );
-      return reconnecting.has(edge.id) ? { ...flowEdge, hidden: true } : flowEdge;
+      // An arrow leaves the lens when either endpoint does: a line to a card the
+      // view excluded is context, not a result.
+      const offLens =
+        lens.view !== null && !(lens.cardIds.has(edge.source) && lens.cardIds.has(edge.target));
+      const painted = offLens ? { ...flowEdge, className: "is-off-lens" } : flowEdge;
+      return reconnecting.has(edge.id) ? { ...painted, hidden: true } : painted;
     });
     setEdges(flowEdges);
-  }, [boardEdges, peers, selectedEdgeIds, setEdges, labelHandlers]);
+  }, [boardEdges, peers, selectedEdgeIds, setEdges, labelHandlers, lens]);
 
   // React Flow registers this handler in an effect keyed on its identity, and
   // unregisters it during the cleanup phase of every commit that re-renders this
@@ -1156,22 +1184,6 @@ export function CanvasBoard() {
       startEditing(card.id, "title");
     },
     [workspace, activeBoardId, setSelectedNodeIds, startEditing, canCreateContent],
-  );
-
-  const arrangeFractal = useCallback(
-    (pattern: LayoutPattern) => {
-      if (!canEditLayout || !activeBoardId) return;
-      try {
-        applyBoardFractal(workspace, {
-          snapshot,
-          rootBoardId: activeBoardId,
-          recipe: { ...DEFAULT_FRACTAL_RECIPE, pattern },
-        });
-      } catch (error) {
-        console.warn("[layout] could not apply fractal layout", error);
-      }
-    },
-    [workspace, snapshot, activeBoardId, canEditLayout],
   );
 
   const createWhiteboardAt = useCallback(
@@ -1795,30 +1807,19 @@ export function CanvasBoard() {
       ];
       return [
         {
-          label: "New note",
+          label: "New card",
           onSelect: () => {
             if (contextMenu.flowPosition) createNoteAt(contextMenu.flowPosition);
           },
         },
         {
-          label: "New whiteboard",
+          label: "New sketch",
           onSelect: () => createWhiteboardAt(flowPosition),
         },
         {
           label: "New section",
           onSelect: () => createSectionAt(flowPosition),
         },
-        ...(canEditLayout
-          ? [
-              {
-                label: "Arrange fractally",
-                items: LAYOUT_PATTERNS.map((pattern) => ({
-                  label: pattern.charAt(0).toUpperCase() + pattern.slice(1),
-                  onSelect: () => arrangeFractal(pattern),
-                })),
-              },
-            ]
-          : []),
         ...(portalItems.length > 0
           ? [
               {
@@ -2137,7 +2138,6 @@ export function CanvasBoard() {
     activeBoardId,
     createNoteAt,
     createWhiteboardAt,
-    arrangeFractal,
     createSectionAt,
     duplicateCards,
     moveCardToBoard,
@@ -2357,6 +2357,7 @@ export function CanvasBoard() {
       >
         <SectionLayer
           sections={boardSections}
+          dimmedSectionIds={dimmedSectionIds}
           membership={sectionMembershipMap}
           offsets={sectionOffsetsMap}
           resizes={sectionResizes}

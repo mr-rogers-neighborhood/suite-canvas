@@ -45,6 +45,8 @@ export interface NodeCardProps {
   width?: number | null;
   height?: number | null;
   selected?: boolean;
+  /** Off the active lens; painted back so the view's result reads first. */
+  dim?: boolean;
   /** Which editor this card is focused in, if any. */
   editing?: EditingField | null;
   presence?: PresenceUser[];
@@ -106,6 +108,7 @@ export function NodeCard({
   width = null,
   height = null,
   selected = false,
+  dim = false,
   editing = null,
   presence = [],
   draggingPeers = [],
@@ -198,6 +201,9 @@ export function NodeCard({
     selected && !draggingPeer && !focusedBy
       ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-500/30"
       : "",
+    // A dimmed card keeps its hover and selection affordances but recedes, so
+    // the lens result reads first without losing the spatial context around it.
+    dim && !selected ? "is-off-lens" : "",
   ]
     .filter(Boolean)
     .join(" ");

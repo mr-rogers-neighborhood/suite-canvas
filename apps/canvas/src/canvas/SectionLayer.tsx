@@ -32,6 +32,8 @@ const STROKE: Record<SectionColor, string> = {
 
 export interface SectionLayerProps {
   sections: Section[];
+  /** Sections whose every card is off the active lens; dimmed, never hidden. */
+  dimmedSectionIds?: ReadonlySet<string> | undefined;
   membership: Map<string, string>;
   offsets: Map<string, SectionOffset>;
   resizes: Map<string, Rect>;
@@ -53,6 +55,7 @@ export interface SectionLayerProps {
 
 export function SectionLayer({
   sections,
+  dimmedSectionIds,
   membership,
   offsets,
   resizes,
@@ -234,7 +237,9 @@ export function SectionLayer({
                 type="button"
                 aria-label={`Section: ${section.title || "Untitled section"}`}
                 data-testid={`section-region-${section.id}`}
-                className={`section-region${selected ? " is-selected" : ""}`}
+                className={`section-region${selected ? " is-selected" : ""}${
+                  dimmedSectionIds?.has(section.id) ? " is-off-lens" : ""
+                }`}
                 style={{
                   left: rect.x,
                   top: rect.y,
@@ -274,7 +279,7 @@ export function SectionLayer({
               <div
                 key={section.id}
                 data-testid={`section-header-${section.id}`}
-                className="section-header"
+                className={`section-header${dimmedSectionIds?.has(section.id) ? " is-off-lens" : ""}`}
                 style={{
                   left: rect.x + 8,
                   top: rect.y + 6,

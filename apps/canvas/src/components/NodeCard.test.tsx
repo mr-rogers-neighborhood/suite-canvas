@@ -62,6 +62,22 @@ describe("NodeCard", () => {
     expect(screen.getByTestId("node-card")).toBeInTheDocument();
   });
 
+  it("paints an off-lens card back without disabling it", () => {
+    const onOpenInfo = vi.fn();
+    renderCard({ dim: true, onOpenInfo });
+
+    const card = screen.getByTestId("node-card");
+    expect(card.className).toContain("is-off-lens");
+    // Dimming is a reading aid: the card still opens.
+    fireEvent.click(card);
+    expect(onOpenInfo).toHaveBeenCalledOnce();
+  });
+
+  it("does not dim a selected card even when the lens excludes it", () => {
+    renderCard({ dim: true, selected: true });
+    expect(screen.getByTestId("node-card").className).not.toContain("is-off-lens");
+  });
+
   it("renders presence avatars for peers on the node", () => {
     renderCard({ presence: [{ name: "Nova", color: "#f97316" }] });
     expect(screen.getByTestId("presence-avatar")).toBeInTheDocument();

@@ -11,6 +11,8 @@
   --ink: #1d1d1f;
   /* 4.57:1 on the darkest muted surface (--segmented-bg over --canvas-bg). */
   --ink-muted: #68686d;
+  /* Off-lens cards recede but keep their text legible enough to scan. */
+  --lens-dim-opacity: 0.34;
   --canvas-bg: #f5f5f7;
   --rf-dot: #d6d6db;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.25);
@@ -34,6 +36,7 @@
   --ink: #f5f5f7;
   /* 5.29:1 on a hovered surface (dark:hover:bg-white/10 over --surface). */
   --ink-muted: #a8a8ad;
+  --lens-dim-opacity: 0.3;
   --canvas-bg: #151517;
   --rf-dot: #333338;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 44px -22px rgba(0, 0, 0, 0.9);
@@ -2040,4 +2043,121 @@ body {
 .views-bar__button[data-active="true"] {
   color: var(--ink);
   font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- the lens */
+
+/*
+ * A saved view applied to the canvas dims what it did not select. Nothing is
+ * removed and nothing is disabled: the card keeps its hover, its drag and its
+ * editor, so the result reads first while the board around it stays legible.
+ */
+.node-card.is-off-lens,
+.section-region.is-off-lens,
+.section-header.is-off-lens,
+.react-flow__edge.is-off-lens .react-flow__edge-path,
+.react-flow__edge.is-off-lens .react-flow__edge-text,
+.react-flow__edge.is-off-lens .react-flow__edge-textbg {
+  opacity: var(--lens-dim-opacity);
+  transition: opacity 140ms ease;
+}
+
+.node-card.is-off-lens:hover,
+.node-card.is-off-lens:focus-within {
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-card.is-off-lens,
+  .section-region.is-off-lens,
+  .section-header.is-off-lens,
+  .react-flow__edge.is-off-lens .react-flow__edge-path {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------- the command bar */
+
+/*
+ * Fills the space the tabs and the status group leave free, so the app bar has
+ * one search surface. A button rather than an input: it opens the command
+ * palette, which owns the query, so there is never a second search box that
+ * disagrees with the first.
+ */
+.command-bar {
+  display: flex;
+  /* Fills whatever the tabs and the status group leave free. */
+  flex: 1 1 200px;
+  min-width: 0;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--segmented-bg);
+  padding: 0 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.command-bar:hover {
+  border-color: var(--ink-muted);
+  color: var(--ink);
+}
+
+.command-bar:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.command-bar__glyph {
+  flex: none;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.command-bar__label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-bar__key {
+  flex: none;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 14px;
+  opacity: 0.85;
+}
+
+/* Narrow windows have no free space to give, so the bar keeps its trigger and
+   drops the label rather than squeezing the tabs into an ellipsis. */
+@media (max-width: 900px) {
+  /* Still fills the free space; the label and the shortcut hint are what give
+     way first, so the trigger never squeezes the tabs. */
+  .command-bar {
+    padding: 0 6px;
+    justify-content: flex-start;
+  }
+
+  .command-bar__label,
+  .command-bar__key {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .command-bar__key {
+    display: none;
+  }
 }

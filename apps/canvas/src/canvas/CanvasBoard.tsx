@@ -1,6 +1,7 @@
 import type { Card, EdgeEndpointKind, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
 import {
   edgeEndpoints,
+  resolveSurfaceStyle,
   sectionColors,
   sectionMembership,
   sectionMovePlan,
@@ -83,6 +84,7 @@ import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { type SectionLink, SectionLinkLayer } from "./SectionLinkLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
+import { linkStroke } from "./surfacePaint";
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
 import { WhiteboardNode } from "./WhiteboardNode";
@@ -203,6 +205,13 @@ function toFlowEdge(
     height: 18,
     ...(peerColor ? { color: peerColor } : {}),
   };
+  // A link's own paint (ADR-0051 §1: one stroke, `sides.top`) rides React Flow's
+  // edge style. A peer's colour is presence, not document state, so it wins while
+  // it lasts and the stored stroke returns when they let go.
+  const style = {
+    ...linkStroke(resolveSurfaceStyle(edge.style, "link")),
+    ...(peerColor ? { stroke: peerColor } : {}),
+  };
 
   return {
     id: edge.id,
@@ -220,7 +229,7 @@ function toFlowEdge(
     ...(edge.sourceConnector ? { sourceHandle: edge.sourceConnector } : {}),
     ...(edge.targetConnector ? { targetHandle: edge.targetConnector } : {}),
     ...(edge.label ? { label: edge.label } : {}),
-    ...(peerColor ? { style: { stroke: peerColor, strokeWidth: 2 } } : {}),
+    style,
     markerEnd: marker,
     ...(edge.bidirectional ? { markerStart: marker } : {}),
   };

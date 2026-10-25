@@ -2,6 +2,7 @@ import type { GraphEdge } from "@suite/graph";
 import { useEffect, useState } from "react";
 import { isolatedEdgeId, setIsolatedEdge, useIsolatedEdgeId } from "../canvas/routeIsolation";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { StyleTab } from "./surface/StyleTab";
 import { describeDot, type LinkEndView, type LinkInspectorModel } from "./useLinkInspectorModel";
 
 export interface LinkInspectorProps {
@@ -376,6 +377,13 @@ export function LinkInspector({
               Reset
             </button>
           </div>
+        </section>
+
+        {/* One stroke, one editor: the same Style tab every other surface has
+            (ADR-0051), showing the line controls a link can actually use. */}
+        <section className="mt-3 border-t border-[var(--hairline)] pt-2">
+          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Style</h3>
+          <StyleTab kind="edge" id={edgeId} canEdit={canEdit} />
         </section>
 
         <section className="mt-3">

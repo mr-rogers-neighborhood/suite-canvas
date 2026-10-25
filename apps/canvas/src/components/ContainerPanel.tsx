@@ -6,6 +6,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { BoardCoverPicker } from "./BoardCoverPicker";
+import { StyleTab } from "./surface/StyleTab";
 import { TagPicker } from "./TagPicker";
 import type { ContainerPanelModel } from "./useContainerPanelModel";
 
@@ -64,7 +65,15 @@ export function ContainerPanel({
   // The picker is a disclosure, not a count: it only exists while the panel is
   // asking which board should replace the one that went away.
   const [picking, setPicking] = useState(false);
+  /**
+   * The same three leaves the card inspector has (ADR-0051): what it is, what it
+   * holds, how it is painted. A portal's outline is a lot of rows, so it earns a
+   * tab rather than pushing Style past the fold.
+   */
+  const [tab, setTab] = useState<"details" | "contents" | "style">("details");
   const contentsCount = model.contents.reduce((total, group) => total + group.cards.length, 0);
+  // A section has no contents tab, so its details are never hidden behind one.
+  const details = !portal || tab === "details";
 
   // A section is tagged directly; a portal shows the board it opens, and a
   // board's tags belong to that record. Either way a tag is a label: nothing
@@ -130,322 +139,373 @@ export function ContainerPanel({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
-        <div className="flex flex-wrap gap-1.5">
-          {portal && model.board && onOpenBoard ? (
+      <div className="card-panel-tabs px-3 pb-2" data-testid="container-panel-tabs">
+        <div role="tablist" aria-label="Container sections" className="segmented">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "details"}
+            data-testid="container-tab-details"
+            className="segmented-option"
+            data-checked={tab === "details" ? "true" : undefined}
+            onClick={() => setTab("details")}
+          >
+            Details
+          </button>
+          {portal ? (
             <button
               type="button"
-              className="library-action"
-              data-testid="container-open-board"
-              onClick={() => onOpenBoard(model.id, model.board?.id ?? "")}
+              role="tab"
+              aria-selected={tab === "contents"}
+              data-testid="container-tab-contents"
+              className="segmented-option"
+              data-checked={tab === "contents" ? "true" : undefined}
+              onClick={() => setTab("contents")}
             >
-              Open board
+              Contents
             </button>
           ) : null}
           <button
             type="button"
-            className="library-action"
-            data-testid="container-locate"
-            onClick={onLocate}
+            role="tab"
+            aria-selected={tab === "style"}
+            data-testid="container-tab-style"
+            className="segmented-option"
+            data-checked={tab === "style" ? "true" : undefined}
+            onClick={() => setTab("style")}
           >
-            Locate
+            Style
           </button>
         </div>
+      </div>
 
-        {portal && model.orphan ? (
-          <section className="mt-3" data-testid="container-orphan">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              {"Empty \u2014 source removed"}
-            </h3>
-            <p className="mt-1 text-[12px] text-[var(--ink)]">
-              The board this portal opened is gone, so there is nothing behind it to show.
-            </p>
-            {canEdit && onRetarget ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  className="library-action"
-                  data-testid="container-choose-board"
-                  aria-expanded={picking}
-                  onClick={() => setPicking((open) => !open)}
-                >
-                  Choose a board
-                </button>
-                {onRemove ? (
+      {tab === "style" ? (
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-style">
+          <StyleTab
+            kind={portal ? "card" : "section"}
+            id={model.id}
+            canEdit={canEdit && !(portal && model.orphan)}
+            workspace={workspace}
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
+          <div className="flex flex-wrap gap-1.5" data-testid="container-actions" hidden={!details}>
+            {portal && model.board && onOpenBoard ? (
+              <button
+                type="button"
+                className="library-action"
+                data-testid="container-open-board"
+                onClick={() => onOpenBoard(model.id, model.board?.id ?? "")}
+              >
+                Open board
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="library-action"
+              data-testid="container-locate"
+              onClick={onLocate}
+            >
+              Locate
+            </button>
+          </div>
+
+          {details && portal && model.orphan ? (
+            <section className="mt-3" data-testid="container-orphan">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {"Empty \u2014 source removed"}
+              </h3>
+              <p className="mt-1 text-[12px] text-[var(--ink)]">
+                The board this portal opened is gone, so there is nothing behind it to show.
+              </p>
+              {canEdit && onRetarget ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     className="library-action"
-                    data-testid="container-remove-from-board"
-                    onClick={onRemove}
+                    data-testid="container-choose-board"
+                    aria-expanded={picking}
+                    onClick={() => setPicking((open) => !open)}
                   >
-                    Remove from board
+                    Choose a board
                   </button>
-                ) : null}
+                  {onRemove ? (
+                    <button
+                      type="button"
+                      className="library-action"
+                      data-testid="container-remove-from-board"
+                      onClick={onRemove}
+                    >
+                      Remove from board
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {picking && onRetarget ? (
+                model.boardOptions.length === 0 ? (
+                  <p
+                    className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                    data-testid="container-board-options-empty"
+                  >
+                    No other board to choose yet.
+                  </p>
+                ) : (
+                  <ul className="mt-1 space-y-0.5" data-testid="container-board-options">
+                    {model.boardOptions.map((board) => (
+                      <li key={board.id}>
+                        <button
+                          type="button"
+                          data-testid={`container-board-option-${board.id}`}
+                          className="w-full truncate rounded px-1.5 py-1 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                          onClick={() => {
+                            setPicking(false);
+                            onRetarget(board.id);
+                          }}
+                        >
+                          {board.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+            </section>
+          ) : null}
+
+          {/* A portal with no board has nothing to colour: the record that carried
+            the colour is the one that went away. */}
+          {details && !(portal && model.orphan) ? (
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Colour
+              </h3>
+              <div className="mt-1 flex flex-wrap gap-1.5" data-testid="container-colors">
+                {sectionColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={`Colour ${color}`}
+                    aria-pressed={model.color === color}
+                    disabled={!canEdit}
+                    data-testid={`container-color-${color}`}
+                    className="h-5 w-5 rounded-full border border-[var(--hairline)] disabled:opacity-40"
+                    style={{ background: SECTION_STROKE[color] }}
+                    onClick={() => onSetColor(model.color === color ? null : color)}
+                  />
+                ))}
               </div>
-            ) : null}
-            {picking && onRetarget ? (
-              model.boardOptions.length === 0 ? (
+            </section>
+          ) : null}
+
+          {details && tagTarget ? (
+            <section className="mt-3" data-testid="container-tags" data-target={tagTarget.kind}>
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Tags
+              </h3>
+              {canEdit ? (
+                <div className="mt-1">
+                  <TagPicker
+                    tags={[...knownTags]}
+                    selectedIds={[...tagTarget.selected]}
+                    onAdd={addTag}
+                    onRemove={removeTag}
+                    onCreate={createTag}
+                    allowCreate={canManageSchema}
+                  />
+                </div>
+              ) : (
+                <div className="mt-1 flex flex-wrap gap-1" data-testid="container-tag-list">
+                  {knownTags
+                    .filter((tag) => tagTarget.selected.includes(tag.id))
+                    .map((tag) => (
+                      <span
+                        key={tag.id}
+                        data-testid="container-tag-chip"
+                        className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--ink)]"
+                      >
+                        #{tag.name}
+                      </span>
+                    ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {tab === "contents" && portal && model.board ? (
+            <section className="mt-3" data-testid="container-contents">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
+              </h3>
+              {model.contents.length === 0 ? (
                 <p
                   className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                  data-testid="container-board-options-empty"
+                  data-testid="container-contents-empty"
                 >
-                  No other board to choose yet.
+                  This board has no cards and no sections yet.
                 </p>
               ) : (
-                <ul className="mt-1 space-y-0.5" data-testid="container-board-options">
-                  {model.boardOptions.map((board) => (
-                    <li key={board.id}>
-                      <button
-                        type="button"
-                        data-testid={`container-board-option-${board.id}`}
-                        className="w-full truncate rounded px-1.5 py-1 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                        onClick={() => {
-                          setPicking(false);
-                          onRetarget(board.id);
-                        }}
-                      >
-                        {board.name}
-                      </button>
+                <ul className="mt-1 space-y-1.5">
+                  {model.contents.map((group) => (
+                    <li
+                      key={group.sectionId ?? "loose"}
+                      data-testid="container-contents-section"
+                      data-section-id={group.sectionId ?? ""}
+                    >
+                      <p className="flex items-baseline gap-1.5">
+                        {group.color ? (
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-2 w-2 flex-none rounded-full"
+                            style={{ background: SECTION_STROKE[group.color] }}
+                          />
+                        ) : null}
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
+                          {group.title}
+                        </span>
+                        <span
+                          className="text-[11px] text-[var(--ink-muted)]"
+                          data-testid="container-contents-count"
+                        >
+                          {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
+                        </span>
+                      </p>
+                      {group.cards.length === 0 ? (
+                        <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
+                          No cards yet
+                        </p>
+                      ) : (
+                        <ul className="mt-0.5 space-y-0.5 pl-3.5">
+                          {group.cards.map((card) => (
+                            <li key={card.id}>
+                              <button
+                                type="button"
+                                data-testid="container-contents-card"
+                                title={card.title}
+                                className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                                onClick={() => onNavigate?.({ kind: "card", id: card.id })}
+                              >
+                                {card.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>
-              )
-            ) : null}
-          </section>
-        ) : null}
+              )}
+            </section>
+          ) : null}
 
-        {/* A portal with no board has nothing to colour: the record that carried
-            the colour is the one that went away. */}
-        {!(portal && model.orphan) ? (
-          <section className="mt-3">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              Colour
-            </h3>
-            <div className="mt-1 flex flex-wrap gap-1.5" data-testid="container-colors">
-              {sectionColors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Colour ${color}`}
-                  aria-pressed={model.color === color}
-                  disabled={!canEdit}
-                  data-testid={`container-color-${color}`}
-                  className="h-5 w-5 rounded-full border border-[var(--hairline)] disabled:opacity-40"
-                  style={{ background: SECTION_STROKE[color] }}
-                  onClick={() => onSetColor(model.color === color ? null : color)}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {tagTarget ? (
-          <section className="mt-3" data-testid="container-tags" data-target={tagTarget.kind}>
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              Tags
-            </h3>
-            {canEdit ? (
-              <div className="mt-1">
-                <TagPicker
-                  tags={[...knownTags]}
-                  selectedIds={[...tagTarget.selected]}
-                  onAdd={addTag}
-                  onRemove={removeTag}
-                  onCreate={createTag}
-                  allowCreate={canManageSchema}
-                />
-              </div>
-            ) : (
-              <div className="mt-1 flex flex-wrap gap-1" data-testid="container-tag-list">
-                {knownTags
-                  .filter((tag) => tagTarget.selected.includes(tag.id))
-                  .map((tag) => (
-                    <span
-                      key={tag.id}
-                      data-testid="container-tag-chip"
-                      className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--ink)]"
-                    >
-                      #{tag.name}
-                    </span>
-                  ))}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {portal && model.board ? (
-          <section className="mt-3" data-testid="container-contents">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              {`Contents${contentsCount > 0 ? ` (${contentsCount})` : ""}`}
-            </h3>
-            {model.contents.length === 0 ? (
-              <p
-                className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                data-testid="container-contents-empty"
-              >
-                This board has no cards and no sections yet.
+          {portal && model.board ? (
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Board
+              </h3>
+              <p className="mt-1 text-[12px] text-[var(--ink)]" data-testid="container-board-name">
+                {model.board.name}
               </p>
-            ) : (
-              <ul className="mt-1 space-y-1.5">
-                {model.contents.map((group) => (
-                  <li
-                    key={group.sectionId ?? "loose"}
-                    data-testid="container-contents-section"
-                    data-section-id={group.sectionId ?? ""}
-                  >
-                    <p className="flex items-baseline gap-1.5">
-                      {group.color ? (
-                        <span
-                          aria-hidden="true"
-                          className="inline-block h-2 w-2 flex-none rounded-full"
-                          style={{ background: SECTION_STROKE[group.color] }}
-                        />
-                      ) : null}
-                      <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--ink)]">
-                        {group.title}
-                      </span>
-                      <span
-                        className="text-[11px] text-[var(--ink-muted)]"
-                        data-testid="container-contents-count"
-                      >
-                        {`${group.cards.length} card${group.cards.length === 1 ? "" : "s"}`}
-                      </span>
-                    </p>
-                    {group.cards.length === 0 ? (
-                      <p className="mt-0.5 pl-3.5 text-[11px] text-[var(--ink-muted)]">
-                        No cards yet
-                      </p>
-                    ) : (
-                      <ul className="mt-0.5 space-y-0.5 pl-3.5">
-                        {group.cards.map((card) => (
-                          <li key={card.id}>
-                            <button
-                              type="button"
-                              data-testid="container-contents-card"
-                              title={card.title}
-                              className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                              onClick={() => onNavigate?.({ kind: "card", id: card.id })}
-                            >
-                              {card.title}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ) : null}
+              <BoardCoverPicker
+                boardId={model.board.id}
+                coverId={model.board.coverAttachmentId}
+                disabled={!canEdit}
+                onPick={(attachmentId) => onSetCover?.(attachmentId)}
+              />
+            </section>
+          ) : null}
 
-        {portal && model.board ? (
-          <section className="mt-3">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              Board
-            </h3>
-            <p className="mt-1 text-[12px] text-[var(--ink)]" data-testid="container-board-name">
-              {model.board.name}
-            </p>
-            <BoardCoverPicker
-              boardId={model.board.id}
-              coverId={model.board.coverAttachmentId}
-              disabled={!canEdit}
-              onPick={(attachmentId) => onSetCover?.(attachmentId)}
-            />
-          </section>
-        ) : null}
-
-        {!portal && model.members.length > 0 ? (
-          <section className="mt-3">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              Inside
-            </h3>
-            <ul className="mt-1 space-y-0.5" data-testid="container-members">
-              {model.members.map((member) => (
-                <li key={member.id}>
-                  <button
-                    type="button"
-                    data-testid="container-member-row"
-                    title={member.title}
-                    className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                    onClick={() => onNavigate?.({ kind: "card", id: member.id })}
-                  >
-                    {member.title}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        {/* A board that is gone has no record to link to, so the list would be
-            a permanent "nothing here". */}
-        {!(portal && model.orphan) ? (
-          <section className="mt-3">
-            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-              Links ({model.links.length})
-            </h3>
-            {model.links.length === 0 ? (
-              <p
-                className="mt-1 text-[12px] text-[var(--ink-muted)]"
-                data-testid="container-no-links"
-              >
-                Nothing links here yet.
-              </p>
-            ) : (
-              <ul className="mt-1 space-y-1" data-testid="container-links">
-                {model.links.map((link) => (
-                  <li key={`${link.edgeId}-${link.direction}`}>
+          {!portal && model.members.length > 0 ? (
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Inside
+              </h3>
+              <ul className="mt-1 space-y-0.5" data-testid="container-members">
+                {model.members.map((member) => (
+                  <li key={member.id}>
                     <button
                       type="button"
-                      data-testid="container-link-row"
-                      className="flex w-full items-baseline gap-1.5 rounded px-1 py-0.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
-                      onClick={() => onNavigate?.({ kind: link.kind, id: link.otherId })}
+                      data-testid="container-member-row"
+                      title={member.title}
+                      className="w-full truncate rounded px-1 py-0.5 text-left text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => onNavigate?.({ kind: "card", id: member.id })}
                     >
-                      <span aria-hidden="true" className="text-[11px] text-[var(--ink-muted)]">
-                        {link.direction === "in" ? "\u2192" : "\u2190"}
-                      </span>
-                      <span aria-hidden="true" className="text-[11px] text-[var(--ink-muted)]">
-                        {link.glyph}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--ink)]">
-                        {link.title}
-                        {link.description ? (
-                          <span className="ml-1 text-[11px] text-[var(--ink-muted)]">
-                            {"\u00b7"} {link.description}
-                          </span>
-                        ) : null}
-                      </span>
+                      {member.title}
                     </button>
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        {!portal && onRename && canEdit ? (
-          <section className="mt-3">
-            <label
-              className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]"
-              htmlFor="container-rename"
-            >
-              Title
-            </label>
-            <input
-              id="container-rename"
-              data-testid="container-rename"
-              className="mt-1 w-full rounded border border-[var(--hairline)] bg-transparent px-1.5 py-1 text-[12px] text-[var(--ink)]"
-              defaultValue={model.title}
-              onBlur={(event) => {
-                const next = event.target.value.trim();
-                if (next && next !== model.title) onRename(next);
-              }}
-            />
-          </section>
-        ) : null}
-      </div>
+          {/* A board that is gone has no record to link to, so the list would be
+            a permanent "nothing here". */}
+          {details && !(portal && model.orphan) ? (
+            <section className="mt-3">
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                Links ({model.links.length})
+              </h3>
+              {model.links.length === 0 ? (
+                <p
+                  className="mt-1 text-[12px] text-[var(--ink-muted)]"
+                  data-testid="container-no-links"
+                >
+                  Nothing links here yet.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-1" data-testid="container-links">
+                  {model.links.map((link) => (
+                    <li key={`${link.edgeId}-${link.direction}`}>
+                      <button
+                        type="button"
+                        data-testid="container-link-row"
+                        className="flex w-full items-baseline gap-1.5 rounded px-1 py-0.5 text-left hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => onNavigate?.({ kind: link.kind, id: link.otherId })}
+                      >
+                        <span aria-hidden="true" className="text-[11px] text-[var(--ink-muted)]">
+                          {link.direction === "in" ? "\u2192" : "\u2190"}
+                        </span>
+                        <span aria-hidden="true" className="text-[11px] text-[var(--ink-muted)]">
+                          {link.glyph}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--ink)]">
+                          {link.title}
+                          {link.description ? (
+                            <span className="ml-1 text-[11px] text-[var(--ink-muted)]">
+                              {"\u00b7"} {link.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {details && !portal && onRename && canEdit ? (
+            <section className="mt-3">
+              <label
+                className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]"
+                htmlFor="container-rename"
+              >
+                Title
+              </label>
+              <input
+                id="container-rename"
+                data-testid="container-rename"
+                className="mt-1 w-full rounded border border-[var(--hairline)] bg-transparent px-1.5 py-1 text-[12px] text-[var(--ink)]"
+                defaultValue={model.title}
+                onBlur={(event) => {
+                  const next = event.target.value.trim();
+                  if (next && next !== model.title) onRename(next);
+                }}
+              />
+            </section>
+          ) : null}
+        </div>
+      )}
     </aside>
   );
 }

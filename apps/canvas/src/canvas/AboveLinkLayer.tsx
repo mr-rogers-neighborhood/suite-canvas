@@ -1,7 +1,9 @@
+import { resolveSurfaceStyle } from "@suite/graph";
 import { ViewportPortal } from "@xyflow/react";
 import { useEdges } from "../store/workspaceStore";
 import { useIsolatedEdgeId } from "./routeIsolation";
 import { linkRoutePath, type SectionLink } from "./SectionLinkLayer";
+import { linkStroke } from "./surfacePaint";
 
 export interface AboveLinkLayerProps {
   /** Every link that asked to paint above the cards (`layer: "above"`). */
@@ -49,6 +51,9 @@ export function AboveLinkLayer({
           const path = linkRoutePath(link, edges);
           // Isolate (ADR-0052 §7) recedes everything but the chosen link.
           const dimmed = isolatedEdgeId !== null && isolatedEdgeId !== link.edge.id;
+          // The same paint the edge layer gives a link below the cards, so raising
+          // one never changes how it looks (ADR-0051 §1).
+          const paint = linkStroke(resolveSurfaceStyle(link.edge.style, "link"));
           return (
             <g
               key={link.edge.id}
@@ -64,6 +69,7 @@ export function AboveLinkLayer({
                 data-edge-id={link.edge.id}
                 data-selected={selected ? "true" : undefined}
                 d={path}
+                style={paint}
                 markerEnd="url(#section-link-arrow)"
               />
               {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}

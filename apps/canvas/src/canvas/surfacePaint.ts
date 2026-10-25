@@ -1,4 +1,11 @@
-import type { ResolvedSurfaceStyle, StyleColourRole, StyleShape, StyleSide } from "@suite/graph";
+import type {
+  ResolvedSurfaceStyle,
+  StyleColourRole,
+  StyleEdgePaint,
+  StyleShape,
+  StyleSide,
+} from "@suite/graph";
+import { defaultEdgeFlow } from "@suite/graph";
 
 /**
  * From a resolved style to paint.
@@ -117,4 +124,44 @@ export function surfacePaintVars(style: ResolvedSurfaceStyle | undefined): Recor
     if (animation) paint[`--paint-animation-${side}`] = animation;
   }
   return paint;
+}
+
+/**
+ * The stroke pattern a dashed or dotted edge draws, in user units, with the
+ * length of one repeat: a dash animation has to travel exactly one pattern or it
+ * visibly jumps every cycle.
+ */
+const DASH_PATTERN: Partial<Record<StyleEdgePaint, { pattern: string; cycle: number }>> = {
+  dashed: { pattern: "7 5", cycle: 12 },
+  dotted: { pattern: "1.5 4", cycle: 5.5 },
+};
+
+/**
+ * The stroke a link paints with, as React style properties.
+ *
+ * A link has one stroke rather than four sides (ADR-0051 §1), so `sides.top` is
+ * where a link's line style lives: paint, width, colour and dash flow. Absent
+ * means solid, which is why an unstyled link returns only its ink and renders
+ * exactly as it did before the paint system.
+ */
+export function linkStroke(style: ResolvedSurfaceStyle): Record<string, string | number> {
+  const edge = style.sides.top;
+  const stroke: Record<string, string | number> = {
+    stroke: colourRoleVar(edge?.colour ?? style.ink),
+  };
+  if (edge?.width !== undefined) stroke.strokeWidth = edge.width;
+  const dash = edge ? DASH_PATTERN[edge.paint] : undefined;
+  if (dash) {
+    stroke.strokeDasharray = dash.pattern;
+    stroke["--link-dash-cycle"] = String(dash.cycle);
+    // `flow` defaults to the link's own direction: source to target (§6).
+    const flow = edge?.flow ?? defaultEdgeFlow("link");
+    if (flow !== "none") {
+      stroke.animation = `link-dash ${edge?.speed ?? 4}s linear infinite${
+        flow === "reverse" ? " reverse" : ""
+      }`;
+    }
+  }
+  if (style.opacity !== 1) stroke.opacity = style.opacity;
+  return stroke;
 }

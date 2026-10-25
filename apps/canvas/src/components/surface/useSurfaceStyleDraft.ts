@@ -1,4 +1,4 @@
-import type { SurfaceStyle } from "@suite/graph";
+import type { SurfaceStyle, WorkspaceDocument } from "@suite/graph";
 import { isEmptyStyle, resolveSurfaceStyle } from "@suite/graph";
 import { useCallback } from "react";
 import { useCanvasStore } from "../../store/useCanvasStore";
@@ -21,13 +21,22 @@ export interface StyledSurface {
  * painted by the same record ([ADR-0051](../../docs/decisions/0051-one-style-vocabulary-over-edges.md)),
  * so the editor should not be re-plumbed per entity kind.
  */
-export function useSurfaceStyleDraft(target: StyledSurface | null): {
+export function useSurfaceStyleDraft(
+  target: StyledSurface | null,
+  /**
+   * The document to write through. Defaults to the live one; a host that was
+   * handed its own (a test, a published snapshot) passes it so the editor never
+   * writes to a different document than the panel is reading.
+   */
+  injected: WorkspaceDocument | null = null,
+): {
   style: SurfaceStyle | undefined;
   resolved: ReturnType<typeof resolveSurfaceStyle>;
   patch: (next: SurfaceStyle) => void;
   reset: () => void;
 } {
-  const workspace = useCanvasStore((state) => state.workspace);
+  const storeWorkspace = useCanvasStore((state) => state.workspace);
+  const workspace = injected ?? storeWorkspace;
   const snapshot = useWorkspaceSnapshot();
 
   const style = (() => {

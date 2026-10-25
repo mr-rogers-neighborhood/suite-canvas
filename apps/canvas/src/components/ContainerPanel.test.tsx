@@ -173,3 +173,47 @@ describe("ContainerPanel tags", () => {
     expect(screen.queryByTestId("tag-input")).toBeNull();
   });
 });
+
+describe("ContainerPanel tabs", () => {
+  it("paints a section from the Style tab", () => {
+    const { workspace, section } = setup();
+
+    renderPanel(sectionModel(workspace, section.id), workspace);
+    // The panel opens on Details, where the identity and the links live.
+    expect(screen.getByTestId("container-tags")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("container-tab-style"));
+    fireEvent.click(screen.getByTestId("style-shape-diamond"));
+
+    expect(workspace.getSection(section.id)?.style?.shape).toBe("diamond");
+    // Details steps out of the way rather than stacking under the editor.
+    expect(screen.queryByTestId("container-tags")).toBeNull();
+  });
+
+  it("paints the portal card itself, not the board it opens", () => {
+    const { workspace, opened, board } = setup();
+    const portal = workspace.createPortalCard({ boardId: board.id, targetBoardId: opened.id });
+
+    renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
+    fireEvent.click(screen.getByTestId("container-tab-style"));
+    fireEvent.change(screen.getByTestId("style-surface"), { target: { value: "surface-strong" } });
+
+    // The card is the surface on this board; the board behind it keeps its own
+    // paint, so opening the portal never repaints the board it opens.
+    expect(workspace.getCard(portal.id)?.style?.surface).toBe("surface-strong");
+    expect(workspace.getBoard(opened.id)?.style?.surface).toBeUndefined();
+  });
+
+  it("keeps a portal's outline behind its Contents tab", () => {
+    const { workspace, opened, board } = setup();
+    const portal = workspace.createPortalCard({ boardId: board.id, targetBoardId: opened.id });
+
+    renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
+    expect(screen.queryByTestId("container-contents")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("container-tab-contents"));
+
+    expect(screen.getByTestId("container-contents")).toBeTruthy();
+    expect(screen.queryByTestId("container-tags")).toBeNull();
+  });
+});

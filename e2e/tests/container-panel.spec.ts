@@ -292,6 +292,9 @@ test("a portal's panel lists the target board, and a row opens it", async ({ pag
 
   await page.getByTestId("portal-node").click();
   await expect(panel(page)).toBeVisible();
+  // The outline is its own leaf: a portal's contents are a lot of rows, so they
+  // sit behind a tab rather than pushing Details and Style past the fold.
+  await page.getByTestId("container-tab-contents").click();
   const contents = page.getByTestId("container-contents");
   await expect(contents).toBeVisible();
   // Board 2 has one card and no sections, so it reads as one loose group.

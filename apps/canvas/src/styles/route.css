@@ -69,3 +69,12 @@ body[data-isolate-edge] .route-edge.is-dimmed .edge-description,
 body[data-isolate-edge] .above-link-group.is-dimmed .above-link {
   opacity: var(--lens-dim-opacity);
 }
+
+/* A dashed or dotted link animates along its own path (ADR-0051 §6): the pattern
+   travels one full repeat per cycle, so the loop has no seam. `reverse` is the
+   explicit exception, and the default flow is source to target. */
+@keyframes link-dash {
+  to {
+    stroke-dashoffset: calc(-1 * var(--link-dash-cycle, 12));
+  }
+}

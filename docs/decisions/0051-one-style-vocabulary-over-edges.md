@@ -62,7 +62,10 @@ other work"*. This ADR is the model; the gate (A29) stages the editors.
 9. **Text scale is a style value**, per surface, independent of camera zoom. It is the answer to "let me
    make this card's text bigger without zooming the board".
 10. **The record lands whole; the editors stage.** Schema first (so no migration), then cards and links,
-    then sections/boards/fields, then shell regions and named rules.
+    then sections/boards/fields, then shell regions and named rules. **Where it stands:** cards, sections,
+    portals and links are painted *and* editable; a link's stroke is stored at `sides.top` (its one edge) and
+    read by `linkStroke`, so both link layers paint the same paint; the board's surface, fields and shell
+    regions have a painter but no editor entry point yet.
 
 ### The record
 

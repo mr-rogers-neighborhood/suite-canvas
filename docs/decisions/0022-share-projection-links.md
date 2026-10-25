@@ -1,6 +1,6 @@
 # ADR-0022: Share links are capabilities over live projection rooms
 
-- **Status:** accepted; portal and drawing projection scopes added in [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) and [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md)
+- **Status:** accepted; portal and drawing projection scopes added in [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) and [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md); the live portal expansion is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
 - **Date:** 2026-10-23
 - **Related:** [ADR-0021](./0021-sharing-seam-deferred.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), `docs/architecture.md`
 

@@ -331,15 +331,24 @@ Loro graph remains the truth, and an aborted expansion leaves the portal usable 
 
 ## Rendering
 
-The canvas target is a **derived scene over the graph**, not a canvas whose document is the
-renderer's own node list ([ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)):
+**The editing canvas is React Flow** (`apps/canvas/src/canvas/CanvasBoard.tsx`), and it is the only
+canvas the product ships ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md), which supersedes
+[ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)). Boards are React Flow node
+lists projected from the graph on every change; sections, connectors, portals and whiteboards are
+node types on that surface.
+
+The **scene preview** described below still exists behind `?canvas=scene`: it is a read-only
+projection used to explore the portal/LOD/fractal idea. It cannot edit, it is not the default, and
+it is scheduled for removal with the scene-only parts of `packages/scene`. Everything in this
+section is therefore a description of code that is on its way out, kept until the removal lands so
+the design record stays readable.
 
 ```text
 Loro graph (@suite/graph)
   cards · placements · sections · edges · drawings
         │
         ▼
-Scene projection (pure, engine-agnostic)
+Scene projection (pure, engine-agnostic) — preview only, being removed
   board instances · transforms · effective zoom · LOD · portal gates · edges
         │
         ▼
@@ -350,9 +359,9 @@ Scene surface (React Flow camera + DOM projection, `?canvas=scene`)
 Read-only card faces + proxy layers (miniatures, icons, edges, sections, whiteboard previews)
 ```
 
-The projection is the target, not today's default: the canvas still ships the React Flow flow
-surface. The pure layer is `packages/scene` (`@suite/scene`); a `?canvas=scene` flag exists for the
-scene surface while it reaches parity, and neither new surface is the default.
+The one part of `@suite/scene` with a live caller in the shipped product is the pure layout planner
+(`layout.ts` and `geometry.ts`): the board's fractal layout command plans with it and commits the
+plan as one undoable batch.
 
 ### Graph truth, derived scene
 
@@ -430,10 +439,9 @@ the accessibility path when the spatial canvas is not legible.
 ### SceneSurface adapter
 
 The seam is the pure `Scene` value: `SceneBoard` owns the camera, LOD/gate state and focus path;
-`SceneLayer` paints the frame. The React Flow scene surface is the product of record; any other
-surface must earn the place by passing a measured checklist. LOD proxies and card faces are
-shared, so the engine choice stays reversible and a failed spike costs an adapter rather than a
-document.
+`SceneLayer` paints the frame. It is a preview surface with no editing path, and
+[ADR-0036](./decisions/0036-the-canvas-is-react-flow.md) removes it rather than growing one; the
+editing surface stays `CanvasBoard`.
 
 ### The card layer
 
@@ -796,11 +804,10 @@ Creating a share rebuilds immediately and revoking one closes its room. Resolvin
 token reports the projection room as its `workspaceId`; the owner workspace id never reaches that
 holder, so a board or card link cannot be exchanged for a workspace link.
 
-A projection must carry whiteboard `drawings` for the cards in scope, and a portal must render a
-live target only when that target board is part of the projection; anything else reads as
-*Unavailable board* ([ADR-0022](./decisions/0022-share-projection-links.md),
-[ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)). Redaction runs before the
-scene is built, so a share never fetches owner-workspace content through a portal.
+A projection must carry whiteboard `drawings` for the cards in scope, and a portal whose target board
+is outside the projection reads as *Unavailable board*
+([ADR-0022](./decisions/0022-share-projection-links.md)). Redaction runs before the projection is
+built, so a share never fetches owner-workspace content through a portal.
 
 A reference row is emitted for every link that crosses the projection boundary, so the same card is
 reported once even when several kinds point the same way. Building those rows walks the workspace

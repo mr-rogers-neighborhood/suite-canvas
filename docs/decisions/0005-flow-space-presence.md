@@ -1,6 +1,6 @@
 # ADR-0005: Flow-space presence and live drag tracking
 
-- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); coordinate and instance scoping amended by [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); the instance-scoping amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
 - **Date:** 2026-10-20
 
 > **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** Presence

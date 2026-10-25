@@ -1,6 +1,6 @@
 # ADR-0006: Node-owned connectors, magnetic placement, and layer order
 
-- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); rendering amended by [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); the rendering amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
 - **Date:** 2026-10-20
 
 > **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** Connector

@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-23
-- **Related:** [ADR-0010](./0010-workspace-boards-and-cards.md), [ADR-0016](./0016-semantic-core.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) (supersedes the UI contract), `docs/roadmap/alpha.md` §7.4, `packages/graph/src/loro/WorkspaceDocument.ts`
+- **Related:** [ADR-0010](./0010-workspace-boards-and-cards.md), [ADR-0016](./0016-semantic-core.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) (supersedes the UI contract), [ADR-0036](./0036-the-canvas-is-react-flow.md) (withdraws that scene contract), `docs/roadmap/alpha.md` §7.4, `packages/graph/src/loro/WorkspaceDocument.ts`
 
 > **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** The
 > data model below stands unchanged. The **UI contract is superseded**: a portal is no longer a
@@ -13,6 +13,13 @@
 > reference-not-ownership and "cycles are a navigation problem" all remain in force. `PortalNode`
 > and `PortalTransitionLayer` are the superseded precedent; the miniature survives as the far-LOD
 > impostor.
+
+> **Amendment (2026-10-25, [ADR-0036](./0036-the-canvas-is-react-flow.md)).** The live-scene UI
+> contract above is withdrawn with the scene surface. A portal is again the doorway it was: a card
+> with a `board` field, a live miniature, and a camera transition that swaps `activeBoardId` under
+> an overlay. `PortalNode` and `PortalTransitionLayer` are the shipped implementation, not a
+> precedent. Nothing in the data model changes — the `portal` type, `board` field kind,
+> `createPortalCard`, reference-not-ownership and cycle legality all still stand.
 
 ## Context
 

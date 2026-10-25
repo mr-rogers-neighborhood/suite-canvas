@@ -1,6 +1,6 @@
 # ADR-0017: Spatial sections
 
-- **Status:** accepted; rendering amended by [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)
+- **Status:** accepted; the rendering amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
 - **Date:** 2026-10-21
 
 > **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** The

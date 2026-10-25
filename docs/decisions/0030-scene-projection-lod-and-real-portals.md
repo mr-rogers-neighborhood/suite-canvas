@@ -1,6 +1,6 @@
 # ADR-0030: Scene projection, LOD bands, and real portals
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0036](./0036-the-canvas-is-react-flow.md)
 - **Date:** 2026-10-23
 - **Related:** [ADR-0017](./0017-spatial-sections.md), [ADR-0022](./0022-share-projection-links.md), [ADR-0029](./0029-portal-board-field.md), [`docs/architecture.md`](../architecture.md) §Rendering, [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.4
 

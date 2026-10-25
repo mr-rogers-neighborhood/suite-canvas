@@ -62,9 +62,12 @@ Two constraints make a naive version expensive:
 7. **The built-in catalogue is repository data, seeded offline.** It ships the way the starter boards
    do; nothing is fetched at runtime. A catalogue is content, not a service (the supply-chain rule that
    already governs tours).
-8. **One gallery, three kinds.** The library gains a **Templates** view that lists type blueprints,
-   board templates and offered cards together, filterable by kit tag, each row installable with the
-   scope the kind allows. A card's starter content stays *attached* to its type (ADR-0038) unless the
+8. **One gallery, three kinds.** The library gains a **Templates** tab — a tab, not a dialog, because
+   board templates already live there and a second surface would split one question in two. It lists
+   type blueprints, board templates and offered cards together, filterable by kit tag, and every row
+   opens the same install sheet: a checklist of the fields plus the starter content, with a preview of
+   what will be created. The checklist is the UI for the `fields` scope, so a partial install is the
+   normal path rather than a hidden one. A card's starter content stays *attached* to its type (ADR-0038) unless the
    card is offered on its own.
 9. **Vocabulary, so the three do not keep colliding.** A type's seed card is its **starter card**
    (`templateCardId` keeps its name in code); a board's seed is a **board template**; a catalogued
@@ -107,9 +110,15 @@ story, all of which a card already has. A shelf of primitives is *content*.
 - **Naming it "Type Template".** ADR-0038 already means the starter card by that phrase; a second
   meaning makes every future sentence about templates ambiguous.
 
-## Open questions this ADR does not settle
+## Settled at writing time (2026-10-25)
 
-- Whether the gallery lives inside the library drawer (its existing tabs) or as its own dialog.
-- Whether a kit shows as a section-per-kit board or a tag-filtered lens page; the decision above
-  permits both, and the difference is presentation only.
-- Whether install provenance is visible in the UI at all, or only recorded.
+- **The name is "type blueprint"**, and the other two keep their own words: a type's seed card is its
+  **starter card**, and a board's seed is a **board template**.
+- **A kit is a tag, and a kit's page is a lens.** No kit record.
+- **It is built after A33 and A34**, not as an Alpha gate: a blueprint declares fields, so the field
+  editor and the composite kinds come first. The model is recorded now because it constrains what
+  install must do (mint ids, refuse an unknown kind).
+- **The gallery is a tab in the library**, and installing opens one checklist sheet shared by all
+  three kinds.
+- **Provenance is recorded and shown** as a row on the installed type ("from Kit X"), because a user who
+  cannot see where a schema came from cannot judge whether to trust it. Updates stay manual.

@@ -936,6 +936,14 @@ workspace merge-back.
 | **A23** | **Source annotations** | A PDF page or video timecode can carry annotations that project as cards, appear in the library, and drop onto the canvas; an annotation can be detached into an ordinary card and keeps working when the source is removed. Evidence: annotation records, projection, the reader surface. | A19 |
 | **A24** | **Navigation and tabs** | A home board setting with a home control; the pre-tabs nav affordance is removed and navigation moves beside the search bar; board tabs can be grouped and pinned, with pinned tabs collapsing to an icon and closing only from the menu; the library reflects grouping and pinning; the outline expands a section to show its contents and navigates into a portal on double-click; clicking an outline card navigates to it. **Expanded 2026-10-25:** the outline gains a z-order lens, so what sits above what is answerable in one place for cards, sections and links; there is no separate layer-mode surface.
 
+**Also 2026-10-25 — Sketches get their own library section, and may be promoted.** A sketch is a card
+(ADR-0031), so it appears in Cards today only by its type; it deserves a **Sketches** tab the way Boards
+has one, because "my drawings" is a question users ask as often as "my boards". The same note asks
+whether a sketch can be **promoted like a board or a portal** — opened full-surface in a **tab**. That is
+the portal mechanism minus the target board: a sketch is already its own surface in focus
+(`openCardFocus`), so promotion is "a sketch tab" over the same card id, not a new object. Promotion stays
+additive and the card remains the thing that exists.
+
 **Also 2026-10-25 — home and new tab are two settings, not one.** Closing the last open board opens the **home board** rather than leaving the app empty. A **new tab** opens a chooser (pick a board, or create one) instead of guessing a board, and the workspace may name a **new-tab board** so that tab has a default. Home and new tab stay distinct because they answer different questions: home is *where I land*, new tab is *where I start something*. Both are one optional board id on the workspace — no new record class, and the same ids a portal already resolves — so a user who wants a portal on their new-tab board can have one. No empty state, no second notion of "the board you are on".
 
 Evidence: `BoardTabs.tsx`, `BoardOutline.tsx`, `LibraryDrawer.tsx`, `ADR-0052`. | A13 |

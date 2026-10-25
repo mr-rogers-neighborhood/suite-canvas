@@ -93,6 +93,14 @@ closed route.**
   self-intersecting outline is a visual mess, not an error; we accept it rather than validating geometry
   the user can see.
 
+## Note 2026-10-25: promotion is not a new kind
+
+The author asked whether a **sketch** can be promoted to a tab, the way a board or a portal can. A sketch
+is already a card with its own focus surface (`openCardFocus`), so promotion is *a tab over an existing
+card id*, not a new object class — the same shape as a portal tab, minus a target board. It follows from
+this ADR's own rule (a shape with text is a card, a shape without text is a route): the sketch stays the
+card, and the tab is a way of looking at it.
+
 ## Open questions (deliberately not settled here)
 
 - Whether strips may be **reordered across sides** by dragging, or only assigned. Assignment is enough to
@@ -102,6 +110,7 @@ closed route.**
 - Whether a route can be **filled** only when closed, or whether an open route can sketch a region. The
   simpler rule is closed-only.
 - Whether rollup summaries are configurable ("show this field") or always derived. Derived first.
+- Should we allow for sections and other cards types to have the same shape granularity, and should sections also have a "Fit" mode which automatically adjusts the section's outline to enclose its content neatly. Should sections then also have widget areas like other cards, and should these areas follow the same rules for strips and compact rendering?
 
 ## Rejected alternatives
 

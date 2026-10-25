@@ -708,6 +708,22 @@ function WorkspaceShell({
     themeMode,
   ]);
 
+  /**
+   * A new sketch, placed where the dock's card would land and opened in the
+   * focus surface — the same result as the canvas's own "New sketch" menu item.
+   */
+  const createSketch = useCallback(() => {
+    if (!canCreateContent) return;
+    createCard(ensureWhiteboardType(workspace).id);
+  }, [canCreateContent, createCard, workspace]);
+
+  /** A new section around nothing, centred where a new card would land. */
+  const createSection = useCallback(() => {
+    if (!activeBoardId || !canCreateContent) return;
+    const centre = canvasPoint();
+    workspace.createSection({ boardId: activeBoardId, x: centre.x - 180, y: centre.y - 130 });
+  }, [activeBoardId, canCreateContent, workspace, canvasPoint]);
+
   const createBoardPortal = useCallback(() => {
     if (!activeBoardId || !canCreateBoards) return;
     const board = workspace.createBoard();
@@ -1125,6 +1141,8 @@ function WorkspaceShell({
             activeBoardId={activeBoardId}
             onCreateCard={(typeId) => createCard(typeId)}
             onCreatePortal={createPortal}
+            onCreateSketch={createSketch}
+            onCreateSection={createSection}
             onCreateBoardPortal={createBoardPortal}
             onManageTypes={openTypeSettings}
             canManageSchema={canManageSchema}

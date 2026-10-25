@@ -17,7 +17,7 @@ function renderDialog(onAddField = vi.fn()) {
     <TypeSettingsDialog
       types={[type]}
       onClose={() => {}}
-      onCreateType={() => {}}
+      onCreateType={() => "type-2"}
       onUpdateType={() => {}}
       onDeleteType={() => {}}
       onAddField={onAddField}

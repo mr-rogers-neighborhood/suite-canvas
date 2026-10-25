@@ -101,3 +101,27 @@ describe("Dock portal creation", () => {
     expect(screen.queryByTestId("dock-new-portal")).toBeNull();
   });
 });
+
+describe("Dock mirrors the canvas's new-thing menu", () => {
+  it("offers Sketch and Section next to the card types", () => {
+    const onCreateSketch = vi.fn();
+    const onCreateSection = vi.fn();
+    mount({ onCreateSketch, onCreateSection });
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+
+    fireEvent.click(screen.getByTestId("dock-new-sketch"));
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+    fireEvent.click(screen.getByTestId("dock-new-section"));
+
+    // The dock is a complete "new" surface, not a subset of the canvas menu.
+    expect(onCreateSketch).toHaveBeenCalledTimes(1);
+    expect(onCreateSection).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides both rows when the caller offers neither", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+    expect(screen.queryByTestId("dock-new-sketch")).toBeNull();
+    expect(screen.queryByTestId("dock-new-section")).toBeNull();
+  });
+});

@@ -2486,6 +2486,8 @@ export function CanvasBoard() {
         ...(canCreateBoards
           ? [
               {
+                // The label says both because it does both: the board is created
+                // and this board opens it through a new portal card.
                 label: "New board and portal",
                 onSelect: () => createPortalToNewBoard(flowPosition),
               },

@@ -42,6 +42,8 @@ export interface PortalCardProps {
   height?: number | null;
   /** Double-click or Enter: the canvas plays the camera transition. */
   onOpen?: (() => void) | undefined;
+  /** Click on the header: read the portal in the container panel. */
+  onOpenInfo?: (() => void) | undefined;
 }
 
 /**
@@ -59,6 +61,7 @@ export function PortalCard({
   width,
   height,
   onOpen,
+  onOpenInfo,
 }: PortalCardProps) {
   const names = peers.map((peer) => peer.name).join(", ");
   const unavailable = boardName === null;
@@ -98,7 +101,22 @@ export function PortalCard({
       }}
     >
       <span className="sr-only">Portal to </span>
+      {/* The header reads the portal, the body walks through it: the same split a
+          card has between its info click and its double-click. It is a button so
+          the affordance is reachable from the keyboard, and it claims only the
+          click, never the double-click that opens the board. */}
       <header className="portal-card__header">
+        <button
+          type="button"
+          aria-label={`Portal details: ${boardName ?? "unavailable board"}`}
+          data-testid="portal-info"
+          className="portal-card__info absolute inset-0 cursor-default"
+          tabIndex={-1}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenInfo?.();
+          }}
+        />
         <span aria-hidden="true" className="portal-card__glyph">
           {glyph}
         </span>

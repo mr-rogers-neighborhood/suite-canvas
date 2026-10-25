@@ -1633,6 +1633,17 @@ export function CanvasBoard() {
     [nodeScreenRect, requestPortalEntry],
   );
 
+  // A surface (the container panel) asked to step through a portal. The camera
+  // owns the doorway — it needs the node's screen rect to fly from — so the
+  // request is fulfilled here, where the node's geometry is known.
+  const portalOpenRequest = useUiStore((state) => state.portalOpenRequest);
+  const clearPortalOpenRequest = useUiStore((state) => state.clearPortalOpenRequest);
+  useEffect(() => {
+    if (!portalOpenRequest) return;
+    enterPortal(portalOpenRequest.cardId, portalOpenRequest.boardId);
+    clearPortalOpenRequest();
+  }, [portalOpenRequest, enterPortal, clearPortalOpenRequest]);
+
   /** Orderly arrival on a board whose stored camera should be restored. */
   useEffect(() => {
     if (!viewportRequest || viewportRequest.boardId !== activeBoardId) return;

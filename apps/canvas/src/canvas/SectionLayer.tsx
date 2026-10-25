@@ -1,4 +1,4 @@
-import type { Connector, Rect, Section, SectionColor } from "@suite/graph";
+import type { Connector, Rect, Section } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../collab/presence";
@@ -13,6 +13,7 @@ import { useUiStore } from "../store/useUiStore";
 import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
 import { revealConnectors } from "./NodeConnectors";
 import type { SectionOffset } from "./sectionLayout";
+import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
 type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -22,23 +23,9 @@ const RESIZE_DIRECTIONS: ResizeDirection[] = ["nw", "n", "ne", "e", "se", "s", "
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 100;
 
-const FILL: Record<SectionColor, string> = {
-  slate: "color-mix(in srgb, var(--section-slate) 9%, transparent)",
-  blue: "color-mix(in srgb, var(--section-blue) 10%, transparent)",
-  green: "color-mix(in srgb, var(--section-green) 10%, transparent)",
-  amber: "color-mix(in srgb, var(--section-amber) 11%, transparent)",
-  rose: "color-mix(in srgb, var(--section-rose) 10%, transparent)",
-  violet: "color-mix(in srgb, var(--section-violet) 10%, transparent)",
-};
+const FILL = SECTION_FILL;
 
-const STROKE: Record<SectionColor, string> = {
-  slate: "var(--section-slate)",
-  blue: "var(--section-blue)",
-  green: "var(--section-green)",
-  amber: "var(--section-amber)",
-  rose: "var(--section-rose)",
-  violet: "var(--section-violet)",
-};
+const STROKE = SECTION_STROKE;
 
 /** What a link dragged out of a section connector landed on. */
 export interface SectionLinkTarget {

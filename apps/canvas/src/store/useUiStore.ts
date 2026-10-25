@@ -32,6 +32,12 @@ function withOpenBoard(openBoardIds: string[], boardId: string): string[] {
  * time. `focus` is the full-canvas card surface, which owns the body editor the
  * same way the inspector's `panel` does.
  */
+/** What the container panel is looking at: a section, or a portal standing for a board. */
+export interface ContainerInspectorTarget {
+  kind: "section" | "portal";
+  id: string;
+}
+
 export type EditingSurface = "canvas" | "panel" | "focus";
 
 /** React Flow's viewport: world-to-screen translate plus zoom. */
@@ -134,6 +140,12 @@ interface UiState extends SessionCapabilities {
   selectedEdgeIds: string[];
   /** Section selected on the active board, if any. */
   selectedSectionId: string | null;
+  /**
+   * The container whose panel is open: a section, or the portal card that stands
+   * for a board. Containers are read by their own panel — they have no fields, no
+   * types and no body, so the card inspector is the wrong surface for them.
+   */
+  containerInspector: ContainerInspectorTarget | null;
   /** Section whose title input is open for renaming. */
   editingSectionId: string | null;
   editingNodeId: string | null;
@@ -218,6 +230,16 @@ interface UiState extends SessionCapabilities {
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedEdgeIds: (ids: string[]) => void;
   selectSection: (id: string | null) => void;
+  openContainerInspector: (target: ContainerInspectorTarget) => void;
+  closeContainerInspector: () => void;
+  /**
+   * A surface asked to step through a portal. The camera owns the doorway — it
+   * needs the node's screen rect to fly from — so the panel only names the board
+   * and the canvas performs the entry.
+   */
+  portalOpenRequest: { cardId: string; boardId: string; at: number } | null;
+  requestPortalOpen: (cardId: string, boardId: string) => void;
+  clearPortalOpenRequest: () => void;
   setEditingSection: (id: string | null) => void;
   setSelectedConnector: (connector: SelectedConnector | null) => void;
   startEditing: (id: string, field?: "title" | "body", surface?: EditingSurface) => void;
@@ -264,6 +286,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectedNodeIds: [],
   selectedEdgeIds: [],
   selectedSectionId: null,
+  containerInspector: null,
+  portalOpenRequest: null,
   editingSectionId: null,
   editingNodeId: null,
   editingField: "body",
@@ -422,6 +446,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectSection: (selectedSectionId) =>
     set({
       selectedSectionId,
+      containerInspector: selectedSectionId ? { kind: "section", id: selectedSectionId } : null,
       ...(selectedSectionId
         ? {
             selectedNodeIds: [],
@@ -456,6 +481,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((state) => ({
       inspectorNodeId,
       inspectorFieldId: fieldId,
+      containerInspector: null,
       // The inspector is the reading surface: opening it ends a focus session,
       // and the panel starts its own edit before accepting keys.
       cardFocusId: null,
@@ -468,10 +494,23 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedSectionId: null,
       editingSectionId: null,
     })),
+  openContainerInspector: (containerInspector) =>
+    set({
+      containerInspector,
+      // A container panel and a card panel are the same drawer: one at a time.
+      inspectorNodeId: null,
+      inspectorFieldId: null,
+      cardFocusId: null,
+    }),
+  closeContainerInspector: () => set({ containerInspector: null }),
+  requestPortalOpen: (cardId, boardId) =>
+    set({ portalOpenRequest: { cardId, boardId, at: performance.now() } }),
+  clearPortalOpenRequest: () => set({ portalOpenRequest: null }),
   closeInspector: () =>
     set((state) => ({
       inspectorNodeId: null,
       inspectorFieldId: null,
+      containerInspector: null,
       // Closing the inspector leaves focus mode with it, so Escape cannot strand
       // the canvas behind a surface the reader has already dismissed.
       cardFocusId: null,

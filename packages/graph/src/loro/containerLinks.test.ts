@@ -468,3 +468,15 @@ describe("deleteBoard card handling", () => {
     expect(workspace.getCard(card.id)?.deletedAt ?? null).toBeNull();
   });
 });
+
+describe("board identity fields", () => {
+  it("reads a board colour back after it is set, and clears it", () => {
+    const { workspace, other } = setup();
+    workspace.setBoardColor(other.id, "rose");
+    expect(workspace.getBoard(other.id)?.color).toBe("rose");
+    expect(workspace.listBoards().find((board) => board.id === other.id)?.color).toBe("rose");
+
+    workspace.setBoardColor(other.id, null);
+    expect(workspace.getBoard(other.id)?.color).toBeUndefined();
+  });
+});

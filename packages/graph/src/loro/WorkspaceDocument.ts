@@ -1100,11 +1100,17 @@ export class WorkspaceDocument {
     if (cached) return cached;
     const value = this.boards.get(id);
     if (!isMap(value)) return undefined;
+    const color = readString(value, "color");
+    const coverAttachmentId = readString(value, "coverAttachmentId");
     const board = boardSchema.parse({
       id,
       name: readString(value, "name") ?? "Board",
       createdAt: readNumber(value, "createdAt") ?? 0,
       updatedAt: readNumber(value, "updatedAt") ?? 0,
+      // Both have been in the schema since boards became identities; nothing read
+      // them back, so a colour write was invisible after the next cache fill.
+      ...(color ? { color } : {}),
+      ...(coverAttachmentId ? { coverAttachmentId } : {}),
     });
     this.boardCache.set(id, board);
     return board;
@@ -1148,6 +1154,16 @@ export class WorkspaceDocument {
     fields.set("name", trimmed);
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}rename-board`);
+  }
+
+  /** A board's colour, or null to go back to the default. Boards are identities. */
+  setBoardColor(id: string, color: Board["color"] | null): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    if (color) fields.set("color", color);
+    else fields.delete("color");
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-color`);
   }
 
   deleteBoard(id: string, options: { cards?: "keep" | "trash" } = {}): void {

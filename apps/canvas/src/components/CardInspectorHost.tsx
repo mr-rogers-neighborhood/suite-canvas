@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
 import { isShareSession } from "../session/session";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CardInspector } from "./CardInspector";
+import { ContainerPanel } from "./ContainerPanel";
 import { useCardPanelModel } from "./useCardPanelModel";
+import { useContainerPanelModel } from "./useContainerPanelModel";
 
 /**
  * Binds the inspector drawer to the workspace. The model comes from
@@ -23,6 +26,20 @@ export function CardInspectorHost() {
   const canManageSchema = useUiStore((state) => state.canManageSchema);
 
   const model = useCardPanelModel(inspectorNodeId, "panel");
+  const container = useContainerPanelModel();
+  const workspace = useCanvasStore((state) => state.workspace);
+  const closeContainerInspector = useUiStore((state) => state.closeContainerInspector);
+  const requestPortalOpen = useUiStore((state) => state.requestPortalOpen);
+  const focusCard = useUiStore((state) => state.focusCard);
+  const focusSection = useUiStore((state) => state.focusSection);
+
+  const containerTarget = useUiStore((state) => state.containerInspector);
+  // A container that vanished (deleted in another tab, trashed) closes the drawer
+  // rather than leaving a panel describing something that is not there.
+  const containerMissing = containerTarget !== null && container === null;
+  useEffect(() => {
+    if (containerMissing) closeContainerInspector();
+  }, [containerMissing, closeContainerInspector]);
 
   useEffect(() => {
     if (inspectorNodeId && !model) closeInspector();
@@ -39,6 +56,34 @@ export function CardInspectorHost() {
       state.stopEditing();
     }
   }, [inspectorNodeId]);
+
+  // Containers first: they share the drawer, and only one of the two can be open.
+  if (container) {
+    return (
+      <ContainerPanel
+        model={container}
+        onClose={closeContainerInspector}
+        onOpenBoard={(cardId, boardId) => requestPortalOpen(cardId, boardId)}
+        onLocate={() => {
+          if (container.kind === "portal") {
+            if (container.boardId) focusCard(container.id, container.boardId);
+            return;
+          }
+          if (container.section) focusSection(container.section.id, container.section.boardId);
+        }}
+        onSetColor={(color) => {
+          if (container.kind === "portal") {
+            if (container.board) workspace.setBoardColor(container.board.id, color);
+            return;
+          }
+          workspace.setSectionColor(container.id, color);
+        }}
+        onRename={(title) => {
+          if (container.kind === "section") workspace.renameSection(container.id, title);
+        }}
+      />
+    );
+  }
 
   if (!model) return null;
 

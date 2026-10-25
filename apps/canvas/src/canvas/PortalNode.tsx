@@ -24,6 +24,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const requestPortalEntry = useUiStore((state) => state.requestPortalEntry);
+  const openContainerInspector = useUiStore((state) => state.openContainerInspector);
   const setResizing = usePresenceStore((state) => state.setResizing);
 
   const targetBoardId = portalTargetId(card);
@@ -147,6 +148,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
         width={width}
         height={height}
         onOpen={open}
+        onOpenInfo={() => openContainerInspector({ kind: "portal", id })}
       />
       <NodeConnectors {...connectors} selected={Boolean(selected)} />
     </div>

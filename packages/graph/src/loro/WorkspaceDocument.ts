@@ -3283,7 +3283,14 @@ export class WorkspaceDocument {
     const targetKind = input.targetKind ?? "card";
     const source = { kind: sourceKind, id: input.source };
     const target = { kind: targetKind, id: input.target };
-    if (isSelfLink(source, target)) return null;
+    if (
+      isSelfLink(source, target, {
+        source: input.sourceConnector,
+        target: input.targetConnector,
+      })
+    ) {
+      return null;
+    }
     if (!this.endpointExists(source) || !this.endpointExists(target)) return null;
 
     const now = Date.now();
@@ -3367,7 +3374,10 @@ export class WorkspaceDocument {
     const ends = edgeEndpoints(edge);
     const next = { kind, id: cardId };
     const otherEnd = end === "source" ? ends.target : ends.source;
-    if (isSelfLink(next, otherEnd)) return;
+    // The connector at the other end is what decides whether this closes a loop
+    // or collapses onto one dot.
+    const otherConnector = end === "source" ? edge.targetConnector : edge.sourceConnector;
+    if (isSelfLink(next, otherEnd, { source: connectorId, target: otherConnector })) return;
     if (!this.endpointExists(next)) return;
 
     const fields = { id: cardId };

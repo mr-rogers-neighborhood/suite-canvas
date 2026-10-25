@@ -28,9 +28,22 @@ export function edgeTouches(edge: GraphEdge, endpoint: LinkEndpoint): boolean {
   return sameEndpoint(ends.source, endpoint) || sameEndpoint(ends.target, endpoint);
 }
 
-/** A link from a thing to itself is meaningless, whatever its kind. */
-export function isSelfLink(source: LinkEndpoint, target: LinkEndpoint): boolean {
-  return sameEndpoint(source, target);
+/**
+ * A link from a thing to itself. It is refused *unless* it is a card joining two
+ * of its own connectors: that draws a loop on the canvas, means nothing
+ * semantically, and is deliberately allowed because users expect the gesture to
+ * work. Two ends on the same connector are still refused — that is a zero-length
+ * link, not a loop.
+ */
+export function isSelfLink(
+  source: LinkEndpoint,
+  target: LinkEndpoint,
+  connectors?: { source?: string | undefined; target?: string | undefined },
+): boolean {
+  if (!sameEndpoint(source, target)) return false;
+  const from = connectors?.source;
+  const to = connectors?.target;
+  return !(from && to && from !== to);
 }
 
 /**

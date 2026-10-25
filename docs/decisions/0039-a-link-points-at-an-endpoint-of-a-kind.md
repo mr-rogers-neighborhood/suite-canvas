@@ -33,19 +33,25 @@ targetKind?: "card" | "board" | "section"   // absent means "card"
 1. **Additive, no migration.** An edge without kinds is a card-to-card link, which is what every
    existing document holds, so `ensureReferences`, portable export and publish keep working
    unchanged. `edgeEndpoints(edge)` is the single place the default is applied.
-2. **The kind is what makes an endpoint legal.** `addEdge` refuses an endpoint that does not exist
+2. **A thing may link to itself through two different connectors.** A card or a
+   section joining one of its own connectors to another draws a loop on the canvas. It
+   means nothing semantically — a card is not related to itself, so nothing appears in
+   its References — and it is allowed on purpose, because the gesture is obvious and
+   refusing it reads as a bug. Two ends on the *same* connector are still refused: that
+   is a zero-length link, not a loop.
+3. **The kind is what makes an endpoint legal.** `addEdge` refuses an endpoint that does not exist
    in the workspace, and refuses a thing linking to itself *at the same kind*. A card and a section
    that share an id are different endpoints.
-3. **Identity is the connection, not the row.** Two links between the same two endpoints on the same
+4. **Identity is the connection, not the row.** Two links between the same two endpoints on the same
    connectors are one connection, in either direction (`linkKey`). Drawing it twice is a no-op
    rather than a second record.
-4. **A board endpoint is drawn through a portal.** A board has no position. Its rect on a board is
+5. **A board endpoint is drawn through a portal.** A board has no position. Its rect on a board is
    the rect of the first portal card on that board pointing at it. No portal means no line — but the
    link stays in the document and in the inspector, which is what lets a link survive its portal
    being unplaced.
-5. **Resolution is pure and separate from rendering.** `linkGeometry.ts` turns endpoints into rects
+6. **Resolution is pure and separate from rendering.** `linkGeometry.ts` turns endpoints into rects
    and anchors with no React and no store, so the canvas, drag previews and tests share one answer.
-6. **Deleting a container deletes links that point at it.** Deleting a board removes the links it
+7. **Deleting a container deletes links that point at it.** Deleting a board removes the links it
    owns (its placements' links, as before), links to the board itself, and nothing else.
 
 ## Rejected alternatives

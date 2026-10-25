@@ -129,6 +129,107 @@ describe("container link endpoints", () => {
   });
 });
 
+describe("a card linking to itself", () => {
+  it("draws a loop between two of its own connectors", () => {
+    const { workspace, board } = setup();
+    const card = workspace.createCard({ boardId: board.id });
+    const [first, second] = card.connectors;
+    if (!first || !second) throw new Error("expected connectors");
+
+    const edge = workspace.addEdge({
+      boardId: board.id,
+      source: card.id,
+      target: card.id,
+      sourceConnector: first.id,
+      targetConnector: second.id,
+    });
+
+    expect(edge).not.toBeNull();
+    expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
+  });
+
+  it("refuses a link that closes onto the same connector", () => {
+    const { workspace, board } = setup();
+    const card = workspace.createCard({ boardId: board.id });
+    const [first] = card.connectors;
+    if (!first) throw new Error("expected a connector");
+
+    expect(
+      workspace.addEdge({
+        boardId: board.id,
+        source: card.id,
+        target: card.id,
+        sourceConnector: first.id,
+        targetConnector: first.id,
+      }),
+    ).toBeNull();
+  });
+
+  it("still refuses a self-link that has no connectors to loop between", () => {
+    const { workspace, board } = setup();
+    const card = workspace.createCard({ boardId: board.id });
+    expect(workspace.addEdge({ boardId: board.id, source: card.id, target: card.id })).toBeNull();
+  });
+
+  it("counts a loop once and leaves the card's reference count alone", () => {
+    const { workspace, board } = setup();
+    const card = workspace.createCard({ boardId: board.id });
+    const [first, second] = card.connectors;
+    if (!first || !second) throw new Error("expected connectors");
+    workspace.addEdge({
+      boardId: board.id,
+      source: card.id,
+      target: card.id,
+      sourceConnector: first.id,
+      targetConnector: second.id,
+    });
+
+    // A card is not related to itself: the loop is a drawing, not a reference.
+    expect(workspace.listLinksTo("card", card.id)).toHaveLength(1);
+  });
+});
+
+describe("a section linking to itself", () => {
+  it("draws a loop between two of its own connectors", () => {
+    const { workspace, board } = setup();
+    const section = workspace.createSection({ boardId: board.id, x: 0, y: 0 });
+    const [first, second] = section.connectors ?? [];
+    if (!first || !second) throw new Error("expected connectors");
+
+    const edge = workspace.addEdge({
+      boardId: board.id,
+      source: section.id,
+      target: section.id,
+      sourceKind: "section",
+      targetKind: "section",
+      sourceConnector: first.id,
+      targetConnector: second.id,
+    });
+
+    expect(edge).not.toBeNull();
+    expect(workspace.listBoardEdges(board.id)).toHaveLength(1);
+  });
+
+  it("refuses a section link that closes onto the same connector", () => {
+    const { workspace, board } = setup();
+    const section = workspace.createSection({ boardId: board.id, x: 0, y: 0 });
+    const [first] = section.connectors ?? [];
+    if (!first) throw new Error("expected a connector");
+
+    expect(
+      workspace.addEdge({
+        boardId: board.id,
+        source: section.id,
+        target: section.id,
+        sourceKind: "section",
+        targetKind: "section",
+        sourceConnector: first.id,
+        targetConnector: first.id,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("drawing container links", () => {
   it("draws a section endpoint on its board and hides it on another board", () => {
     const { workspace, board, other } = setup();

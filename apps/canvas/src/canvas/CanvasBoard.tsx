@@ -40,6 +40,7 @@ import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import { StatusCursorLayer } from "../cursor/StatusCursorLayer";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
@@ -85,6 +86,7 @@ import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
 import { PortalTransitionLayer } from "./PortalTransitionLayer";
 import { PresenceLayer } from "./PresenceLayer";
+import { PurposeControl } from "./PurposeControl";
 import { usePlacementRunStore } from "./placementRun";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
@@ -3401,6 +3403,8 @@ export function CanvasBoard() {
         />
       ) : null}
       <ModeControl engine={placementEngine} />
+      <PurposeControl />
+      <StatusCursorLayer />
       <HeldStackCursor engine={placementEngine} />
       <LibraryDropPreview />
       <PortalTransitionLayer />

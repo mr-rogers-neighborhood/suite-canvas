@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type CanvasPurpose,
   canvasPurposes,
   initialGestureFor,
   nextPurpose,
@@ -18,7 +19,7 @@ import {
 describe("the purpose cycle", () => {
   it("walks explore → run → record → present → explore", () => {
     const walked: string[] = [];
-    let purpose = canvasPurposes[0];
+    let purpose: CanvasPurpose = canvasPurposes[0];
     for (let index = 0; index < canvasPurposes.length; index += 1) {
       walked.push(purpose);
       purpose = nextPurpose(purpose);

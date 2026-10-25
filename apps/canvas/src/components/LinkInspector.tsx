@@ -1,5 +1,7 @@
 import type { GraphEdge } from "@suite/graph";
 import { useEffect, useState } from "react";
+import { isolatedEdgeId, setIsolatedEdge, useIsolatedEdgeId } from "../canvas/routeIsolation";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { describeDot, type LinkEndView, type LinkInspectorModel } from "./useLinkInspectorModel";
 
 export interface LinkInspectorProps {
@@ -21,12 +23,17 @@ export interface LinkInspectorProps {
   onSetLabelOffset: (offset: number | null) => void;
 }
 
+/** Every value of the stored `path` enum, `avoid` included (ADR-0052 §6). */
 const PATHS: Array<{ value: GraphEdge["path"]; label: string }> = [
   { value: "bezier", label: "Curved" },
   { value: "straight", label: "Straight" },
   { value: "step", label: "Step" },
   { value: "smoothstep", label: "Smooth step" },
+  { value: "avoid", label: "Avoid obstacles" },
 ];
+
+/** The document caps a route at 24 bends; the panel matches it. */
+const MAX_BENDS = 24;
 
 /**
  * One link, inspected.
@@ -52,6 +59,62 @@ export function LinkInspector({
   onSetLabelOffset,
 }: LinkInspectorProps) {
   const { canEdit, canManageStructure } = model;
+  const edgeId = model.edge.id;
+  const workspace = useCanvasStore((state) => state.workspace);
+  const isolating = useIsolatedEdgeId() === edgeId;
+
+  // A route write always carries both halves: the document stores the list and
+  // the layer together, so neither can be dropped by editing the other.
+  const writeRoute = (bends: LinkInspectorModel["bends"], layer: LinkInspectorModel["layer"]) => {
+    workspace.setEdgeRoute(edgeId, { bends, layer });
+  };
+
+  /**
+   * A new bend at the middle of the line, pushed off it: the same perpendicular
+   * a reader would drag it to, so the click has a visible result. Bends are
+   * stored relative to the source anchor, which is what makes this stable when
+   * the source card moves.
+   */
+  const addBend = () => {
+    if (!canEdit || model.bends.length >= MAX_BENDS) return;
+    const source = model.sourceCenter;
+    const target = model.targetCenter;
+    const dx = (target?.x ?? 0) - (source?.x ?? 0);
+    const dy = (target?.y ?? 0) - (source?.y ?? 0);
+    const length = Math.hypot(dx, dy) || 1;
+    const bow = 48;
+    const bend = {
+      x: Math.round((dx / 2 - (dy / length) * bow) * 10) / 10,
+      y: Math.round((dy / 2 + (dx / length) * bow) * 10) / 10,
+    };
+    writeRoute([...model.bends, bend], model.layer);
+  };
+
+  const removeBend = (index: number) => {
+    writeRoute(
+      model.bends.filter((_, position) => position !== index),
+      model.layer,
+    );
+  };
+
+  // Leaving this link always gives the board back: isolate is a reading aid for
+  // one route, never a mode someone can get stuck in.
+  useEffect(() => {
+    return () => {
+      if (isolatedEdgeId() === edgeId) setIsolatedEdge(null);
+    };
+  }, [edgeId]);
+
+  const bendHint = (() => {
+    if (model.mode === "avoid" && model.bends.length > 0)
+      return "Bends win: this link keeps the route you drew until its bends are cleared.";
+    if (model.mode === "avoid")
+      return "Routing around cards. Adding a bend hands the line back to you.";
+    if (model.bends.length > 0)
+      return "Every path style follows these bends; drag them on the line.";
+    return "Add a bend, or drag the handle on the selected line.";
+  })();
+
   return (
     <aside
       className="card-inspector link-inspector"
@@ -140,7 +203,7 @@ export function LinkInspector({
                 key={entry.value}
                 type="button"
                 className="library-action"
-                aria-pressed={model.path === entry.value}
+                aria-pressed={model.mode === entry.value}
                 disabled={!canEdit}
                 data-testid={`link-path-${entry.value}`}
                 onClick={() => onSetPath(entry.value)}
@@ -149,6 +212,104 @@ export function LinkInspector({
               </button>
             ))}
           </div>
+        </section>
+
+        {/* The route itself: the bends a reader drew, and the layer the link
+            paints on (ADR-0052 §1, §3, §4). */}
+        <section className="mt-3" data-testid="link-route">
+          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Route</h3>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="library-action"
+              data-testid="link-add-bend"
+              disabled={!canEdit || model.bends.length >= MAX_BENDS}
+              onClick={addBend}
+            >
+              Add bend
+            </button>
+            <button
+              type="button"
+              className="library-action"
+              data-testid="link-clear-bends"
+              disabled={!canEdit || model.bends.length === 0}
+              onClick={() => writeRoute([], model.layer)}
+            >
+              Clear bends
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="link-bend-hint">
+            {bendHint}
+          </p>
+          <ul className="mt-1" data-testid="link-bends" data-count={model.bends.length}>
+            {model.bends.map((bend, index) => (
+              <li
+                // The point is the identity: two bends are never the same point.
+                key={`${bend.x}:${bend.y}`}
+                className="flex items-center gap-1 text-[11px] text-[var(--ink)]"
+                data-testid={`link-bend-${index}`}
+              >
+                <span aria-hidden="true" className="text-[var(--ink-muted)]">
+                  {"•"}
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  Bend {index + 1} · {Math.round(bend.x)}, {Math.round(bend.y)}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-1 text-[10px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                  data-testid={`link-bend-remove-${index}`}
+                  aria-label={`Remove bend ${index + 1}`}
+                  disabled={!canEdit}
+                  onClick={() => removeBend(index)}
+                >
+                  {"×"}
+                </button>
+              </li>
+            ))}
+            {model.bends.length === 0 ? (
+              <li className="text-[11px] text-[var(--ink-muted)]" data-testid="link-bends-empty">
+                No bends yet.
+              </li>
+            ) : null}
+          </ul>
+
+          <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+            Layer
+          </h3>
+          <div className="mt-1 flex flex-wrap gap-1.5" data-testid="link-layers">
+            {(["below", "above"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className="library-action"
+                aria-pressed={model.layer === value}
+                disabled={!canEdit}
+                data-testid={`link-layer-${value}`}
+                onClick={() => writeRoute(model.bends, value)}
+              >
+                {value === "below" ? "Below cards" : "Above cards"}
+              </button>
+            ))}
+          </div>
+
+          <h3 className="mt-3 text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+            Isolate
+          </h3>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="library-action"
+              aria-pressed={isolating}
+              data-testid="link-isolate"
+              onClick={() => setIsolatedEdge(isolating ? null : edgeId)}
+            >
+              {isolating ? "Isolating this link" : "Isolate this link"}
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="link-isolate-hint">
+            Dims everything but this link, so one route can be read on a busy board.
+          </p>
         </section>
 
         <section className="mt-3">

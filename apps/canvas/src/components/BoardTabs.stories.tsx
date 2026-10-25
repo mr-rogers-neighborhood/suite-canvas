@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { BoardTabs } from "./BoardTabs";
 
 const boards = [
-  { id: "b1", name: "Research", createdAt: 0, updatedAt: 0 },
-  { id: "b2", name: "Drafts", createdAt: 1, updatedAt: 1 },
+  { id: "b1", name: "Research", tags: [], createdAt: 0, updatedAt: 0 },
+  { id: "b2", name: "Drafts", tags: [], createdAt: 1, updatedAt: 1 },
 ];
 
 const meta = {

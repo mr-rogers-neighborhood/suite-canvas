@@ -1,12 +1,16 @@
+import type { GraphEdge } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   absoluteBends,
   avoidRoute,
   isAvoidMode,
+  pairOffset,
   type RoutePoint,
   type RouteRect,
+  reversePartnerOf,
   routePath,
   routePoints,
+  shiftRoute,
 } from "./edgeRoute";
 
 /** Parses a path into its drawing commands, so a test can count and measure them. */
@@ -349,5 +353,124 @@ describe("avoiding obstacles", () => {
     // Taller than the margin allows a detour: the caller falls back to bezier.
     const wallAllTheWay = { x: 180, y: -400, width: 40, height: 800 };
     expect(avoidRoute(from, to, [wallAllTheWay])).toBeNull();
+  });
+});
+
+/** A minimal edge record: only the fields the pair rule reads matter here. */
+function edge(id: string, source: string, target: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    boardId: "board-1",
+    source,
+    target,
+    kind: "references",
+    path: "bezier",
+    bidirectional: false,
+    createdAt: 0,
+    updatedAt: 0,
+    ...extra,
+  } as unknown as GraphEdge;
+}
+
+describe("reverse pairs", () => {
+  const a = { x: 100, y: 100 };
+  const b = { x: 400, y: 300 };
+
+  it("gives the same edge the same offset every time", () => {
+    expect(pairOffset("edge-1", a, b)).toEqual(pairOffset("edge-1", a, b));
+  });
+
+  it("mirrors an edge that travels the other way, so a pair cannot overlap", () => {
+    // Same id, reversed travel: the vector is exactly negated, which is what
+    // guarantees the two directions land on opposite sides.
+    const forward = pairOffset("edge-1", a, b);
+    const backward = pairOffset("edge-1", b, a);
+    expect(backward.x).toBeCloseTo(-forward.x, 6);
+    expect(backward.y).toBeCloseTo(-forward.y, 6);
+    expect(Math.hypot(forward.x, forward.y)).toBeGreaterThan(0);
+  });
+
+  it("gives the two directions of a pair two different, deterministic offsets", () => {
+    const out = pairOffset("edge-incoming", a, b);
+    const back = pairOffset("edge-outgoing", b, a);
+    expect(out).not.toEqual(back);
+    // Opposite sides of the straight line whatever the two ids hash to.
+    expect(out.x * back.x + out.y * back.y).toBeLessThan(0);
+    expect(pairOffset("edge-incoming", a, b)).toEqual(out);
+    expect(pairOffset("edge-outgoing", b, a)).toEqual(back);
+  });
+
+  it("keeps the offset small and perpendicular to the line", () => {
+    const offset = pairOffset("edge-1", a, b);
+    const length = Math.hypot(offset.x, offset.y);
+    expect(length).toBeGreaterThanOrEqual(4);
+    expect(length).toBeLessThanOrEqual(10);
+    const line = { x: b.x - a.x, y: b.y - a.y };
+    expect(offset.x * line.x + offset.y * line.y).toBeCloseTo(0, 6);
+  });
+
+  it("declines on a collapsed line rather than dividing by zero", () => {
+    expect(pairOffset("edge-1", a, a)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("finds the link that runs the same dots the other way", () => {
+    const out = edge("e-out", "card-a", "card-b", {
+      sourceConnector: "dot-1",
+      targetConnector: "dot-2",
+    });
+    const back = edge("e-back", "card-b", "card-a", {
+      sourceConnector: "dot-2",
+      targetConnector: "dot-1",
+    });
+    const elsewhere = edge("e-other", "card-a", "card-c");
+    expect(reversePartnerOf(out, [out, back, elsewhere])?.id).toBe("e-back");
+    expect(reversePartnerOf(out, [out, elsewhere])).toBeUndefined();
+    // Same pair, different dots: not the same connection, so not a pair.
+    const otherDots = edge("e-dots", "card-b", "card-a", {
+      sourceConnector: "dot-3",
+      targetConnector: "dot-1",
+    });
+    expect(reversePartnerOf(out, [out, otherDots])).toBeUndefined();
+    // A self link is never paired with itself.
+    const loop = edge("e-loop", "card-a", "card-a");
+    expect(reversePartnerOf(loop, [loop])).toBeUndefined();
+  });
+});
+
+describe("shifting a route sideways", () => {
+  const a = { x: 100, y: 100 };
+  const b = { x: 400, y: 300 };
+  const offset = { x: 0, y: -6 };
+
+  it("bows a two-point route out through a new midpoint", () => {
+    const shifted = shiftRoute([a, b], offset);
+    expect(shifted).toHaveLength(3);
+    expect(shifted[0]).toEqual(a);
+    expect(shifted[2]).toEqual(b);
+    expect(shifted[1]).toEqual({ x: 250, y: 194 });
+  });
+
+  it("moves the interior of a bent route and leaves the ends on their dots", () => {
+    const points = routePoints(a, b, [{ x: 80, y: -40 }]);
+    const shifted = shiftRoute(points, offset);
+    expect(shifted).toHaveLength(points.length);
+    expect(shifted[0]).toEqual(a);
+    expect(shifted[shifted.length - 1]).toEqual(b);
+    expect(shifted[1]).toEqual({ x: points[1]?.x ?? 0, y: (points[1]?.y ?? 0) - 6 });
+  });
+
+  it("is a no-op for a zero offset", () => {
+    expect(shiftRoute([a, b], { x: 0, y: 0 })).toEqual([a, b]);
+  });
+
+  it("splits a pair apart while both still start and end on their dots", () => {
+    const out = shiftRoute([a, b], pairOffset("e-1", a, b));
+    const back = shiftRoute([a, b], pairOffset("e-2", b, a));
+    const outMid = out[1];
+    const backMid = back[1];
+    if (!outMid || !backMid) throw new Error("no midpoint");
+    expect(Math.hypot(outMid.x - backMid.x, outMid.y - backMid.y)).toBeGreaterThan(8);
+    expect(out[0]).toEqual(a);
+    expect(back[2]).toEqual(b);
   });
 });

@@ -14,6 +14,7 @@ const model = boardMiniature(
       height: 320,
       z: 0,
       color: "blue",
+      tags: [],
       createdAt: 0,
       updatedAt: 0,
     },

@@ -95,23 +95,26 @@ export function sideAnimation(style: ResolvedSurfaceStyle, side: StyleSide): str
  */
 export function surfacePaintVars(style: ResolvedSurfaceStyle | undefined): Record<string, string> {
   if (!style) return {};
+  // Keys are real custom properties: React only passes a style entry through to
+  // the element when the name starts with `--`, and a name without the prefix
+  // fails silently, which is how a painted card renders as nothing at all.
   const paint: Record<string, string> = {
-    "paint-surface": style.surface === "none" ? "transparent" : colourRoleVar(style.surface),
-    "paint-ink": colourRoleVar(style.ink),
-    "paint-opacity": String(style.opacity),
-    "paint-text-scale": String(style.textScale),
+    "--paint-surface": style.surface === "none" ? "transparent" : colourRoleVar(style.surface),
+    "--paint-ink": colourRoleVar(style.ink),
+    "--paint-opacity": String(style.opacity),
+    "--paint-text-scale": String(style.textScale),
   };
   const radius = shapeRadius(style.shape);
-  if (radius) paint["paint-radius"] = radius;
-  else if (style.radius !== null) paint["paint-radius"] = `${style.radius}px`;
+  if (radius) paint["--paint-radius"] = radius;
+  else if (style.radius !== null) paint["--paint-radius"] = `${style.radius}px`;
   const clip = shapeClipPath(style.shape);
-  if (clip) paint["paint-clip"] = clip;
+  if (clip) paint["--paint-clip"] = clip;
   for (const side of ["top", "right", "bottom", "left"] as const) {
     const edge = style.sides[side];
     if (!edge) continue;
-    paint[`paint-border-${side}`] = sideBorder(style, side);
+    paint[`--paint-border-${side}`] = sideBorder(style, side);
     const animation = sideAnimation(style, side);
-    if (animation) paint[`paint-animation-${side}`] = animation;
+    if (animation) paint[`--paint-animation-${side}`] = animation;
   }
   return paint;
 }

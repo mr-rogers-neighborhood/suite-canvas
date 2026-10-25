@@ -1,3 +1,4 @@
+import { compositeSummary, compositeValueError, groupFilledCount } from "./composite.js";
 import type { FieldDefinition, PropertyValue } from "./schema.js";
 
 /** Everything a value needs besides its field to be publishable. */
@@ -79,6 +80,12 @@ export function propertyValueError(
       }
       return null;
     }
+    // Composing kinds validate through the shared rules, so a group, a list and
+    // a rating refuse the same values here and in the writer (ADR-0057).
+    case "rating":
+    case "group":
+    case "list":
+      return compositeValueError(field, value);
     default:
       return `Field "${field.name}" has an unknown kind`;
   }
@@ -241,6 +248,13 @@ export function readPropertyValue(
       }
       return shown(options.boardName?.trim() || BOARD);
     }
+    case "rating":
+    case "group":
+    case "list": {
+      // A view counts rather than edits a composite field (ADR-0057 §4), so the
+      // read-only reading is its summary: "7/10", "2/3 filled", "4 items".
+      return shown(compositeSummary(field, value) || empty);
+    }
   }
 }
 
@@ -294,6 +308,12 @@ export function isPropertyValueEmpty(
         options.boardPresence === "missing" ||
         (options.boardName?.trim().length ?? 0) === 0
       );
+    case "rating":
+      return !(typeof value === "number" && Number.isFinite(value));
+    case "group":
+      return groupFilledCount(field, value) === 0;
+    case "list":
+      return !Array.isArray(value) || value.length === 0;
     case "text":
     case "date":
       return typeof value !== "string" || value.trim().length === 0;

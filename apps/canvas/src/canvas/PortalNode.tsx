@@ -163,6 +163,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
         selected={Boolean(selected)}
         width={width}
         height={height}
+        style={card.style}
         onOpen={open}
         onOpenInfo={() => openContainerInspector({ kind: "portal", id })}
       />

@@ -427,6 +427,20 @@ code follows:
 - **Fields can compose** ([ADR-0057](./decisions/0057-fields-can-compose.md)): `rating`, `group` and
   `list`, one level of nesting, one registry entry per kind rendering in all four places.
 
+### Home, new tab, and closing the last board
+
+Two optional board ids on the workspace, distinct because they answer different questions
+([A24](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a34)):
+
+| Setting | Question it answers | Used by |
+| --- | --- | --- |
+| home board | *where do I land* | the home control, and closing the last open board |
+| new-tab board | *where does a blank tab start* | the new-tab action, when the workspace sets one |
+
+With no new-tab board, a new tab opens a chooser (pick a board or create one) rather than guessing. Both
+are board ids, so a portal resolves them like any other board id; neither is a new record class, and
+neither is a special board kind.
+
 ### Where style, routes and steps live
 
 | Record | Path | Shape |

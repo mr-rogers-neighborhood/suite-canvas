@@ -194,6 +194,7 @@ export function CardInspectorHost() {
       onManageTypes={model.onManageTypes}
       onFocusCard={model.onFocusCard}
       onFocusSection={model.onFocusSection}
+      onPlace={model.onPlace}
       onRemoveFromBoard={model.onRemoveFromBoard}
       onFocusLink={model.onFocusLink}
     />

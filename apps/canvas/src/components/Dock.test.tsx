@@ -18,8 +18,8 @@ const types: CardType[] = [
 ];
 
 const boards = [
-  { id: "b1", name: "Research", createdAt: 0, updatedAt: 0 },
-  { id: "b2", name: "Drafts", createdAt: 1, updatedAt: 1 },
+  { id: "b1", name: "Research", createdAt: 0, updatedAt: 0, tags: [] },
+  { id: "b2", name: "Drafts", createdAt: 1, updatedAt: 1, tags: [] },
 ];
 
 function mount(overrides: Partial<Parameters<typeof Dock>[0]> = {}) {

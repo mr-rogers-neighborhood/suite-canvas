@@ -1,6 +1,8 @@
 import type { Connector, EdgeEndpointKind, GraphEdge } from "@suite/graph";
 import { edgeEndpoints, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { useMemo } from "react";
+import { asRouteMode, type RouteMode, type RoutePoint } from "../canvas/edgeRoute";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -35,6 +37,17 @@ export interface LinkInspectorModel {
   target: LinkEndView;
   bidirectional: boolean;
   path: GraphEdge["path"];
+  /**
+   * The same value as `path`, read as a route mode: `avoid` is a route mode the
+   * document may not accept yet, and the panel has to name it either way.
+   */
+  mode: RouteMode;
+  /** The stored route, relative to the source anchor (ADR-0052 §1). */
+  bends: RoutePoint[];
+  layer: "below" | "above";
+  /** Board-space centre of each end, where a new bend is placed. */
+  sourceCenter: RoutePoint | null;
+  targetCenter: RoutePoint | null;
   description: string;
   /** Where the description sits along the line, 0..1; the default is the middle. */
   labelOffset: number;
@@ -123,12 +136,44 @@ export function useLinkInspectorModel(): LinkInspectorModel | null {
     };
 
     const ends = edgeEndpoints(edge);
+    const source = endView(ends.source.kind, ends.source.id, edge.sourceConnector);
+    const target = endView(ends.target.kind, ends.target.id, edge.targetConnector);
+
+    /**
+     * Where an end sits on this board, so a new bend can be dropped at the middle
+     * of the line instead of at the origin. A board end is drawn through its
+     * portal card, which is the rect the user actually sees.
+     */
+    const centreOf = (view: LinkEndView): RoutePoint | null => {
+      const cardId = view.kind === "board" ? view.viaCardId : view.kind === "card" ? view.id : null;
+      if (cardId) {
+        const placement = snapshot.placements.find(
+          (entry) => entry.boardId === edge.boardId && entry.cardId === cardId,
+        );
+        if (!placement) return null;
+        return {
+          x: placement.x + (placement.width ?? DEFAULT_CARD_WIDTH) / 2,
+          y: placement.y + (placement.height ?? DEFAULT_CARD_HEIGHT) / 2,
+        };
+      }
+      const section = snapshot.sections.find(
+        (entry) => entry.boardId === edge.boardId && entry.id === view.id,
+      );
+      if (!section) return null;
+      return { x: section.x + section.width / 2, y: section.y + section.height / 2 };
+    };
+
     return {
       edge,
-      source: endView(ends.source.kind, ends.source.id, edge.sourceConnector),
-      target: endView(ends.target.kind, ends.target.id, edge.targetConnector),
+      source,
+      target,
       bidirectional: edge.bidirectional,
       path: edge.path,
+      mode: asRouteMode(edge.path),
+      bends: (edge.bends ?? []).map((bend) => ({ x: bend.x, y: bend.y })),
+      layer: edge.layer ?? "below",
+      sourceCenter: centreOf(source),
+      targetCenter: centreOf(target),
       description: edge.label ?? "",
       labelOffset: edge.labelOffset ?? 0.5,
       canEdit: canEditLayout,

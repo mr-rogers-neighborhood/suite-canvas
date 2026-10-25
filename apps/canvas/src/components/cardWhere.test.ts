@@ -5,6 +5,7 @@ import { cardWhere } from "./cardWhere";
 const board = (id: string, name: string): Board => ({
   id,
   name,
+  tags: [],
   createdAt: 0,
   updatedAt: 0,
 });
@@ -18,6 +19,7 @@ const section = (id: string, x: number, y: number, width: number, height: number
   width,
   height,
   z: 0,
+  tags: [],
   createdAt: 0,
   updatedAt: 0,
 });

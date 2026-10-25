@@ -447,13 +447,21 @@ export function LibraryDrawer({
 
   if (!open) return null;
 
+  // A card row only offers Locate when the card is on the board in front of the
+  // reader, so a failed Locate is not a state a card row can reach: an unplaced
+  // card has nowhere to pan to, and `Place` is the action it does have.
   const locateCard = (item: LibraryItem) => {
-    if (onLocateCard(item.id)) {
-      setLocateMiss(null);
-      return;
-    }
-    setLocateMiss(`\u201c${item.title}\u201d is not on this board.`);
+    setLocateMiss(null);
+    onLocateCard(item.id);
   };
+
+  /**
+   * Whether this row's card is placed on the active board. Place and Locate are
+   * one pair of meanings across the library and the inspector: a card already
+   * here is located, a card that is not is placed.
+   */
+  const placedHere = (item: LibraryItem): boolean =>
+    activeBoardId !== null && item.boards.some((board) => board.id === activeBoardId);
 
   const locateBoard = (board: LibraryBoard) => {
     if (onLocateBoard(board.id)) {
@@ -587,17 +595,20 @@ export function LibraryDrawer({
                     Open
                   </button>
                 ) : null}
-                <button type="button" className="library-action" onClick={() => onPlace(item.id)}>
-                  Place
-                </button>
-                <button
-                  type="button"
-                  className="library-action"
-                  data-testid={`library-locate-${item.id}`}
-                  onClick={() => locateCard(item)}
-                >
-                  Locate
-                </button>
+                {placedHere(item) ? (
+                  <button
+                    type="button"
+                    className="library-action"
+                    data-testid={`library-locate-${item.id}`}
+                    onClick={() => locateCard(item)}
+                  >
+                    Locate
+                  </button>
+                ) : (
+                  <button type="button" className="library-action" onClick={() => onPlace(item.id)}>
+                    Place
+                  </button>
+                )}
                 {canManageTrash ? (
                   <button
                     type="button"

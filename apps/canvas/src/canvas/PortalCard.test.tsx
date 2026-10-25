@@ -23,6 +23,7 @@ const section = (id: string, x: number): Section => ({
   height: 300,
   z: 0,
   color: "blue",
+  tags: [],
   createdAt: 0,
   updatedAt: 0,
 });

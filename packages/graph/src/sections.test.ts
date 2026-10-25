@@ -20,6 +20,7 @@ function section(id: string, x: number, y: number, width: number, height: number
     width,
     height,
     z: 0,
+    tags: [],
     createdAt: 0,
     updatedAt: 0,
   };

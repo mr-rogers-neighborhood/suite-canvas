@@ -141,6 +141,15 @@ function clientPoint(event: MouseEvent | TouchEvent): { x: number; y: number } |
 }
 
 /**
+ * A selection as one comparable key. Sorted, so two sets that name the same
+ * cards compare equal: neither the store echo nor React Flow promises the
+ * other's order.
+ */
+function selectionKeyOf(ids: readonly string[]): string {
+  return [...ids].sort().join(",");
+}
+
+/**
  * Publishes a gesture's pointer samples at most once per `DRAG_THROTTLE_MS`,
  * plus a trailing sample so a pointer that stops still lands on every peer.
  */
@@ -669,7 +678,7 @@ export function CanvasBoard() {
   const connectCommitted = useRef(false);
   const lastPointerSent = useRef(0);
   const lastDragSent = useRef(0);
-  const selectedKey = selectedNodeIds.join(",");
+  const selectedKey = selectionKeyOf(selectedNodeIds);
   /**
    * The selection key `applyBoardNodes` last painted. React Flow mirrors its own
    * selection into the store asynchronously (through `onSelectionChange`), so a
@@ -679,6 +688,13 @@ export function CanvasBoard() {
    * value wins.
    */
   const paintedSelection = useRef(selectedKey);
+  /**
+   * True from pointerdown to pointerup. A press owns React Flow's selection: the
+   * store echo of the click *before* it can land mid-gesture, and painting that
+   * echo back is what swallowed a modifier click. The flag is a ref — a press
+   * must not re-render the board to protect itself.
+   */
+  const pointerActive = useRef(false);
   /**
    * React Flow owns the selection while a marquee runs. Repainting `selected`
    * from the store mid-gesture makes the pane diff against a stale set and skip
@@ -830,8 +846,12 @@ export function CanvasBoard() {
       if (marqueeActive.current) return;
       // Computed once per pass: an unchanged key means React Flow's live selection
       // is the truth, a changed one means a surface asked for a different set.
+      // While a press is down React Flow is processing that press, so the store's
+      // key can only be the echo of the previous click: painting it now paints a
+      // selection older than the one the pane already holds.
       const explicit = reconciled ? new Set(reconciled) : null;
-      const repaintSelection = !explicit && selectedKey !== paintedSelection.current;
+      const pressed = explicit === null && pointerActive.current;
+      const repaintSelection = !explicit && !pressed && selectedKey !== paintedSelection.current;
       if (!explicit) paintedSelection.current = selectedKey;
       setNodes((current) => {
         const byId = new Map(current.map((node) => [node.id, node]));
@@ -902,6 +922,29 @@ export function CanvasBoard() {
   useEffect(() => {
     applyBoardNodes();
   }, [applyBoardNodes]);
+
+  /**
+   * Marks the length of a press. React Flow owns the selection while a pointer is
+   * down, so `applyBoardNodes` keeps its live `selected` flags for that window
+   * instead of repainting the store's last echo over them. Capture phase on
+   * `pointerdown`, so the flag is up before React Flow's own handler runs.
+   */
+  useEffect(() => {
+    const press = () => {
+      pointerActive.current = true;
+    };
+    const release = () => {
+      pointerActive.current = false;
+    };
+    window.addEventListener("pointerdown", press, true);
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      window.removeEventListener("pointerdown", press, true);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, []);
 
   /**
    * Where the current press landed, in flow coordinates. A box is scoped to the

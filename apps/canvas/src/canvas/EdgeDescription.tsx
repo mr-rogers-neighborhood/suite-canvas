@@ -9,9 +9,28 @@ import {
   useReactFlow,
   useStore,
 } from "@xyflow/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { PeerNameTag } from "../components/PeerNameTag";
+import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
+import { useWorkspaceStore } from "../store/workspaceStore";
+import {
+  absoluteBends,
+  asRouteMode,
+  avoidRoute,
+  isAvoidMode,
+  pairOffset,
+  type RouteMode,
+  type RoutePoint,
+  type RouteRect,
+  reversePartnerOf,
+  routePath,
+  routePoints,
+  shiftRoute,
+} from "./edgeRoute";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { useIsolatedEdgeId } from "./routeIsolation";
 
 /** Routing and label placement carried in `data`, so one component renders every style. */
 export interface EdgeDescriptionData {
@@ -29,11 +48,13 @@ export interface EdgeDescriptionData {
 /** Points sampled when projecting a pointer onto the path. */
 const SAMPLES = 48;
 
-const PATHS: ReadonlySet<string> = new Set(["bezier", "straight", "step", "smoothstep"]);
+/** The document's own cap (`bends` is `max(24)` in the schema). */
+const MAX_BENDS = 24;
 
-function pathOf(data: unknown): GraphEdge["path"] {
-  const path = (data as Partial<EdgeDescriptionData> | undefined)?.path;
-  return typeof path === "string" && PATHS.has(path) ? (path as GraphEdge["path"]) : "bezier";
+const NO_BENDS: readonly RoutePoint[] = [];
+
+function pathOf(data: unknown): RouteMode {
+  return asRouteMode((data as Partial<EdgeDescriptionData> | undefined)?.path);
 }
 
 function labelOffsetOf(data: unknown): number {
@@ -43,6 +64,138 @@ function labelOffsetOf(data: unknown): number {
 
 function clamp(fraction: number): number {
   return Math.min(1, Math.max(0, fraction));
+}
+
+/** One decimal is enough for a flow-unit coordinate and keeps the document tidy. */
+function round(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * The edge's own record, straight from the snapshot rather than through React
+ * Flow's `data`: bends and layer are document facts and have to survive the
+ * board rebuilding its edge list.
+ */
+function useEdgeRecord(edgeId: string): GraphEdge | undefined {
+  const store = useWorkspaceStore();
+  const get = useCallback(
+    () => store.getSnapshot().edges.find((entry) => entry.id === edgeId),
+    [store, edgeId],
+  );
+  return useSyncExternalStore(store.subscribe, get, get);
+}
+
+/** Every edge on the board, for the reverse-pair rule (ADR-0052 §5). */
+function useAllEdges(): readonly GraphEdge[] {
+  const store = useWorkspaceStore();
+  const get = useCallback(() => store.getSnapshot().edges, [store]);
+  return useSyncExternalStore(store.subscribe, get, get);
+}
+
+/**
+ * The card and section frames of this board, which `avoid` routes around. Read
+ * from the snapshot, so the obstacles are document data: every client routes the
+ * same line around the same cards.
+ */
+function useObstacleRects(): readonly RouteRect[] {
+  const store = useWorkspaceStore();
+  const placementsOf = useCallback(() => store.getSnapshot().placements, [store]);
+  const sectionsOf = useCallback(() => store.getSnapshot().sections, [store]);
+  const placements = useSyncExternalStore(store.subscribe, placementsOf, placementsOf);
+  const sections = useSyncExternalStore(store.subscribe, sectionsOf, sectionsOf);
+  return useMemo<RouteRect[]>(
+    () => [
+      ...placements.map((placement) => ({
+        x: placement.x,
+        y: placement.y,
+        width: placement.width ?? DEFAULT_CARD_WIDTH,
+        height: placement.height ?? DEFAULT_CARD_HEIGHT,
+      })),
+      ...sections.map((section) => ({
+        x: section.x,
+        y: section.y,
+        width: section.width,
+        height: section.height,
+      })),
+    ],
+    [placements, sections],
+  );
+}
+
+interface RouteDraw {
+  path: string;
+  /** Where the label falls back to when the path cannot be measured. */
+  mid: RoutePoint;
+  /** The drawn bend positions, for the drag handles. */
+  bends: RoutePoint[];
+}
+
+/**
+ * The one place a card link's geometry is decided. With no bends, no reverse
+ * partner and no `avoid`, it returns exactly what the React Flow helper would —
+ * every link that existed before ADR-0052 draws byte for byte as it did.
+ */
+function drawRoute(input: {
+  id: string;
+  source: RoutePoint;
+  target: RoutePoint;
+  sourcePosition: EdgeProps["sourcePosition"];
+  targetPosition: EdgeProps["targetPosition"];
+  mode: RouteMode;
+  bends: readonly RoutePoint[];
+  /** The perpendicular nudge that separates a reverse pair, or null. */
+  shift: RoutePoint | null;
+  obstacles: readonly RouteRect[];
+}): RouteDraw {
+  const { source, target, sourcePosition, targetPosition, mode, bends, shift, obstacles } = input;
+  const helpers = {
+    sourceX: source.x,
+    sourceY: source.y,
+    sourcePosition,
+    targetX: target.x,
+    targetY: target.y,
+    targetPosition,
+  };
+  const box = { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 };
+
+  const points = routePoints(source, target, bends);
+  const drawn = shift ? shiftRoute(points, shift) : points;
+  const handles = absoluteBends(source, bends).map((bend) => ({
+    x: bend.x + (shift?.x ?? 0),
+    y: bend.y + (shift?.y ?? 0),
+  }));
+
+  // Bends win over `avoid`: a hand-drawn route is never silently re-routed.
+  if (handles.length > 0) return { path: routePath(drawn, mode), mid: box, bends: handles };
+
+  if (isAvoidMode(mode)) {
+    // Memoized on the anchor pair rather than per frame: a resting link routes
+    // once, and a card being dragged asks again each frame — bounded by the
+    // router's own node budget, and never more than one search per render.
+    const routed = avoidRoute(source, target, obstacles);
+    // `null` is the documented fallback: draw the plain bezier. A paired link
+    // keeps its bow, so the two directions of a pair still cannot overlap.
+    if (routed)
+      return {
+        path: routePath(shift ? shiftRoute(routed, shift) : routed, "avoid"),
+        mid: box,
+        bends: [],
+      };
+    return { path: getBezierPath(helpers)[0], mid: box, bends: [] };
+  }
+
+  if (shift) return { path: routePath(drawn, mode), mid: box, bends: [] };
+
+  switch (mode) {
+    case "straight":
+      return { path: getStraightPath(helpers)[0], mid: box, bends: [] };
+    case "step":
+      return { path: getSmoothStepPath({ ...helpers, borderRadius: 0 })[0], mid: box, bends: [] };
+    case "smoothstep":
+      return { path: getSmoothStepPath(helpers)[0], mid: box, bends: [] };
+    default:
+      return { path: getBezierPath(helpers)[0], mid: box, bends: [] };
+  }
 }
 
 /** One reusable element: `getPointAtLength` is the only curve maths needed here. */
@@ -146,39 +299,123 @@ export function EdgeWithDescription({
   style,
   interactionWidth,
   data,
+  selected,
 }: EdgeProps) {
   const zoom = useStore((state) => state.transform[2]);
   const { screenToFlowPosition } = useReactFlow();
+  const workspace = useCanvasStore((state) => state.workspace);
+  const canEditLayout = useUiStore((state) => state.canEditLayout);
   const dragger = useLabelDragger(id);
+  const edge = useEdgeRecord(id);
+  const edges = useAllEdges();
+  const obstacles = useObstacleRects();
+  const isolatedEdgeId = useIsolatedEdgeId();
   const [live, setLive] = useState<number | null>(null);
   const dragging = useRef<number | null>(null);
   const latest = useRef<number | null>(null);
+  // The bend under the pointer, if one is being dragged. Live only: the document
+  // sees one write, on release.
+  const [liveBend, setLiveBend] = useState<{ index: number; point: RoutePoint } | null>(null);
 
-  const [edgePath, midX, midY] = (() => {
-    const points = { sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition };
-    switch (pathOf(data)) {
-      case "straight":
-        return getStraightPath({ sourceX, sourceY, targetX, targetY });
-      case "step":
-        return getSmoothStepPath({ ...points, borderRadius: 0 });
-      case "smoothstep":
-        return getSmoothStepPath(points);
-      default:
-        return getBezierPath(points);
-    }
-  })();
+  const mode = edge ? asRouteMode(edge.path) : pathOf(data);
+  const storedBends = edge?.bends ?? NO_BENDS;
+  const paired = useMemo(
+    () => (edge ? reversePartnerOf(edge, edges) !== undefined : false),
+    [edge, edges],
+  );
+  const source = useMemo(() => ({ x: sourceX, y: sourceY }), [sourceX, sourceY]);
+  const target = useMemo(() => ({ x: targetX, y: targetY }), [targetX, targetY]);
+  const shift = useMemo(
+    () => (paired ? pairOffset(id, source, target) : null),
+    [paired, id, source, target],
+  );
+
+  const bends = useMemo(() => {
+    if (!liveBend) return storedBends;
+    return storedBends.map((bend, index) =>
+      index === liveBend.index
+        ? { x: liveBend.point.x - sourceX, y: liveBend.point.y - sourceY }
+        : bend,
+    );
+  }, [storedBends, liveBend, sourceX, sourceY]);
+
+  const route = useMemo(
+    () =>
+      drawRoute({
+        id,
+        source,
+        target,
+        sourcePosition,
+        targetPosition,
+        mode,
+        bends,
+        shift,
+        obstacles,
+      }),
+    [id, source, target, sourcePosition, targetPosition, mode, bends, shift, obstacles],
+  );
+  const edgePath = route.path;
+
+  /** One write per gesture: the live point is local state until the release. */
+  const commitBend = useCallback(
+    (index: number, at: RoutePoint) => {
+      if (!edge) return;
+      const next = storedBends
+        .map((bend, position) =>
+          position === index
+            ? {
+                x: round(at.x - sourceX - (shift?.x ?? 0)),
+                y: round(at.y - sourceY - (shift?.y ?? 0)),
+              }
+            : bend,
+        )
+        .slice(0, MAX_BENDS);
+      workspace.setEdgeRoute(id, { bends: next, layer: edge.layer });
+    },
+    [edge, storedBends, sourceX, sourceY, shift, workspace, id],
+  );
+
+  const beginBendDrag = (index: number) => (event: React.PointerEvent<SVGCircleElement>) => {
+    if (event.button !== 0 || !canEditLayout) return;
+    // The pane would otherwise read this as the start of a camera drag.
+    event.preventDefault();
+    event.stopPropagation();
+    const toFlow = (clientX: number, clientY: number) =>
+      screenToFlowPosition({ x: clientX, y: clientY });
+    setLiveBend({ index, point: toFlow(event.clientX, event.clientY) });
+
+    const move = (moveEvent: PointerEvent) => {
+      setLiveBend({ index, point: toFlow(moveEvent.clientX, moveEvent.clientY) });
+    };
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      setLiveBend(null);
+      commitBend(index, toFlow(upEvent.clientX, upEvent.clientY));
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+  };
 
   const onLabelDrag = (data as Partial<EdgeDescriptionData> | undefined)?.onLabelDrag;
   const onLabelEdit = (data as Partial<EdgeDescriptionData> | undefined)?.onLabelEdit;
 
   // Our own drag wins; otherwise a peer's live position, then the stored one.
   const offset = live ?? dragger?.offset ?? labelOffsetOf(data);
-  const anchor = pointOnPath(edgePath, offset) ?? { x: midX, y: midY };
+  const anchor = pointOnPath(edgePath, offset) ?? route.mid;
   const scale = 1 / (zoom || 1);
   // The chip is centred on the path point; its halo (CSS) is what opens the gap
   // in the line, so the stroke reads as running into the label.
   const chipX = anchor.x;
   const chipY = anchor.y;
+
+  // Isolate (ADR-0052 §7) gives this link the board to itself: everything else
+  // recedes, this route stays at full strength.
+  const isolated = isolatedEdgeId === id;
+  const dimmed = isolatedEdgeId !== null && !isolated;
+  const showBends = selected === true && canEditLayout && route.bends.length > 0;
 
   /** Fraction of the path under the pointer; null when it cannot be measured. */
   const fractionAt = (clientX: number, clientY: number): number | null => {
@@ -188,14 +425,36 @@ export function EdgeWithDescription({
 
   return (
     <>
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        {...(markerStart ? { markerStart } : {})}
-        {...(markerEnd ? { markerEnd } : {})}
-        {...(style ? { style } : {})}
-        {...(interactionWidth === undefined ? {} : { interactionWidth })}
-      />
+      <g
+        className={`route-edge${dimmed ? " is-dimmed" : ""}${isolated ? " is-isolated" : ""}`}
+        data-testid="route-edge"
+        data-edge-id={id}
+      >
+        <BaseEdge
+          id={id}
+          path={edgePath}
+          {...(markerStart ? { markerStart } : {})}
+          {...(markerEnd ? { markerEnd } : {})}
+          {...(style ? { style } : {})}
+          {...(interactionWidth === undefined ? {} : { interactionWidth })}
+        />
+        {showBends ? (
+          <g className="route-bends" data-testid="route-bends">
+            {route.bends.map((bend, index) => (
+              <circle
+                // The drawn point is the identity: bends are never coincident.
+                key={`${Math.round(bend.x)}:${Math.round(bend.y)}`}
+                className="route-bend nodrag nopan"
+                data-testid={`route-bend-${index}`}
+                cx={bend.x}
+                cy={bend.y}
+                r={5}
+                onPointerDown={beginBendDrag(index)}
+              />
+            ))}
+          </g>
+        ) : null}
+      </g>
       {label ? (
         <EdgeLabelRenderer>
           <div

@@ -1,11 +1,19 @@
-import { useRef } from "react";
+import type { SurfaceStyle } from "@suite/graph";
+import { resolveSurfaceStyle } from "@suite/graph";
+import { type CSSProperties, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { PresenceAvatars } from "../components/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
+import { surfacePaintVars } from "./surfacePaint";
 
 /** Fallback frame for a portal that has never been resized, or whose board is empty. */
 export const DEFAULT_PORTAL_SIZE = { width: 288, height: 256 } as const;
+
+/** The paint record as a DOM style: a custom property needs its `--` prefix. */
+function paintStyle(paint: Record<string, string>): CSSProperties {
+  return paint as CSSProperties;
+}
 /** Longest side of a new portal's frame, and the clamps on the shorter one. */
 const PORTAL_LONG_SIDE = 300;
 const PORTAL_MIN_SIDE = 168;
@@ -43,6 +51,8 @@ export interface PortalCardProps {
   selected?: boolean;
   width?: number | null;
   height?: number | null;
+  /** The portal card's own paint; absent renders today's chrome unchanged. */
+  style?: SurfaceStyle | undefined;
   /** Double-click or Enter: the canvas plays the camera transition. */
   onOpen?: (() => void) | undefined;
   /** A click anywhere on the card: read the portal in the container panel. */
@@ -64,6 +74,7 @@ export function PortalCard({
   selected = false,
   width,
   height,
+  style,
   onOpen,
   onOpenInfo,
 }: PortalCardProps) {
@@ -71,6 +82,12 @@ export function PortalCard({
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
   const unavailable = boardName === null;
   const count = model.cardCount;
+
+  // A portal is a card, so it paints from the same record and the same rules;
+  // the root's `node-card` class is what lets the card paint CSS apply at all.
+  const paint = style ? surfacePaintVars(resolveSurfaceStyle(style, "card")) : {};
+  const painted = Object.keys(paint).length > 0;
+  const seamless = style?.surface === "none";
 
   return (
     // A canvas node keeps its double-click gesture and its selection click, so
@@ -80,6 +97,7 @@ export function PortalCard({
       data-testid="portal-node"
       data-unavailable={unavailable ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
+      data-seamless={seamless ? "true" : undefined}
       role="button"
       tabIndex={0}
       // The accessible name is the card's own content, prefixed by this hidden
@@ -87,11 +105,14 @@ export function PortalCard({
       aria-disabled={unavailable ? "true" : undefined}
       className={`portal-card node-card${selected ? " is-selected" : ""}${
         unavailable ? " is-unavailable" : ""
-      }`}
-      style={{
-        width: width ?? DEFAULT_PORTAL_SIZE.width,
-        height: height ?? DEFAULT_PORTAL_SIZE.height,
-      }}
+      }${painted ? " is-painted" : ""}`}
+      style={
+        {
+          ...paintStyle(paint),
+          width: width ?? DEFAULT_PORTAL_SIZE.width,
+          height: height ?? DEFAULT_PORTAL_SIZE.height,
+        } as CSSProperties
+      }
       onPointerDown={(event) => {
         pointerOrigin.current = { x: event.clientX, y: event.clientY };
       }}

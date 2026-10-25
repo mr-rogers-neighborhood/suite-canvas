@@ -120,6 +120,7 @@ describe("growSectionsToFit", () => {
     width: 400,
     height: 300,
     z: 0,
+    tags: [],
     createdAt: 0,
     updatedAt: 0,
   };

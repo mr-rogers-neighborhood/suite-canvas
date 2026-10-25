@@ -78,3 +78,175 @@
   opacity: 0.5;
   text-decoration: none;
 }
+
+/* ------------------------------------------------------ painted surfaces */
+
+/* The style vocabulary names a `canvas` role (ADR-0051); the shell's token layer
+   spells that value `--canvas-bg`. Without the alias a `canvas` surface would
+   reference an undefined variable, which drops the declaration instead of
+   falling back. */
+:root {
+  --canvas: var(--canvas-bg);
+}
+
+/* A section frame that names a style paints itself. Everything below is paint:
+   the frame's hit area stays rectangular, its silhouette never changes section
+   membership or stacking (ADR-0051 §7). */
+.section-region.is-painted {
+  background: var(--paint-surface);
+  color: var(--paint-ink, var(--ink));
+  opacity: var(--paint-opacity, 1);
+  border-top: var(--paint-border-top, 1px dashed color-mix(in srgb, var(--ink) 22%, transparent));
+  border-right: var(
+    --paint-border-right,
+    1px dashed color-mix(in srgb, var(--ink) 22%, transparent)
+  );
+  border-bottom: var(
+    --paint-border-bottom,
+    1px dashed color-mix(in srgb, var(--ink) 22%, transparent)
+  );
+  border-left: var(--paint-border-left, 1px dashed color-mix(in srgb, var(--ink) 22%, transparent));
+  border-radius: var(--paint-radius, 12px);
+  clip-path: var(--paint-clip, none);
+  animation:
+    var(--paint-animation-top, none), var(--paint-animation-right, none),
+    var(--paint-animation-bottom, none), var(--paint-animation-left, none);
+  /* A dashed border cannot march its own dashes, so a flowing side paints a
+     gradient strip instead (the painter drops that side's border). One strip per
+     side; each runs a period past the frame so the march loops without a seam. */
+  background-image:
+    var(--paint-dash-top, none), var(--paint-dash-right, none), var(--paint-dash-bottom, none),
+    var(--paint-dash-left, none);
+  background-size:
+    var(--paint-dash-size-top, 0 0), var(--paint-dash-size-right, 0 0),
+    var(--paint-dash-size-bottom, 0 0), var(--paint-dash-size-left, 0 0);
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  background-origin: border-box;
+  background-clip: border-box;
+}
+
+/* A faded surface comes back to full when the reader is on it: a paint decision
+   for this reader, never a document write (ADR-0051 §5). */
+.section-region.is-painted:hover,
+.section-region.is-painted:focus-visible,
+.section-region.is-painted.is-selected {
+  opacity: 1;
+}
+
+/* The lens recedes a painted section too: dimming what the reader is looking
+   away from is a view of the board, not part of its paint. Written after the
+   hover rule so a dimmed section stays dim, exactly as an unstyled one does. */
+.section-region.is-painted.is-off-lens {
+  opacity: var(--lens-dim-opacity);
+}
+
+/* The header pill follows the section's ink, so its title stays readable on a
+   painted frame. */
+.section-header.is-painted,
+.section-header.is-painted .section-title,
+.section-header.is-painted .section-title-input {
+  color: var(--paint-ink, var(--ink));
+}
+
+/* A dash marches along its own edge: clockwise from the top (ADR-0051 §6). The
+   offset is exactly one period, so the loop is seamless. One animation owns
+   background-position at a time, so a frame with several flowing sides marches
+   them together rather than in opposite directions. */
+@keyframes top-dash {
+  to {
+    background-position:
+      -12px 0,
+      100% 0,
+      0 100%,
+      0 0;
+  }
+}
+
+@keyframes right-dash {
+  to {
+    background-position:
+      0 0,
+      100% -12px,
+      0 100%,
+      0 0;
+  }
+}
+
+@keyframes bottom-dash {
+  to {
+    background-position:
+      0 0,
+      100% 0,
+      -12px 100%,
+      0 0;
+  }
+}
+
+@keyframes left-dash {
+  to {
+    background-position:
+      0 0,
+      100% 0,
+      0 100%,
+      0 -12px;
+  }
+}
+
+/* A portal is a card: its root carries `node-card`, so the card's paint rules
+   already apply. Only the portal's own frame needs naming. */
+.portal-card.is-painted {
+  background: var(--paint-surface, var(--surface));
+  color: var(--paint-ink, var(--ink));
+  opacity: var(--paint-opacity, 1);
+  border-top: var(--paint-border-top, 1px solid var(--hairline));
+  border-right: var(--paint-border-right, 1px solid var(--hairline));
+  border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
+  border-left: var(--paint-border-left, 1px solid var(--hairline));
+  border-radius: var(--paint-radius, 12px);
+  clip-path: var(--paint-clip, none);
+}
+
+.portal-card.is-painted:hover,
+.portal-card.is-painted:focus-visible,
+.portal-card.is-painted[data-selected="true"] {
+  opacity: 1;
+}
+
+/* A seamless portal (surface: "none") lets its miniature sit on the bare canvas,
+   rather than on the panel its frame would otherwise paint. */
+.portal-card.is-painted[data-seamless="true"] .portal-card__frame {
+  background: transparent;
+}
+
+/* The board's canvas is a surface too: its style paints the space behind the
+   cards. React Flow's layer reads the same paint through --xy-background-color,
+   which the app sets beside these variables. */
+.board-surface.is-painted {
+  background: var(--paint-surface, var(--canvas-bg));
+}
+
+/* Text scale (ADR-0051 §9): one custom property on the surface root, read only
+   by the elements that carry authored content — the card's title and its body.
+   Chrome that is deliberately fixed (type glyph, metadata count, peer tags,
+   resize handles) must not scale: it is the shell's furniture, not the writing. */
+.node-card.is-painted .card-title,
+.node-card.is-painted .card-title-editor,
+.node-card.is-painted .card-title span {
+  font-size: calc(13px * var(--paint-text-scale, 1));
+  line-height: calc(1.25rem * var(--paint-text-scale, 1));
+}
+
+.node-card.is-painted [data-testid="card-body"] .node-card-editor {
+  font-size: calc(14px * var(--paint-text-scale, 1));
+  line-height: calc(1.25rem * var(--paint-text-scale, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-region.is-painted {
+    animation: none;
+  }
+}

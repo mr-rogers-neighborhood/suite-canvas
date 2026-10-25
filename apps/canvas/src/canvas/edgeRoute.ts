@@ -6,6 +6,8 @@
  * so the edge component, section links and tests all get the same answer.
  */
 
+import type { GraphEdge } from "@suite/graph";
+
 export interface RoutePoint {
   x: number;
   y: number;
@@ -19,6 +21,23 @@ export interface RouteRect {
 }
 
 export type RouteMode = "bezier" | "straight" | "step" | "smoothstep" | "avoid";
+
+const ROUTE_MODES: ReadonlySet<string> = new Set<RouteMode>([
+  "bezier",
+  "straight",
+  "step",
+  "smoothstep",
+  "avoid",
+]);
+
+/**
+ * A mode read off a stored edge. Anything unrecognised falls back to `bezier`,
+ * so a document written by a newer client still draws (ADR-0052 §6: the
+ * documented fallback, never a crash).
+ */
+export function asRouteMode(value: unknown): RouteMode {
+  return typeof value === "string" && ROUTE_MODES.has(value) ? (value as RouteMode) : "bezier";
+}
 
 /** Corner radius for the rounded joins, in flow units. */
 const CORNER_RADIUS = 12;
@@ -99,6 +118,99 @@ export function routePath(points: readonly RoutePoint[], mode: RouteMode): strin
 /** True when the route was routed around obstacles rather than drawn as asked. */
 export function isAvoidMode(mode: RouteMode): boolean {
   return mode === "avoid";
+}
+
+/* ------------------------------------------------------------ reverse pairs */
+
+/** How far a paired link bows away from the straight line, in flow units. */
+const PAIR_BOW_MIN = 4;
+const PAIR_BOW_MAX = 10;
+
+/** FNV-1a over the id, mapped to 0..1: the same number on every client, forever. */
+function hashFraction(id: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < id.length; index += 1) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+/**
+ * The sideways nudge that keeps a reverse pair legible (ADR-0052 §5).
+ *
+ * The rule, and it is the whole rule: **a paired link bows to the left of its
+ * own travel, by 4–10 flow units chosen by its own id.** Two links between the
+ * same connectors travel in opposite directions, so they always land on opposite
+ * sides of the line between the dots, and the pair never overlaps. The magnitude
+ * is a hash of the edge id, so every client computes the same offset from the
+ * document alone — never from a peer, a clock or a random seed, and never from
+ * the other link (that would make an unrelated line move).
+ *
+ * Only applied when a reverse partner actually exists; a lone link keeps the
+ * geometry it has always had.
+ */
+export function pairOffset(edgeId: string, source: RoutePoint, target: RoutePoint): RoutePoint {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length < EPSILON) return { x: 0, y: 0 };
+  const magnitude = PAIR_BOW_MIN + hashFraction(edgeId) * (PAIR_BOW_MAX - PAIR_BOW_MIN);
+  // Left of travel is (-dy, dx) on a y-down canvas.
+  return { x: (-dy / length) * magnitude, y: (dx / length) * magnitude };
+}
+
+/**
+ * Nudges a route sideways: interior points move, and a route with no interior
+ * gains one at its midpoint — the bow that separates a two-point link from its
+ * twin. The endpoints stay on their dots.
+ */
+export function shiftRoute(points: readonly RoutePoint[], offset: RoutePoint): RoutePoint[] {
+  const moved = points.map((point) => ({ x: point.x, y: point.y }));
+  if (offset.x === 0 && offset.y === 0) return moved;
+  const first = moved[0];
+  const last = moved[moved.length - 1];
+  if (!first || !last) return moved;
+  if (moved.length > 2) {
+    return moved.map((point, index) =>
+      index === 0 || index === moved.length - 1
+        ? point
+        : { x: point.x + offset.x, y: point.y + offset.y },
+    );
+  }
+  return [
+    first,
+    { x: (first.x + last.x) / 2 + offset.x, y: (first.y + last.y) / 2 + offset.y },
+    last,
+  ];
+}
+
+/** One end of a link as the pair rule compares it: kind, entity and dot. */
+function endKey(edge: GraphEdge, end: "source" | "target"): string {
+  const kind = end === "source" ? edge.sourceKind : edge.targetKind;
+  const connector = end === "source" ? edge.sourceConnector : edge.targetConnector;
+  return `${kind ?? "card"}|${end === "source" ? edge.source : edge.target}|${connector ?? ""}`;
+}
+
+/**
+ * The link that runs the same two dots the other way, if there is one. This is
+ * document data — the same answer everywhere — which is why the pair offset only
+ * turns on for links that have one, and a lone link stays exactly where it was.
+ */
+export function reversePartnerOf(
+  edge: GraphEdge,
+  edges: readonly GraphEdge[],
+): GraphEdge | undefined {
+  const source = endKey(edge, "source");
+  const target = endKey(edge, "target");
+  if (source === target) return undefined;
+  return edges.find(
+    (other) =>
+      other.id !== edge.id &&
+      other.boardId === edge.boardId &&
+      endKey(other, "source") === target &&
+      endKey(other, "target") === source,
+  );
 }
 
 /**

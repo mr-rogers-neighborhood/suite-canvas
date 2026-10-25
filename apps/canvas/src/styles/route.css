@@ -35,3 +35,37 @@
   pointer-events: stroke;
   cursor: pointer;
 }
+
+/* ----------------------------------------------------------------- the route */
+
+/* A bend is a drag handle inside the edge's own SVG group. The group inherits
+   `pointer-events: visibleStroke` from React Flow's edge wrapper, so the circle
+   has to ask for the pointer itself or the stroke around it wins. */
+.route-bend {
+  fill: var(--surface, #fff);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.route-bend:hover,
+.route-bend:focus-visible {
+  fill: var(--accent);
+}
+
+/* Isolate (ADR-0052 §7): everything but the chosen link recedes. The link
+   inspector sets `data-isolate-edge` on <body>, because the cards, sections and
+   section links belong to surfaces a route does not own and a class inside the
+   inspector's subtree cannot reach them. */
+body[data-isolate-edge] .node-card,
+body[data-isolate-edge] .section-region,
+body[data-isolate-edge] .section-header {
+  opacity: var(--lens-dim-opacity);
+}
+
+body[data-isolate-edge] .route-edge.is-dimmed .react-flow__edge-path,
+body[data-isolate-edge] .route-edge.is-dimmed .edge-description,
+body[data-isolate-edge] .above-link-group.is-dimmed .above-link {
+  opacity: var(--lens-dim-opacity);
+}

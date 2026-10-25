@@ -4,7 +4,7 @@ import {
   PORTAL_BOARD_FIELD_ID,
   sectionMembership,
 } from "@suite/graph";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../store/useUiStore";
@@ -499,29 +499,69 @@ describe("LibraryDrawer boards", () => {
     expect(onDeleteBoard).toHaveBeenCalledWith(first.id, "trash");
   });
 
-  it("should report a card that is not on the active board when locating it", () => {
+  it("should offer Place and no Locate for a card that is not on the active board", () => {
     const { workspace, items } = fixture();
+    const onLocateCard = vi.fn(() => false);
+    const onPlace = vi.fn();
     renderDrawer(workspace, items, {
       tab: "cards",
       activeBoardId: "another-board",
-      onLocateCard: () => false,
+      onLocateCard,
+      onPlace,
     });
 
-    fireEvent.click(screen.getByTestId("library-locate-c1"));
+    expect(screen.queryByTestId("library-locate-c1")).not.toBeInTheDocument();
+    const row = screen.getByTestId("library-item-c1");
+    fireEvent.click(within(row).getByRole("button", { name: "Place" }));
 
-    expect(screen.getByTestId("library-locate-miss")).toHaveTextContent(
-      "\u201cMastering the timeline\u201d is not on this board.",
+    expect(onPlace).toHaveBeenCalledWith("c1");
+    expect(onLocateCard).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The inbox is the list of cards with no placement at all, so Locate there
+   * could only ever say "not on this board".
+   */
+  it("should offer Place and no Locate for every inbox card", () => {
+    const { workspace, items } = fixture();
+    const unplaced = items.map((item) => ({ ...item, boards: [] }));
+    const onPlace = vi.fn();
+    renderDrawer(workspace, [], {
+      tab: "inbox",
+      inbox: unplaced,
+      counts: { inbox: unplaced.length, cards: 0, trash: 0 },
+      activeBoardId: "some-board",
+      onPlace,
+    });
+
+    expect(screen.queryByTestId("library-locate-c1")).not.toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByTestId("library-item-c1")).getByRole("button", {
+        name: "Place",
+      }),
     );
+
+    expect(onPlace).toHaveBeenCalledWith("c1");
   });
 
   it("should pan to a card that is on the active board when locating it", () => {
     const { workspace, items } = fixture();
+    const boardId = workspace.listBoards()[0]?.id ?? "";
     const onLocateCard = vi.fn(() => true);
-    renderDrawer(workspace, items, { tab: "cards", onLocateCard });
+    const onPlace = vi.fn();
+    renderDrawer(workspace, items, {
+      tab: "cards",
+      activeBoardId: boardId,
+      onLocateCard,
+      onPlace,
+    });
 
+    const row = screen.getByTestId("library-item-c1");
+    expect(within(row).queryByRole("button", { name: "Place" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("library-locate-c1"));
 
     expect(onLocateCard).toHaveBeenCalledWith("c1");
+    expect(onPlace).not.toHaveBeenCalled();
     expect(screen.queryByTestId("library-locate-miss")).not.toBeInTheDocument();
   });
 

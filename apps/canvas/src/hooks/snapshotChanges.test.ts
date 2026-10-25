@@ -25,6 +25,7 @@ const card = (id: string, updatedAt = 0): Card => ({
 const board = (id: string, createdAt = 0): Board => ({
   id,
   name: id,
+  tags: [],
   createdAt,
   updatedAt: createdAt,
 });

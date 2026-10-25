@@ -1,6 +1,7 @@
-import type { Connector, Rect, Section } from "@suite/graph";
+import type { Connector, Rect, ResolvedSurfaceStyle, Section, StyleSide } from "@suite/graph";
+import { resolveSurfaceStyle } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../collab/presence";
 import {
   MAGNET_RADIUS,
@@ -14,6 +15,7 @@ import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
 import { revealConnectors } from "./NodeConnectors";
 import type { SectionOffset } from "./sectionLayout";
 import { SECTION_FILL, SECTION_STROKE } from "./sectionPalette";
+import { colourRoleVar, surfacePaintVars } from "./surfacePaint";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
 type ResizeDirection = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -26,6 +28,59 @@ const MIN_HEIGHT = 100;
 const FILL = SECTION_FILL;
 
 const STROKE = SECTION_STROKE;
+
+/** One dash period. The keyframes in paint.css march exactly this far. */
+const DASH_PERIOD = 12;
+
+/** The paint record is already a set of custom properties; it can be spread. */
+function paintStyle(paint: Record<string, string>): CSSProperties {
+  return paint as CSSProperties;
+}
+
+/**
+ * A flowing side paints a gradient strip instead of a border: a dashed border
+ * cannot move its own dashes, so the strip is what the animation can carry.
+ */
+function dashStrip(style: ResolvedSurfaceStyle, side: StyleSide): Record<string, string> | null {
+  const edge = style.sides[side];
+  if (!edge || edge.paint === "solid" || edge.paint === "none") return null;
+  if (!edge.flow || edge.flow === "none") return null;
+  const colour = colourRoleVar(edge.colour ?? style.ink);
+  const dash = edge.paint === "dotted" ? 2 : 6;
+  // The gradient runs along the strip, so it repeats along the edge it sits on.
+  const horizontal = side === "top" || side === "bottom";
+  const gradient = `repeating-linear-gradient(${horizontal ? "90deg" : "180deg"}, ${colour} 0 ${dash}px, transparent ${dash}px ${DASH_PERIOD}px)`;
+  const thickness = edge.width ?? 1;
+  // Extending a period past the frame is what lets the march loop seamlessly.
+  const size = horizontal
+    ? `calc(100% + ${DASH_PERIOD}px) ${thickness}px`
+    : `${thickness}px calc(100% + ${DASH_PERIOD}px)`;
+  return { [`--paint-dash-${side}`]: gradient, [`--paint-dash-size-${side}`]: size };
+}
+
+/**
+ * The paint for a section's frame, or nothing when the section has no style.
+ *
+ * Two things are a section's own. A style that names no background keeps the
+ * section's colour wash (the resolved default is the card surface, which would
+ * bleach it), and a flowing side drops its static border in favour of the strip
+ * above, so the dashes are not painted twice.
+ */
+export function sectionPaint(section: Section): Record<string, string> {
+  if (!section.style) return {};
+  const resolved = resolveSurfaceStyle(section.style, "section");
+  const paint = surfacePaintVars(resolved);
+  if (section.style.surface === undefined) {
+    paint["--paint-surface"] = FILL[section.color ?? "slate"];
+  }
+  for (const side of ["top", "right", "bottom", "left"] as const) {
+    const strip = dashStrip(resolved, side);
+    if (!strip) continue;
+    Object.assign(paint, strip);
+    paint[`--paint-border-${side}`] = "none";
+  }
+  return paint;
+}
 
 /** What a link dragged out of a section connector landed on. */
 export interface SectionLinkTarget {
@@ -404,6 +459,8 @@ export function SectionLayer({
             const color = section.color ?? "slate";
             const selected = selectedSectionId === section.id;
             const peerColor = peerSelection.get(section.id);
+            const paint = sectionPaint(section);
+            const painted = Object.keys(paint).length > 0;
             return (
               <button
                 key={section.id}
@@ -412,22 +469,27 @@ export function SectionLayer({
                 data-testid={`section-region-${section.id}`}
                 className={`section-region${selected ? " is-selected" : ""}${
                   dimmedSectionIds?.has(section.id) ? " is-off-lens" : ""
-                }`}
-                style={{
-                  left: rect.x,
-                  top: rect.y,
-                  width: rect.width,
-                  height: rect.height,
-                  background: FILL[color],
-                  borderColor: selected ? STROKE[color] : undefined,
-                  ...(peerColor ? { boxShadow: `0 0 0 2px ${peerColor}66` } : {}),
-                  ...(peerGesture.has(section.id)
-                    ? {
-                        transition:
-                          "left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear",
-                      }
-                    : {}),
-                }}
+                }${painted ? " is-painted" : ""}`}
+                style={
+                  {
+                    left: rect.x,
+                    top: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    // An unstyled frame keeps the section's own colour wash; a
+                    // painted one takes its background from the style instead.
+                    ...(painted ? {} : { background: FILL[color] }),
+                    borderColor: selected ? STROKE[color] : undefined,
+                    ...(peerColor ? { boxShadow: `0 0 0 2px ${peerColor}66` } : {}),
+                    ...(peerGesture.has(section.id)
+                      ? {
+                          transition:
+                            "left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear",
+                        }
+                      : {}),
+                    ...paintStyle(paint),
+                  } as CSSProperties
+                }
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   onSelect(section.id);
@@ -559,19 +621,28 @@ export function SectionLayer({
             const selected = selectedSectionId === section.id;
             const peer = peerGesture.get(section.id);
             const count = members.get(section.id) ?? 0;
+            const paint = sectionPaint(section);
+            const painted = Object.keys(paint).length > 0;
             return (
               // biome-ignore lint/a11y/noStaticElementInteractions: the header is the section's drag handle; its title and rename field are separate controls.
               <div
                 key={section.id}
                 data-testid={`section-header-${section.id}`}
-                className={`section-header${dimmedSectionIds?.has(section.id) ? " is-off-lens" : ""}`}
-                style={{
-                  left: rect.x + 8,
-                  top: rect.y + 6,
-                  transform: `scale(${inverseZoom})`,
-                  borderColor: selected ? STROKE[color] : undefined,
-                  ...(peer ? { transition: "left 60ms linear, top 60ms linear" } : {}),
-                }}
+                className={`section-header${dimmedSectionIds?.has(section.id) ? " is-off-lens" : ""}${
+                  painted ? " is-painted" : ""
+                }`}
+                style={
+                  {
+                    left: rect.x + 8,
+                    top: rect.y + 6,
+                    transform: `scale(${inverseZoom})`,
+                    borderColor: selected ? STROKE[color] : undefined,
+                    ...(peer ? { transition: "left 60ms linear, top 60ms linear" } : {}),
+                    // The pill follows the section's ink so the title stays
+                    // readable on a painted frame.
+                    ...(painted ? { "--paint-ink": paint["--paint-ink"] } : {}),
+                  } as CSSProperties
+                }
                 onPointerDown={(event) => startDrag(event, section)}
                 onContextMenu={(event) => onContextMenu(event, section.id)}
               >

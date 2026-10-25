@@ -100,6 +100,15 @@ export interface NodeCardProps {
   draftActive?: boolean;
 }
 
+/**
+ * The paint record as a DOM style. A custom property is only a custom property
+ * with its `--` prefix, and `surfacePaintVars` names its keys without one, so
+ * spreading the record raw would reach CSS as an unknown declaration.
+ */
+function paintStyle(paint: Record<string, string>): CSSProperties {
+  return paint as CSSProperties;
+}
+
 export function NodeCard({
   card,
   type,
@@ -211,7 +220,7 @@ export function NodeCard({
    * so the default chrome is unchanged; a styled one paints through the shared
    * role tokens (ADR-0051).
    */
-  const paint = surfacePaintVars(resolveSurfaceStyle(card.style, "card"));
+  const paint = card.style ? surfacePaintVars(resolveSurfaceStyle(card.style, "card")) : {};
   const painted = Object.keys(paint).length > 0;
 
   const cardClass = [
@@ -278,7 +287,7 @@ export function NodeCard({
       style={
         {
           ...presenceStyle,
-          ...paint,
+          ...paintStyle(paint),
           width: width ?? DEFAULT_CARD_WIDTH,
           height: height ?? DEFAULT_CARD_HEIGHT,
         } as CSSProperties

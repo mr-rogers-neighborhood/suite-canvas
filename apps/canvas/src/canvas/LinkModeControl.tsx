@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useUiStore } from "../store/useUiStore";
 import { useLinkThreadStore } from "./linkThread";
 
@@ -24,6 +25,59 @@ export function LinkModeControl() {
   const setLinkMode = useUiStore((state) => state.setLinkMode);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
 
+  const button = useRef<HTMLButtonElement | null>(null);
+  const glyph = useRef<HTMLSpanElement | null>(null);
+  /**
+   * Whether Shift is held right now. Shift is the one gesture that chains links
+   * without the thread tool, so holding it shows what the toggle would do. A ref
+   * painted onto the DOM, never state: a re-render mid-gesture is exactly what
+   * the hint must not cause.
+   */
+  const shiftHeld = useRef(false);
+
+  /**
+   * Paints the *displayed* mode on the button. `data-mode` and the click path
+   * stay the stored mode; `data-hint-mode`, the `is-thread` look and the glyph
+   * follow what the reader is doing, so holding Shift flips the indicator and
+   * releasing it flips it back.
+   */
+  const paintHint = useCallback(() => {
+    const node = button.current;
+    if (!node) return;
+    const displayed = shiftHeld.current ? "thread" : linkMode;
+    node.dataset.hintMode = displayed;
+    node.classList.toggle("is-thread", displayed === "thread");
+    if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
+  }, [linkMode]);
+
+  // A commit restores the stored class and glyph from JSX, so the hint is
+  // re-applied before the browser paints — still without a state update of its
+  // own, and with no flash of the stored mode while a gesture is in flight.
+  useLayoutEffect(() => {
+    paintHint();
+  });
+
+  useEffect(() => {
+    const sync = (event: KeyboardEvent) => {
+      if (event.shiftKey === shiftHeld.current) return;
+      shiftHeld.current = event.shiftKey;
+      paintHint();
+    };
+    const release = () => {
+      if (!shiftHeld.current) return;
+      shiftHeld.current = false;
+      paintHint();
+    };
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", release);
+    };
+  }, [paintHint]);
+
   if (!canCreateContent) return null;
 
   const current = MODES[linkMode];
@@ -33,6 +87,7 @@ export function LinkModeControl() {
   // and two buttons implied two independent tools.
   return (
     <button
+      ref={button}
       type="button"
       className={`link-mode-control${thread ? " is-thread" : ""}`}
       aria-pressed={thread}
@@ -40,6 +95,7 @@ export function LinkModeControl() {
       title={thread ? current.next : current.label}
       data-testid="link-mode-toggle"
       data-mode={linkMode}
+      data-hint-mode={linkMode}
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
@@ -50,7 +106,9 @@ export function LinkModeControl() {
         setLinkMode(thread ? "connect" : "thread");
       }}
     >
-      <span aria-hidden="true">{current.glyph}</span>
+      <span ref={glyph} aria-hidden="true">
+        {current.glyph}
+      </span>
     </button>
   );
 }

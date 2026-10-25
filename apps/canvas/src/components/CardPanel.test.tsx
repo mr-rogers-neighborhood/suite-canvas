@@ -548,8 +548,8 @@ describe("cardLinks", () => {
       { boardId: "board-2", cardId: "n4", x: 0, y: 0, z: 0, createdAt: 0 },
     ],
     boards: [
-      { id: "board-1", name: "Research", createdAt: 0, updatedAt: 0 },
-      { id: "board-2", name: "Drafts", createdAt: 0, updatedAt: 0 },
+      { id: "board-1", name: "Research", createdAt: 0, updatedAt: 0, tags: [] },
+      { id: "board-2", name: "Drafts", createdAt: 0, updatedAt: 0, tags: [] },
     ],
     displayTitle: (cardId: string) => `Title ${cardId}`,
   };

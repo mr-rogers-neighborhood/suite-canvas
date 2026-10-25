@@ -1,7 +1,18 @@
 import type { GraphEdge } from "@suite/graph";
 import { ViewportPortal } from "@xyflow/react";
 import { useState } from "react";
+import { useEdges } from "../store/workspaceStore";
+import {
+  asRouteMode,
+  pairOffset,
+  type RoutePoint,
+  reversePartnerOf,
+  routePath,
+  routePoints,
+  shiftRoute,
+} from "./edgeRoute";
 import type { LinkAnchor } from "./linkGeometry";
+import { useIsolatedEdgeId } from "./routeIsolation";
 
 /**
  * The section link layer, in its own file so the route work (ADR-0052) can grow
@@ -22,6 +33,38 @@ export function sectionLinkPath(anchors: { source: LinkAnchor; target: LinkAncho
   return `M ${source.x},${source.y} C ${source.x + bend * direction},${source.y} ${
     target.x - bend * direction
   },${target.y} ${target.x},${target.y}`;
+}
+
+/**
+ * What a link draws. A stored route — bends, or the bow that separates a reverse
+ * pair — resolves through the same `routePath` a card link uses, so a bent
+ * section link and a bent card link are the same shape. A link with neither
+ * keeps the fixed curve it has always had, byte for byte.
+ */
+export function linkRoutePath(link: SectionLink, edges: readonly GraphEdge[]): string {
+  const { source, target } = link.anchors;
+  const bends = link.edge.bends ?? [];
+  const mode = asRouteMode(link.edge.path);
+  const shift: RoutePoint | null = reversePartnerOf(link.edge, edges)
+    ? pairOffset(link.edge.id, source, target)
+    : null;
+
+  if (bends.length === 0 && !shift) {
+    // `avoid` cannot see the board's frames from this layer; the documented
+    // fallback for a link the router declines is the plain curve.
+    return mode === "avoid"
+      ? routePath(
+          [
+            { x: source.x, y: source.y },
+            { x: target.x, y: target.y },
+          ],
+          "bezier",
+        )
+      : sectionLinkPath(link.anchors);
+  }
+
+  const points = routePoints({ x: source.x, y: source.y }, { x: target.x, y: target.y }, bends);
+  return routePath(shift ? shiftRoute(points, shift) : points, mode);
 }
 
 /**
@@ -53,6 +96,8 @@ export function SectionLinkLayer({
     fixed: LinkAnchor;
     pointer: LinkAnchor;
   } | null>(null);
+  const edges = useEdges();
+  const isolatedEdgeId = useIsolatedEdgeId();
 
   if (links.length === 0) return null;
 
@@ -114,6 +159,11 @@ export function SectionLinkLayer({
         </defs>
         {links.map((link) => {
           const selected = selectedEdgeIds.has(link.edge.id);
+          // The route, not the fixed curve: bends and the reverse-pair bow are
+          // the same geometry the card edge renders (ADR-0052 §2).
+          const path = linkRoutePath(link, edges);
+          const dimmed =
+            link.offLens || (isolatedEdgeId !== null && isolatedEdgeId !== link.edge.id);
           return (
             <g key={link.edge.id} data-edge-id={link.edge.id}>
               {/* A section is not a React Flow node, so this line needs its own
@@ -121,7 +171,7 @@ export function SectionLinkLayer({
               {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}
               <path
                 className="section-link__hit"
-                d={sectionLinkPath(link.anchors)}
+                d={path}
                 data-testid="section-link-hit"
                 // React Flow's pane claims the press (it captures the pointer to
                 // drag the camera), so a click that starts here never arrives as
@@ -146,10 +196,10 @@ export function SectionLinkLayer({
               <path
                 data-testid="section-link"
                 data-edge-id={link.edge.id}
-                className={`section-link${link.offLens ? " is-off-lens" : ""}${
+                className={`section-link${dimmed ? " is-off-lens" : ""}${
                   selected ? " is-selected" : ""
                 }`}
-                d={sectionLinkPath(link.anchors)}
+                d={path}
                 markerEnd="url(#section-link-arrow)"
               />
             </g>

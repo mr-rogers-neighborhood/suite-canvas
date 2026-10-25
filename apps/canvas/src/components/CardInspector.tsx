@@ -59,6 +59,11 @@ export interface CardInspectorProps {
   onFocusSection: (sectionId: string) => void;
   onRemoveFromBoard: () => void;
   onFocusLink: (cardId: string, boardId: string | null) => void;
+  /**
+   * Puts this card on the board in front of the reader. Offered only while the
+   * card has no placement here — a card that is already placed is located.
+   */
+  onPlace?: () => void;
   /** A share viewer: the drawer keeps reading and navigation, nothing else. */
   readOnly?: boolean;
   canEditContent?: boolean;
@@ -151,6 +156,7 @@ export function CardInspector({
   onFocusSection,
   onRemoveFromBoard,
   onFocusLink,
+  onPlace,
   focusedField = null,
   bodyEmpty = false,
   readOnly = false,
@@ -166,6 +172,9 @@ export function CardInspector({
   const panelFields = sketch
     ? fields.filter((entry) => entry.field.name !== SKETCH_DISPLAY_FIELD_NAME)
     : fields;
+  // Locate and Place are one pair of meanings, shared with the library rows: a
+  // card on this board is located, a card that is not is placed.
+  const currentBoard = where.entries.find((entry) => entry.isCurrent) ?? null;
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
@@ -189,6 +198,27 @@ export function CardInspector({
             ) : null}
           </p>
         </div>
+        {currentBoard ? (
+          <button
+            type="button"
+            aria-label="Locate this card on the board"
+            data-testid="inspector-locate"
+            className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => onFocusCard(currentBoard.boardId)}
+          >
+            Locate
+          </button>
+        ) : onPlace ? (
+          <button
+            type="button"
+            aria-label="Place this card on the board"
+            data-testid="inspector-place"
+            className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={onPlace}
+          >
+            Place
+          </button>
+        ) : null}
         {editContent ? (
           <button
             type="button"

@@ -1,8 +1,10 @@
 import type { Board, Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/graph";
 import { mentionContext } from "@suite/graph";
+import { useReactFlow } from "@xyflow/react";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { useMemo } from "react";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { useBoardPeers } from "../hooks/useBoardPeers";
@@ -55,6 +57,8 @@ export interface CardPanelModel {
   onManageTypes: () => void;
   onFocusCard: (boardId: string) => void;
   onFocusSection: (sectionId: string) => void;
+  /** Puts an unplaced card on the active board and pans to it. */
+  onPlace: () => void;
   onRemoveFromBoard: () => void;
   onFocusLink: (cardId: string, boardId: string | null) => void;
 }
@@ -76,6 +80,7 @@ export function useCardPanelModel(
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canManageSchema = useUiStore((state) => state.canManageSchema);
+  const { screenToFlowPosition } = useReactFlow();
 
   const peers = useBoardPeers(activeBoardId);
   const localUser = usePresenceStore((state) => state.localUser);
@@ -211,6 +216,22 @@ export function useCardPanelModel(
     onFocusCard: (boardId) => focusCard(card.id, boardId),
     onFocusSection: (sectionId) => {
       if (activeBoardId) focusSection(sectionId, activeBoardId);
+    },
+    onPlace: () => {
+      if (!canEditLayout || !activeBoardId) return;
+      // The same landing spot as a library Place: the middle of the board in
+      // front of the reader, with the card's centre on it rather than its corner.
+      const rect = document.querySelector('[data-testid="canvas-board"]')?.getBoundingClientRect();
+      const centre = screenToFlowPosition({
+        x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+        y: rect ? rect.top + rect.height / 2 : window.innerHeight / 2,
+      });
+      workspace.placeCard(activeBoardId, card.id, {
+        x: centre.x - DEFAULT_CARD_WIDTH / 2,
+        y: centre.y - DEFAULT_CARD_HEIGHT / 2,
+      });
+      // Placing is only useful if the reader sees where it landed.
+      focusCard(card.id, activeBoardId);
     },
     onRemoveFromBoard: () => {
       if (canEditLayout && activeBoardId) workspace.unplaceCard(activeBoardId, card.id);

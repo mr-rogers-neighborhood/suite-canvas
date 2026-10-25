@@ -16,15 +16,15 @@ describe("surface paint", () => {
     expect(colourRoleVar("canvas")).toBe("var(--canvas-bg)");
     expect(colourRoleVar("surface-strong")).toBe("var(--surface-strong)");
     const paint = surfacePaintVars(resolveSurfaceStyle({ surface: "accent" }, "card"));
-    expect(paint["paint-surface"]).toBe("var(--accent)");
-    expect(paint["paint-ink"]).toBe("var(--ink)");
+    expect(paint["--paint-surface"]).toBe("var(--accent)");
+    expect(paint["--paint-ink"]).toBe("var(--ink)");
   });
 
   it("paints nothing when the surface is seamless, but keeps it visible to a hover", () => {
     const paint = surfacePaintVars(resolveSurfaceStyle({ surface: "none" }, "section"));
-    expect(paint["paint-surface"]).toBe("transparent");
+    expect(paint["--paint-surface"]).toBe("transparent");
     // Opacity is still full: seamless is not invisible.
-    expect(paint["paint-opacity"]).toBe("1");
+    expect(paint["--paint-opacity"]).toBe("1");
   });
 
   it("clips a silhouette rather than reshaping the box", () => {
@@ -33,12 +33,12 @@ describe("surface paint", () => {
     expect(shapeRadius("pill")).toBe("999px");
     expect(shapeRadius("circle")).toBe("50%");
     const paint = surfacePaintVars(resolveSurfaceStyle({ shape: "diamond" }, "card"));
-    expect(paint["paint-clip"]).toContain("polygon");
+    expect(paint["--paint-clip"]).toContain("polygon");
   });
 
   it("honours a radius the style names over the shape default", () => {
     const paint = surfacePaintVars(resolveSurfaceStyle({ radius: 18 }, "card"));
-    expect(paint["paint-radius"]).toBe("18px");
+    expect(paint["--paint-radius"]).toBe("18px");
   });
 
   it("writes only the sides a style names, and can remove one", () => {
@@ -47,11 +47,11 @@ describe("surface paint", () => {
       "card",
     );
     const paint = surfacePaintVars(styled);
-    expect(paint["paint-border-top"]).toBe("2px dashed var(--accent)");
-    expect(paint["paint-border-left"]).toBeUndefined();
+    expect(paint["--paint-border-top"]).toBe("2px dashed var(--accent)");
+    expect(paint["--paint-border-left"]).toBeUndefined();
 
     const removed = resolveSurfaceStyle({ sides: { bottom: { paint: "none" } } }, "card");
-    expect(surfacePaintVars(removed)["paint-border-bottom"]).toBe("none");
+    expect(surfacePaintVars(removed)["--paint-border-bottom"]).toBe("none");
   });
 
   it("animates a dashed edge in the direction the geometry gives it", () => {

@@ -5,9 +5,9 @@ import { useUiStore } from "../store/useUiStore";
 import { BoardTabs } from "./BoardTabs";
 
 const boards = [
-  { id: "b1", name: "Research", createdAt: 0, updatedAt: 0 },
-  { id: "b2", name: "Drafts", createdAt: 1, updatedAt: 1 },
-  { id: "b3", name: "Archive", createdAt: 2, updatedAt: 2 },
+  { id: "b1", name: "Research", createdAt: 0, updatedAt: 0, tags: [] },
+  { id: "b2", name: "Drafts", createdAt: 1, updatedAt: 1, tags: [] },
+  { id: "b3", name: "Archive", createdAt: 2, updatedAt: 2, tags: [] },
 ];
 
 const baseProps = {

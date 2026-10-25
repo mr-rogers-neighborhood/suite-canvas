@@ -1,17 +1,28 @@
 import {
   defaultConnectors,
   PORTAL_BOARD_FIELD_ID,
+  resolveSurfaceStyle,
   sectionForCard,
   sectionMembership,
 } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import { surfacePaintVars } from "./canvas/surfacePaint";
 import { ensureWhiteboardType } from "./cards/whiteboard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
@@ -615,6 +626,16 @@ function WorkspaceShell({
   }, [activeBoardId, canCreateBoards, workspace, createPortal]);
 
   const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
+  // The canvas behind the cards is a surface of its own (ADR-0051 §1), so the
+  // board's style paints it. React Flow's own layer reads --xy-background-color,
+  // which is what lets the paint reach it without the canvas knowing about styles.
+  const boardPaint = useMemo((): Record<string, string> => {
+    const board = snapshot.boards.find((entry) => entry.id === activeBoardId);
+    if (!board?.style) return {};
+    const paint = surfacePaintVars(resolveSurfaceStyle(board.style, "board"));
+    return { ...paint, "--xy-background-color": "var(--paint-surface)" };
+  }, [snapshot.boards, activeBoardId]);
+  const boardPainted = Object.keys(boardPaint).length > 0;
   const boardSections = useMemo(
     () =>
       activeBoardId ? snapshot.sections.filter((section) => section.boardId === activeBoardId) : [],
@@ -954,7 +975,10 @@ function WorkspaceShell({
         ) : null}
       </TitleBar>
 
-      <main className="relative z-10 min-h-0 flex-1">
+      <main
+        className={`board-surface relative z-10 min-h-0 flex-1${boardPainted ? " is-painted" : ""}`}
+        style={boardPainted ? (boardPaint as CSSProperties) : undefined}
+      >
         <CanvasBoard />
         {workspaceSurface && canCreateContent && boardEmpty ? (
           <div

@@ -38,6 +38,7 @@ function section(overrides: Partial<Section> = {}): Section {
     width: 320,
     height: 200,
     z: 0,
+    tags: [],
     createdAt: 0,
     updatedAt: 0,
     connectors: [

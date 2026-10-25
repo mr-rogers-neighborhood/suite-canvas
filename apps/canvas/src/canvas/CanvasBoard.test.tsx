@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReactFlowProvider, useStore } from "@xyflow/react";
 import { LoroList, LoroMap, LoroText } from "loro-crdt";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -415,5 +415,61 @@ describe("CanvasBoard card organization", () => {
     expect(create).not.toHaveBeenCalled();
     expect(workspace.listBoardCards(boardId)).toHaveLength(before);
     create.mockRestore();
+  });
+});
+
+describe("CanvasBoard selection during a press", () => {
+  function mountPress() {
+    useUiStore.setState({
+      readOnly: false,
+      activeBoardId: boardId,
+      selectedNodeIds: [],
+      selectedEdgeIds: [],
+      selectedSectionId: null,
+      contextMenu: null,
+      ...FULL_CAPABILITIES,
+    });
+    return render(
+      <ReactFlowProvider>
+        <CanvasBoard />
+      </ReactFlowProvider>,
+    );
+  }
+
+  const selectedCount = (container: HTMLElement): number =>
+    container.querySelectorAll(".react-flow__node.selected").length;
+
+  /**
+   * React Flow owns the selection for the length of a press. The store echo of
+   * the click *before* it can land mid-gesture, and painting that older set back
+   * is what swallowed a modifier click.
+   */
+  it("keeps the pane's selection when a stale echo lands during a press", async () => {
+    const first = workspace.createCard({ boardId, position: { x: 640, y: 640 } });
+    const second = workspace.createCard({ boardId, position: { x: 940, y: 640 } });
+    const { container } = mountPress();
+    await waitFor(() =>
+      expect(container.querySelector(`.react-flow__node[data-id="${second.id}"]`)).not.toBeNull(),
+    );
+
+    const ids = workspace.listBoardCards(boardId).map((card) => card.id);
+    act(() => useUiStore.setState({ selectedNodeIds: ids }));
+    await waitFor(() => expect(selectedCount(container)).toBe(ids.length));
+
+    fireEvent.pointerDown(window);
+    // The echo of an earlier click names one card; the pane already holds them all.
+    act(() => useUiStore.setState({ selectedNodeIds: [first.id] }));
+    expect(selectedCount(container)).toBe(ids.length);
+
+    fireEvent.pointerUp(window);
+    // The guard is per press: the next selection change paints as before.
+    act(() => useUiStore.setState({ selectedNodeIds: [second.id] }));
+    await waitFor(() => expect(selectedCount(container)).toBe(1));
+    expect(container.querySelector(`.react-flow__node[data-id="${second.id}"]`)).toHaveClass(
+      "selected",
+    );
+    expect(container.querySelector(`.react-flow__node[data-id="${first.id}"]`)).not.toHaveClass(
+      "selected",
+    );
   });
 });

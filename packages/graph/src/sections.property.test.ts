@@ -46,6 +46,7 @@ const sectionsArb: fc.Arbitrary<Section[]> = fc
         width: outer.width,
         height: outer.height,
         z: 0,
+        tags: [],
         createdAt: 0,
         updatedAt: 0,
       },
@@ -67,6 +68,7 @@ const sectionsArb: fc.Arbitrary<Section[]> = fc
         width,
         height,
         z: inset.z,
+        tags: [],
         createdAt: index + 1,
         updatedAt: index + 1,
       });

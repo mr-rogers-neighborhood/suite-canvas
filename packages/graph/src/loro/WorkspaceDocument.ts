@@ -11,6 +11,14 @@ import {
   type Value,
 } from "loro-crdt";
 import {
+  compositeValueError,
+  DEFAULT_RATING_SCALE,
+  GROUP_VALUE_TAG,
+  isValueRecord,
+  LIST_ITEM_SUB_FIELD_ID,
+  storedEquals,
+} from "../composite.js";
+import {
   createConnectorId,
   defaultConnectors,
   nextFreeAnchor,
@@ -56,13 +64,17 @@ import {
   fieldDefinitionSchema,
   type GraphEdge,
   graphEdgeSchema,
+  listItemKindSchema,
   type Placement,
   type PropertyValue,
   placementSchema,
+  ratingPresentationSchema,
   type Section,
   type SelectOption,
+  type SubField,
   sectionSchema,
   selectOptionSchema,
+  subFieldSchema,
   type Tag,
   tagSchema,
 } from "../schema.js";
@@ -168,6 +180,16 @@ export interface CreateFieldInput {
   required?: boolean;
   /** Initial labels for select and multi-select fields. */
   options?: string[];
+  /**
+   * A `group`'s members, or a `list`'s item shape
+   * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md) §6). A list of
+   * scalars declares exactly one entry: the item's own kind.
+   */
+  subFields?: Array<{ id?: string; name: string; kind: SubField["kind"] }>;
+  /** For a `list`: repeat the scalar sub-field or a group of them. Defaults to scalar. */
+  itemKind?: "scalar" | "group";
+  /** For a `rating`: scale top, half steps and icon set. Defaults to five whole marks. */
+  rating?: { scale: number; half?: boolean; icon?: string };
 }
 
 export interface CardFieldView {
@@ -570,6 +592,56 @@ function connectorsFromMap(fields: LoroMap): Connector[] {
   return ordered.map((entry) => entry.connector);
 }
 
+/**
+ * One stored property slot read back as a value. Scalars are themselves, a
+ * `list` is its ordered entries, a `group` is its map (recognised by its tag, so
+ * a dormant value still reads back as a group), and any other map is a
+ * multi-select's membership set (`id -> true`). Containers are checked before
+ * plain records because a Loro handler is an object too.
+ */
+function readStoredValue(value: unknown): PropertyValue | undefined {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (isMap(value)) {
+    return value.get(GROUP_VALUE_TAG) === true ? readRecord(value.entries()) : value.keys().sort();
+  }
+  if (isMovableList(value) || isList(value)) return readListItems(value.toArray());
+  if (Array.isArray(value)) return readListItems(value);
+  if (isValueRecord(value)) return readRecord(Object.entries(value));
+  return undefined;
+}
+
+/**
+ * One list entry. A map entry inside a list is always a group item — a list
+ * never holds a membership set — so it reads as a record even when the field
+ * definition is gone, which is what keeps a dormant list recoverable.
+ */
+function readListItem(entry: unknown): PropertyValue | undefined {
+  return isMap(entry) ? readRecord(entry.entries()) : readStoredValue(entry);
+}
+
+function readListItems(entries: readonly unknown[]): PropertyValue[] {
+  const items: PropertyValue[] = [];
+  for (const entry of entries) {
+    const read = readListItem(entry);
+    if (read !== undefined) items.push(read);
+  }
+  return items;
+}
+
+/** A record keyed by sub-field id, in a stable order; the group tag is not a value. */
+function readRecord(entries: Iterable<readonly [string, unknown]>): Record<string, PropertyValue> {
+  const record: Record<string, PropertyValue> = {};
+  const sorted = [...entries].sort(([left], [right]) => left.localeCompare(right));
+  for (const [subId, entry] of sorted) {
+    if (subId === GROUP_VALUE_TAG) continue;
+    const read = readStoredValue(entry);
+    if (read !== undefined) record[subId] = read;
+  }
+  return record;
+}
+
 export function cardFromMap(id: string, fields: LoroMap): Card {
   const connectors: Array<{ connector: Connector; order: number }> = [];
   const connectorMap = fields.get(CONNECTORS_FIELD);
@@ -597,22 +669,14 @@ export function cardFromMap(id: string, fields: LoroMap): Card {
     ? [primaryTypeId, ...membership.filter((id) => id !== primaryTypeId).sort()]
     : [...membership].sort();
 
-  const tagsMap = fields.get("tags");
-  const tags = isMap(tagsMap) ? tagsMap.keys().sort() : [];
+  const tags = readIdSet(fields.get("tags"));
 
   const properties: Record<string, PropertyValue> = {};
   const propertiesMap = fields.get("properties");
   if (isMap(propertiesMap)) {
     for (const fieldId of propertiesMap.keys()) {
-      const value = propertiesMap.get(fieldId);
-      if (isMap(value)) properties[fieldId] = value.keys().sort();
-      else if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean"
-      ) {
-        properties[fieldId] = value;
-      }
+      const value = readStoredValue(propertiesMap.get(fieldId));
+      if (value !== undefined) properties[fieldId] = value;
     }
   }
 
@@ -653,6 +717,25 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
   }
   options.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
+  const subFields: SubField[] = [];
+  const subFieldsMap = fields.get("subFields");
+  if (isMap(subFieldsMap)) {
+    for (const subId of subFieldsMap.keys()) {
+      const sub = subFieldsMap.get(subId);
+      if (!isMap(sub)) continue;
+      const parsed = subFieldSchema.safeParse({
+        id: subId,
+        name: readString(sub, "name") ?? "Field",
+        kind: readString(sub, "kind") ?? "text",
+        order: readNumber(sub, "order") ?? Number.MAX_SAFE_INTEGER,
+      });
+      if (parsed.success) subFields.push(parsed.data);
+    }
+  }
+  subFields.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+
+  const itemKind = listItemKindSchema.safeParse(fields.get("itemKind"));
+  const rating = ratingPresentationSchema.safeParse(fields.get("rating"));
   const display = readString(fields, "display");
   return fieldDefinitionSchema.parse({
     id,
@@ -662,6 +745,9 @@ export function fieldFromMap(id: string, fields: LoroMap): FieldDefinition {
     order: readNumber(fields, "order") ?? Number.MAX_SAFE_INTEGER,
     options,
     ...(display ? { display } : {}),
+    ...(subFields.length > 0 ? { subFields } : {}),
+    ...(itemKind.success ? { itemKind: itemKind.data } : {}),
+    ...(rating.success ? { rating: rating.data } : {}),
   });
 }
 
@@ -715,11 +801,137 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
     height: Math.max(1, readNumber(fields, "height") ?? 240),
     z: readNumber(fields, "z") ?? 0,
     connectors: connectorsFromMap(fields),
+    tags: readIdSet(fields.get("tags")),
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     ...(color ? { color } : {}),
     ...(style ? { style } : {}),
   });
+}
+
+/**
+ * Writes one property slot in the storage shape its kind asks for
+ * ([ADR-0057 §5](../../../docs/decisions/0057-fields-can-compose.md)). Nothing
+ * composite is last-write-wins over a whole collection:
+ *
+ * - `multiSelect` is a membership map, so concurrent picks both survive;
+ * - `group` is a mergeable map keyed by sub-field id, and only *changed*
+ *   sub-values are written, so a concurrent edit to a different sub-value is not
+ *   overwritten by a stale copy of it;
+ * - `list` is a mergeable movable list, so concurrent appends both survive and
+ *   order converges. The editor commits a whole array; the writer diffs it
+ *   against what is stored (common prefix and suffix, replace the middle) and
+ *   issues only the inserts and deletes that difference implies.
+ */
+function writePropertyValue(
+  properties: LoroMap,
+  fieldId: string,
+  field: FieldDefinition | undefined,
+  value: PropertyValue,
+): void {
+  if (field?.kind === "multiSelect" && Array.isArray(value)) {
+    writeIdMembership(
+      properties,
+      fieldId,
+      value.filter((entry) => typeof entry === "string"),
+    );
+    return;
+  }
+  if (field?.kind === "group" && isValueRecord(value)) {
+    writeGroupValue(properties, fieldId, value);
+    return;
+  }
+  if (field?.kind === "list" && Array.isArray(value)) {
+    writeListValue(properties, fieldId, value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    // An array with no field definition is a legacy multi-select membership set.
+    writeIdMembership(
+      properties,
+      fieldId,
+      value.filter((entry) => typeof entry === "string"),
+    );
+    return;
+  }
+  properties.set(fieldId, value);
+}
+
+/** A membership map (`id -> true`), which keeps two people's picks. */
+function writeIdMembership(parent: LoroMap, key: string, ids: readonly string[]): void {
+  const stored = parent.get(key);
+  if (stored !== undefined && !isMap(stored)) parent.delete(key);
+  const selected = parent.ensureMergeableMap(key);
+  const wanted = new Set(ids);
+  for (const id of [...selected.keys()]) {
+    if (!wanted.has(id)) selected.delete(id);
+  }
+  for (const id of wanted) {
+    if (!selected.get(id)) selected.set(id, true);
+  }
+}
+
+/** A group: mergeable map keyed by sub-field id, so sub-values merge on their own. */
+function writeGroupValue(parent: LoroMap, key: string, value: Record<string, PropertyValue>): void {
+  const stored = parent.get(key);
+  if (stored !== undefined && !isMap(stored)) parent.delete(key);
+  const group = parent.ensureMergeableMap(key);
+  if (group.get(GROUP_VALUE_TAG) !== true) group.set(GROUP_VALUE_TAG, true);
+  const wanted = new Set(Object.keys(value));
+  for (const subId of [...group.keys()]) {
+    if (subId !== GROUP_VALUE_TAG && !wanted.has(subId)) group.delete(subId);
+  }
+  for (const [subId, entry] of Object.entries(value)) {
+    if (storedEquals(group.get(subId), entry)) continue;
+    group.set(subId, entry);
+  }
+}
+
+/** A list: mergeable movable list, diffed against what is stored. */
+function writeListValue(parent: LoroMap, key: string, value: readonly PropertyValue[]): void {
+  const stored = parent.get(key);
+  if (stored !== undefined && !isMovableList(stored)) parent.delete(key);
+  syncMovableList(parent.ensureMergeableMovableList(key), value);
+}
+
+function syncMovableList(list: LoroMovableList, next: readonly PropertyValue[]): void {
+  // `toArray()` hands back container handlers for group items; compare the
+  // values they resolve to, or every commit would rewrite every item.
+  const current = readListItems(list.toArray());
+  let head = 0;
+  while (
+    head < current.length &&
+    head < next.length &&
+    sameStoredValue(current[head], next[head])
+  ) {
+    head += 1;
+  }
+  let tailCurrent = current.length;
+  let tailNext = next.length;
+  while (
+    tailCurrent > head &&
+    tailNext > head &&
+    sameStoredValue(current[tailCurrent - 1], next[tailNext - 1])
+  ) {
+    tailCurrent -= 1;
+    tailNext -= 1;
+  }
+  const removed = tailCurrent - head;
+  if (removed > 0) list.delete(head, removed);
+  for (let index = head; index < tailNext; index += 1) {
+    const item = next[index];
+    if (item === undefined) break;
+    if (isValueRecord(item)) {
+      const entry = list.insertContainer(index, new LoroMap());
+      for (const [subId, subValue] of Object.entries(item)) entry.set(subId, subValue);
+    } else {
+      list.insert(index, item);
+    }
+  }
+}
+
+function sameStoredValue(stored: unknown, expected: PropertyValue | undefined): boolean {
+  return expected !== undefined && storedEquals(stored, expected);
 }
 
 /** Writers validate against the type's own field definition. */
@@ -759,6 +971,15 @@ function assertPropertyValue(field: FieldDefinition, value: PropertyValue): void
       if (value.some((entry) => !field.options.some((option) => option.id === entry))) {
         fail("only its options");
       }
+      return;
+    }
+    case "rating":
+    case "group":
+    case "list": {
+      // One rule set, shared with the publish validator: shapes, declared
+      // sub-field ids, the item kind, and one level of nesting (ADR-0057 §4).
+      const error = compositeValueError(field, value);
+      if (error) throw new Error(error);
       return;
     }
   }
@@ -1169,6 +1390,8 @@ export class WorkspaceDocument {
       name: readString(value, "name") ?? "Board",
       createdAt: readNumber(value, "createdAt") ?? 0,
       updatedAt: readNumber(value, "updatedAt") ?? 0,
+      // A board stored before tags existed simply has no map; it reads as none.
+      tags: readIdSet(value.get("tags")),
       // Both have been in the schema since boards became identities; nothing read
       // them back, so a colour write was invisible after the next cache fill.
       ...(color ? { color } : {}),
@@ -1197,6 +1420,7 @@ export class WorkspaceDocument {
     const board: Board = {
       id: input.id ?? crypto.randomUUID(),
       name: input.name ?? `Board ${this.boards.size + 1}`,
+      tags: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -1262,6 +1486,40 @@ export class WorkspaceDocument {
     else fields.delete("coverAttachmentId");
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}board-cover`);
+  }
+
+  /**
+   * A board's labels ([ADR-0053 §6](../../../../docs/decisions/0053-supertags-are-multi-type.md)).
+   * Stored as a set, so two clients adding different tags at once both keep
+   * theirs; a whole-list write just diffs the set rather than replacing it.
+   */
+  setBoardTags(id: string, tagIds: readonly string[]): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    writeIdSet(fields.ensureMergeableMap("tags"), tagIds);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-tags`);
+  }
+
+  addBoardTag(id: string, tagId: string): void {
+    const board = this.getBoard(id);
+    if (!board || board.tags.includes(tagId)) return;
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    const tags = fields.ensureMergeableMap("tags");
+    if (!tags.get(tagId)) tags.set(tagId, true);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-tags`);
+  }
+
+  removeBoardTag(id: string, tagId: string): void {
+    const fields = this.boards.get(id);
+    if (!isMap(fields)) return;
+    const tags = fields.get("tags");
+    if (!isMap(tags) || !tags.get(tagId)) return;
+    tags.delete(tagId);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}board-tags`);
   }
 
   /**
@@ -1336,6 +1594,7 @@ export class WorkspaceDocument {
 
     return this.batch(`${STRUCT_ORIGIN}duplicate-board`, () => {
       const board = this.createBoard({ name });
+      if (source.tags.length > 0) this.setBoardTags(board.id, source.tags);
       // Connector ids are what links name, so copies keep the source layout
       // and every id is minted here, giving the old→new map edges remap with.
       const cardIds = new Map<string, string>();
@@ -1409,7 +1668,7 @@ export class WorkspaceDocument {
         }
       }
 
-      return board;
+      return this.getBoard(board.id) ?? board;
     });
   }
 
@@ -1829,6 +2088,36 @@ export class WorkspaceDocument {
         option.set("order", index);
       });
     }
+    if (input.kind === "group" || input.kind === "list") {
+      // A list with no declared item is a list of text: the kind picker can add
+      // one, and it must not fail for not having asked about a sub-schema yet.
+      const subFields =
+        input.subFields && input.subFields.length > 0
+          ? input.subFields
+          : input.kind === "list"
+            ? [{ id: LIST_ITEM_SUB_FIELD_ID, name: "Item", kind: "text" as const }]
+            : [];
+      const subFieldMap = field.ensureMergeableMap("subFields");
+      // A list of scalars has exactly one entry, and its id is the fixed `item`
+      // id so a value written by any replica lands on the same sub-field.
+      const defaultListItemId = subFields.length === 1 ? LIST_ITEM_SUB_FIELD_ID : null;
+      subFields.forEach((sub, index) => {
+        const subId = sub.id?.trim() || defaultListItemId || crypto.randomUUID();
+        const entry = subFieldMap.ensureMergeableMap(subId);
+        entry.set("name", sub.name.trim() || "Field");
+        entry.set("kind", sub.kind);
+        entry.set("order", index);
+      });
+      if (input.kind === "list") field.set("itemKind", input.itemKind ?? "scalar");
+    }
+    if (input.kind === "rating") {
+      const presentation = input.rating;
+      field.set("rating", {
+        scale: presentation?.scale ?? DEFAULT_RATING_SCALE,
+        ...(presentation?.half !== undefined ? { half: presentation.half } : {}),
+        ...(presentation?.icon ? { icon: presentation.icon } : {}),
+      });
+    }
     this.touchType(typeId);
     this.commit(`${STRUCT_ORIGIN}field`);
     return fieldFromMap(id, field);
@@ -2050,6 +2339,7 @@ export class WorkspaceDocument {
       height: Math.max(60, input.height ?? 260),
       z: existing.length > 0 ? (existing.at(-1)?.z ?? 0) + 1 : 0,
       connectors: input.connectors ?? defaultConnectors(),
+      tags: [],
       createdAt: now,
       updatedAt: now,
       ...(input.color ? { color: input.color } : {}),
@@ -2074,6 +2364,39 @@ export class WorkspaceDocument {
     else fields.delete("color");
     fields.set("updatedAt", Date.now());
     this.commit(`${STRUCT_ORIGIN}section-color`);
+  }
+
+  /**
+   * A section's labels. Like a board's: a queryable grouping, never a rule about
+   * which cards belong to the region (ADR-0053 §6).
+   */
+  setSectionTags(id: string, tagIds: readonly string[]): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    writeIdSet(fields.ensureMergeableMap("tags"), tagIds);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}section-tags`);
+  }
+
+  addSectionTag(id: string, tagId: string): void {
+    const section = this.getSection(id);
+    if (!section || section.tags.includes(tagId)) return;
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    const tags = fields.ensureMergeableMap("tags");
+    if (!tags.get(tagId)) tags.set(tagId, true);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}section-tags`);
+  }
+
+  removeSectionTag(id: string, tagId: string): void {
+    const fields = this.sections.get(id);
+    if (!isMap(fields)) return;
+    const tags = fields.get("tags");
+    if (!isMap(tags) || !tags.get(tagId)) return;
+    tags.delete(tagId);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}section-tags`);
   }
 
   /** Paint for a section's frame. A silhouette never changes what it contains. */
@@ -2221,6 +2544,7 @@ export class WorkspaceDocument {
     fields.set("createdAt", section.createdAt);
     fields.set("updatedAt", section.updatedAt);
     if (section.color) fields.set("color", section.color);
+    writeIdSet(fields.ensureMergeableMap("tags"), section.tags);
     this.writeSectionConnectors(fields, section.connectors ?? []);
   }
 
@@ -2299,18 +2623,7 @@ export class WorkspaceDocument {
       if (!wantedProperties.has(fieldId)) properties.delete(fieldId);
     }
     for (const [fieldId, value] of Object.entries(card.properties)) {
-      if (Array.isArray(value)) {
-        const selected = properties.ensureMergeableMap(fieldId);
-        const wanted = new Set(value);
-        for (const optionId of selected.keys()) {
-          if (!wanted.has(optionId)) selected.delete(optionId);
-        }
-        for (const optionId of value) {
-          if (!selected.get(optionId)) selected.set(optionId, true);
-        }
-      } else {
-        properties.set(fieldId, value);
-      }
+      writePropertyValue(properties, fieldId, this.fieldForCard(card, fieldId), value);
     }
 
     const connectors = fields.ensureMergeableMap(CONNECTORS_FIELD);
@@ -2979,18 +3292,7 @@ export class WorkspaceDocument {
     assertPropertyValue(field, value);
     this.mutateCard(cardId, (fields) => {
       const properties = fields.ensureMergeableMap("properties");
-      if (Array.isArray(value)) {
-        const selected = properties.ensureMergeableMap(fieldId);
-        const wanted = new Set(value);
-        for (const optionId of selected.keys()) {
-          if (!wanted.has(optionId)) selected.delete(optionId);
-        }
-        for (const optionId of value) {
-          if (!selected.get(optionId)) selected.set(optionId, true);
-        }
-      } else {
-        properties.set(fieldId, value);
-      }
+      writePropertyValue(properties, fieldId, field, value);
     });
   }
 

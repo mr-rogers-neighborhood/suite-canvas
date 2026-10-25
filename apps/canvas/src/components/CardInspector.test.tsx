@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { WhiteboardCardFace } from "../cards/WhiteboardCardFace";
 import { ensureWhiteboardType, readSketchDisplay } from "../cards/whiteboard";
 import { useCanvasStore } from "../store/useCanvasStore";
-import { CardInspector } from "./CardInspector";
+import { CardInspector, type CardInspectorProps } from "./CardInspector";
 import { type CardWhere, EMPTY_CARD_LINKS } from "./CardPanel";
 
 const workspace = useCanvasStore.getState().workspace;
@@ -55,7 +55,11 @@ const callbacks = {
   onFocusLink: () => {},
 };
 
-function inspector(card: Card, onEdit: () => void = callbacks.onEdit) {
+function inspector(
+  card: Card,
+  onEdit: () => void = callbacks.onEdit,
+  overrides: Partial<CardInspectorProps> = {},
+) {
   return (
     <CardInspector
       card={card}
@@ -77,6 +81,7 @@ function inspector(card: Card, onEdit: () => void = callbacks.onEdit) {
       peers={[]}
       {...callbacks}
       onEdit={onEdit}
+      {...overrides}
     />
   );
 }
@@ -137,5 +142,73 @@ describe("CardInspector sketch controls", () => {
 
     expect(screen.getByTestId("inspector-edit")).toBeInTheDocument();
     expect(screen.queryByTestId("inspector-open-sketch")).not.toBeInTheDocument();
+  });
+});
+
+describe("CardInspector place and locate", () => {
+  const onBoard: CardWhere = {
+    unplaced: false,
+    entries: [
+      {
+        boardId: "board-here",
+        boardName: "Board 1",
+        isCurrent: true,
+        isHome: true,
+        sectionPath: [],
+      },
+    ],
+  };
+  const elsewhere: CardWhere = {
+    unplaced: false,
+    entries: [
+      {
+        boardId: "board-elsewhere",
+        boardName: "Board 2",
+        isCurrent: false,
+        isHome: true,
+        sectionPath: [],
+      },
+    ],
+  };
+
+  it("locates a card that is already on the board in front of the reader", () => {
+    const onFocusCard = vi.fn();
+    render(inspector(noteCard(), undefined, { where: onBoard, onFocusCard }));
+
+    fireEvent.click(screen.getByTestId("inspector-locate"));
+
+    expect(onFocusCard).toHaveBeenCalledWith("board-here");
+    expect(screen.queryByTestId("inspector-place")).not.toBeInTheDocument();
+  });
+
+  /**
+   * A card that lives on another board has nothing to locate here; Place is the
+   * action that brings it onto this one.
+   */
+  it("places a card that is not on this board and offers no Locate", () => {
+    const onPlace = vi.fn();
+    render(inspector(noteCard(), undefined, { where: elsewhere, onPlace }));
+
+    expect(screen.queryByTestId("inspector-locate")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inspector-place"));
+
+    expect(onPlace).toHaveBeenCalledTimes(1);
+  });
+
+  it("places a card that is in the inbox", () => {
+    const onPlace = vi.fn();
+    render(inspector(noteCard(), undefined, { where: { unplaced: true, entries: [] }, onPlace }));
+
+    expect(screen.queryByTestId("inspector-locate")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inspector-place"));
+
+    expect(onPlace).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers neither action when the surface has no placement to make", () => {
+    render(inspector(noteCard(), undefined, { where: { unplaced: true, entries: [] } }));
+
+    expect(screen.queryByTestId("inspector-locate")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-place")).not.toBeInTheDocument();
   });
 });

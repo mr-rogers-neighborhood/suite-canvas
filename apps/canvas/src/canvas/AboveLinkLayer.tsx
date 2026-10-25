@@ -1,6 +1,7 @@
 import { ViewportPortal } from "@xyflow/react";
-import type { LinkAnchor } from "./linkGeometry";
-import { type SectionLink, sectionLinkPath } from "./SectionLinkLayer";
+import { useEdges } from "../store/workspaceStore";
+import { useIsolatedEdgeId } from "./routeIsolation";
+import { linkRoutePath, type SectionLink } from "./SectionLinkLayer";
 
 export interface AboveLinkLayerProps {
   /** Every link that asked to paint above the cards (`layer: "above"`). */
@@ -27,6 +28,8 @@ export function AboveLinkLayer({
   onSelectEdge,
   onEdgeContextMenu,
 }: AboveLinkLayerProps) {
+  const edges = useEdges();
+  const isolatedEdgeId = useIsolatedEdgeId();
   if (links.length === 0) return null;
 
   return (
@@ -41,9 +44,18 @@ export function AboveLinkLayer({
       >
         {links.map((link) => {
           const selected = selectedEdgeIds.has(link.edge.id);
-          const path = sectionLinkPath(link.anchors as { source: LinkAnchor; target: LinkAnchor });
+          // Same route as the edge component and the section layer (ADR-0052 §2):
+          // bends and the reverse-pair bow are shared geometry, not per layer.
+          const path = linkRoutePath(link, edges);
+          // Isolate (ADR-0052 §7) recedes everything but the chosen link.
+          const dimmed = isolatedEdgeId !== null && isolatedEdgeId !== link.edge.id;
           return (
-            <g key={link.edge.id} className={selected ? "is-selected" : undefined}>
+            <g
+              key={link.edge.id}
+              className={`above-link-group${selected ? " is-selected" : ""}${
+                dimmed ? " is-dimmed" : ""
+              }`}
+            >
               {/* The visible stroke never takes a press; the wide stroke below is
                   the hit target, so a click lands on the line wherever it is. */}
               <path

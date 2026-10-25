@@ -1376,6 +1376,38 @@ body {
   cursor: pointer;
 }
 
+/* A selected section link's ends are draggable: a card link gets React Flow's
+   updaters because it is an edge, and this link is drawn by the canvas. */
+.section-link-handles {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  /* Above the cards: an end sits on a card's or a section's connector, and the
+     dot is a node-sized element that would otherwise take every press. This is
+     the elevation a selected card link already gets from its own layer. */
+  z-index: 4;
+}
+
+.section-link-endpoint-hit {
+  cursor: grab;
+  fill: transparent;
+  pointer-events: all;
+}
+
+.section-link-endpoint-hit:active {
+  cursor: grabbing;
+}
+
+.section-link-endpoint {
+  pointer-events: none;
+  fill: var(--surface);
+  stroke: var(--accent, #0a84ff);
+  stroke-width: 2;
+}
+
 .section-link.is-selected {
   stroke: var(--accent, #0a84ff);
   stroke-width: 2.5;
@@ -1876,6 +1908,26 @@ body {
   border-style: dashed;
   color: var(--ink-muted);
   cursor: default;
+}
+
+/* A board's cover, chosen from the attachments already in the workspace: a
+   square thumbnail that reads at drawer size. */
+.board-cover-thumb {
+  display: flex;
+  height: 44px;
+  width: 56px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: var(--ink-muted);
+}
+
+.board-cover-thumb[data-empty="true"] {
+  border-style: dashed;
 }
 
 /* A peer's held library card, sitting where it would land. A dashed outline, not

@@ -295,13 +295,61 @@ function SectionLinkLayer({
   selectedEdgeIds,
   onSelectEdge,
   onEdgeContextMenu,
+  onReconnect,
+  toFlow,
 }: {
   links: SectionLink[];
   selectedEdgeIds: ReadonlySet<string>;
-  onSelectEdge: (edgeId: string) => void;
+  onSelectEdge: (edgeId: string, additive?: boolean) => void;
   onEdgeContextMenu: (event: React.MouseEvent, edgeId: string) => void;
+  /** Released a dragged end somewhere: the canvas resolves it and writes. */
+  onReconnect?: (edgeId: string, end: "source" | "target", point: LinkAnchor) => void;
+  toFlow?: (client: { x: number; y: number }) => LinkAnchor;
 }) {
+  // The end being dragged, and where the pointer is. A card link gets React
+  // Flow's own updaters because it is an edge; a link that touches a section is
+  // drawn by this layer, so its handles have to be its own.
+  const [drag, setDrag] = useState<{
+    edgeId: string;
+    end: "source" | "target";
+    fixed: LinkAnchor;
+    pointer: LinkAnchor;
+  } | null>(null);
+
   if (links.length === 0) return null;
+
+  // A card's link gets React Flow's own end handles (it is an edge); a link that
+  // touches a section has none, so these stand in. They live in their own layer
+  // because they have to paint above the cards to be grabbable at all — the same
+  // momentary elevation a selected card link gets.
+  const handleLinks = links.filter((link) => selectedEdgeIds.has(link.edge.id));
+
+  const beginDrag = (event: React.PointerEvent, link: SectionLink, end: "source" | "target") => {
+    if (!onReconnect || !toFlow) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const fixed = end === "source" ? link.anchors.target : link.anchors.source;
+    const pointer = toFlow({ x: event.clientX, y: event.clientY });
+    setDrag({ edgeId: link.edge.id, end, fixed, pointer });
+
+    const move = (moveEvent: PointerEvent) => {
+      setDrag((current) =>
+        current
+          ? { ...current, pointer: toFlow({ x: moveEvent.clientX, y: moveEvent.clientY }) }
+          : current,
+      );
+    };
+    const up = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      setDrag(null);
+      onReconnect(link.edge.id, end, toFlow({ x: upEvent.clientX, y: upEvent.clientY }));
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+  };
 
   return (
     <ViewportPortal>
@@ -346,7 +394,9 @@ function SectionLinkLayer({
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onSelectEdge(link.edge.id);
+                  // Shift (and the platform modifiers) add to the selection, so a
+                  // link can be selected alongside cards and other links.
+                  onSelectEdge(link.edge.id, event.shiftKey || event.metaKey || event.ctrlKey);
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
@@ -368,6 +418,61 @@ function SectionLinkLayer({
           );
         })}
       </svg>
+      {handleLinks.map((link) => (
+        <svg
+          key={link.edge.id}
+          className="section-link-handles"
+          data-testid="section-link-handles"
+          aria-hidden="true"
+          focusable="false"
+        >
+          {(["source", "target"] as const).map((end) => (
+            <g key={end}>
+              <circle
+                className="section-link-endpoint-hit"
+                data-testid={`section-link-end-${end}`}
+                cx={link.anchors[end].x}
+                cy={link.anchors[end].y}
+                r={11}
+                onPointerDown={(event) => beginDrag(event, link, end)}
+              />
+              <circle
+                className="section-link-endpoint"
+                cx={link.anchors[end].x}
+                cy={link.anchors[end].y}
+                r={5}
+              />
+            </g>
+          ))}
+          {drag && drag.edgeId === link.edge.id ? (
+            <line
+              className="section-link-preview"
+              data-testid="section-link-end-drag"
+              x1={drag.fixed.x}
+              y1={drag.fixed.y}
+              x2={drag.pointer.x}
+              y2={drag.pointer.y}
+            />
+          ) : null}
+        </svg>
+      ))}
+      {drag && !handleLinks.some((link) => link.edge.id === drag.edgeId) ? (
+        <svg
+          className="section-link-handles"
+          data-testid="section-link-handles"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <line
+            className="section-link-preview"
+            data-testid="section-link-end-drag"
+            x1={drag.fixed.x}
+            y1={drag.fixed.y}
+            x2={drag.pointer.x}
+            y2={drag.pointer.y}
+          />
+        </svg>
+      ) : null}
     </ViewportPortal>
   );
 }
@@ -1263,6 +1368,13 @@ export function CanvasBoard() {
   // board. An inline callback therefore misses any selection change that lands in
   // the same commit (the listener's own effect runs before this one re-registers),
   // so the callback has to stay stable.
+  /**
+   * Section links the user has selected. They are invisible to React Flow (a
+   * section is not a node), so they need their own memory to survive the
+   * selection reports that arrive for everything else.
+   */
+  const sectionLinkSelection = useRef<string[]>([]);
+
   const onSelectionChanged = useCallback(
     ({ nodes: nextNodes, edges: nextEdges }: { nodes: Node[]; edges: Edge[] }) => {
       // A marquee reports every card it touches, frame by frame. Reconciling the
@@ -1270,7 +1382,11 @@ export function CanvasBoard() {
       // republishes presence mid-gesture; `endMarquee` reconciles once instead.
       if (marqueeActive.current) return;
       setSelectedNodeIds(nextNodes.map((node) => node.id));
-      setSelectedEdgeIds(nextEdges.map((edge) => edge.id));
+      // A link that touches a section is drawn by the canvas, not by React Flow,
+      // so it can never appear in this report. Keep the ones the user picked, or
+      // the first unrelated selection change would silently drop them.
+      const flowEdgeIds = nextEdges.map((edge) => edge.id);
+      setSelectedEdgeIds([...new Set([...flowEdgeIds, ...sectionLinkSelection.current])]);
     },
     [setSelectedNodeIds, setSelectedEdgeIds],
   );
@@ -1878,6 +1994,14 @@ export function CanvasBoard() {
 
       if (event.key === "Delete" || event.key === "Backspace") {
         if (isTyping) return;
+        // Selected links go first: they are edges, not entities, and nothing else
+        // is left dangling by removing one.
+        if (state.selectedEdgeIds.length > 0 && canManageStructure) {
+          event.preventDefault();
+          for (const edgeId of state.selectedEdgeIds) workspace.removeEdge(edgeId);
+          state.setSelectedEdgeIds([]);
+          return;
+        }
         if (state.selectedSectionId) {
           // Sections are workspace structure: an editor may change them, not delete them.
           if (!canManageStructure) return;
@@ -2876,9 +3000,13 @@ export function CanvasBoard() {
           event.preventDefault();
           openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId: edge.id });
         }}
-        onEdgeClick={() => {
+        onEdgeClick={(event) => {
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
+          // A plain click replaces the selection; a modified one adds to it.
+          if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+            sectionLinkSelection.current = [];
+          }
         }}
         onNodeDoubleClick={(event, node) => {
           // A portal is a doorway: the camera transition replaces the board in
@@ -2967,7 +3095,11 @@ export function CanvasBoard() {
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
           handleSelectSection(null);
-          // Empty canvas closes the drawer: nothing is selected any more.
+          // Empty canvas closes the drawer: nothing is selected any more. A
+          // section link is not a React Flow edge, so React Flow cannot clear it
+          // for us — that is why selecting one used to be a trap.
+          sectionLinkSelection.current = [];
+          useUiStore.getState().setSelectedEdgeIds([]);
           useUiStore.getState().closeContainerInspector();
         }}
         onNodeClick={() => {
@@ -3083,15 +3215,37 @@ export function CanvasBoard() {
         <SectionLinkLayer
           links={projectedLinks.sections}
           selectedEdgeIds={new Set(selectedEdgeIds)}
-          onSelectEdge={(edgeId) => {
+          onSelectEdge={(edgeId, additive = false) => {
             setSelectedConnector(null);
             setSelectedSectionConnector(null);
-            setSelectedEdgeIds([edgeId]);
+            if (additive) {
+              const current = sectionLinkSelection.current;
+              sectionLinkSelection.current = current.includes(edgeId)
+                ? current.filter((id) => id !== edgeId)
+                : [...current, edgeId];
+            } else {
+              sectionLinkSelection.current = [edgeId];
+            }
+            const flowEdgeIds = selectedEdgeIds.filter(
+              (id) => !sectionLinkSelection.current.includes(id) && id !== edgeId,
+            );
+            setSelectedEdgeIds(
+              additive
+                ? [...new Set([...flowEdgeIds, ...sectionLinkSelection.current])]
+                : [...sectionLinkSelection.current],
+            );
           }}
           onEdgeContextMenu={(event, edgeId) => {
             if (!canEditLayout) return;
             openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId });
           }}
+          onReconnect={(edgeId, end, point) => {
+            if (!canEditLayout) return;
+            const target = resolveLinkTarget(point);
+            if (!target) return;
+            workspace.reconnectEdge(edgeId, end, target.id, target.connectorId, target.kind);
+          }}
+          toFlow={(client) => screenToFlowPosition(client)}
         />
         <Background color="var(--rf-dot)" />
         <Controls showInteractive={false} />

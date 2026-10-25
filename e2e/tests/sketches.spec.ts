@@ -48,6 +48,26 @@ async function createSketch(page: Page): Promise<void> {
   await expect(page.getByTestId("card-focus")).toHaveCount(0);
 }
 
+/** Drags the sketch by its face, and asserts it actually moved. */
+async function dragSketch(page: Page, dx: number, dy: number): Promise<void> {
+  const node = sketchNodes(page);
+  const box = await node.boundingBox();
+  if (!box) throw new Error("the sketch has no box");
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  // React Flow starts the drag on the first move after pointer-down.
+  await page.mouse.move(from.x + 2, from.y + 2, { steps: 1 });
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 10 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const moved = await node.boundingBox();
+      return moved ? Math.abs(moved.x - box.x) : 0;
+    })
+    .toBeGreaterThan(20);
+}
+
 test("the menus and the library say Sketch, never Whiteboard", async ({ page }) => {
   await page.goto(workspaceUrl("labels"));
   await expect(page.getByTestId("canvas-board")).toBeVisible();
@@ -111,4 +131,40 @@ test("a click selects the sketch and a double click opens it", async ({ page }) 
   await sketchNodes(page).dblclick();
   await expect(page.getByTestId("card-focus")).toBeVisible();
   await expect(page.getByTestId("sketch-focus")).toBeVisible();
+});
+
+test("a single click opens the sketch in the one inspector", async ({ page }) => {
+  await page.goto(workspaceUrl("inspector"));
+  await expect(page.getByTestId("canvas-board")).toBeVisible();
+  await createSketch(page);
+
+  const inspector = page.getByTestId("card-inspector");
+  await expect(inspector).toHaveCount(0);
+
+  // A sketch is a card: one click reads it, like a note, and still selects it.
+  await sketchNodes(page).click();
+  await expect(sketchNode(page)).toHaveClass(/selected/);
+  await expect(inspector).toBeVisible();
+  // The drawer is the card panel, with the sketch's own display control and the
+  // way into its editor.
+  await expect(inspector.getByTestId("sketch-display-toggle")).toBeVisible();
+  await expect(inspector.getByTestId("sketch-display-framed")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(inspector.getByTestId("inspector-open-sketch")).toBeVisible();
+  await expect(page.getByTestId("card-focus")).toHaveCount(0);
+
+  await inspector.getByTestId("inspector-close").click();
+  await expect(inspector).toHaveCount(0);
+
+  // A drag moves the sketch and must not also open the drawer.
+  await dragSketch(page, 150, 100);
+  await expect(inspector).toHaveCount(0);
+
+  // The double click still opens the focus surface, and focus owns the drawer.
+  await sketchNodes(page).dblclick();
+  await expect(page.getByTestId("card-focus")).toBeVisible();
+  await expect(page.getByTestId("sketch-focus")).toBeVisible();
+  await expect(inspector).toHaveCount(0);
 });

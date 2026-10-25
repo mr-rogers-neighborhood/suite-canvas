@@ -1,5 +1,5 @@
 import { type NodeProps, NodeResizer, type ResizeParams } from "@xyflow/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { WhiteboardCardFace } from "../cards/WhiteboardCardFace";
 import { readSketchDisplay, SKETCH_TYPE_NAME } from "../cards/whiteboard";
 import { useBoardPeers } from "../hooks/useBoardPeers";
@@ -12,12 +12,16 @@ import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
-/** A sketch card on the canvas: a cheap preview that opens the focus surface. */
+/** A sketch card on the canvas: a cheap preview that opens the info drawer on a
+ * click and the focus surface on a double click. */
 export function WhiteboardNode({ data, selected }: NodeProps) {
   const { card, placement } = data as CardNodeData;
   const workspace = useCanvasStore((state) => state.workspace);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
+  // A sketch is a card, so a click reads it in the one inspector, exactly as a
+  // note does; the focus surface stays behind the double click.
+  const openInspector = useUiStore((state) => state.openInspector);
   const title = useCardTitle(card.id);
   const drawing = useDrawing(card.id);
   const display = readSketchDisplay(workspace, card);
@@ -31,6 +35,7 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   // A sketch is a card too: same connector dots, same gestures as a note.
   const connectors = useNodeConnectorWiring(card, placement.boardId);
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
+  const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
 
   const handleResize = useCallback((_event: unknown, params: ResizeParams) => {
     setLiveSize({ width: params.width, height: params.height });
@@ -56,11 +61,27 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const height = liveSize?.height ?? placement.height ?? DEFAULT_CARD_HEIGHT;
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the sketch is a canvas node; its preview button already handles keyboard open.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the sketch's preview button owns keyboard activation with Enter and Space.
     <div
       className="whiteboard-node"
       data-testid="whiteboard-node"
       data-connector-surface="true"
       style={{ width, height, position: "relative" }}
+      onPointerDown={(event) => {
+        pointerOrigin.current = { x: event.clientX, y: event.clientY };
+      }}
+      // A single click opens the sketch's info; React Flow has already selected
+      // it, and the pointerdown is left alone so a drag can still start. A drag
+      // moves the card and must not also open a panel.
+      onClick={(event) => {
+        // Multi-select owns modifier clicks; they must not open the drawer.
+        if (event.shiftKey || event.metaKey || event.ctrlKey) return;
+        const origin = pointerOrigin.current;
+        const moved = origin ? Math.hypot(event.clientX - origin.x, event.clientY - origin.y) : 0;
+        if (moved > 4) return;
+        openInspector(card.id);
+      }}
     >
       <NodeResizer
         isVisible={canEditLayout && Boolean(selected)}

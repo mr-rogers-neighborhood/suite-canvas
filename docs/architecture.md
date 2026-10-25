@@ -381,6 +381,22 @@ Two surfaces answer "where is it" without leaving the board.
   hiding it. Sections dim when none of their cards is on the lens, edges when either endpoint is.
   A lens is UI state (`activeViewId`), never a document write.
 
+### Links point at an endpoint of a kind
+
+A link is one `GraphEdge` whose ends carry an optional kind (`card`, `board`, `section`); an absent
+kind means a card, so pre-existing documents stay valid
+([ADR-0039](./decisions/0039-a-link-points-at-an-endpoint-of-a-kind.md)). `links.ts` owns the rules
+(`edgeEndpoints`, `linkKey`, `isSelfLink`); `addEdge` refuses missing endpoints, same-kind
+self-links and duplicate connections. A **board** end has no position, so it is drawn through the
+first portal on the board that points at it: no portal, no line, but the link survives and stays in
+the inspector. Section ends resolve to the section's rect and attach to its connectors, which every
+section is seeded with. `linkGeometry.ts` turns endpoints into rects and anchors with no React, so
+the canvas, drag previews and tests share one answer.
+
+Boards and sections are **identities, not types** ([ADR-0040](./decisions/0040-a-board-and-a-section-are-identities.md)):
+they get small fixed inspectors (name, colour, cover image, links) and never types, fields or
+templates. Composition between them is expressed by links.
+
 ### Types create written cards
 
 A type can name a **template card** (`CardType.templateCardId`), and `createCard` copies it in one

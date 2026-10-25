@@ -74,6 +74,8 @@ ICE version.
 - The `scene` package no longer exports anything the canvas draws; `typeGraph.ts` is the only survivor
   of the lens experiments, and it is dead code by design. If it is still unused after the next two
   phases, delete it rather than let it rot.
+- **Removed (2026-10-24):** the parked `packages/scene/src/typeGraph.ts` and its tests are gone, and
+  the `scene` index no longer exports them — no module imported either.
 - **What a future lens must answer**, if one is attempted: a *specific* question the canvas cannot
   answer at its own zoom (not "what is here" — that is the canvas), rendered as a modification of what
   is already drawn (dimming, framing, focusing) rather than a second picture of it.

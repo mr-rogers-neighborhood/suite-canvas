@@ -170,7 +170,7 @@ describe("useCanvasMenuItems canvas menu", () => {
     expect(labels(selected)).not.toContain("Add connector");
   });
 
-  it("offers sections and connectors by default, so the scene surface is unchanged", () => {
+  it("offers sections and connectors by default, so a surface that draws both keeps them", () => {
     const canvasItems = renderMenu(makeInput(canvasMenu({ x: 1, y: 2 })));
     expect(labels(canvasItems)).toContain("New section");
 

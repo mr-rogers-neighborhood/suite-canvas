@@ -377,8 +377,9 @@ Live `NodeCard` at full LOD + proxy layers (miniatures, icons, edges, sections, 
 [ADR-0034](./decisions/0034-ice-primary-rendering-engine.md) makes ICE the primary engine, and it is
 now the **only** one: `@xyflow/react` and the React Flow surfaces are gone, `?canvas=` no longer
 selects an engine (`?canvas=ice` is accepted and harmless), and the pure layer that survives is
-`packages/scene` (`@suite/scene`) — the pure layout and geometry the canvas reads (fractal presets,
-  the type-graph module, which is parked: see [ADR-0040](./decisions/0040-the-type-graph-is-withdrawn.md)).
+`packages/scene` (`@suite/scene`) — the pure layout and geometry the canvas reads (fractal presets;
+the parked type-graph module was removed under
+[ADR-0040](./decisions/0040-the-type-graph-is-withdrawn.md)).
 Interaction is described in
 [ADR-0033](./decisions/0033-interactive-scene-surface.md); the ICE port is tracked in
 [`docs/roadmap/ice-parity.md`](./roadmap/ice-parity.md) and the sections below record what is

@@ -128,21 +128,6 @@ export {
 export type { SpatialEntry, SpatialIndexOptions } from "./spatial.js";
 export { SpatialIndex, spatialIndexFrom } from "./spatial.js";
 export type {
-  TypeGraph,
-  TypeGraphCardInput,
-  TypeGraphEdge,
-  TypeGraphInput,
-  TypeGraphNode,
-  TypeGraphNodeKind,
-  TypeGraphTypeInput,
-} from "./typeGraph.js";
-export {
-  buildTypeGraph,
-  EMPTY_VIEW_ZOOM,
-  LOOSE_CONTAINER_LABEL,
-  looseContainerKey,
-} from "./typeGraph.js";
-export type {
   BoardInstance,
   BuildSceneInput,
   Camera,

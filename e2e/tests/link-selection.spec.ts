@@ -206,3 +206,39 @@ test("a marquee across a section link selects it with the entities it touches", 
   await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
   await expect(sectionLink(page).and(page.locator(".is-selected"))).toHaveCount(0);
 });
+
+test("a link drawn from a section moves by its section end too", async ({ page }) => {
+  await page.goto(workspaceUrl("source-end"));
+  await expect(cards(page)).toHaveCount(2);
+  await cards(page).last().click();
+  await page.keyboard.press("Control+g");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+
+  // Drawn from the section out to a card, so the section holds the source end.
+  const region = await page.locator(".section-region").first().boundingBox();
+  if (!region) throw new Error("section is not measurable");
+  await page.mouse.click(region.x + 8, region.y + region.height / 2);
+  const from = await page.getByTestId("section-connector-dot").nth(3).boundingBox();
+  const to = await cards(page).first().locator(dotSelector).nth(1).boundingBox();
+  await dragDot(page, centre(from), centre(to));
+  await expect(sectionLink(page)).toHaveCount(1);
+
+  const point = await pointOnLine(page, '[data-testid="section-link-hit"]');
+  await page.mouse.click(point.x, point.y);
+  await expect(sectionLink(page)).toHaveClass(/is-selected/);
+
+  // The section end drags onto a card dot like any other end, and the line
+  // lands as a card-to-card link.
+  const end = await page.getByTestId("section-link-end-source").boundingBox();
+  const target = await cards(page).first().locator(dotSelector).nth(3).boundingBox();
+  await page.mouse.move(centre(end).x, centre(end).y);
+  await page.mouse.down();
+  await page.mouse.move(centre(end).x + 12, centre(end).y + 12, { steps: 3 });
+  await expect(page.getByTestId("section-link-end-drag")).toHaveCount(1);
+  await page.mouse.move(centre(target).x, centre(target).y, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(sectionLink(page)).toHaveCount(0);
+  await expect(cardEdge(page)).toHaveCount(1);
+});

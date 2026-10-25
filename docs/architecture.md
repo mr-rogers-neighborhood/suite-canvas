@@ -401,7 +401,7 @@ templates. Composition between them is expressed by links.
 
 Alpha's remaining core surfaces are decided and tracked, not speculative:
 [ADR-0041](./decisions/0041-alpha-core-is-a-closed-feature-set.md) is the closed list, and
-[`docs/roadmap/alpha.md` §7.5](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a27) is the gate
+[`docs/roadmap/alpha.md` §7.5](./roadmap/alpha.md#75-alpha-core-surface-gates-a12a34) is the gate
 tracker. Four of them change a model this document describes, so the decisions are recorded now and the
 code follows:
 
@@ -413,6 +413,30 @@ code follows:
   Follow, Goto and the handbook, so "here is the thing I mean" has one shape.
 - **The shell has no colours of its own** ([ADR-0046](./decisions/0046-the-shell-derives-its-colour.md)):
   it reads the same role tokens the canvas does, and the current palette becomes the default theme.
+- **One style record over the four edges of every surface**
+  ([ADR-0051](./decisions/0051-one-style-vocabulary-over-edges.md)): an optional `SurfaceStyle` on a card,
+  section, board, link or field definition — surface, ink, silhouette, per-side edges with a
+  geometry-derived dash direction, opacity with a floor, text scale, icon. It runs **before** the other
+  gates, because every surface either inherits it or has to be migrated to it (A29).
+- **A link is a route** ([ADR-0052](./decisions/0052-a-link-is-a-route.md)): `bends` in flow coordinates
+  relative to the source anchor, and a `layer` that defaults to beneath the cards.
+- **A tutorial is a card and a tour is its timeline**
+  ([ADR-0054](./decisions/0054-a-tutorial-is-a-card.md)): the tutorial's body holds step blocks whose
+  attributes name a `Target` and a stored viewport; playback is an overlay over the same canvas.
+- **Fields can compose** ([ADR-0057](./decisions/0057-fields-can-compose.md)): `rating`, `group` and
+  `list`, one level of nesting, one registry entry per kind rendering in all four places.
+
+### Where style, routes and steps live
+
+| Record | Path | Shape |
+| --- | --- | --- |
+| `SurfaceStyle` | optional `style` on card, section, board, edge and field definition | `surface`, `ink`, `shape`, `radius`, `sides` (per edge), `opacity`, `textScale`, `icon` |
+| `EdgeStyle` | a value of `SurfaceStyle.sides` | `paint`, `width`, `colour`, `flow`, `speed` |
+| Link route | `edges.<id>.bends` + `edges.<id>.layer` | a polyline of flow points relative to the source anchor; `below` or `above` |
+| Tour step | a block in a tutorial card's body | `target`, `viewport`, `caption`, `advance` |
+
+None of these is a new root map: the style is a value on records that already exist, the route is two
+fields on an edge, and a step is content in a card's own body.
 
 This section describes what is decided, not what is built. Everything above it describes the tree.
 
@@ -762,6 +786,13 @@ snap members back, and on release one `movePlacements` call writes all the geome
 `light` / `dark` / `system` (auto) is stored in `localStorage` and applied as `.dark` on
 `<html>` before first paint. Colors live in CSS variables (`--surface`, `--ink`, `--hairline`,
 `--canvas-bg`, `--rf-dot`), and React Flow chrome is themed through those variables.
+
+Those variables are the **role tokens** of the paint system
+([ADR-0046](./decisions/0046-the-shell-derives-its-colour.md),
+[ADR-0051](./decisions/0051-one-style-vocabulary-over-edges.md)). The *choice* of viewing theme stays
+UI state; anything a style rule assigns lives on the workspace document, so collaborators see the same
+painting. A stored style names a role, never a colour value, which is what lets one theme rule repaint
+every surface without touching a card.
 
 ## Connection lifecycle
 

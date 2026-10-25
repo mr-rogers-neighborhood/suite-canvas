@@ -61,6 +61,13 @@ A card can appear on five boards, in two views and on one website without knowin
 | **Obsidian Semantic Canvas** | Canvas groups; labeled/typed links; deliberate canvas ↔ note property projection | Continuous two-way property sync on every move; note frontmatter as the schema | Projection should be an explicit command, not a background sync that silently rewrites cards. |
 | **Obsidian Metadata Menu** | Typed field definitions; presets; autocomplete; per-type field sets | File/frontmatter as the storage model; per-note ad-hoc schemas | Field definitions are a workspace concern, not a per-file convention. |
 | **Capacities** | Object types; object dashboards; backlinks; collections/queries | Daily-note-centric navigation as the primary shell; cloud-only assumptions | Object dashboards and backlinks are the retrieval layer we want; the shell stays canvas-first. |
+| **Obsidian Advanced Canvas** | Node silhouettes (pill, diamond, circle, document, database) as a *style*; per-side border styles; variable zoom breakpoints that stop drawing detail; z-order controls; edge pathfinding options | A* routing that re-routes a line under the user; "shapes" with no containment semantics; floating edges (we already choose the facing dot) | Read at v7.1.0. Their shape is a CSS mask on a text node and does not move an anchor, which is why silhouettes belong in [ADR-0051](./decisions/0051-one-style-vocabulary-over-edges.md) as paint rather than as containers |
+| **Prezi** | A presentation as a *path of camera frames* on one spatial document; the zoom-out-to-overview beat as narrative | Long flights as the default transition (the top complaint is vestibular discomfort); frames as the only structure | The path-of-frames model is what a tour step stores ([ADR-0054](./decisions/0054-a-tutorial-is-a-card.md)); easing and dimming are ours to bound |
+| **Figma Slides** | One artifact with two zoom levels of editing: spatial authoring and linear playback over the same canvas; a grid view of the narrative | Slide-as-frame as the *only* unit (we need stops that point at arbitrary entities) | Proves that "bird's eye editing, linear presenting" is a property of one document, not an export |
+| **Two Point Museum (tours)** | A tour stop is a *reference to a real object*, never authored content; the route is previewed in-world in stop order | A tour is a single-save route with no branching | The strongest argument against a second tour document: the content already exists; the tour is an ordering over it |
+| **Motion One / motion.page** | Timeline + keyframes + easing as the authoring vocabulary; a scrub-able position rather than only "next" | Scroll-linked triggers, pinning, and a web-animation runtime (we animate a camera) | Supplies the *feel* of the tour authoring surface: steps on a timeline, preview by scrubbing |
+| **walkthrough.js / Driver.js / Shepherd.js** | The missing-target vocabulary: `skipMissingElement`, `waitForElement`, `advanceOnClick`; completion stored by the app, never in the library | jQuery + absolute pixel positioning; localStorage-only completion | Tour rot is the real failure mode, so a step stores target *and* viewport, and our own tours ship an anchor test |
+| **Diátaxis** | Four reader needs — tutorial, how-to, reference, explanation — as a *tag* taxonomy | A document tree, routing, or a CMS | The author asked for the method's discipline without its site structure; tags give that and nothing else |
 
 ### Where sections surface (Heptabase evidence)
 
@@ -599,7 +606,21 @@ every web concern lives where it belongs.
   navigation.
 - **Live property writes on drag.** Sections and views project only through explicit commands.
 - **Stored view results or section membership.** Derived, always.
-- **Multiple supertags in v1.** Deliberately later, with a namespaced additive migration.
+- **Multiple supertags as a v1 delay.** *Answered 2026-10-25*: enabled by
+  [ADR-0053](./decisions/0053-supertags-are-multi-type.md), on the set-plus-primary shape ADR-0016
+  already stored, so no migration is involved.
+- **Obstacle-avoiding routing as a default or a board-wide switch.** *Amended 2026-10-25*: an opt-in
+  `avoid` path mode is accepted ([ADR-0052](./decisions/0052-a-link-is-a-route.md)) — bends win over it, the
+  search is bounded with a `bezier` fallback, and it applies per link, because a line that re-routes itself
+  under the reader is the failure this fence exists for.
+- **A separate layer-mode surface.** What sits above what is answered by the outline's z-order lens and
+  by a link's own `layer`, not by a second editor.
+- **Shape objects that hold cards.** Sections already hold cards and clip their content; a silhouette is
+  paint ([ADR-0051](./decisions/0051-one-style-vocabulary-over-edges.md)).
+- **Type inheritance.** Tags plus multi-type field union already express a family and a class
+  ([ADR-0053](./decisions/0053-supertags-are-multi-type.md)).
+- **A tour recorder before hand authoring works.** Recording clicks produces steps with no narration and
+  no intent ([ADR-0054](./decisions/0054-a-tutorial-is-a-card.md)).
 - **A two-level board → card document tree.** Boards stay views in the index; only card bodies are
   separate docs.
 - **A plugin API before the object model stabilizes.** It would freeze the wrong abstractions.
@@ -615,7 +636,7 @@ every web concern lives where it belongs.
 | **Exact metadata split** | Title, type, tags and scalars in the index; body in the card doc | Title is text; excerpts, attachments and embeds need a rule before migration. |
 | **External share semantics** | Redacted projection + relation stubs | Need to define revocation, transitive visibility through relations, and whether a viewer can see titles of unshared neighbours. |
 | **Search** | In-memory index over summaries first; body search loads card docs | A central search index conflicts with per-card ACL and local-first availability. |
-| **Multiple supertags** | Additive `typeIds` with field-id-namespaced properties | Required fields, conflicting field kinds and dashboard ownership need a concrete rule. |
+| **Multiple supertags** | *Answered*: enabled by [ADR-0053](./decisions/0053-supertags-are-multi-type.md) — primary owns presentation, other types union fields, required stays advisory and per type, no code branches on a combination | Required fields, conflicting field kinds and dashboard ownership need a concrete rule. |
 | **Cross-document transactions** | Compensating, idempotent sequences; scoped undo | Loro has no multi-doc transaction, and a transaction log would become a second truth. |
 | **Section overlap and nesting** | Smallest containing header anchor; nesting derived by containment | Resolved by [ADR-0017](./decisions/0017-spatial-sections.md); outline navigation is still to come. |
 | **Edge placement multiplicity** | One drawing per (board, relation) | Multiple drawings of one statement may be legitimate but complicate selection and deletion. |

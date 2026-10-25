@@ -72,3 +72,13 @@ separate document.
   are published with it; the built-in seed must therefore contain nothing internal.
 - **The badge counts articles, not "help".** A screen with no matching article shows no badge, which is
   the honest signal that documentation for that surface does not exist yet.
+
+## Amendment 2026-10-25: backlinks, and the peek is general
+
+§4's outline-and-point rule is generalised by [ADR-0055](./0055-hover-peek-names-an-entity.md): the same
+gesture serves a mention in a card body, a backlink row and an article row, it never moves the camera unless
+the reader opens it, and it writes nothing.
+
+Articles gain **backlinks**: a card's backlinks list (inspector, Details) and an article's backlinks both list
+the cards that mention or link to it, each row peeking its target. A dead reference reads as "removed" rather
+than vanishing, so a backlink to a trashed card is history, not a broken link.

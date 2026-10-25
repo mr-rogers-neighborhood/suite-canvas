@@ -56,6 +56,13 @@ evidence. A surface is *core* if it is named here. Anything not named here is po
 | **Theming** with a shell derived from the theme; icons | planned | ADR-0046 |
 | **Board templates** — a gallery of ready-made boards (a board, its sections, cards and links) applied in one action, the railway.com / WordPress-patterns model | planned, **core** | ADR-0040 |
 | **Collaborative schema editing**: the type editor and inspectors show who is editing | planned | ADR-0044 |
+| **The paint system**: one style record over the four edges of every surface, role tokens, silhouettes, seamless backgrounds, opacity floor, text scale, wider zoom | planned, **core, first** | ADR-0051 |
+| **Link routes**: manual bends in every path style, per-link layer, reverse pairs, isolate | planned | ADR-0052 |
+| **Supertags**: the multi-type picker under ADR-0016's rules; tags on boards and sections | planned | ADR-0053 |
+| **Fields compose**: `rating`, `group` and `list`, one level of nesting | planned | ADR-0057 |
+| **Tutorials and tours**: a tutorial card, step blocks, a player overlay, Diátaxis as tags | planned | ADR-0054 |
+| **Hover-peek and backlinks**: one read-only gesture over mentions, backlinks and article rows | planned | ADR-0055 |
+| **Card Settings**: entity defaults, runtime-owned fields labelled in the type editor | planned | ADR-0056 |
 
 ### Board templates are core, not a stretch goal
 
@@ -105,3 +112,15 @@ change.
   a planned gate with a governing decision.
 - **A "core feature" claim has a test.** If a proposed feature is not in the table above and not in
   §7.5, it is post-Alpha, and saying otherwise requires editing this ADR.
+
+## Amendment 2026-10-25: the list grows by seven surfaces, and the paint system runs first
+
+A second notes pass added surfaces that are adjacent to the ones above but not covered by them: a full
+style/paint system, link routes with manual bends, multi-type supertags, composite fields, tutorials and
+tours, hover-peek with backlinks, and a Card Settings surface. Each has a governing ADR in the table, so
+"a surface on this list does not need re-approving" (rule 1) applies to them unchanged.
+
+One ordering decision is recorded here because it overrides the usual sequence: **the paint system runs
+first**. Its record sits on cards, sections, boards, fields and links, so every other surface either
+inherits it or has to be migrated to it (the consequence ADR-0046 §Consequences already named). The gates
+are A29–A34 in [`docs/roadmap/alpha.md`](../roadmap/alpha.md) §7.5.

@@ -67,3 +67,11 @@ that a card's stacking order must not hide a link. The cost only showed up in us
   reintroduces the "wrong port" behaviour. `linkGeometry.test.ts` and
   `packages/graph/src/loro/connectionMatrix.test.ts` cover the matrix; `e2e/tests/connection-matrix.spec.ts`
   asserts the drawn ends for every ordered pair of kinds, in both gestures.
+
+## Amendment 2026-10-25: beneath is the default, and one link may opt out
+
+The rule in this ADR — links paint beneath cards so a 20px hit stroke never takes a card's press — becomes the
+**default** rather than the only choice. [ADR-0052](./0052-a-link-is-a-route.md) adds `layer: "below" | "above"`
+per link, and a link that opts into `above` raises its paint *and* its hit stroke together, so a link drawn
+over a card is clickable where it is visible. Everything else here stands: the layer only rises while an edge
+is selected or hovered, and `elevateEdgesOnSelect` stays off.

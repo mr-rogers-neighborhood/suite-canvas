@@ -99,3 +99,13 @@ Two questions had to be settled before writing it:
   type-owned fields keep deletion and ownership unambiguous.
 - **Deleting values with their field/type.** It makes a routine schema edit destructive and
   unrecoverable without a backup.
+
+## Amendment 2026-10-25: multi-type is enabled, and kinds compose
+
+§2's storage shape stands unchanged, and its "it remains a UI-only follow-up" sentence is now superseded:
+[ADR-0053](./0053-supertags-are-multi-type.md) enables the multi-type picker under the rules §3 already set
+(primary owns presentation, extra types only add fields, no code branches on a combination).
+
+§4's kind list widens under [ADR-0057](./0057-fields-can-compose.md) with `rating`, `group` and `list`, one
+level of nesting. §4's other promise — **a field's kind is immutable after creation** — is unchanged and now
+also forbids a composite kind becoming a scalar.

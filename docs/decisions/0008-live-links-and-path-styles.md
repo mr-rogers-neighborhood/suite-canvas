@@ -44,3 +44,11 @@ invisible to peers.
 - Right-clicking a link immediately after its endpoints swap can briefly hit the pane, because React
   Flow drops the edge for a frame while handles re-register; the e2e helper retries instead of
   asserting on one frame.
+
+## Amendment 2026-10-25: path styles now render a route
+
+[ADR-0052](./0052-a-link-is-a-route.md) adds `bends` and `layer` to the edge. §3 above said path style is
+data; it still is, and now the path it names renders one polyline: bezier curves through the bends,
+`straight` joins them, `step`/`smoothstep` route right angles through them. There is no "manual" mode and no
+mode in which a bend is ignored, so §3's four values keep their meaning and gain a route to follow.
+`reconnectEdge` and `reverseEdge` preserve bends.

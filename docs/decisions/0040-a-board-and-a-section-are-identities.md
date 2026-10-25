@@ -32,6 +32,17 @@ inspector, one query engine and one template system serve everything.
    duplication (copy the board, its sections, placements and edges), not on giving boards a body and
    a template reference.
 
+## Amendment — 2026-10-25: identity governs types, not inventory
+
+"A board and a section are identities, not types" is a rule about **type surfaces**: neither has fields to
+author, a type to edit, or a facet to filter by. It was never a rule about where they are *found*.
+
+A card whose type the runtime owns — a portal, a sketch, a tutorial — is still a card: it has a placement,
+it can be taken off a board and returned to the **Inbox**, it can be selected in the library and placed
+again, and a run can place it like any other card. What it cannot do is appear in the type facet row or the
+type editor, because its "type" is behaviour rather than a kind the user authors. The predicate for that is
+`isBehaviourType` in `@suite/graph`, so the answer is one function rather than a list kept in the UI.
+
 ## Rejected alternatives
 
 - **Boards and sections become typeable.** Three property-bearing record classes, three query

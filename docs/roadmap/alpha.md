@@ -961,6 +961,8 @@ Evidence: `BoardTabs.tsx`, `BoardOutline.tsx`, `LibraryDrawer.tsx`, `ADR-0052`. 
 | **A33** | **The type and settings editors** | The plural sits inline with the singular; every entity's Title row comes first and is editable in place; the type editor's rows are a grid the user can author in, with runtime-owned fields marked read-only and linked to Card Settings; Card Settings owns entity defaults (sketch display mode, new-card size/shape/text scale, portal defaults); the inspector reaches the library entry for a board, sketch or portal. Evidence: `ADR-0056`, `CardSettingsDialog.tsx`, `TypeSettingsDialog.tsx`, `e2e/tests/type-editor.spec.ts`. | A30 |
 | **A34** | **Fields compose** | `rating` (a number with a scale, optional half steps and an icon set, fed by media metadata), `group` (an object keyed by sub-field id) and `list` (a `LoroMovableList` of scalars, groups or card references) with one level of nesting; concurrent appends keep both entries and concurrent edits to different sub-values both survive; one registry entry per kind renders on the canvas, in the body, in the inspector and in a database cell. **In flight:** the kind registry landed (`apps/canvas/src/field/fieldKindRegistry.tsx`), consulted by the inspector before its built-in switch, so a composite kind ships without editing the panel. Evidence: `ADR-0057`, `packages/graph/src/loro/compositeFields.test.ts`, `fieldKindRegistry.tsx` + tests. | A29 |
 | **A35** | **Shape, strip and rollup** | A card's four sides each hold at most one ordered strip (title, footer, a field) with content in what remains; a card or a section can be `collapsed` as document state, painting a strip and a derived summary while a section keeps its cards' placements and membership; a custom shape is a closed route (one connector, bends as the outline) rendered as paint on an underlay so a silhouette never clips content. Evidence: `ADR-0060`, `ADR-0051` §5, `ADR-0052` §2, `e2e/tests/shape-strip.spec.ts`. | A29, A31 |
+| **A36** | **Placement is a mode too** | One mode slot reads as a link tool on connectors and as a placement tool during a run: `place · thread · web · pattern`, cycling in that order, with `place` the single-card reading, `thread` a chain, `web` spokes from a fixed origin and `pattern` a mindmap tree. A run is gesture state — a queue, what it placed, an origin and an anchor — never document data, so it needs no schema and cannot half-sync to a collaborator. Positions come from a pure planner (`placeRun.ts`, joining `arrangeCommand.ts`), placement plus its link land in one `batch()` so one undo removes both, and a run always ends (Escape, Stop, empty queue, board switch). Section wrapping is opt-in per run and sized to fit. **Planned.** Evidence: `ADR-0063`, `ADR-0061` amendment, `apps/canvas/src/canvas/placeRun.ts` + tests, `e2e/tests/place-run.spec.ts`. | A13, A26, A31 |
+| **A37** | **A run has sources** | Every place a set of cards can come from hands the run an ordered list of ids and nothing else: a **library selection** (row selection with ⌘/Ctrl-add and Shift-range, the same selection bulk trash and unplace use), a **saved view's** sorted result via *Place results…*, the **dock's** type picks, and the **one-at-a-time loop** that reopens the library on the same tab and filters after each placement. Order is the order the user can see — a run that threaded a different order than the list would read as a bug. Behaviours (portal, sketch, tutorial) are ordinary cards here: placeable, unplace-able, and present in Cards and the Inbox. **Planned.** Evidence: `ADR-0063`, `ADR-0011` amendment, `ADR-0040` amendment, `e2e/tests/library-bulk.spec.ts`, `e2e/tests/views-place.spec.ts`. | A36, A13, A20 |
 
 **Non-goals for §7.5:** real-time co-editing of Excalidraw scenes, a CMS-style routing/slug model, a
 media *library* surface, mobile, and any second canvas or rendering engine.
@@ -1059,18 +1061,21 @@ claim to describe *today*.
 | `rating`, `group`, `list` with one level of nesting and four-place parity | A34 |
 | A tutorial card, step blocks, the player overlay, Diátaxis tags, product tours with an anchor-rot test | A32 |
 | Type editor rows, Title-first panels, inline title edit, Card Settings, library access from the panel | A33 |
+| A mode family shared by link drawing and placement, with a pure run planner | A36 |
+| Library row selection; a run's four sources; behaviours listed as cards | A37 |
 
 **Exit evidence:** the paint gate's schema and e2e tests, the bend matrix, the composite-field merge tests,
 a tour that plays and survives a deleted target, and `scripts/tour-anchors.mjs` failing on a removed anchor.
 
 **Not in scope:** A* obstacle-avoiding pathfinding, dynamic mirrored edges, a separate layer-mode surface,
-shape objects that hold cards, type inheritance, and a click-recorder for tours.
+shape objects that hold cards, type inheritance, a click-recorder for tours, and saved layout presets
+(a run ships with four built-in shapes — see `ADR-0063`).
 
 ### 8.1 Package dependency graph
 
 `A → A1, A2` · `B → A3` · `A3 → A4, A5, A7` · `C → A6 → A10` · `D → A8, A9` (A9 needs A1 for the
 attachment row; A8 needs A3 for the check to run) · `E → A29 → A25, A31, A34 → A30 → A33`, with A32
-needing A29 and A22.
+needing A29 and A22, and A36 → A37 needing A13 and A26.
 
 A3 (CI) has the widest effect: it keeps every other gate's evidence current. A8 (docs) is the
 smallest: it requires reading the cited files and correcting them.

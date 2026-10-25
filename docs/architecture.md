@@ -766,8 +766,10 @@ and links follow when the footer expands.
 - **Dock** — a floating pill at the bottom centre: `Library` with the Inbox count, a separator, and
   the card-type registry. A type click creates that card at the viewport centre and focuses its
   title.
-- **Drawer** — anchored above the dock, tabs `Inbox | Cards | Trash` with counts and empty states.
-  Rows show `displayTitle` and board chips.
+- **Drawer** — anchored above the dock, tabs `Inbox | Cards | Sketches | Boards | Types | Trash` with
+  counts and empty states, in that order (the type facet row appears on Inbox and Cards only). Rows
+  show `displayTitle`, board chips and one `⋯` menu rather than a row of buttons. An expanded state
+  takes the window, keeping the same header, facets and rows.
 - **Scope** — the Cards tab offers `All | <board>`. Board scope filters rows to that board's
   placements, adds a **Sections** facet (a section includes its descendants, plus `Unsorted`), and
   offers **group by section**. Sections are never a global facet: a section title only means
@@ -782,6 +784,18 @@ and links follow when the footer expands.
 - **Hold to place** is a pointer gesture (not HTML5 drag and drop): a row lifts into a card ghost
   that follows the cursor; dropping over the canvas places the card centred on the drop point, and
   dropping anywhere else cancels. The pointer-down is prevented from selecting text across the board.
+- **Selection and bulk** — rows select (click in selection mode, `⌘`/`Ctrl`-add, `Shift`-range), and
+  a selection's actions are the row's own menu plus the run verbs, in the same context menu as the
+  row's `⋯` ([ADR-0011](./decisions/0011-library-dock-and-card-chrome.md) amendment).
+- **Placement is a mode too** ([ADR-0063](./decisions/0063-placement-is-a-mode-too.md)). One mode slot
+  — `place · thread · web · pattern` — reads as a link tool on connectors and as a placement tool
+  during a **run**: an ordered queue of cards placed one at a time, each with a position from the pure
+  planner in `canvas/placeRun.ts` and, in `thread`/`web`/`pattern`, an ordinary link to its predecessor
+  or origin. The step is one `batch()` (a placement and its line are one undo), a run is UI state and
+  never document data, section wrapping is opt-in and sized to fit, and a run ends on Escape, on Stop,
+  when the queue empties, or when the active board changes. Sources hand the engine an ordered id list
+  and nothing else: a library selection, a saved view's sorted result, dock type picks, and the
+  one-at-a-time loop that reopens the library after each placement.
 - **Trash** offers Restore and Delete forever, plus Empty trash; deleting a *board* asks first and
   offers keeping the cards (they fall into the Inbox) or trashing them.
 - **Views** — `Views ▸` sits beside the board tabs and lists saved queries. A view is exactly what

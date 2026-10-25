@@ -67,6 +67,24 @@ facet row are now stated rather than left to whoever adds the next tab.
    that act (open, place, locate), and bulk actions over a selection (A13). A new section that cannot
    answer all four is a panel, not a tab.
 
+## Amendment — 2026-10-25: a selection, and behaviours live in Cards
+
+1. **Rows can be selected.** Click selects (in selection mode), `⌘`/`Ctrl`-click adds one, `Shift`-click
+   selects a range, and a tab offers "select all". A selection is the input to every bulk action — trash,
+   unplace, place — and to a **placement run**
+   ([ADR-0063](./0063-placement-is-a-mode-too.md)), which is why it lands with them rather than after.
+   The press rule does not change: a press that travels is a drag-to-place, a press that does not is a
+   click. In selection mode a click selects instead of opening the card, and the row's `⋯`/right-click menu
+   still opens.
+2. **Bulk actions are the row menu, applied to a selection.** The verbs a selection offers are the verbs a
+   row offers plus the run verbs (`Place cards`, `Thread cards`, `Web cards`, `Pattern cards`), in the same
+   context menu — not a second panel.
+3. **A behaviour is a card, and is listed as one.** Portal, Sketch and Tutorial cards appear in **Cards**
+   and in the **Inbox** exactly like a note: they can be unplaced (`Remove from board`), placed again, and
+   dragged out to a board. Being runtime-owned only removes them from *type* surfaces (the facet row, the
+   type editor), never from the card list. A behaviour row is a normal row; there is no separate list to
+   keep in sync and no second notion of "thing that is on a board".
+
 ## Consequences
 
 - The library is reachable from anywhere on the canvas without a mode switch or a sidebar.

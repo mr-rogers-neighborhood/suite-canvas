@@ -51,6 +51,14 @@ The confusion is real, and the honest fix is not to hide the fields: it is to sa
 7. **Styling is not defaults.** A rule (ADR-0051/0046) styles every sketch; Card Settings decides what a *new*
    sketch looks like. Keeping those apart is what stops "defaults" from becoming a second theme system.
 
+## Amendment — 2026-10-25: placement defaults live here too
+
+A placement run ([ADR-0063](./0063-placement-is-a-mode-too.md)) reads four numbers, and they are settings,
+not a style: the **gap** between placed cards, the **columns** a `place` grid fills before wrapping, the
+**ring radius** a `web` uses, and the **padding** a run's wrapping section adds around its contents. They
+belong in Card Settings beside the other entity defaults, for the same reason: one surface decides what the
+next thing looks like, and a run should not invent its own spacing in a dialog nobody can find again.
+
 ## Consequences
 
 - **The type editor becomes truthful** without gaining a concept: authored rows are editable, runtime rows are

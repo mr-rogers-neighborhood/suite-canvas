@@ -104,6 +104,25 @@ to prevent — "Attach" is the first alternative to try, and this paragraph is t
 - **Neither modifier reveals the dots on its own.** Only a committed first click arms, exactly as Shift has
   always worked; the indicator previews the mode while the key is held, and the dots follow the arm.
 
+## Amendment — 2026-10-25: the family is not link-specific
+
+The three readings were recorded as a *link* tool. They are now one **mode slot** shared with placement
+([ADR-0063](./0063-placement-is-a-mode-too.md)), because a click cannot mean two things and a second arm
+would need a precedence rule:
+
+1. **`CanvasMode` is `place · thread · web · pattern`** — `connect` became `place` at the level of the
+   family, since a slot that also lays cards out needs the general verb. The arrow glyph and the sentence
+   "drag one link at a time" still describe the link reading, and every link-specific label keeps the word
+   *link*.
+2. **`pattern` is the fourth shape**: a chain that branches (a mindmap), used only by placement today. It
+   sits in the same cycle, so the control reads `place → thread → web → pattern → place` whichever gesture
+   the user is about to make.
+3. **What this ADR decided is unchanged**: a web keeps a fixed origin, the origin stays visible, the modes
+   are gestures rather than documents, and Control is the press-time shortcut. Only the name of the first
+   mode and the size of the cycle changed.
+4. **The store field follows the reading.** `linkMode` is `mode`, `setLinkMode` is `setMode`; the rename is
+   mechanical and lives in one commit so no two features disagree about the name mid-flight.
+
 ## Rejected alternatives
 
 - **A "hub" tool that creates a node for the hub.** It invents an object to express "A relates to B and

@@ -152,6 +152,30 @@ describe("iceEditingController", () => {
     ]);
   });
 
+  it("tells the caller a Board write happened, and a card write did not", () => {
+    // The seat that wrote a Board records the structure it produced, so the
+    // projection does not rebuild the desk for a change the reader just made.
+    const boardWrite = vi.fn();
+    const boards = harness({
+      pick: () => 7,
+      boardSlots: new Map([[7, { boardId: "board-a", parentBoardId: ROOT }]]),
+      afterBoardCommit: boardWrite,
+    });
+    boards.boxes.set(7, { x: 44, y: 74, width: 816, height: 280 });
+    boards.controller.pointerDown(1, inside({ x: 44, y: 74, width: 816, height: 280 }));
+    boards.boxes.set(7, { x: 104, y: 114, width: 816, height: 280 });
+    boards.controller.pointerUp(1, inside({ x: 44, y: 74, width: 816, height: 280 }));
+    expect(boardWrite).toHaveBeenCalledTimes(1);
+
+    const cardWrite = vi.fn();
+    const cards = harness({ pick: () => 1, afterBoardCommit: cardWrite });
+    const start = inside({ x: 100, y: 100, width: 288, height: 240 });
+    cards.controller.pointerDown(1, start);
+    cards.boxes.set(1, { x: 140, y: 100, width: 288, height: 240 });
+    cards.controller.pointerUp(1, start);
+    expect(cardWrite).not.toHaveBeenCalled();
+  });
+
   it("should not write a Board that a gesture left where it was", () => {
     const { controller, canonical, boxes } = harness({
       pick: () => 7,

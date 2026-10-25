@@ -77,6 +77,12 @@ export interface IceEditingAdapters {
   removeCards(cardIds: readonly string[]): void;
   /** Called after a successful commit so the caller can reconcile. */
   afterCommit?(): void;
+  /**
+   * Called after a commit that wrote a Board's own fact (its rect or its
+   * parent). The caller records the structure it just produced, so the
+   * projection does not rebuild the desk for a change this seat made.
+   */
+  afterBoardCommit?(): void;
 }
 
 export interface IceEditingOptions extends IceEditingAdapters {
@@ -379,24 +385,27 @@ export function createIceEditingController(options: IceEditingOptions): IceEditi
         // A mat dropped into a Board changes its parent; the re-parent and the
         // frame's box land together, in the new parent's frame.
         const landed = options.containerOf?.(board.entity) ?? null;
-        if (
+        const nest =
           landed !== null &&
           landed !== board.slot.parentBoardId &&
           travelled(board.startScreen, screen)
-        ) {
-          return commit(
-            planBoardNestCommit(
-              { boardId: board.slot.boardId, parentBoardId: landed, geometry: box },
-              { capabilities },
-            ),
-          );
-        }
-        return commit(
-          planBoardRectCommit(
-            { boardId: board.slot.boardId, start: board.start, final: box },
-            { capabilities },
-          ),
-        );
+            ? commit(
+                planBoardNestCommit(
+                  { boardId: board.slot.boardId, parentBoardId: landed, geometry: box },
+                  { capabilities },
+                ),
+              )
+            : false;
+        const wrote = nest
+          ? true
+          : commit(
+              planBoardRectCommit(
+                { boardId: board.slot.boardId, start: board.start, final: box },
+                { capabilities },
+              ),
+            );
+        if (wrote) options.afterBoardCommit?.();
+        return wrote;
       }
       const pin = pendingPin;
       if (pin !== null && pin.pointerId === pointerId) {

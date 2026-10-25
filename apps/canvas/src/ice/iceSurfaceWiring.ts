@@ -45,6 +45,13 @@ export interface IceCommands {
   /** Arrow keys: nudge the selection by one unit (ten with Shift), one write. */
   nudge(dx: number, dy: number): void;
   reconcile(): void;
+  /**
+   * Note that this seat just wrote a Board's own fact (its rect, name, colour or
+   * parent). The mat already shows it — the gesture moved it, or its face synced
+   * — so the projection records the new structural key instead of rebuilding the
+   * desk, which would respawn every card for a change the reader made.
+   */
+  noteBoardWrite?(): void;
   escape(): void;
   zoomBy(factor: number): void;
   fitView(): void;
@@ -66,6 +73,12 @@ export interface IceOwned {
   structure?: string | null | undefined;
   /** Rebuild the desk's contents from the document, keeping the reader's seat. */
   reseed?: (() => void) | undefined;
+  /**
+   * Record the document's current structural key as the one the desk already
+   * shows. Called after this seat's own Board write, so the next comparison
+   * matches and nothing rebuilds.
+   */
+  recordStructure?: (() => void) | undefined;
 }
 
 export interface IceWiring {

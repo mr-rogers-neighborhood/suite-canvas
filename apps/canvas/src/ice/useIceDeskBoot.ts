@@ -409,6 +409,15 @@ export function useIceDeskBoot(input: {
           // The projection rebuilds the desk when the Board tree moves under
           // it; the engine and the loaded module are all a rebuild needs.
           reseed: () => reseedRef.current(engine, core),
+          // Our own Board write: the mat is already right, so record the key the
+          // document now has and let the projection's comparison match.
+          recordStructure: () => {
+            if (liveWorkspace === null || rootBoardId === null) return;
+            owned.current = {
+              ...owned.current,
+              structure: workspaceStructureKey(liveWorkspace, rootBoardId),
+            };
+          },
         };
         // The links are spawned by the seed effect, which also has to re-spawn
         // them when the View changes; it reaches the kind's table through here.

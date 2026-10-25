@@ -73,6 +73,12 @@ import { selectCardsInIce } from "./iceSelectionCommand";
 export interface IceContextMenuActions {
   /** Re-derive the ICE entities from the document. */
   readonly reconcile: () => void;
+  /**
+   * The write changed a Board's own fact (name, colour, existence, parent). The
+   * face already shows it, so the surface records the structure instead of
+   * rebuilding the desk — a rebuild would respawn every card.
+   */
+  readonly onBoardWrite?: (() => void) | undefined;
 }
 
 export interface IceContextMenuProps extends IceContextMenuActions {
@@ -100,6 +106,7 @@ export function IceContextMenu({
   canManageTrash,
   canManageLinks,
   reconcile,
+  onBoardWrite,
 }: IceContextMenuProps) {
   const liveSnapshot = useWorkspaceSnapshot();
   const snapshot = snapshotProp ?? liveSnapshot;
@@ -297,6 +304,8 @@ export function IceContextMenu({
         width: size.width,
         height: size.height,
       });
+      // A new Board is a structural fact: the desk has no mat for it yet, so the
+      // surface must rebuild rather than record.
       setSelectedNodeIds([]);
       useUiStore.getState().selectSection(board.id);
     },
@@ -347,11 +356,14 @@ export function IceContextMenu({
    */
   const commitRename = useCallback(
     (boardId: string, name: string) => {
-      if (canEditLayout) workspace.renameBoard(boardId, name);
+      if (canEditLayout) {
+        workspace.renameBoard(boardId, name);
+        onBoardWrite?.();
+      }
       setEditingSection(null);
       reconcile();
     },
-    [canEditLayout, reconcile, setEditingSection, workspace],
+    [canEditLayout, onBoardWrite, reconcile, setEditingSection, workspace],
   );
 
   const changeLayer = useCallback(

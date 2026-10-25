@@ -261,6 +261,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
     boardsRef,
     portalDepth,
     portalFramesRef,
+    owned,
     setPortalPath,
     openWhiteboard,
   });
@@ -504,6 +505,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           canManageTrash={canManageTrash && caps.canWriteLayout}
           canManageLinks={canManageSchema}
           reconcile={() => commandsRef.current?.reconcile()}
+          onBoardWrite={() => commandsRef.current?.noteBoardWrite?.()}
         />
       ) : null}
 

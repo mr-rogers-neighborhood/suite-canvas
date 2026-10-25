@@ -44,7 +44,7 @@ import { setIceSelectionCommand } from "./iceSelectionCommand";
 import { type IceCamera, prefersReducedMotion } from "./iceSurfaceCamera";
 import { entityAt, entityRectOf, screenPointOf } from "./iceSurfaceShared";
 import { deskEdgesOf } from "./iceSurfaceSpawns";
-import type { IceCommands, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
+import type { IceCommands, IceOwned, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
 import { resolveSurface } from "./iceSurfaceWiring";
 import type { IceLinkGesture } from "./useIceLinkGesture";
 import type { IceProjection } from "./useIceProjection";
@@ -62,17 +62,22 @@ export function useIceBoardGesture(input: {
   readonly boardsRef: RefObject<readonly Board[]>;
   readonly portalDepth: RefObject<number>;
   readonly portalFramesRef: RefObject<readonly { id: string; name: string }[]>;
+  /** What the boot owns, so a Board write can record the structure it produced. */
+  readonly owned: RefObject<IceOwned>;
   readonly setPortalPath: Dispatch<SetStateAction<readonly string[]>>;
   readonly openWhiteboard: (
     cardId: string,
     box: { left: number; top: number; width: number; height: number; scale: number },
   ) => void;
 }): void {
-  const { wiring, refs, projection, camera, link, commands, boardsRef } = input;
+  const { wiring, refs, projection, camera, link, commands, boardsRef, owned } = input;
   const { portalDepth, portalFramesRef, setPortalPath, openWhiteboard } = input;
   // The shell's one-shot "show me this" request; consumed by the reveal effect.
   const focusTarget = useUiStore((state) => state.focusTarget);
 
+  // `owned` is a stable ref object whose `recordStructure` the boot replaces;
+  // reading it inside the effect is the point, so it is not a dependency.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     const { phase, seed, layerReady, workspaceMode, liveWorkspace, rootBoardId, caps, cameraApi } =
       wiring;
@@ -174,8 +179,12 @@ export function useIceBoardGesture(input: {
       selection: () => useUiStore.getState().selectedNodeIds,
       // A gesture commits into Loro, then reconcile brings the projection to
       // the new truth: a moved card is already where it was left (a no-op), and
-      // a resize that crossed a type rung respawns on the new kind.
+      // a resize that crossed a type rung respawns on the new kind. A Board's
+      // own rect is a structural fact, so the seat that wrote it records the key
+      // first — the mat is where the gesture left it, and rebuilding the desk
+      // for it would respawn every card for nothing.
       afterCommit: projection.reconcile,
+      afterBoardCommit: () => owned.current.recordStructure?.(),
       pinSlots: new Map([...seed.pinEntities].map(([pinId, entity]) => [entity, pinId])),
       movePin: (pinId, point) => {
         liveWorkspace.movePin(pinId, point);
@@ -482,6 +491,12 @@ export function useIceBoardGesture(input: {
         projection.reconcile();
       },
       reconcile: projection.reconcile,
+      /**
+       * The menu wrote a Board's own fact. The face already shows it (the pill
+       * reads the name, the vinyl reads the colour), so the seat records the
+       * structure it produced and nothing rebuilds.
+       */
+      noteBoardWrite: () => owned.current.recordStructure?.(),
       /**
        * Escape is a ladder, innermost first: abandon the gesture that owns the
        * pointer, leave the Board the camera is inside, and — with nothing else

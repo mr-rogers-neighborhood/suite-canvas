@@ -47,7 +47,12 @@ export interface CardPanelModel {
   cardDoc: LoroDoc;
   onStartEditing: (field: CardPanelEditingField) => void;
   onEditEnd: () => void;
+  /** Makes `typeId` the primary type; the other members stay (ADR-0053 §1). */
   onSetType: (typeId: string) => void;
+  /** Adds a type that only contributes fields; never changes presentation. */
+  onAddType: (typeId: string) => void;
+  /** Drops a member type; its property values stay dormant (ADR-0016 §6). */
+  onRemoveType: (typeId: string) => void;
   onAddTag: (tagId: string) => void;
   onRemoveTag: (tagId: string) => void;
   onCreateTag: (name: string) => void;
@@ -193,7 +198,15 @@ export function useCardPanelModel(
     onEditEnd: stopEditing,
     onSetType: (typeId) => {
       // Type membership is schema, which a board or card share may never change.
-      if (canManageSchema) workspace.setCardTypes(card.id, [typeId], typeId);
+      // A primary switch keeps every other member: the extra types are fields,
+      // not presentation (ADR-0053 §1).
+      if (canManageSchema) workspace.setPrimaryType(card.id, typeId);
+    },
+    onAddType: (typeId) => {
+      if (canManageSchema) workspace.addCardType(card.id, typeId);
+    },
+    onRemoveType: (typeId) => {
+      if (canManageSchema) workspace.removeCardType(card.id, typeId);
     },
     onAddTag: (tagId) => {
       if (canEditContent) workspace.addCardTag(card.id, tagId);

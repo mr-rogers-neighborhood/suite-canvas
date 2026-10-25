@@ -36,6 +36,11 @@ export const viewQuerySchema = z.object({
   textScope: textScopeSchema.optional(),
   /** Facets: OR within a group, AND across groups, exactly as the library. */
   typeIds: z.array(entityIdSchema),
+  /**
+   * A card answers for its own tags and for the tags of the section it sits in
+   * ([ADR-0053 §6](../../../docs/decisions/0053-supertags-are-multi-type.md)):
+   * a section tag is a queryable grouping, never a membership rule.
+   */
   tagIds: z.array(entityIdSchema),
   sectionIds: z.array(entityIdSchema),
   scope: viewScopeSchema,
@@ -332,6 +337,19 @@ export function runViewQuery(
   };
   const sectionsOf = (id: string): Section[] => ensureSections().get(id) ?? [];
   const chainCache = new Map<string, string[]>();
+  // A section tag is a lens target (ADR-0053 §6): the cards inside a tagged
+  // section answer for that tag. Membership itself stays pure geometry — this
+  // is a read, and nothing in the query writes a placement.
+  let sectionsById: Map<string, Section> | undefined;
+  const sectionById = (id: string): Section | undefined => {
+    if (!sectionsById) {
+      sectionsById = new Map();
+      for (const sections of ensureSections().values()) {
+        for (const section of sections) sectionsById.set(section.id, section);
+      }
+    }
+    return sectionsById.get(id);
+  };
 
   // The search index and the reference index are derived and shared: the same
   // map serves a text predicate, a presence check and the ranked text search.
@@ -398,10 +416,21 @@ export function runViewQuery(
     if (query.scope === "board" && scoped.length === 0) continue;
 
     if (takesType && !card.typeIds.some((id) => wantedTypes.has(id))) continue;
-    if (takesTag && !card.tags.some((id) => wantedTags.has(id))) continue;
+    // The section chain answers both the tag and the section facet, so it is
+    // resolved at most once per card.
+    let resolvedSectionIds: string[] | undefined;
+    const cardSections = (): string[] =>
+      (resolvedSectionIds ??= sectionIdsFor(scoped, ensureSections(), chainCache));
+    if (takesTag) {
+      const viaOwnTag = card.tags.some((id) => wantedTags.has(id));
+      const viaSectionTag =
+        !viaOwnTag &&
+        cardSections().some((id) => sectionById(id)?.tags.some((tagId) => wantedTags.has(tagId)));
+      if (!viaOwnTag && !viaSectionTag) continue;
+    }
     if (takesSection) {
-      const sectionIds = sectionIdsFor(scoped, ensureSections(), chainCache);
-      const own = sectionIds.length > 0 ? sectionIds : [VIEW_UNSORTED_SECTION];
+      const ids = cardSections();
+      const own = ids.length > 0 ? ids : [VIEW_UNSORTED_SECTION];
       if (!own.some((id) => wantedSections.has(id))) continue;
     }
     if (takesGroups && !groupsMatch(card, groups, predicateContext)) continue;

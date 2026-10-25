@@ -1,8 +1,8 @@
-/* The tour overlay (ADR-0058). Filled by the tours lane; the file exists so that
-   work never conflicts with the paint or route stylesheets. */
+/* The tour overlay (ADR-0058). Chrome over the canvas: it measures the DOM and
+   never reaches into the renderer, so nothing here depends on React Flow. */
 
-/* A tour's reading surface. Chrome over the canvas: it never takes a press on
-   the board itself, only on its own controls. */
+/* A tour's reading surface. It never takes a press on the board itself, only on
+   its own controls and on the one target an `advance: "click"` step waits for. */
 .tour-overlay {
   position: absolute;
   inset: 0;
@@ -10,34 +10,406 @@
   pointer-events: none;
 }
 
-.tour-overlay__bar {
+/* One dimming layer for everything the step is not about. It is separate from
+   the ring so the ring can sit above it and catch a click. */
+.tour-overlay__dim {
   position: absolute;
-  right: 16px;
+  inset: 0;
+  background: color-mix(in oklab, var(--surface) 12%, rgba(8, 10, 14, 0.62));
+  backdrop-filter: saturate(0.9) blur(0.5px);
+}
+
+/* The spotlight: an outline plus a halo, so the target reads as lit rather than
+   boxed. Measured in overlay coordinates on every frame while a step shows. */
+.tour-overlay__spotlight {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 9999px transparent,
+    0 0 0 4px color-mix(in oklab, var(--ink) 22%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.28);
+  transition:
+    left 160ms ease-out,
+    top 160ms ease-out,
+    width 160ms ease-out,
+    height 160ms ease-out;
+}
+
+.tour-overlay__spotlight.is-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tour-overlay__spotlight.is-clickable:hover {
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--ink) 30%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.tour-overlay__caption {
+  position: absolute;
+  z-index: 3;
+  left: 16px;
   bottom: 16px;
+  width: min(340px, calc(100vw - 32px));
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  padding: 6px 8px;
+  padding: 12px 12px 10px;
   border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: var(--surface-translucent);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   pointer-events: auto;
   backdrop-filter: blur(8px);
 }
 
 .tour-overlay__step {
-  padding: 0 6px;
   font-size: 11px;
   color: var(--ink-muted);
 }
 
+.tour-overlay__text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.tour-overlay__hint,
+.tour-overlay__tombstone {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.tour-overlay__tombstone {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+
+.tour-overlay__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  pointer-events: auto;
+}
+
 .tour-overlay__control {
   border-radius: 9999px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   font-size: 12px;
+  border: 1px solid var(--hairline);
 }
 
 .tour-overlay__control:disabled {
   opacity: 0.4;
+}
+
+/* The step block in a tutorial's body (ADR-0054). A stop is a value, so the
+   block is a compact row rather than an editor surface. */
+.tour-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 8px;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--ink) 3%, transparent);
+}
+
+.tour-step:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.tour-step[data-armed="true"] {
+  border-color: var(--ink);
+}
+
+.tour-step__index {
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.tour-step__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tour-step__target {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.tour-step__kind,
+.tour-step__more {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.tour-step__label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tour-step__caption {
+  min-height: 1.4em;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  outline: none;
+  border-radius: 4px;
+}
+
+.tour-step__caption:focus {
+  color: var(--ink);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ink) 18%, transparent);
+}
+
+.tour-step__caption:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
+.tour-step__pick {
+  align-self: flex-start;
+  border-radius: 9999px;
+  border: 1px dashed var(--hairline);
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.tour-step[data-armed="true"] .tour-step__pick {
+  border-style: solid;
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.tour-step__actions {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tour-step__advance {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  border-radius: 9999px;
+  padding: 1px 6px;
+}
+
+.tour-step__action {
+  font-size: 11px;
+  border-radius: 9999px;
+  padding: 1px 8px;
+  color: var(--ink-muted);
+}
+
+.tour-step__action:hover,
+.tour-step__advance:hover {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+
+/* The tutorial card's Steps tab: the ordered list, Add step and Present, and
+   the transport that appears while the tour is playing (ADR-0058). */
+.tour-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tour-steps__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tour-steps__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-steps__count {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.tour-steps__button {
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.tour-steps__button.is-primary {
+  border-color: var(--ink);
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.tour-steps__button:disabled {
+  opacity: 0.4;
+}
+
+.tour-steps__empty {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.tour-steps__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tour-steps__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.tour-steps__row.is-active {
+  border-color: var(--ink);
+}
+
+.tour-steps__index {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--hairline);
+}
+
+.tour-steps__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.tour-steps__target {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tour-steps__row[data-dead="true"] .tour-steps__target {
+  color: var(--ink-muted);
+}
+
+.tour-steps__dead,
+.tour-steps__more {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.tour-steps__caption {
+  font-size: 11px;
+  color: var(--ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tour-steps__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tour-steps__icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.tour-steps__icon:hover {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
+}
+
+.tour-steps__present {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--ink) 3%, transparent);
+}
+
+.tour-steps__transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-steps__position {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+}
+
+.tour-steps__scrubber {
+  width: 100%;
+}
+
+.tour-steps__caption-editor {
+  min-height: 2.4em;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
 }

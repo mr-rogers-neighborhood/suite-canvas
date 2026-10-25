@@ -71,9 +71,11 @@ import {
   ratingPresentationSchema,
   type Section,
   type SelectOption,
+  type StyleRule,
   type SubField,
   sectionSchema,
   selectOptionSchema,
+  styleRuleSchema,
   subFieldSchema,
   type Tag,
   tagSchema,
@@ -423,7 +425,11 @@ function writeSurfaceStyle(fields: LoroMap, style: SurfaceStyle | null): void {
 }
 
 export function readSurfaceStyle(fields: LoroMap): SurfaceStyle | undefined {
-  const value = fields.get("style");
+  return readSurfaceStyleValue(fields.get("style"));
+}
+
+/** A paint record from a raw value, so the workspace's own style parses like a card's. */
+function readSurfaceStyleValue(value: unknown): SurfaceStyle | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const parsed = surfaceStyleSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
@@ -1117,6 +1123,8 @@ export class WorkspaceDocument {
   private readonly undoManager: UndoManager;
   private readonly known: Record<WorkspaceSection, Set<string>>;
   private readonly listeners = new Set<(change: WorkspaceChange) => void>();
+  /** Notified when the workspace's own meta paint changes; the snapshot has no meta. */
+  private readonly paintListeners = new Set<() => void>();
   private readonly viewListeners = new Set<() => void>();
   private viewRevision = 0;
   private readonly containerCache = new Map<string, CardContainers>();
@@ -1150,6 +1158,7 @@ export class WorkspaceDocument {
     };
 
     doc.subscribe((batch) => {
+      let paintTouched = false;
       const touched = new Map<WorkspaceSection, Set<string>>();
       const containers = new Set<string>();
       const savedViews = new Set<string>();
@@ -1161,6 +1170,12 @@ export class WorkspaceDocument {
           else if (event.diff.type === "map") {
             for (const key of Object.keys(event.diff.updated)) containers.add(key);
           }
+          continue;
+        }
+        if (root === WorkspaceDocument.META_KEY) {
+          // The workspace's own name, style and rules live here. They are not a
+          // snapshot section, so readers of them subscribe separately.
+          paintTouched = true;
           continue;
         }
         if (root === WorkspaceDocument.VIEWS_KEY) {
@@ -1217,6 +1232,7 @@ export class WorkspaceDocument {
         this.viewRevision += 1;
         for (const listener of this.viewListeners) listener();
       }
+      if (paintTouched) for (const listener of this.paintListeners) listener();
       if (touched.size === 0) return;
       for (const [section, keys] of touched) {
         for (const key of keys) {
@@ -1372,6 +1388,65 @@ export class WorkspaceDocument {
     if (this.meta.get("name") === trimmed) return;
     this.meta.set("name", trimmed);
     this.commit(`${STRUCT_ORIGIN}rename-workspace`);
+  }
+
+  // ------------------------------------------------------------ shell paint
+
+  /**
+   * The workspace's own paint ([ADR-0046](../../../../docs/decisions/0046-the-shell-derives-its-colour.md)):
+   * the shell regions read it, and it stores roles rather than values, so the
+   * shell still derives every colour from the theme.
+   */
+  shellStyle(): SurfaceStyle | undefined {
+    return readSurfaceStyleValue(this.meta.get("shellStyle"));
+  }
+
+  /** Writes the shell's style, or removes it when the style says nothing. */
+  setShellStyle(style: SurfaceStyle | null): void {
+    if (!style) {
+      this.meta.delete("shellStyle");
+      this.commit(`${STRUCT_ORIGIN}set-shell-style`);
+      return;
+    }
+    const parsed = surfaceStyleSchema.parse(style);
+    if (isEmptyStyle(parsed)) this.meta.delete("shellStyle");
+    else this.meta.set("shellStyle", parsed);
+    this.commit(`${STRUCT_ORIGIN}set-shell-style`);
+  }
+
+  /**
+   * The named rules over roles ([ADR-0046 §3–4](../../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+   * A rule is a scope plus assignments; the app resolves them per surface.
+   */
+  styleRules(): StyleRule[] {
+    const value = this.meta.get("rules");
+    if (!Array.isArray(value)) return [];
+    const rules: StyleRule[] = [];
+    for (const entry of value) {
+      const parsed = styleRuleSchema.safeParse(entry);
+      if (parsed.success) rules.push(parsed.data);
+    }
+    return rules.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  }
+
+  /**
+   * Notifies when the workspace's own paint changes ([ADR-0046](../../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+   * A meta edit is not a snapshot section, so the shell — the one reader — takes
+   * its own subscription rather than a second snapshot field.
+   */
+  observeWorkspacePaint(listener: () => void): () => void {
+    this.paintListeners.add(listener);
+    return () => {
+      this.paintListeners.delete(listener);
+    };
+  }
+
+  /** Replaces the whole rule list; an empty list removes the stored key. */
+  setStyleRules(rules: readonly StyleRule[]): void {
+    const parsed = rules.map((rule) => styleRuleSchema.parse(rule));
+    if (parsed.length === 0) this.meta.delete("rules");
+    else this.meta.set("rules", parsed);
+    this.commit(`${STRUCT_ORIGIN}set-style-rules`);
   }
 
   // ---------------------------------------------------------------- boards

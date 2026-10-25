@@ -1,11 +1,10 @@
 import type { Card, CardType } from "@suite/graph";
-import { resolveSurfaceStyle } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
 import { NodeConnectors } from "../canvas/NodeConnectors";
-import { surfacePaintVars } from "../canvas/surfacePaint";
+import { surfacePaintFor, useSurfaceRules } from "../canvas/rules";
 import type { CardMeta } from "../cards/cardMeta";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
@@ -216,11 +215,17 @@ export function NodeCard({
           : {};
 
   /**
-   * The card's own paint, when it has one. An unstyled card passes nothing here,
-   * so the default chrome is unchanged; a styled one paints through the shared
-   * role tokens (ADR-0051).
+   * The card's paint: its own style over the rules that match its type, resolved
+   * with the contrast floor (ADR-0046 §3–6). A card nothing names passes nothing
+   * here, so the default chrome is unchanged.
    */
-  const paint = card.style ? surfacePaintVars(resolveSurfaceStyle(card.style, "card")) : {};
+  const surfaceRules = useSurfaceRules();
+  const cardPaint = useMemo(
+    () =>
+      surfacePaintFor(card.style, { surface: "card", typeId: card.primaryTypeId }, surfaceRules),
+    [card.style, card.primaryTypeId, surfaceRules],
+  );
+  const { paint, corrections } = cardPaint;
   const painted = Object.keys(paint).length > 0;
 
   const cardClass = [
@@ -280,6 +285,9 @@ export function NodeCard({
       data-selected-by-peer={selectingPeer ? "true" : undefined}
       data-resizing-by-peer={resizingPeer ? "true" : undefined}
       data-board-id={boardId}
+      // A rule the floor had to correct says so on the card instead of
+      // pretending the pair was legible (ADR-0046 §6).
+      data-contrast-corrected={corrections.length > 0 ? "true" : undefined}
       className={cardClass}
       // The default box comes from the shared constants, so an unstored card
       // measures exactly what the canvas, the section fit and the drop offset

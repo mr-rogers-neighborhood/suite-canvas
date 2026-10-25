@@ -16,6 +16,27 @@ const type: CardType = {
   fields: [{ id: "owner", name: "Owner", kind: "text", required: false, order: 0, options: [] }],
 };
 
+const film: CardType = {
+  id: "film",
+  name: "Film",
+  glyph: "F",
+  createdAt: 0,
+  updatedAt: 0,
+  fields: [
+    { id: "status", name: "Status", kind: "text", required: true, order: 0, options: [] },
+    { id: "runtime", name: "Runtime", kind: "number", required: false, order: 1, options: [] },
+  ],
+};
+
+/** The same field name under two types: two rows, never merged (ADR-0053 §2). */
+const projectStatus: CardType = {
+  ...type,
+  fields: [
+    ...type.fields,
+    { id: "project-status", name: "Status", kind: "text", required: true, order: 1, options: [] },
+  ],
+};
+
 const card: Card = {
   id: "c1",
   createdAt: 0,
@@ -174,6 +195,8 @@ const meta = {
     onStartEditing: () => {},
     onEditEnd: () => {},
     onSetType: () => {},
+    onAddType: () => {},
+    onRemoveType: () => {},
     onAddTag: () => {},
     onRemoveTag: () => {},
     onCreateTag: () => {},
@@ -195,6 +218,27 @@ type Story = StoryObj<typeof meta>;
 export const Embedded: Story = {};
 
 export const Inspector: Story = { args: { variant: "inspector" } };
+
+/**
+ * A card that is a Project and a Film. The Project stays primary and keeps the
+ * card's presentation; the Film only adds fields, and both types' "Status"
+ * fields read as their own row under their own heading.
+ */
+export const MultiType: Story = {
+  args: {
+    card: {
+      ...card,
+      typeIds: ["project", "film"],
+      primaryTypeId: "project",
+      properties: { owner: "Ada Lovelace", "project-status": "In review", status: "Draft" },
+    },
+    types: [projectStatus, film],
+    fields: [
+      ...projectStatus.fields.map((field) => ({ typeId: "project", field })),
+      ...film.fields.map((field) => ({ typeId: "film", field })),
+    ],
+  },
+};
 
 /** A card with no body opens straight into Content, placeholder included. */
 export const EmptyBody: Story = {

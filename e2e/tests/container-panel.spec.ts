@@ -145,6 +145,36 @@ test("a section's selection opens the container panel with its members and links
   await expect(page.getByTestId("container-title")).toHaveText("Act one");
 });
 
+test("tags a section without moving a card in or out of it", async ({ page }) => {
+  await page.goto(workspaceUrl("section-tags"));
+  await expect(cards(page)).toHaveCount(2);
+
+  await cards(page).last().click();
+  await page.keyboard.press("Control+g");
+  await expect(page.locator(".section-header")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(panel(page)).toHaveAttribute("data-kind", "section");
+
+  // A section's tags are edited where its other properties are (ADR-0053 §6).
+  await expect(page.getByTestId("container-tags")).toHaveAttribute("data-target", "section");
+  await page.getByTestId("tag-input").fill("research");
+  await page.getByTestId("tag-input").press("Enter");
+  await expect(page.getByTestId("tag-chip")).toContainText("research");
+  // The label is not a membership rule: the members are exactly the card that
+  // was selected when the section was made.
+  await expect(page.getByTestId("container-members")).toContainText("Untitled");
+
+  // The tag lives on the record, so reopening the panel reads it back.
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toHaveCount(0);
+  const region = page.locator(".section-region").first();
+  const box = await region.boundingBox();
+  if (!box) throw new Error("cannot measure");
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await expect(panel(page)).toBeVisible();
+  await expect(page.getByTestId("tag-chip")).toContainText("research");
+});
+
 test("closing the container panel leaves nothing open", async ({ page }) => {
   await page.goto(workspaceUrl("close"));
   await expect(cards(page)).toHaveCount(2);

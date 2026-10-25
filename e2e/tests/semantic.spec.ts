@@ -63,15 +63,24 @@ test("creates a type with a field and applies it from the inspector", async ({ p
   await expect(page.getByLabel("Field name Stage")).toHaveValue("Stage");
   await page.getByRole("button", { name: "Done" }).click();
 
-  await page.getByRole("button", { name: "Initiative", exact: true }).click();
+  // A second type is added from the picker's "+ Type" menu (ADR-0053): it
+  // contributes fields and cannot change how the card looks.
+  await page.getByTestId("type-add").click();
+  await page.getByRole("menuitem", { name: "Initiative" }).click();
+  await expect(page.getByTestId("type-picker")).toContainText("Initiative");
   await expect(page.getByLabel("Stage").last()).toBeVisible();
+
+  // Presentation belongs to the primary, so changing the primary is the action
+  // that changes what the card reads as.
+  await page.getByTestId("type-primary-menu").click();
+  await page.getByRole("menuitem", { name: "Initiative" }).click();
   await expect(cards(page).first().getByTestId("card-type")).toHaveAttribute(
     "aria-label",
     "Card type: Initiative",
   );
 });
 
-test("shows a type switch and keeps the hidden property dormant", async ({ page }) => {
+test("adds a second type and keeps a removed type's property dormant", async ({ page }) => {
   await page.goto(workspaceUrl("switch"));
   await expect(cards(page)).toHaveCount(2);
 
@@ -79,11 +88,21 @@ test("shows a type switch and keeps the hidden property dormant", async ({ page 
   await addTextField(page, "Status");
   await setProperty(page, "Status", "active");
 
-  await page.getByTestId("type-option-concept").click();
-  await expect(page.getByTestId("type-option-concept")).toHaveAttribute("aria-pressed", "true");
+  // A second type unions fields in: the Note field the card already has stays.
+  await page.getByTestId("type-add").click();
+  await page.getByRole("menuitem", { name: "Concept" }).click();
+  await expect(page.getByTestId("type-picker")).toContainText("Concept");
+  await expect(page.getByLabel("Status").last()).toHaveValue("active");
+
+  // Make Concept primary, then drop Note: its field hides with its type.
+  await page.getByTestId("type-primary-menu").click();
+  await page.getByRole("menuitem", { name: "Concept" }).click();
+  await page.getByRole("button", { name: "Remove type Note" }).click();
   await expect(page.getByTestId("property-list")).toHaveCount(0);
 
-  await page.getByTestId("type-option-note").click();
+  // Adding the type back revives the value, which was never erased.
+  await page.getByTestId("type-add").click();
+  await page.getByRole("menuitem", { name: "Note" }).click();
   await expect(page.getByLabel("Status").last()).toHaveValue("active");
 });
 

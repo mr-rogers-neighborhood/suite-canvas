@@ -1,6 +1,9 @@
+import { z } from "zod";
 import type { PlacementSnapshot, RichTextSnapshot, RichTextTextSnapshot } from "./merge.js";
 import type { GraphEdge, Section } from "./schema.js";
 import { edgeKinds, edgePaths, sectionColors } from "./schema.js";
+import { targetSchema } from "./target.js";
+import { tourStepAdvanceSchema, tourStepViewportSchema } from "./tutorial.js";
 
 /** Largest absolute coordinate a publish accepts on a board. */
 export const MAX_PUBLISH_COORDINATE = 10_000_000;
@@ -100,6 +103,7 @@ export const RICH_TEXT_NODE_NAMES = [
   "propertyBlock",
   "attachment",
   "image",
+  "tourStep",
 ] as const;
 
 /** Marks the editor schema produces. */
@@ -131,6 +135,9 @@ export const RICH_TEXT_NODE_ATTRIBUTE_NAMES = {
   attachment: ["id", "mime", "width", "height", "name", "bytes"],
   // A link image: an address to fetch, a label, and the size it draws at.
   image: ["src", "alt", "width", "height"],
+  // A tour step: its stable id, the targets it points at, the camera it asks
+  // for, its caption and how a reader leaves it (ADR-0054).
+  tourStep: ["stepId", "targets", "viewport", "caption", "advance"],
 } as const satisfies Record<string, readonly string[]>;
 
 const ALLOWED_NODES = new Set<string>(RICH_TEXT_NODE_NAMES);
@@ -324,6 +331,26 @@ function validateAttachmentAttribute(key: string, value: string | number | boole
   return null;
 }
 
+/**
+ * A tour step's two structured attributes: the targets it points at and the
+ * camera it asks for. A published tour a reader cannot resolve is worse than a
+ * tour without that step, so a malformed one is refused rather than clipped.
+ */
+function validateTourStepAttribute(key: string, value: unknown): string | null {
+  if (key === "targets") {
+    const parsed = z.array(targetSchema).min(1).safeParse(value);
+    return parsed.success ? null : "is not a non-empty list of targets";
+  }
+  if (key === "viewport") {
+    const parsed = tourStepViewportSchema.safeParse(value);
+    return parsed.success ? null : "is not a camera";
+  }
+  if (key === "advance") {
+    return tourStepAdvanceSchema.safeParse(value).success ? null : "is not an advance mode";
+  }
+  return null;
+}
+
 function validateAttributes(nodeName: string, attributes: unknown, path: string): string | null {
   if (!isRecord(attributes) || isTextSnapshot(attributes)) {
     return `${path}.attributes is not a plain object`;
@@ -338,8 +365,12 @@ function validateAttributes(nodeName: string, attributes: unknown, path: string)
       }
       continue;
     }
-    const ok =
-      typeof value === "string"
+    // A tour step stores structured values on purpose: a list of targets and
+    // the camera it asks for. They are validated by their own schemas below.
+    const structured = nodeName === "tourStep" && (key === "targets" || key === "viewport");
+    const ok = structured
+      ? true
+      : typeof value === "string"
         ? true
         : typeof value === "boolean"
           ? true
@@ -351,6 +382,10 @@ function validateAttributes(nodeName: string, attributes: unknown, path: string)
     }
     if (nodeName === "image") {
       const issue = validateImageAttribute(key, value as string | number | boolean);
+      if (issue !== null) return `${path}.${key} ${issue}`;
+    }
+    if (nodeName === "tourStep") {
+      const issue = validateTourStepAttribute(key, value);
       if (issue !== null) return `${path}.${key} ${issue}`;
     }
   }

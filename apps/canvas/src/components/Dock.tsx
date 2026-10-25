@@ -14,6 +14,10 @@ export interface DockProps {
   activeBoardId?: string | null;
   onToggleLibrary: () => void;
   onCreateCard: (typeId: string) => void;
+  /** A sketch is a card of the built-in sketch type, created on demand. */
+  onCreateSketch?: (() => void) | undefined;
+  /** A section is not a card, so it needs its own action. */
+  onCreateSection?: (() => void) | undefined;
   onCreatePortal?: (targetBoardId: string) => void;
   onCreateBoardPortal?: () => void;
   onManageTypes: () => void;
@@ -38,6 +42,8 @@ export function Dock({
   activeBoardId = null,
   onToggleLibrary,
   onCreateCard,
+  onCreateSketch,
+  onCreateSection,
   onCreatePortal,
   onCreateBoardPortal,
   onManageTypes,
@@ -111,6 +117,10 @@ export function Dock({
   // the ordinary "new card" list: creating one without a board is meaningless.
   const creatableTypes = types.filter((type) => type.id !== PORTAL_TYPE_ID);
   const portalTargets = boards.filter((board) => board.id !== activeBoardId);
+  /** The sketch type's glyph, and a section's dashed frame, drawn as text. */
+  const SKETCH_GLYPH = "\u270e";
+  const SECTION_GLYPH = "\u25a2";
+
   const portalAction = canCreateContent && (portalTargets.length > 0 || canCreateBoards);
 
   return (
@@ -172,6 +182,48 @@ export function Dock({
                 <span className="min-w-0 flex-1 truncate">{type.name}</span>
               </button>
             ))}
+
+            {onCreateSketch || onCreateSection ? (
+              <div className="my-1 h-px bg-[var(--hairline)]" />
+            ) : null}
+            {/* Sketch and Section mirror the canvas's own context menu, so the
+                dock is a complete "new" surface rather than a subset of it. A
+                sketch is a type, so it is offered here next to the others; a
+                section is not a card, which is why it needs its own row. */}
+            {onCreateSketch ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="dock-new-sketch"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onCreateSketch();
+                }}
+              >
+                <span aria-hidden="true" className="w-4 text-center text-[var(--ink-muted)]">
+                  {SKETCH_GLYPH}
+                </span>
+                <span className="min-w-0 flex-1 truncate">New sketch</span>
+              </button>
+            ) : null}
+            {onCreateSection ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="dock-new-section"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onCreateSection();
+                }}
+              >
+                <span aria-hidden="true" className="w-4 text-center text-[var(--ink-muted)]">
+                  {SECTION_GLYPH}
+                </span>
+                <span className="min-w-0 flex-1 truncate">New section</span>
+              </button>
+            ) : null}
 
             {portalAction ? (
               <>

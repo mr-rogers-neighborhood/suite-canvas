@@ -106,6 +106,24 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (editor, range) => consumeQuery(editor, range).insertContent("@").run(),
   },
   {
+    id: "step",
+    title: "Tour step",
+    hint: "One stop of a tour, anchored to a target",
+    glyph: "\u25b8",
+    // "tutorial" too: an author looking for the step block is writing a tour.
+    keywords: ["step", "tour", "tutorial", "walkthrough", "spotlight", "present"],
+    run: (editor, range) => {
+      // Inserted without a target: picking one is a click on the canvas, which
+      // the block itself arms (ADR-0054 §3).
+      consumeQuery(editor, range)
+        .insertContent({
+          type: "tourStep",
+          attrs: { stepId: crypto.randomUUID(), targets: [], advance: "next" },
+        })
+        .run();
+    },
+  },
+  {
     id: "property",
     title: "Property",
     hint: "Show one of this card's fields",

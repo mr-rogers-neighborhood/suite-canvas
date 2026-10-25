@@ -160,6 +160,8 @@ export function CardFocusHost() {
         onStartEditing={model.onStartEditing}
         onEditEnd={model.onEditEnd}
         onSetType={model.onSetType}
+        onAddType={model.onAddType}
+        onRemoveType={model.onRemoveType}
         onAddTag={model.onAddTag}
         onRemoveTag={model.onRemoveTag}
         onCreateTag={model.onCreateTag}

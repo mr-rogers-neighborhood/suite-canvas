@@ -86,7 +86,7 @@ export function BoardTabs({
                 data-testid={`board-tab-${board.id}`}
                 data-active={active ? "true" : undefined}
                 title={canManageBoards ? "Double-click to rename" : board.name}
-                className={`inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
+                className={`board-tab inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
                   active
                     ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
                     : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"

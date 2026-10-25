@@ -118,7 +118,7 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
   // `/` lists every block in order; two downs from the first land on the
   // bulleted list, which is why the count only guards that the menu is complete.
   await page.keyboard.type("/");
-  await expect(page.getByTestId("slash-option")).toHaveCount(10);
+  await expect(page.getByTestId("slash-option")).toHaveCount(11);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("slash-option").nth(2)).toHaveAttribute("aria-selected", "true");

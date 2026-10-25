@@ -325,7 +325,37 @@ export const graphEdgeSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
 });
 
+/**
+ * What a named rule can target ([ADR-0046 §3–4](../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+ * `global` applies everywhere, `type` to every card of one type, `kind` to every
+ * surface of one kind, `shell` to one shell region. Absent `id` is only legal for
+ * `global`; the resolver in the app checks that.
+ */
+export const styleScopeKinds = ["global", "type", "kind", "shell"] as const;
+
+export const styleRuleScopeSchema = z.object({
+  kind: z.enum(styleScopeKinds),
+  /** Type id, surface kind or shell region name; absent for `global`. */
+  id: z.string().min(1).max(120).optional(),
+});
+
+/**
+ * One named rule over roles: a scope plus the assignments it makes. A rule never
+ * stores a value the token layer does not define, so a theme swap keeps working.
+ */
+export const styleRuleSchema = z.object({
+  id: entityIdSchema,
+  name: z.string().min(1).max(80),
+  /** Ordering among equally specific rules; later wins. */
+  order: z.number().int(),
+  scope: styleRuleScopeSchema,
+  style: surfaceStyleSchema,
+});
+
 export type Connector = z.infer<typeof connectorSchema>;
+export type StyleRule = z.infer<typeof styleRuleSchema>;
+export type StyleRuleScope = z.infer<typeof styleRuleScopeSchema>;
+export type StyleScopeKind = (typeof styleScopeKinds)[number];
 export type Board = z.infer<typeof boardSchema>;
 export type Card = z.infer<typeof cardSchema>;
 export type CardType = z.infer<typeof cardTypeSchema>;

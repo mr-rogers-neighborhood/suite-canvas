@@ -95,6 +95,8 @@ const base: CardPanelProps = {
   onStartEditing: () => {},
   onEditEnd: () => {},
   onSetType: () => {},
+  onAddType: () => {},
+  onRemoveType: () => {},
   onAddTag: () => {},
   onRemoveTag: () => {},
   onCreateTag: () => {},
@@ -696,5 +698,189 @@ describe("CardPanel read-only (share viewer)", () => {
     expect(screen.getByTestId("tag-list")).toHaveTextContent("#alpha");
     expect(screen.getByTestId("tag-list")).not.toHaveTextContent("#beta");
     expect(screen.getByTestId("property-value-owner")).toHaveTextContent("Ada");
+  });
+});
+
+const projectStatus: FieldDefinition = {
+  id: "project-status",
+  name: "Status",
+  kind: "text",
+  required: true,
+  order: 1,
+  options: [],
+};
+
+const projectType: CardType = { ...type, fields: [owner, projectStatus] };
+
+const filmStatus: FieldDefinition = {
+  id: "film-status",
+  name: "Status",
+  kind: "select",
+  required: true,
+  order: 0,
+  options: [{ id: "draft", label: "Draft", order: 0 }],
+};
+
+const filmType: CardType = {
+  id: "film",
+  name: "Film",
+  glyph: "F",
+  createdAt: 0,
+  updatedAt: 0,
+  fields: [filmStatus],
+};
+
+/** A card that is a Project and a Film; the primary type is the Project. */
+const multiCard: Card = {
+  ...card,
+  typeIds: ["film", "project"],
+  primaryTypeId: "project",
+  properties: {},
+};
+
+const multiTypes = [projectType, filmType];
+
+const multiFields: CardFieldView[] = [
+  { typeId: "project", field: owner },
+  { typeId: "project", field: projectStatus },
+  { typeId: "film", field: filmStatus },
+];
+
+describe("CardPanel multi-type picker", () => {
+  it("adds a type from + Type without changing the primary", () => {
+    const onAddType = vi.fn();
+    const onSetType = vi.fn();
+    renderPanel({
+      card: { ...multiCard, typeIds: ["project"] },
+      types: multiTypes,
+      fields: [{ typeId: "project", field: owner }],
+      onAddType,
+      onSetType,
+    });
+
+    expect(screen.getByTestId("type-primary-project")).toHaveAttribute("data-primary", "true");
+    fireEvent.click(screen.getByTestId("type-add"));
+    fireEvent.click(screen.getByTestId("type-option-film"));
+
+    expect(onAddType).toHaveBeenCalledWith("film");
+    // Adding a type is never a primary switch: presentation does not move.
+    expect(onSetType).not.toHaveBeenCalled();
+  });
+
+  it("survives the pointerdown that starts a click on a menu item", () => {
+    const onAddType = vi.fn();
+    renderPanel({
+      card: { ...multiCard, typeIds: ["project"] },
+      types: multiTypes,
+      fields: [{ typeId: "project", field: owner }],
+      onAddType,
+    });
+
+    fireEvent.click(screen.getByTestId("type-add"));
+    // A real click begins with pointerdown on the item; the dismissal listener
+    // must not unmount the menu before the click lands.
+    fireEvent.pointerDown(screen.getByTestId("type-option-film"));
+    expect(screen.getByTestId("type-add-menu")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("type-option-film"));
+    expect(onAddType).toHaveBeenCalledWith("film");
+  });
+
+  it("closes the menu on a pointer elsewhere", () => {
+    renderPanel({
+      card: { ...multiCard, typeIds: ["project"] },
+      types: multiTypes,
+      fields: [{ typeId: "project", field: owner }],
+    });
+
+    fireEvent.click(screen.getByTestId("type-add"));
+    expect(screen.getByTestId("type-add-menu")).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByTestId("type-add-menu")).toBeNull();
+  });
+
+  it("changes the primary from its own menu", () => {
+    const onSetType = vi.fn();
+    const onRemoveType = vi.fn();
+    renderPanel({
+      card: multiCard,
+      types: multiTypes,
+      fields: multiFields,
+      onSetType,
+      onRemoveType,
+    });
+
+    fireEvent.click(screen.getByTestId("type-primary-menu"));
+    fireEvent.click(screen.getByTestId("type-primary-option-film"));
+
+    expect(onSetType).toHaveBeenCalledWith("film");
+    // A primary switch is not a membership change: the host writes the new
+    // primary, and the old one stays as an added type rather than being removed.
+    expect(onRemoveType).not.toHaveBeenCalled();
+    expect(screen.getByTestId("type-chip-film")).toBeInTheDocument();
+  });
+
+  it("removes an added type and leaves its values dormant", () => {
+    const onRemoveType = vi.fn();
+    const onClearProperty = vi.fn();
+    const onSetType = vi.fn();
+    renderPanel({
+      card: { ...multiCard, properties: { "film-status": "draft" } },
+      types: multiTypes,
+      fields: multiFields,
+      onRemoveType,
+      onClearProperty,
+      onSetType,
+    });
+
+    fireEvent.click(screen.getByTestId("type-remove-film"));
+
+    expect(onRemoveType).toHaveBeenCalledWith("film");
+    // Removing a type hides a field; it never rewrites or deletes a value.
+    expect(onClearProperty).not.toHaveBeenCalled();
+    expect(onSetType).not.toHaveBeenCalled();
+  });
+
+  it("groups fields under their type, primary first, without merging names", () => {
+    renderPanel({ card: multiCard, types: multiTypes, fields: multiFields });
+
+    const list = screen.getByTestId("property-list");
+    const order = [...list.querySelectorAll(":scope > div")].map((element) =>
+      element.getAttribute("data-testid"),
+    );
+    expect(order).toEqual(["type-group-project", "type-group-film"]);
+    expect(screen.getByTestId("type-group-project")).toHaveAttribute("data-primary", "true");
+
+    // Two independent "Status" fields: two rows, each under its own type.
+    expect(screen.getByTestId("property-project-status")).toHaveTextContent("Status");
+    expect(screen.getByTestId("property-film-status")).toHaveTextContent("Status");
+    expect(screen.getAllByText("Status")).toHaveLength(2);
+    expect(screen.getByTestId("type-group-heading-project")).toHaveTextContent("Project");
+    expect(screen.getByTestId("type-group-heading-film")).toHaveTextContent("Film");
+  });
+
+  it("counts required fields per type", () => {
+    renderPanel({
+      card: { ...multiCard, properties: { "film-status": "draft" } },
+      types: multiTypes,
+      fields: multiFields,
+    });
+
+    // The Project's Status is empty; the Film's is filled. Each badge only
+    // counts its own type, and neither blocks the rows from rendering.
+    expect(screen.getByTestId("type-required-project")).toHaveAttribute("data-required", "1");
+    expect(screen.getByTestId("type-required-project")).toHaveAttribute("data-missing", "1");
+    expect(screen.getByTestId("type-required-film")).toHaveAttribute("data-missing", "0");
+    expect(screen.getByTestId("property-film-status")).toBeInTheDocument();
+  });
+
+  it("renders every member type read-only, primary marked", () => {
+    renderPanel({ card: multiCard, types: multiTypes, fields: multiFields, readOnly: true });
+
+    expect(screen.getByTestId("type-view-project")).toHaveAttribute("data-primary", "true");
+    expect(screen.getByTestId("type-view-film")).not.toHaveAttribute("data-primary");
+    expect(screen.queryByTestId("type-add")).toBeNull();
   });
 });

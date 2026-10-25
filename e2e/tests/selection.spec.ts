@@ -243,6 +243,49 @@ test("shift-click toggles membership without opening the inspector", async ({ pa
   await expect(page.getByTestId("card-inspector")).toBeVisible();
 });
 
+test("a modifier click survives a peer's edits landing mid-gesture", async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  const url = workspaceUrl("shift-race");
+
+  await pageA.goto(url);
+  await pageB.goto(url);
+  await expect(cards(pageA)).toHaveCount(2);
+  await expect(cards(pageB)).toHaveCount(2);
+
+  const nodes = pageA.locator(".react-flow__node");
+  await expect(nodes).toHaveCount(2);
+  const inside = { x: 40, y: 60 } as const;
+
+  // The peer edits a title, so page A is rebuilt between the Shift keydown and
+  // the click — the echo of the first click is exactly what a rebuild used to
+  // paint back over the second one.
+  const peerCard = await cards(pageB).first().boundingBox();
+  if (!peerCard) throw new Error("peer card not visible");
+  await pageB.mouse.dblclick(peerCard.x + 60, peerCard.y + 24);
+  await expect(pageB.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
+  // React StrictMode remounts the editor once in dev; let it settle first.
+  await pageB.waitForTimeout(300);
+  const typing = pageB.keyboard.type("typed by the collaborator", { delay: 25 });
+
+  try {
+    await pageA.keyboard.down("Shift");
+    await nodes.nth(0).click({ position: inside });
+    await nodes.nth(1).click({ position: inside });
+    await pageA.keyboard.up("Shift");
+  } finally {
+    await typing;
+  }
+
+  await expect(selectedNodes(pageA)).toHaveCount(2);
+  await expect(pageA.getByTestId("card-inspector")).toHaveCount(0);
+
+  await contextA.close();
+  await contextB.close();
+});
+
 test("dragging one selected card moves the whole selection and persists", async ({ page }) => {
   await page.goto(workspaceUrl("multi-drag"));
   await expect(cards(page)).toHaveCount(2);

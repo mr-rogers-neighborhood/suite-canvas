@@ -47,7 +47,12 @@ export interface CardInspectorProps {
   onEdit: () => void;
   onStartEditing: (field: CardPanelEditingField) => void;
   onEditEnd: () => void;
+  /** Makes `typeId` the primary type; the other members stay (ADR-0053 §1). */
   onSetType: (typeId: string) => void;
+  /** Adds a type that only contributes fields. */
+  onAddType?: ((typeId: string) => void) | undefined;
+  /** Drops a member type; its values stay dormant. */
+  onRemoveType?: ((typeId: string) => void) | undefined;
   onAddTag: (tagId: string) => void;
   onRemoveTag: (tagId: string) => void;
   onCreateTag: (name: string) => void;
@@ -145,6 +150,8 @@ export function CardInspector({
   onStartEditing,
   onEditEnd,
   onSetType,
+  onAddType,
+  onRemoveType,
   onAddTag,
   onRemoveTag,
   onCreateTag,
@@ -267,6 +274,8 @@ export function CardInspector({
           onStartEditing={onStartEditing}
           onEditEnd={onEditEnd}
           onSetType={onSetType}
+          onAddType={onAddType}
+          onRemoveType={onRemoveType}
           onAddTag={onAddTag}
           onRemoveTag={onRemoveTag}
           onCreateTag={onCreateTag}

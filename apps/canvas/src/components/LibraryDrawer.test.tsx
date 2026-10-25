@@ -785,3 +785,67 @@ describe("LibraryDrawer templates", () => {
     );
   });
 });
+
+describe("LibraryDrawer tag lens", () => {
+  function withSectionTag() {
+    const { workspace, items } = fixture();
+    const board = workspace.listBoards()[0];
+    if (!board) throw new Error("fixture has no board");
+    const section = workspace.createSection({
+      boardId: board.id,
+      title: "Act one",
+      x: 0,
+      y: 0,
+      width: 600,
+      height: 400,
+    });
+    const tag = workspace.createTag({ name: "research" });
+    workspace.addSectionTag(section.id, tag.id);
+    return { workspace, items, section, tag };
+  }
+
+  it("counts a section's tag for the cards inside it, and filters by it", () => {
+    const { workspace, items, section, tag } = withSectionTag();
+    const onToggleTag = vi.fn();
+    const scoped = items.map((item) =>
+      item.id === "c1" ? { ...item, sectionIds: [section.id] } : item,
+    );
+
+    const rendered = renderDrawer(workspace, scoped, {
+      tags: workspace.listTags(),
+      onToggleTag,
+    });
+
+    const facet = screen.getByTestId(`facet-tag-${tag.id}`);
+    expect(facet).toHaveTextContent("1");
+    fireEvent.click(facet);
+    expect(onToggleTag).toHaveBeenCalledWith(tag.id);
+
+    // What an applied lens does: the same tag arrives as the filter value.
+    rendered.rerender({ tagFilter: [tag.id] });
+
+    expect(screen.getByTestId("library-item-c1")).toBeInTheDocument();
+    expect(screen.queryByTestId("library-item-c2")).toBeNull();
+  });
+
+  it("does not count a section tag for a card outside the section", () => {
+    const { workspace, items, tag } = withSectionTag();
+
+    renderDrawer(workspace, items, { tags: workspace.listTags() });
+
+    // Membership is geometry: no card names the section, so the tag stays a
+    // label on the section rather than a membership claim about cards.
+    expect(screen.getByTestId(`facet-tag-${tag.id}`)).toHaveTextContent("0");
+  });
+
+  it("counts a card once when the card and its section carry the same tag", () => {
+    const { workspace, items, section, tag } = withSectionTag();
+    const scoped = items.map((item) =>
+      item.id === "c1" ? { ...item, sectionIds: [section.id], tagIds: [tag.id] } : item,
+    );
+
+    renderDrawer(workspace, scoped, { tags: workspace.listTags() });
+
+    expect(screen.getByTestId(`facet-tag-${tag.id}`)).toHaveTextContent("1");
+  });
+});

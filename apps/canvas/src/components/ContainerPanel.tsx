@@ -1,8 +1,12 @@
-import type { Section, Target } from "@suite/graph";
+import type { Section, Tag, Target, WorkspaceDocument } from "@suite/graph";
 import { sectionColors } from "@suite/graph";
 import { useState } from "react";
 import { SECTION_STROKE } from "../canvas/sectionPalette";
+import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
+import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { BoardCoverPicker } from "./BoardCoverPicker";
+import { TagPicker } from "./TagPicker";
 import type { ContainerPanelModel } from "./useContainerPanelModel";
 
 export interface ContainerPanelProps {
@@ -22,6 +26,10 @@ export interface ContainerPanelProps {
   onRetarget?: ((boardId: string) => void) | undefined;
   /** An orphaned portal: take the card off the board it is drawn on. */
   onRemove?: (() => void) | undefined;
+  /** Defaults to the live document in the canvas store; tests inject their own. */
+  workspace?: WorkspaceDocument | null;
+  /** Every tag in the workspace; defaults to the live snapshot. */
+  tags?: readonly Tag[] | undefined;
 }
 
 /**
@@ -43,13 +51,49 @@ export function ContainerPanel({
   onNavigate,
   onRetarget,
   onRemove,
+  workspace: workspaceProp = null,
+  tags: tagsProp,
 }: ContainerPanelProps) {
   const portal = model.kind === "portal";
   const canEdit = !model.readOnly && model.canEditLayout;
+  const storeWorkspace = useCanvasStore((state) => state.workspace);
+  const workspace = workspaceProp ?? storeWorkspace;
+  const snapshot = useWorkspaceSnapshot();
+  const knownTags = tagsProp ?? snapshot.tags;
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
   // The picker is a disclosure, not a count: it only exists while the panel is
   // asking which board should replace the one that went away.
   const [picking, setPicking] = useState(false);
   const contentsCount = model.contents.reduce((total, group) => total + group.cards.length, 0);
+
+  // A section is tagged directly; a portal shows the board it opens, and a
+  // board's tags belong to that record. Either way a tag is a label: nothing
+  // here reads or writes a placement, so tagging can never move a card in or
+  // out of a section ([ADR-0053 §6](../../../../docs/decisions/0053-supertags-are-multi-type.md)).
+  const tagTarget: { kind: "section" | "board"; id: string; selected: readonly string[] } | null =
+    portal
+      ? model.board
+        ? { kind: "board", id: model.board.id, selected: model.board.tags }
+        : null
+      : model.section
+        ? { kind: "section", id: model.section.id, selected: model.section.tags }
+        : null;
+
+  const addTag = (tagId: string) => {
+    if (!tagTarget || !canEdit) return;
+    if (tagTarget.kind === "section") workspace.addSectionTag(tagTarget.id, tagId);
+    else workspace.addBoardTag(tagTarget.id, tagId);
+  };
+  const removeTag = (tagId: string) => {
+    if (!tagTarget || !canEdit) return;
+    if (tagTarget.kind === "section") workspace.removeSectionTag(tagTarget.id, tagId);
+    else workspace.removeBoardTag(tagTarget.id, tagId);
+  };
+  const createTag = (name: string) => {
+    if (!tagTarget || !canEdit || !canManageSchema) return;
+    const tag = workspace.ensureTag(name);
+    addTag(tag.id);
+  };
 
   return (
     <aside
@@ -192,6 +236,40 @@ export function ContainerPanel({
                 />
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {tagTarget ? (
+          <section className="mt-3" data-testid="container-tags" data-target={tagTarget.kind}>
+            <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+              Tags
+            </h3>
+            {canEdit ? (
+              <div className="mt-1">
+                <TagPicker
+                  tags={[...knownTags]}
+                  selectedIds={[...tagTarget.selected]}
+                  onAdd={addTag}
+                  onRemove={removeTag}
+                  onCreate={createTag}
+                  allowCreate={canManageSchema}
+                />
+              </div>
+            ) : (
+              <div className="mt-1 flex flex-wrap gap-1" data-testid="container-tag-list">
+                {knownTags
+                  .filter((tag) => tagTarget.selected.includes(tag.id))
+                  .map((tag) => (
+                    <span
+                      key={tag.id}
+                      data-testid="container-tag-chip"
+                      className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] text-[var(--ink)]"
+                    >
+                      #{tag.name}
+                    </span>
+                  ))}
+              </div>
+            )}
           </section>
         ) : null}
 

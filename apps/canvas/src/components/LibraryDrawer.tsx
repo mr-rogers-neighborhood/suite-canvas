@@ -168,6 +168,26 @@ function Highlighted({ text, terms }: { text: string; terms: readonly string[] }
   return <>{parts}</>;
 }
 
+/**
+ * Cards answer for the tags of the section they sit in as well as their own
+ * ([ADR-0053 §6](../../../../docs/decisions/0053-supertags-are-multi-type.md)).
+ * Read-only: section membership still comes from geometry alone.
+ */
+function withSectionTags(items: LibraryItem[], workspace: WorkspaceDocument | null): LibraryItem[] {
+  if (!workspace) return items;
+  const tagsBySection = new Map<string, string[]>();
+  for (const section of workspace.listSections()) {
+    if (section.tags.length > 0) tagsBySection.set(section.id, section.tags);
+  }
+  if (tagsBySection.size === 0) return items;
+  return items.map((item) => {
+    const inherited = item.sectionIds.flatMap((id) => tagsBySection.get(id) ?? []);
+    if (inherited.length === 0) return item;
+    // A card can also carry the tag itself; the facet counts a card once.
+    return { ...item, tagIds: [...new Set([...item.tagIds, ...inherited])] };
+  });
+}
+
 export function LibraryDrawer({
   open,
   tab,
@@ -412,8 +432,12 @@ export function LibraryDrawer({
     };
   }, [onDropAt, onOpenCard, canPlace, setLibraryDrag]);
 
-  const countsByFacet = facetCounts(scopedItems, typeFilter, tagFilter, activeSectionFilter);
-  const facetFiltered = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);
+  // A card answers for its section's tags too, so a section tag is a lens target
+  // rather than decoration (ADR-0053 §6). The drawer and the canvas lens read
+  // the same rule; neither writes a placement, so membership cannot change.
+  const filterable = withSectionTags(scopedItems, workspace);
+  const countsByFacet = facetCounts(filterable, typeFilter, tagFilter, activeSectionFilter);
+  const facetFiltered = filterItems(filterable, typeFilter, tagFilter, activeSectionFilter);
   // A query replaces the facet-filtered list but never bypasses it: facets keep
   // narrowing the ranked hits, and the ranking order wins.
   const itemsById = new Map(scopedItems.map((item) => [item.id, item]));
@@ -877,8 +901,8 @@ export function LibraryDrawer({
       <div
         className="library-facets flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
         data-testid="library-facets"
-        // Boards carry no types, tags or sections (ADR-0040), so the facet row
-        // would be a row of zeroes.
+        // The facet row filters cards. A board row is not a card, so the row
+        // would be a row of zeroes here even though boards now carry tags.
         style={tab === "boards" ? { display: "none" } : undefined}
       >
         {types.map((type) => {

@@ -8,6 +8,7 @@ import { Mention } from "./Mention";
 import { PropertyBlock } from "./PropertyBlock";
 import { PasteImages } from "./pasteImages";
 import { SlashCommands } from "./SlashCommands";
+import { TourStep } from "./TourStep";
 
 export interface CardBodySchemaOptions {
   /** Card that owns the body; mentions and property blocks resolve against it. */
@@ -55,6 +56,9 @@ export function cardBodySchemaExtensions({
       cardId,
       openPanel: (id: string) => openPanel?.(id),
     }),
+    // A tour step is a block in the tutorial's body, so the card that owns the
+    // body is what "present from this step" plays (ADR-0054).
+    TourStep.configure({ cardId }),
     // An empty body still reads as a place to write, unless the reader has
     // no way to write there. The decoration is render-only: it never
     // touches the CRDT and leaves carets alone.

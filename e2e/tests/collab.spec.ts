@@ -90,7 +90,9 @@ test("deletes the selected note with the keyboard", async ({ page }) => {
   await created.click({ position: { x: 40, y: 14 } });
   await page.keyboard.press("Delete");
   // Delete removes the placement, not the card; the inspector keeps showing it.
-  await expect(page.locator("[data-node-id]")).toHaveCount(2);
+  // Count cards, not everything that carries a node id: a card's connector layer
+  // carries one too, so `[data-node-id]` doubles the count.
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   await expect(page.getByTestId("card-inspector")).toContainText("In the inbox");
 });
 
@@ -201,7 +203,9 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   if (!box) throw new Error("card not visible");
 
   // Clicking a connector reveals the grab handle (dragging the dot is reserved
-  // for making connections).
+  // for making connections). Dots only show while the card is hovered or
+  // selected, so the pointer has to come to the card first.
+  await card.hover();
   await connectors.first().locator(".connector-dot").click();
   const grab = card.locator('[data-testid="connector-grab"]');
   await expect(grab).toHaveCount(1);
@@ -226,6 +230,7 @@ test("manages connectors: add, magnetize, reposition, delete", async ({ page }) 
   await expect(card.locator('[data-testid="connector"][data-anchored="false"]')).toHaveCount(0);
 
   // Right-click offers reposition and delete (target the dot itself).
+  await card.hover();
   await connectors.nth(2).locator('[data-testid="connector-dot"]').click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Reposition Connector" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Delete connector" }).click();
@@ -299,6 +304,9 @@ test("the link follows a connector while it is being moved", async ({ page }) =>
   if (!before) throw new Error("edge missing");
 
   const card = page.locator('[data-testid="node-card"]').first();
+  // Dots are a hover/selection affordance: hovering the card brings them to hand,
+  // and only then can one be clicked to select it.
+  await card.hover();
   await card.locator('[data-testid="connector-dot"]').nth(1).click();
   const grab = await card.locator('[data-testid="connector-grab"]').boundingBox();
   const cardBox = await card.boundingBox();
@@ -329,6 +337,32 @@ async function edgeMidpoint(page: Page): Promise<{ x: number; y: number }> {
     return { x: screen.x, y: screen.y };
   });
   if (!point) throw new Error("edge missing");
+  return point;
+}
+
+/**
+ * A point that genuinely belongs to the link, in screen pixels. Sampling the
+ * stroke matters because links now paint *below* the cards: a link crossing a
+ * card is only pressable along the parts that are not covered, and the middle of
+ * its bounding box is rarely on the curve at all.
+ */
+async function linkPoint(page: Page): Promise<{ x: number; y: number }> {
+  const point = await page.evaluate(() => {
+    const path = document.querySelector<SVGPathElement>("path.react-flow__edge-path");
+    if (!path) return null;
+    const matrix = path.getScreenCTM();
+    const total = path.getTotalLength();
+    for (let step = 1; step < 40; step += 1) {
+      const local = path.getPointAtLength((total * step) / 40);
+      const screen = matrix ? new DOMPoint(local.x, local.y).matrixTransform(matrix) : local;
+      const hit = document.elementFromPoint(screen.x, screen.y);
+      if (hit?.classList.contains("react-flow__edge-interaction")) {
+        return { x: screen.x, y: screen.y };
+      }
+    }
+    return null;
+  });
+  if (!point) throw new Error("no exposed part of the link to press");
   return point;
 }
 
@@ -680,14 +714,14 @@ test("shows link selection and connector movement presence", async ({ browser })
   if (!before) throw new Error("edge missing on B");
 
   // A selects the link; B sees it highlighted in A's color.
-  const box = await pageA.locator(".react-flow__edge").first().boundingBox();
-  if (!box) throw new Error("edge not visible");
-  await pageA.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  const point = await linkPoint(pageA);
+  await pageA.mouse.click(point.x, point.y);
 
   await expect.poll(async () => (await edgeGeometry(pageB))?.stroke).not.toBe(before.stroke);
 
   // A drags a connector; B sees it as peer-moved.
   const cardA = pageA.locator('[data-testid="node-card"]').first();
+  await cardA.hover();
   await cardA.locator('[data-testid="connector-dot"]').nth(1).click();
   const grab = await cardA.locator('[data-testid="connector-grab"]').boundingBox();
   if (!grab) throw new Error("grab handle not visible");
@@ -733,6 +767,8 @@ test("a peer sees the connector and its link move before release", async ({ brow
   const card = pageA.locator('[data-testid="node-card"]').first();
   const cardBox = await card.boundingBox();
   if (!cardBox) throw new Error("card not visible");
+  // Dots are a hover affordance; the pointer has to be over the card first.
+  await card.hover();
   await card.locator('[data-testid="connector-dot"]').nth(1).click();
   const grab = await card.locator('[data-testid="connector-grab"]').boundingBox();
   if (!grab) throw new Error("grab handle not visible");
@@ -779,6 +815,7 @@ test("shows a peer's connector selection", async ({ browser }) => {
 
   // A clicks (without dragging) one of its connectors.
   const cardA = pageA.locator('[data-testid="node-card"]').first();
+  await cardA.hover();
   await cardA.locator('[data-testid="connector-dot"]').nth(1).click();
 
   await expect(peerConnector).toHaveCount(1);

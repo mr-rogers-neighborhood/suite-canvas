@@ -1,5 +1,6 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
+import type { LinkMode } from "../canvas/linkGesture";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 
@@ -165,6 +166,13 @@ interface UiState extends SessionCapabilities {
   outlineOpen: boolean;
   /** The command palette: one surface for navigation and actions from `⌘K`. */
   paletteOpen: boolean;
+  /**
+   * What a plain click on a connector starts. `connect` drags one link;
+   * `thread` keeps the chain going. Shift-click chains in either mode, which is
+   * the gesture people already know from other tools.
+   */
+  linkMode: LinkMode;
+  setLinkMode: (mode: LinkMode) => void;
   contextMenu: ContextMenuState | null;
   selectedConnector: SelectedConnector | null;
   /** Scope a canvas gesture asked the app-bar dialog to open on; consumed once. */
@@ -249,6 +257,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   expandedCardMeta: {},
   typeSettingsOpen: false,
   paletteOpen: false,
+  linkMode: "connect",
   libraryTypeFilter: [],
   libraryTagFilter: [],
   librarySectionFilter: [],
@@ -419,6 +428,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   openTypeSettings: () => set({ typeSettingsOpen: true }),
   setPaletteOpen: (paletteOpen) =>
     set((state) => (state.paletteOpen === paletteOpen ? state : { paletteOpen })),
+  setLinkMode: (linkMode) => set((state) => (state.linkMode === linkMode ? state : { linkMode })),
   closeTypeSettings: () => set({ typeSettingsOpen: false }),
   toggleLibraryType: (id) =>
     set((state) => ({

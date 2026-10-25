@@ -48,16 +48,11 @@ export interface NodeConnectorWiring {
 }
 
 /**
- * Thread mode reveals every node's connectors. W2 builds the toggle; until it
- * lands there is no store field to read, so this is the single place the rest of
- * the connector layer asks.
- *
- * W2: replace the body with
- * `useUiStore((state) => state.linkMode !== "connect")` (or a `threadMode`
- * boolean) once that field exists on `useUiStore`.
+ * Thread mode reveals every node's connectors, because the user is picking link
+ * targets. One reader, so every node kind and the section layer agree.
  */
 export function useThreadMode(): boolean {
-  return false;
+  return useUiStore((state) => state.linkMode === "thread");
 }
 
 /** The reveal inputs for sections and node faces, read from the one place. */

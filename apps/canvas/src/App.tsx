@@ -1,4 +1,4 @@
-import { sectionForCard, sectionMembership } from "@suite/graph";
+import { PORTAL_BOARD_FIELD_ID, sectionForCard, sectionMembership } from "@suite/graph";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
@@ -17,9 +17,8 @@ import { CardInspectorHost } from "./components/CardInspectorHost";
 import { CommandPaletteHost } from "./components/CommandPalette";
 import { sectionPath } from "./components/cardWhere";
 import type { Capability } from "./components/commandRegistry";
-import { Dialog } from "./components/Dialog";
 import { Dock } from "./components/Dock";
-import { LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
+import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { buildPaletteItems } from "./components/paletteProviders";
 import { SharePublishButton } from "./components/SharePublishButton";
@@ -177,6 +176,9 @@ function WorkspaceShell({
     return map;
   }, [peers]);
   const activateBoard = useUiStore((state) => state.activateBoard);
+  const openBoardIds = useUiStore((state) => state.openBoardIds);
+  const closeBoardTab = useUiStore((state) => state.closeBoardTab);
+  const focusCard = useUiStore((state) => state.focusCard);
   const goBackBoard = useUiStore((state) => state.goBackBoard);
   const boardHistory = useUiStore((state) => state.boardHistory);
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
@@ -197,7 +199,6 @@ function WorkspaceShell({
     libraryWasOpen.current = libraryOpen;
   }, [libraryOpen]);
 
-  const [boardToDelete, setBoardToDelete] = useState<string | null>(null);
   const stagger = useRef(0);
   const shareCardOpened = useRef(false);
   // A standalone build renders from IndexedDB alone: no socket, no presence and
@@ -677,6 +678,103 @@ function WorkspaceShell({
   const cardItems = allCards.map(toItem);
   const trashItems = trashed.map(toItem);
 
+  // The tab strip shows the open boards; the library shows every board.
+  const openBoards = useMemo(
+    () => snapshot.boards.filter((board) => openBoardIds.includes(board.id)),
+    [snapshot.boards, openBoardIds],
+  );
+
+  /**
+   * The library's Boards section. Placing a board adds a portal to the active
+   * board and leaves this list alone: boards are global, so a placed board is
+   * still one row here (unlike a card, which leaves the inbox).
+   */
+  const boardEntries = useMemo<LibraryBoard[]>(() => {
+    const liveCards = new Set(
+      snapshot.cards.filter((card) => !card.deletedAt).map((card) => card.id),
+    );
+    const placed = new Map<string, number>();
+    for (const placement of snapshot.placements) {
+      if (!liveCards.has(placement.cardId)) continue;
+      placed.set(placement.boardId, (placed.get(placement.boardId) ?? 0) + 1);
+    }
+    return snapshot.boards.map((board) => ({
+      id: board.id,
+      title: board.name,
+      open: openBoardIds.includes(board.id),
+      cardCount: placed.get(board.id) ?? 0,
+    }));
+  }, [snapshot.boards, snapshot.cards, snapshot.placements, openBoardIds]);
+
+  /**
+   * Locate pans to the object on the board in front of the reader. A card that
+   * is not placed here has nowhere to pan to, so the drawer is told so instead
+   * of the camera moving somewhere unrelated.
+   */
+  const locateCard = useCallback(
+    (cardId: string): boolean => {
+      if (!activeBoardId) return false;
+      const card = workspace.getCard(cardId);
+      if (!card || card.deletedAt) return false;
+      const onBoard = snapshot.placements.some(
+        (placement) => placement.boardId === activeBoardId && placement.cardId === cardId,
+      );
+      if (!onBoard) return false;
+      focusCard(cardId, activeBoardId);
+      return true;
+    },
+    [activeBoardId, snapshot.placements, workspace, focusCard],
+  );
+
+  /** A portal on this board is the nearest thing a board has to a position. */
+  const locateBoard = useCallback(
+    (boardId: string): boolean => {
+      if (activeBoardId && activeBoardId !== boardId) {
+        const portal = snapshot.placements
+          .filter((placement) => placement.boardId === activeBoardId)
+          .map((placement) => workspace.getCard(placement.cardId))
+          .find(
+            (card) =>
+              card !== undefined &&
+              !card.deletedAt &&
+              card.properties[PORTAL_BOARD_FIELD_ID] === boardId,
+          );
+        if (portal) {
+          focusCard(portal.id, activeBoardId);
+          return true;
+        }
+      }
+      // Without a portal here, opening the board is the only way to show it.
+      activateBoard(boardId);
+      return true;
+    },
+    [activeBoardId, snapshot.placements, workspace, focusCard, activateBoard],
+  );
+
+  /** Unplacing is per board: a card that also lives elsewhere stays there. */
+  const unplaceBoardCards = useCallback(
+    (boardId: string) => {
+      if (!canEditLayout) return;
+      for (const card of workspace.listBoardCards(boardId)) {
+        workspace.unplaceCard(boardId, card.id);
+      }
+    },
+    [canEditLayout, workspace],
+  );
+
+  /**
+   * Delete asks once, in the library, and then closes the tab: a deleted board
+   * must not leave a dangling id in the open set.
+   */
+  const deleteBoard = useCallback(
+    (boardId: string, cards: "keep" | "trash") => {
+      if (!canManageBoards) return;
+      workspace.deleteBoard(boardId, { cards });
+      closeBoardTab(boardId);
+    },
+    [canManageBoards, workspace, closeBoardTab],
+  );
+
   const boardEmpty = !!activeBoardId && workspace.listBoardCards(activeBoardId).length === 0;
   // A projection can arrive empty when the owner's cards left the board — the
   // link still works, so the viewer gets one honest line instead of the
@@ -773,7 +871,7 @@ function WorkspaceShell({
               </button>
             ) : null}
             <BoardTabs
-              boards={snapshot.boards}
+              boards={openBoards}
               activeBoardId={activeBoardId}
               onSelect={activateBoard}
               peersByBoard={peersByBoard}
@@ -784,14 +882,7 @@ function WorkspaceShell({
                 activateBoard(board.id);
               }}
               onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-              onDeleteRequest={(boardId) => {
-                // Nothing to lose on an empty board, so skip the dialog.
-                if (workspace.listBoardCards(boardId).length === 0) {
-                  workspace.deleteBoard(boardId);
-                  return;
-                }
-                setBoardToDelete(boardId);
-              }}
+              onClose={closeBoardTab}
             />
           </>
         ) : null}
@@ -863,10 +954,22 @@ function WorkspaceShell({
         <LibraryDrawer
           open={libraryOpen}
           tab={libraryTab}
-          counts={{ inbox: unplaced.length, cards: allCards.length, trash: trashed.length }}
+          counts={{
+            inbox: unplaced.length,
+            cards: allCards.length,
+            boards: snapshot.boards.length,
+            trash: trashed.length,
+          }}
           inbox={inboxItems}
           cards={cardItems}
           trash={trashItems}
+          boards={boardEntries}
+          onOpenBoard={activateBoard}
+          onPlaceBoard={createPortal}
+          onUnplaceBoardCards={unplaceBoardCards}
+          onDeleteBoard={deleteBoard}
+          onLocateCard={locateCard}
+          onLocateBoard={locateBoard}
           onTab={setLibraryTab}
           onClose={() => setLibraryOpen(false)}
           onPlace={placeCard}
@@ -899,34 +1002,6 @@ function WorkspaceShell({
       ) : null}
 
       <PerfOverlay />
-
-      {boardToDelete ? (
-        <Dialog
-          title="Delete board?"
-          description={`${workspace.getBoard(boardToDelete)?.name ?? "This board"} has ${
-            workspace.listBoardCards(boardToDelete).length
-          } card(s) on it. Cards can stay in the library, or move to the trash with the board.`}
-          onClose={() => setBoardToDelete(null)}
-          actions={[
-            {
-              label: "Keep cards",
-              primary: true,
-              onSelect: () => {
-                workspace.deleteBoard(boardToDelete, { cards: "keep" });
-                setBoardToDelete(null);
-              },
-            },
-            {
-              label: "Trash cards",
-              danger: true,
-              onSelect: () => {
-                workspace.deleteBoard(boardToDelete, { cards: "trash" });
-                setBoardToDelete(null);
-              },
-            },
-          ]}
-        />
-      ) : null}
     </div>
   );
 }

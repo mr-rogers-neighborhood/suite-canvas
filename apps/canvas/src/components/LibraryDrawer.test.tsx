@@ -1,11 +1,16 @@
 import type { WorkspaceDocument } from "@suite/graph";
-import { WorkspaceDocument as Document } from "@suite/graph";
+import { WorkspaceDocument as Document, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../store/useUiStore";
 import { Dock } from "./Dock";
-import { LibraryDrawer, type LibraryDrawerProps, type LibraryItem } from "./LibraryDrawer";
+import {
+  type LibraryBoard,
+  LibraryDrawer,
+  type LibraryDrawerProps,
+  type LibraryItem,
+} from "./LibraryDrawer";
 
 function addNode(parent: LoroMap, name: string): LoroMap {
   const children = parent.ensureMergeableList("children");
@@ -362,5 +367,184 @@ describe("Library shortcut", () => {
 
     expect(useUiStore.getState().paletteOpen).toBe(true);
     expect(useUiStore.getState().libraryOpen).toBe(false);
+  });
+});
+
+describe("LibraryDrawer boards", () => {
+  interface BoardFixture {
+    workspace: WorkspaceDocument;
+    first: { id: string; name: string };
+    second: { id: string; name: string };
+    entries: (open?: string[]) => LibraryBoard[];
+  }
+
+  /** Two named boards and a card on the first one. */
+  function boardFixture(): BoardFixture {
+    const workspace = new Document();
+    workspace.ensureDefaultTypes();
+    const first = workspace.ensureBoard();
+    workspace.renameBoard(first.id, "Research");
+    const second = workspace.createBoard({ name: "Drafts" });
+    workspace.createCard({ id: "c1", boardId: first.id, position: { x: 0, y: 0 } });
+    workspace.doc.commit({ origin: "test" });
+
+    return {
+      workspace,
+      first: { id: first.id, name: "Research" },
+      second: { id: second.id, name: "Drafts" },
+      entries: (open = [first.id]) =>
+        workspace.listBoards().map((board) => ({
+          id: board.id,
+          title: board.name,
+          open: open.includes(board.id),
+          cardCount: workspace.listBoardCards(board.id).length,
+        })),
+    };
+  }
+
+  const rowIds = (): Array<string | null> =>
+    screen.getAllByRole("listitem").map((row) => row.getAttribute("data-row-id"));
+
+  it("should list every board, open or closed", () => {
+    const { workspace, first, second, entries } = boardFixture();
+    renderDrawer(workspace, [], { tab: "boards", boards: entries([second.id]) });
+
+    expect(screen.getByTestId(`library-title-${first.id}`)).toHaveTextContent("Research");
+    expect(screen.getByTestId(`library-title-${second.id}`)).toHaveTextContent("Drafts");
+    expect(screen.getByTestId(`library-board-state-${first.id}`)).toHaveTextContent("Closed");
+    expect(screen.getByTestId(`library-board-state-${second.id}`)).toHaveTextContent("Open");
+  });
+
+  it("should place a board without moving or removing its row", () => {
+    const { workspace, first, second, entries } = boardFixture();
+    const view = renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: entries(),
+      activeBoardId: first.id,
+      onPlaceBoard: (boardId) => {
+        workspace.createPortalCard({
+          boardId: first.id,
+          targetBoardId: boardId,
+          position: { x: 0, y: 0 },
+        });
+      },
+    });
+
+    const before = rowIds();
+    fireEvent.click(screen.getByTestId(`library-board-place-${second.id}`));
+    view.rerender({ boards: entries() });
+
+    // A portal to the board exists on the active board...
+    const portal = workspace
+      .listBoardCards(first.id)
+      .find((card) => card.properties[PORTAL_BOARD_FIELD_ID] === second.id);
+    expect(portal).toBeDefined();
+    // ...and the board it points at keeps its place in the section.
+    expect(rowIds()).toEqual(before);
+    expect(screen.getByTestId(`library-title-${second.id}`)).toBeInTheDocument();
+  });
+
+  it("should unplace only this board's placements", () => {
+    const { workspace, first, second, entries } = boardFixture();
+    // The same card also lives on the second board.
+    workspace.placeCard(second.id, "c1", { x: 40, y: 40 });
+
+    renderDrawer(workspace, [], {
+      tab: "boards",
+      boards: entries(),
+      onUnplaceBoardCards: (boardId) => {
+        for (const card of workspace.listBoardCards(boardId)) {
+          workspace.unplaceCard(boardId, card.id);
+        }
+      },
+    });
+
+    fireEvent.click(screen.getByTestId(`library-board-unplace-${first.id}`));
+
+    expect(workspace.listCardPlacements("c1").map((placement) => placement.boardId)).toEqual([
+      second.id,
+    ]);
+    expect(workspace.getCard("c1")?.deletedAt ?? null).toBeNull();
+  });
+
+  it("should ask once and offer unplace or trash", () => {
+    const { workspace, first, entries } = boardFixture();
+    const onDeleteBoard = vi.fn();
+    renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
+
+    fireEvent.click(screen.getByTestId(`library-board-delete-${first.id}`));
+
+    expect(screen.getByTestId("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Delete board?")).toBeInTheDocument();
+    expect(onDeleteBoard).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unplace cards" }));
+    expect(onDeleteBoard).toHaveBeenCalledWith(first.id, "keep");
+    expect(screen.queryByTestId("dialog")).not.toBeInTheDocument();
+  });
+
+  it("should trash the board's cards when asked to", () => {
+    const { workspace, first, entries } = boardFixture();
+    const onDeleteBoard = vi.fn();
+    renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
+
+    fireEvent.click(screen.getByTestId(`library-board-delete-${first.id}`));
+    fireEvent.click(screen.getByRole("button", { name: "Trash cards" }));
+
+    expect(onDeleteBoard).toHaveBeenCalledWith(first.id, "trash");
+  });
+
+  it("should report a card that is not on the active board when locating it", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, {
+      tab: "cards",
+      activeBoardId: "another-board",
+      onLocateCard: () => false,
+    });
+
+    fireEvent.click(screen.getByTestId("library-locate-c1"));
+
+    expect(screen.getByTestId("library-locate-miss")).toHaveTextContent(
+      "\u201cMastering the timeline\u201d is not on this board.",
+    );
+  });
+
+  it("should pan to a card that is on the active board when locating it", () => {
+    const { workspace, items } = fixture();
+    const onLocateCard = vi.fn(() => true);
+    renderDrawer(workspace, items, { tab: "cards", onLocateCard });
+
+    fireEvent.click(screen.getByTestId("library-locate-c1"));
+
+    expect(onLocateCard).toHaveBeenCalledWith("c1");
+    expect(screen.queryByTestId("library-locate-miss")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The library is the only place a board is deleted, so its two choices are
+   * pinned to the document behaviour they promise. The trash scope is this
+   * board's own cards — never a card that still lives somewhere else.
+   */
+  it("should trash only the cards that were on the deleted board", () => {
+    const { workspace, first, second } = boardFixture();
+    const shared = workspace.createCard({ boardId: second.id });
+    workspace.placeCard(first.id, shared.id, { x: 10, y: 10 });
+    const elsewhere = workspace.createCard({ boardId: second.id });
+
+    workspace.deleteBoard(first.id, { cards: "trash" });
+
+    expect(typeof workspace.getCard("c1")?.deletedAt).toBe("number");
+    // Shared with another board by placement: it stays where it is.
+    expect(workspace.getCard(shared.id)?.deletedAt ?? null).toBeNull();
+    expect(workspace.getCard(elsewhere.id)?.deletedAt ?? null).toBeNull();
+  });
+
+  it("should keep every card when the delete asks to unplace them", () => {
+    const { workspace, first } = boardFixture();
+
+    workspace.deleteBoard(first.id, { cards: "keep" });
+
+    expect(workspace.getCard("c1")?.deletedAt ?? null).toBeNull();
+    expect(workspace.listCardPlacements("c1")).toHaveLength(0);
   });
 });

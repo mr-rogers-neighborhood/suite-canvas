@@ -7,10 +7,15 @@ const workspaceUrl = (name: string) =>
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
-async function createBoard(page: Page): Promise<void> {
+async function createBoard(page: Page): Promise<string> {
   const before = await page.locator('[role="tab"][data-testid^="board-tab"]').count();
   await page.getByTestId("board-create").click();
   await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(before + 1);
+  const testId = await page
+    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .getAttribute("data-testid");
+  if (!testId) throw new Error("the new board has no tab");
+  return testId.replace("board-tab-", "");
 }
 
 async function createNoteFromDock(page: Page): Promise<void> {
@@ -58,7 +63,7 @@ async function addTextField(page: Page, name: string): Promise<void> {
   await expect(page.getByTestId("type-settings")).toHaveCount(0);
 }
 
-async function openLibrary(page: Page, tab: "inbox" | "cards" | "trash"): Promise<void> {
+async function openLibrary(page: Page, tab: "inbox" | "cards" | "boards" | "trash"): Promise<void> {
   if ((await page.getByTestId("library-drawer").count()) === 0) {
     await page.getByTestId("dock-library").click();
   }
@@ -178,23 +183,27 @@ test("holds a card out of the drawer and drops it on the board", async ({ page }
   expect(Math.abs(placed.x + placed.width / 2 - 640)).toBeLessThan(60);
 });
 
-test("deletes an empty board without asking", async ({ page }) => {
+test("deletes a board from the library and asks once", async ({ page }) => {
   await page.goto(workspaceUrl("board-delete-empty"));
   await expect(cards(page)).toHaveCount(2);
-  await createBoard(page);
+  const boardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
-  // Nothing to lose, so no confirmation dialog.
-  await page.getByLabel(/^Delete /).click();
-  await expect(page.getByTestId("dialog")).toHaveCount(0);
+  // Deletion lives in the library now; the tab strip only closes tabs.
+  await openLibrary(page, "boards");
+  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await expect(page.getByTestId("dialog")).toBeVisible();
+  await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
+
   await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.getByTestId(`library-item-${boardId}`)).toHaveCount(0);
   await expect(cards(page)).toHaveCount(2);
 });
 
 test("asks before deleting a board with cards and keeps them in the library", async ({ page }) => {
   await page.goto(workspaceUrl("board-delete"));
   await expect(cards(page)).toHaveCount(2);
-  await createBoard(page);
+  const boardId = await createBoard(page);
   await expect(cards(page)).toHaveCount(0);
 
   // Put a card on the board so the delete has consequences.
@@ -206,9 +215,10 @@ test("asks before deleting a board with cards and keeps them in the library", as
     .click();
   await expect(cards(page)).toHaveCount(1);
 
-  await page.getByLabel(/^Delete /).click();
+  await page.getByTestId("library-tab-boards").click();
+  await page.getByTestId(`library-board-delete-${boardId}`).click();
   await expect(page.getByTestId("dialog")).toBeVisible();
-  await page.getByRole("button", { name: "Keep cards" }).click();
+  await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
   await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
   // The card survives; it is simply no longer on the deleted board.

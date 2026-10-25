@@ -10,9 +10,14 @@ const workspaceUrl = (name: string) =>
 const portalNodes = (page: Page) => page.getByTestId("portal-node");
 const boardTabs = (page: Page) => page.locator('[role="tab"]');
 
-async function createBoard(page: Page): Promise<void> {
+async function createBoard(page: Page): Promise<string> {
   await page.getByTestId("board-create").click();
   await expect(boardTabs(page)).toHaveCount(2);
+  const testId = await page
+    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .getAttribute("data-testid");
+  if (!testId) throw new Error("the new board has no tab");
+  return testId.replace("board-tab-", "");
 }
 
 async function createPortal(page: Page, target: string): Promise<void> {
@@ -145,13 +150,18 @@ test("marks a portal unavailable instead of breaking when its board is deleted",
   page,
 }) => {
   await page.goto(workspaceUrl("missing"));
-  await createBoard(page);
+  const boardId = await createBoard(page);
   await page.getByRole("tab", { name: "Board 1" }).click();
   await createPortal(page, "Board 2");
 
-  await page.getByRole("tab", { name: "Board 2" }).click();
-  await page.getByRole("button", { name: "Delete Board 2" }).click();
-  await expect(boardTabs(page)).toHaveCount(1);
+  // A tab only ever closes now; deleting a board asks once, in the library.
+  await page.getByTestId("dock-library").click();
+  await page.getByTestId("library-tab-boards").click();
+  await page.getByTestId(`library-board-delete-${boardId}`).click();
+  await expect(page.getByTestId("dialog")).toBeVisible();
+  await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
+
+  await expect(page.getByRole("tab", { name: "Board 1" })).toHaveAttribute("aria-selected", "true");
   await expect(portalNodes(page)).toHaveAttribute("data-unavailable", "true");
   await expect(portalNodes(page)).toContainText("Unavailable board");
 });

@@ -16,7 +16,7 @@ const meta = {
     onSelect: () => {},
     onCreate: () => {},
     onRename: () => {},
-    onDeleteRequest: () => {},
+    onClose: () => {},
   },
   tags: ["autodocs"],
 } satisfies Meta<typeof BoardTabs>;

@@ -20,7 +20,12 @@ export interface SelectedConnector {
   connectorId: string;
 }
 
-export type LibraryTab = "inbox" | "cards" | "trash";
+export type LibraryTab = "inbox" | "cards" | "boards" | "trash";
+
+/** Adds a board to the tab strip unless it is already there. */
+function withOpenBoard(openBoardIds: string[], boardId: string): string[] {
+  return openBoardIds.includes(boardId) ? openBoardIds : [...openBoardIds, boardId];
+}
 
 /**
  * Which editor of one card holds the keystrokes; only one may be editable at a
@@ -93,6 +98,12 @@ const nextNavigationNonce = () => {
 interface UiState extends SessionCapabilities {
   /** Board currently on screen; null until the shell resolves one. */
   activeBoardId: string | null;
+  /**
+   * Boards with an open tab, in the order they were opened. A tab is a view of
+   * a board, not a claim on it: closing one leaves the board in the library and
+   * never writes the document.
+   */
+  openBoardIds: string[];
   /** Viewport last seen on each board, so a return lands where it left. */
   boardViewports: Record<string, ViewportState>;
   /** Boards visited from the current one, newest last. */
@@ -181,6 +192,11 @@ interface UiState extends SessionCapabilities {
   clearShareRequest: () => void;
   setActiveBoardId: (id: string | null) => void;
   /**
+   * Drops a board's tab. Nothing else happens: no prompt, no write, no
+   * unplace — the board stays in the library and its cards stay where they are.
+   */
+  closeBoardTab: (boardId: string) => void;
+  /**
    * Switches boards and remembers where the user came from. Tab clicks, the
    * library's "go to board" and a finished portal transition all use it, so a
    * back stack exists for every path into another board.
@@ -234,6 +250,7 @@ interface UiState extends SessionCapabilities {
 export const useUiStore = create<UiState>((set, get) => ({
   ...sessionCapabilities(getSession()),
   activeBoardId: null,
+  openBoardIds: [],
   boardViewports: {},
   boardHistory: [],
   viewportRequest: null,
@@ -271,10 +288,47 @@ export const useUiStore = create<UiState>((set, get) => ({
   shareRequest: null,
   requestShare: (shareRequest) => set({ shareRequest }),
   clearShareRequest: () => set({ shareRequest: null }),
-  setActiveBoardId: (activeBoardId) => set({ activeBoardId }),
+  setActiveBoardId: (activeBoardId) =>
+    set((state) => ({
+      activeBoardId,
+      openBoardIds: activeBoardId
+        ? withOpenBoard(state.openBoardIds, activeBoardId)
+        : state.openBoardIds,
+    })),
+  closeBoardTab: (boardId) =>
+    set((state) => {
+      const openBoardIds = state.openBoardIds.filter((id) => id !== boardId);
+      if (state.activeBoardId !== boardId) return { openBoardIds };
+      // The closed tab was the one on screen, so the last remaining tab takes
+      // over. With none left the shell resolves a board again on the next pass.
+      const next = openBoardIds.at(-1) ?? null;
+      return {
+        openBoardIds,
+        activeBoardId: next,
+        ...(next
+          ? {
+              viewportRequest: {
+                boardId: next,
+                viewport: state.boardViewports[next] ?? null,
+                nonce: nextNavigationNonce(),
+              },
+            }
+          : {}),
+        editingNodeId: null,
+        editingSectionId: null,
+        selectedSectionId: null,
+        selectedNodeIds: [],
+        selectedEdgeIds: [],
+        selectedConnector: null,
+        cardFocusId: null,
+      };
+    }),
   activateBoard: (boardId, options = {}) =>
     set((state) => {
-      if (state.activeBoardId === boardId) return state;
+      if (state.activeBoardId === boardId) {
+        const openBoardIds = withOpenBoard(state.openBoardIds, boardId);
+        return openBoardIds === state.openBoardIds ? state : { openBoardIds };
+      }
       const from = state.activeBoardId;
       const leaving = from
         ? [
@@ -289,6 +343,9 @@ export const useUiStore = create<UiState>((set, get) => ({
         options.viewport !== undefined ? options.viewport : (state.boardViewports[boardId] ?? null);
       return {
         activeBoardId: boardId,
+        // A switcher, a portal and the library all land here, so every one of
+        // them gives the board a tab.
+        openBoardIds: withOpenBoard(state.openBoardIds, boardId),
         // Bounded: a long portal chain should not grow the session forever.
         boardHistory: [...state.boardHistory, ...leaving].slice(-24),
         viewportRequest: { boardId, viewport: request, nonce: nextNavigationNonce() },
@@ -310,6 +367,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (!previous) return false;
     set({
       activeBoardId: previous.boardId,
+      openBoardIds: withOpenBoard(state.openBoardIds, previous.boardId),
       boardHistory: state.boardHistory.slice(0, -1),
       viewportRequest: {
         boardId: previous.boardId,

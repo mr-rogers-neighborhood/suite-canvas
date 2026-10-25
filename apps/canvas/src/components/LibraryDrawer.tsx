@@ -14,6 +14,7 @@ import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrar
 import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
+import { Dialog } from "./Dialog";
 import {
   facetCounts,
   filterItems,
@@ -34,13 +35,47 @@ export interface LibraryItem {
   properties: Record<string, PropertyValue>;
 }
 
+/**
+ * A board in the library's Boards section. A board has a name and placements —
+ * no types, tags or fields (ADR-0040), so it is its own row shape rather than a
+ * `LibraryItem` with invented values.
+ */
+export interface LibraryBoard {
+  id: string;
+  title: string;
+  /** Whether the board currently has a tab; a closed board is still listed. */
+  open: boolean;
+  /** Cards placed on this board right now. */
+  cardCount: number;
+}
+
+/** What a drawer row can be. Boards are global: they never leave this list. */
+export type LibraryEntry =
+  | { kind: "card"; card: LibraryItem }
+  | { kind: "board"; board: LibraryBoard };
+
 export interface LibraryDrawerProps {
   open: boolean;
   tab: LibraryTab;
-  counts: Record<LibraryTab, number>;
+  /** `Partial` so a caller (or a story) that predates a tab still type-checks. */
+  counts: Partial<Record<LibraryTab, number>>;
   inbox: LibraryItem[];
   cards: LibraryItem[];
   trash: LibraryItem[];
+  /** Every board in the workspace, open or closed. */
+  boards?: LibraryBoard[];
+  /** Switches to the board, giving it a tab. */
+  onOpenBoard?: (boardId: string) => void;
+  /** Creates a portal card to the board on the active board; the row stays put. */
+  onPlaceBoard?: (boardId: string) => void;
+  /** Removes this board's placements only; a card on another board stays there. */
+  onUnplaceBoardCards?: (boardId: string) => void;
+  /** Asks once, here: unplace the cards or trash them with the board. */
+  onDeleteBoard?: (boardId: string, cards: "keep" | "trash") => void;
+  /** Pans to a card on the active board; false when it is not on this one. */
+  onLocateCard?: (cardId: string) => boolean;
+  /** Pans to this board's portal on the active board, else opens the board. */
+  onLocateBoard?: (boardId: string) => boolean;
   onTab: (tab: LibraryTab) => void;
   onClose: () => void;
   onPlace: (cardId: string) => void;
@@ -83,6 +118,7 @@ export interface LibraryDrawerProps {
 const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "cards", label: "Cards" },
+  { id: "boards", label: "Boards" },
   { id: "trash", label: "Trash" },
 ];
 
@@ -119,6 +155,13 @@ export function LibraryDrawer({
   inbox,
   cards,
   trash,
+  boards = [],
+  onOpenBoard = () => {},
+  onPlaceBoard = () => {},
+  onUnplaceBoardCards = () => {},
+  onDeleteBoard = () => {},
+  onLocateCard = () => false,
+  onLocateBoard = () => false,
   onTab,
   onClose,
   onPlace,
@@ -159,6 +202,10 @@ export function LibraryDrawer({
   const activeView = views.find((view) => view.id === activeViewId);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
   const [activeResult, setActiveResult] = useState(0);
+  /** A Locate that found nothing says so instead of moving the camera. */
+  const [locateMiss, setLocateMiss] = useState<string | null>(null);
+  /** The board whose delete is being asked about; the only place a board is deleted. */
+  const [pendingDelete, setPendingDelete] = useState<LibraryBoard | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
   const activeRow = useRef<HTMLLIElement | null>(null);
   const focusPending = useRef(false);
@@ -170,7 +217,7 @@ export function LibraryDrawer({
   } | null>(null);
 
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
-  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : trash;
+  const items = tab === "inbox" ? inbox : tab === "cards" ? cards : tab === "trash" ? trash : [];
   const scopedItems = boardScope
     ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
     : items;
@@ -183,6 +230,16 @@ export function LibraryDrawer({
     hits,
     ids: rankedIds,
   } = useLibrarySearch(workspace, scopedItems, initialQuery);
+
+  // Boards are a name and a placement count, so they are matched by title only:
+  // the card index has nothing to say about them.
+  const boardQuery = query.trim().toLowerCase();
+  const visibleBoards =
+    tab !== "boards"
+      ? []
+      : boardQuery.length === 0
+        ? boards
+        : boards.filter((board) => board.title.toLowerCase().includes(boardQuery));
 
   // The app bar offers "save current search"; it reads the live text through
   // the store rather than reaching into this component.
@@ -259,7 +316,11 @@ export function LibraryDrawer({
   }, [activeResult]);
 
   useEffect(() => {
-    if (!open) setHold(null);
+    if (!open) {
+      setHold(null);
+      setPendingDelete(null);
+      setLocateMiss(null);
+    }
   }, [open]);
 
   // Pointer-based hold: the row lifts into a ghost that follows the cursor, and
@@ -338,6 +399,22 @@ export function LibraryDrawer({
   const activeId = searching ? ordered[Math.min(activeResult, ordered.length - 1)]?.id : undefined;
 
   if (!open) return null;
+
+  const locateCard = (item: LibraryItem) => {
+    if (onLocateCard(item.id)) {
+      setLocateMiss(null);
+      return;
+    }
+    setLocateMiss(`\u201c${item.title}\u201d is not on this board.`);
+  };
+
+  const locateBoard = (board: LibraryBoard) => {
+    if (onLocateBoard(board.id)) {
+      setLocateMiss(null);
+      return;
+    }
+    setLocateMiss(`\u201c${board.title}\u201d has no portal on this board.`);
+  };
 
   const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (!searching || ordered.length === 0) return;
@@ -466,6 +543,14 @@ export function LibraryDrawer({
                 <button type="button" className="library-action" onClick={() => onPlace(item.id)}>
                   Place
                 </button>
+                <button
+                  type="button"
+                  className="library-action"
+                  data-testid={`library-locate-${item.id}`}
+                  onClick={() => locateCard(item)}
+                >
+                  Locate
+                </button>
                 {canManageTrash ? (
                   <button
                     type="button"
@@ -483,6 +568,84 @@ export function LibraryDrawer({
     );
   };
 
+  /**
+   * A board row. Boards are global: every action here reaches the board itself,
+   * and none of them removes it from this list (unlike a card leaving the inbox
+   * when it is placed).
+   */
+  const renderBoardRow = (board: LibraryBoard) => (
+    <li key={board.id} className="library-entry" data-row-id={board.id}>
+      <div
+        data-testid={`library-item-${board.id}`}
+        data-board-open={board.open ? "true" : "false"}
+        className="library-row"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12px]" data-testid={`library-title-${board.id}`}>
+            <Highlighted text={board.title} terms={searching ? terms : []} />
+          </p>
+          <p className="truncate text-[10px] text-[var(--ink-muted)]">
+            <span data-testid={`library-board-state-${board.id}`}>
+              {board.open ? "Open" : "Closed"}
+            </span>
+            {" \u00b7 "}
+            {board.cardCount} {board.cardCount === 1 ? "card" : "cards"}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="library-action"
+            data-testid={`library-board-open-${board.id}`}
+            onClick={() => onOpenBoard(board.id)}
+          >
+            Open
+          </button>
+          <button
+            type="button"
+            className="library-action"
+            data-testid={`library-board-place-${board.id}`}
+            onClick={() => onPlaceBoard(board.id)}
+          >
+            Place
+          </button>
+          <button
+            type="button"
+            className="library-action"
+            data-testid={`library-board-locate-${board.id}`}
+            onClick={() => locateBoard(board)}
+          >
+            Locate
+          </button>
+          <button
+            type="button"
+            className="library-action"
+            data-testid={`library-board-unplace-${board.id}`}
+            onClick={() => onUnplaceBoardCards(board.id)}
+          >
+            Unplace Cards
+          </button>
+          <button
+            type="button"
+            className="library-action text-red-600"
+            data-testid={`library-board-delete-${board.id}`}
+            onClick={() => setPendingDelete(board)}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+
+  const entries: LibraryEntry[] =
+    tab === "boards"
+      ? visibleBoards.map((board) => ({ kind: "board", board }))
+      : ordered.map((card) => ({ kind: "card", card }));
+  const renderEntry = (entry: LibraryEntry) =>
+    entry.kind === "board" ? renderBoardRow(entry.board) : renderRow(entry.card);
+
   const rows = grouped ? (
     <div className="space-y-2">
       {grouped.map((group) => (
@@ -495,12 +658,14 @@ export function LibraryDrawer({
             <span className="min-w-0 truncate">{group.title}</span>
             <span className="tabular-nums text-[var(--ink-muted)]">{group.items.length}</span>
           </h3>
-          <ul className="space-y-0.5">{group.items.map(renderRow)}</ul>
+          <ul className="space-y-0.5">
+            {group.items.map((item) => renderEntry({ kind: "card", card: item }))}
+          </ul>
         </section>
       ))}
     </div>
   ) : (
-    <ul className="space-y-0.5">{ordered.map(renderRow)}</ul>
+    <ul className="space-y-0.5">{entries.map(renderEntry)}</ul>
   );
 
   return createPortal(
@@ -525,7 +690,7 @@ export function LibraryDrawer({
               onClick={() => onTab(entry.id)}
             >
               {entry.label}
-              <span className="tabular-nums text-[var(--ink-muted)]">{counts[entry.id]}</span>
+              <span className="tabular-nums text-[var(--ink-muted)]">{counts[entry.id] ?? 0}</span>
             </button>
           ))}
         </div>
@@ -621,8 +786,8 @@ export function LibraryDrawer({
           type="search"
           value={query}
           data-testid="library-search"
-          aria-label="Search cards"
-          placeholder="Search titles and notes"
+          aria-label={tab === "boards" ? "Search boards" : "Search cards"}
+          placeholder={tab === "boards" ? "Search boards" : "Search titles and notes"}
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--ink-muted)]"
           onChange={(event) => updateQuery(event.target.value)}
@@ -644,6 +809,9 @@ export function LibraryDrawer({
       <div
         className="library-facets flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
         data-testid="library-facets"
+        // Boards carry no types, tags or sections (ADR-0040), so the facet row
+        // would be a row of zeroes.
+        style={tab === "boards" ? { display: "none" } : undefined}
       >
         {types.map((type) => {
           const count = countsByFacet.types.get(type.id) ?? 0;
@@ -747,28 +915,63 @@ export function LibraryDrawer({
         ) : null}
       </div>
 
+      {locateMiss ? (
+        <p
+          className="border-b border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)]"
+          data-testid="library-locate-miss"
+        >
+          {locateMiss}
+        </p>
+      ) : null}
+
       <div className="library-list overflow-y-auto p-1.5">
-        {ordered.length === 0 ? (
+        {entries.length === 0 ? (
           <p
             className="px-2 py-6 text-center text-[12px] text-[var(--ink-muted)]"
             {...(searching ? { "data-testid": "library-search-empty" } : {})}
           >
-            {searching
-              ? `No cards match \u201c${query.trim()}\u201d.`
-              : filtering
-                ? "No cards match these filters."
-                : tab === "inbox"
-                  ? "Nothing in the inbox. Cards you take off a board land here."
-                  : tab === "cards"
-                    ? boardScope
-                      ? "No cards on this board."
-                      : "No cards yet."
-                    : "Trash is empty."}
+            {tab === "boards"
+              ? searching
+                ? `No boards match \u201c${query.trim()}\u201d.`
+                : "No boards yet."
+              : searching
+                ? `No cards match \u201c${query.trim()}\u201d.`
+                : filtering
+                  ? "No cards match these filters."
+                  : tab === "inbox"
+                    ? "Nothing in the inbox. Cards you take off a board land here."
+                    : tab === "cards"
+                      ? boardScope
+                        ? "No cards on this board."
+                        : "No cards yet."
+                      : "Trash is empty."}
           </p>
         ) : (
           rows
         )}
       </div>
+
+      {pendingDelete ? (
+        <Dialog
+          title="Delete board?"
+          description={`${pendingDelete.title} has ${pendingDelete.cardCount} ${
+            pendingDelete.cardCount === 1 ? "card" : "cards"
+          } on it. Unplacing keeps the cards in the library; trashing sends this board's cards to the trash with it.`}
+          onClose={() => setPendingDelete(null)}
+          actions={[
+            {
+              label: "Unplace cards",
+              primary: true,
+              onSelect: () => onDeleteBoard(pendingDelete.id, "keep"),
+            },
+            {
+              label: "Trash cards",
+              danger: true,
+              onSelect: () => onDeleteBoard(pendingDelete.id, "trash"),
+            },
+          ]}
+        />
+      ) : null}
 
       {hold ? (
         <div

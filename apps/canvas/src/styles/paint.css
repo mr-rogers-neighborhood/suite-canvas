@@ -198,10 +198,23 @@
 
 /* A portal is a card: its root carries `node-card`, so the card's paint rules
    already apply. Only the portal's own frame needs naming. */
+/* A portal paints on an underlay for the same reason a card does: a silhouette
+   must never clip the miniature or the board name (ADR-0060 §5). */
 .portal-card.is-painted {
-  background: var(--paint-surface, var(--surface));
+  isolation: isolate;
+  background: transparent;
+  border: none;
   color: var(--paint-ink, var(--ink));
   opacity: var(--paint-opacity, 1);
+}
+
+.portal-card.is-painted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--paint-surface, var(--surface));
   border-top: var(--paint-border-top, 1px solid var(--hairline));
   border-right: var(--paint-border-right, 1px solid var(--hairline));
   border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
@@ -249,4 +262,105 @@
   .section-region.is-painted {
     animation: none;
   }
+}
+
+/* -------------------------------------------------------- the shell's paint */
+
+/*
+ * The shell owns no palette (ADR-0046 §1). The app bar, the tab strip, the dock
+ * and the drawer paint from the workspace's shell style — resolved with the
+ * named rules — and fall back to the very tokens each one already read. The
+ * root carries `data-shell-paint` only when that style names something, so an
+ * unstyled workspace renders exactly as it did before the rule layer existed.
+ *
+ * The variables are `--shell-paint-*`, not `--paint-*`: the shell root is an
+ * ancestor of the board, and a card must never inherit an edge it did not name.
+ */
+.app-canvas[data-shell-paint~="surface"] .app-bar {
+  background: var(--shell-paint-surface);
+}
+
+/* The two floating surfaces keep their translucency; the tint is derived from
+   the shell's surface rather than replaced by it. */
+.app-canvas[data-shell-paint~="surface"] .dock {
+  background: color-mix(in srgb, var(--shell-paint-surface) 78%, transparent);
+}
+
+.app-canvas[data-shell-paint~="surface"] .library-drawer {
+  background: color-mix(in srgb, var(--shell-paint-surface) 92%, transparent);
+}
+
+.app-canvas[data-shell-paint~="surface"] .board-tab[data-active="true"] {
+  background: color-mix(in srgb, var(--shell-paint-ink, var(--ink)) 8%, transparent);
+}
+
+.app-canvas[data-shell-paint~="ink"] .app-bar,
+.app-canvas[data-shell-paint~="ink"] .dock,
+.app-canvas[data-shell-paint~="ink"] .library-drawer {
+  color: var(--shell-paint-ink);
+}
+
+.app-canvas[data-shell-paint~="ink"] .board-tab {
+  color: color-mix(in srgb, var(--shell-paint-ink) 62%, transparent);
+}
+
+.app-canvas[data-shell-paint~="ink"] .board-tab[data-active="true"] {
+  color: var(--shell-paint-ink);
+}
+
+/* The app bar's edge is an inset shadow, not a border box, so it keeps its
+   hairline; the two floating surfaces take all four painted edges. */
+.app-canvas[data-shell-paint~="sides"] .dock,
+.app-canvas[data-shell-paint~="sides"] .library-drawer {
+  border-top: var(--shell-paint-border-top, 1px solid var(--hairline));
+  border-right: var(--shell-paint-border-right, 1px solid var(--hairline));
+  border-bottom: var(--shell-paint-border-bottom, 1px solid var(--hairline));
+  border-left: var(--shell-paint-border-left, 1px solid var(--hairline));
+}
+
+/* A silhouette on the shell reaches the elements that own a radius. */
+.app-canvas[data-shell-paint~="radius"] .dock,
+.app-canvas[data-shell-paint~="shape"] .dock {
+  border-radius: var(--shell-paint-radius, 9999px);
+}
+
+.app-canvas[data-shell-paint~="radius"] .library-drawer,
+.app-canvas[data-shell-paint~="shape"] .library-drawer {
+  border-radius: var(--shell-paint-radius, 14px);
+}
+
+.app-canvas[data-shell-paint~="radius"] .app-bar,
+.app-canvas[data-shell-paint~="shape"] .app-bar {
+  border-radius: var(--shell-paint-radius, 0);
+}
+
+/* ------------------------------------------------- content breakpoints */
+
+/*
+ * A surface stops drawing detail before the detail turns to mush (ADR-0051,
+ * "a bigger canvas becomes possible"). The board root carries `data-zoom-band`,
+ * which the shell writes from the camera's own viewport changes, so nothing here
+ * measures itself and no card re-renders to change band.
+ *
+ * far  — the title only: body and metadata leave, the title centres.
+ * mid  — title and a clamped body: three lines and a fade.
+ * near — untouched.
+ */
+.board-surface[data-zoom-band="far"] .node-card [data-testid="card-body"],
+.board-surface[data-zoom-band="far"] .node-card .card-meta,
+.board-surface[data-zoom-band="far"] .node-card .card-meta-toggle,
+.board-surface[data-zoom-band="far"] .node-card [data-testid="card-link-count"],
+.board-surface[data-zoom-band="mid"] .node-card .card-meta {
+  display: none;
+}
+
+.board-surface[data-zoom-band="far"] .node-card {
+  justify-content: center;
+}
+
+.board-surface[data-zoom-band="mid"] .node-card [data-testid="card-body"] {
+  max-height: calc(3 * 1.25rem);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent);
+  mask-image: linear-gradient(to bottom, #000 68%, transparent);
 }

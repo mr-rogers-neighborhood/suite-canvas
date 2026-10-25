@@ -321,10 +321,33 @@ body {
 /* A card with its own style (ADR-0051). Only the parts a style names are set,
    so an unstyled card never reaches these rules; the variables arrive inline
    from `surfacePaintVars`, which resolves roles to the token layer. */
+/*
+ * A painted card paints on an underlay, not on itself.
+ *
+ * `clip-path` clips every descendant, so clipping the card to a silhouette would
+ * slice the corners off its own title — a diamond that makes its text unreadable
+ * is worse than no diamond. The fill, the outline and the silhouette live on a
+ * pseudo-element behind the content instead, and the card's own box stays a plain
+ * transparent rectangle for layout, presses and hit-testing (ADR-0060 §5).
+ */
 .node-card.is-painted {
-  background: var(--paint-surface, var(--surface));
+  /* A -1 underlay only stays behind content inside this context. */
+  isolation: isolate;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   color: var(--paint-ink, var(--ink));
   opacity: var(--paint-opacity, 1);
+}
+
+.node-card.is-painted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Behind this card's content but inside its own stacking context. */
+  z-index: -1;
+  pointer-events: none;
+  background: var(--paint-surface, var(--surface));
   border-top: var(--paint-border-top, 1px solid var(--hairline));
   border-right: var(--paint-border-right, 1px solid var(--hairline));
   border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));

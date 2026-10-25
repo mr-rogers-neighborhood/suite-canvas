@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
+import { useNavigateTarget } from "../canvas/navigateTarget";
 import { isShareSession } from "../session/session";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CardInspector } from "./CardInspector";
 import { ContainerPanel } from "./ContainerPanel";
+import { LinkInspector } from "./LinkInspector";
 import { useCardPanelModel } from "./useCardPanelModel";
 import { useContainerPanelModel } from "./useContainerPanelModel";
+import { useLinkInspectorModel } from "./useLinkInspectorModel";
 
 /**
  * Binds the inspector drawer to the workspace. The model comes from
@@ -34,6 +37,13 @@ export function CardInspectorHost() {
   const focusSection = useUiStore((state) => state.focusSection);
 
   const containerTarget = useUiStore((state) => state.containerInspector);
+  const link = useLinkInspectorModel();
+  const selectedEdgeIds = useUiStore((state) => state.selectedEdgeIds);
+  const linkEndMove = useUiStore((state) => state.linkEndMove);
+  const startLinkEndMove = useUiStore((state) => state.startLinkEndMove);
+  const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
+  const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
+  const navigateTo = useNavigateTarget();
   // A container that vanished (deleted in another tab, trashed) closes the drawer
   // rather than leaving a panel describing something that is not there.
   const containerMissing = containerTarget !== null && container === null;
@@ -57,7 +67,38 @@ export function CardInspectorHost() {
     }
   }, [inspectorNodeId]);
 
-  // Containers first: they share the drawer, and only one of the two can be open.
+  // One link, one panel. A link is selected by the edge selection it already has,
+  // so the drawer needs no second open flag for it.
+  if (link && selectedEdgeIds.length === 1) {
+    const edgeId = link.edge.id;
+    return (
+      <LinkInspector
+        model={link}
+        onClose={() => setSelectedEdgeIds([])}
+        onNavigateEnd={(end) => {
+          navigateTo({ kind: end.kind, id: end.id });
+        }}
+        onMoveEnd={(end) => startLinkEndMove({ edgeId, end })}
+        movingEnd={linkEndMove?.edgeId === edgeId ? linkEndMove.end : null}
+        onCancelMoveEnd={cancelLinkEndMove}
+        onSetPath={(path) => workspace.setEdgePath(edgeId, path)}
+        onSetBidirectional={(bidirectional) =>
+          workspace.setEdgeBidirectional(edgeId, bidirectional)
+        }
+        onReverse={() => workspace.reverseEdge(edgeId)}
+        onDelete={() => {
+          workspace.removeEdge(edgeId);
+          setSelectedEdgeIds([]);
+        }}
+        onSetDescription={(description) =>
+          workspace.setEdgeLabel(edgeId, description.trim() ? description : null)
+        }
+        onSetLabelOffset={(offset) => workspace.setEdgeLabelOffset(edgeId, offset)}
+      />
+    );
+  }
+
+  // Containers next: they share the drawer, and only one of the three can be open.
   if (container) {
     return (
       <ContainerPanel

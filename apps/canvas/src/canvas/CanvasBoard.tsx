@@ -3076,6 +3076,9 @@ export function CanvasBoard() {
           }}
           resolveLinkTarget={resolveLinkTarget}
           onLinkCommit={onSectionLinkCommit}
+          onReconnectEnd={(edgeId, end, sectionId, connectorId) => {
+            workspace.reconnectEdge(edgeId, end, sectionId, connectorId, "section");
+          }}
         />
         <SectionLinkLayer
           links={projectedLinks.sections}

@@ -57,6 +57,13 @@ export interface SectionLayerProps {
   /** The section connector showing its dashed grab ring, if any. */
   selectedConnector?: { sectionId: string; connectorId: string } | null;
   onConnectorSelect?: (sectionId: string, connectorId: string) => void;
+  /** An armed link end landed on this dot; the canvas writes the reconnect. */
+  onReconnectEnd?: (
+    edgeId: string,
+    end: "source" | "target",
+    sectionId: string,
+    connectorId: string,
+  ) => void;
   /** Persisted once on release, so a drag never writes to the CRDT per frame. */
   onConnectorMoveEnd?: (sectionId: string, connectorId: string, position: Point) => void;
   onConnectorContextMenu?: (
@@ -106,6 +113,7 @@ export function SectionLayer({
   onContextMenu,
   selectedConnector = null,
   onConnectorSelect,
+  onReconnectEnd,
   onConnectorMoveEnd,
   onConnectorContextMenu,
   resolveLinkTarget,
@@ -287,6 +295,15 @@ export function SectionLayer({
     if (readOnly || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    // A link end was armed in the inspector: this dot is its new home, so the
+    // press re-attaches it instead of starting a link drag.
+    const moving = useUiStore.getState().linkEndMove;
+    if (moving) {
+      onReconnectEnd?.(moving.edgeId, moving.end, section.id, connector.id);
+      useUiStore.getState().cancelLinkEndMove();
+      onConnectorSelect?.(section.id, connector.id);
+      return;
+    }
     onConnectorSelect?.(section.id, connector.id);
 
     const rect = rectFor(section);

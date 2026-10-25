@@ -145,6 +145,14 @@ interface UiState extends SessionCapabilities {
    */
   libraryDrag: { cardId: string; screen: { x: number; y: number } } | null;
   setLibraryDrag: (drag: { cardId: string; screen: { x: number; y: number } } | null) => void;
+  /**
+   * A link end waiting for a connector to be clicked. The link inspector arms
+   * this so an end can be moved without dragging on the canvas; the next
+   * connector press re-attaches it and clears the field.
+   */
+  linkEndMove: { edgeId: string; end: "source" | "target" } | null;
+  startLinkEndMove: (move: { edgeId: string; end: "source" | "target" }) => void;
+  cancelLinkEndMove: () => void;
   /** Section selected on the active board, if any. */
   selectedSectionId: string | null;
   /**
@@ -296,6 +304,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   containerInspector: null,
   portalOpenRequest: null,
   libraryDrag: null,
+  linkEndMove: null,
   editingSectionId: null,
   editingNodeId: null,
   editingField: "body",
@@ -452,6 +461,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
   setLibraryDrag: (libraryDrag) => set({ libraryDrag }),
+  startLinkEndMove: (linkEndMove) => set({ linkEndMove }),
+  cancelLinkEndMove: () => set({ linkEndMove: null }),
   selectSection: (selectedSectionId) =>
     set({
       selectedSectionId,

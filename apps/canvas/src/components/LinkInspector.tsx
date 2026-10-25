@@ -1,0 +1,284 @@
+import type { GraphEdge } from "@suite/graph";
+import { useEffect, useState } from "react";
+import { describeDot, type LinkEndView, type LinkInspectorModel } from "./useLinkInspectorModel";
+
+export interface LinkInspectorProps {
+  model: LinkInspectorModel;
+  onClose: () => void;
+  /** Go to the thing at one end, switching boards if it lives elsewhere. */
+  onNavigateEnd: (end: LinkEndView) => void;
+  /** Arm a one-shot mode: the next connector clicked re-attaches this end. */
+  onMoveEnd: (end: "source" | "target") => void;
+  /** True while this end is waiting for a dot to be clicked on the canvas. */
+  movingEnd: "source" | "target" | null;
+  onCancelMoveEnd: () => void;
+  onSetPath: (path: GraphEdge["path"]) => void;
+  onSetBidirectional: (bidirectional: boolean) => void;
+  onReverse: () => void;
+  onDelete: () => void;
+  onSetDescription: (description: string) => void;
+  /** 0..1 along the line; `null` puts the label back at the middle. */
+  onSetLabelOffset: (offset: number | null) => void;
+}
+
+const PATHS: Array<{ value: GraphEdge["path"]; label: string }> = [
+  { value: "bezier", label: "Curved" },
+  { value: "straight", label: "Straight" },
+  { value: "step", label: "Step" },
+  { value: "smoothstep", label: "Smooth step" },
+];
+
+/**
+ * One link, inspected.
+ *
+ * A link is not an entity — it is an edge — so there is no name, type, tag or
+ * body here. The panel repeats what the canvas right-click menu offers (style,
+ * direction, delete, description) and adds the three things a line cannot say:
+ * which two connectors it joins, a description that can be slid along it, and a
+ * way to move one end to another connector without a drag.
+ */
+export function LinkInspector({
+  model,
+  onClose,
+  onNavigateEnd,
+  onMoveEnd,
+  movingEnd,
+  onCancelMoveEnd,
+  onSetPath,
+  onSetBidirectional,
+  onReverse,
+  onDelete,
+  onSetDescription,
+  onSetLabelOffset,
+}: LinkInspectorProps) {
+  const { canEdit, canManageStructure } = model;
+  return (
+    <aside
+      className="card-inspector link-inspector"
+      data-testid="link-inspector"
+      aria-label="Link info"
+    >
+      <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <p
+            className="truncate text-[13px] font-semibold text-[var(--ink)]"
+            data-testid="link-title"
+          >
+            {model.source.title} {"\u2192"} {model.target.title}
+          </p>
+          <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">
+            Link{model.bidirectional ? " \u00b7 two-way" : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label="Close"
+          data-testid="link-close"
+          className="rounded px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={onClose}
+        >
+          {"\u00d7"}
+        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">
+        {/* The two ends: what they are, which dot holds the link, and a way there. */}
+        {(["source", "target"] as const).map((end) => {
+          const view = model[end];
+          const moving = movingEnd === end;
+          return (
+            <section key={end} className="mb-3" data-testid={`link-end-${end}`}>
+              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+                {end === "source" ? "From" : "To"}
+              </h3>
+              <div className="mt-1 flex items-start gap-1.5">
+                <span aria-hidden="true" className="leading-5 text-[var(--ink-muted)]">
+                  {view.glyph}
+                </span>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  title={view.title}
+                  data-testid={`link-end-${end}-open`}
+                  onClick={() => onNavigateEnd(view)}
+                >
+                  <span className="block truncate text-[12px] text-[var(--ink)]">{view.title}</span>
+                  <span className="block truncate text-[11px] text-[var(--ink-muted)]">
+                    {describeDot(view)}
+                  </span>
+                </button>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded px-1 text-[10px] leading-5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                    data-testid={`link-end-${end}-move`}
+                    title="Move this end to another connector"
+                    aria-pressed={moving}
+                    onClick={() => (moving ? onCancelMoveEnd() : onMoveEnd(end))}
+                  >
+                    {moving ? "Cancel" : "Move"}
+                  </button>
+                ) : null}
+              </div>
+              {moving ? (
+                <p
+                  className="mt-1 text-[11px] text-[var(--ink-muted)]"
+                  data-testid="link-move-hint"
+                >
+                  Click a connector on the canvas to attach this end there.
+                </p>
+              ) : null}
+            </section>
+          );
+        })}
+
+        <section className="mt-3">
+          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">Style</h3>
+          <div className="mt-1 flex flex-wrap gap-1" data-testid="link-paths">
+            {PATHS.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                className="library-action"
+                aria-pressed={model.path === entry.value}
+                disabled={!canEdit}
+                data-testid={`link-path-${entry.value}`}
+                onClick={() => onSetPath(entry.value)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-3">
+          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+            Direction
+          </h3>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="library-action"
+              aria-pressed={model.bidirectional}
+              disabled={!canEdit}
+              data-testid="link-bidirectional"
+              onClick={() => onSetBidirectional(!model.bidirectional)}
+            >
+              {model.bidirectional ? "Two-way" : "One-way"}
+            </button>
+            <button
+              type="button"
+              className="library-action"
+              disabled={!canEdit}
+              data-testid="link-reverse"
+              onClick={onReverse}
+            >
+              Reverse
+            </button>
+          </div>
+        </section>
+
+        <section className="mt-3">
+          <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
+            Description
+          </h3>
+          <DescriptionField
+            value={model.description}
+            disabled={!canEdit}
+            onCommit={onSetDescription}
+          />
+          {/* The label's home along the line. The canvas gesture writes the same
+              value, so the two can never disagree. */}
+          <label className="mt-2 block text-[11px] text-[var(--ink-muted)]" htmlFor="link-offset">
+            Position along the line
+          </label>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <input
+              id="link-offset"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={model.labelOffset}
+              disabled={!canEdit || model.description.length === 0}
+              data-testid="link-offset"
+              className="min-w-0 flex-1"
+              onChange={(event) => onSetLabelOffset(Number(event.target.value))}
+            />
+            <button
+              type="button"
+              className="shrink-0 rounded px-1 text-[10px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+              data-testid="link-offset-reset"
+              disabled={!canEdit}
+              onClick={() => onSetLabelOffset(null)}
+            >
+              Reset
+            </button>
+          </div>
+        </section>
+
+        <section className="mt-3">
+          <button
+            type="button"
+            className="w-full rounded px-1.5 py-1 text-left text-[12px] text-red-600 hover:bg-red-500/10 disabled:opacity-40 dark:text-red-400"
+            data-testid="link-delete"
+            disabled={!canManageStructure}
+            onClick={onDelete}
+          >
+            Delete link
+          </button>
+        </section>
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * The description, edited in place. A panel is where someone is already reading
+ * the link, so sending them to the canvas to type would be a detour; the canvas
+ * inline editor stays available for the gesture-first path.
+ */
+function DescriptionField({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: string;
+  disabled: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  // A peer's edit, or a different link, replaces the draft rather than being
+  // silently overwritten by whatever this field was holding.
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (draft === value) return;
+    onCommit(draft);
+  };
+
+  return (
+    <div className="mt-1 flex items-center gap-1">
+      <input
+        className="min-w-0 flex-1 rounded border border-[var(--hairline)] bg-transparent px-1.5 py-1 text-[12px] text-[var(--ink)] disabled:opacity-60"
+        data-testid="link-description"
+        aria-label="Link description"
+        placeholder="Describe this link…"
+        value={draft}
+        disabled={disabled}
+        maxLength={160}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(value);
+          }
+        }}
+      />
+    </div>
+  );
+}

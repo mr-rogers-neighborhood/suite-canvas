@@ -68,8 +68,11 @@ export function useConnectorRevealState(): {
 } {
   const threadMode = useThreadMode();
   const draftActive = useLinkDraftStore((state) => state.draftActive);
-  const armed = useLinkThreadStore((state) => state.armed !== null);
-  return { threadMode, draftActive, armed };
+  const threadArmed = useLinkThreadStore((state) => state.armed !== null);
+  // Moving a link end is the same problem as arming a thread: every dot is a
+  // candidate, so every dot has to be on screen.
+  const movingEnd = useUiStore((state) => state.linkEndMove !== null);
+  return { threadMode, draftActive, armed: threadArmed || movingEnd };
 }
 
 /**
@@ -128,6 +131,8 @@ export function useNodeConnectorWiring(
 
   const armThread = useLinkThreadStore((state) => state.arm);
   const linkMode = useUiStore((state) => state.linkMode);
+  const linkEndMove = useUiStore((state) => state.linkEndMove);
+  const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
 
   /**
    * A click selects one connector, unless it continues a thread. Thread mode, or
@@ -138,6 +143,16 @@ export function useNodeConnectorWiring(
     (connectorId: string, event?: React.MouseEvent) => {
       if (!nodeId) return;
       const clicked = { kind: "card" as const, id: nodeId, connectorId };
+
+      // A link end was armed for moving: this press is the new home for it, not a
+      // thread step and not a plain selection.
+      if (linkEndMove) {
+        workspace.reconnectEdge(linkEndMove.edgeId, linkEndMove.end, nodeId, connectorId, "card");
+        cancelLinkEndMove();
+        armThread(null);
+        setSelectedConnector({ nodeId, connectorId });
+        return;
+      }
 
       // An armed thread keeps chaining on plain clicks: Shift starts a chain,
       // and the clicks after it should not each need the modifier.
@@ -166,7 +181,16 @@ export function useNodeConnectorWiring(
         step.armed ? { nodeId: step.armed.id, connectorId: step.armed.connectorId } : null,
       );
     },
-    [nodeId, boardId, linkMode, armThread, setSelectedConnector, workspace],
+    [
+      nodeId,
+      boardId,
+      linkMode,
+      armThread,
+      setSelectedConnector,
+      workspace,
+      linkEndMove,
+      cancelLinkEndMove,
+    ],
   );
 
   const onMoveStart = useCallback(
@@ -219,7 +243,9 @@ export function useNodeConnectorWiring(
     connectors,
     threadMode,
     draftActive,
-    armed: threadArmed,
+    // Moving a link end makes every dot a candidate: reveal them all, exactly as
+    // an armed thread does, or there is nothing to aim at.
+    armed: threadArmed || linkEndMove !== null,
     peerActive,
     color,
     selectedConnectorId:

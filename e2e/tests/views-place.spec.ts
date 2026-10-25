@@ -33,7 +33,7 @@ async function fitBoard(page: Page): Promise<void> {
   await settleViewport(page);
 }
 
-test("a saved view's result places as a run, in the view's own order", async ({ page }) => {
+test("a saved view's result becomes a held run, in the view's own order", async ({ page }) => {
   await page.goto(workspaceUrl("place"));
   await expect(cards(page)).toHaveCount(2);
   await removeAllFromBoard(page);
@@ -52,13 +52,21 @@ test("a saved view's result places as a run, in the view's own order", async ({ 
   await expect(viewsButton(page)).toContainText("Everything");
 
   // Thread mode, then place the view's cards. The query is read on the click, so
-  // the run follows the view rather than a list captured when it was saved.
+  // the run follows the view rather than a list captured when it was saved — and a
+  // thread is held, so the two cards go down under the cursor one at a time.
   await page.getByTestId("link-mode-toggle").click();
   await expect(page.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "thread");
 
   await viewsButton(page).click();
   await expect(page.getByTestId("views-menu")).toBeVisible();
   await page.locator('[data-testid^="views-place-"]').first().click();
+  await expect(page.getByTestId("held-stack-count")).toHaveText("2 left");
+
+  const board = await page.getByTestId("canvas-board").boundingBox();
+  if (!board) throw new Error("board not visible");
+  await page.mouse.click(board.x + board.width / 2 - 160, board.y + board.height / 2 - 60);
+  await expect(page.getByTestId("held-stack-count")).toHaveText("1 left");
+  await page.mouse.click(board.x + board.width / 2 + 160, board.y + board.height / 2 - 60);
 
   await fitBoard(page);
   await expect(cards(page)).toHaveCount(2);

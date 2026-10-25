@@ -147,6 +147,7 @@ export function useNodeConnectorWiring(
       }
 
       const step = stepThread(useLinkThreadStore.getState().armed, clicked);
+      const by = linkMode === "thread" ? "mode" : "shift";
       if (step.link && boardId) {
         workspace.addEdge({
           boardId,
@@ -158,7 +159,7 @@ export function useNodeConnectorWiring(
           ...(step.link.to.kind === "card" ? { targetConnector: step.link.to.connectorId } : {}),
         });
       }
-      armThread(step.armed);
+      armThread(step.armed, by);
       setSelectedConnector(
         step.armed ? { nodeId: step.armed.id, connectorId: step.armed.connectorId } : null,
       );

@@ -46,7 +46,13 @@ import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import { LinkModeControl } from "./LinkModeControl";
-import { endpointAtPoint, type LinkAnchor, type LinkScene, linkAnchors } from "./linkGeometry";
+import {
+  endpointAnchor,
+  endpointAtPoint,
+  type LinkAnchor,
+  type LinkScene,
+  linkAnchors,
+} from "./linkGeometry";
 import { useLinkThreadStore } from "./linkThread";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
@@ -206,6 +212,55 @@ interface SectionLink {
   offLens: boolean;
 }
 
+/**
+ * The next link in a thread, rubber-banding from the armed connector to the
+ * pointer. Without it the user clicks into the dark: nothing shows where the
+ * line would land until the click that commits it.
+ */
+function ThreadLinkPreview({
+  endpoint,
+  cursor,
+  scene,
+  boardId,
+}: {
+  endpoint: { kind: string; id: string; connectorId: string };
+  cursor: LinkAnchor;
+  scene: LinkScene;
+  boardId: string;
+}) {
+  const from = endpointAnchor(
+    {
+      kind: endpoint.kind === "section" ? "section" : "card",
+      id: endpoint.id,
+      connectorId: endpoint.connectorId,
+    },
+    boardId,
+    scene,
+    cursor,
+  );
+  if (!from) return null;
+
+  return (
+    <ViewportPortal>
+      <svg
+        className="section-link-preview-layer"
+        data-testid="thread-link-preview"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <line
+          className="section-link-preview"
+          x1={from.x}
+          y1={from.y}
+          x2={cursor.x}
+          y2={cursor.y}
+        />
+        <circle className="section-link-preview__origin" cx={from.x} cy={from.y} r={4} />
+      </svg>
+    </ViewportPortal>
+  );
+}
+
 /** A link React Flow draws between two of this board's nodes. */
 interface FlowLink {
   edge: GraphEdge;
@@ -343,6 +398,8 @@ export function CanvasBoard() {
    * gesture that armed it.
    */
   const threadStepAt = useRef(0);
+  const armedThread = useLinkThreadStore((state) => state.armed);
+  const [threadCursor, setThreadCursor] = useState<LinkAnchor | null>(null);
   /**
    * The connector a gesture started on, readable synchronously. A click fires
    * connect-start and connect-end before React re-renders, so the state set by
@@ -354,6 +411,18 @@ export function CanvasBoard() {
     anchorEnd: "source" | "target";
   } | null>(null);
   const setLinkMode = useUiStore((state) => state.setLinkMode);
+
+  // Releasing Shift ends a shift-armed thread: the modifier was the mode. A
+  // thread started from the UI keeps going, because nothing is being held.
+  useEffect(() => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Shift") return;
+      const state = useLinkThreadStore.getState();
+      if (state.armedBy === "shift") state.clear();
+    };
+    window.addEventListener("keyup", onKeyUp);
+    return () => window.removeEventListener("keyup", onKeyUp);
+  }, []);
 
   // A thread belongs to the mode it started in: leaving the mode must not leave
   // a connector armed in a mode that no longer chains on a plain click.
@@ -380,6 +449,21 @@ export function CanvasBoard() {
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
   const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow();
+
+  // While a thread is armed the pointer is the other end of a line that is not
+  // drawn yet, so follow it in flow coordinates.
+  useEffect(() => {
+    if (!armedThread) {
+      setThreadCursor(null);
+      return;
+    }
+    const follow = (event: PointerEvent) => {
+      setThreadCursor(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+    };
+    window.addEventListener("pointermove", follow);
+    return () => window.removeEventListener("pointermove", follow);
+  }, [armedThread, screenToFlowPosition]);
+
   const store = useStoreApi();
   const requestPortalEntry = useUiStore((state) => state.requestPortalEntry);
   const recordBoardViewport = useUiStore((state) => state.recordBoardViewport);
@@ -2730,16 +2814,20 @@ export function CanvasBoard() {
           commitDrop(dropped);
         }}
         onPaneClick={() => {
-          if (performance.now() - threadStepAt.current > 300) {
-            useLinkThreadStore.getState().clear();
+          const thread = useLinkThreadStore.getState();
+          if (performance.now() - Math.max(threadStepAt.current, thread.armedAt) > 300) {
+            thread.clear();
           }
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
           handleSelectSection(null);
         }}
         onNodeClick={() => {
-          if (performance.now() - threadStepAt.current > 300) {
-            useLinkThreadStore.getState().clear();
+          // React Flow also reports a connector press as a node click, so this
+          // must not undo the arm that press just made.
+          const thread = useLinkThreadStore.getState();
+          if (performance.now() - Math.max(threadStepAt.current, thread.armedAt) > 300) {
+            thread.clear();
           }
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
@@ -2861,6 +2949,14 @@ export function CanvasBoard() {
       </ReactFlow>
       {/* Outside React Flow: its pane preventDefaults pointerdown, which eats the
           click on any control nested inside it. */}
+      {armedThread && threadCursor && activeBoardId ? (
+        <ThreadLinkPreview
+          endpoint={armedThread}
+          cursor={threadCursor}
+          scene={linkScene}
+          boardId={activeBoardId}
+        />
+      ) : null}
       <LinkModeControl />
       <PortalTransitionLayer />
       {edgeDescription ? (

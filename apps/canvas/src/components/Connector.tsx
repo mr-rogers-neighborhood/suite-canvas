@@ -289,7 +289,9 @@ export function Connector({
       data-side={SIDE_NAME[side]}
       data-peer={movingPeer ? "true" : undefined}
       data-peer-selected={peerIndicator ? "true" : undefined}
-      className="nodrag nopan absolute z-20"
+      // `nokey` is React Flow's own opt-out: without it a Shift-press here is
+      // swallowed by its selection-marquee handler before the dot sees it.
+      className="nodrag nopan nokey absolute z-20"
       style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
     >
       {peerIndicator ? (

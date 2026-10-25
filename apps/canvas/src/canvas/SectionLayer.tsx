@@ -453,7 +453,7 @@ export function SectionLayer({
                     data-section-id={section.id}
                     data-connector-id={connector.id}
                     data-selected={selected ? "true" : undefined}
-                    className="section-connector"
+                    className="section-connector nokey"
                     style={{
                       left: rect.x + rect.width * position.x,
                       top: rect.y + rect.height * position.y,

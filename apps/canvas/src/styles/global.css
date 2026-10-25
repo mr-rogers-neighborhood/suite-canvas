@@ -317,11 +317,20 @@ body {
 }
 
 /* React Flow chrome, themed through its CSS variables. */
+/* React Flow positions panels with `bottom: 0` plus a 15px margin, and its
+   stylesheet loads after this one. Three classes out-specify it, and the margin
+   is replaced so the pill's bottom edge lands on the toggle's top edge. */
+.react-flow__panel.react-flow__controls.bottom {
+  bottom: 57px;
+  margin: 0 0 0 15px;
+}
+
 .react-flow__controls {
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  /* Square bottom: the link-mode toggle continues the pill below it. */
+  border-radius: 10px 10px 0 0;
   box-shadow: var(--card-shadow);
 }
 
@@ -2313,45 +2322,38 @@ body {
   }
 }
 
-/* The link tool sits with zoom and fit: same size, same surface, one active state. */
+/* The link tool is the pill's bottom segment: same width, same border, and the
+   only rounded corners are the pill's own bottom two. */
 .link-mode-control {
-  /* Sits in the viewport widget stack directly above zoom/fit, which is
-     bottom-left. Absolute positioning keeps it out of the canvas flow. */
   position: absolute;
   left: 15px;
-  bottom: 92px;
+  bottom: 31px;
   z-index: 5;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 27.33px;
+  height: 26px;
   margin: 0;
   padding: 0;
-  overflow: hidden;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
   background: var(--surface);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-}
-
-.link-mode-control__button {
-  width: 26px;
-  height: 26px;
-  border: 0;
-  background: transparent;
+  box-shadow: var(--card-shadow);
   color: var(--ink-muted);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
 }
 
-.link-mode-control__button + .link-mode-control__button {
-  border-left: 1px solid var(--hairline);
-}
-
-.link-mode-control__button:hover {
+.link-mode-control:hover {
   color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
 }
 
-.link-mode-control__button.is-active {
+.link-mode-control.is-thread {
   color: var(--surface);
   background: var(--ink);
 }
@@ -2361,4 +2363,15 @@ body {
   border-color: var(--accent, #0a84ff);
   background: var(--accent, #0a84ff);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #0a84ff) 35%, transparent);
+}
+
+/* A sketch's focus body hosts the drawing surface and its editing badge (A15). */
+.sketch-focus {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+.sketch-focus .whiteboard-surface {
+  height: 100%;
 }

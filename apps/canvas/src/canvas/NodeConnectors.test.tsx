@@ -5,6 +5,7 @@ import { ensureWhiteboardType, WHITEBOARD_TYPE_ID } from "../cards/whiteboard";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
+import { useLinkThreadStore } from "./linkThread";
 import { NodeConnectors } from "./NodeConnectors";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
@@ -554,6 +555,41 @@ describe("thread mode", () => {
     );
 
     expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "false");
+  });
+});
+
+describe("armed threads", () => {
+  const connectors = [
+    { id: "t-top", x: 0.5, y: 0 },
+    { id: "t-bottom", x: 0.5, y: 1 },
+  ];
+
+  it("should reveal the dots of an unselected node while a thread is armed", () => {
+    render(
+      <ReactFlowProvider>
+        <NodeConnectors nodeId="armed-node" connectors={connectors} armed />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "true");
+  });
+
+  it("should reveal every node while the shared thread store is armed", async () => {
+    const { container } = mount();
+    await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
+    expect(isRevealed(container, NOTE_ID)).toBe(false);
+
+    act(() =>
+      useLinkThreadStore
+        .getState()
+        .arm({ kind: "card", id: NOTE_ID, connectorId: "some-connector" }, "shift"),
+    );
+
+    await waitFor(() => expect(isRevealed(container, PORTAL_ID)).toBe(true));
+    expect(isRevealed(container, SKETCH_ID)).toBe(true);
+
+    act(() => useLinkThreadStore.getState().clear());
+    await waitFor(() => expect(isRevealed(container, PORTAL_ID)).toBe(false));
   });
 });
 

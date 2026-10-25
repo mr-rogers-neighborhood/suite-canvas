@@ -41,9 +41,20 @@ export function stepThread(armed: LinkConnectorRef | null, clicked: LinkConnecto
   return { armed: clicked, link: { from: armed, to: clicked } };
 }
 
+/** Why a thread is armed: holding Shift, or the mode chosen in the UI. */
+export type ThreadArmSource = "shift" | "mode";
+
 interface LinkThreadState {
   armed: LinkConnectorRef | null;
-  arm: (ref: LinkConnectorRef | null) => void;
+  /**
+   * How the thread was started. A shift-armed thread ends when Shift is released
+   * — the modifier *is* the mode. A mode-armed thread lasts until the user turns
+   * the mode off, because nothing physical is being held.
+   */
+  armedBy: ThreadArmSource | null;
+  /** When the last arm happened, so a click handler can ignore a gesture's tail. */
+  armedAt: number;
+  arm: (ref: LinkConnectorRef | null, by?: ThreadArmSource) => void;
   clear: () => void;
 }
 
@@ -54,8 +65,11 @@ interface LinkThreadState {
  */
 export const useLinkThreadStore = create<LinkThreadState>((set) => ({
   armed: null,
-  arm: (armed) => set({ armed }),
-  clear: () => set({ armed: null }),
+  armedBy: null,
+  armedAt: 0,
+  arm: (armed, by = "mode") =>
+    set({ armed, armedBy: armed ? by : null, armedAt: armed ? performance.now() : 0 }),
+  clear: () => set({ armed: null, armedBy: null }),
 }));
 
 /** True when this connector is the armed end of a thread. */

@@ -1,6 +1,8 @@
 import { type NodeProps, NodeResizer, type ResizeParams } from "@xyflow/react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { WhiteboardCardFace } from "../cards/WhiteboardCardFace";
+import { readSketchDisplay, SKETCH_TYPE_NAME } from "../cards/whiteboard";
+import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -9,7 +11,7 @@ import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
-/** A whiteboard card on the canvas: a cheap preview that opens the focus surface. */
+/** A sketch card on the canvas: a cheap preview that opens the focus surface. */
 export function WhiteboardNode({ data, selected }: NodeProps) {
   const { card, placement } = data as CardNodeData;
   const workspace = useCanvasStore((state) => state.workspace);
@@ -17,6 +19,14 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const title = useCardTitle(card.id);
   const drawing = useDrawing(card.id);
+  const display = readSketchDisplay(workspace, card);
+  // Presence rides the shared focus channel: a peer with this sketch open is
+  // editing it, and the badge says so without syncing any cursor.
+  const peers = useBoardPeers(placement.boardId);
+  const editors = useMemo(
+    () => peers.filter((peer) => peer.focus?.nodeId === card.id).map((peer) => peer.user),
+    [peers, card.id],
+  );
   // A sketch is a card too: same connector dots, same gestures as a note.
   const connectors = useNodeConnectorWiring(card, placement.boardId);
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
@@ -59,7 +69,9 @@ export function WhiteboardNode({ data, selected }: NodeProps) {
       />
       <WhiteboardCardFace
         drawing={drawing}
-        label={title || "Whiteboard"}
+        label={title || SKETCH_TYPE_NAME}
+        display={display}
+        editors={editors}
         onOpen={() => openCardFocus(card.id)}
       />
       <NodeConnectors {...connectors} selected={Boolean(selected)} />

@@ -1,5 +1,5 @@
-import type { CardType, CreateFieldInput, FieldDefinition } from "@suite/graph";
-import { displayTemplate, fieldKinds, typePluralName } from "@suite/graph";
+import type { CardType, CreateFieldInput, FieldDefinition, SubField } from "@suite/graph";
+import { displayTemplate, fieldKinds, subFieldKinds, typePluralName } from "@suite/graph";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { DisplayStyleDialog } from "./DisplayStyleDialog";
@@ -128,6 +128,11 @@ export function TypeSettingsDialog({
   const [fieldName, setFieldName] = useState("");
   const [fieldKind, setFieldKind] = useState<CreateFieldInput["kind"]>("text");
   const [fieldOptions, setFieldOptions] = useState("");
+  /** Sub-fields of a `group`, or the members of a `list`'s group item. */
+  const [subFields, setSubFields] = useState<Array<{ name: string; kind: SubField["kind"] }>>([]);
+  const [listItemKind, setListItemKind] = useState<"scalar" | "group">("scalar");
+  const [ratingScale, setRatingScale] = useState(5);
+  const [ratingHalf, setRatingHalf] = useState(false);
   const [displayFieldId, setDisplayFieldId] = useState<string | null>(null);
 
   const selected = useMemo(
@@ -158,10 +163,26 @@ export function TypeSettingsDialog({
               .filter(Boolean),
           }
         : {}),
+      // A composite field is only useful with its shape: without sub-fields a
+      // `group` renders nothing and a `list` falls back to a text item, which is
+      // the confusion this editor exists to remove (ADR-0057 §6).
+      ...(fieldKind === "group" || fieldKind === "list"
+        ? {
+            subFields: subFields
+              .map((entry) => ({ name: entry.name.trim(), kind: entry.kind }))
+              .filter((entry) => entry.name.length > 0),
+            itemKind: listItemKind,
+          }
+        : {}),
+      ...(fieldKind === "rating"
+        ? { rating: { scale: ratingScale, ...(ratingHalf ? { half: true } : {}) } }
+        : {}),
     });
     setFieldName("");
     setFieldOptions("");
     setFieldKind("text");
+    setSubFields([]);
+    setListItemKind("scalar");
   };
 
   const displayField = selected?.fields.find((field) => field.id === displayFieldId);
@@ -486,6 +507,115 @@ export function TypeSettingsDialog({
                       className={inputClass}
                       onChange={(event) => setFieldOptions(event.target.value)}
                     />
+                  ) : null}
+
+                  {fieldKind === "rating" ? (
+                    <div className="flex items-center gap-2" data-testid="rating-shape">
+                      <label className="flex items-center gap-1 text-[12px]">
+                        Out of
+                        <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={ratingScale}
+                          data-testid="rating-scale"
+                          className="w-12 rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                          onChange={(event) => setRatingScale(Number(event.target.value) || 5)}
+                        />
+                      </label>
+                      <label className="flex items-center gap-1 text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={ratingHalf}
+                          data-testid="rating-half"
+                          onChange={(event) => setRatingHalf(event.target.checked)}
+                        />
+                        Half marks
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {fieldKind === "group" || fieldKind === "list" ? (
+                    <div className="space-y-1" data-testid="sub-field-editor">
+                      {fieldKind === "list" ? (
+                        <label className="flex items-center gap-1 text-[12px]">
+                          Each row is
+                          <select
+                            value={listItemKind}
+                            data-testid="list-item-kind"
+                            aria-label="List item shape"
+                            className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                            onChange={(event) =>
+                              setListItemKind(event.target.value as "scalar" | "group")
+                            }
+                          >
+                            <option value="scalar">one value</option>
+                            <option value="group">a group of values</option>
+                          </select>
+                        </label>
+                      ) : null}
+                      {subFields.map((entry, index) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: sub-fields are edited in place and have no id yet.
+                        <div key={index} className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={entry.name}
+                            aria-label={`Sub-field ${index + 1} name`}
+                            placeholder="Sub-field"
+                            className={inputClass}
+                            data-testid={`sub-field-name-${index}`}
+                            onChange={(event) =>
+                              setSubFields((current) =>
+                                current.map((item, at) =>
+                                  at === index ? { ...item, name: event.target.value } : item,
+                                ),
+                              )
+                            }
+                          />
+                          <select
+                            value={entry.kind}
+                            aria-label={`Sub-field ${index + 1} kind`}
+                            data-testid={`sub-field-kind-${index}`}
+                            className="rounded-md border border-[var(--hairline)] bg-transparent px-1 text-[12px]"
+                            onChange={(event) =>
+                              setSubFields((current) =>
+                                current.map((item, at) =>
+                                  at === index
+                                    ? { ...item, kind: event.target.value as SubField["kind"] }
+                                    : item,
+                                ),
+                              )
+                            }
+                          >
+                            {subFieldKinds.map((kind) => (
+                              <option key={kind} value={kind}>
+                                {kind}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            aria-label={`Remove sub-field ${index + 1}`}
+                            className="rounded px-1 text-[12px] text-[var(--ink-muted)]"
+                            onClick={() =>
+                              setSubFields((current) => current.filter((_, at) => at !== index))
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        data-testid="add-sub-field"
+                        className="text-[12px] text-[var(--ink-muted)] underline"
+                        onClick={() =>
+                          setSubFields((current) => [...current, { name: "", kind: "text" }])
+                        }
+                      >
+                        Add a sub-field
+                      </button>
+                    </div>
                   ) : null}
                   <button
                     type="button"

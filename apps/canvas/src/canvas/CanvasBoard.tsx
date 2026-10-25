@@ -44,6 +44,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { type AlignEdge, type DistributeAxis, planAlign, planDistribute } from "./arrangeCommand";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import { LinkModeControl } from "./LinkModeControl";
 import {
@@ -2321,6 +2322,29 @@ export function CanvasBoard() {
 
   const cancelEdgeDescription = useCallback(() => setEdgeDescription(null), []);
 
+  /**
+   * Arrange is one gesture over a selection: plan pure, then commit the whole plan
+   * in one undoable batch. Sections are not arranged; they grow to fit instead.
+   */
+  const arrangeSelection = useCallback(
+    (kind: "align" | "distribute", value: AlignEdge | DistributeAxis) => {
+      if (!canEditLayout || !activeBoardId || selectedNodeIds.length === 0) return;
+      const target = {
+        boardId: activeBoardId,
+        placements: boardPlacementList,
+        sections: boardSections,
+        selectedCardIds: selectedNodeIds,
+      };
+      const plan =
+        kind === "align"
+          ? planAlign(target, value as AlignEdge)
+          : planDistribute(target, value as DistributeAxis);
+      if (!plan) return;
+      workspace.applyLayoutPlan(plan);
+    },
+    [canEditLayout, activeBoardId, selectedNodeIds, boardPlacementList, boardSections, workspace],
+  );
+
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     // Menus are built from what this session may do, so a share never renders
     // an action its publish would reject. A viewer gets no menu at all.
@@ -2562,6 +2586,43 @@ export function CanvasBoard() {
         ...(canEditLayout
           ? [
               {
+                label: "Arrange",
+                items: [
+                  {
+                    label: "Align left",
+                    onSelect: () => arrangeSelection("align", "left"),
+                  },
+                  {
+                    label: "Align centre",
+                    onSelect: () => arrangeSelection("align", "centerHorizontal"),
+                  },
+                  {
+                    label: "Align right",
+                    onSelect: () => arrangeSelection("align", "right"),
+                  },
+                  {
+                    label: "Align top",
+                    onSelect: () => arrangeSelection("align", "top"),
+                  },
+                  {
+                    label: "Align middle",
+                    onSelect: () => arrangeSelection("align", "middle"),
+                  },
+                  {
+                    label: "Align bottom",
+                    onSelect: () => arrangeSelection("align", "bottom"),
+                  },
+                  {
+                    label: "Distribute horizontally",
+                    onSelect: () => arrangeSelection("distribute", "horizontal"),
+                  },
+                  {
+                    label: "Distribute vertically",
+                    onSelect: () => arrangeSelection("distribute", "vertical"),
+                  },
+                ],
+              },
+              {
                 label: "Position",
                 items: [
                   {
@@ -2718,6 +2779,7 @@ export function CanvasBoard() {
     otherBoards,
     changeLayer,
     changeLayerBulk,
+    arrangeSelection,
     unplaceSelected,
     trashSelected,
     selectedNodeIds,

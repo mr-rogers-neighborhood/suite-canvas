@@ -35,6 +35,20 @@ export function BoardMiniature({ model, dots = [], label, className }: BoardMini
         height={height}
         rx={1.5}
       />
+      {model.links.length > 0 ? (
+        <g data-testid="portal-miniature-links">
+          {model.links.map((link) => (
+            <line
+              key={link.edgeId}
+              className="portal-miniature__link"
+              x1={link.x1}
+              y1={link.y1}
+              x2={link.x2}
+              y2={link.y2}
+            />
+          ))}
+        </g>
+      ) : null}
       {model.sections.map((section) => (
         <rect
           key={section.sectionId}

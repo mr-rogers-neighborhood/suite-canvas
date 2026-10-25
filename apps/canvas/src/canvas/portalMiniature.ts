@@ -1,4 +1,6 @@
-import type { Placement, Section } from "@suite/graph";
+import type { Card, GraphEdge, Placement, Section } from "@suite/graph";
+import { edgeEndpoints, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
+import { type LinkScene, linkAnchors } from "./linkGeometry";
 
 /** Card box assumed when a placement has never been resized. */
 export const MINIATURE_CARD_SIZE = { width: 224, height: 160 } as const;
@@ -13,6 +15,11 @@ const MIN_BOUNDS = { width: 360, height: 240 };
 const UNIT = 100;
 /** Cards drawn at most; `cardCount` still reports the whole board. */
 const MAX_CARDS = 240;
+/**
+ * Links drawn at most. A board with hundreds of links is unreadable at 100px
+ * wide anyway, and the cap keeps the miniature cheap to repaint on every change.
+ */
+const MAX_LINKS = 200;
 
 export interface MiniatureRect {
   x: number;
@@ -30,11 +37,22 @@ export interface MiniatureCard extends MiniatureRect {
   cardId: string;
 }
 
+/** One drawn link, already normalised into the miniature's coordinate space. */
+export interface MiniatureLink {
+  edgeId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 export interface BoardMiniatureModel {
   /** Normalised coordinate space every rect is expressed in. */
   viewBox: { width: number; height: number };
   sections: MiniatureSection[];
   cards: MiniatureCard[];
+  /** Links whose both ends resolve on this board, drawn as straight segments. */
+  links: MiniatureLink[];
   /** Cards on the target board, including any beyond the drawing cap. */
   cardCount: number;
   empty: boolean;
@@ -102,9 +120,17 @@ export function boardBounds(
  * A static miniature of one board, derived from the same snapshot the canvas
  * reads. Nothing here is stored: a target board that changes redraws the model.
  */
+export interface MiniatureExtras {
+  /** The board's links; one whose end is not drawn here is simply absent. */
+  edges?: readonly GraphEdge[];
+  /** Cards on the board, so an end can anchor on the connector it was drawn to. */
+  cards?: readonly Card[];
+}
+
 export function boardMiniature(
   sections: readonly Section[],
   placements: readonly Placement[],
+  extras: MiniatureExtras = {},
 ): BoardMiniatureModel {
   const bounds = boardBounds(sections, placements);
   if (!bounds) {
@@ -112,6 +138,7 @@ export function boardMiniature(
       viewBox: { width: UNIT, height: round((UNIT * MIN_BOUNDS.height) / MIN_BOUNDS.width) },
       sections: [],
       cards: [],
+      links: [],
       cardCount: 0,
       empty: true,
     };
@@ -132,6 +159,31 @@ export function boardMiniature(
     (a, b) => a.z - b.z || a.createdAt - b.createdAt || a.cardId.localeCompare(b.cardId),
   );
 
+  const scene = miniatureScene(placements, sections, extras.cards ?? []);
+  const links: MiniatureLink[] = [];
+  for (const edge of extras.edges ?? []) {
+    if (links.length >= MAX_LINKS) break;
+    const { source, target } = edgeEndpoints(edge);
+    const anchors = linkAnchors(
+      {
+        source: { ...source, connectorId: edge.sourceConnector },
+        target: { ...target, connectorId: edge.targetConnector },
+      },
+      scene.boardId,
+      scene.scene,
+    );
+    // One unresolved end means the link is not on this board: absent, not drawn
+    // to a made-up corner.
+    if (!anchors) continue;
+    links.push({
+      edgeId: edge.id,
+      x1: round((anchors.source.x - bounds.x) * scale),
+      y1: round((anchors.source.y - bounds.y) * scale),
+      x2: round((anchors.target.x - bounds.x) * scale),
+      y2: round((anchors.target.y - bounds.y) * scale),
+    });
+  }
+
   return {
     viewBox: { width: round(bounds.width * scale), height: round(bounds.height * scale) },
     sections: orderedSections.map((section) => ({
@@ -148,8 +200,35 @@ export function boardMiniature(
       }),
       cardId: placement.cardId,
     })),
+    links,
     cardCount: placements.length,
     empty: placements.length === 0 && sections.length === 0,
+  };
+}
+
+/**
+ * The link scene for one board, built from what the miniature already has. The
+ * anchors have to come from `linkGeometry`, not from a second copy of the maths:
+ * the picture and the board it depicts must not disagree about where a link
+ * leaves a card.
+ */
+function miniatureScene(
+  placements: readonly Placement[],
+  sections: readonly Section[],
+  cards: readonly Card[],
+): { boardId: string; scene: LinkScene } {
+  const boardId = placements[0]?.boardId ?? sections[0]?.boardId ?? "";
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const portals: Array<{ boardId: string; cardId: string; targetBoardId: string }> = [];
+  for (const placement of placements) {
+    const targetBoardId = byId.get(placement.cardId)?.properties[PORTAL_BOARD_FIELD_ID];
+    if (typeof targetBoardId === "string") {
+      portals.push({ boardId: placement.boardId, cardId: placement.cardId, targetBoardId });
+    }
+  }
+  return {
+    boardId,
+    scene: { placements, sections, cards, portals },
   };
 }
 

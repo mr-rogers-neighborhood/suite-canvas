@@ -1878,6 +1878,15 @@ body {
   cursor: default;
 }
 
+/* A miniature is read at arm's length: one hairline, no arrowheads. Direction is
+   the canvas's job; at this size an arrowhead is a smudge. */
+.portal-miniature__link {
+  stroke: var(--ink-muted);
+  stroke-width: 0.5;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
 .portal-card__header {
   position: relative;
   display: flex;

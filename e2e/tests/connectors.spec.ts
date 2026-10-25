@@ -286,3 +286,30 @@ test("hovering a section's empty area reveals its dots, hovering a card does not
   await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + 12);
   await expect(sectionDots).toHaveCount(0);
 });
+
+test("a portal's miniature draws the links on the board it opens", async ({ page }) => {
+  await page.goto(workspaceUrl("miniature"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // One link between the two starters on Board 1, drawn from dot to dot.
+  const first = cards(page).first();
+  await first.click();
+  const from = await first.getByTestId("connector-dot").nth(1).boundingBox();
+  const to = await cards(page).nth(1).getByTestId("connector-dot").nth(3).boundingBox();
+  if (!from || !to) throw new Error("cannot measure a dot");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 16, from.y + 16, { steps: 3 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+
+  // A portal to Board 1, sitting on the new Board 2, must paint that link inside
+  // its picture — the same anchors the board uses, not a second set of rules.
+  await page.getByTestId("board-create").click();
+  await expect(boardTabs(page)).toHaveCount(2);
+  await createPortal(page, "Board 1");
+
+  await expect(page.getByTestId("portal-miniature")).toHaveCount(1);
+  await expect(page.getByTestId("portal-miniature-links").locator("line")).toHaveCount(1);
+});

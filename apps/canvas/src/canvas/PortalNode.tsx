@@ -44,9 +44,19 @@ export function PortalNode({ id, data, selected }: NodeProps) {
   );
   // Re-derived from the snapshot, never stored: the target's version vector is
   // enough to redraw this miniature when a peer changes it.
+  const targetEdges = useMemo(
+    () => (targetBoardId ? snapshot.edges.filter((edge) => edge.boardId === targetBoardId) : []),
+    [snapshot.edges, targetBoardId],
+  );
   const model = useMemo(
-    () => boardMiniature(targetSections, targetPlacements),
-    [targetSections, targetPlacements],
+    // Links ride the same anchor rules the canvas uses, so the picture cannot
+    // disagree with the board it depicts.
+    () =>
+      boardMiniature(targetSections, targetPlacements, {
+        edges: targetEdges,
+        cards: snapshot.cards,
+      }),
+    [targetSections, targetPlacements, targetEdges, snapshot.cards],
   );
 
   const peers = useBoardPeers(targetBoardId);

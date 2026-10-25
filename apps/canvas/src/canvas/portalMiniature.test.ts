@@ -1,4 +1,4 @@
-import type { Placement, Section } from "@suite/graph";
+import type { Card, GraphEdge, Placement, Section } from "@suite/graph";
 import { describe, expect, it } from "vitest";
 import {
   boardBounds,
@@ -156,5 +156,54 @@ describe("miniatureDots", () => {
       { focus: { nodeId: "elsewhere" }, user: { color: "#00f", name: "Cy" } },
     ]);
     expect(dots).toEqual([]);
+  });
+});
+
+describe("miniature links", () => {
+  const cards = [
+    { id: "c1", connectors: [{ id: "c1-right", x: 1, y: 0.5 }], properties: {}, deletedAt: null },
+    { id: "c2", connectors: [{ id: "c2-left", x: 0, y: 0.5 }], properties: {}, deletedAt: null },
+  ] as unknown as Card[];
+
+  it("draws a link whose both ends are on the board, from dot to dot", () => {
+    const model = boardMiniature([], [placement("c1", 0, 0), placement("c2", 600, 0)], {
+      cards,
+      edges: [
+        {
+          id: "e1",
+          boardId: "b1",
+          source: "c1",
+          sourceKind: "card",
+          target: "c2",
+          targetKind: "card",
+          sourceConnector: "c1-right",
+          targetConnector: "c2-left",
+        } as unknown as GraphEdge,
+      ],
+    });
+
+    expect(model.links).toHaveLength(1);
+    // The right dot of the left card, the left dot of the right card: the
+    // miniature uses the same anchors, so x1 < x2 and both sit on the mid line.
+    const [link] = model.links;
+    expect(link?.x1).toBeLessThan(link?.x2 ?? 0);
+    expect(link?.y1).toBe(link?.y2);
+    expect(link?.edgeId).toBe("e1");
+  });
+
+  it("leaves out a link with an end that is not here", () => {
+    const model = boardMiniature([], [placement("c1", 0, 0)], {
+      cards,
+      edges: [
+        {
+          id: "e2",
+          boardId: "b1",
+          source: "c1",
+          target: "elsewhere",
+          targetKind: "card",
+        } as unknown as GraphEdge,
+      ],
+    });
+    expect(model.links).toHaveLength(0);
   });
 });

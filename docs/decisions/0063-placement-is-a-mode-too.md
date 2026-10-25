@@ -81,6 +81,48 @@ family shared with link drawing.**
     steps there too. This is recorded as an expectation, not a decision — when the tour editor is built it
     may take the family, and if it does not, that is its own ADR.
 
+## Amendment — 2026-10-25: a step can be a set, and a set can change the mode
+
+The queue above is written as a list of cards, which is the common case and the first thing to build. The
+author's refinement: **a step may be a set**, and a step may read the shape differently from its neighbours.
+
+1. **A step is `{ ids[], mode? }`.** One card is a step of one; an existing section with its cards, or four
+   cards that belong together, is a step of several. The set is placed as one unit — its members keep their
+   relative geometry when they have one (a section and its cards), and are arranged in a small grid when they
+   do not. The unit behaves as one placement for the purpose of the run: one position, one link from the
+   previous step's anchor, one undo.
+2. **A step may name its own mode.** "Thread this one from the last, then web a section beside it" is a
+   single run: the step's mode wins for that step, the run's live mode is the default. This is what makes a
+   run an *outline* of intent rather than a repetition of one gesture — and it is why the mode is stored per
+   step rather than read once at the start.
+3. **A step's set is a group, not a new object.** Nothing is grouped in the document by running: a set that
+   needs to stay together is a section, and a section is created explicitly (by the run's wrap or by the
+   user). A run that invented a container would be inventing structure the user cannot see the edges of.
+4. **This is advanced, and it is additive.** The first cut produces single-card steps from every source; the
+   state model, the planner and the engine all carry steps and per-step modes from the start, so a source
+   that offers sets (a section row, a multi-selection inside a run) is an adapter rather than a redesign.
+
+## Amendment — 2026-10-25: a run may nest, and returns to where it was
+
+The second refinement is the harder one, and it is the same idea one level up: **a step can be a run**.
+
+1. **A run is a stack.** Starting a run while one is live *suspends* the outer one rather than replacing
+   it, and finishing the inner one resumes the outer exactly where it stopped — same queue, same origin,
+   same anchor. "Take these six interview notes, and for each one thread the three quotes that came from
+   it" is two runs, and the second is entered *from* the first.
+2. **A sub-run's source can be a query.** The case that motivates nesting is a **sub-query**: place the
+   result of "cards tagged *quote* linked to this interview", then return to "the rest of this week's
+   notes". Nothing about the query is stored — it is read when the inner run starts, exactly as a saved
+   view is read when it is opened (ADR-0043), so a sub-run is as cheap as a run.
+3. **Suspended runs cannot place.** Only the top of the stack is live; the canvas, the control and Escape
+   all address the top. A suspended run is visible as a count ("1 more queued run") and can be resumed or
+   dropped from it, but it does not compete for the next click — one live run is the same rule as one mode.
+4. **The stack is bounded and shown.** A stack more than a few deep is a sign that a saved view or a
+   section was the right tool; the control shows the depth, and the third nested run is where the
+   interaction stops being cheap enough to be useful.
+5. **Nothing here changes the document.** A stack of runs is still gesture state: no records, no schema,
+   no merge story, and a collaborator sees only the placements each step commits.
+
 ## Consequences
 
 - **One vocabulary for two gestures.** The control under the zoom widget means "how the next click lands"
@@ -93,6 +135,8 @@ family shared with link drawing.**
   later previewed without a canvas.
 - **A bulk action is now a menu, not a wizard.** The library already offers per-row actions through one
   context menu (ADR-0011 §6); the run verbs join that menu for a selection rather than opening a panel.
+- **A run can be entered from a run.** Nesting is what makes "for each of these, that set" expressible
+  without a spreadsheet: the inner run is the sub-query, and the outer one resumes when it ends.
 - **`pattern` is one mode with many possible rules.** Only the alternating-tree ships; a "ring", "cone" or
   "staircase" is a new rule in the same planner, not a new mode.
 - **Nothing is stored, so nothing can disagree.** Two collaborators can run the same placement at the same

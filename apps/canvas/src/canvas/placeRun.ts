@@ -1,3 +1,4 @@
+import type { Connector } from "@suite/graph";
 import type { CanvasMode } from "./linkGesture";
 
 /**
@@ -24,6 +25,8 @@ export interface PlacementOptions {
   columns: number;
   /** Distance from the origin to a `web` spoke's centre. */
   radius: number;
+  /** Padding a run's wrapping section keeps around what it placed. */
+  sectionPadding: number;
 }
 
 export const DEFAULT_PLACEMENT_OPTIONS: PlacementOptions = {
@@ -32,6 +35,7 @@ export const DEFAULT_PLACEMENT_OPTIONS: PlacementOptions = {
   // A ring the floor accepts for a default card (see `planSpokes`), so the number
   // in Card Settings is the number the planner obeys for default sizes.
   radius: 360,
+  sectionPadding: 32,
 };
 
 /**
@@ -244,4 +248,59 @@ export function planRunFrame(placed: readonly RunBox[], padding: number): RunBox
     width: right - left + padding * 2,
     height: bottom - top + padding * 2,
   };
+}
+
+/** Where a link should leave or arrive, in perimeter fractions. */
+const FACING = {
+  left: { x: 0, y: 0.5 },
+  right: { x: 1, y: 0.5 },
+  top: { x: 0.5, y: 0 },
+  bottom: { x: 0.5, y: 1 },
+} as const;
+
+/**
+ * The connector nearest one side of a card, so a run's links leave and arrive on
+ * the sides that face each other.
+ *
+ * A gap has to be a gap: linking from the right dot to another right dot draws a
+ * line that loops around the card, which reads as a mistake rather than a chain.
+ * Cards keep four side connectors by default, but a user may move or delete them,
+ * so this is "nearest" rather than "the one at exactly (1, 0.5)".
+ */
+export function connectorFacing(
+  connectors: readonly Connector[],
+  side: keyof typeof FACING,
+): Connector | undefined {
+  const target = FACING[side];
+  let best: Connector | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const connector of connectors) {
+    const distance = (connector.x - target.x) ** 2 + (connector.y - target.y) ** 2;
+    if (distance < bestDistance) {
+      best = connector;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * The offsets one step's set fills, relative to the step's own position.
+ *
+ * A step is placed as a unit: its first card takes the step's position and the
+ * rest fill a small grid beside it, so a set reads as one thing the run moved
+ * rather than as N unrelated placements. A set with real geometry (a section and
+ * the cards inside it) is handled by the caller, which knows the section — this is
+ * the fallback for cards that have none.
+ */
+export function planSetOffsets(
+  count: number,
+  size: { width: number; height: number },
+  options: PlacementOptions = DEFAULT_PLACEMENT_OPTIONS,
+): Array<{ x: number; y: number }> {
+  const columns = Math.max(1, Math.min(count, options.columns));
+  return Array.from({ length: count }, (_, index) => ({
+    x: (index % columns) * (size.width + options.gap),
+    y: Math.floor(index / columns) * (size.height + options.gap),
+  }));
 }

@@ -80,6 +80,7 @@ import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
 import { PortalTransitionLayer } from "./PortalTransitionLayer";
 import { PresenceLayer } from "./PresenceLayer";
+import { usePlacementRunStore } from "./placementRun";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
 import { type SectionLink, SectionLinkLayer } from "./SectionLinkLayer";
@@ -87,6 +88,7 @@ import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectio
 import { linkStroke } from "./surfacePaint";
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
+import { usePlacementEngine } from "./usePlacementEngine";
 import { WhiteboardNode } from "./WhiteboardNode";
 import { ZOOM_MAX, ZOOM_MIN } from "./zoomRange";
 
@@ -323,6 +325,9 @@ function leavesSection(
 
 export function CanvasBoard() {
   countRender("canvas");
+  // One engine per surface: the canvas reports and steers a run, and the library
+  // starts one. Same hook, so there is exactly one implementation.
+  const placementEngine = usePlacementEngine();
 
   useEffect(() => {
     markBoot("canvas:mounted");
@@ -1950,6 +1955,13 @@ export function CanvasBoard() {
         return;
       }
 
+      if (event.key === "Escape" && usePlacementRunStore.getState().run) {
+        // A run ends where the arm ends: the same key, the same meaning, so a
+        // reader who escapes one escapes the other (ADR-0063 §9).
+        usePlacementRunStore.getState().finish();
+        return;
+      }
+
       if (event.key === "Escape" && useLinkThreadStore.getState().armed) {
         useLinkThreadStore.getState().clear();
         state.setSelectedConnector(null);
@@ -3373,7 +3385,7 @@ export function CanvasBoard() {
           boardId={activeBoardId}
         />
       ) : null}
-      <ModeControl />
+      <ModeControl engine={placementEngine} />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

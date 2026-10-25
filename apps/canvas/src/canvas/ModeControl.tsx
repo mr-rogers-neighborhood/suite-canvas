@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useUiStore } from "../store/useUiStore";
 import { type CanvasMode, nextMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
+import { usePlacementRunStore } from "./placementRun";
+import type { PlacementEngine } from "./usePlacementEngine";
 
 /**
  * The mode family ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md),
@@ -39,10 +41,24 @@ function switchLabel(mode: CanvasMode): string {
  * lets a plain click chain links; shift-click does the same in connect mode,
  * which is why the two live together rather than as separate tools.
  */
-export function ModeControl() {
+export interface ModeControlProps {
+  /**
+   * The placement engine, when the host has one. Absent in a story or a test,
+   * where the control still shows and cycles the mode — the run UI simply cannot
+   * appear without a run, and a run cannot start without the engine.
+   */
+  engine?: PlacementEngine | undefined;
+}
+
+export function ModeControl({ engine }: ModeControlProps = {}) {
   const mode = useUiStore((state) => state.mode);
   const setMode = useUiStore((state) => state.setMode);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
+  // A live run turns this control into its progress and steering wheel: the mode
+  // that decided where the last card went is the mode that decides the next one.
+  const run = usePlacementRunStore((state) => state.run);
+  const skipRun = usePlacementRunStore((state) => state.skip);
+  const finishRun = usePlacementRunStore((state) => state.finish);
 
   const button = useRef<HTMLButtonElement | null>(null);
   const glyph = useRef<HTMLSpanElement | null>(null);
@@ -110,6 +126,52 @@ export function ModeControl() {
 
   const current = MODES[mode];
   const active = mode !== "place";
+
+  if (run && engine) {
+    const total = run.placed.length + run.queue.length;
+    return (
+      <div className="placement-run" data-testid="placement-run" data-mode={mode}>
+        <span className="placement-run__count" data-testid="placement-run-count">
+          {`${run.placed.length} / ${total}`}
+        </span>
+        <button
+          type="button"
+          className="placement-run__action"
+          data-testid="placement-run-place-all"
+          title="Place the rest now, as one undo step"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => engine.placeAll()}
+        >
+          Place all
+        </button>
+        <button
+          type="button"
+          className="placement-run__action"
+          data-testid="placement-run-skip"
+          title="Skip this one and take the next"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => {
+            skipRun();
+            // Skipping is a step: the engine places whatever the queue now heads
+            // with, so the run never stalls waiting for another gesture.
+            engine.step();
+          }}
+        >
+          Skip
+        </button>
+        <button
+          type="button"
+          className="placement-run__action"
+          data-testid="placement-run-stop"
+          title="Stop placing (Escape)"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => finishRun()}
+        >
+          Stop
+        </button>
+      </div>
+    );
+  }
 
   // One button that walks a four-state cycle rather than a segmented control:
   // the four are one tool with four readings, and four buttons would imply four

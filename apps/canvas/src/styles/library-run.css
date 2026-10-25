@@ -1,0 +1,48 @@
+/* The selection bar and the run control (ADR-0063). Kept in its own file so the
+   placement work and the library work never edit the same stylesheet. */
+
+/* A selected row is not a focused one: the focus ring says "the canvas is
+   pointing here", the tint says "this will be acted on". */
+.library-entry[data-selected="true"] .library-row {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.library-selection {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* The run's progress and steering, under the zoom widget where the mode lives. */
+.placement-run {
+  position: absolute;
+  left: 15px;
+  bottom: 31px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px solid var(--hairline);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.placement-run__count {
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.placement-run__action {
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--ink-muted);
+}
+
+.placement-run__action:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}

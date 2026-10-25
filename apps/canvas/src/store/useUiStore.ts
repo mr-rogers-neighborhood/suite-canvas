@@ -1,6 +1,7 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
 import type { CanvasMode } from "../canvas/linkGesture";
+import { DEFAULT_PLACEMENT_OPTIONS, type PlacementOptions } from "../canvas/placeRun";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 
@@ -211,6 +212,14 @@ interface UiState extends SessionCapabilities {
    */
   libraryFull: boolean;
   setLibraryFull: (full: boolean) => void;
+  /**
+   * The numbers a placement run reads: gap, columns, ring radius, section padding
+   * ([ADR-0056](../../docs/decisions/0056-card-settings-owns-defaults.md) amendment).
+   * They live in UI state because Card Settings — the surface that will own them —
+   * is A33; when it lands it writes these same fields rather than a second copy.
+   */
+  placementOptions: PlacementOptions;
+  setPlacementOptions: (options: Partial<PlacementOptions>) => void;
   libraryGroupBySection: boolean;
   /** Saved query view applied to the library, if any. */
   activeViewId: string | null;
@@ -358,6 +367,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   librarySectionFilter: [],
   libraryScope: "all",
   libraryFull: false,
+  placementOptions: DEFAULT_PLACEMENT_OPTIONS,
   libraryGroupBySection: false,
   activeViewId: null,
   libraryQuery: "",
@@ -638,6 +648,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     })),
   setLibraryScope: (libraryScope) => set({ libraryScope }),
   setLibraryFull: (libraryFull) => set({ libraryFull }),
+  setPlacementOptions: (options) =>
+    set((state) => ({ placementOptions: { ...state.placementOptions, ...options } })),
   toggleLibraryGroupBySection: () =>
     set((state) => ({ libraryGroupBySection: !state.libraryGroupBySection })),
   setLibraryQuery: (libraryQuery) => set({ libraryQuery }),

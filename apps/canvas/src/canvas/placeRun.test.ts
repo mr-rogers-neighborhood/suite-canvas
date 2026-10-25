@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   boxesOverlap,
+  connectorFacing,
   DEFAULT_PLACEMENT_OPTIONS,
   type PlanPlacementInput,
   planPlacementStep,
   planRunFrame,
+  planSetOffsets,
   type RunBox,
 } from "./placeRun";
 
@@ -189,5 +191,51 @@ describe("planRunFrame", () => {
 
   it("has no frame for a run that placed nothing", () => {
     expect(planRunFrame([], 32)).toBeNull();
+  });
+});
+
+describe("connectorFacing", () => {
+  const connectors = [
+    { id: "top", x: 0.5, y: 0 },
+    { id: "right", x: 1, y: 0.5 },
+    { id: "bottom", x: 0.5, y: 1 },
+    { id: "left", x: 0, y: 0.5 },
+  ];
+
+  it("picks the dot on the side the line leaves from", () => {
+    expect(connectorFacing(connectors, "right")?.id).toBe("right");
+    expect(connectorFacing(connectors, "left")?.id).toBe("left");
+    expect(connectorFacing(connectors, "top")?.id).toBe("top");
+  });
+
+  it("picks the nearest dot, because a user may have moved the one it expected", () => {
+    const moved = [
+      { id: "almost-right", x: 0.9, y: 0.4 },
+      { id: "top", x: 0.5, y: 0 },
+    ];
+
+    expect(connectorFacing(moved, "right")?.id).toBe("almost-right");
+  });
+
+  it("has no answer for a card with no dots, so the link falls back to the box", () => {
+    expect(connectorFacing([], "left")).toBeUndefined();
+  });
+});
+
+describe("planSetOffsets", () => {
+  it("puts the first card at the step's own position", () => {
+    expect(planSetOffsets(3, SIZE, DEFAULT_PLACEMENT_OPTIONS)[0]).toEqual({ x: 0, y: 0 });
+  });
+
+  it("fills a small grid beside it, so a set reads as one thing", () => {
+    const offsets = planSetOffsets(4, SIZE, { ...DEFAULT_PLACEMENT_OPTIONS, columns: 2, gap: 40 });
+
+    expect(offsets[1]).toEqual({ x: SIZE.width + 40, y: 0 });
+    expect(offsets[2]).toEqual({ x: 0, y: SIZE.height + 40 });
+  });
+
+  it("never leaves the first card without a position", () => {
+    expect(planSetOffsets(0, SIZE)).toEqual([]);
+    expect(planSetOffsets(1, SIZE)).toEqual([{ x: 0, y: 0 }]);
   });
 });

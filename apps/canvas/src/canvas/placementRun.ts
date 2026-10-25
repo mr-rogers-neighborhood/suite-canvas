@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { CanvasMode } from "./linkGesture";
 
 /**
  * A placement run: an ordered queue of cards being placed one at a time
@@ -14,9 +15,30 @@ import { create } from "zustand";
 export const placementSources = ["selection", "view", "dock", "picker"] as const;
 export type PlacementSource = (typeof placementSources)[number];
 
+/**
+ * One step of a run: a card, or a set placed as one unit (ADR-0063 amendment).
+ *
+ * A set keeps its relative geometry where it has one — a section and its cards —
+ * and is arranged in a small grid where it does not. A step may also read the
+ * shape differently from its neighbours, which is what makes a run an outline of
+ * intent ("thread this one, then web that section beside it") instead of a
+ * repetition of one gesture.
+ */
+export interface RunStep {
+  /** The cards this step places, as one unit. */
+  ids: string[];
+  /** Overrides the run's live mode for this step. */
+  mode?: CanvasMode | undefined;
+}
+
+/** A step for the common case: one card, the run's own mode. */
+export function cardStep(cardId: string): RunStep {
+  return { ids: [cardId] };
+}
+
 export interface PlacementRun {
-  /** Card ids still to place, in the order the user can see. */
-  queue: string[];
+  /** Steps still to place, in the order the user can see. */
+  queue: RunStep[];
   /** Card ids this run has already placed. */
   placed: string[];
   /**
@@ -40,20 +62,38 @@ export interface StartRunOptions {
 
 interface PlacementRunState {
   run: PlacementRun | null;
-  /** Begin a run. An empty queue is not a run, so it clears instead. */
-  start: (queue: readonly string[], options?: StartRunOptions) => void;
   /**
-   * Record a placement. `cardId` must be the head of the queue; the caller has
-   * already written the placement and its link in one commit.
+   * Runs that were live when a sub-run started, outermost first (ADR-0063 second
+   * amendment). Only the top of the stack places; finishing the inner run resumes
+   * the one it interrupted, exactly where it stopped.
    */
-  advance: (cardId: string, sectionId?: string | null) => void;
+  suspended: PlacementRun[];
+  /** Begin a run from card ids; each becomes a single-card step. */
+  start: (queue: readonly string[], options?: StartRunOptions) => void;
+  /** Begin a run from steps, when a source can offer sets or per-step modes. */
+  startSteps: (steps: readonly RunStep[], options?: StartRunOptions) => void;
+  /**
+   * Record the step just placed. The caller has already written the placements
+   * and the link in one commit.
+   */
+  advance: (step: RunStep, sectionId?: string | null) => void;
   /** Drop the head of the queue without placing it. */
   skip: () => void;
+  /**
+   * Add cards to the end of a live run. This is the picker loop: the card was
+   * created a moment ago and belongs in the sequence the user is already making.
+   */
+  enqueue: (ids: readonly string[]) => void;
   /** The run's own frame, once the engine has created it. */
   setSection: (sectionId: string | null) => void;
   setWrap: (wrap: boolean) => void;
-  /** End the run. Every exit goes through here, so no stale queue survives. */
+  /**
+   * End the run. Every exit goes through here, so no stale queue survives — and
+   * ending a sub-run hands control back to the run it interrupted.
+   */
   finish: () => void;
+  /** Drop the whole stack: a board switch or a Stop on the outermost run. */
+  finishAll: () => void;
 }
 
 const GUARD = 200;
@@ -65,31 +105,45 @@ const GUARD = 200;
  */
 export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
   run: null,
+  suspended: [],
   start: (queue, options = {}) => {
+    get().startSteps(queue.map(cardStep), options);
+  },
+  startSteps: (steps, options = {}) => {
     // A queue longer than a board could usefully hold is a sign of a caller bug, not
     // a feature; clamping keeps a runaway selection from placing forever.
-    const trimmed = queue.slice(0, GUARD);
+    const trimmed = steps.filter((step) => step.ids.length > 0).slice(0, GUARD);
     if (trimmed.length === 0) {
       set({ run: null });
       return;
     }
+    const next: PlacementRun = {
+      queue: trimmed,
+      placed: [],
+      originId: null,
+      anchorId: null,
+      sectionId: null,
+      wrap: options.wrap === true,
+      source: options.source ?? "selection",
+    };
+    // Starting while one is live is a sub-run, not a replacement: the outer run is
+    // suspended and resumes when this one ends (ADR-0063 second amendment).
+    const current = get().run;
     set({
-      run: {
-        queue: trimmed,
-        placed: [],
-        originId: null,
-        anchorId: null,
-        sectionId: null,
-        wrap: options.wrap === true,
-        source: options.source ?? "selection",
-      },
+      run: next,
+      suspended: current ? [...get().suspended, current] : get().suspended,
     });
   },
-  advance: (cardId, sectionId = null) => {
+  advance: (step, sectionId = null) => {
     const run = get().run;
     if (!run) return;
-    const placed = run.placed.includes(cardId) ? run.placed : [...run.placed, cardId];
-    const queue = run.queue.filter((id) => id !== cardId);
+    const placed = [...run.placed];
+    for (const id of step.ids) if (!placed.includes(id)) placed.push(id);
+    // The queue is consumed by position, not by value: two steps may name the same
+    // card (placing it twice on purpose), so filtering by id would eat both.
+    const queue = run.queue.slice(1);
+    const first = run.originId ?? step.ids[0] ?? null;
+    const anchor = step.ids[step.ids.length - 1] ?? run.anchorId;
     set({
       run:
         queue.length === 0
@@ -98,8 +152,8 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
               ...run,
               queue,
               placed,
-              originId: run.originId ?? cardId,
-              anchorId: cardId,
+              originId: first,
+              anchorId: anchor,
               sectionId: sectionId ?? run.sectionId,
             },
     });
@@ -109,6 +163,13 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     if (!run) return;
     const queue = run.queue.slice(1);
     set({ run: queue.length === 0 ? null : { ...run, queue } });
+  },
+  enqueue: (ids) => {
+    const run = get().run;
+    if (!run) return;
+    const fresh = ids.filter((id) => !run.queue.some((step) => step.ids.includes(id)));
+    if (fresh.length === 0) return;
+    set({ run: { ...run, queue: [...run.queue, ...fresh.map(cardStep)] } });
   },
   setSection: (sectionId) => {
     const run = get().run;
@@ -120,10 +181,22 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     if (!run) return;
     set({ run: { ...run, wrap } });
   },
-  finish: () => set({ run: null }),
+  finish: () => {
+    // A sub-run hands back to what it interrupted; the outermost run leaves nothing
+    // behind, which is why Escape on it ends the whole idea rather than resuming.
+    const suspended = [...get().suspended];
+    const parent = suspended.pop() ?? null;
+    set({ run: parent, suspended });
+  },
+  finishAll: () => set({ run: null, suspended: [] }),
 }));
 
-/** True while a run is placing, so the canvas can report progress and offer Stop. */
+/** The live run, so the canvas can report progress and offer Stop. */
 export function usePlacementRun(): PlacementRun | null {
   return usePlacementRunStore((state) => state.run);
+}
+
+/** How many runs are waiting under the live one, for the control's depth count. */
+export function useSuspendedRunCount(): number {
+  return usePlacementRunStore((state) => state.suspended.length);
 }

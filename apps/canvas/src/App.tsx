@@ -22,10 +22,12 @@ import {
 } from "react";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
+import type { CanvasMode } from "./canvas/linkGesture";
 import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
 import {
   readPalette,
   type SurfacePalette,
@@ -33,6 +35,7 @@ import {
   shellPaintFor,
 } from "./canvas/rules";
 import { surfacePaintVars } from "./canvas/surfacePaint";
+import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { zoomBand } from "./canvas/zoomRange";
 import { ensureWhiteboardType } from "./cards/whiteboard";
 import { TAB_ID } from "./collab/tabId";
@@ -232,6 +235,7 @@ function WorkspaceShell({
   const toggleLibrarySection = useUiStore((state) => state.toggleLibrarySection);
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
+  const setMode = useUiStore((state) => state.setMode);
   const libraryFull = useUiStore((state) => state.libraryFull);
   const setLibraryFull = useUiStore((state) => state.setLibraryFull);
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
@@ -525,6 +529,52 @@ function WorkspaceShell({
       startEditing(card.id, "title");
     },
     [activeBoardId, canvasPoint, workspace, startEditing],
+  );
+
+  /** A run is carried out by one engine, shared with the canvas and the library. */
+  const placementRun = usePlacementEngine();
+  // Subscribed, not read at render time: a row's Place verb changes with it.
+  const placementRunActive = usePlacementRunStore((state) => state.run !== null);
+
+  // A run places into the board in front of the reader. Navigating away cancels it
+  // rather than continuing into a board they are no longer looking at (ADR-0063 §9).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the board is the trigger; the store call needs no dependency of its own.
+  useEffect(() => {
+    usePlacementRunStore.getState().finishAll();
+  }, [activeBoardId]);
+
+  /**
+   * The run verbs: "Thread cards", "Web cards", "Pattern cards", "Place cards".
+   * The verb *is* the mode, so choosing one sets the mode and starts the run — two
+   * things a user should not have to do separately.
+   */
+  const runCards = useCallback(
+    (cardIds: readonly string[], runMode: CanvasMode, source: PlacementSource) => {
+      if (!canEditLayout || cardIds.length === 0) return;
+      setMode(runMode);
+      placementRun.start(cardIds, source);
+    },
+    [canEditLayout, placementRun, setMode],
+  );
+
+  /**
+   * A dock pick during a run joins the run instead of landing at a fixed point: the
+   * card is created unplaced and queued, which is the "pick, place, pick again"
+   * loop from the add-card side (ADR-0063 §6).
+   */
+  const createCardInRun = useCallback(
+    (typeId: string) => {
+      if (!activeBoardId) return;
+      const running = usePlacementRunStore.getState().run;
+      if (!running) {
+        createCard(typeId);
+        return;
+      }
+      const card = workspace.createCard({ typeId });
+      usePlacementRunStore.getState().enqueue([card.id]);
+      placementRun.step();
+    },
+    [activeBoardId, createCard, placementRun, workspace],
   );
 
   /**
@@ -1141,7 +1191,7 @@ function WorkspaceShell({
             types={snapshot.types}
             boards={snapshot.boards}
             activeBoardId={activeBoardId}
-            onCreateCard={(typeId) => createCard(typeId)}
+            onCreateCard={createCardInRun}
             onCreatePortal={createPortal}
             onCreateSketch={createSketch}
             onCreateSection={createSection}
@@ -1215,6 +1265,12 @@ function WorkspaceShell({
             groupBySection={libraryGroupBySection}
             onToggleGroup={toggleLibraryGroupBySection}
             onOpenCard={openInspector}
+            onRunCards={(cardIds, runMode) => runCards(cardIds, runMode, "selection")}
+            onQueueCards={(cardIds) => {
+              usePlacementRunStore.getState().enqueue(cardIds);
+              placementRun.step();
+            }}
+            runActive={placementRunActive}
             canManageTrash={canManageTrash}
           />
         ) : null}

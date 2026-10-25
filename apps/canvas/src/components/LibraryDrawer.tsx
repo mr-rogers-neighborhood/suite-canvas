@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { CanvasMode } from "../canvas/linkGesture";
 import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrarySearch";
 import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
@@ -23,6 +24,14 @@ import {
   type SectionOrderEntry,
   UNSORTED_SECTION,
 } from "./libraryFilters";
+import {
+  applySelection,
+  EMPTY_SELECTION,
+  gestureOf,
+  type SelectionState,
+  selectAll,
+  selectedInOrder,
+} from "./librarySelection";
 import { type BoardStarter, TemplateGallery } from "./TemplateGallery";
 import { useSavedViews } from "./ViewsBar";
 
@@ -131,6 +140,15 @@ export interface LibraryDrawerProps {
   onToggleGroup: () => void;
   /** Opens a card in the inspector; rows never expand in place. */
   onOpenCard: (cardId: string) => void;
+  /**
+   * Run the selection in one shape: the verb *is* the mode (ADR-0063), so a caller
+   * sets the mode and starts the run in one go.
+   */
+  onRunCards?: ((cardIds: readonly string[], mode: CanvasMode) => void) | undefined;
+  /** True while a run is placing, so a row's Place verb joins it instead of starting one. */
+  runActive?: boolean;
+  /** Add cards to the live run: the picker loop's other half. */
+  onQueueCards?: ((cardIds: readonly string[]) => void) | undefined;
   /** Trash, restore, purge and empty the trash; owner and workspace editor. */
   canManageTrash?: boolean;
   /** Search source; defaults to the live document in the canvas store. */
@@ -147,6 +165,14 @@ const TABS: Array<{ id: LibraryTab; label: string }> = [
 ];
 
 const HOLD_THRESHOLD = 4;
+
+/** The verb a run's shape is called when it applies to a set of rows. */
+const VERB_LABELS: Record<CanvasMode, string> = {
+  place: "Place",
+  thread: "Thread",
+  web: "Web",
+  pattern: "Pattern",
+};
 
 /**
  * The overflow button every row carries.
@@ -280,6 +306,9 @@ export function LibraryDrawer({
   groupBySection,
   onToggleGroup,
   onOpenCard,
+  onRunCards,
+  runActive = false,
+  onQueueCards,
   canManageTrash = true,
   workspace: workspaceProp = null,
   initialQuery = "",
@@ -303,6 +332,18 @@ export function LibraryDrawer({
    * for both rows and both entry points (the ⋯ button and a right-click), so the
    * two can never show different actions for the same row.
    */
+  /**
+   * Row selection: the input every bulk action and every run shares (ADR-0011
+   * amendment, ADR-0063). It is drawer state, not document state — nothing about a
+   * selection is stored.
+   */
+  const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
+  /**
+   * Selection mode. A plain click opens a card — that is the drawer's dominant
+   * gesture — so bulk selection is opted into with one button rather than inferred
+   * from a modifier, and the mode says so in the header while it is on.
+   */
+  const [selecting, setSelecting] = useState(false);
   const [rowMenu, setRowMenu] = useState<{
     id: string;
     label: string;
@@ -594,7 +635,12 @@ export function LibraryDrawer({
         : []),
       placedHere(card)
         ? { label: "Locate", onSelect: () => locateCard(card) }
-        : { label: "Place on board", onSelect: () => onPlace(card.id) },
+        : {
+            // While a run is live, picking another card is the loop: it joins the
+            // sequence instead of starting a second run beside it (ADR-0063 §6).
+            label: runActive ? "Place next" : "Place on board",
+            onSelect: () => (runActive ? onQueueCards?.([card.id]) : onPlace(card.id)),
+          },
       ...(canManageTrash
         ? [{ label: "Move to trash", danger: true, onSelect: () => onTrash(card.id) }]
         : []),
@@ -628,6 +674,30 @@ export function LibraryDrawer({
     }
   };
 
+  /**
+   * The rows a selection can hold, in the order on screen. A run places in this
+   * order, which is why it is derived from the rendered list rather than stored.
+   */
+  const selectableOrder = tab === "cards" || tab === "inbox" ? ordered.map((item) => item.id) : [];
+
+  const selectRow = (id: string, event: React.PointerEvent | React.MouseEvent) => {
+    const gesture = gestureOf({
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    });
+    setSelection((current) => applySelection(current, id, gesture, selectableOrder));
+  };
+
+  const runVerb = (mode: CanvasMode) => {
+    const ids = selectedInOrder(selection, selectableOrder);
+    if (ids.length === 0) return;
+    onRunCards?.(ids, mode);
+    // A run is now live; the selection has done its job.
+    setSelection(EMPTY_SELECTION);
+    setSelecting(false);
+  };
+
   const sectionLabel = (item: LibraryItem): string => {
     const owner = item.sectionIds.find((id) => sectionsById.has(id));
     return owner ? (sectionsById.get(owner)?.title ?? "Untitled section") : "Unsorted";
@@ -642,6 +712,7 @@ export function LibraryDrawer({
         className="library-entry"
         data-row-id={item.id}
         data-active={current ? "true" : undefined}
+        data-selected={selection.ids.includes(item.id) ? "true" : undefined}
         aria-current={current ? "true" : undefined}
         ref={current ? activeRow : undefined}
       >
@@ -663,6 +734,12 @@ export function LibraryDrawer({
             }
             // Keep the gesture from selecting text across the board.
             event.preventDefault();
+            if (selecting) {
+              // Selection mode claims the press: a drag-to-place here would be a
+              // second meaning for the same gesture (ADR-0011 amendment).
+              selectRow(item.id, event);
+              return;
+            }
             holdRef.current = {
               cardId: item.id,
               startX: event.clientX,
@@ -892,6 +969,22 @@ export function LibraryDrawer({
                 the drawer's own close button would read as a second close. */}
             {full ? "\u2921" : "\u2922"}
           </button>
+          {selectableOrder.length > 0 || selecting ? (
+            <button
+              type="button"
+              aria-pressed={selecting}
+              data-testid="library-select-toggle"
+              className="library-action"
+              data-active={selecting ? "true" : undefined}
+              title={selecting ? "Leave selection" : "Select rows to act on them together"}
+              onClick={() => {
+                setSelecting((on) => !on);
+                setSelection(EMPTY_SELECTION);
+              }}
+            >
+              Select
+            </button>
+          ) : null}
           {tab === "inbox" ? (
             <button
               type="button"
@@ -922,6 +1015,72 @@ export function LibraryDrawer({
           </button>
         </div>
       </div>
+
+      {/* The selection bar replaces the search row while a selection exists: the
+          verbs are the reason the rows were selected, and a run starts from here. */}
+      {selecting || selection.ids.length > 0 ? (
+        <div
+          className="library-selection flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
+          data-testid="library-selection"
+        >
+          <span
+            className="mr-1 text-[11px] font-medium text-[var(--ink)]"
+            data-testid="library-selection-count"
+          >
+            {`${selection.ids.length} selected`}
+          </span>
+          {selection.ids.length === 0 ? (
+            // The bar appears with the mode, not with the first row: an empty mode
+            // with no visible verbs is a mode a reader has to guess at.
+            <span className="mr-1 text-[11px] text-[var(--ink-muted)]">
+              Pick rows to act on them together
+            </span>
+          ) : null}
+          {(["place", "thread", "web", "pattern"] as const).map((verb) => (
+            <button
+              key={verb}
+              type="button"
+              className="library-action"
+              data-testid={`library-run-${verb}`}
+              disabled={selection.ids.length === 0}
+              // The verb is the mode: "Thread cards" is thread mode plus a queue.
+              onClick={() => runVerb(verb)}
+            >
+              {`${VERB_LABELS[verb]} cards`}
+            </button>
+          ))}
+          {canManageTrash ? (
+            <button
+              type="button"
+              className="library-action text-red-600"
+              data-testid="library-selection-trash"
+              disabled={selection.ids.length === 0}
+              onClick={() => {
+                for (const id of selectedInOrder(selection, selectableOrder)) onTrash(id);
+                setSelection(EMPTY_SELECTION);
+              }}
+            >
+              Trash
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="ml-auto library-action"
+            data-testid="library-selection-all"
+            onClick={() => setSelection(selectAll(selectableOrder))}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className="library-action"
+            data-testid="library-selection-clear"
+            onClick={() => setSelection(EMPTY_SELECTION)}
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       <div className="library-search flex items-center gap-1.5 border-b border-[var(--hairline)] px-2 py-1.5">
         <span aria-hidden="true" className="text-[12px] text-[var(--ink-muted)]">

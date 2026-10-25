@@ -181,6 +181,33 @@ describe("a step can be a set, and can change the mode", () => {
   });
 });
 
+describe("the picker loop outlives its queue", () => {
+  it("stays live with an empty queue, because it is waiting to be fed", () => {
+    store().start(["a"], { source: "picker" });
+    store().advance(cardStep("a"));
+
+    expect(store().run).not.toBeNull();
+    expect(store().run?.queue).toEqual([]);
+    expect(store().run?.placed).toEqual(["a"]);
+  });
+
+  it("still ends on Stop, which is the only exit a loop needs", () => {
+    store().start(["a"], { source: "picker" });
+    store().advance(cardStep("a"));
+    store().finish();
+
+    expect(store().run).toBeNull();
+  });
+
+  it("every other source ends when its last card lands", () => {
+    for (const source of ["selection", "view", "dock"] as const) {
+      store().start(["a"], { source });
+      store().advance(cardStep("a"));
+      expect(store().run).toBeNull();
+    }
+  });
+});
+
 describe("a run may nest", () => {
   it("suspends the outer run instead of replacing it", () => {
     store().start(["outer-1", "outer-2"], { source: "selection" });

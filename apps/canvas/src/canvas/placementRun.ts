@@ -144,18 +144,21 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     const queue = run.queue.slice(1);
     const first = run.originId ?? step.ids[0] ?? null;
     const anchor = step.ids[step.ids.length - 1] ?? run.anchorId;
+    // The picker loop is the one run that outlives its queue: it is waiting to be
+    // fed one card at a time, which is the whole point of it (ADR-0063 §6). Every
+    // other run ends when its last card lands.
+    const ended = queue.length === 0 && run.source !== "picker";
     set({
-      run:
-        queue.length === 0
-          ? null
-          : {
-              ...run,
-              queue,
-              placed,
-              originId: first,
-              anchorId: anchor,
-              sectionId: sectionId ?? run.sectionId,
-            },
+      run: ended
+        ? null
+        : {
+            ...run,
+            queue,
+            placed,
+            originId: first,
+            anchorId: anchor,
+            sectionId: sectionId ?? run.sectionId,
+          },
     });
   },
   skip: () => {

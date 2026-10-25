@@ -149,6 +149,11 @@ export interface LibraryDrawerProps {
   runActive?: boolean;
   /** Add cards to the live run: the picker loop's other half. */
   onQueueCards?: ((cardIds: readonly string[]) => void) | undefined;
+  /**
+   * Start a picker loop: place one card and stay live, so every later pick joins
+   * the same sequence.
+   */
+  onRunLoop?: ((cardIds: readonly string[]) => void) | undefined;
   /** Trash, restore, purge and empty the trash; owner and workspace editor. */
   canManageTrash?: boolean;
   /** Search source; defaults to the live document in the canvas store. */
@@ -309,6 +314,7 @@ export function LibraryDrawer({
   onRunCards,
   runActive = false,
   onQueueCards,
+  onRunLoop,
   canManageTrash = true,
   workspace: workspaceProp = null,
   initialQuery = "",
@@ -1049,6 +1055,24 @@ export function LibraryDrawer({
               {`${VERB_LABELS[verb]} cards`}
             </button>
           ))}
+          <button
+            type="button"
+            className="library-action"
+            data-testid="library-run-loop"
+            disabled={selection.ids.length === 0}
+            title="Place these one at a time, coming back here for the next"
+            onClick={() => {
+              // The loop places one and stays live, so the next pick joins the same
+              // sequence instead of starting another (ADR-0063 §6).
+              const ids = selectedInOrder(selection, selectableOrder);
+              if (ids.length === 0) return;
+              onRunLoop?.(ids);
+              setSelection(EMPTY_SELECTION);
+              setSelecting(false);
+            }}
+          >
+            One at a time
+          </button>
           {canManageTrash ? (
             <button
               type="button"

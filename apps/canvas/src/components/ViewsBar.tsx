@@ -1,4 +1,4 @@
-import type { SavedView, ViewQuery, WorkspaceDocument } from "@suite/graph";
+import { runViewQuery, type SavedView, type ViewQuery, type WorkspaceDocument } from "@suite/graph";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -30,6 +30,12 @@ export function useSavedViews(workspace: WorkspaceDocument | null | undefined): 
 export interface ViewsBarProps {
   /** Defaults to the live document in the canvas store. */
   workspace?: WorkspaceDocument | null;
+  /**
+   * Place a view's result as a run ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)).
+   * The view's own sorts decide the order, so a threaded run follows the list the
+   * user is looking at.
+   */
+  onPlaceResults?: ((cardIds: readonly string[]) => void) | undefined;
   /**
    * Saving, renaming and deleting a view is workspace configuration, so it is
    * gated by `canManageSchema` by default; tests and stories may override.
@@ -65,7 +71,11 @@ function suggestedName(text: string, count: number): string {
  * query, so opening one copies it into the library's own controls; nothing is
  * cached and no result list is stored.
  */
-export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBarProps) {
+export function ViewsBar({
+  workspace: workspaceProp = null,
+  canManage,
+  onPlaceResults,
+}: ViewsBarProps) {
   const storeWorkspace = useCanvasStore((state) => state.workspace);
   const workspace = workspaceProp ?? storeWorkspace;
   const views = useSavedViews(workspace);
@@ -75,6 +85,7 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
   const applyView = useUiStore((state) => state.applyView);
   const exitView = useUiStore((state) => state.exitView);
   const activeViewId = useUiStore((state) => state.activeViewId);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
   const query = useUiStore((state) => state.libraryQuery);
   const typeFilter = useUiStore((state) => state.libraryTypeFilter);
   const tagFilter = useUiStore((state) => state.libraryTagFilter);
@@ -264,6 +275,28 @@ export function ViewsBar({ workspace: workspaceProp = null, canManage }: ViewsBa
                         </span>
                       ) : null}
                     </button>
+                    {onPlaceResults ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-testid={`views-place-${view.id}`}
+                        title="Place this view's cards on the board, in its own order"
+                        className="rounded px-1.5 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => {
+                          // Resolved on the click, never cached: a view selects, it
+                          // does not store a result list (ADR-0043).
+                          const result = runViewQuery(
+                            workspace,
+                            appliedQuery(workspace, view.query),
+                            { boardId: activeBoardId },
+                          );
+                          onPlaceResults(result.cardIds);
+                          close();
+                        }}
+                      >
+                        Place
+                      </button>
+                    ) : null}
                     {canManageViews ? (
                       <>
                         <button

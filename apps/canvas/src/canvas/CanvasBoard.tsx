@@ -1955,7 +1955,13 @@ export function CanvasBoard() {
         return;
       }
 
-      if (event.key === "Escape" && usePlacementRunStore.getState().run) {
+      if (
+        event.key === "Escape" &&
+        // Escape in an editor belongs to the editor: leaving a title with Escape
+        // must not also end the run that created the card.
+        !(target instanceof HTMLElement && target.closest(".ProseMirror")) &&
+        usePlacementRunStore.getState().run
+      ) {
         // A run ends where the arm ends: the same key, the same meaning, so a
         // reader who escapes one escapes the other (ADR-0063 §9).
         usePlacementRunStore.getState().finish();

@@ -125,6 +125,9 @@ The second refinement is the harder one, and it is the same idea one level up: *
 
 ## Consequences
 
+- **The word is already the product's word.** A "run" here is the same idea the product wants to use it
+  for elsewhere — a sequence the user sets going and can stop — which is why the noun was chosen over
+  "batch" or "queue": a run is something you *start*, watch and end, not a pile you submit.
 - **One vocabulary for two gestures.** The control under the zoom widget means "how the next click lands"
   whether the click is on a connector or a placement, so there is one thing to learn and one place to be
   wrong.

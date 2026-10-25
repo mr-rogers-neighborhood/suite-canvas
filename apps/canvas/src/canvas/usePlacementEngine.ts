@@ -119,7 +119,8 @@ export function usePlacementEngine(): PlacementEngine {
     if (!run) return;
     const next = run.queue[0];
     if (!next) {
-      usePlacementRunStore.getState().finish();
+      // A picker loop is *waiting*, not finished: it lives until it is stopped.
+      if (run.source !== "picker") usePlacementRunStore.getState().finish();
       return;
     }
     const plan = planStep(next, run);

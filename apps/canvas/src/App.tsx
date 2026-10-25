@@ -558,6 +558,25 @@ function WorkspaceShell({
   );
 
   /**
+   * Start a picker loop: one card now, and every later pick joins the same
+   * sequence. The loop is the only run that outlives its queue, because it is
+   * waiting to be fed (ADR-0063 §6).
+   */
+  const startPlacementLoop = useCallback(
+    (cardIds: readonly string[]) => {
+      if (!canEditLayout || cardIds.length === 0) return;
+      const [first, ...rest] = cardIds;
+      if (!first) return;
+      usePlacementRunStore.getState().start([first], { source: "picker" });
+      // The rest are queued behind the first, so a selection can seed the loop and
+      // still be added to by hand afterwards.
+      if (rest.length > 0) usePlacementRunStore.getState().enqueue(rest);
+      placementRun.step();
+    },
+    [canEditLayout, placementRun],
+  );
+
+  /**
    * A dock pick during a run joins the run instead of landing at a fixed point: the
    * card is created unplaced and queued, which is the "pick, place, pick again"
    * loop from the add-card side (ADR-0063 §6).
@@ -1094,7 +1113,17 @@ function WorkspaceShell({
           {workspaceSurface ? (
             <>
               <div className="views-bar">
-                <ViewsBar canManage={canManageSchema} />
+                <ViewsBar
+                  canManage={canManageSchema}
+                  // A view's result is a queue like any other; the view's sorts are
+                  // the order, so a threaded run follows the list on screen.
+                  {...(canEditLayout
+                    ? {
+                        onPlaceResults: (cardIds: readonly string[]) =>
+                          runCards(cardIds, useUiStore.getState().mode, "view"),
+                      }
+                    : {})}
+                />
               </div>
               {/*
               A way back exists only where the reader was *taken* somewhere: a
@@ -1270,6 +1299,7 @@ function WorkspaceShell({
               usePlacementRunStore.getState().enqueue(cardIds);
               placementRun.step();
             }}
+            onRunLoop={(cardIds) => startPlacementLoop(cardIds)}
             runActive={placementRunActive}
             canManageTrash={canManageTrash}
           />

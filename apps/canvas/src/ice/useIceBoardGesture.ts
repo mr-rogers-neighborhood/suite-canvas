@@ -30,6 +30,7 @@ import { pinFocusPoint, revealCamera, revealPlan } from "./iceReveal";
 import { setIceSelectionCommand } from "./iceSelectionCommand";
 import type { IceCamera } from "./iceSurfaceCamera";
 import { entityAt, entityRectOf } from "./iceSurfaceShared";
+import { deskEdgesOf } from "./iceSurfaceSpawns";
 import type { IceCommands, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
 import { resolveSurface } from "./iceSurfaceWiring";
 import type { IceLinkGesture } from "./useIceLinkGesture";
@@ -80,6 +81,17 @@ export function useIceBoardGesture(input: {
     portalDepth.current = adopted.length;
     portalFramesRef.current = adopted;
     if (adopted.length > 0) setPortalPath(adopted.map((frame) => frame.name));
+    /**
+     * A link that crosses a wall is drawn *inside* the Board, cut at its wall —
+     * a different object, in different units, not a moved one. Every enter and
+     * every exit asks the link table to re-draw, and the adoption above counts:
+     * a desk restored inside a Board must open with its crossing links clipped.
+     */
+    const restageLinks = (): void => {
+      const path = enteredPathOf(world, seed.boardMats, rootBoardId) ?? [];
+      deskEdgesOf(engine)?.restage(path.map((frame) => frame.id));
+    };
+    restageLinks();
     // What this surface spawned, plus what a frame ICE built itself holds: a
     // press inside an entered Board lands on the latter, and the entity's own
     // face is what makes it a card there.
@@ -250,6 +262,8 @@ export function useIceBoardGesture(input: {
             portalDepth.current -= 1;
             portalFramesRef.current = portalFramesRef.current.slice(0, -1);
             setPortalPath((path) => path.slice(0, -1));
+            // Out on the plane, a crossing link is drawn on its own again.
+            restageLinks();
           } catch {
             // A refused exit leaves the camera where it is.
           }
@@ -311,6 +325,8 @@ export function useIceBoardGesture(input: {
             { id: mat.boardId, name: mat.title },
           ];
           setPortalPath((path) => [...path, mat.title]);
+          // Links that leave this Board are drawn inside it from here on.
+          restageLinks();
         } catch {
           // A refused entry leaves the camera where it is.
         }
@@ -530,6 +546,7 @@ export function useIceBoardGesture(input: {
       portalDepth.current = adopted.length;
       portalFramesRef.current = adopted;
       setPortalPath(adopted.map((frame) => frame.name));
+      deskEdgesOf(engine)?.restage(adopted.map((frame) => frame.id));
       if (adopted.map((frame) => frame.id).join("/") !== plan.path.join("/")) {
         store.clearFocusTarget();
         return;

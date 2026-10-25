@@ -18,6 +18,7 @@ import {
   SUITE_EDGE_KIND,
   SUITE_EDGE_SIZE,
   SUITE_EDGE_STRATUM,
+  SUITE_EDGE_THROUGH_LENGTH,
   SUITE_EDGE_TONE,
   SUITE_EDGE_TYPE,
   SuiteEdge,
@@ -29,6 +30,7 @@ import {
   suiteEdgeEntities,
   suiteEdgeHitTest,
   suiteEdgeSpawn,
+  throughQuads,
 } from "./suiteEdgeKind";
 
 /** A straight run of ink, the simplest link there is. */
@@ -59,11 +61,19 @@ function edgeContext(overrides: {
   readonly zoom?: number;
   readonly pens?: Readonly<Record<string, readonly [number, number, number]>>;
   readonly papers?: Readonly<Record<string, readonly [number, number, number]>>;
+  /** The ends the last follow cut at a wall — what the through tick marks. */
+  readonly through?: readonly ("source" | "target")[];
 }): ObjectContext {
   return {
     entity: 1 as unknown as Entity,
     props: { thickness: SUITE_EDGE_DEFAULT_THICKNESS, ...overrides.props },
-    local: overrides.polyline === undefined ? undefined : { polylineOf: () => overrides.polyline },
+    local:
+      overrides.polyline === undefined
+        ? undefined
+        : {
+            polylineOf: () => overrides.polyline,
+            traceOf: () => ({ through: overrides.through ?? [] }),
+          },
     view: { zoom: overrides.zoom ?? 1 },
     look: {
       pens: overrides.pens ?? { card: [0.2, 0.2, 0.2] },
@@ -88,6 +98,7 @@ describe("suite.edge kind", () => {
       thickness: "edge",
       arrow: "edge",
       label: "edge",
+      through: "edge",
     });
   });
 
@@ -131,6 +142,7 @@ describe("suite.edge kind", () => {
       thickness: 2,
       arrow: true,
       label: "supports",
+      through: false,
     };
     expect(edgeKinds).toContain(face.kind);
     expect(edgePaths).toContain(face.path);
@@ -268,6 +280,55 @@ describe("arrowQuads", () => {
   });
 });
 
+describe("throughQuads", () => {
+  it("should lay one bar across the ink at each cut end", () => {
+    // The wall is at the target end of a horizontal run: the bar turns a quarter.
+    const [bar] = throughQuads(flat, 2, ["target"]);
+    expect(throughQuads(flat, 2, ["target"])).toHaveLength(1);
+    expect(bar?.cx).toBe(100);
+    expect(bar?.cy).toBe(0);
+    // Square to the run: a horizontal link is marked by a vertical bar.
+    expect(Math.abs(Math.sin(bar?.angle ?? 0))).toBeCloseTo(1, 12);
+    expect(bar?.length).toBeCloseTo(2 * SUITE_EDGE_THROUGH_LENGTH, 12);
+    expect(bar?.thickness).toBe(2);
+
+    const both = throughQuads(flat, 2, ["source", "target"]);
+    expect(both).toHaveLength(2);
+    expect(both[0]?.cx).toBe(0);
+    expect(both[1]?.cx).toBe(100);
+  });
+
+  it("should take a vertical run's bar horizontally", () => {
+    const [bar] = throughQuads(
+      [
+        { x: 10, y: 0 },
+        { x: 10, y: 80 },
+      ],
+      2,
+      ["target"],
+    );
+    expect(bar?.cx).toBe(10);
+    expect(bar?.cy).toBe(80);
+    expect(Math.abs(Math.cos(bar?.angle ?? 0))).toBeCloseTo(1, 12);
+  });
+
+  it("should draw nothing without an end, or without a direction", () => {
+    expect(throughQuads(flat, 2, [])).toHaveLength(0);
+    expect(throughQuads([], 2, ["source"])).toHaveLength(0);
+    expect(throughQuads([{ x: 5, y: 5 }], 2, ["target"])).toHaveLength(0);
+    expect(
+      throughQuads(
+        [
+          { x: 5, y: 5 },
+          { x: 5, y: 5 },
+        ],
+        2,
+        ["source", "target"],
+      ),
+    ).toHaveLength(0);
+  });
+});
+
 describe("distanceToPolyline", () => {
   it("should be zero on the ink and the perpendicular distance beside it", () => {
     expect(distanceToPolyline(flat, 50, 0)).toBeCloseTo(0, 12);
@@ -296,6 +357,7 @@ describe("suiteEdgeHitTest", () => {
     thickness,
     zoom,
     arrow: false,
+    through: [],
     box: polylineBounds(polyline),
     hitSlop: Math.max(thickness / 2, SUITE_EDGE_HIT_PX / zoom),
   });
@@ -395,6 +457,40 @@ describe("resolve and record", () => {
     expect(sheet.grain).toBe(0);
   });
 
+  it("should mark a cut end with a through tick, and only when it was cut", () => {
+    const plain = kind?.resolve(
+      edgeContext({ polyline: flat, props: { thickness: 2 } }),
+    ) as SuiteEdgeGeometry;
+    expect(plain.through).toEqual([]);
+    expect(plain.quads).toHaveLength(1);
+
+    const crossed = kind?.resolve(
+      edgeContext({ polyline: flat, props: { thickness: 2, through: true }, through: ["target"] }),
+    ) as SuiteEdgeGeometry;
+    expect(crossed.through).toEqual(["target"]);
+    // One segment plus one bar, in the same list the ink is drawn from.
+    expect(crossed.quads).toHaveLength(2);
+    expect(crossed.quads[1]?.cx).toBe(100);
+    expect(crossed.quads[1]?.cy).toBe(0);
+    // The box holds the bar, so a cull margin can never eat the mark: whichever
+    // of the ink's reach and the bar's half length is wider is the pad.
+    const reachOf = (thickness: number) =>
+      Math.max(thickness / 2 + SUITE_EDGE_HALO.grow, (thickness * SUITE_EDGE_THROUGH_LENGTH) / 2);
+    expect(crossed.box.x).toBe(-reachOf(2));
+    expect(crossed.box.width).toBe(100 + reachOf(2) * 2);
+    const broad = kind?.resolve(
+      edgeContext({ polyline: flat, props: { thickness: 4, through: true }, through: ["target"] }),
+    ) as SuiteEdgeGeometry;
+    expect(broad.box.x).toBe(-reachOf(4));
+    expect(broad.box.width).toBe(100 + reachOf(4) * 2);
+
+    // A drawing that says it crosses but was cut nowhere marks nothing.
+    const stale = kind?.resolve(
+      edgeContext({ polyline: flat, props: { thickness: 2, through: true } }),
+    ) as SuiteEdgeGeometry;
+    expect(stale.quads).toHaveLength(1);
+  });
+
   it("should tone each relation differently and fall back to references", () => {
     // The tone reads out of the ink: too little of the sheet mixed in means more
     // ink, so a quieter relation has the lighter stroke.
@@ -434,6 +530,7 @@ describe("suiteEdgeSpawn", () => {
       thickness: SUITE_EDGE_DEFAULT_THICKNESS,
       arrow: false,
       label: "",
+      through: false,
     });
   });
 
@@ -502,6 +599,7 @@ describe("the driver's recompute policy", () => {
     thickness: 2,
     arrow: false,
     label: "",
+    through: false,
   };
 
   /** A world holding one link: its props group plus a rect the writes land in. */
@@ -600,6 +698,55 @@ describe("the driver's recompute policy", () => {
         w: 100 + 2 + SUITE_EDGE_HALO.grow * 2,
         h: 200 + 2 + SUITE_EDGE_HALO.grow * 2,
       });
+    } finally {
+      setSuiteEdgeLinkOf(undefined);
+      driver?.dispose?.();
+    }
+  });
+
+  it("should cut a crossing link at the entered frame's wall every follow", () => {
+    const writes = { count: 0 };
+    const rect: { x?: number; y?: number; w?: number; h?: number } = {};
+    const local = kind?.local?.({
+      remake: () => {},
+    } as never) as unknown as {
+      traceOf(e: Entity): SuiteEdgeTrace | undefined;
+    };
+    const driver = driversOf(SuiteEdge)?.({
+      world: worldOf(rect, writes),
+      local,
+    } as never);
+
+    let source = { x: 10, y: 10 };
+    setSuiteEdgeLinkOf(() => ({
+      source: { placement: { x: source.x, y: source.y, width: 10, height: 10 }, frames: [] },
+      target: { placement: { x: 190, y: 10, width: 10, height: 10 }, frames: [] },
+      // The frame the camera is inside: its own rect, in its own coordinates.
+      clip: { x: 0, y: 0, width: 100, height: 100 },
+    }));
+
+    try {
+      driver?.follow(0);
+      const first = local.traceOf(entity);
+      // The inside end is kept; the outside end stops on the wall it leaves by.
+      expect(first?.from).toEqual({ x: 15, y: 15 });
+      expect(first?.to).toEqual({ x: 100, y: 15 });
+      expect(first?.through).toEqual(["target"]);
+
+      // A card moving inside the frame carries the cut with it: the wall holds.
+      source = { x: 50, y: 90 };
+      driver?.follow(16);
+      const moved = local.traceOf(entity);
+      expect(moved?.from).toEqual({ x: 55, y: 95 });
+      // The cut follows the line: (55,95) → (195,15) meets x = 100 part way down.
+      expect(moved?.to.x).toBe(100);
+      expect(moved?.to.y).toBeCloseTo(95 - (80 * 45) / 140, 9);
+      expect(moved?.through).toEqual(["target"]);
+
+      // Dragged out of the frame entirely: nothing of this link lies inside it.
+      source = { x: 400, y: 400 };
+      driver?.follow(32);
+      expect(local.traceOf(entity)).toBeUndefined();
     } finally {
       setSuiteEdgeLinkOf(undefined);
       driver?.dispose?.();

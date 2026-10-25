@@ -63,7 +63,7 @@ export interface BoardFaceChip extends BoardFaceRect {
 /**
  * The bands a Board's face is drawn in. `hidden` is below the band where a name
  * could still be read: a mat that small is a dot, and a dot with a label is noise
- * (the camera's ceiling is `EMPTY_VIEW_ZOOM`, 0.12, well inside `compact`).
+ * (the camera's ceiling is 0.12, well inside `compact`).
  */
 export type SuiteBoardFaceBand = "hidden" | "compact" | "full";
 

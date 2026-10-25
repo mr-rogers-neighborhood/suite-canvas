@@ -30,18 +30,24 @@
  *
  * ## What is drawn from where
  *
- * - **Props are stable**: `edgeId`, `kind`, `path`, `thickness`, `arrow`, `label`.
- *   Nothing that changes per frame lives in props. The label is the document's
- *   text projected onto the object; the surface keeps it true (`useIceLinkGesture`
- *   writes it through `setWidgetProps`) and draws it as a screen-space chip,
- *   because a description has to be readable at every zoom and the desk's only
- *   text path is the paper ink raster, which a link is not (see
+ * - **Props are stable**: `edgeId`, `kind`, `path`, `thickness`, `arrow`, `label`,
+ *   `through`. Nothing that changes per frame lives in props. The label is the
+ *   document's text projected onto the object; the surface keeps it true
+ *   (`useIceLinkGesture` writes it through `setWidgetProps`) and draws it as a
+ *   screen-space chip, because a description has to be readable at every zoom and
+ *   the desk's only text path is the paper ink raster, which a link is not (see
  *   `suiteEdgeLabelLayer.ts`).
  * - **The polyline is a per-driver side table** keyed by entity, refreshed in
- *   `drivers.follow()`. The driver reads each endpoint's live `Position`/`Size`
- *   from the world (so a drag moves the link with no write) plus that card's
- *   Board frame offsets — which only the surface knows — through
- *   `setSuiteEdgeLinkOf`.
+ *   `drivers.follow()`. The endpoints come from the surface through
+ *   `setSuiteEdgeLinkOf` — a card's placement and its Board chain, or a frame's
+ *   rect — and the surface refreshes that table whenever the document changes,
+ *   so a committed drag carries the ink with it. An end that names its own object
+ *   is read live from the world instead, which is what a drag in flight needs.
+ * - **A link that leaves an entered Board is cut at its wall.** The surface
+ *   re-spawns such a link inside the Board and hands the frame's own rect as
+ *   `clip`; `follow()` cuts the segment there every frame, and the cut ends are
+ *   drawn with a through tick (`throughQuads`) in this same programme — one
+ *   capsule laid across the ink, not a second kind and not a DOM layer.
  * - **The object's own `Position`/`Size` are the polyline's bounding box**, also
  *   kept up to date by `follow()`. ICE culls and picks by that rect first.
  * - **The stratum is `sheets`**, so a link lies over the Board it crosses and
@@ -94,6 +100,7 @@ import {
   type Rect,
   routeEdge,
 } from "./iceEdgeGeometry";
+import { clipToRect, frameLocalPoint, type ThroughEnd, throughEndsOf } from "./iceFrames";
 
 const paper = paperKind();
 
@@ -114,7 +121,7 @@ type SuiteEdgeLocal = KindLocal & {
   clear(): void;
 };
 
-/** What the driver remembers about one edge between frames — the recompute test reads it. */
+/** The box the driver remembers about one edge between frames. */
 export interface SuiteEdgeTrace {
   readonly polyline: readonly Point[];
   /** The world anchors the polyline was routed between; a move of either is what remakes it. */
@@ -123,6 +130,8 @@ export interface SuiteEdgeTrace {
   readonly path: EdgePath;
   /** The box written to `Position`/`Size` for this trace. */
   readonly box: Rect;
+  /** The ends cut at the entered frame's wall this frame; empty when nothing crosses. */
+  readonly through: readonly ThroughEnd[];
 }
 
 /** The object type and its kind share the name; both are unique on this desk. */
@@ -146,6 +155,14 @@ export const SUITE_EDGE_ARROW_LENGTH = 4;
 
 /** Half the angle between an arrowhead's two barbs, radians. */
 export const SUITE_EDGE_ARROW_SPREAD = Math.PI / 6;
+
+/**
+ * Length of the through tick as a multiple of the link's thickness. The tick is
+ * a cross-bar laid *across* the ink where the link leaves a Board's wall: long
+ * enough to read as a bar at zoom 1 (a bar barely wider than the ink disappears
+ * into the stroke's round cap) and short enough not to read as a second link.
+ */
+export const SUITE_EDGE_THROUGH_LENGTH = 5;
 
 const EPSILON = 1e-6;
 const BOX_EPSILON = 1e-3;
@@ -207,6 +224,12 @@ export type SuiteEdgeFace = {
   readonly arrow: boolean;
   /** The document's description, as the surface last projected it; `""` for none. */
   readonly label: string;
+  /**
+   * Whether this drawing is a link leaving a Board the camera is inside: the
+   * segment is cut at the frame's wall and marked with a through tick. False for
+   * every link drawn on its own plane.
+   */
+  readonly through: boolean;
 };
 
 /** What the projection hands `suiteEdgeSpawn`. */
@@ -222,6 +245,8 @@ export interface SuiteEdgeSpawnInput {
   readonly arrow?: boolean;
   /** The description to draw; the surface re-projects it when the document changes. */
   readonly label?: string;
+  /** Draw the through tick: this link was cut at the entered frame's wall. */
+  readonly through?: boolean;
 }
 
 /** What `spawnWidget` takes for one link, with our type filled in. */
@@ -246,8 +271,9 @@ export interface SuiteEdgeSpawn {
  */
 export function suiteEdgeSpawn(input: SuiteEdgeSpawnInput): SuiteEdgeSpawn {
   const thickness = saneThickness(input.thickness ?? SUITE_EDGE_DEFAULT_THICKNESS);
+  const through = input.through === true;
   const polyline = routeEdge({ from: input.from, to: input.to, path: input.path });
-  const box = polylineBounds(polyline, edgeInkReach(thickness));
+  const box = polylineBounds(polyline, edgeReach(thickness, through));
   return {
     type: SUITE_EDGE_TYPE,
     x: box.x,
@@ -261,6 +287,7 @@ export function suiteEdgeSpawn(input: SuiteEdgeSpawnInput): SuiteEdgeSpawn {
       thickness,
       arrow: input.arrow === true,
       label: input.label ?? "",
+      through,
     },
   };
 }
@@ -350,6 +377,59 @@ export function arrowQuads(polyline: readonly Point[], thickness: number): EdgeQ
       sin,
     };
   });
+}
+
+/**
+ * Where the ink runs at one end of the polyline, and which way — the direction a
+ * tick laid across it has to be square to. `null` when the route has no length
+ * at all (a degenerate link has no direction to mark).
+ */
+function endDirection(
+  polyline: readonly Point[],
+  end: ThroughEnd,
+): { readonly point: Point; readonly angle: number } | null {
+  const point = end === "source" ? polyline[0] : polyline[polyline.length - 1];
+  if (point === undefined) return null;
+  const others = end === "source" ? polyline.slice(1) : [...polyline].reverse().slice(1);
+  for (const other of others) {
+    if (Math.hypot(other.x - point.x, other.y - point.y) <= EPSILON) continue;
+    // Both ends are aimed *along* the run: the bar turns a quarter from it, so
+    // the sign of this direction never shows.
+    return { point, angle: Math.atan2(other.y - point.y, other.x - point.x) };
+  }
+  return null;
+}
+
+/**
+ * The through ticks: one short capsule laid across the ink at each end that was
+ * cut at a wall, a quarter turn from the run so it reads as a bar the line
+ * passes through. The same capsule every other piece of the link is drawn with
+ * (`sheetGeometry`), so no second kind and no second pass.
+ */
+export function throughQuads(
+  polyline: readonly Point[],
+  thickness: number,
+  ends: readonly ThroughEnd[],
+): EdgeQuad[] {
+  if (ends.length === 0) return [];
+  const width = saneThickness(thickness);
+  const bar = width * SUITE_EDGE_THROUGH_LENGTH;
+  const quads: EdgeQuad[] = [];
+  for (const end of ends) {
+    const direction = endDirection(polyline, end);
+    if (direction === null) continue;
+    const angle = direction.angle + Math.PI / 2;
+    quads.push({
+      cx: direction.point.x,
+      cy: direction.point.y,
+      length: bar,
+      thickness: width,
+      angle,
+      cos: Math.cos(angle),
+      sin: Math.sin(angle),
+    });
+  }
+  return quads;
 }
 
 /** The axis-aligned box of a polyline, grown by `pad` on every side. */
@@ -450,12 +530,14 @@ export function polylineMidpoint(polyline: readonly Point[]): Point | null {
 /** The geometry a link resolves to this frame: what the pass draws and what the pick tests against. */
 export interface SuiteEdgeGeometry {
   readonly polyline: readonly Point[];
-  /** One capsule per segment, then the arrowhead's barbs when the link carries one. */
+  /** One capsule per segment, then a through tick per cut end, then the arrowhead's barbs. */
   readonly quads: readonly EdgeQuad[];
   readonly thickness: number;
   /** The frame's camera zoom — what `hit` takes its screen-space slop back through. */
   readonly zoom: number;
   readonly arrow: boolean;
+  /** The ends this drawing was cut at (a Board's wall), as the through ticks mark them. */
+  readonly through: readonly ThroughEnd[];
   /** The box the object's `Position`/`Size` should hold (the polyline's bounds, grown by the ink). */
   readonly box: Rect;
   /** World units a press may miss the ink by: `SUITE_EDGE_HIT_PX` at this zoom, never under the ink itself. */
@@ -507,6 +589,13 @@ export interface SuiteEdgeLink {
    * frame-local. Absent on the root plane, where world *is* local.
    */
   readonly origin?: Point | undefined;
+  /**
+   * The entered frame's own rect, frame-local, when this drawing is a link
+   * leaving a Board: the segment is cut at the wall every frame, so a card that
+   * moves inside the frame still ends on it. Absent when the link is drawn on
+   * the plane it belongs to.
+   */
+  readonly clip?: Rect | undefined;
 }
 
 /**
@@ -587,6 +676,11 @@ function samePoint(left: Point, right: Point): boolean {
   return Math.abs(left.x - right.x) <= BOX_EPSILON && Math.abs(left.y - right.y) <= BOX_EPSILON;
 }
 
+/** The same cut ends, in the same order — the trace's other "did anything move". */
+function sameThrough(left: readonly ThroughEnd[], right: readonly ThroughEnd[]): boolean {
+  return left.length === right.length && left.every((end, index) => end === right[index]);
+}
+
 /** A capsule as the paper program's sheet: flat, no curl, no shadow, no fibre. */
 function sheetGeometry(quad: EdgeQuad, alpha: number): PaperRecordGeometry {
   const halfThickness = quad.thickness / 2;
@@ -614,6 +708,17 @@ function sheetGeometry(quad: EdgeQuad, alpha: number): PaperRecordGeometry {
 /** How far a link's drawing reaches past its polyline: the ink's half width plus the halo. */
 function edgeInkReach(thickness: number): number {
   return thickness / 2 + SUITE_EDGE_HALO.grow;
+}
+
+/**
+ * What the object's box has to hold: the ink's own reach, or a through tick's
+ * half length when the drawing carries one — a bar laid across the end reaches
+ * past the ink, and a cull margin that clips it would eat the mark.
+ */
+function edgeReach(thickness: number, through: boolean): number {
+  if (!through) return edgeInkReach(thickness);
+  const halfBar = (saneThickness(thickness) * SUITE_EDGE_THROUGH_LENGTH) / 2;
+  return Math.max(edgeInkReach(saneThickness(thickness)), halfBar);
 }
 
 /** `tone` of the ink over the sheet: what a link's stroke is, mixed rather than alpha-laid. */
@@ -726,9 +831,15 @@ const suiteEdgeKind: ObjectKind<SuiteEdgeGeometry, readonly PaperRecord[]> = {
       numberProp(ctx.props, "thickness", SUITE_EDGE_DEFAULT_THICKNESS),
     );
     const arrow = ctx.props.arrow === true;
-    const quads = arrow
-      ? [...segmentQuads(polyline, thickness), ...arrowQuads(polyline, thickness)]
-      : segmentQuads(polyline, thickness);
+    // The tick is the surface's word that this drawing leaves a Board, and the
+    // trace says which ends it was cut at: the two never disagree, because the
+    // cut is what wrote the trace.
+    const through = ctx.props.through === true ? (local?.traceOf(ctx.entity)?.through ?? []) : [];
+    const quads = [
+      ...segmentQuads(polyline, thickness),
+      ...throughQuads(polyline, thickness, through),
+      ...(arrow ? arrowQuads(polyline, thickness) : []),
+    ];
     const zoom = saneZoom(ctx.view.zoom);
     return {
       polyline,
@@ -736,7 +847,8 @@ const suiteEdgeKind: ObjectKind<SuiteEdgeGeometry, readonly PaperRecord[]> = {
       thickness,
       zoom,
       arrow,
-      box: polylineBounds(polyline, edgeInkReach(thickness)),
+      through,
+      box: polylineBounds(polyline, edgeReach(thickness, through.length > 0)),
       // A screen-space slop, taken back into world units: six CSS px of miss is
       // six world units at zoom 1 and sixty at zoom 0.1.
       hitSlop: Math.max(thickness / 2, SUITE_EDGE_HIT_PX / zoom),
@@ -834,8 +946,13 @@ export const SuiteEdge = defineObject({
     // the surface keeps it in step with `edge.label` (one `setWidgetProps` per
     // change, never per frame).
     label: p.string({ default: "" }),
+    // This drawing is a link leaving a Board the camera is inside: cut at the
+    // frame's wall, with a through tick at each cut end. The surface sets it when
+    // it re-spawns a crossing link into the entered frame, so it never changes
+    // per frame.
+    through: p.boolean({ default: false }),
   },
-  groups: { edge: ["edgeId", "kind", "path", "thickness", "arrow", "label"] },
+  groups: { edge: ["edgeId", "kind", "path", "thickness", "arrow", "label", "through"] },
   size: SUITE_EDGE_SIZE,
   kind: suiteEdgeKind,
   interaction: SUITE_EDGE_INTERACTION,
@@ -980,15 +1097,31 @@ function followSuiteEdges(host: KindDriverHost, local: SuiteEdgeLocal): void {
     // The anchors are world; the object sits inside its frame, so the polyline
     // is the anchor less the frame's origin.
     const origin = link.origin ?? { x: 0, y: 0 };
-    const from = { x: worldFrom.x - origin.x, y: worldFrom.y - origin.y };
-    const to = { x: worldTo.x - origin.x, y: worldTo.y - origin.y };
+    const frameFrom = frameLocalPoint(worldFrom, origin);
+    const frameTo = frameLocalPoint(worldTo, origin);
+    // A crossing link is cut at the wall it leaves by, every frame: the card that
+    // holds the inside end may have moved since the last one, and the wall has
+    // not. A link that ends on that wall is not cut there (`clipToRect` keeps an
+    // end that is already on the boundary), which is why a Board end needs no
+    // special case.
+    const cut = link.clip === undefined ? null : clipToRect(frameFrom, frameTo, link.clip);
+    if (link.clip !== undefined && cut === null) {
+      // The whole segment is outside the entered frame: this drawing has no ink
+      // inside it, exactly as if the link were on a plane the camera cannot see.
+      local.dropTrace(entity);
+      continue;
+    }
+    const from = cut === null ? frameFrom : cut.from;
+    const to = cut === null ? frameTo : cut.to;
+    const through = cut === null ? [] : throughEndsOf(cut);
 
     const last = local.traceOf(entity);
     const moved =
       last === undefined ||
       last.path !== face.path ||
       !samePoint(last.from, from) ||
-      !samePoint(last.to, to);
+      !samePoint(last.to, to) ||
+      !sameThrough(last.through, through);
     if (moved) {
       const polyline = routeEdge({ from, to, path: face.path });
       const thickness = saneThickness(face.thickness);
@@ -997,7 +1130,8 @@ function followSuiteEdges(host: KindDriverHost, local: SuiteEdgeLocal): void {
         from,
         to,
         path: face.path,
-        box: polylineBounds(polyline, edgeInkReach(thickness)),
+        box: polylineBounds(polyline, edgeReach(thickness, face.through === true)),
+        through,
       });
       // The box may come out identical (a card moving between two corners of
       // the same bounds), so the record is remade by hand as well: the builder's

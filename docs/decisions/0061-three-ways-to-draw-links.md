@@ -1,0 +1,98 @@
+# ADR-0061: Three ways to draw links — connect, thread, web
+
+- **Status:** proposed — direction recorded, nothing built
+- **Date:** 2026-10-25
+- **Related:** [ADR-0007](./0007-connector-links.md) (connector links),
+  [ADR-0039](./0039-a-link-points-at-an-endpoint-of-a-kind.md) (an endpoint of a kind),
+  [ADR-0041](./0041-alpha-core-is-a-closed-feature-set.md) (thread mode in the core list),
+  [ADR-0048](./0048-links-paint-beneath-cards.md) (link interaction),
+  `apps/canvas/src/canvas/LinkModeControl.tsx`, `apps/canvas/src/canvas/linkThread.ts`
+
+## Context
+
+The product author's note, which came from their father misreading thread mode and landing on something
+better:
+
+> A third mode, same ui element, same entry points and logic, only difference is you hold ctrl to enter
+> it, or enter the third mode by clicking the third item in the ui. We can use a literal web icon for it.
+> What this is, is instead of daisy chaining (what threading mode is), you keep connecting from your
+> starting point to other connectors, rather than "threading" between them, you are "webbing".
+
+The two existing modes answer two shapes of drawing:
+
+- **Connect** — drag one link at a time; the line follows the pointer and lands on release.
+- **Thread** — click connector after connector; each click commits a link from the *previous* endpoint, so
+  a chain grows end to end.
+
+Thread mode is right for a path ("A leads to B leads to C") and wrong for a hub ("A relates to B, C, D,
+E"). Today that hub is drawn as four drags, or as a thread which — wrongly — makes B→C and C→D look
+like part of the same statement. The distinction is not cosmetic: a thread writes `A→B, B→C`; webbing
+writes `A→B, A→C, A→D`.
+
+## Decision
+
+**A third link mode: web. One control, three modes, one origin.**
+
+1. **Web mode fixes an origin and links from it.** The first click (or the connector a drag started on)
+   becomes the origin; every later click commits a link *from that origin* to the clicked endpoint. The
+   origin stays armed until it is cleared, so a hub is one click per spoke.
+2. **The origin is visible.** The armed origin keeps its dot ring (the same affordance thread mode gives
+   its endpoint), so the user can always see what they are webbing from. Without it, the third mode is
+   indistinguishable from thread and the mistake that produced this ADR repeats.
+3. **Same control, three entries.** `LinkModeControl` becomes three states rather than a toggle:
+   connect → thread → web → connect. `Ctrl` (and `Cmd`) held while pressing a connector enters web mode
+   for that gesture, mirroring how `Shift` already means "thread". Holding the modifier is a *gesture*
+   modifier, so it never writes the stored mode.
+4. **A web is a set of independent links.** Nothing about the drawn edges differs: they are ordinary
+   links with their own kinds, ends and descriptions. There is no "web" record and no group. Deleting the
+   origin's dot does not delete the links.
+5. **The stored mode is the tool, the modifier is the gesture.** Exactly as thread mode already works:
+   picking web from the control persists; holding `Ctrl` engages it for one press and reverts.
+6. **Escape clears the origin**, and so does clicking empty canvas — the same two exits thread mode has,
+   because a mode whose exit is undiscoverable is a trap.
+7. **Self-links stay legal** where they already are. An origin may web to another dot of its own card; the
+   existing rule (any dot pair except the identical one) is unchanged.
+
+### Why the icon and the name
+
+"Web" earns its own glyph because the shape it draws is radial, and the existing arrow ("connect") and
+chain ("thread") glyphs already communicate the other two shapes. The user-facing labels stay
+`Connect`, `Thread`, `Web`.
+
+**Considered and declined: renaming Connect to "Attach".** The argument for it is real — in a menu of
+three, "Connect" can read as "the one that makes connections", which is true of all three. It is still
+declined, for three reasons:
+
+1. **The family is shape-verbs.** Thread draws a chain, web draws a star, connect draws a single line. All
+   three name the *gesture's shape*; "attach" names the *result*, which every mode produces.
+2. **The object is a connector.** Users click a connector to make a connection; the UI verb and the object
+   should agree. "Attach" would make the sentence "attach this connector" while the dot's own label says
+   "Draw a link from this connector".
+3. **The code says connect everywhere** — `onConnect`, `ConnectState`, `nodesConnectable`, `connector`.
+   A UI-only rename splits the vocabulary for no gain in meaning.
+
+If the three-state control turns out to confuse testers — which the tooltip and the origin ring are meant
+to prevent — "Attach" is the first alternative to try, and this paragraph is the record of why.
+
+## Consequences
+
+- **One idea, three shapes.** The three modes are the same mechanism with a different rule for what the
+  next click means: pointer (connect), previous endpoint (thread), fixed origin (web).
+- **`linkThread` grows a mode rather than a second store.** Its armed state already holds an endpoint; web
+  keeps the same armed endpoint across commits instead of replacing it.
+- **A hub no longer requires a fake chain.** This is the user-visible win, and it is also a data-correctness
+  win: the graph now records what the author meant.
+- **The control is a three-way cycle, not a toggle.** Its `aria-pressed` becomes a three-state
+  `aria-label`/`data-mode`, and the shift-hint behaviour (a modifier previewing a mode) extends to Ctrl.
+- **Discoverability is the risk.** A third state hides behind two clicks or a modifier; the tooltip must
+  name all three and the origin ring must be unmistakable.
+
+## Rejected alternatives
+
+- **A "hub" tool that creates a node for the hub.** It invents an object to express "A relates to B and
+  C", which the links already say.
+- **Web as a modifier on thread instead of its own mode.** Modifiers compose badly (Shift + Ctrl would
+  mean two things), and a mode the user cannot see in the control is one they will not find.
+- **Auto-grouping webbed links into a web record.** It duplicates what the edges say and creates a second
+  selection semantics for the same lines.
+- **Keeping the origin forever.** An origin with no exit turns a mode into a mode you are stuck in.

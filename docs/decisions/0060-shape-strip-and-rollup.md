@@ -101,6 +101,21 @@ card id*, not a new object class — the same shape as a portal tab, minus a tar
 this ADR's own rule (a shape with text is a card, a shape without text is a route): the sketch stays the
 card, and the tab is a way of looking at it.
 
+## Parked 2026-10-25: card faces
+
+The author's father — the largest real-world user, building a Terry Pratchett-style universe with nested
+book graphs — suggested cards could **flip** to a second side. It is recorded here because it is adjacent
+to strips and would be decided by the same record shape, and parked for two reasons:
+
+1. **It is a second body, not a second strip.** A face implies two documents per card, or one document with
+   a face id, and either answer changes what "the card's content" means everywhere — the body editor,
+   search, export, mentions and the strip layout.
+2. **Nothing needs it yet.** The stated use (a map or a portrait on the reverse) is served today by a second
+   card, an image attachment, or a portal. "A card with two sides" is a real feature; it is not an Alpha one.
+
+If it returns, the first question is the one above — **a face is content or a card is content** — and that
+is an ADR, not an implementation detail.
+
 ## Open questions (deliberately not settled here)
 
 - Whether strips may be **reordered across sides** by dragging, or only assigned. Assignment is enough to

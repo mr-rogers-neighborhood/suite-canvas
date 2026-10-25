@@ -110,10 +110,49 @@ story, all of which a card already has. A shelf of primitives is *content*.
 - **Naming it "Type Template".** ADR-0038 already means the starter card by that phrase; a second
   meaning makes every future sentence about templates ambiguous.
 
+## Amendment 2026-10-25: "Blueprint" is the family name, not the type-only one
+
+The author asked whether a **board template** should also be called a Blueprint, since that mirrors the
+railway.com model more closely. It should — and the umbrella reading is cleaner than the one this ADR
+originally took:
+
+- A **blueprint** is an installable starting point. There are two kinds: a **type blueprint** (seeds a
+  type — this ADR) and a **board blueprint** (seeds a board — ADR-0040's board template, renamed in the
+  interface).
+- **"Template" leaves the user vocabulary.** ADR-0038's meaning (the card a new card is copied from) is
+  now the **starter card**; the board idea is a **board blueprint**. Code keeps `templateCardId` and
+  `setBoardTemplate` — renaming stable schema identifiers buys nothing.
+- **One gallery, both kinds, one install sheet.** A board blueprint installs by duplication, a type
+  blueprint by this ADR's command; the sheet differs in what it lists, not in how it reads.
+
+This is why decision 8's "Templates tab" is a **Blueprints** tab.
+
+## Amendment 2026-10-25: three ways in, and a Types tab
+
+The author specified where the shelf is reached, which is a usability decision worth recording because a
+catalogue nobody finds is a catalogue nobody uses:
+
+1. **"Browse blueprints"** below **Manage types** in the add-card menu — the moment a user is choosing
+   what to make.
+2. **"Browse blueprints"** below **Add types** in the type editor — the moment a user is authoring a type
+   and would otherwise build a field list from scratch.
+3. **A Types tab in the library**, beside Cards, Boards, Sketches and Trash, listing the workspace's own
+   types with the usual row controls, and **suggested blueprints appended below** based on what the
+   workspace already has (a book type suggests a character and a location; a project type suggests a
+   milestone). Suggestions are a list, never automatic installs.
+
+The Types tab also gives types the affordances every other library row has — which is the answer to "where
+do I manage my types" that does not require opening a modal.
+
+**Bulk editing and large libraries are one problem, not two.** Every library tab now needs it: select
+several rows and trash, unplace, place, tag or import them together; and a section that grows past a
+screenful needs to stay usable (a filter that survives, a stable sort, and rows that do not re-render on
+every keystroke). That work belongs to the library's own gate rather than to any single tab.
+
 ## Settled at writing time (2026-10-25)
 
-- **The name is "type blueprint"**, and the other two keep their own words: a type's seed card is its
-  **starter card**, and a board's seed is a **board template**.
+- **The name is "blueprint" for the family**, with a *type blueprint* and a *board blueprint* as its two
+  kinds; a type's seed card is its **starter card**. See the amendment above.
 - **A kit is a tag, and a kit's page is a lens.** No kit record.
 - **It is built after A33 and A34**, not as an Alpha gate: a blueprint declares fields, so the field
   editor and the composite kinds come first. The model is recorded now because it constrains what

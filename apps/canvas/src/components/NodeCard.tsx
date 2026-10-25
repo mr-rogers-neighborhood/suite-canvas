@@ -65,7 +65,7 @@ export interface NodeCardProps {
   onConnectorMove?: (connectorId: string, position: { x: number; y: number }) => void;
   onConnectorMoveFinished?: () => void;
   selectedConnectorId?: string | null;
-  onConnectorSelect?: (connectorId: string) => void;
+  onConnectorSelect?: (connectorId: string, event?: React.MouseEvent) => void;
   onConnectorMoveEnd?: (connectorId: string, position: { x: number; y: number }) => void;
   onConnectorContextMenu?: (event: React.MouseEvent, connectorId: string) => void;
   onStartEditing?: (field: EditingField) => void;
@@ -93,6 +93,7 @@ export interface NodeCardProps {
   readOnly?: boolean;
   /** W2: thread mode reveals the connector dots on unselected cards too. */
   threadMode?: boolean;
+  armed?: boolean;
   /** A link is being dragged, so this card's dots must show even unselected. */
   draftActive?: boolean;
 }
@@ -143,6 +144,7 @@ export function NodeCard({
   canManageTrash,
   readOnly = false,
   threadMode = false,
+  armed = false,
   draftActive = false,
 }: NodeCardProps) {
   const editContent = canEditContent ?? !readOnly;
@@ -456,11 +458,12 @@ export function NodeCard({
         selected={selected}
         threadMode={threadMode}
         draftActive={draftActive}
+        armed={armed}
         color={focusedBy?.color ?? draggingPeer?.color}
         selectedConnectorId={selectedConnectorId}
         movingConnectorPeers={movingConnectorPeers}
         selectingConnectorPeers={selectingConnectorPeers}
-        onSelect={(id) => onConnectorSelect?.(id)}
+        onSelect={(id, event) => onConnectorSelect?.(id, event)}
         onMoveStart={(id) => onConnectorMoveStart?.(id)}
         onMove={(id, position) => onConnectorMove?.(id, position)}
         onMoveFinished={onConnectorMoveFinished}

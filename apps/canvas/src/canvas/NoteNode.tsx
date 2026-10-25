@@ -216,6 +216,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         resizingPeers={resizingPeers}
         threadMode={connectors.threadMode}
         draftActive={connectors.draftActive}
+        armed={connectors.armed}
         movingConnectorPeers={connectors.movingConnectorPeers}
         selectingConnectorPeers={connectors.selectingConnectorPeers}
         canEditContent={canEditContent}

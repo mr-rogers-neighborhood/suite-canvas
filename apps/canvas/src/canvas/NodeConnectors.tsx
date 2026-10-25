@@ -18,6 +18,11 @@ export interface ConnectorRevealInput {
   draftActive?: boolean | undefined;
   /** The pointer is over the entity, so its dots come to hand without a click. */
   hovered?: boolean | undefined;
+  /**
+   * A thread is armed: one connector has been clicked and the next click picks
+   * its target, so every candidate must be visible even in connect mode.
+   */
+  armed?: boolean | undefined;
 }
 
 /** The single reveal rule for every connector layer, cards and sections alike. */
@@ -26,8 +31,9 @@ export function revealConnectors({
   threadMode = false,
   draftActive = false,
   hovered = false,
+  armed = false,
 }: ConnectorRevealInput): boolean {
-  return selected || threadMode || draftActive || hovered;
+  return selected || threadMode || draftActive || hovered || armed;
 }
 
 export interface NodeConnectorsProps {
@@ -47,6 +53,8 @@ export interface NodeConnectorsProps {
   threadMode?: boolean | undefined;
   /** A link is being dragged right now, so every reachable target must show. */
   draftActive?: boolean | undefined;
+  /** A thread is armed: the next click picks a target, so show every candidate. */
+  armed?: boolean | undefined;
   /** Override the hover read from the surrounding node (sections have no node). */
   hovered?: boolean | undefined;
   selectedConnectorId?: string | null | undefined;
@@ -54,7 +62,7 @@ export interface NodeConnectorsProps {
   movingConnectorPeers?: Record<string, ConnectorPeerState> | undefined;
   /** Peers that selected a connector, keyed by connector id. */
   selectingConnectorPeers?: Record<string, PresenceUser[]> | undefined;
-  onSelect?: ((connectorId: string) => void) | undefined;
+  onSelect?: ((connectorId: string, event?: React.MouseEvent) => void) | undefined;
   onMoveStart?: ((connectorId: string) => void) | undefined;
   onMove?: ((connectorId: string, position: Point) => void) | undefined;
   onMoveFinished?: (() => void) | undefined;
@@ -83,6 +91,7 @@ export function NodeConnectors({
   selected = false,
   threadMode = false,
   draftActive = false,
+  armed = false,
   hovered: hoveredProp,
   selectedConnectorId = null,
   movingConnectorPeers = {},
@@ -112,7 +121,7 @@ export function NodeConnectors({
     };
   }, []);
   const hovered = hoveredProp ?? hoveredSelf;
-  const revealed = revealConnectors({ selected, threadMode, draftActive, hovered });
+  const revealed = revealConnectors({ selected, threadMode, draftActive, hovered, armed });
   const count = connectors.length;
 
   // Handles stay mounted whether or not they are visible: React Flow only starts
@@ -147,7 +156,7 @@ export function NodeConnectors({
           nodeId={nodeId}
           color={color}
           selected={selectedConnectorId === connector.id}
-          onSelect={(id) => onSelect?.(id)}
+          onSelect={(id, event) => onSelect?.(id, event)}
           onMoveEnd={(id, position) => onMoveEnd?.(id, position)}
           movingPeers={movingConnectorPeers[connector.id]?.users ?? []}
           selectingPeers={selectingConnectorPeers[connector.id] ?? []}

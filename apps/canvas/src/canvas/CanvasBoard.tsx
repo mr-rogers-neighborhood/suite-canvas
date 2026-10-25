@@ -45,7 +45,9 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
+import { LinkModeControl } from "./LinkModeControl";
 import { endpointAtPoint, type LinkAnchor, type LinkScene, linkAnchors } from "./linkGeometry";
+import { useLinkThreadStore } from "./linkThread";
 import { LocalDragEase, prefersReducedMotion } from "./localEasing";
 import {
   DEFAULT_CARD_HEIGHT,
@@ -334,6 +336,31 @@ export function CanvasBoard() {
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
+  const linkMode = useUiStore((state) => state.linkMode);
+  /**
+   * When the last thread step happened. React Flow reports a connector release as
+   * a *node click* too, and clearing the thread there would disarm it in the same
+   * gesture that armed it.
+   */
+  const threadStepAt = useRef(0);
+  /**
+   * The connector a gesture started on, readable synchronously. A click fires
+   * connect-start and connect-end before React re-renders, so the state set by
+   * the first is still null in the second.
+   */
+  const connectingDraft = useRef<{
+    nodeId: string;
+    connectorId: string;
+    anchorEnd: "source" | "target";
+  } | null>(null);
+  const setLinkMode = useUiStore((state) => state.setLinkMode);
+
+  // A thread belongs to the mode it started in: leaving the mode must not leave
+  // a connector armed in a mode that no longer chains on a plain click.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: linkMode is the trigger, not a value read in the effect.
+  useEffect(() => {
+    useLinkThreadStore.getState().clear();
+  }, [linkMode]);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const stopEditing = useUiStore((state) => state.stopEditing);
@@ -1630,6 +1657,11 @@ export function CanvasBoard() {
         return;
       }
 
+      if (event.key === "Escape" && useLinkThreadStore.getState().armed) {
+        useLinkThreadStore.getState().clear();
+        state.setSelectedConnector(null);
+        return;
+      }
       if (event.key === "Escape" && state.editingSectionId) {
         state.setEditingSection(null);
         return;
@@ -1951,6 +1983,7 @@ export function CanvasBoard() {
       setReconnecting(null);
       setReconnect(null);
       setConnecting({ nodeId, connectorId: handleId, anchorEnd });
+      connectingDraft.current = { nodeId, connectorId: handleId, anchorEnd };
 
       const point = clientPoint(event);
       if (!point) return;
@@ -1966,13 +1999,15 @@ export function CanvasBoard() {
 
   const onConnectEnd = useCallback<OnConnectEnd>(
     (event, connectionState) => {
-      const draft = connecting;
+      const draft = connecting ?? connectingDraft.current;
+      connectingDraft.current = null;
       const committed = connectCommitted.current;
       connectCommitted.current = false;
       setConnecting(null);
       setConnect(null);
       // Released on a connector dot: `onConnect` already wrote the link.
-      if (!draft || committed) return;
+      if (committed) return;
+      if (!draft) return;
       if (!canCreateContent || !activeBoardId) return;
 
       const client = clientPoint(event);
@@ -2300,10 +2335,17 @@ export function CanvasBoard() {
 
     if (contextMenu.kind === "connector") {
       if (!canManageStructure) return [];
+      // The same toggle as the widget bar, where the user is already looking when
+      // they right-click the dot they mean to start from.
+      const linkModeItem = {
+        label: linkMode === "thread" ? "Switch to connect mode" : "Switch to thread mode",
+        onSelect: () => setLinkMode(linkMode === "thread" ? "connect" : "thread"),
+      };
       // Section connectors address a section, card connectors address a node.
       if (contextMenu.sectionId && contextMenu.connectorId) {
         const { sectionId, connectorId } = contextMenu;
         return [
+          linkModeItem,
           {
             label: "Reposition Connector",
             onSelect: () => setSelectedSectionConnector({ sectionId, connectorId }),
@@ -2319,6 +2361,7 @@ export function CanvasBoard() {
         ];
       }
       return [
+        linkModeItem,
         {
           label: "Reposition Connector",
           onSelect: () => {
@@ -2543,6 +2586,8 @@ export function CanvasBoard() {
     canCreateBoards,
     cardsById,
     enterPortal,
+    linkMode,
+    setLinkMode,
   ]);
 
   return (
@@ -2685,11 +2730,17 @@ export function CanvasBoard() {
           commitDrop(dropped);
         }}
         onPaneClick={() => {
+          if (performance.now() - threadStepAt.current > 300) {
+            useLinkThreadStore.getState().clear();
+          }
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
           handleSelectSection(null);
         }}
         onNodeClick={() => {
+          if (performance.now() - threadStepAt.current > 300) {
+            useLinkThreadStore.getState().clear();
+          }
           setSelectedConnector(null);
           setSelectedSectionConnector(null);
           handleSelectSection(null);
@@ -2767,6 +2818,7 @@ export function CanvasBoard() {
           }}
           threadMode={revealState.threadMode}
           draftActive={revealState.draftActive}
+          armed={revealState.armed}
           selectedConnector={selectedSectionConnector}
           onConnectorSelect={(sectionId, connectorId) => {
             setSelectedSectionConnector({ sectionId, connectorId });
@@ -2807,6 +2859,9 @@ export function CanvasBoard() {
         <PresenceLayer />
         <PeerReconnectLayer />
       </ReactFlow>
+      {/* Outside React Flow: its pane preventDefaults pointerdown, which eats the
+          click on any control nested inside it. */}
+      <LinkModeControl />
       <PortalTransitionLayer />
       {edgeDescription ? (
         <EdgeDescriptionInput

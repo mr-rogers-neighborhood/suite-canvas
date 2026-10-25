@@ -7,6 +7,7 @@ import type { Point } from "../components/Connector";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
 
 /**
@@ -34,12 +35,14 @@ export interface NodeConnectorWiring {
   threadMode: boolean;
   /** True while this client is dragging a link out of (or into) a connector. */
   draftActive: boolean;
+  /** True while a thread is armed, so every candidate connector is visible. */
+  armed: boolean;
   /** Peer colour while a peer focuses or drags this node, for the dot outline. */
   color: string | undefined;
   selectedConnectorId: string | null;
   movingConnectorPeers: Record<string, ConnectorPeerState>;
   selectingConnectorPeers: Record<string, PresenceUser[]>;
-  onSelect: (connectorId: string) => void;
+  onSelect: (connectorId: string, event?: React.MouseEvent) => void;
   onMoveStart: (connectorId: string) => void;
   onMove: (connectorId: string, position: Point) => void;
   onMoveFinished: () => void;
@@ -56,10 +59,15 @@ export function useThreadMode(): boolean {
 }
 
 /** The reveal inputs for sections and node faces, read from the one place. */
-export function useConnectorRevealState(): { threadMode: boolean; draftActive: boolean } {
+export function useConnectorRevealState(): {
+  threadMode: boolean;
+  draftActive: boolean;
+  armed: boolean;
+} {
   const threadMode = useThreadMode();
   const draftActive = useLinkDraftStore((state) => state.draftActive);
-  return { threadMode, draftActive };
+  const armed = useLinkThreadStore((state) => state.armed !== null);
+  return { threadMode, draftActive, armed };
 }
 
 /**
@@ -74,7 +82,7 @@ export function useNodeConnectorWiring(
 ): NodeConnectorWiring {
   const nodeId = card?.id ?? "";
   const connectors = useMemo(() => card?.connectors ?? [], [card]);
-  const { threadMode, draftActive } = useConnectorRevealState();
+  const { threadMode, draftActive, armed: threadArmed } = useConnectorRevealState();
   const workspace = useCanvasStore((state) => state.workspace);
   const peers = useBoardPeers(boardId ?? null);
   const setMovingConnector = usePresenceStore((state) => state.setMovingConnector);
@@ -116,12 +124,46 @@ export function useNodeConnectorWiring(
     return focused?.user.color ?? dragging?.user.color;
   }, [peers, nodeId]);
 
+  const armThread = useLinkThreadStore((state) => state.arm);
+  const linkMode = useUiStore((state) => state.linkMode);
+
+  /**
+   * A click selects one connector, unless it continues a thread. Thread mode, or
+   * Shift in either mode, links from the armed connector and arms the clicked
+   * one, so a chain grows click by click without dragging.
+   */
   const onSelect = useCallback(
-    (connectorId: string) => {
+    (connectorId: string, event?: React.MouseEvent) => {
       if (!nodeId) return;
-      setSelectedConnector({ nodeId, connectorId });
+      const clicked = { kind: "card" as const, id: nodeId, connectorId };
+
+      // An armed thread keeps chaining on plain clicks: Shift starts a chain,
+      // and the clicks after it should not each need the modifier.
+      const armedNow = useLinkThreadStore.getState().armed !== null;
+      if (!armedNow && !isChaining({ shiftKey: event?.shiftKey, linkMode })) {
+        armThread(null);
+        setSelectedConnector({ nodeId, connectorId });
+        return;
+      }
+
+      const step = stepThread(useLinkThreadStore.getState().armed, clicked);
+      if (step.link && boardId) {
+        workspace.addEdge({
+          boardId,
+          source: step.link.from.id,
+          sourceKind: step.link.from.kind,
+          sourceConnector: step.link.from.connectorId,
+          target: step.link.to.id,
+          targetKind: step.link.to.kind,
+          ...(step.link.to.kind === "card" ? { targetConnector: step.link.to.connectorId } : {}),
+        });
+      }
+      armThread(step.armed);
+      setSelectedConnector(
+        step.armed ? { nodeId: step.armed.id, connectorId: step.armed.connectorId } : null,
+      );
     },
-    [nodeId, setSelectedConnector],
+    [nodeId, boardId, linkMode, armThread, setSelectedConnector, workspace],
   );
 
   const onMoveStart = useCallback(
@@ -171,6 +213,7 @@ export function useNodeConnectorWiring(
     connectors,
     threadMode,
     draftActive,
+    armed: threadArmed,
     color,
     selectedConnectorId:
       selectedConnector?.nodeId === nodeId ? selectedConnector.connectorId : null,

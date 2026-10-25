@@ -9,7 +9,7 @@ export interface ConnectorProps {
   nodeId: string;
   color?: string | undefined;
   selected?: boolean;
-  onSelect: (connectorId: string) => void;
+  onSelect: (connectorId: string, event?: React.MouseEvent) => void;
   /** Persisted once, on release, so dragging never writes to the CRDT per frame. */
   onMoveEnd: (connectorId: string, position: { x: number; y: number }) => void;
   onContextMenu: (event: React.MouseEvent, connectorId: string) => void;
@@ -338,7 +338,9 @@ export function Connector({
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
-          onSelect(connector.id);
+          // The event travels with the click so a thread can read Shift without
+          // a global key listener that would go stale on focus loss.
+          onSelect(connector.id, event);
         }}
         onContextMenu={(event) => {
           event.preventDefault();

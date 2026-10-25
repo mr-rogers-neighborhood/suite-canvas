@@ -9,6 +9,8 @@ import {
   projectToPerimeter,
 } from "../components/Connector";
 import { PeerNameTag } from "../components/PeerNameTag";
+import { useUiStore } from "../store/useUiStore";
+import { isChaining, stepThread, useLinkThreadStore } from "./linkThread";
 import { revealConnectors } from "./NodeConnectors";
 import type { SectionOffset } from "./sectionLayout";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
@@ -86,6 +88,8 @@ export interface SectionLayerProps {
   threadMode?: boolean;
   /** A link is being dragged, so every section shows its drop targets. */
   draftActive?: boolean;
+  /** A thread is armed, so every section shows its connectors as candidates. */
+  armed?: boolean;
   /** A viewer may select a section, never move, resize or rename it. */
   readOnly?: boolean;
 }
@@ -116,6 +120,7 @@ export function SectionLayer({
   onLinkCommit,
   threadMode = false,
   draftActive = false,
+  armed = false,
   readOnly = false,
 }: SectionLayerProps) {
   const { screenToFlowPosition } = useReactFlow();
@@ -137,6 +142,7 @@ export function SectionLayer({
    */
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const setDraftActive = useLinkDraftStore((state) => state.setDraftActive);
+  const linkMode = useUiStore((state) => state.linkMode);
 
   const members = useMemo(() => {
     const counts = new Map<string, number>();
@@ -310,7 +316,20 @@ export function SectionLayer({
         const target = resolveLinkTarget?.(to) ?? null;
         setLinkDraft(null);
         setDraftActive(false);
-        if (target) onLinkCommit?.(section.id, connector.id, target, origin);
+        if (target) {
+          onLinkCommit?.(section.id, connector.id, target, origin);
+          useLinkThreadStore.getState().clear();
+          return;
+        }
+        // Released without a target: in chaining mode that is a click, so the
+        // section connector takes part in a thread like a card's does.
+        if (!isChaining({ shiftKey: pointer.shiftKey, linkMode })) return;
+        const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
+        const step = stepThread(useLinkThreadStore.getState().armed, clicked);
+        if (step.link) {
+          onLinkCommit?.(step.link.from.id, step.link.from.connectorId, step.link.to, origin);
+        }
+        useLinkThreadStore.getState().arm(step.armed);
       },
     );
   };
@@ -414,6 +433,7 @@ export function SectionLayer({
                 selected: section.id === selectedSectionId,
                 threadMode,
                 draftActive,
+                armed,
                 hovered: section.id === hoveredSectionId,
               }),
             )

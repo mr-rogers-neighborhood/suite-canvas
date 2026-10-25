@@ -46,6 +46,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { AboveLinkLayer } from "./AboveLinkLayer";
 import { type AlignEdge, type DistributeAxis, planAlign, planDistribute } from "./arrangeCommand";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
 import { LinkModeControl } from "./LinkModeControl";
@@ -81,6 +82,7 @@ import { PortalTransitionLayer } from "./PortalTransitionLayer";
 import { PresenceLayer } from "./PresenceLayer";
 import { boardBounds } from "./portalMiniature";
 import { SectionLayer } from "./SectionLayer";
+import { type SectionLink, SectionLinkLayer } from "./SectionLinkLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
@@ -215,13 +217,6 @@ function toFlowEdge(
   };
 }
 
-/** A link drawn in flow space because one of its ends is a section. */
-interface SectionLink {
-  edge: GraphEdge;
-  anchors: { source: LinkAnchor; target: LinkAnchor };
-  offLens: boolean;
-}
-
 /**
  * The next link in a thread, rubber-banding from the armed connector to the
  * pointer. Without it the user clicks into the dark: nothing shows where the
@@ -277,207 +272,6 @@ interface FlowLink {
   source: string;
   target: string;
   offLens: boolean;
-}
-
-/** A gentle horizontal curve between two anchors, in flow coordinates. */
-function sectionLinkPath(anchors: { source: LinkAnchor; target: LinkAnchor }): string {
-  const { source, target } = anchors;
-  const bend = Math.max(32, Math.min(160, Math.abs(target.x - source.x) / 2));
-  const direction = target.x >= source.x ? 1 : -1;
-  return `M ${source.x},${source.y} C ${source.x + bend * direction},${source.y} ${
-    target.x - bend * direction
-  },${target.y} ${target.x},${target.y}`;
-}
-
-/**
- * Links with a section end: a section is not a React Flow node, so its lines are
- * drawn here in flow space, anchored by the same geometry the cards use.
- */
-function SectionLinkLayer({
-  links,
-  selectedEdgeIds,
-  onSelectEdge,
-  onEdgeContextMenu,
-  onReconnect,
-  toFlow,
-}: {
-  links: SectionLink[];
-  selectedEdgeIds: ReadonlySet<string>;
-  onSelectEdge: (edgeId: string, additive?: boolean) => void;
-  onEdgeContextMenu: (event: React.MouseEvent, edgeId: string) => void;
-  /** Released a dragged end somewhere: the canvas resolves it and writes. */
-  onReconnect?: (edgeId: string, end: "source" | "target", point: LinkAnchor) => void;
-  toFlow?: (client: { x: number; y: number }) => LinkAnchor;
-}) {
-  // The end being dragged, and where the pointer is. A card link gets React
-  // Flow's own updaters because it is an edge; a link that touches a section is
-  // drawn by this layer, so its handles have to be its own.
-  const [drag, setDrag] = useState<{
-    edgeId: string;
-    end: "source" | "target";
-    fixed: LinkAnchor;
-    pointer: LinkAnchor;
-  } | null>(null);
-
-  if (links.length === 0) return null;
-
-  // A card's link gets React Flow's own end handles (it is an edge); a link that
-  // touches a section has none, so these stand in. They live in their own layer
-  // because they have to paint above the cards to be grabbable at all — the same
-  // momentary elevation a selected card link gets.
-  const handleLinks = links.filter((link) => selectedEdgeIds.has(link.edge.id));
-
-  const beginDrag = (event: React.PointerEvent, link: SectionLink, end: "source" | "target") => {
-    if (!onReconnect || !toFlow) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const fixed = end === "source" ? link.anchors.target : link.anchors.source;
-    const pointer = toFlow({ x: event.clientX, y: event.clientY });
-    setDrag({ edgeId: link.edge.id, end, fixed, pointer });
-
-    const move = (moveEvent: PointerEvent) => {
-      setDrag((current) =>
-        current
-          ? { ...current, pointer: toFlow({ x: moveEvent.clientX, y: moveEvent.clientY }) }
-          : current,
-      );
-    };
-    const up = (upEvent: PointerEvent) => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      window.removeEventListener("pointercancel", up, true);
-      setDrag(null);
-      onReconnect(link.edge.id, end, toFlow({ x: upEvent.clientX, y: upEvent.clientY }));
-    };
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
-    window.addEventListener("pointercancel", up, true);
-  };
-
-  return (
-    <ViewportPortal>
-      <svg
-        className="section-link-layer"
-        data-testid="section-link-layer"
-        // Purely decorative: the links themselves are selectable through the hit
-        // paths below, and the edge menu carries their accessible actions.
-        aria-hidden="true"
-        focusable="false"
-      >
-        <defs>
-          <marker
-            id="section-link-arrow"
-            viewBox="0 0 18 18"
-            markerWidth="12"
-            markerHeight="12"
-            refX="9"
-            refY="9"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 18 9 L 0 18 z" className="section-link-arrow" />
-          </marker>
-        </defs>
-        {links.map((link) => {
-          const selected = selectedEdgeIds.has(link.edge.id);
-          return (
-            <g key={link.edge.id} data-edge-id={link.edge.id}>
-              {/* A section is not a React Flow node, so this line needs its own
-                  hit area and click handling to be selectable like any edge. */}
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: the hit path is the pointer affordance for an edge the edge menu already describes. */}
-              <path
-                className="section-link__hit"
-                d={sectionLinkPath(link.anchors)}
-                data-testid="section-link-hit"
-                // React Flow's pane claims the press (it captures the pointer to
-                // drag the camera), so a click that starts here never arrives as
-                // a click on this path. Claiming the press first is what makes a
-                // section link selectable at all.
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  // Shift (and the platform modifiers) add to the selection, so a
-                  // link can be selected alongside cards and other links.
-                  onSelectEdge(link.edge.id, event.shiftKey || event.metaKey || event.ctrlKey);
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onSelectEdge(link.edge.id);
-                  onEdgeContextMenu(event, link.edge.id);
-                }}
-              />
-              <path
-                data-testid="section-link"
-                data-edge-id={link.edge.id}
-                className={`section-link${link.offLens ? " is-off-lens" : ""}${
-                  selected ? " is-selected" : ""
-                }`}
-                d={sectionLinkPath(link.anchors)}
-                markerEnd="url(#section-link-arrow)"
-              />
-            </g>
-          );
-        })}
-      </svg>
-      {handleLinks.map((link) => (
-        <svg
-          key={link.edge.id}
-          className="section-link-handles"
-          data-testid="section-link-handles"
-          aria-hidden="true"
-          focusable="false"
-        >
-          {(["source", "target"] as const).map((end) => (
-            <g key={end}>
-              <circle
-                className="section-link-endpoint-hit"
-                data-testid={`section-link-end-${end}`}
-                cx={link.anchors[end].x}
-                cy={link.anchors[end].y}
-                r={11}
-                onPointerDown={(event) => beginDrag(event, link, end)}
-              />
-              <circle
-                className="section-link-endpoint"
-                cx={link.anchors[end].x}
-                cy={link.anchors[end].y}
-                r={5}
-              />
-            </g>
-          ))}
-          {drag && drag.edgeId === link.edge.id ? (
-            <line
-              className="section-link-preview"
-              data-testid="section-link-end-drag"
-              x1={drag.fixed.x}
-              y1={drag.fixed.y}
-              x2={drag.pointer.x}
-              y2={drag.pointer.y}
-            />
-          ) : null}
-        </svg>
-      ))}
-      {drag && !handleLinks.some((link) => link.edge.id === drag.edgeId) ? (
-        <svg
-          className="section-link-handles"
-          data-testid="section-link-handles"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <line
-            className="section-link-preview"
-            data-testid="section-link-end-drag"
-            x1={drag.fixed.x}
-            y1={drag.fixed.y}
-            x2={drag.pointer.x}
-            y2={drag.pointer.y}
-          />
-        </svg>
-      ) : null}
-    </ViewportPortal>
-  );
 }
 
 export function CanvasBoard() {
@@ -716,7 +510,10 @@ export function CanvasBoard() {
   const projectedLinks = useMemo(() => {
     const flow: FlowLink[] = [];
     const sections: SectionLink[] = [];
-    if (!activeBoardId) return { flow, sections };
+    // A link may ask to paint over the cards. React Flow has one edge layer, so
+    // those are drawn separately rather than raised per element (ADR-0052 §3).
+    const above: SectionLink[] = [];
+    if (!activeBoardId) return { flow, sections, above };
 
     const onLens = (endpoint: { kind: EdgeEndpointKind; id: string }) =>
       endpoint.kind !== "card" || lens.cardIds.has(endpoint.id);
@@ -735,10 +532,11 @@ export function CanvasBoard() {
       const offLens = lens.view !== null && !(onLens(endpoints.source) && onLens(endpoints.target));
       const source = nodeIdForEndpoint(endpoints.source);
       const target = nodeIdForEndpoint(endpoints.target);
+      if (edge.layer === "above") above.push({ edge, anchors, offLens });
       if (source && target) flow.push({ edge, source, target, offLens });
       else sections.push({ edge, anchors, offLens });
     }
-    return { flow, sections };
+    return { flow, sections, above };
   }, [boardEdges, activeBoardId, linkScene, nodeIdForEndpoint, lens]);
 
   const sectionMembershipMap = useMemo(
@@ -3363,6 +3161,28 @@ export function CanvasBoard() {
           onLinkCommit={onSectionLinkCommit}
           onReconnectEnd={(edgeId, end, sectionId, connectorId) => {
             workspace.reconnectEdge(edgeId, end, sectionId, connectorId, "section");
+          }}
+        />
+        <AboveLinkLayer
+          links={projectedLinks.above}
+          selectedEdgeIds={new Set(selectedEdgeIds)}
+          onSelectEdge={(edgeId, additive = false) => {
+            setSelectedConnector(null);
+            setSelectedSectionConnector(null);
+            if (additive) {
+              const current = sectionLinkSelection.current;
+              sectionLinkSelection.current = current.includes(edgeId)
+                ? current.filter((id) => id !== edgeId)
+                : [...current, edgeId];
+            } else {
+              sectionLinkSelection.current = [edgeId];
+            }
+            setSelectedEdgeIds(sectionLinkSelection.current);
+          }}
+          onEdgeContextMenu={(event, edgeId) => {
+            if (!canEditLayout) return;
+            event.preventDefault();
+            openContextMenu({ x: event.clientX, y: event.clientY, kind: "edge", edgeId });
           }}
         />
         <SectionLinkLayer

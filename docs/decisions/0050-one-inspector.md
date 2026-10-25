@@ -88,3 +88,18 @@ genuinely not the same question — browsing articles is not inspecting the thin
   behalf.
 - A read-only share session has one place to get right, and a share projection has one panel to
   redact against instead of three.
+
+## Amendment 2026-10-25: a tour mode is the same drawer
+
+A tutorial's **tour mode is the existing inspector**, not a fourth panel kind. A tutorial is a card, so
+selecting it renders the card renderer like any other card; the mode adds tabs (**Details · Steps ·
+Style**) and a Present control to that renderer, and presenting changes what the same drawer shows. It
+inherits the shared chrome, the close and Escape behaviour, the editing session and the read-only rule
+by being the drawer, which is the whole point of this decision.
+
+The **overlay is not an inspector.** It is chrome over the canvas — spotlight, dimming, caption bubble,
+previous/next, progress — a reading surface that works with nothing selected and no drawer open. It
+never becomes an inspectable target and it never opens the drawer on the user's behalf.
+
+Surfaces, and where a tour's state lives, are recorded in
+[ADR-0058](./0058-a-tour-is-one-document-on-three-surfaces.md).

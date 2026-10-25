@@ -1,6 +1,7 @@
-import type { FieldDefinition, PropertyValue } from "@suite/graph";
+import type { Card, FieldDefinition, PropertyValue } from "@suite/graph";
 import { isPropertyValueEmpty } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
+import { fieldKindEntry } from "../field/fieldKindRegistry";
 import { CardPicker, type CardPickerOption } from "./CardPicker";
 
 const inputClass =
@@ -140,6 +141,27 @@ export function FieldValueInput({
   testId,
   className,
 }: FieldValueInputProps) {
+  // A kind that registered its own editor takes precedence: that is what lets a
+  // composite kind ship without editing this switch (ADR-0057).
+  const registered = fieldKindEntry(field.kind);
+  if (registered) {
+    const Editor = registered.editor;
+    return (
+      <Editor
+        field={field}
+        value={value}
+        onCommit={onCommit}
+        autoFocus={autoFocus}
+        testId={testId}
+        className={className}
+        onDone={onDone}
+        onCancel={onCancel}
+        cards={cards as readonly Card[] | undefined}
+        excludeCardId={excludeCardId}
+      />
+    );
+  }
+
   switch (field.kind) {
     case "text":
     case "date":

@@ -82,3 +82,15 @@ the reader opens it, and it writes nothing.
 Articles gain **backlinks**: a card's backlinks list (inspector, Details) and an article's backlinks both list
 the cards that mention or link to it, each row peeking its target. A dead reference reads as "removed" rather
 than vanishing, so a backlink to a trashed card is history, not a broken link.
+
+## Amendment 2026-10-25: an article can play a tour
+
+An article may carry a **Play** control that starts a tour whose steps include the article's subject. The
+article stays the contextual answer to "what is this on my screen?"; the control is a hand-off, not a second
+mode of the panel.
+
+The handbook still **only lists articles by what is on screen** (§3), and it still does not drive playback:
+no step list, no scrubber, no present mode in this panel. A tour is read in the overlay and authored in the
+tutorial card's own inspector — see
+[ADR-0058](./0058-a-tour-is-one-document-on-three-surfaces.md). Keeping the two apart is what keeps "any set
+of highlights" from becoming a tutorial.

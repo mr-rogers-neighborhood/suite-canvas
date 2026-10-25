@@ -106,3 +106,21 @@ anchor to `data-testid` with a CI test that fails when an anchor disappears. Thi
 The rendering pieces this reuses already exist: `targetOfFocus()` and `planNavigation`
 (`apps/canvas/src/canvas/navigateTarget.ts`), the camera transition in `CanvasBoard.tsx`, and the
 outline-and-point rendering specified for the handbook (ADR-0045 §4, generalised by ADR-0055).
+
+## Amendment 2026-10-25: several targets per step, and presenting from the card's own panel
+
+§2's `target` becomes **`targets: Target[]`**, at least one, and the **first is primary**. A step may
+need to point at "these three cards form a group" or "the connector and the section it lands in"; a
+consumer that needs exactly one target — an outline, a badge, the dead-target tombstone — reads
+`targets[0]`. This is recorded before the first tour is authored, because a step's attributes live
+inside a card body, so widening later would be a content migration across every tutorial.
+
+§4's player is **a mode of the tutorial card's own inspector panel** (Details · Steps · Style), not a
+separate player surface: presenting shows the current step, previous/next, a scrubber and the caption
+in the real rich-text editor. The **author may edit a caption while presenting**; a reader without edit
+rights sees the tour **read-only**, and the panel's editing surface never appears in a share. The
+reading surface itself is the overlay, which needs no inspector open.
+
+Everything else here stands: a tutorial is still a card, a step is still a block, and the anchor test is
+still the defence against rot. The three surfaces and the state split are recorded in
+[ADR-0058](./0058-a-tour-is-one-document-on-three-surfaces.md).

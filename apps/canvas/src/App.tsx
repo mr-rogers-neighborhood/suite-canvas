@@ -30,6 +30,7 @@ import { SharePublishButton } from "./components/SharePublishButton";
 import { StoragePanel } from "./components/StoragePanel";
 import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./components/TemplateGallery";
 import { TitleBar } from "./components/TitleBar";
+import { TourOverlayHost } from "./components/TourOverlayHost";
 import { TypeSettingsHost } from "./components/TypeSettingsHost";
 import { useSavedViews, ViewsBar } from "./components/ViewsBar";
 import { markBoot, measureBoot } from "./dev/bootTiming";
@@ -991,6 +992,7 @@ function WorkspaceShell({
         <BoardOutlineHost />
         <CardInspectorHost />
         <CardFocusHost />
+        <TourOverlayHost />
       </main>
 
       {workspaceSurface && !readOnly && !cardFocusId ? (

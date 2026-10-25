@@ -31,12 +31,13 @@ import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
 import { PeerNameTag } from "./PeerNameTag";
 import { isPropertyEmpty, PropertyField } from "./PropertyField";
+import { StyleTab } from "./surface/StyleTab";
 import { TagPicker } from "./TagPicker";
 
 export type CardPanelEditingField = "title" | "body";
 
 /** Inspector tabs: metadata and relations, or the body itself. */
-export type CardPanelTab = "details" | "content";
+export type CardPanelTab = "details" | "content" | "style";
 
 export interface CardWhereSection {
   id: string;
@@ -547,6 +548,8 @@ export function CardPanel({
   const detailsPanelId = `${idPrefix}-details-panel`;
   const contentTabId = `${idPrefix}-content-tab`;
   const contentPanelId = `${idPrefix}-content-panel`;
+  const styleTabId = `${idPrefix}-style-tab`;
+  const stylePanelId = `${idPrefix}-style-panel`;
   const [tab, setTab] = useState<CardPanelTab>(() => {
     if (editing === "body") return "content";
     if (focusedField) return "details";
@@ -654,6 +657,7 @@ export function CardPanel({
 
   const showDetails = !inspector || tab === "details";
   const showContent = !inspector || tab === "content";
+  const showStyle = inspector && tab === "style";
   const bodySurface = (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the read-only body moves the editable surface here
     // biome-ignore lint/a11y/useKeyWithClickEvents: the panel title and Edit button are the keyboard path
@@ -772,6 +776,19 @@ export function CardPanel({
               onClick={() => selectTab("content")}
             >
               Content
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id={styleTabId}
+              aria-controls={stylePanelId}
+              aria-selected={tab === "style"}
+              data-testid="card-panel-tab-style"
+              className="segmented-option"
+              data-checked={tab === "style" ? "true" : undefined}
+              onClick={() => selectTab("style")}
+            >
+              Style
             </button>
           </div>
         </div>
@@ -1110,6 +1127,18 @@ export function CardPanel({
         ) : (
           <Section title="Body">{bodySurface}</Section>
         )
+      ) : null}
+
+      {showStyle ? (
+        <div
+          className="px-3 py-3"
+          data-testid="card-panel-style"
+          role="tabpanel"
+          id={stylePanelId}
+          aria-labelledby={styleTabId}
+        >
+          <StyleTab kind="card" id={card.id} canEdit={editLayout} />
+        </div>
       ) : null}
     </div>
   );

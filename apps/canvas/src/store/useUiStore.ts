@@ -38,6 +38,24 @@ export interface ContainerInspectorTarget {
   id: string;
 }
 
+/**
+ * A tour being read or authored ([ADR-0058](../../../docs/decisions/0058-a-tour-is-one-document-on-three-surfaces.md)).
+ *
+ * The steps themselves are content on the tutorial card; this is only what one
+ * reader is looking at — the same split as `containerInspector` or a selection.
+ * `presenting` is what makes the overlay appear; `panelOpen` lets the author
+ * keep the controls beside the spotlight while it does.
+ */
+export interface TourState {
+  /** The tutorial card being played. */
+  tutorialId: string;
+  /** Index of the step showing; clamped by the panel, which knows the count. */
+  stepIndex: number;
+  presenting: boolean;
+  /** Whether the inspector keeps its controls on screen while presenting. */
+  panelOpen: boolean;
+}
+
 export type EditingSurface = "canvas" | "panel" | "focus";
 
 /** React Flow's viewport: world-to-screen translate plus zoom. */
@@ -161,6 +179,8 @@ interface UiState extends SessionCapabilities {
    * types and no body, so the card inspector is the wrong surface for them.
    */
   containerInspector: ContainerInspectorTarget | null;
+  /** The tour this reader is in, if any (ADR-0058). */
+  tour: TourState | null;
   /** Section whose title input is open for renaming. */
   editingSectionId: string | null;
   editingNodeId: string | null;
@@ -247,6 +267,14 @@ interface UiState extends SessionCapabilities {
   selectSection: (id: string | null) => void;
   openContainerInspector: (target: ContainerInspectorTarget) => void;
   closeContainerInspector: () => void;
+  /** Opens a tutorial's panel without playing it. */
+  openTour: (tutorialId: string) => void;
+  /** Starts (or resumes) playback from a step. */
+  presentTour: (tutorialId: string, stepIndex?: number) => void;
+  setTourStep: (stepIndex: number) => void;
+  setTourPanelOpen: (open: boolean) => void;
+  /** Leaves the tour entirely: closes the panel and the overlay. */
+  closeTour: () => void;
   /**
    * A surface asked to step through a portal. The camera owns the doorway — it
    * needs the node's screen rect to fly from — so the panel only names the board
@@ -302,6 +330,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectedEdgeIds: [],
   selectedSectionId: null,
   containerInspector: null,
+  tour: null,
   portalOpenRequest: null,
   libraryDrag: null,
   linkEndMove: null,
@@ -530,6 +559,30 @@ export const useUiStore = create<UiState>((set, get) => ({
       cardFocusId: null,
     }),
   closeContainerInspector: () => set({ containerInspector: null }),
+
+  openTour: (tutorialId) =>
+    set((state) =>
+      state.tour?.tutorialId === tutorialId
+        ? { tour: { ...state.tour, panelOpen: true } }
+        : { tour: { tutorialId, stepIndex: 0, presenting: false, panelOpen: true } },
+    ),
+  presentTour: (tutorialId, stepIndex = 0) =>
+    set((state) => ({
+      tour: {
+        tutorialId,
+        stepIndex:
+          state.tour?.tutorialId === tutorialId ? state.tour.stepIndex : Math.max(0, stepIndex),
+        presenting: true,
+        panelOpen: state.tour?.tutorialId === tutorialId ? state.tour.panelOpen : true,
+      },
+    })),
+  setTourStep: (stepIndex) =>
+    set((state) =>
+      state.tour ? { tour: { ...state.tour, stepIndex: Math.max(0, stepIndex) } } : state,
+    ),
+  setTourPanelOpen: (panelOpen) =>
+    set((state) => (state.tour ? { tour: { ...state.tour, panelOpen } } : state)),
+  closeTour: () => set({ tour: null }),
   requestPortalOpen: (cardId, boardId) =>
     set({ portalOpenRequest: { cardId, boardId, at: performance.now() } }),
   clearPortalOpenRequest: () => set({ portalOpenRequest: null }),

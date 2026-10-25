@@ -1,0 +1,37 @@
+/* Link routes (ADR-0052). Kept apart from global.css so the route work and the
+   paint work never edit the same file. */
+
+/* Links that asked to paint above the cards. React Flow has one edge layer, so
+   an edge with `layer: "above"` is drawn here instead of being raised in place.
+   Above the nodes, below the section grips, which only exist while selected. */
+.above-link-layer {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.above-link {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  pointer-events: none;
+}
+
+.above-link.is-selected,
+.above-link-group.is-selected .above-link {
+  stroke: var(--accent-strong, var(--accent));
+  stroke-width: 2.2;
+}
+
+/* The hit stroke is wide and invisible: a 1.6px line is not a target. */
+.above-link__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20;
+  pointer-events: stroke;
+  cursor: pointer;
+}

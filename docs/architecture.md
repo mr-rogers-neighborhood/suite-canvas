@@ -422,7 +422,8 @@ code follows:
   relative to the source anchor, and a `layer` that defaults to beneath the cards.
 - **A tutorial is a card and a tour is its timeline**
   ([ADR-0054](./decisions/0054-a-tutorial-is-a-card.md)): the tutorial's body holds step blocks whose
-  attributes name a `Target` and a stored viewport; playback is an overlay over the same canvas.
+  attributes name `targets` and a stored viewport; the card's own inspector authors and presents them,
+  and the overlay is the reader's view ([ADR-0058](./decisions/0058-a-tour-is-one-document-on-three-surfaces.md)).
 - **Fields can compose** ([ADR-0057](./decisions/0057-fields-can-compose.md)): `rating`, `group` and
   `list`, one level of nesting, one registry entry per kind rendering in all four places.
 
@@ -433,10 +434,27 @@ code follows:
 | `SurfaceStyle` | optional `style` on card, section, board, edge and field definition | `surface`, `ink`, `shape`, `radius`, `sides` (per edge), `opacity`, `textScale`, `icon` |
 | `EdgeStyle` | a value of `SurfaceStyle.sides` | `paint`, `width`, `colour`, `flow`, `speed` |
 | Link route | `edges.<id>.bends` + `edges.<id>.layer` | a polyline of flow points relative to the source anchor; `below` or `above` |
-| Tour step | a block in a tutorial card's body | `target`, `viewport`, `caption`, `advance` |
+| Tour step | a block in a tutorial card's body | `targets` (at least one, first is primary), `viewport`, `caption`, `advance` |
 
 None of these is a new root map: the style is a value on records that already exist, the route is two
 fields on an edge, and a step is content in a card's own body.
+
+### Where a tour's state lives
+
+A tour is one document on three surfaces ([ADR-0058](./decisions/0058-a-tour-is-one-document-on-three-surfaces.md)):
+the tutorial card's inspector (**Details · Steps · Style**) authors and presents it, the overlay is the
+reader's view with no inspector open, and the handbook panel only starts one whose steps include the
+article's subject. Control state splits from content:
+
+| Thing | Where | Why |
+| --- | --- | --- |
+| steps, captions, `targets` | the tutorial card's body (CRDT) | content: merges, exports, shares, is linkable |
+| current step, panel open, presenting | `useUiStore`, like `containerInspector` | per-viewer, never document truth |
+| completion | a workspace record on the tutorial card | a collaborator can see it was read |
+| the camera a step asks for | `viewportRequest` in `useUiStore` | the camera channel that already exists |
+
+The overlay measures the DOM (`data-node-id` on cards, `data-testid="section-region-<id>"` on sections)
+rather than renderer internals, which is why the tour needs no change to `CanvasBoard.tsx`.
 
 This section describes what is decided, not what is built. Everything above it describes the tree.
 

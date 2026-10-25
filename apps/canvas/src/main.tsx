@@ -27,6 +27,10 @@ import {
 } from "./storage/durability";
 import { initTheme } from "./theme/useThemeStore";
 import "./styles/global.css";
+// One stylesheet per workstream, so parallel work never edits the same file.
+import "./styles/paint.css";
+import "./styles/route.css";
+import "./styles/tour.css";
 
 // Apply the stored theme before first paint to avoid a flash of the wrong mode.
 initTheme();

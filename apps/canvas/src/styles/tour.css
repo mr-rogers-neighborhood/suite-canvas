@@ -1,0 +1,43 @@
+/* The tour overlay (ADR-0058). Filled by the tours lane; the file exists so that
+   work never conflicts with the paint or route stylesheets. */
+
+/* A tour's reading surface. Chrome over the canvas: it never takes a press on
+   the board itself, only on its own controls. */
+.tour-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.tour-overlay__bar {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: var(--surface-translucent);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+}
+
+.tour-overlay__step {
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.tour-overlay__control {
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.tour-overlay__control:disabled {
+  opacity: 0.4;
+}

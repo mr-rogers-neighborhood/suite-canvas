@@ -64,6 +64,7 @@ import {
   tagSchema,
 } from "../schema.js";
 import { normalizeTemplate } from "../template.js";
+import { expandTitleTemplate, hasTitleToken, titleTemplateValues } from "../templateTitle.js";
 import type { SavedView, ViewQuery } from "../views.js";
 import { savedViewSchema } from "../views.js";
 
@@ -102,6 +103,12 @@ export interface CreateCardInput {
   position?: { x: number; y: number };
   /** Preserve an existing connector layout; defaults to a fresh card layout. */
   connectors?: Connector[];
+  /**
+   * Copy the type's template card, if it has one. Defaults to true, so every
+   * ordinary "new card of this type" arrives written. Pass false to build the
+   * template itself, or when the caller wants an empty card.
+   */
+  fromTemplate?: boolean;
 }
 
 /**
@@ -591,6 +598,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
 
   const color = readString(fields, "color");
   const pluralName = readString(fields, "pluralName")?.trim();
+  const templateCardId = readString(fields, "templateCardId")?.trim();
   return cardTypeSchema.parse({
     id,
     name: readString(fields, "name") ?? "Type",
@@ -598,6 +606,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     fields: definitions,
+    ...(templateCardId ? { templateCardId } : {}),
     ...(color ? { color } : {}),
     ...(pluralName ? { pluralName } : {}),
   });
@@ -1162,6 +1171,16 @@ export class WorkspaceDocument {
         scope: isMap(query) ? query.get("scope") : undefined,
         groupBySection: isMap(query) ? query.get("groupBySection") : undefined,
         order: isMap(query) ? query.get("order") : undefined,
+        ...(isMap(query) && query.get("textScope") !== undefined
+          ? { textScope: query.get("textScope") }
+          : {}),
+        ...(isMap(query) && query.get("groupBy") !== undefined
+          ? { groupBy: query.get("groupBy") }
+          : {}),
+        ...(isMap(query) && query.get("groups") !== undefined
+          ? { groups: query.get("groups") }
+          : {}),
+        ...(isMap(query) && query.get("sorts") !== undefined ? { sorts: query.get("sorts") } : {}),
       },
     });
     // A hand-edited or corrupt view is skipped, not thrown on: the rest of the
@@ -1258,6 +1277,19 @@ export class WorkspaceDocument {
     writeIdSet(query.ensureMergeableMap("typeIds"), view.query.typeIds);
     writeIdSet(query.ensureMergeableMap("tagIds"), view.query.tagIds);
     writeIdSet(query.ensureMergeableMap("sectionIds"), view.query.sectionIds);
+    // v2 fields. A query is replaced whole (`updateView` takes a new record), so
+    // the predicate and sort lists travel as JSON values: one last-writer-wins
+    // slot is exactly the semantics a saved query has.
+    for (const key of ["textScope", "groupBy"] as const) {
+      const value = view.query[key];
+      if (value === undefined) query.delete(key);
+      else query.set(key, value);
+    }
+    for (const key of ["groups", "sorts"] as const) {
+      const value = view.query[key];
+      if (value === undefined || value.length === 0) query.delete(key);
+      else query.set(key, value);
+    }
   }
 
   /**
@@ -1314,6 +1346,8 @@ export class WorkspaceDocument {
     else if (fields.get("pluralName") !== undefined) fields.delete("pluralName");
     if (type.color) fields.set("color", type.color);
     else if (fields.get("color") !== undefined) fields.delete("color");
+    if (type.templateCardId) fields.set("templateCardId", type.templateCardId);
+    else if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
     fields.set("createdAt", type.createdAt);
     fields.set("updatedAt", type.updatedAt);
     fields.ensureMergeableMap("fields");
@@ -1343,7 +1377,14 @@ export class WorkspaceDocument {
 
   updateType(
     id: string,
-    patch: { name?: string; pluralName?: string | null; glyph?: string; color?: string | null },
+    patch: {
+      name?: string;
+      pluralName?: string | null;
+      glyph?: string;
+      color?: string | null;
+      /** `null` clears the template; a card id points at the template card. */
+      templateCardId?: string | null;
+    },
   ): void {
     const type = this.getType(id);
     if (!type) return;
@@ -1360,7 +1401,14 @@ export class WorkspaceDocument {
       if (patch.color) fields.set("color", patch.color);
       else if (fields.get("color") !== undefined) fields.delete("color");
     }
+    if (patch.templateCardId !== undefined) {
+      const template = patch.templateCardId?.trim();
+      // A template must be a live card; clearing it is always allowed.
+      if (template && this.getCard(template)) fields.set("templateCardId", template);
+      else if (fields.get("templateCardId") !== undefined) fields.delete("templateCardId");
+    }
     fields.set("updatedAt", Date.now());
+    this.typeCache.delete(id);
     this.commit(`${STRUCT_ORIGIN}type`);
   }
 
@@ -1913,26 +1961,68 @@ export class WorkspaceDocument {
   createCard(input: CreateCardInput = {}): Card {
     const now = Date.now();
     const typeId = input.typeId ?? DEFAULT_TYPE_ID;
+    const template = input.fromTemplate === false ? undefined : this.liveTemplateCard(typeId);
     const card = cardSchema.parse({
       id: input.id ?? crypto.randomUUID(),
       createdAt: now,
       updatedAt: now,
-      connectors: input.connectors ?? defaultConnectors(),
+      connectors: input.connectors ?? template?.connectors ?? defaultConnectors(),
       deletedAt: null,
-      typeIds: [typeId],
+      typeIds: template ? [...template.typeIds] : [typeId],
       primaryTypeId: typeId,
-      tags: [],
-      properties: {},
+      tags: template ? [...template.tags] : [],
+      properties: template ? structuredClone(template.properties) : {},
     });
 
     this.applyCard(card);
-    this.content.ensureMergeableMap(card.id);
-    this.titles.ensureMergeableMap(card.id);
+    const content = this.content.ensureMergeableMap(card.id);
+    const title = this.titles.ensureMergeableMap(card.id);
+    if (template) {
+      const sourceContent = this.peekContent(template.id);
+      const sourceTitle = this.peekTitle(template.id);
+      if (sourceContent) copyContainerTree(sourceContent, content);
+      if (sourceTitle) copyContainerTree(sourceTitle, title);
+      this.expandCopiedTitle(card, title);
+    }
     if (input.boardId) {
       this.placeCardInternal(input.boardId, card.id, input.position ?? { x: 0, y: 0 });
     }
     this.commit(`${STRUCT_ORIGIN}create-card`);
     return card;
+  }
+
+  /**
+   * The type's template card, if it names one that still exists and is not in
+   * the trash. A missing or trashed template is "no template", never an error:
+   * a card the user deleted must not break creating cards of that type.
+   */
+  templateCard(typeId: string): Card | undefined {
+    return this.liveTemplateCard(typeId);
+  }
+
+  private liveTemplateCard(typeId: string): Card | undefined {
+    const templateId = this.getType(typeId)?.templateCardId;
+    if (!templateId) return undefined;
+    const template = this.getCard(templateId);
+    return template && !template.deletedAt ? template : undefined;
+  }
+
+  /**
+   * A copied title is rich text, so mentions and formatting already travel.
+   * `{{Field}}` tokens are filled once, here, and only for a plain title: a
+   * formatted or mentioned title is left exactly as the template wrote it.
+   */
+  private expandCopiedTitle(card: Card, title: LoroMap): void {
+    const children = title.get("children");
+    if (!isList(children) || children.length !== 1) return;
+    const only = children.get(0);
+    if (!isText(only)) return;
+    const text: string = only.toString();
+    if (!hasTitleToken(text)) return;
+    const expanded = expandTitleTemplate(text, titleTemplateValues(card, this.listTypes()));
+    if (expanded === text) return;
+    only.delete(0, only.length);
+    if (expanded.length > 0) only.insert(0, expanded);
   }
 
   /**

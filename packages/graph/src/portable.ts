@@ -3,6 +3,13 @@ import type { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import { formatPropertyValue } from "./property.js";
 import type { Card, CardType, FieldDefinition, PropertyValue, Tag } from "./schema.js";
 
+/**
+ * Rich-text node names the graph layer reads directly. They match the editor
+ * nodes in `apps/canvas/src/editor/`, which import them from here so the two
+ * cannot drift.
+ */
+export const ATTACHMENT_NODE_NAME = "attachment";
+
 export const PORTABLE_EXPORT_KIND = "suite.portable";
 export const PORTABLE_EXPORT_VERSION = 1;
 

@@ -95,6 +95,7 @@ export type {
   PortableWorkspace,
 } from "./portable.js";
 export {
+  ATTACHMENT_NODE_NAME,
   exportPortable,
   loroTreeToJson,
   PORTABLE_EXPORT_KIND,
@@ -250,24 +251,60 @@ export {
   templateSegments,
 } from "./template.js";
 export type {
+  LinkIndex,
+  PredicateContext,
+  PresenceKind,
+  PropertyOp,
+  RelationDirection,
+  TextScope,
+  ViewPredicate,
+  ViewPredicateGroup,
+} from "./viewPredicates.js";
+export {
+  buildLinkIndex,
+  fieldForCard,
+  groupsMatch,
+  predicateMatches,
+  presenceKindSchema,
+  presenceKinds,
+  propertyMatches,
+  propertyOpSchema,
+  propertyOps,
+  relationDirectionSchema,
+  relationDirections,
+  textScopeMatches,
+  textScopeSchema,
+  textScopes,
+  viewPredicateGroupSchema,
+  viewPredicateSchema,
+} from "./viewPredicates.js";
+export type {
   SavedView,
   ViewContext,
+  ViewGroup,
   ViewOrder,
   ViewQuery,
   ViewResult,
   ViewScope,
+  ViewSort,
 } from "./views.js";
 export {
   emptyViewQuery,
+  groupViewResult,
+  normalizeViewQuery,
   runView,
   runViewQuery,
   savedViewSchema,
   VIEW_UNSORTED_SECTION,
+  viewGroupBySchema,
+  viewGroupBys,
   viewOrderSchema,
   viewOrders,
   viewQuerySchema,
   viewScopeSchema,
   viewScopes,
+  viewSortKeySchema,
+  viewSortKeys,
 } from "./views.js";
 export type {
   WorkspaceFile,

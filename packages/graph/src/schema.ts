@@ -78,6 +78,12 @@ export const cardTypeSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   fields: z.array(fieldDefinitionSchema),
+  /**
+   * A card that new cards of this type are copied from: its title, body,
+   * properties, tags and connectors arrive together. A reference, not an owned
+   * copy — a deleted template simply means "no template" (ADR-0038).
+   */
+  templateCardId: entityIdSchema.optional(),
 });
 
 /**

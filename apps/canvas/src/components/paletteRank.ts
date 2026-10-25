@@ -8,6 +8,8 @@ import fuzzysort from "fuzzysort";
 export interface PaletteItem {
   /** Stable across renders; also the React key. */
   id: string;
+  /** The registry command this row came from, when it came from one. */
+  commandId?: string | undefined;
   /** What the row reads. */
   title: string;
   /** The small second line: a board name, a type, a shortcut. */

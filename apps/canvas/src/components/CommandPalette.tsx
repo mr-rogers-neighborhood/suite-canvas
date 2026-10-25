@@ -13,8 +13,9 @@ export interface CommandPaletteProps {
  * view, a section or an action, press Enter. It never owns state beyond its
  * query and the highlighted row, so closing it leaves nothing behind.
  *
- * Rows come from `paletteProviders`; ordering comes from `paletteRank`, so a
- * different matcher is a change in one file.
+ * Rows come from the command registry through `paletteProviders`; ordering
+ * comes from `paletteRank`, so a different matcher is a change in one file and
+ * a different command is a change in the registry — never in this component.
  */
 const MAX_ROWS = 40;
 
@@ -22,6 +23,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const panel = useRef<HTMLDivElement | null>(null);
+  const input = useRef<HTMLInputElement | null>(null);
   const listbox = useRef<HTMLDivElement | null>(null);
 
   const ranked = useMemo(() => rankPaletteItems(items, query).slice(0, MAX_ROWS), [items, query]);
@@ -33,8 +35,10 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
     setActiveIndex(0);
   }, [query]);
 
+  // The palette exists to take the keyboard, so the search box owns it from the
+  // first frame; the panel only catches keys when the box has lost focus.
   useEffect(() => {
-    panel.current?.focus();
+    input.current?.focus();
   }, []);
 
   const run = (item: PaletteItem) => {
@@ -96,8 +100,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
             {"\u2318"}
           </span>
           <input
-            // biome-ignore lint/a11y/noAutofocus: the palette exists to take the keyboard
-            autoFocus
+            ref={input}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label="Search boards, cards, views and actions"
@@ -149,6 +152,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
                       id={`palette-row-${item.id}`}
                       aria-selected={active}
                       data-index={rowIndex}
+                      data-command-id={item.commandId}
                       data-testid="command-palette-row"
                       className={`flex w-full items-baseline gap-2 rounded px-3 py-1.5 text-left text-[12px] ${
                         active

@@ -109,3 +109,20 @@ describe("surface styles", () => {
     expect(reopened.getCard(card.id)?.style?.opacity).toBe(0.5);
   });
 });
+
+describe("primary type under supertags", () => {
+  it("setPrimaryType keeps the other types a card carries", () => {
+    const { doc, board } = workspace();
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    const concept = doc.createType({ name: "Concept", glyph: "◇" });
+    const source = doc.createType({ name: "Source", glyph: "▤" });
+    doc.setCardTypes(card.id, [concept.id, source.id], concept.id);
+
+    // Making another type primary must not drop the first one: a palette row that
+    // says "set type" is a choice of presentation, not a replacement of schema.
+    doc.setPrimaryType(card.id, source.id);
+    const after = doc.getCard(card.id);
+    expect(after?.primaryTypeId).toBe(source.id);
+    expect(after?.typeIds.slice().sort()).toEqual([concept.id, source.id].sort());
+  });
+});

@@ -2,13 +2,17 @@ import {
   defaultConnectors,
   PORTAL_BOARD_FIELD_ID,
   resolveSurfaceStyle,
+  type StyleRule,
+  type SurfaceStyle,
   sectionForCard,
   sectionMembership,
+  type WorkspaceDocument,
 } from "@suite/graph";
-import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
 import {
   type CSSProperties,
   lazy,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -22,7 +26,14 @@ import { prefersReducedMotion } from "./canvas/localEasing";
 import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import {
+  readPalette,
+  type SurfacePalette,
+  SurfaceRulesContext,
+  shellPaintFor,
+} from "./canvas/rules";
 import { surfacePaintVars } from "./canvas/surfacePaint";
+import { zoomBand } from "./canvas/zoomRange";
 import { ensureWhiteboardType } from "./cards/whiteboard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
@@ -76,6 +87,51 @@ function documentLabel(share: ShareSession, workspaceId: string): string {
 }
 
 /**
+ * The workspace's own paint — the shell's style and the named rules — read from
+ * the document meta. It re-renders only when that paint actually changes, so a
+ * keystroke in a card never repaints the shell (ADR-0046 §3).
+ */
+function useWorkspacePaint(workspace: WorkspaceDocument): {
+  shellStyle: SurfaceStyle | undefined;
+  rules: StyleRule[];
+} {
+  const read = useCallback(
+    () => ({ shellStyle: workspace.shellStyle(), rules: workspace.styleRules() }),
+    [workspace],
+  );
+  const [paint, setPaint] = useState(read);
+  const signature = useRef(JSON.stringify(paint));
+  useEffect(() => {
+    const sync = () => {
+      const next = read();
+      const key = JSON.stringify(next);
+      if (key === signature.current) return;
+      signature.current = key;
+      setPaint(next);
+    };
+    sync();
+    // The workspace's own paint is meta, not a snapshot section, so it has its
+    // own subscription; the snapshot would never mention it.
+    return workspace.observeWorkspacePaint(sync);
+  }, [read, workspace]);
+  return paint;
+}
+
+/**
+ * The live role palette, read from the token layer on the shell root rather than
+ * kept as a second copy (ADR-0046 §1). A theme change is exactly when it moves.
+ */
+function useSurfacePalette(root: RefObject<HTMLElement | null>, themeMode: string): SurfacePalette {
+  const [palette, setPalette] = useState<SurfacePalette>({});
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the theme mode is the trigger, not an input — the palette is read back from the DOM once the theme's classes have moved.
+  useEffect(() => {
+    const node = root.current;
+    if (node) setPalette(readPalette(node));
+  }, [root, themeMode]);
+  return palette;
+}
+
+/**
  * The workspace actions pull in the share dialog, the recovery dialog and the
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
@@ -120,6 +176,37 @@ function WorkspaceShell({
   const snapshot = useWorkspaceSnapshot();
   countRender("shell");
 
+  // The shell paints from the workspace's own style, resolved with the named
+  // rules (ADR-0046 §3–4). The variables are prefixed here because the shell
+  // root is an ancestor of the board: an unprefixed `--paint-*` would be
+  // inherited by cards that never named that edge.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const boardRef = useRef<HTMLElement>(null);
+  const workspacePaint = useWorkspacePaint(workspace);
+  const themeMode = useThemeStore((state) => state.mode);
+  const palette = useSurfacePalette(shellRef, themeMode);
+  const shellPaint = useMemo(
+    () => shellPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),
+    [workspacePaint, palette],
+  );
+  const surfaceRules = useMemo(
+    () => ({ rules: workspacePaint.rules, palette }),
+    [workspacePaint.rules, palette],
+  );
+
+  // Content breakpoints (ADR-0051): the band rides the board root as an
+  // attribute, written straight to the element so a zoom gesture does not
+  // re-render the shell. CanvasBoard owns the camera, so this is the reader's
+  // side of the same decision.
+  useOnViewportChange({
+    onChange: (viewport) => {
+      const node = boardRef.current;
+      if (!node) return;
+      const band = zoomBand(viewport.zoom);
+      if (node.dataset.zoomBand !== band) node.dataset.zoomBand = band;
+    },
+  });
+
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const libraryOpen = useUiStore((state) => state.libraryOpen);
@@ -130,7 +217,6 @@ function WorkspaceShell({
   const openCardFocus = useUiStore((state) => state.openCardFocus);
   const selectSection = useUiStore((state) => state.selectSection);
   const savedViews = useSavedViews(workspace);
-  const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
   const setLibraryTab = useUiStore((state) => state.setLibraryTab);
   const startEditing = useUiStore((state) => state.startEditing);
@@ -558,7 +644,10 @@ function WorkspaceShell({
           activateBoard(board.id);
         },
         editCard: (cardId) => openCardFocus(cardId),
-        setCardType: (cardId, typeId) => workspace.setCardTypes(cardId, [typeId], typeId),
+        // "Set type" means "make this the primary": a card that carries several
+        // types must not lose the others because a palette row was picked
+        // ([ADR-0053](../../docs/decisions/0053-supertags-are-multi-type.md)).
+        setCardType: (cardId, typeId) => workspace.setPrimaryType(cardId, typeId),
         trashCard: (cardId) => workspace.trashCard(cardId),
         restoreCard: (cardId) => workspace.restoreCard(cardId),
         deleteCardForever: (cardId) => workspace.purgeCard(cardId),
@@ -873,235 +962,243 @@ function WorkspaceShell({
   if (boot.show) return <BootSkeleton exiting={boot.exiting} />;
 
   return (
-    <div
-      className="app-canvas flex h-screen w-screen flex-col"
-      data-ready={ready && synced}
-      data-leaving={leaving ? "true" : undefined}
-    >
-      <TitleBar
-        onNavigateHome={goHome}
-        onOpenSearch={() => setPaletteOpen(true)}
-        // A standalone build never opens a socket, so "Syncing" would be a lie;
-        // the status slot reports the connection it has (none) beside the note.
-        status={standalone ? "disconnected" : status}
-        {...(share ? { role: share.role } : {})}
-        peerCount={standalone ? 0 : peerCount}
-        workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
-        canRenameWorkspace={!share && !readOnly}
-        onRenameWorkspace={(name) => {
-          try {
-            workspace.renameWorkspace(name);
-            rememberWorkspaceName(workspaceId, workspace.workspaceName());
-            setWorkspaceName(workspace.workspaceName());
-            return null;
-          } catch (cause) {
-            return cause instanceof Error ? cause.message : "Could not rename the workspace.";
-          }
-        }}
-        actions={
-          // Share sessions only exist on a relay. The literal is inlined by Vite,
-          // so a standalone build drops this branch — and the publish button and
-          // `/api/shares` client behind it — instead of shipping dead relay UI.
-          // A constant or `isStandalone()` call would be opaque to the bundler.
-          share && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-            <SharePublishButton />
-          ) : (
-            <>
-              <Suspense fallback={null}>
-                <WorkspaceActions
-                  workspaceId={workspaceId}
-                  boardId={activeBoardId}
-                  title={activeBoardName ?? "Workspace"}
-                />
-              </Suspense>
-              {standalone ? (
-                <span
-                  data-testid="local-only"
-                  title="This build keeps every workspace in this browser: no sync, no sharing."
-                  className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)]"
-                >
-                  Local only
-                </span>
-              ) : null}
-              <StoragePanel workspaceId={workspaceId} />
-            </>
-          )
-        }
+    <SurfaceRulesContext.Provider value={surfaceRules}>
+      <div
+        ref={shellRef}
+        className="app-canvas flex h-screen w-screen flex-col"
+        data-ready={ready && synced}
+        data-leaving={leaving ? "true" : undefined}
+        // The shell's own paint: present only when the workspace names a style,
+        // so an unstyled workspace renders exactly as it did before the rules.
+        data-shell-paint={shellPaint.fields || undefined}
+        style={shellPaint.vars as CSSProperties}
       >
-        {workspaceSurface ? (
-          <>
-            <div className="views-bar">
-              <ViewsBar canManage={canManageSchema} />
-            </div>
-            {/*
+        <TitleBar
+          onNavigateHome={goHome}
+          onOpenSearch={() => setPaletteOpen(true)}
+          // A standalone build never opens a socket, so "Syncing" would be a lie;
+          // the status slot reports the connection it has (none) beside the note.
+          status={standalone ? "disconnected" : status}
+          {...(share ? { role: share.role } : {})}
+          peerCount={standalone ? 0 : peerCount}
+          workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
+          canRenameWorkspace={!share && !readOnly}
+          onRenameWorkspace={(name) => {
+            try {
+              workspace.renameWorkspace(name);
+              rememberWorkspaceName(workspaceId, workspace.workspaceName());
+              setWorkspaceName(workspace.workspaceName());
+              return null;
+            } catch (cause) {
+              return cause instanceof Error ? cause.message : "Could not rename the workspace.";
+            }
+          }}
+          actions={
+            // Share sessions only exist on a relay. The literal is inlined by Vite,
+            // so a standalone build drops this branch — and the publish button and
+            // `/api/shares` client behind it — instead of shipping dead relay UI.
+            // A constant or `isStandalone()` call would be opaque to the bundler.
+            share && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
+              <SharePublishButton />
+            ) : (
+              <>
+                <Suspense fallback={null}>
+                  <WorkspaceActions
+                    workspaceId={workspaceId}
+                    boardId={activeBoardId}
+                    title={activeBoardName ?? "Workspace"}
+                  />
+                </Suspense>
+                {standalone ? (
+                  <span
+                    data-testid="local-only"
+                    title="This build keeps every workspace in this browser: no sync, no sharing."
+                    className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)]"
+                  >
+                    Local only
+                  </span>
+                ) : null}
+                <StoragePanel workspaceId={workspaceId} />
+              </>
+            )
+          }
+        >
+          {workspaceSurface ? (
+            <>
+              <div className="views-bar">
+                <ViewsBar canManage={canManageSchema} />
+              </div>
+              {/*
               A way back exists only where the reader was *taken* somewhere: a
               portal entry. Tab clicks already leave every board one click away,
               so a chevron for those was a second, single-direction control in
               the busiest corner of the bar.
             */}
-            {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
-              <button
-                type="button"
-                data-testid="portal-back"
-                aria-label={`Back to ${
-                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                    ?.name ?? "the previous board"
-                }`}
-                title={`Back to ${
-                  snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                    ?.name ?? "the previous board"
-                }`}
-                className="portal-back"
-                onClick={() => goBackBoard()}
-              >
-                <span aria-hidden="true">{"\u2039"}</span>
-              </button>
-            ) : null}
-            <BoardTabs
-              boards={openBoards}
-              activeBoardId={activeBoardId}
-              onSelect={activateBoard}
-              peersByBoard={peersByBoard}
-              canCreateBoards={canCreateBoards}
-              canManageBoards={canManageBoards}
-              onCreate={() => {
-                const board = workspace.createBoard();
-                activateBoard(board.id);
-              }}
-              onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-              onClose={closeBoardTab}
-            />
-          </>
-        ) : null}
-      </TitleBar>
+              {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
+                <button
+                  type="button"
+                  data-testid="portal-back"
+                  aria-label={`Back to ${
+                    snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
+                      ?.name ?? "the previous board"
+                  }`}
+                  title={`Back to ${
+                    snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
+                      ?.name ?? "the previous board"
+                  }`}
+                  className="portal-back"
+                  onClick={() => goBackBoard()}
+                >
+                  <span aria-hidden="true">{"\u2039"}</span>
+                </button>
+              ) : null}
+              <BoardTabs
+                boards={openBoards}
+                activeBoardId={activeBoardId}
+                onSelect={activateBoard}
+                peersByBoard={peersByBoard}
+                canCreateBoards={canCreateBoards}
+                canManageBoards={canManageBoards}
+                onCreate={() => {
+                  const board = workspace.createBoard();
+                  activateBoard(board.id);
+                }}
+                onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
+                onClose={closeBoardTab}
+              />
+            </>
+          ) : null}
+        </TitleBar>
 
-      <main
-        className={`board-surface relative z-10 min-h-0 flex-1${boardPainted ? " is-painted" : ""}`}
-        style={boardPainted ? (boardPaint as CSSProperties) : undefined}
-      >
-        <CanvasBoard />
-        {workspaceSurface && canCreateContent && boardEmpty ? (
-          <div
-            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
-            data-testid="empty-board"
-          >
-            <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
-              <p className="text-[13px] font-semibold">A blank board</p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">
-                Double-click anywhere, or start with a note.
-              </p>
-              <button
-                type="button"
-                className="mt-3 rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium text-[var(--surface)] hover:opacity-90"
-                onClick={() => createCard("note")}
-              >
-                New note
-              </button>
+        <main
+          ref={boardRef}
+          className={`board-surface relative z-10 min-h-0 flex-1${boardPainted ? " is-painted" : ""}`}
+          style={boardPainted ? (boardPaint as CSSProperties) : undefined}
+        >
+          <CanvasBoard />
+          {workspaceSurface && canCreateContent && boardEmpty ? (
+            <div
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
+              data-testid="empty-board"
+            >
+              <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
+                <p className="text-[13px] font-semibold">A blank board</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">
+                  Double-click anywhere, or start with a note.
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium text-[var(--surface)] hover:opacity-90"
+                  onClick={() => createCard("note")}
+                >
+                  New note
+                </button>
+              </div>
             </div>
-          </div>
-        ) : null}
-        {sharedEmpty ? (
-          <div
-            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
-            data-testid="empty-board"
-            data-empty-reason="shared-cards-gone"
-          >
-            <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
-              <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
-                Nothing to show — these shared cards were moved or deleted.
-              </p>
+          ) : null}
+          {sharedEmpty ? (
+            <div
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
+              data-testid="empty-board"
+              data-empty-reason="shared-cards-gone"
+            >
+              <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
+                <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
+                  Nothing to show — these shared cards were moved or deleted.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : null}
+          <BoardOutlineHost />
+          <CardInspectorHost />
+          <CardFocusHost />
+          <TourOverlayHost />
+        </main>
+
+        {workspaceSurface && !readOnly && !cardFocusId ? (
+          <Dock
+            inboxCount={unplaced.length}
+            libraryOpen={libraryOpen}
+            onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
+            types={snapshot.types}
+            boards={snapshot.boards}
+            activeBoardId={activeBoardId}
+            onCreateCard={(typeId) => createCard(typeId)}
+            onCreatePortal={createPortal}
+            onCreateBoardPortal={createBoardPortal}
+            onManageTypes={openTypeSettings}
+            canManageSchema={canManageSchema}
+            canCreateContent={canCreateContent}
+            canCreateBoards={canCreateBoards}
+          />
         ) : null}
-        <BoardOutlineHost />
-        <CardInspectorHost />
-        <CardFocusHost />
-        <TourOverlayHost />
-      </main>
 
-      {workspaceSurface && !readOnly && !cardFocusId ? (
-        <Dock
-          inboxCount={unplaced.length}
-          libraryOpen={libraryOpen}
-          onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
-          types={snapshot.types}
-          boards={snapshot.boards}
-          activeBoardId={activeBoardId}
-          onCreateCard={(typeId) => createCard(typeId)}
-          onCreatePortal={createPortal}
-          onCreateBoardPortal={createBoardPortal}
-          onManageTypes={openTypeSettings}
-          canManageSchema={canManageSchema}
-          canCreateContent={canCreateContent}
-          canCreateBoards={canCreateBoards}
-        />
-      ) : null}
+        {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
 
-      {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
+        {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
 
-      {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
+        {workspaceSurface && !readOnly ? (
+          <LibraryDrawer
+            open={libraryOpen}
+            tab={libraryTab}
+            counts={{
+              inbox: unplaced.length,
+              cards: allCards.length,
+              boards: snapshot.boards.length,
+              trash: trashed.length,
+            }}
+            inbox={inboxItems}
+            cards={cardItems}
+            trash={trashItems}
+            boards={boardEntries}
+            onOpenBoard={activateBoard}
+            onPlaceBoard={createPortal}
+            onUnplaceBoardCards={unplaceBoardCards}
+            onDeleteBoard={deleteBoard}
+            onLocateCard={locateCard}
+            onLocateBoard={locateBoard}
+            {...(canCreateBoards
+              ? {
+                  onUseBoardTemplate: useBoardTemplate,
+                  onUseStarter: useStarter,
+                  starters: BOARD_STARTERS,
+                }
+              : {})}
+            {...(canManageBoards ? { onSetBoardTemplate: setBoardTemplate } : {})}
+            onTab={setLibraryTab}
+            onClose={() => setLibraryOpen(false)}
+            onPlace={placeCard}
+            onCreateInInbox={() => workspace.createCard()}
+            onTrash={(cardId) => workspace.trashCard(cardId)}
+            onRestore={(cardId) => workspace.restoreCard(cardId)}
+            onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
+            onEmptyTrash={() => workspace.emptyTrash()}
+            onGoToBoard={activateBoard}
+            onDropAt={(cardId, point) => placeCard(cardId, point)}
+            canPlace={canEditLayout}
+            types={snapshot.types}
+            tags={snapshot.tags}
+            typeFilter={libraryTypeFilter}
+            tagFilter={libraryTagFilter}
+            onToggleType={toggleLibraryType}
+            onToggleTag={toggleLibraryTag}
+            onClearFilters={clearLibraryFilters}
+            activeBoardId={activeBoardId}
+            activeBoardName={activeBoardName}
+            scope={libraryScope}
+            onScope={setLibraryScope}
+            sectionFilter={librarySectionFilter}
+            onToggleSection={toggleLibrarySection}
+            sectionOrder={sectionOrder}
+            groupBySection={libraryGroupBySection}
+            onToggleGroup={toggleLibraryGroupBySection}
+            onOpenCard={openInspector}
+            canManageTrash={canManageTrash}
+          />
+        ) : null}
 
-      {workspaceSurface && !readOnly ? (
-        <LibraryDrawer
-          open={libraryOpen}
-          tab={libraryTab}
-          counts={{
-            inbox: unplaced.length,
-            cards: allCards.length,
-            boards: snapshot.boards.length,
-            trash: trashed.length,
-          }}
-          inbox={inboxItems}
-          cards={cardItems}
-          trash={trashItems}
-          boards={boardEntries}
-          onOpenBoard={activateBoard}
-          onPlaceBoard={createPortal}
-          onUnplaceBoardCards={unplaceBoardCards}
-          onDeleteBoard={deleteBoard}
-          onLocateCard={locateCard}
-          onLocateBoard={locateBoard}
-          {...(canCreateBoards
-            ? {
-                onUseBoardTemplate: useBoardTemplate,
-                onUseStarter: useStarter,
-                starters: BOARD_STARTERS,
-              }
-            : {})}
-          {...(canManageBoards ? { onSetBoardTemplate: setBoardTemplate } : {})}
-          onTab={setLibraryTab}
-          onClose={() => setLibraryOpen(false)}
-          onPlace={placeCard}
-          onCreateInInbox={() => workspace.createCard()}
-          onTrash={(cardId) => workspace.trashCard(cardId)}
-          onRestore={(cardId) => workspace.restoreCard(cardId)}
-          onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
-          onEmptyTrash={() => workspace.emptyTrash()}
-          onGoToBoard={activateBoard}
-          onDropAt={(cardId, point) => placeCard(cardId, point)}
-          canPlace={canEditLayout}
-          types={snapshot.types}
-          tags={snapshot.tags}
-          typeFilter={libraryTypeFilter}
-          tagFilter={libraryTagFilter}
-          onToggleType={toggleLibraryType}
-          onToggleTag={toggleLibraryTag}
-          onClearFilters={clearLibraryFilters}
-          activeBoardId={activeBoardId}
-          activeBoardName={activeBoardName}
-          scope={libraryScope}
-          onScope={setLibraryScope}
-          sectionFilter={librarySectionFilter}
-          onToggleSection={toggleLibrarySection}
-          sectionOrder={sectionOrder}
-          groupBySection={libraryGroupBySection}
-          onToggleGroup={toggleLibraryGroupBySection}
-          onOpenCard={openInspector}
-          canManageTrash={canManageTrash}
-        />
-      ) : null}
-
-      <PerfOverlay />
-    </div>
+        <PerfOverlay />
+      </div>
+    </SurfaceRulesContext.Provider>
   );
 }

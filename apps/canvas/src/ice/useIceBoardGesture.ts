@@ -17,7 +17,18 @@ import type { Entity } from "@vibecook/ice";
 import { type Dispatch, type RefObject, type SetStateAction, useEffect } from "react";
 import { isWhiteboardCard } from "../cards/whiteboard";
 import { useUiStore } from "../store/useUiStore";
-import { workspaceWriter } from "./iceBridge";
+import { applyCanonicalWrite, ICE_WRITE_ORIGIN, workspaceWriter } from "./iceBridge";
+import {
+  applyClone,
+  clipboardText,
+  getIceClipboard,
+  type IceClipboardCard,
+  planCopy,
+  planDuplicate,
+  planPaste,
+  setIceClipboard,
+  workspaceCloneWriter,
+} from "./iceClipboard";
 import { contextMenuStateFor, type MenuPick, menuTargetFromPick } from "./iceContextMenu";
 import {
   attachIcePointerEditing,
@@ -26,10 +37,12 @@ import {
 } from "./iceEditingController";
 import { enteredPathOf, restoreEnteredPath } from "./iceEnteredPath";
 import { identitySlots, matBoardOf } from "./iceEntityIdentity";
+import { type IceNudgeCard, planNudge } from "./iceNudge";
 import { pinFocusPoint, revealCamera, revealPlan } from "./iceReveal";
+import { screenToWorld } from "./iceScreenToWorld";
 import { setIceSelectionCommand } from "./iceSelectionCommand";
-import type { IceCamera } from "./iceSurfaceCamera";
-import { entityAt, entityRectOf } from "./iceSurfaceShared";
+import { type IceCamera, prefersReducedMotion } from "./iceSurfaceCamera";
+import { entityAt, entityRectOf, screenPointOf } from "./iceSurfaceShared";
 import { deskEdgesOf } from "./iceSurfaceSpawns";
 import type { IceCommands, IceSurfaceRefs, IceWiring } from "./iceSurfaceWiring";
 import { resolveSurface } from "./iceSurfaceWiring";
@@ -98,6 +111,14 @@ export function useIceBoardGesture(input: {
     const slots = identitySlots(seed.entitySlots, world);
     const rectOf = (entity: Entity) => entityRectOf(engine, core, entity);
     const pickEntity = (screen: { x: number; y: number }) => entityAt(desk, screen);
+
+    /**
+     * The pointer's last client position over this surface. A paste targets "the
+     * Board the pointer is over", and the last move is the only evidence of
+     * where that was; the client point is stored as-is and converted only at
+     * paste time, so tracking it costs no layout read per move.
+     */
+    let pointerClient: { x: number; y: number } | null = null;
 
     /** One camera convention, and it is ICE's: see `useIceCamera`. */
     const cameraOf = () => cameraApi?.cameraOf() ?? null;
@@ -193,6 +214,147 @@ export function useIceBoardGesture(input: {
       }
     };
 
+    /* ------------------------------------------------------- clipboard */
+
+    /**
+     * A Board share owns one Board and nothing else, so a paste onto another
+     * Board is outside what this seat may write. An owner (`null`) may write
+     * every Board; a card share never reaches here (`canCreateCards` is false).
+     */
+    const boardInScope = (boardId: string): boolean =>
+      caps.boardIdFilter === null || caps.boardIdFilter === boardId;
+
+    /**
+     * The document's answer for a card the selection names: the Board it is
+     * placed on and the position it was copied from. The seed's slot table says
+     * which Board the *entity* is drawn in — the same thing — but a card can be
+     * selected without the desk having drawn it (a stale store after a reseed),
+     * so the placement is read from the document and the slot is only a hint.
+     */
+    const clipboardCardOf = (cardId: string): IceClipboardCard | null => {
+      const slot = [...slots.values()].find((candidate) => candidate.cardId === cardId);
+      const placement =
+        (slot === undefined ? undefined : liveWorkspace.getPlacement(slot.boardId, cardId)) ??
+        liveWorkspace.listCardPlacements(cardId)[0];
+      if (placement === undefined) return null;
+      return {
+        cardId,
+        boardId: placement.boardId,
+        x: placement.x,
+        y: placement.y,
+        title: liveWorkspace.displayTitle(cardId),
+      };
+    };
+
+    const clipboardCardsOf = (cardIds: readonly string[]): IceClipboardCard[] =>
+      cardIds.flatMap((cardId) => {
+        const card = clipboardCardOf(cardId);
+        return card === null ? [] : [card];
+      });
+
+    /**
+     * The selected cards as the keyboard measures them: the entity's committed
+     * box (board-local, exactly what a drag would have started from).
+     */
+    const nudgeCardsOf = (cardIds: readonly string[]): IceNudgeCard[] => {
+      const wanted = new Set(cardIds);
+      const cards: IceNudgeCard[] = [];
+      const seen = new Set<string>();
+      for (const [entity, slot] of slots) {
+        if (!wanted.has(slot.cardId) || seen.has(slot.cardId)) continue;
+        const box = rectOf(entity);
+        if (box === null) continue;
+        seen.add(slot.cardId);
+        cards.push({
+          cardId: slot.cardId,
+          boardId: slot.boardId,
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height,
+        });
+      }
+      return cards;
+    };
+
+    /**
+     * Copy: no write, so it only needs a seat that could paste. A viewer copies
+     * nothing — a buffer it can never use would be a lie about what the seat can
+     * do. The OS clipboard gets the titles as plain text, best effort: a courtesy
+     * for pasting into another app, never the mechanism.
+     */
+    const copySelection = (): void => {
+      const copied = planCopy({
+        cards: clipboardCardsOf(useUiStore.getState().selectedNodeIds),
+        capabilities: { select: caps.bridge.select, write: caps.canCreateCards },
+      });
+      if (copied === null) return;
+      setIceClipboard(copied);
+      const text = clipboardText(copied);
+      try {
+        const write = navigator.clipboard?.writeText(text);
+        if (write !== undefined) void write.catch(() => undefined);
+      } catch {
+        // No clipboard permission, an insecure context, or no clipboard at all:
+        // the document copy already happened, which is the one that matters.
+      }
+    };
+
+    /**
+     * Where a paste lands: the Board under the pointer, in that Board's units.
+     *
+     * Over a mat, the paste goes *into* that Board — the same assumption a drop
+     * makes — and the pointer's frame-local point is shifted by the mat's own
+     * origin. Anywhere else it lands on the frame the camera is inside, which is
+     * the root View on the plane. With no pointer yet (a keyboard paste on a
+     * fresh mount) the middle of the viewport stands in for "here".
+     */
+    const pasteTarget = (): { boardId: string; x: number; y: number } | null => {
+      const frame = currentFrameOf(rootBoardId, portalFramesRef.current);
+      const screen =
+        pointerClient === null
+          ? (() => {
+              try {
+                const viewport = engine.world.getResource(core.Viewport);
+                return viewport === undefined ? null : { x: viewport.w / 2, y: viewport.h / 2 };
+              } catch {
+                return null;
+              }
+            })()
+          : screenPointOf(root, {
+              clientX: pointerClient.x,
+              clientY: pointerClient.y,
+            });
+      if (screen === null) return null;
+      const cameraNow = cameraOf();
+      const point =
+        cameraNow === null
+          ? screenToWorld(screen)
+          : screenToWorld(screen, { x: cameraNow.x, y: cameraNow.y, zoom: cameraNow.zoom });
+      if (pointerClient !== null) {
+        const entity = entityAt(desk, screen);
+        const mat = entity === null ? undefined : seed.boardMats.get(entity);
+        if (entity !== null && mat !== undefined) {
+          let geometry:
+            | { centre?: readonly [number, number]; half?: readonly [number, number] }
+            | undefined;
+          try {
+            geometry = desk.geometryOf(entity) as typeof geometry;
+          } catch {
+            geometry = undefined;
+          }
+          if (geometry?.centre !== undefined && geometry.half !== undefined) {
+            const origin = {
+              x: geometry.centre[0] - Math.abs(geometry.half[0]),
+              y: geometry.centre[1] - Math.abs(geometry.half[1]),
+            };
+            return { boardId: mat.boardId, x: point.x - origin.x, y: point.y - origin.y };
+          }
+        }
+      }
+      return { boardId: frame.boardId, x: point.x, y: point.y };
+    };
+
     commands.current = {
       undo: () => {
         liveWorkspace.undo();
@@ -217,6 +379,8 @@ export function useIceBoardGesture(input: {
        * "Remove from board" and "Move to trash".
        */
       deleteSelection: () => {
+        // A viewer, or a seat whose share does not cover layout, writes nothing.
+        if (!caps.canWriteLayout) return;
         const selected = useUiStore.getState().selectedNodeIds;
         if (selected.length === 0) return;
         // Unplace from the Board each card is actually on: the frame the camera
@@ -238,10 +402,84 @@ export function useIceBoardGesture(input: {
       },
       /** Shift+Delete: the explicit, destructive key. One planned delete write. */
       trashSelection: () => {
+        if (!caps.canWriteLayout) return;
         const selected = useUiStore.getState().selectedNodeIds;
         if (selected.length === 0) return;
         controller.deleteSelection(selected);
         clearSelection();
+      },
+      /**
+       * Cmd/Ctrl+C — remember the selection. Cmd/Ctrl+X is a copy followed by
+       * the recoverable removal Delete performs (the card stays in the
+       * workspace), so a cut is undoable in one step and loses nothing.
+       */
+      copy: copySelection,
+      cut: () => {
+        if (!caps.canCreateCards) return;
+        copySelection();
+        commands.current?.deleteSelection();
+      },
+      /**
+       * Cmd/Ctrl+V — clone the buffer onto the Board under the pointer. One
+       * commit for the whole paste: `applyClone` opens one batch and the
+       * document's own copy-with-content lands inside it.
+       */
+      paste: () => {
+        const copied = getIceClipboard();
+        if (copied === null) return;
+        const target = pasteTarget();
+        if (target === null || !boardInScope(target.boardId)) return;
+        const plan = planPaste({
+          clipboard: copied,
+          target,
+          capabilities: { select: caps.bridge.select, write: caps.canCreateCards },
+        });
+        if (plan.status !== "commit") return;
+        const created = applyClone(
+          workspaceCloneWriter(liveWorkspace),
+          plan.write,
+          `${ICE_WRITE_ORIGIN}:paste`,
+        );
+        if (created.length === 0) return;
+        projection.reconcile();
+      },
+      /**
+       * Cmd/Ctrl+D — a copy of each selected card, down-right of itself, on the
+       * Board it already lives on. One commit for the selection, like a paste;
+       * the copy carries the title and the body, because it is the document
+       * copying its own trees.
+       */
+      duplicate: () => {
+        const cards = clipboardCardsOf(useUiStore.getState().selectedNodeIds).filter((card) =>
+          boardInScope(card.boardId),
+        );
+        const plan = planDuplicate({
+          cards,
+          capabilities: { select: caps.bridge.select, write: caps.canCreateCards },
+        });
+        if (plan.status !== "commit") return;
+        const created = applyClone(
+          workspaceCloneWriter(liveWorkspace),
+          plan.write,
+          `${ICE_WRITE_ORIGIN}:duplicate`,
+        );
+        if (created.length === 0) return;
+        projection.reconcile();
+      },
+      /**
+       * Arrow keys — the same `planMoveCommit` a drag commits, one write per
+       * press. `caps.bridge` is the layout capability the controller uses, so a
+       * seat that cannot drag cannot nudge either.
+       */
+      nudge: (dx, dy) => {
+        const cards = nudgeCardsOf(useUiStore.getState().selectedNodeIds).filter((card) =>
+          boardInScope(card.boardId),
+        );
+        if (cards.length === 0) return;
+        const plan = planNudge({ cards, delta: { x: dx, y: dy }, capabilities: caps.bridge });
+        if (plan.status !== "commit") return;
+        applyCanonicalWrite(workspaceWriter(liveWorkspace), plan.write);
+        projection.reconcile();
       },
       reconcile: projection.reconcile,
       /**
@@ -318,7 +556,11 @@ export function useIceBoardGesture(input: {
       const mat = seed.boardMats.get(entity);
       if (mat !== undefined) {
         try {
-          engine.ops.enterContainer(entity);
+          // Entering a Board is a camera flight inside ICE. A reader who asked
+          // for reduced motion gets the destination without the travel — the
+          // same rule `flyTo` applies to every journey (ADR-0037 §6).
+          if (prefersReducedMotion()) engine.ops.enterContainer(entity, { transition: "none" });
+          else engine.ops.enterContainer(entity);
           portalDepth.current += 1;
           portalFramesRef.current = [
             ...portalFramesRef.current,
@@ -468,12 +710,20 @@ export function useIceBoardGesture(input: {
     };
     root.addEventListener("pointerdown", onPinPointerDown, true);
     root.addEventListener("click", onPinClick);
+    // Where the pointer is, for the one command that needs a place rather than a
+    // selection: a paste lands on the Board the pointer is over. A capture-phase
+    // listener sees the move even when a card's own handler stops it.
+    const onTrackPointer = (event: PointerEvent): void => {
+      pointerClient = { x: event.clientX, y: event.clientY };
+    };
+    root.addEventListener("pointermove", onTrackPointer, true);
 
     return () => {
       root.removeEventListener("dblclick", onDouble);
       root.removeEventListener("contextmenu", onContextMenu);
       root.removeEventListener("pointerdown", onPinPointerDown, true);
       root.removeEventListener("click", onPinClick);
+      root.removeEventListener("pointermove", onTrackPointer, true);
       setIceSelectionCommand(null);
       detach();
       controller.cancel();

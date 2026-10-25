@@ -119,6 +119,35 @@ ICE is not the default until each row has an artifact a reviewer can open.
 | Accessibility | Scene outline and keyboard path reach every card and portal; focus order is stable; the canvas has an accessible description; reduced motion is honoured |
 | Budget | 1k and 5k object fixtures on hardware: frame time, mounted DOM editors, GPU memory, time to interactive and device-loss rate recorded against the React Flow baseline |
 
+### The Failure row, re-checked (2026-10-25)
+
+The table says the Failure row needs evidence, so it was exercised against the app as it
+now is. All five states are reachable and all five show something a reader can act on;
+two things were false and are fixed. The screens live in `IceSurface.tsx` and are pinned
+by `IceSurface.test.tsx`; the import path is the launcher, not the canvas.
+
+| State | What reaches the seat | Verdict |
+| --- | --- | --- |
+| No WebGPU (`navigator.gpu` missing) | `phase: unavailable`, reason `api`; "This browser has no WebGPU", how to run it locally, the browser versions that work, the adapter line `engine: no WebGPU`, **Copy diagnostics** and **Reload workspace** in the HUD | true |
+| No adapter (an API but `requestAdapter()` refuses) | `phase: unavailable`, reason `adapter`; "WebGPU has no graphics adapter"; the adapter line says `not acquired` | true |
+| Device loss (`layerStatus.state === "failed"`) | `phase: failed`, reason `device-lost`; "The graphics device was lost", the promise that nothing was written, and the button this seat actually has | true after the fix below |
+| Refused import | The launcher's import error: `importWorkspaceFile` rejects a backup it cannot read and the launcher prints the reason; no workspace id, key or recents entry is created. A share link whose cards are gone opens on "Nothing to show — these shared cards were moved or deleted" | true |
+| Unsupported screen | The fallback card, and **no canvas**: the React Flow surface is deleted, so a browser without WebGPU never gets a second renderer | true after the fix below |
+
+Two fixes: the unsupported screen had the reason, the run instruction and the HUD's copy
+action, but the promised *link* to the requirements was prose ("Chrome 113+, Edge 113+,
+Safari 26+"). It now carries a real link (`ice-fallback-requirements`). And the
+device-loss copy told a workspace seat to "Reset demo" — the button in front of it says
+"Reload workspace" — so the sentence now names the button the seat has.
+
+The other two rows this phase touched are recorded in
+[`docs/roadmap/ice-parity.md`](../roadmap/ice-parity.md) §9: **Accessibility** is
+partial and stays P0 for the objects themselves (the surface has a description, a live
+summary and a documented keyboard; the cards are WebGPU rasters and are read through the
+library and the inspector), and **Budget** has 1k/5k mount-cost and memory numbers in
+Node (`apps/canvas/src/ice/icePerf.test.ts`) with GPU frame time still unmeasured at
+scale.
+
 P1 after the gate: persisted View cameras, Pins, saved filters, fractal layout presets, crossfade
 polish and a minimap. These are specified in
 [ADR-0035](./0035-views-pins-and-portals.md) and

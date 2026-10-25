@@ -49,14 +49,17 @@
  */
 import type { Board, WorkspaceDocument } from "@suite/graph";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CanvasZoomControls } from "../components/CanvasZoomControls";
+import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { getSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { IceContextMenu } from "./IceContextMenu";
 import { IceSurfaceHud } from "./IceSurfaceHud";
+import { describeIceKeys, type IceCommandId, iceKeymapEntries } from "./iceKeys";
+import { ICE_NUDGE_STEP, ICE_NUDGE_STEP_FAR } from "./iceNudge";
 import { iceShareCaps, withinShareScope } from "./iceShareCaps";
 import { useIceCamera, useIceCameraFrame, useIceMiddlePan } from "./iceSurfaceCamera";
 import { demoModeFromSearch, SUITE_PIN_KIND } from "./iceSurfaceSpawns";
@@ -79,10 +82,33 @@ export interface IceSurfaceFallbackProps {
   readonly title: string;
   readonly message: string;
   readonly detail?: string;
+  /**
+   * Where a reader can read the requirements, when the state has a fix outside
+   * this app. ADR-0034's unsupported screen promises a link, not just prose.
+   */
+  readonly requirements?: { readonly href: string; readonly label: string } | undefined;
 }
 
+/** The one screen-reader-only style this file needs. */
+const VISUALLY_HIDDEN: CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+};
+
 /** The calm no-desk card. Exported so Storybook can show it without WebGPU. */
-export function IceSurfaceFallback({ title, message, detail }: IceSurfaceFallbackProps) {
+export function IceSurfaceFallback({
+  title,
+  message,
+  detail,
+  requirements,
+}: IceSurfaceFallbackProps) {
   return (
     <div className="ice-surface__state" data-testid="ice-fallback">
       <div className="ice-surface__card">
@@ -95,6 +121,18 @@ export function IceSurfaceFallback({ title, message, detail }: IceSurfaceFallbac
         {detail === undefined ? null : (
           <p className="ice-surface__card-detail" data-testid="ice-fallback-detail">
             {detail}
+          </p>
+        )}
+        {requirements === undefined ? null : (
+          <p className="ice-surface__card-copy">
+            <a
+              data-testid="ice-fallback-requirements"
+              href={requirements.href}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {requirements.label}
+            </a>
           </p>
         )}
       </div>
@@ -123,6 +161,8 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
   const canManageSchema = useUiStore((state) => state.canManageSchema);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
   const readOnly = useUiStore((state) => state.readOnly);
+  // What the accessible summary carries beside the View's name.
+  const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   // One capability row for everything the surface does. The session matrix in
   // the store says what this seat may do; `iceShareCaps` narrows it to the
   // share's scope, so a board share cannot write a card on another board and a
@@ -287,61 +327,118 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
 
   const ready = phase.kind === "ready" ? phase : null;
 
+  /**
+   * Cmd/Ctrl+K — the canvas's own search. The Dock owns the app-wide shortcut,
+   * and this override adds the two things a canvas search means: scope the
+   * library to the View on screen, and reveal whatever result is chosen. The
+   * drawer owns its input, so it focuses on this event rather than being handed
+   * a ref it does not expose.
+   */
+  const openSearch = useCallback(() => {
+    const store = useUiStore.getState();
+    // The drawer is not rendered for a read-only seat, so there is nothing to
+    // open; searching is the library's surface, not the canvas's.
+    if (store.readOnly) return;
+    store.setLibraryTab("cards");
+    store.setLibraryScope("board");
+    store.setLibraryReveal(true);
+    store.setLibraryOpen(true);
+    window.dispatchEvent(new Event(LIBRARY_SEARCH_FOCUS_EVENT));
+  }, []);
+
+  /**
+   * Cmd/Ctrl+K is bound here rather than through ICE's keymap.
+   *
+   * The shell's Dock already listens for it on `window`, and it attaches before
+   * this lazily-mounted surface does — so it runs first, calls `preventDefault`,
+   * and ICE (which cedes any default-prevented event) would drop the override.
+   * A capture-phase listener on the surface avoids the race entirely: it runs
+   * before the Dock's, and a key pressed inside an editable target is left
+   * alone, which is how the editor keeps its own ⌘K.
+   */
+  useEffect(() => {
+    if (!workspaceMode) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== "k") return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ) {
+        return;
+      }
+      event.preventDefault();
+      openSearch();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [workspaceMode, openSearch]);
+
+  /**
+   * The keyboard is one table (`iceKeys.ts`): every entry is an override of an
+   * ICE default, because ICE's own arrows nudge its ECS document, its ⌘D
+   * duplicates into it and its ⌘Z undoes it. The handlers below are the only
+   * place a key becomes a suite command.
+   */
   const keymapOverrides = useMemo(() => {
     if (!workspaceMode) return undefined;
-    return [
-      {
-        key: "z",
-        mod: true,
-        run: () => {
-          commandsRef.current?.undo();
-        },
-      },
-      {
-        key: "z",
-        mod: true,
-        shift: true,
-        run: () => {
-          commandsRef.current?.redo();
-        },
-      },
-      {
-        key: "Escape",
-        run: () => {
-          commandsRef.current?.escape();
-        },
-      },
-      // Delete removes the card from its Board — recoverable, the card is still
-      // in the workspace — and Shift+Delete is the only key that trashes (the
-      // decision and its reasoning live in `useIceBoardGesture`'s commands).
-      {
-        key: "Backspace",
-        run: () => {
-          commandsRef.current?.deleteSelection();
-        },
-      },
-      {
-        key: "Delete",
-        run: () => {
-          commandsRef.current?.deleteSelection();
-        },
-      },
-      {
-        key: "Backspace",
-        shift: true,
-        run: () => {
-          commandsRef.current?.trashSelection?.();
-        },
-      },
-      {
-        key: "Delete",
-        shift: true,
-        run: () => {
-          commandsRef.current?.trashSelection?.();
-        },
-      },
-    ];
-  }, [workspaceMode]);
+    const nudge = (dx: number, dy: number) => () => commandsRef.current?.nudge(dx, dy);
+    const handlers: Record<IceCommandId, () => void> = {
+      undo: () => commandsRef.current?.undo(),
+      redo: () => commandsRef.current?.redo(),
+      delete: () => commandsRef.current?.deleteSelection(),
+      trash: () => commandsRef.current?.trashSelection?.(),
+      escape: () => commandsRef.current?.escape(),
+      copy: () => commandsRef.current?.copy(),
+      cut: () => commandsRef.current?.cut(),
+      paste: () => commandsRef.current?.paste(),
+      duplicate: () => commandsRef.current?.duplicate(),
+      "nudge-left": nudge(-ICE_NUDGE_STEP, 0),
+      "nudge-right": nudge(ICE_NUDGE_STEP, 0),
+      "nudge-up": nudge(0, -ICE_NUDGE_STEP),
+      "nudge-down": nudge(0, ICE_NUDGE_STEP),
+      "nudge-left-far": nudge(-ICE_NUDGE_STEP_FAR, 0),
+      "nudge-right-far": nudge(ICE_NUDGE_STEP_FAR, 0),
+      "nudge-up-far": nudge(0, -ICE_NUDGE_STEP_FAR),
+      "nudge-down-far": nudge(0, ICE_NUDGE_STEP_FAR),
+      search: openSearch,
+    };
+    return iceKeymapEntries(handlers);
+  }, [workspaceMode, openSearch]);
+
+  /*
+   * Accessibility, honestly.
+   *
+   * The desk is drawn by WebGPU: the cards, their titles and their affordances
+   * are not DOM, so a screen reader cannot walk them however the markup is
+   * arranged. What is genuinely available is the shell around the canvas — a
+   * named region with a description, a live summary of the view, how much is on
+   * it and what is selected, and a keyboard list that matches the keymap. Do not
+   * describe this canvas as accessible; its meaning is carried by the library,
+   * the inspector and this summary.
+   */
+  // The View on screen is the root Board the shell handed the surface: a View is
+  // a camera over the same Boards (`rootBoardId`), not the store's saved-view
+  // filter, which is a library query and may be null.
+  const viewName = useMemo(
+    () =>
+      snapshot.views.find((view) => view.id === rootBoardId)?.name ??
+      snapshot.boards.find((board) => board.id === rootBoardId)?.name ??
+      null,
+    [snapshot.views, snapshot.boards, rootBoardId],
+  );
+  const surfaceSummary = `${
+    viewName ?? "The canvas"
+  }: ${snapshot.placements.length} cards placed on ${snapshot.boards.length} boards, ${
+    selectedNodeIds.length
+  } selected.`;
+  const surfaceDescription = useMemo(
+    () =>
+      "A canvas drawn with WebGPU. Its cards are not in the accessibility tree, so read them in the library (Control or Command K) or the inspector. Keys: " +
+      `${describeIceKeys()}.`,
+    [],
+  );
 
   return (
     <section
@@ -350,7 +447,19 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
       data-testid="ice-surface"
       data-ice-phase={phase.kind}
       aria-label="ICE experimental canvas"
+      aria-describedby="ice-surface-description"
     >
+      <p id="ice-surface-description" style={VISUALLY_HIDDEN} data-testid="ice-surface-help">
+        {surfaceDescription}
+      </p>
+      <div
+        style={VISUALLY_HIDDEN}
+        data-testid="ice-surface-summary"
+        role="status"
+        aria-live="polite"
+      >
+        {surfaceSummary}
+      </div>
       {ready === null ? (
         <div className="ice-surface__desk" data-testid="ice-desk-host" />
       ) : (
@@ -425,6 +534,10 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
               ? `${phase.detail} Try Chrome 113+, Edge 113+, or Safari 26+ with hardware acceleration on.`
               : `${phase.detail} Check that hardware acceleration is on and a supported GPU is present.`
           }
+          requirements={{
+            href: "https://caniuse.com/webgpu",
+            label: "Which browsers have WebGPU",
+          }}
         />
       ) : null}
 
@@ -435,7 +548,7 @@ export function IceSurface({ workspace, rootBoardId = null }: IceSurfaceProps = 
           }
           message={
             phase.reason === "device-lost"
-              ? "ICE stopped drawing because the graphics device went away. Nothing was written to your workspace. Reset demo rebuilds the desk."
+              ? `ICE stopped drawing because the graphics device went away. Nothing was written to your workspace. ${workspaceMode ? "Reload workspace" : "Reset demo"} builds the desk again.`
               : "The desk failed before it could draw. Nothing was written to your workspace. Reset demo retries; if it keeps failing, run `pnpm dev:ice` in a headed Chrome with `--enable-unsafe-webgpu` (`node scripts/ice-chrome.mjs`)."
           }
           detail={phase.detail}

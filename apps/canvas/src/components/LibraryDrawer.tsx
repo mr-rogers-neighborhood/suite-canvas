@@ -165,7 +165,7 @@ export function LibraryDrawer({
   const activeRow = useRef<HTMLLIElement | null>(null);
   const focusPending = useRef(false);
   const holdRef = useRef<{
-    cardId: string;
+    item: LibraryItem;
     startX: number;
     startY: number;
     dragging: boolean;
@@ -173,12 +173,38 @@ export function LibraryDrawer({
 
   const requestDropPin = useUiStore((state) => state.requestDropPin);
   const focusPinAt = useUiStore((state) => state.focusPinAt);
+  const focusCard = useUiStore((state) => state.focusCard);
+  const libraryReveal = useUiStore((state) => state.libraryReveal);
+  const setLibraryReveal = useUiStore((state) => state.setLibraryReveal);
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
   const items = tab === "inbox" ? inbox : tab === "cards" ? cards : tab === "trash" ? trash : [];
   const scopedItems = boardScope
     ? items.filter((item) => item.boards.some((board) => board.id === activeBoardId))
     : items;
   const activeSectionFilter = boardScope ? sectionFilter : [];
+
+  /**
+   * Choosing a result. The inspector is the shell's reading surface and opens
+   * either way. When the search came from the canvas (`Cmd/Ctrl+K` sets
+   * `libraryReveal`) the card is *also* revealed there — `focusTarget` enters
+   * the Boards it is nested in and flies the camera to its box (`iceReveal.ts`)
+   * — and the drawer steps aside so the flight is visible. An unplaced card has
+   * nothing to fly to, so the drawer stays open and the inspector is the answer.
+   */
+  const chooseItem = useCallback(
+    (item: LibraryItem) => {
+      if (libraryReveal) {
+        const board = item.boards.find((entry) => entry.id === activeBoardId) ?? item.boards[0];
+        if (board !== undefined) {
+          focusCard(item.id, board.id);
+          setLibraryReveal(false);
+          onClose();
+        }
+      }
+      onOpenCard(item.id);
+    },
+    [libraryReveal, activeBoardId, focusCard, setLibraryReveal, onClose, onOpenCard],
+  );
   const {
     query,
     setQuery,
@@ -264,7 +290,9 @@ export function LibraryDrawer({
 
   useEffect(() => {
     if (!open) setHold(null);
-  }, [open]);
+    // A reveal belongs to the search session that asked for it.
+    if (!open) setLibraryReveal(false);
+  }, [open, setLibraryReveal]);
 
   // Pointer-based hold: the row lifts into a ghost that follows the cursor, and
   // dropping over the canvas places the card there.
@@ -289,7 +317,7 @@ export function LibraryDrawer({
       if (!current) return;
       // A press that never became a drag is a plain click on the row.
       if (!current.dragging) {
-        onOpenCard(current.cardId);
+        chooseItem(current.item);
         return;
       }
       // ICE is the only surface now, so the drop target is its root: the old
@@ -297,7 +325,7 @@ export function LibraryDrawer({
       const canvas = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest('[data-testid="ice-surface"]');
-      if (canvas) onDropAt(current.cardId, { x: event.clientX, y: event.clientY });
+      if (canvas) onDropAt(current.item.id, { x: event.clientX, y: event.clientY });
     };
 
     window.addEventListener("pointermove", move);
@@ -308,7 +336,7 @@ export function LibraryDrawer({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onDropAt, onOpenCard]);
+  }, [onDropAt, chooseItem]);
 
   const countsByFacet = facetCounts(scopedItems, typeFilter, tagFilter, activeSectionFilter);
   const facetFiltered = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);
@@ -357,7 +385,7 @@ export function LibraryDrawer({
       const target = ordered[Math.min(activeResult, ordered.length - 1)];
       if (target === undefined) return;
       event.preventDefault();
-      onOpenCard(target.id);
+      chooseItem(target);
     }
   };
 
@@ -393,7 +421,7 @@ export function LibraryDrawer({
             // Keep the gesture from selecting text across the board.
             event.preventDefault();
             holdRef.current = {
-              cardId: item.id,
+              item,
               startX: event.clientX,
               startY: event.clientY,
               dragging: false,

@@ -179,6 +179,15 @@ interface UiState extends SessionCapabilities {
   libraryQuery: string;
   setLibraryQuery: (query: string) => void;
   /**
+   * "This search was opened on the canvas, so choosing a result should go
+   * there." The canvas sets it with Cmd/Ctrl+K; the drawer reads it on each
+   * activation and clears it when it closes. A search opened from the Dock
+   * leaves it false, so a click there keeps opening the inspector and nothing
+   * moves.
+   */
+  libraryReveal: boolean;
+  setLibraryReveal: (reveal: boolean) => void;
+  /**
    * Applies a saved view to the same controls manual facets use — there is no
    * second filtering model, just a stored query copied into them.
    */
@@ -292,6 +301,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryGroupBySection: false,
   activeViewId: null,
   libraryQuery: "",
+  libraryReveal: false,
   outlineOpen: true,
   contextMenu: null,
   selectedConnector: null,
@@ -494,6 +504,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleLibraryGroupBySection: () =>
     set((state) => ({ libraryGroupBySection: !state.libraryGroupBySection })),
   setLibraryQuery: (libraryQuery) => set({ libraryQuery }),
+  setLibraryReveal: (libraryReveal) => set({ libraryReveal }),
   applyView: (activeViewId, query) =>
     set({
       activeViewId,
@@ -505,6 +516,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       libraryGroupBySection: query.groupBySection,
       libraryTab: "cards",
       libraryOpen: true,
+      // Applying a saved view is a library session, not a canvas search.
+      libraryReveal: false,
     }),
   exitView: () =>
     set({
@@ -515,6 +528,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       librarySectionFilter: [],
       libraryScope: "all",
       libraryGroupBySection: false,
+      libraryReveal: false,
     }),
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
   openContextMenu: (contextMenu) => set({ contextMenu }),

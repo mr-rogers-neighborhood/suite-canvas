@@ -31,6 +31,19 @@ export interface IceCommands {
   deleteSelection(): void;
   /** Shift+Delete: move the selection to the trash (the only destructive key). */
   trashSelection?(): void;
+  /**
+   * Cmd/Ctrl+C: remember the selection's ids and positions. No write; a seat
+   * that cannot create cards remembers nothing.
+   */
+  copy(): void;
+  /** Cmd/Ctrl+X: copy, then remove the selection from its Board (recoverable). */
+  cut(): void;
+  /** Cmd/Ctrl+V: clone the buffer onto the Board under the pointer, in one commit. */
+  paste(): void;
+  /** Cmd/Ctrl+D: clone each selected card down-right of itself, in one commit. */
+  duplicate(): void;
+  /** Arrow keys: nudge the selection by one unit (ten with Shift), one write. */
+  nudge(dx: number, dy: number): void;
   reconcile(): void;
   escape(): void;
   zoomBy(factor: number): void;

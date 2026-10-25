@@ -637,15 +637,16 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | Capability | React Flow era | ICE today | Gap | Owner |
 | --- | --- | --- | --- | --- |
 | Click, shift-click, marquee | React Flow selection, `SelectionMode.Partial`, Shift or Cmd toggled membership | ICE's own selection; the marquee is mirrored to peers from `marqueeBuffer` | Additive and partial-touch selection is ICE's behaviour and no app test asserts it | G polish |
-| Select all | Cmd/Ctrl+A → `selectAllOnBoard(boardCardIds)` | Not bound; `keymapOverrides` has five entries | No select-all | G polish |
+| Select all | Cmd/Ctrl+A → `selectAllOnBoard(boardCardIds)` | ICE's own ⌘A (`ops.selectAll`) is left in place and `useIceSelection` mirrors ICE's `Selected` set into the store every frame, so the shell agrees. Measured: on the example's Atlas plane it selects its three cards — the four cards drawn inside Boards belong to those frames | Selects objects of the frame the camera is in, not the whole View; no app test asserts it | — |
 | Delete and Backspace | Unplaced from the Board; Shift+Delete trashed | `deleteSelection` → `trashCards` | Delete is now destructive, and there is no keyboard "remove from Board" | G polish |
 | Undo and redo | Cmd+Z, Shift+Cmd+Z, Cmd+Y, selection cleared afterwards | Cmd+Z and Shift+Cmd+Z, Loro only | Cmd+Y missing; the selection survives an undo | G polish |
 | Escape | Seven-step ladder ending in clearing the selection | Link drag, then exit Board, then cancel gestures | The selection is never cleared | G polish |
 | Enter | Entered a portal, else opened the body editor | Not bound | Enter does nothing | B editing |
 | Cmd/Ctrl+G | New section at the centre, wrapping the selection | Not bound | No keyboard Board creation | D board tree |
 | Cmd/Ctrl+Enter | Quick capture at the centre with the title open | Not bound | No quick capture | B editing |
-| Copy and paste a selection | No card-level copy/paste in the flow era either | Absent | New work, not parity | G polish |
-| Reveal an object | `focusTarget` fitted the card or section and switched boards | `focusCard` and `focusSection` still write `focusTarget`; nothing reads it (`useUiStore.ts`) | The inspector's focus action does nothing, and no camera command can reveal a card | A persistence |
+| Copy and paste a selection | No card-level copy/paste in the flow era either | Closed: ⌘C/⌘X/⌘V/⌘D through `iceClipboard.ts`. The buffer is card ids and positions — content is copied by the document (`duplicateCard`), never by a DOM clipboard — and a paste is one `doc.batch` onto the Board under the pointer. A viewer copies nothing and pastes nothing | — (new work, not parity) | — |
+| Arrow-key nudge | — | Closed: ←/→/↑/↓ move the selection one unit, ⇧ ten, through the same `planMoveCommit` a drag commits (`iceNudge.ts`); one write per press. ICE's own arrow keymap is replaced, because it wrote ICE's document | — (new work, not parity) | — |
+| Reveal an object | `focusTarget` fitted the card or section and switched boards | `focusTarget` is consumed by `useIceBoardGesture`: `iceReveal.ts` plans the Boards to enter and the box to frame, and the camera flies to it (reduced motion jumps). The inspector's focus action, a link, a pin and a search result all ride it | — | — |
 
 ### Library and creation
 
@@ -656,7 +657,7 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | Create a card inside a Board | Board nesting did not exist | Every create uses the View root's id and world coordinates | A card made while inside a Board lands on the View | D board tree |
 | Pins | `PinsPanel` listed, grouped, renamed and focused pins; no marker on the canvas | The panel, plus a marker, a drop action at the camera centre, a drag that commits once, and click-to-focus from the list | — (markers and dragging are new) | — |
 | Click a pin's marker | — | The marker is drawn but not wired; focus comes from the list | Marker clicks do nothing | G polish |
-| Search on the canvas | None: the library drawer (Cmd/Ctrl+K) was the only search | None: the same drawer | New work, not parity: find a card and fly to it | G polish |
+| Search on the canvas | None: the library drawer (Cmd/Ctrl+K) was the only search | Closed: Cmd/Ctrl+K on the canvas opens the same drawer scoped to the View on screen (`libraryScope: "board"`) with `libraryReveal` set, and choosing a result reveals the card — the drawer closes so the flight is visible. Scoping follows the drawer's board scope: cards inside the View's Boards are found with the whole-library scope, not the canvas one | — (new work, not parity) | — |
 | Arrange fractally | Canvas menu → `applyBoardFractal` | The same entry, the same command | — | — |
 
 ### Collaboration
@@ -688,17 +689,55 @@ ambient layer were withdrawn by ADR-0040. `BoardTabs` survives as `ViewTabs`.
 | --- | --- | --- | --- | --- |
 | Cull what is off screen | `onlyRenderVisibleElements` | ICE culls by object rect; cards are GPU faces | — | — |
 | Editor budget | One DOM editor per visible card | No DOM faces by default (`SUITE_CARD_DOM_FACE`) | Has to be re-answered when in-place editing lands | B editing |
-| The 1k/5k artifact | None measured | None measured | Phase 10's performance evidence is still missing | G polish |
-| No WebGPU, device loss | No engine to fail | Fallback screens, adapter line, diagnostics, reload | — (superset) | — |
+| The 1k/5k artifact | None measured | **Measured, in Node** (`apps/canvas/src/ice/icePerf.test.ts`). 1 000 cards, real document: build **3.9–4.0 s**, derive placements **52–56 ms**, plan the entity set **1.2–1.3 ms**, heap **+41 MB**. 5 000 placements (no document): entity plan **3.7–5.6 ms**, heap **+4.5 MB**. GPU frame time at scale is **not** measured: a 5k workspace cannot be created in the browser cheaply, because creating cards through `WorkspaceDocument` is superlinear (**3.5 s** for 1 000 geometric cards, **88–95 s** for 5 000, before any text). The desk reports its live fps in the HUD (`#ice-fps`) on whatever workspace it is showing | Phase 10 still wants a browser artifact at 1k/5k: frame time, mounted DOM editors, GPU memory, TTI | G polish |
+| No WebGPU, device loss | No engine to fail | Fallback screens, adapter line, diagnostics, reload; the unsupported screen now also links the requirements (`ice-fallback-requirements`). Device loss names the button the seat actually has ("Reload workspace" for a workspace, "Reset demo" for a demo) | — (superset) | — |
 
 ### Accessibility
 
+**The canvas is not accessible, and this matrix does not claim it is.** ICE draws to
+WebGPU: cards, titles, chips, connectors and pin markers are a raster, and no amount of
+markup puts them in the accessibility tree. What the shell can honestly provide is the
+meaning *around* the surface, and that is what landed:
+
+- the region is named (`aria-label="ICE experimental canvas"`) and carries a description
+  (`ice-surface-description`) that says plainly that the cards are not in the tree and
+  names the way to read one: the library (⌘K) or the inspector;
+- a polite live region (`ice-surface-summary`, `role="status"`) announces the View's
+  name, how many cards are placed on how many boards, and how many are selected;
+- the full key map is in that description, generated from the same table the keymap is
+  built from (`iceKeys.ts`), so it cannot drift;
+- every camera flight honours `prefers-reduced-motion`, including entering a Board;
+- the library drawer, the inspector, the zoom cluster, the context menu and the Views bar
+  are ordinary DOM and are fully usable by keyboard and screen reader.
+
 | Capability | React Flow era | ICE today | Gap | Owner |
 | --- | --- | --- | --- | --- |
-| The canvas in the accessibility tree | React Flow nodes were real DOM elements, so titles, chips and buttons were readable and tabbable | The overlay is `aria-hidden="true"`; the section carries only a label | P0: a screen reader finds an empty canvas | G polish |
-| Keyboard focus traversal | React Flow's own node focus order moved between cards | None | No keyboard route to any card | G polish |
+| The canvas in the accessibility tree | React Flow nodes were real DOM elements, so titles, chips and buttons were readable and tabbable | The objects are WebGPU rasters; the overlay is `aria-hidden="true"`. The surface carries a name, a description and a live summary, and the library and inspector are the reading path | **P0 remains**: a screen reader gets the surface's summary and nothing per card. Reading a specific card means finding it in the library, which needs a mouse or the ⌘K path — and the drawer is not mounted for a read-only seat | G polish |
+| Keyboard focus traversal | React Flow's own node focus order moved between cards | No per-card focus order and no caret on the canvas. The keyboard reaches the canvas *commands* (select-all, nudge, clipboard, delete, undo, search) and the shell's controls; a card is reached through the library or the inspector | No way to walk cards with Tab, and no announced selection change other than the live summary's count | G polish |
 | Zoom and fit | React Flow `Controls` | `CanvasZoomControls`, real buttons | — | — |
-| Reduced motion | `prefersReducedMotion` on local easing and the portal transition | `flyTo` writes the target at once | — | — |
+| Reduced motion | `prefersReducedMotion` on local easing and the portal transition | `flyTo` writes the target at once (`iceSurfaceCamera.ts`), and a Board entry asks ICE for `transition: "none"` (`useIceBoardGesture`) | ICE's own marquee/selection micro-motion is not ours to tune; nothing else in the desk animates | — |
+
+### The keyboard, as it now stands
+
+One table (`apps/canvas/src/ice/iceKeys.ts`) is both the keymap and the documentation;
+the surface's accessible description is generated from it. Every canvas key is an
+*override* of an ICE default, because ICE's arrows nudge its ECS document, its ⌘D
+duplicates into it and its ⌘Z undoes it.
+
+| Keys | What it does |
+| --- | --- |
+| ⌘Z / Ctrl+Z, ⇧⌘Z / Shift+Ctrl+Z, ⌘Y / Ctrl+Y | undo, redo, redo (Loro only; ICE's history is off) |
+| Delete / Backspace | remove the selection from the Board it is on (the card stays in the library) |
+| ⇧Delete / Shift+Backspace | move the selection to the trash — the only destructive key |
+| Esc | abandon the gesture, leave the entered Board, then clear the selection |
+| ⌘C / ⌘X / ⌘V / ⌘D | copy, cut, paste onto the Board under the pointer, duplicate down-right |
+| ← → ↑ ↓ | nudge one unit; with Shift, ten |
+| ⌘K / Ctrl+K | search this canvas; choosing a result reveals the card |
+| ⌘A / Ctrl+A | ICE's own select-all, frame by frame (the store mirrors the result) |
+| v / h / c, Space-drag | ICE's tools and the pan modifier |
+
+Paste and duplicate keep the selection where it was — a paste does not steal it — and
+every one of them is one commit, so one undo puts it back.
 
 ### Cleanup
 

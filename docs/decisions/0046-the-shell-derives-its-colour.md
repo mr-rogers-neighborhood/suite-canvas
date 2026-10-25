@@ -36,7 +36,7 @@ The tree already has the raw material: `global.css` is token-driven (`--surface`
 3. **Theming is rules over tokens, not CSS authoring.** A rule is a named record — a selector (type,
    card, portal, sketch, section, shell region, board), a small set of role assignments (surface, ink,
    accent, border, radius, density), and a scope. Users compose rules; they never write selectors or
-   values. Utility-class *semantics* without a class string the user has to spell.
+   values. Utility-class *semantics* without a class string the user has to spell. The user can also account for dark and light modes, and create shared themes (within the workspace).
 4. **Global rules and type rules are the same shape.** A global rule applies everywhere; a type rule
    applies to every card of that type; both are ordered, with the more specific scope winning.
 5. **Derived values are computed, not asked for.** Given a card's surface and ink, the border, the

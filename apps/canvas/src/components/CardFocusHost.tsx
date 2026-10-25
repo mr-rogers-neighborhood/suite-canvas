@@ -1,8 +1,10 @@
 import { useReactFlow, type Viewport } from "@xyflow/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { prefersReducedMotion } from "../canvas/localEasing";
+import { SketchEditors } from "../cards/WhiteboardCardFace";
 import { WhiteboardFocus } from "../cards/WhiteboardFocus";
 import { isWhiteboardCard } from "../cards/whiteboard";
+import { usePresenceStore } from "../collab/usePresenceStore";
 import { isShareSession } from "../session/session";
 import { useUiStore } from "../store/useUiStore";
 import { CardFocusSurface } from "./CardFocusSurface";
@@ -31,10 +33,31 @@ export function CardFocusHost() {
   const canManageSchema = useUiStore((state) => state.canManageSchema);
 
   const model = useCardPanelModel(cardFocusId, "focus");
-  const whiteboard = model ? isWhiteboardCard(model.card) : false;
+  const sketch = model ? isWhiteboardCard(model.card) : false;
   const { getViewport, setViewport } = useReactFlow();
   const savedViewport = useRef<Viewport | null>(null);
   const cardId = model?.card.id ?? null;
+
+  const setPresenceFocus = usePresenceStore((state) => state.setFocus);
+  const peers = usePresenceStore((state) => state.peers);
+  const editors = useMemo(
+    () =>
+      cardId
+        ? Object.values(peers)
+            .filter((peer) => peer.focus?.nodeId === cardId)
+            .map((peer) => peer.user)
+        : [],
+    [peers, cardId],
+  );
+
+  // An open sketch editor is an editing gesture. It rides the existing focus
+  // presence field — a name and a colour, no cursor sync — and is cleared when
+  // the surface closes, so the badge never outlives the session.
+  useEffect(() => {
+    if (!cardId || !sketch || readOnly) return;
+    setPresenceFocus({ nodeId: cardId, field: "body" });
+    return () => setPresenceFocus(null);
+  }, [cardId, sketch, readOnly, setPresenceFocus]);
 
   // The board is never moved underneath the surface, so closing it can restore
   // the exact camera the reader came from — including after a pan behind it.
@@ -51,7 +74,7 @@ export function CardFocusHost() {
   // Focus is an editing gesture: the body editor takes the caret as soon as the
   // panel has mounted it, and the title/body stay the panel's editors.
   useEffect(() => {
-    if (!cardId || whiteboard) return;
+    if (!cardId || sketch) return;
     startEditing(cardId, "body", "focus");
     let frame = 0;
     let tries = 0;
@@ -67,7 +90,7 @@ export function CardFocusHost() {
     };
     frame = requestAnimationFrame(focusBody);
     return () => cancelAnimationFrame(frame);
-  }, [cardId, startEditing, whiteboard]);
+  }, [cardId, startEditing, sketch]);
 
   // The zoom trick: the sheet grows out of the card's own rectangle, the same
   // way a portal grows its target board. The card is still mounted under the
@@ -102,10 +125,13 @@ export function CardFocusHost() {
   const focusEditing =
     editingNodeId === model.card.id && editingSurface === "focus" ? editingField : null;
 
-  if (whiteboard) {
+  if (sketch) {
     return (
       <CardFocusSurface title={model.title} onClose={close}>
-        <WhiteboardFocus cardId={model.card.id} readOnly={readOnly} />
+        <div className="sketch-focus" data-testid="sketch-focus">
+          <SketchEditors editors={editors} variant="editor" />
+          <WhiteboardFocus cardId={model.card.id} readOnly={readOnly} />
+        </div>
       </CardFocusSurface>
     );
   }

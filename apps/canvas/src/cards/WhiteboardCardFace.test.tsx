@@ -14,13 +14,20 @@ const drawing: Drawing = {
   updatedAt: 0,
 };
 
-describe("WhiteboardCardFace", () => {
+describe("sketch card face", () => {
   it("should show the preview, title and element count", () => {
     render(<WhiteboardCardFace drawing={drawing} label="Ideas" onOpen={() => {}} />);
 
     expect(screen.getByTestId("whiteboard-card")).toHaveTextContent("Ideas");
     expect(screen.getByTestId("whiteboard-preview")).toHaveAttribute("aria-label", "Ideas preview");
     expect(screen.getByTitle("2 elements")).toHaveTextContent("2");
+  });
+
+  it("should say Sketch where no title is set", () => {
+    render(<WhiteboardCardFace drawing={drawing} onOpen={() => {}} />);
+
+    expect(screen.getByTestId("whiteboard-card-open")).toHaveAttribute("aria-label", "Open Sketch");
+    expect(screen.getByTestId("whiteboard-card")).toHaveTextContent("Sketch");
   });
 
   it("should open the focus surface on a double click, not a single one", () => {
@@ -48,8 +55,45 @@ describe("WhiteboardCardFace", () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
-  it("should render an empty board without a drawing", () => {
+  it("should drop the frame and the footer in seamless mode", () => {
+    const { rerender } = render(
+      <WhiteboardCardFace drawing={drawing} label="Ideas" onOpen={() => {}} />,
+    );
+    const framed = screen.getByTestId("whiteboard-card");
+    expect(framed).toHaveAttribute("data-display", "framed");
+    expect(framed).not.toHaveClass("whiteboard-card--seamless");
+    expect(framed).toHaveTextContent("2");
+
+    rerender(
+      <WhiteboardCardFace drawing={drawing} label="Ideas" display="seamless" onOpen={() => {}} />,
+    );
+    const seamless = screen.getByTestId("whiteboard-card");
+    expect(seamless).toHaveAttribute("data-display", "seamless");
+    expect(seamless).toHaveClass("whiteboard-card--seamless");
+    // The name survives, but only as the hover affordance.
+    expect(seamless).not.toHaveTextContent("2");
+    expect(seamless).toHaveTextContent("Ideas");
+  });
+
+  it("should badge a peer who is editing this sketch", () => {
+    const { rerender } = render(<WhiteboardCardFace drawing={drawing} onOpen={() => {}} />);
+    expect(screen.queryByTestId("sketch-editors")).not.toBeInTheDocument();
+
+    rerender(
+      <WhiteboardCardFace
+        drawing={drawing}
+        editors={[{ name: "Ada", color: "rgb(255, 0, 0)" }]}
+        onOpen={() => {}}
+      />,
+    );
+    const badge = screen.getByTestId("sketch-editors");
+    expect(badge).toHaveTextContent("Editing");
+    expect(screen.getByTestId("sketch-editor")).toHaveTextContent("Ada");
+  });
+
+  it("should render an empty sketch without a drawing", () => {
     render(<WhiteboardCardFace drawing={null} onOpen={() => {}} />);
     expect(screen.getByTestId("whiteboard-preview")).toHaveAttribute("data-empty", "true");
+    expect(screen.getByTestId("whiteboard-preview")).toHaveTextContent("Empty sketch");
   });
 });

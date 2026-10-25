@@ -3,6 +3,7 @@ import type { ExcalidrawImperativeAPI, ExcalidrawProps } from "@excalidraw/excal
 import type { Drawing, DrawingElement } from "@suite/graph";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import { useThemeStore } from "../theme/useThemeStore";
+import { createSketchCommitBatcher } from "./whiteboard";
 import "../styles/whiteboard-surface.css";
 
 const LazyExcalidraw = lazy(async () => {
@@ -40,34 +41,49 @@ export interface WhiteboardSurfaceProps {
 
 /**
  * The Excalidraw editing surface is lazy: the board face never pays for it, and
- * the focus surface mounts it only when a whiteboard is actually opened.
+ * the focus surface mounts it only when a sketch is actually opened.
  */
 export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: WhiteboardSurfaceProps) {
   const theme = useThemeStore((state) => state.theme);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  const pending = useRef<WhiteboardCommit | null>(null);
-  const commitTimer = useRef<number | null>(null);
   const lastEmitted = useRef<string>(drawingSignature(drawing.elements));
   const lastApplied = useRef<string>(drawingSignature(drawing.elements));
 
-  const flush = useCallback(() => {
-    if (commitTimer.current !== null) {
-      window.clearTimeout(commitTimer.current);
-      commitTimer.current = null;
-    }
-    const commit = pending.current;
-    pending.current = null;
-    if (commit) {
-      lastEmitted.current = drawingSignature(commit.elements);
-      onCommit(commit);
-    }
-  }, [onCommit]);
+  // Excalidraw reports every pointer sample of a freehand stroke. A gesture
+  // suppresses the idle timer and lands the whole stroke in one commit on
+  // pointer-up, so undo and the peer sync see one line, not three hundred.
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const batcher = useMemo(
+    () =>
+      createSketchCommitBatcher<WhiteboardCommit>((commit) => {
+        lastEmitted.current = drawingSignature(commit.elements);
+        onCommitRef.current(commit);
+      }),
+    [],
+  );
 
+  useEffect(() => {
+    const begin = () => batcher.beginGesture();
+    const end = () => batcher.endGesture();
+    // Capture phase: Excalidraw's own handlers stop propagation on the canvas.
+    window.addEventListener("pointerdown", begin, true);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerdown", begin, true);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [batcher]);
+
+  // Closing the surface must not drop the stroke that is still in flight.
   useEffect(
     () => () => {
-      flush();
+      batcher.flush();
+      batcher.dispose();
     },
-    [flush],
+    [batcher],
   );
 
   const handleChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
@@ -78,14 +94,12 @@ export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: White
       );
       const signature = sceneSignature(live);
       if (signature === lastEmitted.current) return;
-      pending.current = {
+      batcher.schedule({
         elements: live as unknown as DrawingElement[],
         order: live.map((element) => element.id),
-      };
-      if (commitTimer.current !== null) window.clearTimeout(commitTimer.current);
-      commitTimer.current = window.setTimeout(flush, 300);
+      });
     },
-    [flush, readOnly],
+    [batcher, readOnly],
   );
 
   const incoming = useMemo(() => drawingSignature(drawing.elements), [drawing.elements]);
@@ -127,7 +141,7 @@ export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: White
 
   return (
     <div className="whiteboard-surface" data-testid="whiteboard-surface">
-      <Suspense fallback={<div className="whiteboard-surface__loading">Loading whiteboard…</div>}>
+      <Suspense fallback={<div className="whiteboard-surface__loading">Loading sketch…</div>}>
         <LazyExcalidraw
           initialData={initialData}
           theme={theme}
@@ -137,7 +151,7 @@ export function WhiteboardSurface({ drawing, readOnly = false, onCommit }: White
           excalidrawAPI={(api: ExcalidrawImperativeAPI) => {
             apiRef.current = api;
           }}
-          name="Suite whiteboard"
+          name="Suite sketch"
         />
       </Suspense>
     </div>

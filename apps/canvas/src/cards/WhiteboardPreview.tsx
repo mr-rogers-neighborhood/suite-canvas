@@ -5,15 +5,15 @@ import "../styles/whiteboard-preview.css";
 
 export interface WhiteboardPreviewProps {
   elements: readonly DrawingElement[];
-  /** Accessible name; defaults to a neutral whiteboard description. */
+  /** Accessible name; defaults to a neutral sketch description. */
   label?: string;
   className?: string;
 }
 
-/** A lightweight SVG preview for a whiteboard card face. */
+/** A lightweight SVG preview for a sketch card face. */
 export function WhiteboardPreview({
   elements,
-  label = "Whiteboard preview",
+  label = "Sketch preview",
   className,
 }: WhiteboardPreviewProps) {
   const preview = useMemo(() => whiteboardPreview(elements), [elements]);
@@ -115,7 +115,7 @@ export function WhiteboardPreview({
           textAnchor="middle"
           dominantBaseline="middle"
         >
-          Empty whiteboard
+          Empty sketch
         </text>
       ) : null}
     </svg>

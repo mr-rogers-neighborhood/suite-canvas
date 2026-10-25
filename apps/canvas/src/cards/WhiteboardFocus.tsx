@@ -4,7 +4,7 @@ import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { type WhiteboardCommit, WhiteboardSurface } from "./WhiteboardSurface";
 
-/** The focus surface for one whiteboard card. */
+/** The focus surface for one sketch card. */
 export function WhiteboardFocus({
   cardId,
   readOnly = false,
@@ -20,7 +20,7 @@ export function WhiteboardFocus({
       try {
         workspace.applyDrawing(cardId, elements, order);
       } catch (error) {
-        console.warn("[whiteboard] could not save scene", error);
+        console.warn("[sketch] could not save scene", error);
       }
     },
     [workspace, cardId],

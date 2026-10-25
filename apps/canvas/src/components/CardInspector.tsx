@@ -1,7 +1,18 @@
 import type { Board, Card, CardFieldView, CardType, PropertyValue, Tag } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
+import { useEffect } from "react";
+import {
+  ensureWhiteboardType,
+  isWhiteboardCard,
+  readSketchDisplay,
+  SKETCH_DISPLAY_FIELD_NAME,
+  SKETCH_DISPLAY_MODES,
+  type SketchDisplayMode,
+  setSketchDisplay,
+} from "../cards/whiteboard";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { type CardLinks, CardPanel, type CardPanelEditingField, type CardWhere } from "./CardPanel";
 import type { CardPickerOption } from "./CardPicker";
 
@@ -58,6 +69,51 @@ export interface CardInspectorProps {
 }
 
 /**
+ * The sketch-specific part of the inspector: how the card paints, and the way
+ * into its editor. Both are label-only additions — the value is an ordinary
+ * property on the sketch's type, so nothing about the card record changes.
+ */
+function SketchDisplayControl({ card, disabled }: { card: Card; disabled: boolean }) {
+  const workspace = useCanvasStore((state) => state.workspace);
+  // Heals a workspace made before the rename: the Sketch labels and the
+  // display field are added once, additively, and never touch the drawing.
+  useEffect(() => {
+    ensureWhiteboardType(workspace);
+  }, [workspace]);
+  const mode = readSketchDisplay(workspace, card);
+
+  return (
+    <fieldset
+      className="flex min-w-0 items-center gap-1 border-b border-[var(--hairline)] px-3 py-1.5"
+      aria-label="Sketch display"
+      data-testid="sketch-display-toggle"
+    >
+      <span className="text-[11px] text-[var(--ink-muted)]">Display</span>
+      {SKETCH_DISPLAY_MODES.map((option: SketchDisplayMode) => {
+        const active = mode === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={active}
+            disabled={disabled}
+            data-testid={`sketch-display-${option}`}
+            className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-50 ${
+              active
+                ? "border-transparent bg-[var(--segmented-bg)] text-[var(--ink)]"
+                : "border-[var(--hairline)] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            }`}
+            onClick={() => setSketchDisplay(workspace, card.id, option)}
+          >
+            {option === "framed" ? "Framed" : "Seamless"}
+          </button>
+        );
+      })}
+    </fieldset>
+  );
+}
+
+/**
  * The inspector drawer is a shell around the shared card surface; all card
  * content lives in `CardPanel` so the same surface can appear elsewhere.
  */
@@ -104,6 +160,12 @@ export function CardInspector({
   restrictLinks,
 }: CardInspectorProps) {
   const editContent = canEditContent ?? !readOnly;
+  const sketch = isWhiteboardCard(card);
+  // The toggle above is the sketch's control; the generic property row would
+  // be a second, worse copy of the same value.
+  const panelFields = sketch
+    ? fields.filter((entry) => entry.field.name !== SKETCH_DISPLAY_FIELD_NAME)
+    : fields;
   return (
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
@@ -130,12 +192,12 @@ export function CardInspector({
         {editContent ? (
           <button
             type="button"
-            aria-label="Edit card text"
-            data-testid="inspector-edit"
+            aria-label={sketch ? "Open sketch" : "Edit card text"}
+            data-testid={sketch ? "inspector-open-sketch" : "inspector-edit"}
             className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
             onClick={onEdit}
           >
-            Edit
+            {sketch ? "Open sketch" : "Edit"}
           </button>
         ) : null}
         <button
@@ -149,6 +211,8 @@ export function CardInspector({
         </button>
       </header>
 
+      {sketch ? <SketchDisplayControl card={card} disabled={!editContent} /> : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         <CardPanel
           card={card}
@@ -156,7 +220,7 @@ export function CardInspector({
           types={types}
           tags={tags}
           boards={boards}
-          fields={fields}
+          fields={panelFields}
           where={where}
           cards={cards}
           links={links}

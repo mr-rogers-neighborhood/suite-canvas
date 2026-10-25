@@ -3,6 +3,7 @@
 }
 
 .whiteboard-card {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
@@ -65,4 +66,90 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Seamless: no frame, the drawing runs to the card's edges, no footer. */
+.whiteboard-card--seamless {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.whiteboard-card--seamless .whiteboard-card__preview:focus-visible {
+  outline-offset: 2px;
+}
+
+/* Seamless keeps its name, but only reads while the card is hovered or focused. */
+.whiteboard-card__hover-title {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.whiteboard-card:hover .whiteboard-card__hover-title,
+.whiteboard-card:focus-within .whiteboard-card__hover-title {
+  opacity: 1;
+}
+
+/* "Someone is editing this sketch": a name and a colour, never a cursor. */
+.whiteboard-editors {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 14px;
+  pointer-events: none;
+}
+
+.whiteboard-editors--card {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+}
+
+.whiteboard-editors--editor {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.whiteboard-editors__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+}
+
+.whiteboard-editors__peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+}
+
+.whiteboard-editors__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }

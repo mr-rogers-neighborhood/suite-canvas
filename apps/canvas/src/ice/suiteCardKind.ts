@@ -61,6 +61,13 @@ import {
 } from "@vibecook/ice/desk";
 import { PENS, paperKind } from "@vibecook/ice/desk/objects";
 import {
+  cardFaceAtBand,
+  cardFaceBand,
+  cardFaceOf,
+  cardFaceRevisionOf,
+  publishCardFaceBand,
+} from "./suiteCardFace";
+import {
   createSuiteCardOverlay,
   type SuiteCardFace,
   type SuiteCardOverlayHandle,
@@ -101,16 +108,82 @@ export function setSuiteCardSlotRenderer(next: SuiteCardSlotRenderer | undefined
   slotRenderer = next;
 }
 
-/** Our kind's per-desk state: the overlay's frame hook. */
-interface SuiteCardLocal extends KindLocal {
+/** Our kind's per-desk state: the overlay's frame hook, and the writing's band door. */
+interface SuiteCardLocal extends KindLocal, Partial<PaperWritingDraw> {
   setSink(sink: (() => void) | undefined): void;
+}
+
+/**
+ * The slice of the paper writing this kind narrows: `draw`, where the text a
+ * sheet lays out is decided. The engine does not re-export the `Writing` type
+ * from its public entry, so it is stated here in the shape the paper's own
+ * `record` calls it (`objects/src/paper/writing.ts`).
+ */
+interface PaperWritingDraw {
+  draw(
+    entity: Entity,
+    props: Readonly<Record<string, unknown>>,
+    rect: { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number },
+    view: { readonly zoom: number; readonly dpr: number },
+    geometry: PaperGeometry,
+    fading?: boolean,
+  ): object;
+}
+
+/** How many face bands a raster rung is multiplied by, so the two never collide. */
+const SUITE_CARD_BAND_STEPS = 4;
+
+/** The face revision's span (`cardFaceRevision` is 16 bits) — the rung's middle term. */
+const SUITE_CARD_REVISION_SPAN = 0x10000;
+
+/** One rung step per revision and band, with room for the raster rung below them. */
+const SUITE_CARD_RUNG_SPAN = SUITE_CARD_REVISION_SPAN * SUITE_CARD_BAND_STEPS;
+
+/** A card the projection has published nothing for: its own prop's text stands. */
+const SUITE_CARD_NO_FACE = 0;
+
+/** The band a card of this on-screen width draws, as a small integer for the rung. */
+function cardFaceBandIndexOf(screenWidth: number): number {
+  const band = cardFaceBand(screenWidth);
+  return band === "icon" ? 0 : band === "compact" ? 1 : 2;
+}
+
+/**
+ * What the sheet writes this frame.
+ *
+ * The card's face is *banded by its own width on screen* (ADR-0043 §2): `icon`
+ * writes nothing, `compact` writes the title row, `full` writes the whole flow.
+ * The flow is one string — the projection cannot know the band, because only the
+ * kind sees the camera — so the truncation happens here, at the one door the
+ * paper takes its text through.
+ */
+export function suiteCardWrite(text: string, screenWidth: number): string {
+  return cardFaceAtBand(text, cardFaceBand(screenWidth));
 }
 
 function createSuiteCardLocal(base: KindLocal | undefined): SuiteCardLocal {
   let sink: (() => void) | undefined;
+  const writing = base as (KindLocal & Partial<PaperWritingDraw>) | undefined;
+  const inheritDraw = writing?.draw?.bind(writing);
   return {
     // Keep the paper writing's own state (the reused `record` reads it).
     ...base,
+    // The band is applied here rather than at spawn: the projection builds the
+    // flow once per document change, and a zoom crossing must not replace the
+    // entity (which would drop a selection mid-gesture) to change a word. The
+    // card's own on-screen width is the only fact that bands it, and this is the
+    // one place that sees both the sheet's box and the frame's zoom.
+    draw: (entity, props, rect, view, geometry, fading) => {
+      // What the projection published is the face; the prop is what the boot
+      // wrote and is only the answer for a card no projection owns (the lab).
+      const published = cardFaceOf(String(props.cardId ?? ""));
+      const flow = published ?? (typeof props.text === "string" ? props.text : "");
+      const width = rect.w * (Number.isFinite(view.zoom) && view.zoom > 0 ? view.zoom : 1);
+      const band = cardFaceBand(width);
+      publishCardFaceBand(String(props.cardId ?? ""), band, width);
+      const next = { ...props, text: cardFaceAtBand(flow, band) };
+      return inheritDraw?.(entity, next, rect, view, geometry, fading) ?? {};
+    },
     setSink: (next) => {
       sink = next;
     },
@@ -166,6 +239,24 @@ function createSuiteCardRung(scale: CardTypeScale): SuiteCardRung {
       // reads as a grid of cards, while the paper's own lift, curl and shadow
       // stay — the card IS a sheet on the desk, drawn by the same pass as a note.
       return { ...geometry, angle: 0, cos: 1, sin: 0 };
+    },
+    /**
+     * The record's key: the paper writing's own raster rung, with the *face's*
+     * revision and band folded in.
+     *
+     * A record is remade when this changes, and the paper's rung only changes at
+     * its raster bands (a power-of-two ladder of texels per world unit). The face
+     * has crossings of its own — its words move when the document does (a tag
+     * added, a link drawn), and its band moves at 56 px and 180 px of the card's
+     * width on screen (ADR-0043 §2). Either with the raster rung unchanged would
+     * leave the sheet saying what it was last built with: a title row with no
+     * body on a card plainly wide enough to read. Three crossings, one key.
+     */
+    rung: (context) => {
+      const rasters = paper.rung?.(context) ?? 0;
+      const revision = cardFaceRevisionOf(String(context.props.cardId ?? "")) ?? SUITE_CARD_NO_FACE;
+      const band = cardFaceBandIndexOf(context.rect.w * context.zoom);
+      return rasters * SUITE_CARD_RUNG_SPAN + revision * SUITE_CARD_BAND_STEPS + band;
     },
     local: (host) => createSuiteCardLocal(paper.local?.(host)),
   };

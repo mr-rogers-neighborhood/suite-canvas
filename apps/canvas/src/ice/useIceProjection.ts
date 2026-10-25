@@ -10,6 +10,13 @@
  * can arrive from a peer, and a sync of a 5k workspace is not a keystroke cost.
  * It also redraws the links: a link is document data too, so one a peer drew
  * must appear without a reload and one they deleted must go.
+ *
+ * What a card *says* is assembled here and nowhere else (ADR-0043 §2): the
+ * document is asked for the type's glyph, the title, the reference and tag
+ * counts and the body, and `suiteCardFace` folds them into the one flow the
+ * paper writes. The band is not this module's business — the face is banded by
+ * the card's own on-screen width, which only the kind knows at draw time — so
+ * the flow always carries the title row *and* the body and the kind truncates.
  */
 
 import { boardWorldRect } from "@suite/graph";
@@ -17,15 +24,19 @@ import type { Entity } from "@vibecook/ice";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/multiSelect";
+import { typesById } from "../cards/cardTypes";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import { type ReferenceCountLookup, referenceCounts } from "../hooks/useReferenceCounts";
 import { useUiStore } from "../store/useUiStore";
 import { workspaceStructureKey } from "./iceBoardTree";
 import { type CanonicalPlacement, CardProjection } from "./iceCardProjection";
 import { extentOf, type FitRect, fitCamera } from "./iceSurfaceCamera";
 import { entityRectOf } from "./iceSurfaceShared";
 import type { IceCommands, IceOwned, IceWiring } from "./iceSurfaceWiring";
+import { type CardFaceSources, cardFaceFrom, publishCardFaces } from "./suiteCardFace";
 import { cardFit } from "./suiteCardFit";
 import { cardTypeForScale, scaleForExtent } from "./suiteCardScale";
+import { type WhiteboardFace, whiteboardFace } from "./suiteWhiteboardFace";
 import { useIceCameraPersist } from "./useIceCameraPersist";
 
 export interface IceProjection {
@@ -34,6 +45,13 @@ export interface IceProjection {
   /** Fit the View's content: its cards and its sections, never the workspace. */
   fitView(): void;
 }
+
+/**
+ * A face's view of the document for one reconcile pass: the type table, the
+ * reference counts and the whiteboards' scenes, each resolved once rather than
+ * once per card.
+ */
+type FacePass = CardFaceSources;
 
 /**
  * The View's cards, derived from the document.
@@ -50,6 +68,37 @@ export function useIceProjection(input: {
 }): IceProjection {
   const { wiring, snapshot, commands, owned } = input;
   useIceCameraPersist(wiring);
+  /**
+   * A drawing is not in the snapshot, so a whiteboard's face would wait for an
+   * unrelated edit: `drawings` is a root map the document keeps, and the card
+   * projection only hears about cards, edges and Boards. The document's own
+   * callback is the invalidation — coalesced to one reconcile per frame, so a
+   * peer's stroke and a keystroke cost the same pass.
+   */
+  useEffect(() => {
+    const workspace = wiring.liveWorkspace;
+    if (workspace === null) return;
+    let handle = 0;
+    const unsubscribe = workspace.doc.subscribe((batch) => {
+      // Only a drawing edit: everything else already arrives through the
+      // snapshot, and a second pass per keystroke is a second pass.
+      if (!batch.events.some((event) => event.path[0] === "drawings")) return;
+      if (handle !== 0) return;
+      handle = requestAnimationFrame(() => {
+        handle = 0;
+        commands.current?.reconcile();
+      });
+    });
+    return () => {
+      unsubscribe();
+      if (handle !== 0) cancelAnimationFrame(handle);
+    };
+  }, [wiring.liveWorkspace, commands]);
+  // The effect below rebuilds only when its wiring changes, so the snapshot it
+  // was created with would go stale on the very next keystroke. The face reads
+  // the *latest* one through this ref: counts and type glyphs are snapshot data.
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const reconcileRef = useRef<(() => void) | null>(null);
   const fitViewRef = useRef<(() => void) | null>(null);
 
@@ -73,12 +122,41 @@ export function useIceProjection(input: {
       }
     };
 
-    // What a card says, as the one text flow its paper writes. Title, a blank
-    // line, then the body: the same two facts the DOM face used to lay out.
-    const faceText = (cardId: string): string => {
-      const title = liveWorkspace.displayTitle(cardId);
-      const body = liveWorkspace.cardText(cardId).trim();
-      return body.length === 0 ? title : `${title}\n\n${body}`;
+    // What a card says, as the one text flow its paper writes (ADR-0043 §2):
+    // `glyph · title · ⇄n · ✎n · #n`, a blank line, then the body. The band is
+    // the kind's: it truncates this flow to the title row at `compact` and to
+    // nothing at `icon`, because only it knows the card's width on screen.
+    const faceText = (cardId: string, pass: FacePass): string => cardFaceFrom(pass, cardId);
+
+    /**
+     * Everything the face needs of the document, resolved once per pass.
+     *
+     * The counts are the inspector's own figure (`referenceCounts`, memoised on
+     * the snapshot's sections, so a pass that follows no document change reuses
+     * the walk), and a whiteboard's scene is read once per pass — never per
+     * frame, which is the half of ADR-0043 §3 the interim keeps.
+     */
+    const facePass = (): FacePass => {
+      const latest = snapshotRef.current;
+      const types = typesById(latest.types);
+      let counts: ReferenceCountLookup | null = null;
+      const drawings = new Map<string, WhiteboardFace>();
+      return {
+        workspace: liveWorkspace,
+        types,
+        referencesOf: (cardId) => {
+          if (counts === null) counts = referenceCounts(latest);
+          return counts(cardId);
+        },
+        drawingOf: (cardId) => {
+          let face = drawings.get(cardId);
+          if (face === undefined) {
+            face = whiteboardFace(liveWorkspace.drawing(cardId)?.elements);
+            drawings.set(cardId, face);
+          }
+          return face;
+        },
+      };
     };
 
     /** The View's live placements: trashed cards are not on the View. */
@@ -99,7 +177,8 @@ export function useIceProjection(input: {
      */
     const canonicalPlacements = (): CanonicalPlacement[] => {
       const boards = liveWorkspace.listBoards();
-      return livePlacements().map((placement) => {
+      const pass = facePass();
+      const placements = livePlacements().map((placement) => {
         // A flattened plane coordinate less the Board's own origin is exactly
         // the frame-local coordinate ICE stores for a child of that Board.
         const origin = boardWorldRect(boards, placement.boardId);
@@ -108,12 +187,17 @@ export function useIceProjection(input: {
           cardId: placement.cardId,
           x: placement.x - (origin?.x ?? 0),
           y: placement.y - (origin?.y ?? 0),
-          text: faceText(placement.cardId),
+          text: faceText(placement.cardId, pass),
           ...(placement.width === undefined ? {} : { width: placement.width }),
           ...(placement.height === undefined ? {} : { height: placement.height }),
           ...(placement.typeScale === undefined ? {} : { typeScale: placement.typeScale }),
         };
       });
+      // Publish what the faces say: the kind draws from here (so a boot that
+      // spawned the cards first keeps its entity ids), and the dev snapshot
+      // reads the same map for the lab (ADR-0043 §2).
+      publishCardFaces(new Map(placements.map((entry) => [entry.cardId, entry.text ?? ""])));
+      return placements;
     };
 
     /**
@@ -186,8 +270,10 @@ export function useIceProjection(input: {
           props: {
             cardId: placement.cardId,
             boardId: placement.boardId,
-            // The paper writes this: title, blank line, body — the same two
-            // facts the card showed as a DOM face, now drawn by the GPU.
+            // The boot's copy of the words. The sheet draws the *published*
+            // face (`cardFaceOf`), which is this flow — the prop is the
+            // fallback for a card no projection owns, and the record's rung
+            // carries the revision that says when the published flow moved.
             text: placement.text ?? "",
             seeds: "",
             title: "",
@@ -219,16 +305,22 @@ export function useIceProjection(input: {
         `${placement.text ?? ""}\u001f${cardScaleOf(placement)}\u001f${placement.boardId}`,
     });
 
-    // Seed the projection with the *same* render key a reconcile computes, or
-    // the first reconcile would replace every card it was handed: the key is
-    // text, rung and Board, and a registration that carried only the text would
-    // not match itself.
+    // Adopt the cards the boot seeded, with the key a reconcile will compute.
+    //
+    // The seed spawns each card before this projection exists and writes *its
+    // own* text into the card's props (`suiteProjection` composes `title`, a
+    // blank line, the body). The face the desk draws is not that prop: the
+    // projection publishes what a card says (`cardFaceFrom`, ADR-0043 §2) and
+    // the kind reads it from there, so the entity the boot made is the entity
+    // the reconcile wants — no id churn, and no replace of a card the presence
+    // layer, the link gesture and the selection are already holding.
     const seededPlacements = new Map(
       canonicalPlacements().map((placement) => [placement.cardId, placement]),
     );
+    const seedFaces = facePass();
     for (const [entity, slot] of seed.entitySlots) {
       const placement = seededPlacements.get(slot.cardId);
-      const text = faceText(slot.cardId);
+      const text = placement?.text ?? faceText(slot.cardId, seedFaces);
       projection.register(
         entity,
         slot.cardId,

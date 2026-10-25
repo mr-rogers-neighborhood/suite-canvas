@@ -15,6 +15,7 @@
  */
 
 import type { PeerPresence } from "../collab/presence";
+import { cardFaceBand, cardFaceBandOf, cardFaceOf } from "./suiteCardFace";
 
 export interface IceDebugPoint {
   readonly x: number;
@@ -37,6 +38,27 @@ export interface IceDebugBoard {
   readonly world: IceDebugRect;
 }
 
+/**
+ * What the card's paper says, and what its band draws of it (ADR-0043 §2).
+ *
+ * The snapshot is built from entities and rects, and neither carries a word —
+ * a GPU face is a raster with no DOM to read back. So the *text* is what the
+ * projection last published, and the *band* is derived here from the two facts
+ * a scenario can already see: the card's own width and the camera's zoom.
+ */
+export interface IceDebugSlotFace {
+  /** The flow: the title row, a blank line, the body. */
+  readonly text: string;
+  /** `icon` draws none of it, `compact` the title row, `full` all of it. */
+  readonly band: string | null;
+  /**
+   * The band the *sheet* drew at, published by the kind, and the width that
+   * decided it. `band` above is derived from the card's box and the camera, so a
+   * disagreement between the two is a bug worth seeing.
+   */
+  readonly drawn?: { readonly band: string; readonly width: number } | undefined;
+}
+
 export interface IceDebugSlot {
   readonly entity: number;
   readonly cardId: string;
@@ -45,6 +67,8 @@ export interface IceDebugSlot {
   readonly local: IceDebugRect;
   /** The same box on the View's plane: what presence and links use. */
   readonly world: IceDebugRect;
+  /** What the face says, when the projection has published it (dev only). */
+  readonly face?: IceDebugSlotFace | undefined;
 }
 
 export interface IceDebugEdge {
@@ -153,9 +177,31 @@ function cleanRect(rect: IceDebugRect): IceDebugRect {
  * as `NaN`.
  */
 export function buildIceDebugSnapshot(input: IceDebugInput): IceDebugSnapshot {
+  const bandOf = (slot: IceDebugSlot): string | null => {
+    const zoom = input.camera?.zoom;
+    if (zoom === undefined || !usable(zoom) || zoom <= 0) return null;
+    return cardFaceBand(slot.local.width * zoom);
+  };
   const slots = input.slots
     .filter((slot) => usableRect(slot.local) && usableRect(slot.world))
-    .map((slot) => ({ ...slot, local: cleanRect(slot.local), world: cleanRect(slot.world) }));
+    .map((slot) => {
+      const text = cardFaceOf(slot.cardId);
+      const drawn = cardFaceBandOf(slot.cardId);
+      return {
+        ...slot,
+        local: cleanRect(slot.local),
+        world: cleanRect(slot.world),
+        ...(text === undefined
+          ? {}
+          : {
+              face: {
+                text,
+                band: bandOf(slot),
+                ...(drawn === undefined ? {} : { drawn: { ...drawn } }),
+              },
+            }),
+      };
+    });
 
   const edges = input.edges
     .filter((edge) => usable(edge.from.x) && usable(edge.from.y))

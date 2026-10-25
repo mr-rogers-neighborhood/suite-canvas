@@ -93,6 +93,37 @@ inspector owns properties; the context menu already owns the actions (`IceContex
 thing the flow era had that is missing is a hint that a card *can* be opened, and that is the
 in-place editor's job, not a badge's.
 
+**As built** (`apps/canvas/src/ice/suiteCardFace.ts`). The projection composes one flow per card —
+`glyph · title · ⇄n · #n`, a blank line, the body — from the document: the type's glyph, the display
+title (or the type's name when the card has neither title nor body), `referenceCount` (the inspector's
+own figure, so the card and the panel cannot disagree) and `card.tags.length`. A count of zero is
+dropped, because `⇄0` spends four of the line's forty characters on nothing.
+
+The flow is **published**, not written into the widget's `text` prop. The boot spawns every card
+before the projection exists and fills that prop with its own composition, so a projection that
+wanted the prop to be the face would have to replace every seeded entity at boot — and a replace is a
+new entity id, which the presence layer, the link gesture and the selection are already holding (a
+measured symptom: a card hovered perfectly and offered no link dots, because its connector lookup had
+been handed an entity that no longer existed). The projection therefore publishes the flow per card
+and the kind reads it there; the prop is only the fallback for an entity no projection owns (the card
+lab).
+
+The **band** is applied where the sheet is drawn, not at spawn: the card's width on screen is the only
+thing that bands it, and a zoom crossing must not replace the entity (a replace drops the selection
+mid-gesture). Both the band and the flow's revision are folded into the record's rung, so the sheet is
+rebuilt exactly when either changes what it says.
+
+That last point was not obvious and cost a round of measurement: a record is remade when its **rung**
+changes, and the paper's rung is a power-of-two ladder of *raster* texels per unit. A card crossing
+56 px or 180 px of screen width often does so with its raster rung untouched, so the sheet kept the
+words it was last built with — a title row and no body on a card plainly wide enough to read. The
+face's band and the flow's revision are now part of the rung (`rung = rasterRung × 262144 + revision
+× 4 + bandIndex`, the revision a 16-bit hash of the flow), which makes all three crossings one key.
+`pnpm ice:lab face` asserts it end to end: it zooms out to the icon band, in
+through `compact` to `full`, checks `⇄1`/`#1` on a card with one link and one tag and no `⇄0` on a
+card with none, reads a whiteboard's `✎4` and its sketch, and compares the band the **sheet** drew
+(published by the kind) with the one its width asks for.
+
 ### 3. A whiteboard previews its drawing, from rung 1 up
 
 The flow era drew `WhiteboardCardFace`; today a whiteboard is blank paper until it is opened. That is
@@ -109,6 +140,23 @@ whiteboards.
 Interim, if that kind is not built in this phase: the whiteboard's title row says `▤ Whiteboard · 42`
 (its stroke count, which the drawing binding already knows). A count is not a preview, and this ADR
 does not pretend otherwise — it is the honest stopgap, and the texture face is the deliverable.
+
+**As built — the interim, and what it costs** (`apps/canvas/src/ice/suiteWhiteboardFace.ts`). The
+texture is *not* reachable in this engine version, and the module header records why in full: the
+paper pass has one text channel and `r8` ink pages rather than an image channel; the only per-object
+image door is the `photo` kind's picture pass, which is a different object with its own layout, lift
+and shadow law; and `DeskLayerHandle.pinAsset` — the one way to pin a committed raster on an entity —
+is the *still* path (the oracle's parity scenes), keyed by entity, and is not reachable from the
+projection's wiring.
+
+So a whiteboard's title row carries its stroke count (`▧ · Sketch: three boards · ✎4 · #2`, the `✎`
+slot changing the "42" above only so the number cannot be mistaken for a reference count), and its
+body is a **sketch of the strokes' extents**: the drawing's bounding boxes folded into a 24 × 3 grid
+of block characters, each cell's block height the fraction of it the boxes fill. It is measured from
+the same `whiteboardPreview` the DOM preview uses, so nothing is invented; it says "a wide thing on
+the left, a small one on the right" and does not pretend to say what they are. Cost: the scene is read
+once per reconcile, never per frame, and the sketch is characters in the flow the paper already
+writes — no raster, no shelf carve, no texture.
 
 ### 4. A Board's mat says its name at rest
 
@@ -149,6 +197,33 @@ backstop — a mat pair that differs only in value would be the first to collaps
 differs in both has two chances. Six is honest only if that survives measurement: **the acceptance
 test is one screenshot per theme with all six mats side by side.** If two collapse, the fallback is
 three mats plus the accent dot — recorded here so the fallback is a decision rather than a drift.
+
+**Measured** (`apps/canvas/src/ice/suiteBoardMats.ts`, story `Canvas/ICE board mats`, test
+`suiteBoardMats.test.ts`). The evidence is both themes side by side plus the two numbers that decide
+it, computed from the inks the app ships rather than typed in:
+
+| pair | OKLab ΔE | luminance step |
+| --- | --- | --- |
+| slate / rose (nearest) | 7.5 | 0.036 |
+| blue / violet | 8.4 | 0.061 |
+| slate / violet | 8.5 | 0.047 |
+| … 12 more pairs | ≥ 9.0 | ≥ 0.011 |
+
+Against the desks: light ground `#f2f1ee`, every mat 2.2–3.7 : 1; dark ground `#3c3d42` (the screen
+value `suiteDeskTheme` documents, not the pre-chain value), every mat 2.6–4.4 : 1.
+
+**Verdict: six mats, no fallback.** The first draft did not pass its own rule — blue and violet sat
+5.4 ΔE apart with **0.008** of value between them, i.e. two hues of one value, which is the pair a
+steep night chain merges first. That is a palette-value fault, not a reason to cut the material down
+to three (the mat program resolves any number of names, which was the whole point of §5), so violet
+was raised to `#a294ce`: the six then clear both floors, and the odd pair is uniform. The rule is
+enforced, not admired: the test fails if any pair stops being two materials.
+
+What the measurement is *not*: a photograph of the dark desk. `ice-lab` launches no colour scheme, so
+the dark theme cannot be photographed through it, and the engine's night appearance is shader-side
+(not callable from the app). The pair test is therefore stated as the theme-invariant property it is —
+the same albedos are lit by the same per-channel monotone map, which cannot merge two values — and the
+ground test is per theme. A dark-desk capture stays on the list, with a theme-switching lab harness.
 
 The `boardColors` schema does not change. This is the narrower of the two edits and it needs no bump,
 no migration and no `packages/graph` change.
@@ -196,14 +271,17 @@ no migration and no `packages/graph` change.
 
 ## Work this defines
 
-1. **Title-row face text** (`useIceProjection.ts`, `faceText`): `glyph · title · ⇄n · #n`, with the
-   type-glyph map and the reference/tag counts read from the existing `cardMeta`/`cardReferences`
-   projections. One line, world units, no new raster. Tests: the composed string per rung/band.
+1. **Title-row face text** (`suiteCardFace.ts`, consumed by `useIceProjection.ts`): `glyph · title ·
+   ⇄n · #n`, with the type glyph and the reference/tag counts read from the document. One line, world
+   units, no new raster. **Done.** Tests: `suiteCardFace.test.ts`, `suiteCardFace.document.test.ts`,
+   and `suiteCardKind.test.ts` for the band per width.
 2. **Band contract on the face**: `icon` draws no text; `compact` draws the title row; `full` adds the
-   body. Today `faceText` is one string at every band, so the engine's greek is the only rule.
-3. **`suite.whiteboard` textured face** plus the rasterise-on-settle cache from `WhiteboardPreview`;
-   interim: the whiteboard title row prints its stroke count.
-4. **Board mat measurement**: six mats photographed in both themes, recorded in the parity matrix; if
-   two collapse in dark, three mats + accent dot becomes the answer.
+   body. **Done**, in the kind's `draw` (the only place that sees a card's width and the frame's
+   zoom), with the band folded into the record's rung so the sheet is rebuilt at a crossing.
+3. **`suite.whiteboard` textured face** plus the rasterise-on-settle cache from `WhiteboardPreview`.
+   **Interim shipped**: the stroke count and a sketch of the strokes' extents — the texture is
+   deferred for the engine reasons recorded under §3, which is the deliverable that remains.
+4. **Board mat measurement**: six mats in both themes, recorded here. **Done** (see §5's table); no
+   pair collapses, so three mats + accent dot is not taken, and a dark-desk photograph stays open.
 5. **The `⋮`-less face is final**: no menu badge on the card. If "this card can be opened" turns out
    to be unlearnable, the fix is the in-place editor's hover affordance, not a chip.

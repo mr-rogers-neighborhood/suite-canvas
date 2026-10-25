@@ -116,6 +116,13 @@ interface Ink {
  * **value as well as hue** — a tone curve (ICE's night chain is steep and blue)
  * can stretch or compress lightness, but it cannot turn two different values
  * into the same one.
+ *
+ * The values are measured, not eyeballed: `suiteBoardMats.ts` computes the
+ * pairwise OKLab distance and the luminance step of these six, and its test
+ * fails if any pair stops being two materials. The first draft failed its own
+ * rule — blue and violet were 5.4 apart with 0.008 of value between them, i.e.
+ * two hues of one value — so violet was raised (measured again at 8.4 apart,
+ * 0.06 of value) rather than the palette being cut down to three.
  */
 export const SUITE_BOARD_VINYL_INKS = {
   "board-slate": { token: "board mat: slate", css: "#8a9aa4" },
@@ -123,7 +130,7 @@ export const SUITE_BOARD_VINYL_INKS = {
   "board-green": { token: "board mat: green", css: "#6f8f6d" },
   "board-amber": { token: "board mat: amber", css: "#c0a166" },
   "board-rose": { token: "board mat: rose", css: "#b0848c" },
-  "board-violet": { token: "board mat: violet", css: "#8578a8" },
+  "board-violet": { token: "board mat: violet", css: "#a294ce" },
 } as const satisfies Readonly<Record<string, Ink>>;
 
 /** A Board mat's vinyl name (`palette.vinyls` key and `props.vinyl` value). */

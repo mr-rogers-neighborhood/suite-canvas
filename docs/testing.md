@@ -57,17 +57,17 @@ reuses them when they are already running outside CI.
 Snapshot on 2026-10-25 at `0.2.0-alpha.1` (counts grow as lanes land tests — recount before quoting
 them):
 
-- Unit and integration: 135 test files — 1,671 Vitest tests across `graph`, `server` and `canvas`,
+- Unit and integration: 138 test files — 1,727 Vitest tests across `graph`, `server` and `canvas`,
   plus 75 `node --test` tests in `services/billing`.
-- End-to-end: 30 Playwright specs containing 171 tests, all in the single `chromium` project.
+- End-to-end: 32 Playwright specs containing 177 tests, all in the single `chromium` project.
 
 Recount them with:
 
 ```sh
-pnpm test                                                           # authoritative: 135 files, 1,671 tests
+pnpm test                                                           # authoritative: 138 files, 1,727 tests
 pnpm exec vitest list | wc -l                                       # see the note below before quoting this
 cd services/billing && node --test "*.test.ts" | tail -20           # 75 tests
-pnpm --filter @suite/e2e exec playwright test --list | tail -1       # 171 tests in 30 files
+pnpm --filter @suite/e2e exec playwright test --list | tail -1       # 177 tests in 32 files
 ```
 
 `vitest list` is the fast approximation, not the total: tests built in a loop appear once while the

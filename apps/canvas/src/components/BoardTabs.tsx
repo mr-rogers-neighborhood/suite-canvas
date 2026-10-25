@@ -47,7 +47,7 @@ export function BoardTabs({
   return (
     // The tablist owns the tabs and nothing else; the per-board delete and the
     // "new board" button live beside it instead of inside it.
-    <div className="group flex min-w-0 items-center gap-1">
+    <div className="group flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
       <div
         className="board-tabs flex min-w-0 items-center gap-1"
         role="tablist"

@@ -367,6 +367,29 @@ never edited, persisted or synced. That keeps one document and one undo stack. T
 consumes plain values only — no React, DOM, engine or Loro imports — so its transforms and recipes
 are unit-testable without a renderer.
 
+### Retrieval: the palette and the lens
+
+Two surfaces answer "where is it" without leaving the board.
+
+- **The command palette** (`⌘K`, `components/CommandPalette.tsx`) is the navigation home: boards,
+  saved views, the active board's sections, cards, and actions, ranked by one matcher
+  (`paletteRank.ts` over `fuzzysort`). Providers (`paletteProviders.ts`) are pure functions of a
+  small input, so adding a source is a function, not a branch in the component. `⌘⇧K` keeps the
+  library search the shortcut used to open.
+- **The lens** ([ADR-0037](./decisions/0037-a-saved-view-is-a-lens.md)) is what a saved view does to
+  the canvas: `runViewQuery` selects the cards, and the board dims everything else rather than
+  hiding it. Sections dim when none of their cards is on the lens, edges when either endpoint is.
+  A lens is UI state (`activeViewId`), never a document write.
+
+### Types create written cards
+
+A type can name a **template card** (`CardType.templateCardId`), and `createCard` copies it in one
+batch: title, body, properties, tags and connectors
+([ADR-0038](./decisions/0038-a-type-template-is-a-card.md)). The template is an ordinary card, so
+it is edited with the same slash menu and property blocks as the cards it produces. A plain title
+may carry `{{Field Name}}` tokens, expanded once at creation; rich titles copy verbatim so mentions
+stay live. `displayTitle` remains a plain string.
+
 ### The card layer
 
 A CRDT change should repaint the card it touched, not the board.

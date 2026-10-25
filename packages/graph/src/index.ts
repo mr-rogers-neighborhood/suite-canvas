@@ -38,6 +38,14 @@ export {
   MIN_LAYOUT_SECTION_WIDTH,
   parseLayoutPlan,
 } from "./layoutPlan.js";
+export type { LinkEndpoint } from "./links.js";
+export {
+  edgeEndpoints,
+  edgeTouches,
+  isSelfLink,
+  linkKey,
+  sameEndpoint,
+} from "./links.js";
 export type {
   CardContainers,
   CardFieldView,
@@ -171,6 +179,7 @@ export type {
   Card,
   CardType,
   Connector,
+  EdgeEndpointKind,
   EdgeKind,
   EdgePath,
   FieldDefinition,
@@ -189,6 +198,8 @@ export {
   cardTypeSchema,
   connectorSchema,
   DEFAULT_TYPE_ID,
+  edgeEndpointKindSchema,
+  edgeEndpointKinds,
   edgeKindSchema,
   edgeKinds,
   edgePathSchema,

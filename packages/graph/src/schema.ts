@@ -13,11 +13,14 @@ export const fieldKinds = [
   "board",
 ] as const;
 export const sectionColors = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
+/** What a link endpoint points at. Boards and sections are identities, not types. */
+export const edgeEndpointKinds = ["card", "board", "section"] as const;
 
 export const edgeKindSchema = z.enum(edgeKinds);
 export const edgePathSchema = z.enum(edgePaths);
 export const fieldKindSchema = z.enum(fieldKinds);
 export const sectionColorSchema = z.enum(sectionColors);
+export const edgeEndpointKindSchema = z.enum(edgeEndpointKinds);
 
 export const entityIdSchema = z.string().min(1);
 
@@ -39,6 +42,9 @@ export const connectorSchema = z.object({
 export const boardSchema = z.object({
   id: entityIdSchema,
   name: z.string().min(1),
+  color: sectionColorSchema.optional(),
+  /** Replaces the live miniature inside a portal card when set. */
+  coverAttachmentId: entityIdSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -173,6 +179,8 @@ export const sectionSchema = z.object({
   /** Ordering among overlapping sections; cards always paint above all of them. */
   z: z.number().finite(),
   color: sectionColorSchema.optional(),
+  /** Link attachment points, like a card's; a section can be a link endpoint. */
+  connectors: z.array(connectorSchema).optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -182,6 +190,10 @@ export const graphEdgeSchema = z.object({
   boardId: entityIdSchema,
   source: entityIdSchema,
   target: entityIdSchema,
+  /** What `source` names. Absent means a card, so older documents stay valid. */
+  sourceKind: edgeEndpointKindSchema.optional(),
+  /** What `target` names. Absent means a card. */
+  targetKind: edgeEndpointKindSchema.optional(),
   /** Connector ids the link attaches to, when it was drawn between connectors. */
   sourceConnector: entityIdSchema.optional(),
   targetConnector: entityIdSchema.optional(),
@@ -212,3 +224,4 @@ export type SectionColor = z.infer<typeof sectionColorSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 export type EdgePath = z.infer<typeof edgePathSchema>;
+export type EdgeEndpointKind = z.infer<typeof edgeEndpointKindSchema>;

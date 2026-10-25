@@ -37,6 +37,7 @@ import {
   MIN_LAYOUT_SECTION_WIDTH,
   parseLayoutPlan,
 } from "../layoutPlan.js";
+import { edgeEndpoints, edgeTouches, isSelfLink, type LinkEndpoint, linkKey } from "../links.js";
 import { isCalendarDate } from "../property.js";
 import { mentionTargets, sameTargets } from "../references.js";
 import {
@@ -48,6 +49,8 @@ import {
   cardSchema,
   cardTypeSchema,
   DEFAULT_TYPE_ID,
+  type EdgeEndpointKind,
+  edgeEndpointKindSchema,
   entityIdSchema,
   type FieldDefinition,
   fieldDefinitionSchema,
@@ -163,6 +166,9 @@ export interface CreateEdgeInput {
   boardId: string;
   source: string;
   target: string;
+  /** Defaults to a card, so existing callers keep working unchanged. */
+  sourceKind?: EdgeEndpointKind | undefined;
+  targetKind?: EdgeEndpointKind | undefined;
   sourceConnector?: string | undefined;
   targetConnector?: string | undefined;
   kind?: GraphEdge["kind"];
@@ -188,6 +194,8 @@ export interface CreateSectionInput {
   width?: number;
   height?: number;
   color?: Section["color"];
+  /** Defaults to the same four side midpoints every new card starts with. */
+  connectors?: Connector[];
 }
 
 /** A saved query, plus where it sits in the Views menu. */
@@ -493,6 +501,26 @@ function connectorFromMap(id: string, fields: LoroMap): Connector {
   };
 }
 
+/** A connector map as an ordered array; cards and sections store them alike. */
+function connectorsFromMap(fields: LoroMap): Connector[] {
+  const connectorMap = fields.get(CONNECTORS_FIELD);
+  if (!isMap(connectorMap)) return [];
+  const ordered: Array<{ connector: Connector; order: number }> = [];
+  for (const connectorId of connectorMap.keys()) {
+    const connector = connectorMap.get(connectorId);
+    if (!isMap(connector)) continue;
+    ordered.push({
+      connector: connectorFromMap(connectorId, connector),
+      order: readNumber(connector, "order") ?? Number.MAX_SAFE_INTEGER,
+    });
+  }
+  ordered.sort(
+    (left, right) =>
+      left.order - right.order || left.connector.id.localeCompare(right.connector.id),
+  );
+  return ordered.map((entry) => entry.connector);
+}
+
 export function cardFromMap(id: string, fields: LoroMap): Card {
   const connectors: Array<{ connector: Connector; order: number }> = [];
   const connectorMap = fields.get(CONNECTORS_FIELD);
@@ -633,6 +661,7 @@ export function sectionFromMap(id: string, fields: LoroMap): Section {
     width: Math.max(1, readNumber(fields, "width") ?? 320),
     height: Math.max(1, readNumber(fields, "height") ?? 240),
     z: readNumber(fields, "z") ?? 0,
+    connectors: connectorsFromMap(fields),
     createdAt: readNumber(fields, "createdAt") ?? 0,
     updatedAt: readNumber(fields, "updatedAt") ?? 0,
     ...(color ? { color } : {}),
@@ -702,12 +731,16 @@ export function edgeFromMap(id: string, fields: LoroMap): GraphEdge {
   const targetConnector = readString(fields, "targetConnector");
   const label = readString(fields, "label");
   const labelOffset = readNumber(fields, "labelOffset");
+  const sourceKind = edgeEndpointKindSchema.safeParse(readString(fields, "sourceKind"));
+  const targetKind = edgeEndpointKindSchema.safeParse(readString(fields, "targetKind"));
   return normalizeEdge(
     graphEdgeSchema.parse({
       id,
       boardId: readString(fields, "boardId") ?? "",
       source: readString(fields, "source") ?? "",
       target: readString(fields, "target") ?? "",
+      ...(sourceKind.success ? { sourceKind: sourceKind.data } : {}),
+      ...(targetKind.success ? { targetKind: targetKind.data } : {}),
       ...(sourceConnector ? { sourceConnector } : {}),
       ...(targetConnector ? { targetConnector } : {}),
       kind: readString(fields, "kind") ?? "references",
@@ -1119,6 +1152,9 @@ export class WorkspaceDocument {
 
   deleteBoard(id: string, options: { cards?: "keep" | "trash" } = {}): void {
     const cardsOption = options.cards ?? "keep";
+    // Scoped before the placements go: only cards that were on *this* board are
+    // candidates for the trash, and only if they have nowhere else to live.
+    const onThisBoard = new Set(this.listBoardCards(id).map((card) => card.id));
     for (const key of [...this.placements.keys()]) {
       const fields = this.placements.get(key);
       if (isMap(fields) && readString(fields, "boardId") === id) this.placements.delete(key);
@@ -1127,6 +1163,8 @@ export class WorkspaceDocument {
       const fields = this.edges.get(edgeId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.edges.delete(edgeId);
     }
+    // Links drawn elsewhere may point at the board itself; they go with it.
+    this.deleteLinksTo({ kind: "board", id });
     for (const sectionId of [...this.sections.keys()]) {
       const fields = this.sections.get(sectionId);
       if (isMap(fields) && readString(fields, "boardId") === id) this.sections.delete(sectionId);
@@ -1135,10 +1173,11 @@ export class WorkspaceDocument {
 
     if (cardsOption === "trash") {
       const now = Date.now();
-      for (const card of this.listCards()) {
-        if (card.deletedAt) continue;
-        if (this.listCardPlacements(card.id).length > 0) continue;
-        this.mutateCard(card.id, (fields) => fields.set("deletedAt", now), false);
+      for (const cardId of onThisBoard) {
+        const card = this.getCard(cardId);
+        if (!card || card.deletedAt) continue;
+        if (this.listCardPlacements(cardId).length > 0) continue;
+        this.mutateCard(cardId, (fields) => fields.set("deletedAt", now), false);
       }
     }
     this.commit(`${STRUCT_ORIGIN}delete-board`);
@@ -1758,6 +1797,7 @@ export class WorkspaceDocument {
       width: Math.max(80, input.width ?? 360),
       height: Math.max(60, input.height ?? 260),
       z: existing.length > 0 ? (existing.at(-1)?.z ?? 0) + 1 : 0,
+      connectors: input.connectors ?? defaultConnectors(),
       createdAt: now,
       updatedAt: now,
       ...(input.color ? { color: input.color } : {}),
@@ -1831,8 +1871,81 @@ export class WorkspaceDocument {
 
   deleteSection(id: string): void {
     if (this.sections.get(id) === undefined) return;
+    this.deleteLinksTo({ kind: "section", id });
     this.sections.delete(id);
     this.commit(`${STRUCT_ORIGIN}delete-section`);
+  }
+
+  /** Links pointing at a deleted container go with it; a dangling id is not a link. */
+  private deleteLinksTo(endpoint: LinkEndpoint): void {
+    for (const edge of this.listLinksTo(endpoint.kind, endpoint.id)) {
+      this.edges.delete(edge.id);
+    }
+  }
+
+  addSectionConnector(sectionId: string, position?: { x: number; y: number }): Connector | null {
+    const section = this.getSection(sectionId);
+    if (!section) return null;
+
+    const connectors = section.connectors ?? [];
+    const anchor = position ?? nextFreeAnchor(connectors);
+    const connector: Connector = { id: createConnectorId(), ...anchor };
+    const fields = this.sections.get(sectionId);
+    if (!isMap(fields)) return null;
+    const map = fields.ensureMergeableMap(CONNECTORS_FIELD);
+    const entry = map.ensureMergeableMap(connector.id);
+    entry.set("x", connector.x);
+    entry.set("y", connector.y);
+    entry.set("order", connectors.length);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}add-section-connector`);
+    return connector;
+  }
+
+  removeSectionConnector(sectionId: string, connectorId: string): void {
+    const section = this.getSection(sectionId);
+    if (!section) return;
+
+    for (const edge of this.listEdges()) {
+      const ends = edgeEndpoints(edge);
+      const attached =
+        (ends.source.kind === "section" &&
+          ends.source.id === sectionId &&
+          edge.sourceConnector === connectorId) ||
+        (ends.target.kind === "section" &&
+          ends.target.id === sectionId &&
+          edge.targetConnector === connectorId);
+      if (attached) this.edges.delete(edge.id);
+    }
+
+    const fields = this.sections.get(sectionId);
+    if (!isMap(fields)) return;
+    const map = fields.get(CONNECTORS_FIELD);
+    if (isMap(map)) map.delete(connectorId);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}remove-section-connector`);
+  }
+
+  moveSectionConnector(
+    sectionId: string,
+    connectorId: string,
+    position: { x: number; y: number },
+    options: { snap?: boolean } = {},
+  ): void {
+    const section = this.getSection(sectionId);
+    if (!section) return;
+    const fields = this.sections.get(sectionId);
+    if (!isMap(fields)) return;
+    const map = fields.get(CONNECTORS_FIELD);
+    if (!isMap(map)) return;
+    const entry = map.get(connectorId);
+    if (!isMap(entry)) return;
+
+    const next = options.snap ? snapToAnchor(position) : position;
+    entry.set("x", next.x);
+    entry.set("y", next.y);
+    fields.set("updatedAt", Date.now());
+    this.commit(`${STRUCT_ORIGIN}move-section-connector`);
   }
 
   private writeSection(section: Section): void {
@@ -1847,6 +1960,21 @@ export class WorkspaceDocument {
     fields.set("createdAt", section.createdAt);
     fields.set("updatedAt", section.updatedAt);
     if (section.color) fields.set("color", section.color);
+    this.writeSectionConnectors(fields, section.connectors ?? []);
+  }
+
+  private writeSectionConnectors(fields: LoroMap, connectors: readonly Connector[]): void {
+    const map = fields.ensureMergeableMap(CONNECTORS_FIELD);
+    const keep = new Set(connectors.map((connector) => connector.id));
+    for (const id of [...map.keys()]) {
+      if (!keep.has(id)) map.delete(id);
+    }
+    connectors.forEach((connector, order) => {
+      const entry = map.ensureMergeableMap(connector.id);
+      entry.set("x", connector.x);
+      entry.set("y", connector.y);
+      entry.set("order", order);
+    });
   }
 
   // ----------------------------------------------------------------- cards
@@ -3055,22 +3183,67 @@ export class WorkspaceDocument {
 
   listBoardEdges(boardId: string): GraphEdge[] {
     const placed = new Map(this.listBoardCards(boardId).map((card) => [card.id, card]));
+    const sections = new Map(this.listSections(boardId).map((section) => [section.id, section]));
+    const portals = this.portalsByTargetBoard(placed);
     return this.listEdges().filter(
       (edge) =>
         edge.boardId === boardId &&
-        placed.has(edge.source) &&
-        placed.has(edge.target) &&
-        this.anchorsResolve(edge, placed),
+        this.endpointIsDrawn(edgeEndpoints(edge).source, edge.sourceConnector, {
+          placed,
+          sections,
+          portals,
+        }) &&
+        this.endpointIsDrawn(edgeEndpoints(edge).target, edge.targetConnector, {
+          placed,
+          sections,
+          portals,
+        }),
     );
   }
 
-  private anchorsResolve(edge: GraphEdge, placed: Map<string, Card>): boolean {
-    const resolve = (cardId: string, connectorId: string | undefined): boolean => {
-      if (!connectorId) return true;
-      const connectors = placed.get(cardId)?.connectors ?? [];
-      return connectors.some((connector) => connector.id === connectorId);
-    };
-    return resolve(edge.source, edge.sourceConnector) && resolve(edge.target, edge.targetConnector);
+  /**
+   * On this board, the first portal card per target board. A board endpoint has
+   * no position of its own, so it is drawn between portal instances: no portal
+   * on this board means no line, though the link survives in the document.
+   */
+  private portalsByTargetBoard(placed: Map<string, Card>): Map<string, Card> {
+    const portals = new Map<string, Card>();
+    for (const card of placed.values()) {
+      if (card.primaryTypeId !== PORTAL_TYPE_ID) continue;
+      const target = card.properties[PORTAL_BOARD_FIELD_ID];
+      if (typeof target !== "string" || target.length === 0) continue;
+      if (!portals.has(target)) portals.set(target, card);
+    }
+    return portals;
+  }
+
+  private endpointIsDrawn(
+    endpoint: LinkEndpoint,
+    connectorId: string | undefined,
+    context: {
+      placed: Map<string, Card>;
+      sections: Map<string, Section>;
+      portals: Map<string, Card>;
+    },
+  ): boolean {
+    switch (endpoint.kind) {
+      case "card": {
+        const card = context.placed.get(endpoint.id);
+        if (!card) return false;
+        if (!connectorId) return true;
+        return card.connectors.some((connector) => connector.id === connectorId);
+      }
+      case "section": {
+        const section = context.sections.get(endpoint.id);
+        if (!section) return false;
+        if (!connectorId) return true;
+        return (section.connectors ?? []).some((connector) => connector.id === connectorId);
+      }
+      case "board":
+        return context.portals.has(endpoint.id);
+      default:
+        return false;
+    }
   }
 
   getEdge(id: string): GraphEdge | undefined {
@@ -3088,6 +3261,10 @@ export class WorkspaceDocument {
     fields.set("boardId", edge.boardId);
     fields.set("source", edge.source);
     fields.set("target", edge.target);
+    if (edge.sourceKind) fields.set("sourceKind", edge.sourceKind);
+    else fields.delete("sourceKind");
+    if (edge.targetKind) fields.set("targetKind", edge.targetKind);
+    else fields.delete("targetKind");
     fields.set("kind", edge.kind);
     fields.set("path", edge.path);
     fields.set("bidirectional", edge.bidirectional);
@@ -3102,7 +3279,12 @@ export class WorkspaceDocument {
   }
 
   addEdge(input: CreateEdgeInput): GraphEdge | null {
-    if (input.source === input.target) return null;
+    const sourceKind = input.sourceKind ?? "card";
+    const targetKind = input.targetKind ?? "card";
+    const source = { kind: sourceKind, id: input.source };
+    const target = { kind: targetKind, id: input.target };
+    if (isSelfLink(source, target)) return null;
+    if (!this.endpointExists(source) || !this.endpointExists(target)) return null;
 
     const now = Date.now();
     const edge: GraphEdge = graphEdgeSchema.parse({
@@ -3110,6 +3292,8 @@ export class WorkspaceDocument {
       boardId: input.boardId,
       source: input.source,
       target: input.target,
+      sourceKind,
+      targetKind,
       kind: input.kind ?? "references",
       path: "bezier",
       bidirectional: false,
@@ -3118,9 +3302,46 @@ export class WorkspaceDocument {
       ...(input.sourceConnector ? { sourceConnector: input.sourceConnector } : {}),
       ...(input.targetConnector ? { targetConnector: input.targetConnector } : {}),
     });
+    if (this.isDuplicateEdge(edge)) return null;
     this.applyEdge(edge);
     this.commit(`${STRUCT_ORIGIN}add-edge`);
     return edge;
+  }
+
+  /** A link may only point at a thing that exists in this workspace. */
+  private endpointExists(endpoint: LinkEndpoint): boolean {
+    switch (endpoint.kind) {
+      case "card":
+        return this.getCard(endpoint.id) !== undefined;
+      case "board":
+        return this.boards.get(endpoint.id) !== undefined;
+      case "section":
+        return this.sections.get(endpoint.id) !== undefined;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Two links between the same endpoints on the same connectors are the same
+   * connection; drawing it twice is a no-op rather than a second record.
+   */
+  private isDuplicateEdge(candidate: GraphEdge): boolean {
+    const key = linkKey(candidate);
+    return this.listEdges().some((edge) => edge.id !== candidate.id && linkKey(edge) === key);
+  }
+
+  /** Every link with this thing at either end, including links to containers. */
+  listLinksTo(kind: EdgeEndpointKind, id: string): GraphEdge[] {
+    const endpoint = { kind, id };
+    return this.listEdges().filter((edge) => edgeTouches(edge, endpoint));
+  }
+
+  setEdgeEndpointKind(id: string, end: "source" | "target", kind: EdgeEndpointKind): void {
+    if (!this.getEdge(id)) return;
+    this.mutateEdge(id, (fields) =>
+      fields.set(end === "source" ? "sourceKind" : "targetKind", kind),
+    );
   }
 
   removeEdge(id: string): void {
@@ -3138,23 +3359,45 @@ export class WorkspaceDocument {
     end: "source" | "target",
     cardId: string,
     connectorId: string | undefined,
+    kind: EdgeEndpointKind = "card",
   ): void {
     const edge = this.getEdge(id);
     if (!edge) return;
 
+    const ends = edgeEndpoints(edge);
+    const next = { kind, id: cardId };
+    const otherEnd = end === "source" ? ends.target : ends.source;
+    if (isSelfLink(next, otherEnd)) return;
+    if (!this.endpointExists(next)) return;
+
+    const fields = { id: cardId };
     if (end === "source") {
-      if (cardId === edge.target) return;
-      this.mutateEdge(id, (fields) => {
-        fields.set("source", cardId);
-        if (connectorId) fields.set("sourceConnector", connectorId);
-        else fields.delete("sourceConnector");
+      const candidate = {
+        ...edge,
+        source: fields.id,
+        sourceKind: kind,
+        sourceConnector: connectorId,
+      };
+      if (this.isDuplicateEdge(candidate)) return;
+      this.mutateEdge(id, (entry) => {
+        entry.set("source", fields.id);
+        entry.set("sourceKind", kind);
+        if (connectorId) entry.set("sourceConnector", connectorId);
+        else entry.delete("sourceConnector");
       });
     } else {
-      if (cardId === edge.source) return;
-      this.mutateEdge(id, (fields) => {
-        fields.set("target", cardId);
-        if (connectorId) fields.set("targetConnector", connectorId);
-        else fields.delete("targetConnector");
+      const candidate = {
+        ...edge,
+        target: fields.id,
+        targetKind: kind,
+        targetConnector: connectorId,
+      };
+      if (this.isDuplicateEdge(candidate)) return;
+      this.mutateEdge(id, (entry) => {
+        entry.set("target", fields.id);
+        entry.set("targetKind", kind);
+        if (connectorId) entry.set("targetConnector", connectorId);
+        else entry.delete("targetConnector");
       });
     }
   }

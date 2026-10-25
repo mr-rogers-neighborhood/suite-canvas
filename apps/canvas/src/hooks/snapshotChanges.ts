@@ -23,7 +23,9 @@ function boardValue(value: WorkspaceChange["value"]): Board | null {
 }
 
 function cardValue(value: WorkspaceChange["value"]): Card | null {
-  return value !== null && "connectors" in value ? value : null;
+  // A section now carries connectors too, so cards are identified by the
+  // properties only they have rather than by their connector list.
+  return value !== null && "primaryTypeId" in value && "properties" in value ? value : null;
 }
 
 function placementValue(value: WorkspaceChange["value"]): Placement | null {

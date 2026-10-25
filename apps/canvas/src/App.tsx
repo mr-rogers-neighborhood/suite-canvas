@@ -1000,6 +1000,7 @@ function WorkspaceShell({
           onEmptyTrash={() => workspace.emptyTrash()}
           onGoToBoard={activateBoard}
           onDropAt={(cardId, point) => placeCard(cardId, point)}
+          canPlace={canEditLayout}
           types={snapshot.types}
           tags={snapshot.tags}
           typeFilter={libraryTypeFilter}

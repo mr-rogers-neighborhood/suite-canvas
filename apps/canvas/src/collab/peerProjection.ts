@@ -5,6 +5,7 @@ import {
   type DraggingState,
   type FocusState,
   type LabelDragState,
+  type LibraryDragState,
   type PeerPresence,
   type PointerState,
   type PresenceUser,
@@ -89,6 +90,7 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     reconnect: (state[AWARENESS_FIELDS.reconnect] as ReconnectState | undefined) ?? null,
     connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
     labelDrag: (state[AWARENESS_FIELDS.labelDrag] as LabelDragState | undefined) ?? null,
+    libraryDrag: (state[AWARENESS_FIELDS.libraryDrag] as LibraryDragState | undefined) ?? null,
     gestureBeat: readBeat(state[AWARENESS_FIELDS.gestureBeat]),
   };
 }
@@ -108,6 +110,7 @@ export function gestureSignature(peer: PeerPresence): string {
     !peer.reconnect &&
     !peer.connect &&
     !peer.labelDrag &&
+    !peer.libraryDrag &&
     !peer.selectionBox
   ) {
     return "";
@@ -124,6 +127,7 @@ export function gestureSignature(peer: PeerPresence): string {
     peer.reconnect,
     peer.connect,
     peer.labelDrag,
+    peer.libraryDrag,
     peer.selectionBox,
     peer.gestureBeat ?? 0,
   ]);
@@ -139,6 +143,7 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
     !peer.reconnect &&
     !peer.connect &&
     !peer.labelDrag &&
+    !peer.libraryDrag &&
     !peer.selectionBox
   ) {
     return peer;
@@ -153,6 +158,7 @@ function withoutGesture(peer: PeerPresence): PeerPresence {
     reconnect: null,
     connect: null,
     labelDrag: null,
+    libraryDrag: null,
     selectionBox: null,
   };
 }

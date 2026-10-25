@@ -79,6 +79,12 @@ export interface LibraryDrawerProps {
   onTab: (tab: LibraryTab) => void;
   onClose: () => void;
   onPlace: (cardId: string) => void;
+  /**
+   * Whether this session may write layout. A viewer still lifts a row and still
+   * publishes the ghost — seeing the gesture is how they know something is
+   * happening — but releasing over the canvas places nothing.
+   */
+  canPlace?: boolean;
   onCreateInInbox: () => void;
   onTrash: (cardId: string) => void;
   onRestore: (cardId: string) => void;
@@ -165,6 +171,7 @@ export function LibraryDrawer({
   onTab,
   onClose,
   onPlace,
+  canPlace = true,
   onCreateInInbox,
   onTrash,
   onRestore,
@@ -198,6 +205,7 @@ export function LibraryDrawer({
   const activeViewId = useUiStore((state) => state.activeViewId);
   const exitView = useUiStore((state) => state.exitView);
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
+  const setLibraryDrag = useUiStore((state) => state.setLibraryDrag);
   const views = useSavedViews(workspace);
   const activeView = views.find((view) => view.id === activeViewId);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
@@ -334,6 +342,12 @@ export function LibraryDrawer({
         Math.abs(event.clientY - current.startY) > HOLD_THRESHOLD;
       if (!far && !current.dragging) return;
       current.dragging = true;
+      // The canvas owns the camera, so this is a screen point here and a flow
+      // point by the time it reaches presence.
+      setLibraryDrag({
+        cardId: current.cardId,
+        screen: { x: event.clientX, y: event.clientY },
+      });
       setHold((previous) =>
         previous ? { ...previous, x: event.clientX, y: event.clientY } : null,
       );
@@ -343,12 +357,16 @@ export function LibraryDrawer({
       const current = holdRef.current;
       holdRef.current = null;
       setHold(null);
+      setLibraryDrag(null);
       if (!current) return;
       // A press that never became a drag is a plain click on the row.
       if (!current.dragging) {
         onOpenCard(current.cardId);
         return;
       }
+      // A viewer's ghost still travelled; the drop does nothing, which is the
+      // same answer the capability matrix gives every other layout write.
+      if (!canPlace) return;
       const canvas = document
         .elementFromPoint(event.clientX, event.clientY)
         ?.closest('[data-testid="canvas-board"]');
@@ -363,7 +381,7 @@ export function LibraryDrawer({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onDropAt, onOpenCard]);
+  }, [onDropAt, onOpenCard, canPlace, setLibraryDrag]);
 
   const countsByFacet = facetCounts(scopedItems, typeFilter, tagFilter, activeSectionFilter);
   const facetFiltered = filterItems(scopedItems, typeFilter, tagFilter, activeSectionFilter);

@@ -49,6 +49,22 @@ export interface ConnectorState {
   position?: { x: number; y: number };
 }
 
+/**
+ * A card being dragged out of the library, in flow units. The drawer lives
+ * outside the canvas, so the canvas converts the pointer to flow space and
+ * publishes this — peers then see where the card will land, not where it is on
+ * the sender's screen.
+ */
+export interface LibraryDragState {
+  cardId: string;
+  /** The flow point under the pointer; the card is placed centred on it. */
+  position: { x: number; y: number };
+  /** Board it would land on, so a peer on another board does not draw it. */
+  board: string | null;
+  /** The dragging client, so the sender can skip its own ghost. */
+  clientId?: string;
+}
+
 /** A live marquee a peer is dragging, in flow units. */
 export interface SelectionBoxState {
   x: number;
@@ -130,6 +146,7 @@ export const AWARENESS_FIELDS = {
   reconnect: "reconnect",
   connect: "connect",
   labelDrag: "labelDrag",
+  libraryDrag: "libraryDrag",
   /**
    * Liveness of an in-flight gesture, as a counter the sender bumps while it
    * holds one. A gesture is refreshed only when its payload *changes*, so a peer
@@ -157,6 +174,8 @@ export interface PeerPresence {
   reconnect: ReconnectState | null;
   connect: ConnectState | null;
   labelDrag: LabelDragState | null;
+  /** A card held in the library, and where it would land. */
+  libraryDrag?: LibraryDragState | null;
   /** Sender's liveness counter for an in-flight gesture; see `gestureBeat`. */
   gestureBeat?: number;
 }

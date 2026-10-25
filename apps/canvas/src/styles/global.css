@@ -1878,6 +1878,43 @@ body {
   cursor: default;
 }
 
+/* A peer's held library card, sitting where it would land. A dashed outline, not
+   a card: nothing exists there until the drop, and pretending otherwise would be
+   a lie about the document. */
+.peer-library-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: 160px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1.5px dashed;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--ink-muted);
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.peer-library-ghost__name {
+  align-self: flex-start;
+  border-radius: 4px;
+  padding: 0 4px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.peer-library-ghost__title {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A miniature is read at arm's length: one hairline, no arrowheads. Direction is
    the canvas's job; at this size an arrowhead is a smudge. */
 .portal-miniature__link {

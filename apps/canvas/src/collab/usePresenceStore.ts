@@ -10,6 +10,7 @@ import {
   type DraggingState,
   type FocusState,
   type LabelDragState,
+  type LibraryDragState,
   type PeerPresence,
   type PointerState,
   type ReconnectState,
@@ -41,6 +42,8 @@ interface PresenceState {
   setReconnect: (reconnect: ReconnectState | null) => void;
   setConnect: (connect: ConnectState | null) => void;
   setLabelDrag: (labelDrag: LabelDragState | null) => void;
+  /** A card held in the library, in flow units, so peers see where it lands. */
+  setLibraryDrag: (libraryDrag: LibraryDragState | null) => void;
 }
 
 /**
@@ -211,6 +214,10 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     setLabelDrag: (labelDrag) => {
       publishGesture(AWARENESS_FIELDS.labelDrag, labelDrag);
       if (labelDrag) clearPointer();
+    },
+    setLibraryDrag: (libraryDrag) => {
+      publishGesture(AWARENESS_FIELDS.libraryDrag, libraryDrag);
+      if (libraryDrag) clearPointer();
     },
   };
 });

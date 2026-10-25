@@ -70,6 +70,7 @@ import {
 } from "./multiSelect";
 import { nodeTypes } from "./NoteNode";
 import type { CardNodeData } from "./nodeData";
+import { PeerLibraryDragLayer, usePublishLibraryDrag } from "./PeerLibraryDragLayer";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
 import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
@@ -1645,6 +1646,9 @@ export function CanvasBoard() {
     clearPortalOpenRequest();
   }, [portalOpenRequest, enterPortal, clearPortalOpenRequest]);
 
+  // A library drag is a screen point in the drawer and a flow point for peers.
+  usePublishLibraryDrag();
+
   /** Orderly arrival on a board whose stored camera should be restored. */
   useEffect(() => {
     if (!viewportRequest || viewportRequest.boardId !== activeBoardId) return;
@@ -3082,6 +3086,7 @@ export function CanvasBoard() {
         <Controls showInteractive={false} />
         <PresenceLayer />
         <PeerReconnectLayer />
+        <PeerLibraryDragLayer />
       </ReactFlow>
       {/* Outside React Flow: its pane preventDefaults pointerdown, which eats the
           click on any control nested inside it. */}

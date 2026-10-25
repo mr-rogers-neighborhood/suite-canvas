@@ -138,6 +138,13 @@ interface UiState extends SessionCapabilities {
   libraryTab: LibraryTab;
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
+  /**
+   * A card being dragged out of the library, in *screen* units. The drawer owns
+   * the gesture; the canvas owns the camera, so it converts this to flow space
+   * before publishing presence.
+   */
+  libraryDrag: { cardId: string; screen: { x: number; y: number } } | null;
+  setLibraryDrag: (drag: { cardId: string; screen: { x: number; y: number } } | null) => void;
   /** Section selected on the active board, if any. */
   selectedSectionId: string | null;
   /**
@@ -288,6 +295,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   selectedSectionId: null,
   containerInspector: null,
   portalOpenRequest: null,
+  libraryDrag: null,
   editingSectionId: null,
   editingNodeId: null,
   editingField: "body",
@@ -443,6 +451,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
+  setLibraryDrag: (libraryDrag) => set({ libraryDrag }),
   selectSection: (selectedSectionId) =>
     set({
       selectedSectionId,

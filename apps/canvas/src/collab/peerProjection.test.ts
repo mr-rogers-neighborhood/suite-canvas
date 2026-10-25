@@ -62,6 +62,22 @@ describe("projectPeers", () => {
     ).toBeNull();
   });
 
+  it("carries a library drag, and forgets it like any other gesture", () => {
+    const seen = new Map<string, SeenGesture>();
+    const drag = { cardId: "starter-1", position: { x: 10, y: 20 }, board: "b1" };
+    project(1000, seen, { [AWARENESS_FIELDS.libraryDrag]: drag });
+    const peers = project(1000 + GESTURE_TTL_MS - 1, seen, {
+      [AWARENESS_FIELDS.libraryDrag]: drag,
+    });
+    expect(peers[PEER]?.libraryDrag).toMatchObject({ cardId: "starter-1" });
+
+    // A held row that stops arriving is a dropped connection, not a drag.
+    const quiet = project(1000 + GESTURE_TTL_MS + 1, seen, {
+      [AWARENESS_FIELDS.libraryDrag]: drag,
+    });
+    expect(quiet[PEER]?.libraryDrag ?? null).toBeNull();
+  });
+
   it("restarts the clock when the gesture frame changes", () => {
     const seen = new Map<string, SeenGesture>();
     project(1000, seen);

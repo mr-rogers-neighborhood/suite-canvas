@@ -87,6 +87,7 @@ import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectio
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
 import { WhiteboardNode } from "./WhiteboardNode";
+import { ZOOM_MAX, ZOOM_MIN } from "./zoomRange";
 
 /** Share of the remaining distance covered per frame when easing toward a peer's drag. */
 const SMOOTHING = 0.22;
@@ -308,6 +309,7 @@ export function CanvasBoard() {
   const selectedNodeIds = useUiStore((state) => state.selectedNodeIds);
   const selectedConnector = useUiStore((state) => state.selectedConnector);
   const selectedSectionId = useUiStore((state) => state.selectedSectionId);
+  const presenting = useUiStore((state) => Boolean(state.tour?.presenting));
   const selectSection = useUiStore((state) => state.selectSection);
   const editingSectionId = useUiStore((state) => state.editingSectionId);
   const setEditingSection = useUiStore((state) => state.setEditingSection);
@@ -2961,6 +2963,12 @@ export function CanvasBoard() {
         // connectors remeasure when a card scrolls back in.
         onlyRenderVisibleElements
         fitView
+        // The camera reaches far enough out to read a whole board and far enough
+        // in to work on one card. Presenting is unclamped, because a tour step
+        // asks for the viewport that frames what it is talking about
+        // ([ADR-0051 §9](../../../docs/decisions/0051-one-style-vocabulary-over-edges.md)).
+        minZoom={presenting ? 0 : ZOOM_MIN}
+        maxZoom={presenting ? Number.POSITIVE_INFINITY : ZOOM_MAX}
         deleteKeyCode={null}
         // Selection, panning, zoom and the inspector stay for every role.
         // Layout writes follow the session capabilities: an editor share may

@@ -8,9 +8,28 @@ import type { ResolvedSurfaceStyle, StyleColourRole, StyleShape, StyleSide } fro
  * rather than a set of names. Nothing here writes to the document.
  */
 
-/** The CSS variable a colour role resolves to. The token layer owns the value. */
+/**
+ * The CSS variable a colour role resolves to. The token layer owns the value.
+ *
+ * The map is explicit because a role is a *meaning*, not a token name: the
+ * canvas role reads `--canvas-bg` and the surface role `--surface`, and a rename
+ * in one place must not silently resolve a style to an undefined variable.
+ */
+const ROLE_TOKEN: Record<StyleColourRole, string> = {
+  canvas: "--canvas-bg",
+  surface: "--surface",
+  "surface-strong": "--surface-strong",
+  ink: "--ink",
+  "ink-muted": "--ink-muted",
+  hairline: "--hairline",
+  accent: "--accent",
+  danger: "--danger",
+  success: "--success",
+  warning: "--warning",
+};
+
 export function colourRoleVar(role: StyleColourRole): string {
-  return `var(--${role})`;
+  return `var(${ROLE_TOKEN[role]})`;
 }
 
 /**

@@ -24,6 +24,14 @@
   --section-amber: #f59e0b;
   --section-rose: #f43f5e;
   --section-violet: #8b5cf6;
+  /* Roles the paint system names (ADR-0051). They were referenced with literal
+     fallbacks before, which is the shell owning a palette ADR-0046 forbids. */
+  --surface-strong: #ffffff;
+  --accent: #0a84ff;
+  --accent-strong: #0069d9;
+  --danger: #d33;
+  --success: #0f8a4a;
+  --warning: #b26a00;
   /* The brand blue is too light for chip text (2.9:1); this keeps the hue. */
   --mention-ink: color-mix(in srgb, var(--section-blue) 72%, #000);
 }
@@ -48,6 +56,13 @@
   --section-amber: #fbbf24;
   --section-rose: #fb7185;
   --section-violet: #a78bfa;
+  /* Dark roles: each value re-checked against its surface, not inverted. */
+  --surface-strong: #2c2c31;
+  --accent: #4aa3ff;
+  --accent-strong: #7ebdff;
+  --danger: #ff6b6b;
+  --success: #4ade80;
+  --warning: #fbbf24;
   /* On dark surfaces the light brand blue already clears 4.5:1. */
   --mention-ink: var(--section-blue);
 }
@@ -1441,12 +1456,12 @@ body {
 .section-link-endpoint {
   pointer-events: none;
   fill: var(--surface);
-  stroke: var(--accent, #0a84ff);
+  stroke: var(--accent);
   stroke-width: 2;
 }
 
 .section-link.is-selected {
-  stroke: var(--accent, #0a84ff);
+  stroke: var(--accent);
   stroke-width: 2.5;
 }
 
@@ -1462,13 +1477,13 @@ body {
 }
 
 .section-link-preview {
-  stroke: var(--accent, #0a84ff);
+  stroke: var(--accent);
   stroke-width: 2;
   stroke-dasharray: 6 4;
 }
 
 .section-link-preview__origin {
-  fill: var(--accent, #0a84ff);
+  fill: var(--accent);
 }
 
 .section-link-arrow {
@@ -2334,7 +2349,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--danger, #d33);
+  color: var(--danger);
 }
 
 @media (max-width: 720px) {
@@ -2528,9 +2543,9 @@ body {
 
 /* The armed end of a thread reads as "the next click goes here". */
 .section-connector[data-armed="true"] .section-connector__dot {
-  border-color: var(--accent, #0a84ff);
-  background: var(--accent, #0a84ff);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #0a84ff) 35%, transparent);
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* A sketch's focus body hosts the drawing surface and its editing badge (A15). */

@@ -12,6 +12,9 @@ import {
 describe("surface paint", () => {
   it("names tokens, never values", () => {
     expect(colourRoleVar("accent")).toBe("var(--accent)");
+    // A role is a meaning: the canvas role reads the canvas background token.
+    expect(colourRoleVar("canvas")).toBe("var(--canvas-bg)");
+    expect(colourRoleVar("surface-strong")).toBe("var(--surface-strong)");
     const paint = surfacePaintVars(resolveSurfaceStyle({ surface: "accent" }, "card"));
     expect(paint["paint-surface"]).toBe("var(--accent)");
     expect(paint["paint-ink"]).toBe("var(--ink)");

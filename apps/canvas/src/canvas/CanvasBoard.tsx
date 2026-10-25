@@ -1,9 +1,11 @@
 import type { Card, EdgeEndpointKind, GraphEdge, LayerAction, Placement, Rect } from "@suite/graph";
 import {
   edgeEndpoints,
+  rectContainsRect,
   sectionColors,
   sectionMembership,
   sectionMovePlan,
+  sectionsAt,
   unionRect,
 } from "@suite/graph";
 import {
@@ -567,7 +569,7 @@ export function CanvasBoard() {
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
   const focusTarget = useUiStore((state) => state.focusTarget);
   const clearFocusTarget = useUiStore((state) => state.clearFocusTarget);
-  const { screenToFlowPosition, setViewport, getViewport, fitView } = useReactFlow();
+  const { screenToFlowPosition, setViewport, getViewport, fitView, updateNode } = useReactFlow();
 
   // While a thread is armed the pointer is the other end of a line that is not
   // drawn yet, so follow it in flow coordinates.
@@ -885,6 +887,13 @@ export function CanvasBoard() {
    */
   const marqueeActive = useRef(false);
   /**
+   * The section a selection box was started inside. While the box stays within
+   * that section's frame only its cards can be boxed: a marquee begun inside a
+   * section is about rearranging that section, not the board around it. The
+   * scope lifts the moment the box leaves the frame.
+   */
+  const marqueeScope = useRef<{ sectionId: string; applied: boolean } | null>(null);
+  /**
    * The rendered (eased) positions of this client's drag. React Flow paints the
    * pointer sample; this eases it, so the board does not step on a dropped
    * frame. `null` outside a drag and when reduced motion is requested.
@@ -1090,6 +1099,50 @@ export function CanvasBoard() {
   }, [applyBoardNodes]);
 
   /**
+   * Where the current press landed, in flow coordinates. A box is scoped to the
+   * section that press was inside; `onSelectionStart` carries no position.
+   */
+  const marqueePress = useRef<{ x: number; y: number } | null>(null);
+
+  const boardRoot = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * While the selection key is held, a section stops swallowing the press: a
+   * box can only start on the pane, and React Flow cannot see a press that lands
+   * on the section layer at all (it is rendered through a portal, so the pane is
+   * not its React ancestor). The flag is a DOM attribute rather than state — a
+   * re-render of this board between keydown and click repaints the selection
+   * from the store's last echo, which swallows a modifier click.
+   */
+  useEffect(() => {
+    const root = boardRoot;
+    const sync = (event: KeyboardEvent) => {
+      if (event.shiftKey) root.current?.setAttribute("data-selection-key", "true");
+      else root.current?.removeAttribute("data-selection-key");
+    };
+    const release = () => root.current?.removeAttribute("data-selection-key");
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", release);
+    };
+  }, []);
+
+  /**
+   * Gives every card back its `selectable` flag. React Flow only boxes nodes
+   * that are selectable, so this is the only thing standing between the scope
+   * and a permanently unselectable card.
+   */
+  const releaseMarqueeScope = useCallback(() => {
+    if (!marqueeScope.current) return;
+    marqueeScope.current = null;
+    for (const id of boardCardIds.current) updateNode(id, { selectable: true });
+  }, [updateNode]);
+
+  /**
    * Releases the marquee guard on every termination path, not just the happy
    * one. React Flow reports `onSelectionEnd` when the box closes on its own; a
    * pointer released outside the pane or an Escape mid-gesture leaves the guard
@@ -1111,6 +1164,7 @@ export function CanvasBoard() {
         ? { userSelectionRect: null, userSelectionActive: false }
         : state,
     );
+    releaseMarqueeScope();
     if (!marqueeActive.current) return;
     marqueeActive.current = false;
     const ids = [...liveSelectedIds()];
@@ -1119,7 +1173,7 @@ export function CanvasBoard() {
     paintedSelection.current = ids.join(",");
     setSelectedNodeIds(ids);
     applyBoardNodes(ids);
-  }, [applyBoardNodes, liveSelectedIds, setSelectedNodeIds, store]);
+  }, [applyBoardNodes, liveSelectedIds, releaseMarqueeScope, setSelectedNodeIds, store]);
 
   // The listener effect must not re-subscribe when `endMarquee` changes: its
   // cleanup used to drop `marqueeActive`, so the first rebuild during a gesture
@@ -1453,6 +1507,48 @@ export function CanvasBoard() {
       height: Math.abs(end.y - start.y),
     });
   }, [selectionRect, screenToFlowPosition, setSelectionBox]);
+
+  // The scope a box began under: every card outside the section loses its
+  // `selectable` flag, which is what makes React Flow's own box skip it. The
+  // flag is restored the frame the box grows past the section's frame, so a
+  // sweep that leaves the section keeps selecting the rest of the board.
+  useEffect(() => {
+    const scope = marqueeScope.current;
+    if (!scope) return;
+    if (!selectionRect || selectionRect.width === 0 || selectionRect.height === 0) return;
+    const section = boardSections.find((entry) => entry.id === scope.sectionId);
+    if (!section) {
+      releaseMarqueeScope();
+      return;
+    }
+    const start = screenToFlowPosition({ x: selectionRect.x, y: selectionRect.y });
+    const end = screenToFlowPosition({
+      x: selectionRect.x + selectionRect.width,
+      y: selectionRect.y + selectionRect.height,
+    });
+    const box = {
+      x: Math.min(start.x, end.x),
+      y: Math.min(start.y, end.y),
+      width: Math.abs(end.x - start.x),
+      height: Math.abs(end.y - start.y),
+    };
+    if (!rectContainsRect(section, box)) {
+      releaseMarqueeScope();
+      return;
+    }
+    if (scope.applied) return;
+    scope.applied = true;
+    for (const id of boardCardIds.current) {
+      updateNode(id, { selectable: sectionMembershipMap.get(id) === scope.sectionId });
+    }
+  }, [
+    selectionRect,
+    boardSections,
+    sectionMembershipMap,
+    releaseMarqueeScope,
+    screenToFlowPosition,
+    updateNode,
+  ]);
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -2943,7 +3039,11 @@ export function CanvasBoard() {
   return (
     <div
       data-testid="canvas-board"
+      ref={boardRoot}
       className={`h-full w-full ${selectedConnector ? "connector-active" : ""}`}
+      onPointerDown={(event) => {
+        marqueePress.current = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      }}
       onPointerMove={(event) => {
         const now = performance.now();
         if (now - lastPointerSent.current < POINTER_THROTTLE_MS) return;
@@ -2978,6 +3078,9 @@ export function CanvasBoard() {
         selectionMode={SelectionMode.Partial}
         onSelectionStart={() => {
           marqueeActive.current = true;
+          const press = marqueePress.current;
+          const inside = press ? sectionsAt(press, boardSections)[0] : undefined;
+          marqueeScope.current = inside ? { sectionId: inside.id, applied: false } : null;
         }}
         onSelectionEnd={() => {
           // React Flow's final selection is authoritative; `endMarquee` releases

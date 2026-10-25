@@ -134,7 +134,7 @@ async function pathMidpoint(page: Page, selector: string): Promise<{ x: number; 
 
 test("a card outside a section stays clickable, draggable and deselectable", async ({ page }) => {
   test.setTimeout(90_000);
-  const { note, link } = await noteLinkedToSection(page);
+  const { note } = await noteLinkedToSection(page);
 
   // Selecting the card still works, and reveals its own dots.
   await note.click();

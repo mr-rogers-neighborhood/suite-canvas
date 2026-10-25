@@ -1236,6 +1236,14 @@ body {
   backdrop-filter: blur(8px);
 }
 
+/* A held selection key means the next drag is a selection box, so a section may
+   not take that press: the box starts on the pane and the scope comes from the
+   point it started at. */
+[data-selection-key="true"] .section-region,
+[data-selection-key="true"] .section-header {
+  pointer-events: none;
+}
+
 .section-header:active {
   cursor: grabbing;
 }
@@ -2012,6 +2020,13 @@ body {
   overflow: hidden;
   border-radius: 8px;
   background: var(--canvas-bg);
+}
+
+.portal-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .portal-card__missing {

@@ -285,6 +285,9 @@ export async function marqueeOver(page: Page, boxes: Box[], steps = 16): Promise
  */
 export async function beginMarquee(page: Page, from: Point, to: Point, steps = 10): Promise<void> {
   await page.keyboard.down("Shift");
+  // React Flow reads the selection key from its last render, so a press in the
+  // same tick as the keypress is not a selection press yet.
+  await page.waitForFunction(() => document.querySelector(".react-flow__pane.selection") !== null);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps });

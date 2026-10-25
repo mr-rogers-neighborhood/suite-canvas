@@ -1,15 +1,7 @@
 # ADR-0017: Spatial sections
 
-- **Status:** accepted; the rendering amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
+- **Status:** accepted
 - **Date:** 2026-10-21
-
-> **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** The
-> geometry model stands unchanged: a section is a stored rectangle, membership is derived from the
-> header anchor, and nesting is derived by containment. Rendering point 8 describes one surface, not
-> the contract: sections project as `SectionInstance`s in the derived scene, so the same background
-> band and header layer paint on any `SceneSurface` and inside every board instance — including a
-> live portal. Membership is recomputed per board, so the same card can be in different sections in
-> different instances.
 
 ## Context
 

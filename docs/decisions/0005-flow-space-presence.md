@@ -1,14 +1,7 @@
 # ADR-0005: Flow-space presence and live drag tracking
 
-- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); the instance-scoping amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
-
-> **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** Presence
-> stays in **scene coordinates**, not screen pixels: the derived scene maps a peer's board position
-> into every visible instance of that board, through that instance's transform. A peer dragging a
-> card is therefore drawn in all instances of the card, and a peer's caret belongs to the instance
-> whose editor owns the Loro container. The ephemeral transport and the drag/live-position rule are
-> unchanged.
 
 ## Context
 

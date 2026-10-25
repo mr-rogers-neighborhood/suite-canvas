@@ -2,24 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-23
-- **Related:** [ADR-0010](./0010-workspace-boards-and-cards.md), [ADR-0016](./0016-semantic-core.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) (supersedes the UI contract), [ADR-0036](./0036-the-canvas-is-react-flow.md) (withdraws that scene contract), `docs/roadmap/alpha.md` §7.4, `packages/graph/src/loro/WorkspaceDocument.ts`
-
-> **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** The
-> data model below stands unchanged. The **UI contract is superseded**: a portal is no longer a
-> static miniature entered by a camera transition that swaps `activeBoardId` under an overlay, and
-> nesting is no longer one level. A portal is a live, scaled instance of its target board inside a
-> derived scene, with lazy expansion, cycle/depth guards, a camera-only focus path and checkpoint
-> back navigation. The `portal` type, `board` field kind, `createPortalCard`,
-> reference-not-ownership and "cycles are a navigation problem" all remain in force. `PortalNode`
-> and `PortalTransitionLayer` are the superseded precedent; the miniature survives as the far-LOD
-> impostor.
-
-> **Amendment (2026-10-25, [ADR-0036](./0036-the-canvas-is-react-flow.md)).** The live-scene UI
-> contract above is withdrawn with the scene surface. A portal is again the doorway it was: a card
-> with a `board` field, a live miniature, and a camera transition that swaps `activeBoardId` under
-> an overlay. `PortalNode` and `PortalTransitionLayer` are the shipped implementation, not a
-> precedent. Nothing in the data model changes — the `portal` type, `board` field kind,
-> `createPortalCard`, reference-not-ownership and cycle legality all still stand.
+- **Related:** [ADR-0010](./0010-workspace-boards-and-cards.md), [ADR-0016](./0016-semantic-core.md), [ADR-0019](./0019-references-not-typed-links.md), `docs/roadmap/alpha.md` §7.4, `packages/graph/src/loro/WorkspaceDocument.ts`
 
 ## Context
 
@@ -79,8 +62,8 @@ represented?
 8. **Cycles are a navigation problem, not a data-model problem.** A → B → A is a legal pair of
    portal cards; the document stores both, and nothing enforces acyclicity. Entering and leaving
    boards is governed by the client's focus path and camera checkpoints (Escape, breadcrumb, reverse
-   zoom), which return to the exact previous board and viewport; the scene stops expanding at the
-   repeated board path ([ADR-0030](./0030-scene-projection-lod-and-real-portals.md)). A graph
+   zoom), which return to the exact previous board and viewport, and stop at a repeated board path.
+   A graph
    constraint would need a reachability query on
    every property write and would still have to answer what happens when two clients create a cycle
    concurrently.
@@ -121,12 +104,11 @@ represented?
 - **Publish treats a portal as an ordinary card with an inert value.** Portal-aware publish/export
   is a named non-goal of the first slice; when it lands, `boardExists` in
   `PropertyValidationContext` is the seam for redaction and stub handling.
-- **The UI contract is ADR-0030's now.** This ADR fixes the data model: `PORTAL_TYPE_ID`,
+- **This ADR fixes the data model, not the UI contract.** `PORTAL_TYPE_ID`,
   `PORTAL_BOARD_FIELD_ID`, `createPortalCard`, `boardName`/`boardPresence` in
-  `FormatPropertyOptions`, and the two protection errors. The camera transition, one-level nesting
-  and the `PortalNode`/`PortalTransitionLayer` acceptance are superseded by
-  [ADR-0030](./0030-scene-projection-lod-and-real-portals.md); the plan/board values, reference
-  semantics and cycle legality are unchanged.
+  `FormatPropertyOptions`, and the two protection errors. The canvas decides how a portal paints —
+  today a card with a `board` field, a live miniature and a camera transition that swaps
+  `activeBoardId`. The plan/board values, reference semantics and cycle legality are unchanged.
 - **Tested by construction.** `packages/graph/src/property.test.ts` covers board validation,
   formatting and the empty state; `packages/graph/src/loro/portal.test.ts` covers the seed and its
   idempotence under a rename, one-commit creation, placement, a deleted target, the refused

@@ -1160,7 +1160,7 @@ title bar, the board tabs, and the two menus that change what they see.
 | **One theme control** | Replace the three-segment control with one icon button and a menu (Light, Dark, Auto). The icon morphs sun↔moon on change, and the morph is skipped under `prefers-reduced-motion`. |
 | **Views beside the name** | Views sits between the workspace name and the board tabs as a text menu with a divider, so it reads as a scope switch rather than a button crowded against the first tab. |
 | **One control height** | Share, File, Live, Views and the theme control share a single 24 px row height and baseline. Report any surface that cannot meet it. |
-| **No orphan navigation** | Board tabs are root-board navigation, so a tab click leaves every board one click away. The way back out of a portal is its back control and the board tabs ([ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the scene outline), not a one-way chevron; the second single-direction chevron next to Views stays removed. See §4.13. |
+| **No orphan navigation** | Board tabs are root-board navigation, so a tab click leaves every board one click away. The way back out of a portal is its back control and the board tabs (the scene outline was withdrawn with its surface), not a one-way chevron; the second single-direction chevron next to Views stays removed. See §4.13. |
 | **Menus follow the keyboard** | Arrow navigation scrolls the active row into view in `/`, `@`, and every menu with a scrollport. A selection never disappears past the end of the list. |
 
 **Why it belongs in Beta.** These are the surfaces a stranger touches before they understand the
@@ -1207,10 +1207,8 @@ Alpha tab behaviour is not mistaken for a commitment.
 
 Raised after the portal back control turned up beside Views: the bar has no single place for "where
 can I go" and "do a thing", and what it had was a chevron that only moved one direction. The scene
-layer ([ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md)) was going to retire
-that chevron; [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the scene layer, so
-the flow surface keeps the camera transition and the back control, and the question stands as
-written. Board tabs remain root-board navigation, so the shell still needs one navigation home.
+layer was going to retire that chevron; it is withdrawn, so the flow surface keeps the camera
+transition and the back control, and the question stands as written. Board tabs remain root-board navigation, so the shell still needs one navigation home.
 
 **The idea.** One **navigation control** in the app bar, replacing ad-hoc navigation buttons:
 

@@ -332,8 +332,7 @@ Loro graph remains the truth, and an aborted expansion leaves the portal usable 
 ## Rendering
 
 **The editing canvas is React Flow** (`apps/canvas/src/canvas/CanvasBoard.tsx`), and it is the only
-canvas the product ships ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md), which supersedes
-[ADR-0030](./decisions/0030-scene-projection-lod-and-real-portals.md)). Boards are React Flow node
+canvas the product ships. Boards are React Flow node
 lists derived from the graph on every change:
 
 ```text

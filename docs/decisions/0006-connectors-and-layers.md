@@ -1,13 +1,7 @@
 # ADR-0006: Node-owned connectors, magnetic placement, and layer order
 
-- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md); the rendering amendment from [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
+- **Status:** accepted; CRDT/presence mechanics amended by [ADR-0015](./0015-loro-as-crdt-engine.md)
 - **Date:** 2026-10-20
-
-> **Amendment (2026-10-23, [ADR-0030](./0030-scene-projection-lod-and-real-portals.md)).** Connector
-> and layer **data** are unchanged: connectors live on the card, `z` is per board, and a move writes
-> one rank. Rendering is engine-neutral: a connector, edge or layer order paints from its scene
-> instance, so a card stack looks the same on any `SceneSurface` and inside a live portal. "Selected
-> elevation" is a surface concern, never document state.
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-25
-- **Related:** [ADR-0003](./0003-typed-object-graph.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0036](./0036-the-canvas-is-react-flow.md), [`packages/graph/src/views.ts`](../../packages/graph/src/views.ts), [`apps/canvas/src/canvas/useCanvasLens.ts`](../../apps/canvas/src/canvas/useCanvasLens.ts)
+- **Related:** [ADR-0003](./0003-typed-object-graph.md), [ADR-0019](./0019-references-not-typed-links.md), [`packages/graph/src/views.ts`](../../packages/graph/src/views.ts), [`apps/canvas/src/canvas/useCanvasLens.ts`](../../apps/canvas/src/canvas/useCanvasLens.ts)
 
 ## Context
 

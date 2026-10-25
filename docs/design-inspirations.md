@@ -355,12 +355,12 @@ rather than surrounding it with chrome.
   reading order with member counts and peer presence dots. Clicking a row selects the section and
   moves the viewport. It is the board's table of contents — Heptabase's precedent — not a filter.
   A **scene outline** over portal instances and LOD bands was built behind `?canvas=scene` and
-  withdrawn with that surface ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md)).
+  withdrawn with that surface.
 - **Sub-boards / portals** *(current, as a doorway)*: a card with a `board` field shows the target
   board as a live miniature, and opening it moves the camera through a transition that swaps the
   active board ([ADR-0029](./decisions/0029-portal-board-field.md)). It references the board, never
   owns it. The *live, scaled instance inside one continuous scene* was the scene surface's job and
-  is withdrawn ([ADR-0036](./decisions/0036-the-canvas-is-react-flow.md)).
+  is withdrawn with it.
 - **Inspector / card info** *(current)*: a floating right panel built on the shared card panel:
   title, type, tags, field values, a **Where** block (`Board › Section › Subsection`, plus the other
   boards it is placed on) and the body editor. A click opens it; clicking the body or title edits it

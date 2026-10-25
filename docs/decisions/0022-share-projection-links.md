@@ -1,14 +1,14 @@
 # ADR-0022: Share links are capabilities over live projection rooms
 
-- **Status:** accepted; portal and drawing projection scopes added in [ADR-0030](./0030-scene-projection-lod-and-real-portals.md) and [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md); the live portal expansion is withdrawn by [ADR-0036](./0036-the-canvas-is-react-flow.md)
+- **Status:** accepted; portal and drawing projection scopes added in [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md)
 - **Date:** 2026-10-23
-- **Related:** [ADR-0021](./0021-sharing-seam-deferred.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), `docs/architecture.md`
+- **Related:** [ADR-0021](./0021-sharing-seam-deferred.md), [ADR-0031](./0031-whiteboard-cards-and-loro-binding.md), `docs/architecture.md`
 
 > **Amendment (2026-10-23).** Two projection rules are explicit. A board projection must copy the
 > `drawings` entries of whiteboards in scope, under the same redaction rules as body text. A portal
-> target renders as a live board only when that target board is inside the projection; otherwise the
+> target renders as its board only when that target board is inside the projection; otherwise the
 > card reads as *Unavailable board*. The projection records whether a target is included, redaction
-> runs before the scene is built, and no share expands or fetches a board outside its scope. This
+> runs before the projection is built, and no share expands or fetches a board outside its scope. This
 > extends the existing "self-contained projection" rule; it does not add a new token or room kind.
 
 ## Context

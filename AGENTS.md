@@ -9,8 +9,7 @@ Claude Code, …). Read it first; keep it high-signal.
 - **Monorepo:** pnpm workspaces + Turborepo (task caching)
 - **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
   Zustand (UI state), React Flow (`@xyflow/react`) as **the only canvas surface**, Tiptap 3 (every
-  node is an editor). There is no second surface and no engine adapter
-  ([ADR-0036](docs/decisions/0036-the-canvas-is-react-flow.md)).
+  node is an editor). There is no second surface and no engine adapter.
 - **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +

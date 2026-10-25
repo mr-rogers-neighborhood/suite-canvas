@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-23
-- **Related:** [ADR-0006](./0006-connectors-and-layers.md), [ADR-0015](./0015-loro-as-crdt-engine.md), [ADR-0022](./0022-share-projection-links.md), [ADR-0030](./0030-scene-projection-lod-and-real-portals.md), [`docs/architecture.md`](../architecture.md) §Document model
+- **Related:** [ADR-0006](./0006-connectors-and-layers.md), [ADR-0015](./0015-loro-as-crdt-engine.md), [ADR-0022](./0022-share-projection-links.md), [`docs/architecture.md`](../architecture.md) §Document model
 
 ## Context
 
@@ -19,8 +19,8 @@ using it raises three questions the document model has to answer before any UI e
    like every other card, must count as content in a projection, and must not smuggle a second live
    canvas into the scene.
 
-A fourth question — should a whiteboard embed a live portal — is answered by ADR-0030: recursion
-belongs to the board scene, not to an embedded editor.
+A fourth question — should a whiteboard embed a live portal — is answered by the canvas model:
+recursion belongs to board navigation, not to an embedded editor.
 
 ## Decision
 
@@ -72,8 +72,8 @@ belongs to the board scene, not to an embedded editor.
     not deep-search the whole scene.
 
 11. **No live portals inside a drawing.** A drawing may contain a link or shape reference to a card
-    or board, but it does not embed a live board scene. Recursive live boards belong to the board
-    scene (ADR-0030); an embedded editor is not a second surface for portals.
+    or board, but it does not embed a live board. Recursive boards belong to board navigation; an
+    embedded editor is not a second surface for portals.
 
 ## Rejected alternatives
 

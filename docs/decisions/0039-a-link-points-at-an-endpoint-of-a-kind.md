@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-25
-- **Related:** [ADR-0003](./0003-typed-object-graph.md), [ADR-0017](./0017-spatial-sections.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0029](./0029-portal-board-field.md), [ADR-0036](./0036-the-canvas-is-react-flow.md), [`packages/graph/src/links.ts`](../../packages/graph/src/links.ts), [`apps/canvas/src/canvas/linkGeometry.ts`](../../apps/canvas/src/canvas/linkGeometry.ts)
+- **Related:** [ADR-0003](./0003-typed-object-graph.md), [ADR-0017](./0017-spatial-sections.md), [ADR-0019](./0019-references-not-typed-links.md), [ADR-0029](./0029-portal-board-field.md), [`packages/graph/src/links.ts`](../../packages/graph/src/links.ts), [`apps/canvas/src/canvas/linkGeometry.ts`](../../apps/canvas/src/canvas/linkGeometry.ts)
 
 ## Context
 

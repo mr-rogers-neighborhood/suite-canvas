@@ -676,12 +676,11 @@ outsider could inspect. A gate without an artifact is not closed. The Beta and V
 
 A11 (Portals) is pinned as an alpha gate for the next planning phase. It is not claimed open; its
 scope, data model, and acceptance are sketched in §7.4. It is split into **A11a** (real portals in
-a derived scene) and **A11b** (fractal layout presets) after
-[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md) superseded the camera
-transition as the target.
+a derived scene) and **A11b** (fractal layout presets); that split is now history, with A11a
+deferred and A11b carrying on.
 
-> **Amendment (2026-10-25).** ADR-0036 supersedes ADR-0030: A11a is `deferred` with the scene
-> surface, and A11b continues as the fractal layout command on the React Flow board.
+> **Amendment (2026-10-25).** A11a is `deferred` with the removed scene surface, and A11b continues
+> as the fractal layout command on the React Flow board.
 
 | Gate | Statement | Required evidence | Depends on |
 | --- | --- | --- | --- |
@@ -695,8 +694,8 @@ transition as the target.
 | **A8** | The docs tell the truth | §9 ledger emptied; `pnpm docs:check` (links + code fences) in CI; `AGENTS.md` names real types | — |
 | **A9** | The limits are published | A single limits page: workspace bytes, card count, attachment bytes/workspace, shares/workspace, selection cards, open rooms, peers/room, restore targets. Values sourced from `limits.ts` and `compose.yaml`, not prose | A1 |
 | **A10** | Both reported UX bugs are closed | Marquee e2e checklist (1, 2, many, across sections, with a peer); local-vs-remote smoothing acceptance at 60/120 Hz; one CRDT commit per gesture | A6 |
-| **A11a** | Real portals in a derived scene (ADR-0030) | Portal data model retained (ADR-0029); a portal renders a live, scaled target board at readable zoom and its miniature only as the far-LOD impostor; entering moves the camera and the root board stays active; nested portals expand lazily with cycle/depth guards; scene outline and camera checkpoints replace the overlay transition; a share expands only in-scope targets; e2e covers zoom-through without a board switch, depth ≥ 2, a cycle, back to the exact camera, and one CRDT commit per gesture | A10 |
-| **A11b** | Fractal layout presets (ADR-0030) | One-shot recursive layout commands with per-depth overrides, a preview, one undoable batch and deterministic output; no live reflow; unit/e2e coverage of recipes, cycles and pinned cards | A11a |
+| **A11a** | Real portals in a derived scene | Portal data model retained (ADR-0029); a portal renders a live, scaled target board at readable zoom and its miniature only as the far-LOD impostor; entering moves the camera and the root board stays active; nested portals expand lazily with cycle/depth guards; scene outline and camera checkpoints replace the overlay transition; a share expands only in-scope targets; e2e covers zoom-through without a board switch, depth ≥ 2, a cycle, back to the exact camera, and one CRDT commit per gesture | A10 |
+| **A11b** | Fractal layout presets | One-shot recursive layout commands with per-depth overrides, a preview, one undoable batch and deterministic output; no live reflow; unit/e2e coverage of recipes, cycles and pinned cards | A11a |
 
 ### 7.1 Gate notes
 
@@ -795,13 +794,13 @@ owner is the maintainer/operator; no separate review board is implied.
 | A8 | `open` | `scripts/docs-check.mjs`; corrected `README.md`, `AGENTS.md`, `docs/testing.md`, `docs/billing.md`, `docs/deploy-aws.md` |
 | A9 | `open` | `scripts/generate-limits.mjs`; generated `docs/limits.md`; `--check` in CI |
 | A10 | `open` | Marquee selection ownership fixed; both former `fixme` cases are real specs (peer drag during the box, cancel mid-gesture); local drag easing is render-only and one commit per drop. Evidence: `apps/canvas/src/canvas/CanvasBoard.tsx`; `apps/canvas/src/canvas/localEasing.ts` + tests; `e2e/tests/marquee.spec.ts` |
-| A11a | `deferred` | The live, scaled portal instance was the scene surface's job. [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes that surface: a portal is a doorway again (card + `board` field + miniature + camera transition), and the data model (ADR-0029) is unchanged. Nothing to close here. |
+| A11a | `deferred` | The live, scaled portal instance was the scene surface's job, and that surface is removed: a portal is a doorway again (card + `board` field + miniature + camera transition), and the data model (ADR-0029) is unchanged. Nothing to close here. |
 | A11b | `open` | Fractal layout is still a one-shot command and keeps its caller: all eight recipes, per-depth recipe, pinned/selected cards and cycle/depth caps in `packages/scene/src/layout.ts`; the planner lives in `apps/canvas/src/canvas/layoutCommand.ts` and the pure recipes stay in `packages/scene`; `applyLayoutPlan` in `packages/graph/src/layoutPlan.ts` still commits one undoable batch; **Arrange fractally** stays in `CanvasBoard.tsx`. A preview surface is the one thing never built. |
 
 ### 7.4 A11 — Portals and card focus (pinned)
 
-**Amendment (2026-10-25).** [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) withdraws the
-live-scene rendering target, so **A11a is withdrawn** and the scene surface is removed. The
+**Amendment (2026-10-25).** The live-scene rendering target is withdrawn, so **A11a is withdrawn**
+and the scene surface is removed. The
 data-model decisions below stand and ship; the "Scene rendering (A11a target)" paragraphs are kept
 as the record of a direction that was not taken.
 
@@ -810,11 +809,9 @@ object is a doorway, not a container. Alternatives if it ever needs renaming: *V
 *Looking Glass*.
 
 **Amendment (2026-10-23).** The data model below was accepted in ADR-0029 and stands. The rendering
-and acceptance were superseded by
-[ADR-0030](../decisions/0030-scene-projection-lod-and-real-portals.md): the static miniature plus
-camera transition that swaps `activeBoardId`, and the one-level nesting limit, are no longer the
-target. A11 is now **A11a** (real portals in a derived scene) and **A11b** (fractal layout
-presets).
+and acceptance were, for a time, superseded: the static miniature plus camera transition that swaps
+`activeBoardId`, and the one-level nesting limit, were no longer the target. That direction is now
+withdrawn; A11 is **A11a** (deferred) and **A11b** (fractal layout presets).
 
 **Definition.** A portal is a card on a board that represents another board. In the target it is a
 **live, scaled instance** of its target inside one continuous scene: the root board stays active,
@@ -881,8 +878,8 @@ of the same plane.
   retired.
 - Tab grouping and cross-board edges are follow-ons, not part of A11a.
 
-**Status (2026-10-25):** A11a `deferred` — the live portal was the scene surface's job, and
-[ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes that surface. A11b `open` — the
+**Status (2026-10-25):** A11a `deferred` — the live portal was the scene surface's job, and that
+surface is removed. A11b `open` — the
 fractal layout planner, the graph `LayoutPlan` batch and the **Arrange fractally** menu ship; only a
 preview surface was never built. The acceptance list below stays as the record of what A11a would
 have required.
@@ -897,8 +894,7 @@ have required.
 - Back/Escape restores the exact camera checkpoint; board tabs still switch the root board.
 - The scene outline lists root and portal instances, follows the focus path, and supports keyboard
   navigation.
-- LOD bands and hysteresis match ADR-0030; DOM editors exist only at `full`; one CRDT commit per
-  gesture.
+- DOM editors exist only at `full`; one CRDT commit per gesture.
 - A portal target outside a share's scope reads as *Unavailable board*; drawing content is present
   when in scope.
 - A peer on the target board appears on the portal card, the tab and every live instance.
@@ -1029,7 +1025,7 @@ the drift that audit missed (D12–D17).
 | D13 | "142 test files; ~1,392 unit declarations; ~160 Playwright declarations; 61 billing tests; 24 stories" | 138 Vitest files / 1,727 tests; 32 Playwright specs; 75 billing tests; 27 stories | `docs/roadmap/alpha.md` §3, `docs/testing.md`, `README.md` | ✅ (fixed 2026-10-25) |
 | D14 | "`compose.yaml` configures five … attachments defaults to CWD; settings and licences default to `:memory:`" | All six stores are under `/data` with `SUITE_REQUIRE_DURABLE_STORES=1`, and boot refuses a split layout | `docs/roadmap/alpha.md` §4.4, §7.1 A1 | ✅ (fixed 2026-10-25) |
 | D15 | "23 ADRs"; "840-line architecture doc"; "884-line operations runbook"; "`WorkspaceDocument`, 2,850 lines" | 30 ADRs; 990 lines; 952 lines; 3,558 lines | `docs/roadmap/alpha.md` §1.1, §3 row 12 | ✅ (fixed 2026-10-25) |
-| D16 | ADR-0030 is "the product of record"; `?canvas=ice` names a surface | The scene is a read-only preview with no editing path, and [ADR-0036](../decisions/0036-the-canvas-is-react-flow.md) removes it; `?canvas=ice` is gone from the parser, and the scene surface and its modules are deleted (2026-10-25) | `docs/architecture.md` §Rendering, `AGENTS.md`, ADR-0030 | ✅ (fixed 2026-10-25) |
+| D16 | A derived "scene" was described as the product of record; `?canvas=ice` named a surface | The scene was a read-only preview with no editing path and it is removed; `?canvas=ice` is gone from the parser, and the scene surface and its modules are deleted (2026-10-25) | `docs/architecture.md` §Rendering, `AGENTS.md` | ✅ (fixed 2026-10-25) |
 | D17 | "64 `node --test` tests" in billing | 75 | `README.md:70` | ✅ (fixed 2026-10-25) |
 
 ### 9.1 Closure status
@@ -1044,7 +1040,7 @@ the drift that audit missed (D12–D17).
 | D8 | fixed | the stale `preview-light.png` was removed; README uses `preview-dark.png` |
 | D9 | fixed | backup and restore both cover settings |
 | D10 | history | ADR-0020 remains a dated decision; no rewrite |
-| D12–D17 | fixed 2026-10-25 | Identity, counts, store layout, doc sizes, the surface claim and the billing count were corrected against the tree; ADR-0036 records the surface decision |
+| D12–D17 | fixed 2026-10-25 | Identity, counts, store layout, doc sizes, the surface claim and the billing count were corrected against the tree; the surface decision lives in `docs/architecture.md` §Rendering |
 
 **Mechanical guard (A8).** `node scripts/docs-check.mjs` checks relative links and anchors, fenced
 blocks, retired terms, and version consistency. The CI `quality` job runs it. The limits page has
@@ -1285,7 +1281,7 @@ What was verified in this pass, and what was not.
 | `navigator.storage.persist()` + `StoragePanel` + `CanvasErrorBoundary` + `crash/*`; no service worker | Storybook story count and a11y gating beyond the 29 files listed |
 | `pnpm test`: 138 files / 1,727 tests; billing `node --test`: 75 declarations | |
 | `stryker.server.config.mjs` mutation scope | |
-| ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted; ADR-0030 superseded by ADR-0036 | |
+| ADR-0021 superseded for S1; 0022/0023 accepted; ADR-0019 accepted; the scene surface is removed | |
 | `purity.test.ts`, `mode.test.ts`, `patchGuard.test.ts`, `mutationGaps.test.ts`, `workspace.convergence.test.ts` all exist | |
 
 The 2026-10-23 rows that were overtaken — attachments in the working directory, five configured

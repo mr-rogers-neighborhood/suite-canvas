@@ -135,6 +135,13 @@ interface StoryCase {
   name: string;
   story: string;
   target: (page: Page) => Locator;
+  /**
+   * Regions whose text is a *relative* label. "Last used 2 hours ago" is computed from
+   * the wall clock when the story renders, so it moves at a minute boundary and takes the
+   * snapshot with it; masking it is what makes the case about the layout rather than about
+   * when it ran.
+   */
+  mask?: (page: Page) => Locator[];
 }
 
 test.describe("visual: stories", () => {
@@ -164,6 +171,7 @@ test.describe("visual: stories", () => {
       name: "share-dialog-selection.png",
       story: "components-sharedialog--selection",
       target: (page) => page.getByTestId("share-dialog"),
+      mask: (page) => [page.locator('[data-testid^="share-last-used-"]')],
     },
     {
       name: "library-drawer-search-query.png",
@@ -191,7 +199,8 @@ test.describe("visual: stories", () => {
     test(entry.name, async ({ page }) => {
       const target = entry.target(page);
       await openStory(page, entry.story, target);
-      await expectStable(entry.name, target);
+      const mask = entry.mask?.(page);
+      await expectStable(entry.name, target, mask ? { mask } : {});
     });
   }
 });

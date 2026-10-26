@@ -202,6 +202,11 @@ export function SectionLayer({
   const armedEnd = useLinkThreadStore((state) => state.armed);
   const mode = useUiStore((state) => state.mode);
 
+  // A fold is reader state: the section's stored rect is untouched, so unfolding
+  // puts every member back where it was.
+  const collapsedSections = useUiStore((state) => state.collapsedSections);
+  const toggleSectionCollapsed = useUiStore((state) => state.toggleSectionCollapsed);
+
   const members = useMemo(() => {
     const counts = new Map<string, number>();
     for (const sectionId of membership.values()) {
@@ -257,6 +262,15 @@ export function SectionLayer({
       width: section.width,
       height: section.height,
     };
+  };
+
+  /** The rect a folded section is painted with: its own width, header height. */
+  const FOLDED_SECTION_HEIGHT = 34;
+
+  const paintRect = (section: Section): Rect => {
+    const rect = rectFor(section);
+    if (collapsedSections[section.id] !== true) return rect;
+    return { ...rect, height: Math.min(rect.height, FOLDED_SECTION_HEIGHT) };
   };
 
   const startWindowGesture = (
@@ -467,7 +481,7 @@ export function SectionLayer({
       <ViewportPortal>
         <div className="section-background-layer" data-testid="section-background-layer">
           {sections.map((section) => {
-            const rect = rectFor(section);
+            const rect = paintRect(section);
             const color = section.color ?? "slate";
             const selected = selectedSectionId === section.id;
             const peerColor = peerSelection.get(section.id);
@@ -635,7 +649,7 @@ export function SectionLayer({
       <ViewportPortal>
         <div className="section-header-layer" data-testid="section-header-layer">
           {sections.map((section) => {
-            const rect = rectFor(section);
+            const rect = paintRect(section);
             const color = section.color ?? "slate";
             const selected = selectedSectionId === section.id;
             const peer = peerGesture.get(section.id);
@@ -707,6 +721,29 @@ export function SectionLayer({
                     {section.title || "Untitled section"}
                   </button>
                 )}
+                <button
+                  type="button"
+                  data-testid={`section-fold-${section.id}`}
+                  aria-label={
+                    collapsedSections[section.id] === true
+                      ? `Expand section ${section.title || "Untitled section"}`
+                      : `Collapse section ${section.title || "Untitled section"}`
+                  }
+                  aria-expanded={collapsedSections[section.id] !== true}
+                  title={
+                    collapsedSections[section.id] === true ? "Expand section" : "Collapse section"
+                  }
+                  className="section-fold nodrag"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleSectionCollapsed(section.id);
+                  }}
+                >
+                  <span aria-hidden="true">
+                    {collapsedSections[section.id] === true ? "\u25b8" : "\u25be"}
+                  </span>
+                </button>
                 <span className="section-count">{count}</span>
                 {peer ? <PeerNameTag user={peer.user} /> : null}
               </div>
@@ -714,7 +751,12 @@ export function SectionLayer({
           })}
 
           {sections
-            .filter((section) => !readOnly && section.id === selectedSectionId)
+            .filter(
+              (section) =>
+                !readOnly &&
+                section.id === selectedSectionId &&
+                collapsedSections[section.id] !== true,
+            )
             .flatMap((section) => {
               const rect = rectFor(section);
               return RESIZE_DIRECTIONS.map((direction) => {

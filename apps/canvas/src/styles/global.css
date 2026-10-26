@@ -1615,6 +1615,19 @@ html[data-inspector-linking] .card-inspector {
   outline: none;
 }
 
+.section-fold {
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.section-fold:hover {
+  color: var(--ink);
+}
+
 .section-count {
   padding: 0 5px;
   border-radius: 9999px;

@@ -283,12 +283,14 @@ interface UiState extends SessionCapabilities {
   /** Whether the version-history panel is open beside the board. */
   historyOpen: boolean;
   /**
-   * Whether the rollup rail is open (ADR-0060): the card in focus reduced to its
-   * header line and the count it hides. Reader state, like `outlineOpen` — two
-   * people on one board may want it open or shut, and a collapse is not written
-   * to the document.
+   * Cards reduced to their header line, and sections whose members are hidden.
+   *
+   * Reader state, never document data. Two people looking at one board may want
+   * different things folded away, and a fold is not a change to the work, so it
+   * does not travel through the CRDT.
    */
-  rollupOpen: boolean;
+  collapsedCards: Record<string, true>;
+  collapsedSections: Record<string, true>;
   /**
    * The card whose blueprint install is on screen, if any. The panel previews a
    * type written in a card's title and body, so it opens over the board rather
@@ -386,11 +388,20 @@ interface UiState extends SessionCapabilities {
   toggleOutline: () => void;
   toggleHistory: () => void;
   closeHistory: () => void;
-  toggleRollup: () => void;
+  toggleCardCollapsed: (cardId: string) => void;
+  toggleSectionCollapsed: (sectionId: string) => void;
   openBlueprintInstall: (cardId: string) => void;
   closeBlueprintInstall: () => void;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
+}
+
+/** Adds or removes one key from a set-shaped record without mutating it. */
+function toggled(current: Record<string, true>, key: string): Record<string, true> {
+  const next = { ...current };
+  if (next[key]) delete next[key];
+  else next[key] = true;
+  return next;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -441,7 +452,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryQuery: "",
   outlineOpen: true,
   historyOpen: false,
-  rollupOpen: false,
+  collapsedCards: {},
+  collapsedSections: {},
   blueprintCardId: null,
   contextMenu: null,
   selectedConnector: null,
@@ -785,7 +797,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
   toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
   closeHistory: () => set({ historyOpen: false }),
-  toggleRollup: () => set((state) => ({ rollupOpen: !state.rollupOpen })),
+  toggleCardCollapsed: (cardId) =>
+    set((state) => ({ collapsedCards: toggled(state.collapsedCards, cardId) })),
+  toggleSectionCollapsed: (sectionId) =>
+    set((state) => ({ collapsedSections: toggled(state.collapsedSections, sectionId) })),
   openBlueprintInstall: (blueprintCardId) => set({ blueprintCardId }),
   closeBlueprintInstall: () => set({ blueprintCardId: null }),
   openContextMenu: (contextMenu) => set({ contextMenu }),

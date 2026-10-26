@@ -35,7 +35,6 @@ import type { LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
-import { RollupSummaryHost } from "./RollupSummaryHost";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
@@ -494,7 +493,6 @@ export function WorkspaceShellView({
             </div>
           ) : null}
           <BoardOutlineHost />
-          <RollupSummaryHost workspace={workspace} />
           <CardInspectorHost />
           <CardFocusHost />
           <TourOverlayHost />

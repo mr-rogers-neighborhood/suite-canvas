@@ -23,7 +23,6 @@ export interface OutlineTreeProps {
   onSelect: (sectionId: string) => void;
   onContextMenu: (event: ReactMouseEvent, sectionId: string) => void;
   /** Whether this session may make a section, which the empty rail offers. */
-  canCreate?: boolean;
   /** The peek a row opens on rest or on keyboard focus (ADR-0055). */
   peek?: PeekController | undefined;
 }
@@ -38,7 +37,6 @@ export function OutlineTree({
   onToggle,
   onSelect,
   onContextMenu,
-  canCreate = false,
   peek,
 }: OutlineTreeProps) {
   const rows = useMemo(() => outlineRows(sections, membership), [sections, membership]);
@@ -69,14 +67,6 @@ export function OutlineTree({
             </button>
           </header>
           <div className="board-outline__rows">
-            {/* A board with no sections still gets the rail: an outline that
-                vanishes is indistinguishable from one that has nothing to say. */}
-            {rows.length === 0 ? (
-              <div className="board-outline__empty" data-testid="outline-empty">
-                <p>No sections on this board.</p>
-                <p>{canCreate ? "Cmd/Ctrl+G makes one." : "Sections appear here."}</p>
-              </div>
-            ) : null}
             {rows.map((row) => {
               const { section, depth, count } = row;
               const active = selectedSectionId === section.id;
@@ -177,7 +167,6 @@ export function BoardOutlineHost() {
   const toggleOutline = useUiStore((state) => state.toggleOutline);
   const selectedSectionId = useUiStore((state) => state.selectedSectionId);
   const selectSection = useUiStore((state) => state.selectSection);
-  const canCreateContent = useUiStore((state) => state.canCreateContent);
   const focusSection = useUiStore((state) => state.focusSection);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const peers = useBoardPeers(activeBoardId);
@@ -237,9 +226,11 @@ export function BoardOutlineHost() {
     [openContextMenu],
   );
 
-  // An empty board keeps the rail so the outline has a place to say it is
-  // empty, and so the toggle exists before the first section does.
-  if (!activeBoardId) return null;
+  // Nothing to outline is nothing to show. The rail used to stay up on an empty
+  // board to say it was empty, which put a panel in the corner of every new
+  // board; the toggle beside the tabs and `[` are still there when a section
+  // arrives.
+  if (!activeBoardId || sections.length === 0) return null;
 
   return (
     <OutlineTree
@@ -251,7 +242,6 @@ export function BoardOutlineHost() {
       onToggle={toggleOutline}
       onSelect={handleSelect}
       onContextMenu={handleContextMenu}
-      canCreate={canCreateContent}
       peek={peek}
     />
   );

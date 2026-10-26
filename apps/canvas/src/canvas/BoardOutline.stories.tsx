@@ -84,7 +84,6 @@ const meta = {
     onToggle: () => {},
     onSelect: () => {},
     onContextMenu: () => {},
-    canCreate: true,
   },
   decorators: [
     (Story) => (

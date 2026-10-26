@@ -436,3 +436,25 @@ describe("useUiStore purpose", () => {
     expect(usePlacementRunStore.getState().run).not.toBeNull();
   });
 });
+
+describe("useUiStore folds", () => {
+  it("folds and unfolds one card without touching its neighbours", () => {
+    useUiStore.setState({ collapsedCards: {}, collapsedSections: {} });
+
+    useUiStore.getState().toggleCardCollapsed("card-a");
+    useUiStore.getState().toggleCardCollapsed("card-b");
+    expect(useUiStore.getState().collapsedCards).toEqual({ "card-a": true, "card-b": true });
+
+    useUiStore.getState().toggleCardCollapsed("card-a");
+    expect(useUiStore.getState().collapsedCards).toEqual({ "card-b": true });
+  });
+
+  it("keeps card folds and section folds apart", () => {
+    useUiStore.setState({ collapsedCards: {}, collapsedSections: {} });
+
+    useUiStore.getState().toggleSectionCollapsed("section-1");
+
+    expect(useUiStore.getState().collapsedSections).toEqual({ "section-1": true });
+    expect(useUiStore.getState().collapsedCards).toEqual({});
+  });
+});

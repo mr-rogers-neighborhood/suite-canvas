@@ -7,6 +7,7 @@ import type { cardMeta } from "../../cards/cardMeta";
 import { resolveCardType } from "../../cards/cardTypes";
 import { isPortalCard } from "../../cards/portal";
 import { isWhiteboardCard } from "../../cards/whiteboard";
+import { useUiStore } from "../../store/useUiStore";
 import type { EdgeDescriptionData } from "../EdgeDescription";
 import type { CardNodeData } from "../nodeData";
 import { toFlowEdge } from "./boardSupport";
@@ -36,6 +37,10 @@ export function useBoardNodes(
 ) {
   const { store, peers, lens, selectedEdgeIds } = ui;
   const { refs, projection, cardOffsetsMap, labelHandlers } = input;
+  // Reader state, read as values: a fold repaints the board, and it never
+  // touches the document.
+  const collapsedCards = useUiStore((state) => state.collapsedCards);
+  const collapsedSections = useUiStore((state) => state.collapsedSections);
   const {
     boardCards,
     boardPlacements,
@@ -204,6 +209,10 @@ export function useBoardNodes(
         return boardCards.flatMap((card: Card, layer) => {
           const placement = boardPlacements.get(card.id);
           if (!placement) return [];
+          // A folded section hides its members: the frame is the whole of it.
+          const sectionId = sectionMembershipMap.get(card.id);
+          if (sectionId !== undefined && collapsedSections[sectionId] === true) return [];
+          const collapsed = collapsedCards[card.id] === true;
           const existing = byId.get(card.id);
           const sectionOffset = cardOffsetsMap.get(card.id);
           const storedPosition = sectionOffset
@@ -226,6 +235,7 @@ export function useBoardNodes(
           // cleared must repaint, and an unchanged card must keep its object.
           const dim = lens.view !== null && !lens.cardIds.has(card.id);
           const previousDim = previous?.dim === true;
+          const previousCollapsed = previous?.collapsed === true;
           // Reuse the data object (and the node when nothing visible changed), so
           // a card that did not change does not re-render on a peer's edit.
           const data: CardNodeData =
@@ -234,9 +244,17 @@ export function useBoardNodes(
             previous.placement === placement &&
             previous.type === type &&
             previous.meta === meta &&
-            previousDim === dim
+            previousDim === dim &&
+            previousCollapsed === collapsed
               ? previous
-              : { card, placement, type, meta, ...(dim ? { dim: true } : {}) };
+              : {
+                  card,
+                  placement,
+                  type,
+                  meta,
+                  ...(dim ? { dim: true } : {}),
+                  ...(collapsed ? { collapsed: true } : {}),
+                };
           // A scoped marquee only boxes this section's cards. The flag has to be
           // part of the node this function builds, not a one-off `updateNode`:
           // every rebuild would otherwise hand React Flow a node that is
@@ -278,6 +296,8 @@ export function useBoardNodes(
       setNodes,
       lens,
       sectionMembershipMap,
+      collapsedCards,
+      collapsedSections,
     ],
   );
 

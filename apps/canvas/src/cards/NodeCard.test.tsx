@@ -57,6 +57,30 @@ function renderCard(overrides: Partial<Parameters<typeof NodeCard>[0]> = {}) {
 }
 
 describe("NodeCard", () => {
+  it("folds to its header line and back", () => {
+    const onToggleCollapsed = vi.fn();
+    renderCard({ collapsed: true, onToggleCollapsed });
+
+    // The body is not merely hidden: it is not mounted, so nothing inside it can
+    // hold focus or a caret.
+    expect(screen.queryByTestId("card-body")).toBeNull();
+    expect(screen.getByTestId("card-fold")).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByTestId("card-fold"));
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+
+  it("mounts the body when it is unfolded", () => {
+    renderCard({ collapsed: false, onToggleCollapsed: vi.fn() });
+    expect(screen.getByTestId("card-body")).toBeInTheDocument();
+    expect(screen.getByTestId("card-fold")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("offers no fold when the surface owns none", () => {
+    renderCard();
+    expect(screen.queryByTestId("card-fold")).toBeNull();
+  });
+
   it("renders a read-only note card", () => {
     renderCard();
     expect(screen.getByTestId("node-card")).toBeInTheDocument();

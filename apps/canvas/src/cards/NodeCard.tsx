@@ -29,6 +29,13 @@ export interface NodeCardProps {
   meta: CardMeta;
   /** Whether the card's frontmatter is expanded. Local UI state only. */
   metaExpanded?: boolean;
+  /**
+   * Reduced to the header line. Reader state: the document is unchanged, and the
+   * reference count in the header is what the fold hides.
+   */
+  collapsed?: boolean;
+  /** Folds or unfolds the card. Absent leaves the fold off the face entirely. */
+  onToggleCollapsed?: (() => void) | undefined;
   /** Toggles the frontmatter area. */
   onToggleMeta?: () => void;
   /** Card document that owns the title and body rich text. */
@@ -125,6 +132,8 @@ export function NodeCard({
   type,
   meta,
   metaExpanded = false,
+  collapsed = false,
+  onToggleCollapsed,
   onToggleMeta,
   cardDoc,
   contentId,
@@ -343,7 +352,24 @@ export function NodeCard({
       {/* The header takes its top corners from the card, not from a fixed radius:
           see the `.card-header` rule, which is why no `rounded-*` utility is here. */}
       <div className="card-header flex shrink-0 items-center gap-1.5 px-2 py-2">
-        {hasMeta ? (
+        {onToggleCollapsed ? (
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand card" : "Collapse card"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand card" : "Collapse card"}
+            data-testid="card-fold"
+            className="card-meta-toggle nodrag shrink-0 rounded px-0.5 text-[10px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleCollapsed();
+            }}
+          >
+            <span aria-hidden="true">{collapsed ? "\u25b8" : "\u25be"}</span>
+          </button>
+        ) : null}
+
+        {hasMeta && !collapsed ? (
           <button
             type="button"
             aria-label={
@@ -463,7 +489,7 @@ export function NodeCard({
         ) : null}
       </div>
 
-      {hasMeta && metaExpanded ? (
+      {hasMeta && metaExpanded && !collapsed ? (
         <div className="card-meta shrink-0 px-2.5 pb-1.5" data-testid="card-meta">
           {meta.properties.map((property) => (
             <button
@@ -492,35 +518,39 @@ export function NodeCard({
         </div>
       ) : null}
 
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
-      <div
-        className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
-          editing === "body" ? "nodrag" : ""
-        }`}
-        data-testid="card-body"
-        onDoubleClick={(event) => {
-          if (onDoubleClickPresent?.() === true) {
-            event.stopPropagation();
-            return;
-          }
-          if (!editContent || editing === "body") return;
-          event.stopPropagation();
-          onStartEditing?.("body");
-        }}
-      >
-        <CardBodyEditor
-          cardId={card.id}
-          cardDoc={cardDoc}
-          contentId={contentId}
-          cursorStore={cursorStore}
-          localUser={localUser}
-          editable={editContent && editing === "body"}
-          readOnly={!editContent}
-          onFocus={keepFocusAlive}
-          onBlur={releaseFocusSoon}
-          onOpenCardPanel={() => onOpenInfo?.()}
-        />
-      </div>
+      {collapsed ? null : (
+        <>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: the nested ProseMirror editor owns keyboard interaction */}
+          <div
+            className={`card-body-scroll min-h-0 flex-1 overflow-auto ${
+              editing === "body" ? "nodrag" : ""
+            }`}
+            data-testid="card-body"
+            onDoubleClick={(event) => {
+              if (onDoubleClickPresent?.() === true) {
+                event.stopPropagation();
+                return;
+              }
+              if (!editContent || editing === "body") return;
+              event.stopPropagation();
+              onStartEditing?.("body");
+            }}
+          >
+            <CardBodyEditor
+              cardId={card.id}
+              cardDoc={cardDoc}
+              contentId={contentId}
+              cursorStore={cursorStore}
+              localUser={localUser}
+              editable={editContent && editing === "body"}
+              readOnly={!editContent}
+              onFocus={keepFocusAlive}
+              onBlur={releaseFocusSoon}
+              onOpenCardPanel={() => onOpenInfo?.()}
+            />
+          </div>
+        </>
+      )}
 
       <NodeConnectors
         nodeId={card.id}

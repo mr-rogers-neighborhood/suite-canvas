@@ -15,6 +15,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
+import { COLLAPSED_CARD_HEIGHT } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
 /**
@@ -28,12 +29,13 @@ const DUPLICATE_OFFSET = { x: DEFAULT_CARD_WIDTH / 10, y: DEFAULT_CARD_HEIGHT / 
 export function NoteNode({ id, data, selected }: NodeProps) {
   countRender("note");
 
-  const { card, placement, type, meta, dim } = data as {
+  const { card, placement, type, meta, dim, collapsed } = data as {
     card: Card;
     placement: Placement;
     type: CardType;
     meta: CardMeta;
     dim?: boolean;
+    collapsed?: boolean;
   };
   const workspace = useCanvasStore((state) => state.workspace);
   const cursorStore = useCanvasStore((state) => state.cursors);
@@ -55,6 +57,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   const setSelectedNodeIds = useUiStore((state) => state.setSelectedNodeIds);
   const metaExpanded = useUiStore((state) => Boolean(state.expandedCardMeta[id]));
   const toggleCardMeta = useUiStore((state) => state.toggleCardMeta);
+  const toggleCardCollapsed = useUiStore((state) => state.toggleCardCollapsed);
 
   // Container ids are stable; resolving them through the container observer
   // lets a card that mounted before the body existed adopt it without
@@ -147,7 +150,12 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 
   const panelOwnsCard = editingNodeId === id && editingSurface === "panel";
   const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
-  const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
+  // A fold wins over every measured size: the card is its header line, and the
+  // placement keeps the height it had so unfolding restores it.
+  const height =
+    collapsed === true
+      ? COLLAPSED_CARD_HEIGHT
+      : (liveSize?.height ?? peerSize?.height ?? placement.height ?? null);
 
   // Duplicating is creating content, moving is a placement change; the menu
   // only ever receives the callbacks this session's capabilities allow.
@@ -208,6 +216,8 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         boardId={placement.boardId}
         width={width}
         height={height}
+        collapsed={collapsed === true}
+        onToggleCollapsed={() => toggleCardCollapsed(id)}
         selected={selected}
         editing={editingNodeId === id && editingSurface === "canvas" ? editingField : null}
         presence={presence}

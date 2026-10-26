@@ -22,25 +22,16 @@ function renderTree(over: { sections?: Section[]; open?: boolean; canCreate?: bo
       onToggle={noop}
       onSelect={noop}
       onContextMenu={noop}
-      canCreate={over.canCreate ?? false}
     />,
   );
 }
 
 describe("an empty outline", () => {
-  it("says the board has no sections and names the shortcut that makes one", () => {
-    renderTree({ canCreate: true });
+  it("counts nothing rather than describing the emptiness", () => {
+    renderTree();
 
-    expect(screen.getByTestId("outline-empty")).toHaveTextContent("No sections on this board.");
-    expect(screen.getByTestId("outline-empty")).toHaveTextContent("Cmd/Ctrl+G makes one.");
     expect(screen.getByTestId("outline-count")).toHaveTextContent("0");
-  });
-
-  it("does not offer a shortcut the session cannot use", () => {
-    renderTree({ canCreate: false });
-
-    expect(screen.getByTestId("outline-empty")).toHaveTextContent("Sections appear here.");
-    expect(screen.getByTestId("outline-empty")).not.toHaveTextContent("G makes one");
+    expect(screen.queryByTestId("outline-empty")).toBeNull();
   });
 
   it("keeps the collapsed tab so the rail can be reopened", () => {

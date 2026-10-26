@@ -1,8 +1,8 @@
 /**
  * Stand-in for the shell when the relay says another key owns this workspace.
  * It only needs the theme and the logo: no store, no sync connection, no
- * document. The way back in is the recovery key file saved from the File menu,
- * or an editor link that carries the owner fragment.
+ * document. The way back in is the owner file saved from the File menu, its
+ * words, or an editor link that carries the owner fragment.
  *
  * A 409 has two shapes and the copy names the right one from this device's
  * claim record: the workspace was worked on here before anyone owned it and was
@@ -14,7 +14,6 @@ import { useRef, useState } from "react";
 import {
   type ClaimRecord,
   claimWorkspace,
-  deriveOwnerKey,
   readClaimRecord,
   reloadWithOwnerKey,
   writeOwnerKey,
@@ -40,20 +39,15 @@ export interface ConflictCopy {
 }
 
 const EXITS =
-  "Open a recovery key file, or the editor link that includes the current owner key. Recovery words and a passphrase also work here.";
+  "Open the owner file, paste it, or use the editor link that includes the current owner key.";
 
 const OFFLINE_KEY_NOTE =
   "The server could not be reached, so this key is not verified yet. Your edits on this device are kept — try again when you are back online.";
-const PASSPHRASE_MISMATCH =
-  "That passphrase does not open this workspace. Check the words and try again; nothing on this device was changed.";
 const WORDS_MISMATCH =
-  "Those recovery words do not open this workspace. Check each word against your copy; nothing on this device was changed.";
+  "Those words do not open this workspace. Check each word against your copy; nothing on this device was changed.";
 const FILE_COPY =
-  "A recovery key file survives a lost browser and restores owner access on a new device.";
-const WORDS_COPY =
-  "Recovery words survive a lost browser and a lost file: read them back in order to restore this key.";
-const PASSPHRASE_COPY =
-  "A passphrase survives a lost browser, a lost file and a new device: the same words derive the same key.";
+  "An owner file survives a lost browser and restores owner access on a new device.";
+const WORDS_COPY = "The words are this workspace's owner key written out; read them back in order.";
 
 /**
  * The two 409s read differently even though they are the same outcome. The
@@ -97,7 +91,6 @@ export function WorkspaceProtected({
   const [busy, setBusy] = useState(false);
   const [paste, setPaste] = useState("");
   const [wordsInput, setWordsInput] = useState("");
-  const [passphrase, setPassphrase] = useState("");
   const fileInput = useRef<HTMLInputElement | null>(null);
   const record = readClaimRecord(workspaceId ?? "");
 
@@ -105,7 +98,7 @@ export function WorkspaceProtected({
    * Verifies a candidate key against the relay and installs it only when the
    * relay says this key owns the workspace. `refusal` is the one readable line
    * for a key that does not match; nothing is ever written on that path, so a
-   * wrong passphrase cannot leave an unauthenticated key behind.
+   * wrong file cannot leave an unauthenticated key behind.
    */
   const install = async (candidate: string, refusal: string) => {
     setError(null);
@@ -161,29 +154,6 @@ export function WorkspaceProtected({
     await install(decoded.key, WORDS_MISMATCH);
   };
 
-  const recoverWithPassphrase = async () => {
-    setError(null);
-    if (!workspaceId) {
-      setError("This page does not name a workspace, so a passphrase cannot be used.");
-      return;
-    }
-    if (passphrase.trim().length === 0) {
-      setError("Type the passphrase you set for this workspace.");
-      return;
-    }
-    setBusy(true);
-    let derived: string;
-    try {
-      derived = await deriveOwnerKey(passphrase, workspaceId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The passphrase key could not be derived.");
-      return;
-    } finally {
-      setBusy(false);
-    }
-    await install(derived, PASSPHRASE_MISMATCH);
-  };
-
   const onFile = async (file: File | undefined) => {
     if (!file || busy) return;
     try {
@@ -221,7 +191,7 @@ export function WorkspaceProtected({
           className="rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[12px] text-[var(--ink)] hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
           onClick={() => fileInput.current?.click()}
         >
-          Open recovery key file…
+          Open an owner file…
         </button>
         <p
           data-testid="recovery-file-copy"
@@ -244,11 +214,11 @@ export function WorkspaceProtected({
 
         <details className="w-[280px] text-left">
           <summary className="cursor-pointer text-center text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]">
-            Paste recovery key
+            Paste an owner file
           </summary>
           <div className="mt-2 flex flex-col gap-1.5">
             <textarea
-              aria-label="Recovery key file contents"
+              aria-label="Owner file contents"
               data-testid="recovery-paste"
               rows={4}
               spellCheck={false}
@@ -262,7 +232,7 @@ export function WorkspaceProtected({
               data-testid="recovery-paste-apply"
               disabled={busy || paste.trim().length === 0}
               className="self-end rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] text-[var(--surface)] disabled:opacity-40"
-              onClick={() => void open(paste, "the pasted key")}
+              onClick={() => void open(paste, "the pasted owner file")}
             >
               {busy ? "Opening\u2026" : "Use key"}
             </button>
@@ -274,7 +244,7 @@ export function WorkspaceProtected({
             data-testid="recovery-words-open"
             className="cursor-pointer text-center text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
           >
-            Recover with recovery words
+            Paste the words
           </summary>
           <div className="mt-2 flex flex-col gap-1.5">
             <p
@@ -284,7 +254,7 @@ export function WorkspaceProtected({
               {WORDS_COPY}
             </p>
             <textarea
-              aria-label="Recovery words"
+              aria-label="Owner words"
               data-testid="recovery-words-input"
               rows={3}
               spellCheck={false}
@@ -301,41 +271,6 @@ export function WorkspaceProtected({
               onClick={() => void recoverWithWords()}
             >
               {busy ? "Opening\u2026" : "Use words"}
-            </button>
-          </div>
-        </details>
-
-        <details className="w-[280px] text-left">
-          <summary
-            data-testid="recovery-passphrase-open"
-            className="cursor-pointer text-center text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
-          >
-            Recover with passphrase
-          </summary>
-          <div className="mt-2 flex flex-col gap-1.5">
-            <p
-              data-testid="recovery-passphrase-copy"
-              className="text-[10px] leading-relaxed text-[var(--ink-muted)]"
-            >
-              {PASSPHRASE_COPY}
-            </p>
-            <input
-              type="password"
-              aria-label="Passphrase"
-              data-testid="recovery-passphrase-input"
-              spellCheck={false}
-              className="w-full rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)] outline-none"
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.currentTarget.value)}
-            />
-            <button
-              type="button"
-              data-testid="recovery-passphrase-apply"
-              disabled={busy || passphrase.trim().length === 0}
-              className="self-end rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] text-[var(--surface)] disabled:opacity-40"
-              onClick={() => void recoverWithPassphrase()}
-            >
-              {busy ? "Opening\u2026" : "Use passphrase"}
             </button>
           </div>
         </details>

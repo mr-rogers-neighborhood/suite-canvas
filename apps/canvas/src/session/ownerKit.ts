@@ -13,7 +13,7 @@ export const OWNER_KIT_KIND = "suite.owner";
 export const OWNER_KIT_VERSION = 1;
 export const OWNER_KIT_EXTENSION = ".suitekey";
 const RECOVERY_SAVED_PREFIX = "suite.recoverySaved.";
-export const OWNER_KIT_MISMATCH = "That recovery key does not own this workspace.";
+export const OWNER_KIT_MISMATCH = "That owner file does not own this workspace.";
 
 function hasStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -50,7 +50,7 @@ export function readSavedRecoveryKey(workspaceId: string): SavedRecoveryKey | nu
   }
 }
 
-/** True when this browser has downloaded a recovery key for the workspace. */
+/** True when this browser has downloaded an owner file for the workspace. */
 export function hasSavedRecoveryKey(workspaceId: string): boolean {
   return readSavedRecoveryKey(workspaceId) !== null;
 }
@@ -91,7 +91,7 @@ export interface ParsedOwnerKit {
   ownerKey: string;
 }
 
-const MALFORMED = "This is not a Suite recovery key. Choose the .suitekey file Suite saved.";
+const MALFORMED = "This is not a Suite owner file. Choose the .suitekey file Suite saved.";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -132,28 +132,28 @@ export function parseOwnerKit(input: string): ParsedOwnerKit {
 
   if (value.kind !== OWNER_KIT_KIND) {
     throw new Error(
-      "This file is not a Suite recovery key. A .suite workspace backup does not restore access.",
+      "This file is not a Suite owner file. A .suite workspace backup does not restore access.",
     );
   }
 
   const version = value.version;
   if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
-    throw new Error("This recovery key is missing its version.");
+    throw new Error("This owner file is missing its version.");
   }
   if (version > OWNER_KIT_VERSION) {
     throw new Error(
-      `This recovery key was made by a newer Suite (version ${version}); this build supports ${OWNER_KIT_VERSION}.`,
+      `This owner file was made by a newer Suite (version ${version}); this build supports ${OWNER_KIT_VERSION}.`,
     );
   }
 
   const workspaceId = text(value.workspaceId);
-  if (workspaceId.length === 0) throw new Error("This recovery key does not name a workspace.");
+  if (workspaceId.length === 0) throw new Error("This owner file does not name a workspace.");
 
   const ownerKey = text(value.ownerKey);
-  if (ownerKey.length === 0) throw new Error("This recovery key does not contain an owner key.");
+  if (ownerKey.length === 0) throw new Error("This owner file does not contain an owner key.");
 
   if (text(value.exportedAt).length === 0) {
-    throw new Error("This recovery key is missing its export date.");
+    throw new Error("This owner file is missing its export date.");
   }
 
   return { workspaceId, ownerKey };

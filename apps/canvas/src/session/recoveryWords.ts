@@ -2210,18 +2210,18 @@ export function recoveryWordsDocument(
   const words = phrase.split(" ");
   const numbered = words.map((word, index) => `${index + 1}. ${word}`).join("\n");
   return [
-    "Suite workspace recovery words",
+    "Suite workspace owner words",
     "",
     `Workspace: ${workspaceId}`,
     `Created: ${createdAt.toISOString()}`,
     "",
-    "Anyone with these words has owner access to the workspace. Keep this file",
-    "away from document backups, and write the words down in order.",
+    "These words are the workspace's owner key written out. Anyone with them has",
+    "owner access, so keep this file away from document backups.",
     "",
     numbered,
     "",
     "Type them back in the workspace's protected screen, under",
-    '"Recover with recovery words".',
+    '"Paste the words".',
     "",
   ].join("\n");
 }

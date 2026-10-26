@@ -62,9 +62,9 @@ describe("parseOwnerKit", () => {
   });
 
   it("refuses a file that is not JSON or not an object", () => {
-    expect(() => parseOwnerKit("not json")).toThrow("not a Suite recovery key");
-    expect(() => parseOwnerKit("[]")).toThrow("not a Suite recovery key");
-    expect(() => parseOwnerKit("null")).toThrow("not a Suite recovery key");
+    expect(() => parseOwnerKit("not json")).toThrow("not a Suite owner file");
+    expect(() => parseOwnerKit("[]")).toThrow("not a Suite owner file");
+    expect(() => parseOwnerKit("null")).toThrow("not a Suite owner file");
   });
 
   it("names a workspace backup rather than accepting it", () => {
@@ -106,7 +106,7 @@ describe("parseOwnerKit", () => {
     expect(() => parseOwnerKit(JSON.stringify({ ...base, ownerKey: "   " }))).toThrow("owner key");
     expect(() => parseOwnerKit(JSON.stringify({ ...base, exportedAt: "" }))).toThrow("export date");
     const { kind: _kind, ...withoutKind } = base;
-    expect(() => parseOwnerKit(JSON.stringify(withoutKind))).toThrow("not a Suite recovery key");
+    expect(() => parseOwnerKit(JSON.stringify(withoutKind))).toThrow("not a Suite owner file");
   });
 });
 
@@ -114,7 +114,7 @@ describe("assertOwnerKitWorkspace", () => {
   it("rejects a key from another workspace", () => {
     const kit = parseOwnerKit(createOwnerKit("ws-2", KEY));
     expect(() => assertOwnerKitWorkspace(kit, WORKSPACE)).toThrow(
-      "That recovery key does not own this workspace.",
+      "That owner file does not own this workspace.",
     );
     expect(() => assertOwnerKitWorkspace(kit, "ws-2")).not.toThrow();
   });
@@ -217,7 +217,7 @@ describe("readOwnerKit", () => {
     });
 
     const backup = new File(["{}"], "notes.suitekey");
-    await expect(readOwnerKitFile(backup)).rejects.toThrow("not a Suite recovery key");
+    await expect(readOwnerKitFile(backup)).rejects.toThrow("not a Suite owner file");
   });
 });
 

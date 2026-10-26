@@ -41,7 +41,7 @@ async function downloadText(
   await action();
   const download = await pending;
   const path = await download.path();
-  if (!path) throw new Error("the recovery key download has no path");
+  if (!path) throw new Error("the owner file download has no path");
   return {
     filename: download.suggestedFilename(),
     path,
@@ -107,7 +107,7 @@ test("offers a separate recovery key right after a backup export", async ({ page
   // The only export-time follow-up: one small prompt, not a bundle or banner.
   await expect(page.getByTestId("recovery-prompt")).toBeVisible();
   await expect(page.getByTestId("recovery-prompt")).toContainText(
-    "Backup saved. Save a separate recovery key too?",
+    "Backup saved. Save a separate owner file too?",
   );
 
   const kit = await downloadText(page, () => page.getByTestId("recovery-prompt-save").click());
@@ -131,7 +131,7 @@ test("replacing the recovery key retires the old fragment and old file", async (
   await openRecoveryDialog(page);
   await page.getByTestId("recovery-replace").click();
   await expect(page.getByTestId("recovery-warning")).toContainText(
-    "Existing editor links and old recovery files will stop working.",
+    "Existing editor links and old owner files will stop working.",
   );
 
   const kit = await downloadText(page, () => page.getByTestId("recovery-confirm").click());
@@ -183,7 +183,7 @@ test("offers a recovery key after a launcher export and opens one from the launc
 
   await expect(page.getByTestId("recovery-prompt")).toBeVisible();
   await expect(page.getByTestId("recovery-prompt")).toContainText(
-    "Backup saved. Save a separate recovery key too?",
+    "Backup saved. Save a separate owner file too?",
   );
   const kit = await downloadText(page, () => page.getByTestId("recovery-prompt-save").click());
   expect(kit.filename).toMatch(/-recovery\.suitekey$/);

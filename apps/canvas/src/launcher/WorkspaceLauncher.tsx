@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "../session/ownerKey";
 import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
-import { isShareSession } from "../session/session";
 import {
   forgetWorkspaceName,
   friendlyWorkspaceName,
@@ -18,7 +17,6 @@ import {
   importWorkspaceFile,
   navigateTo,
   newWorkspaceId,
-  openNewWorkspace,
   openWorkspace,
   type RecentWorkspace,
   readRecentWorkspaces,
@@ -36,12 +34,6 @@ interface RecoveryPrompt {
   workspaceId: string;
   ownerKey: string;
   title: string;
-}
-
-/** A new workspace whose passphrase choice has not been answered yet. */
-interface CreationChoice {
-  workspaceId: string;
-  ownerKey: string;
 }
 
 function openedAt(timestamp: number): string {
@@ -83,7 +75,6 @@ export function WorkspaceLauncher() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
-  const [choice, setChoice] = useState<CreationChoice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RecentEntry | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -109,26 +100,7 @@ export function WorkspaceLauncher() {
     };
   }, []);
 
-  /**
-   * A passphrase only helps where the relay can own the workspace from any
-   * device, and it is the owner's decision: a share session or a viewer gets the
-   * plain new workspace, with no choice to make.
-   */
-  const offerPassphrase = import.meta.env.VITE_SUITE_MODE !== "standalone" && !isShareSession();
-
-  /**
-   * The id and the key are made here but written only when the choice is
-   * answered, so closing the dialog leaves no half-made workspace behind.
-   */
-  const startNew = () => {
-    if (!offerPassphrase) {
-      openNewWorkspace();
-      return;
-    }
-    setChoice({ workspaceId: newWorkspaceId(), ownerKey: generateOwnerKey() });
-  };
-
-  /** The one place a new workspace is written, whichever key was chosen. */
+  /** A new workspace is written here and nowhere else. */
   const openCreated = (workspaceId: string, ownerKey: string) => {
     writeOwnerKey(workspaceId, ownerKey);
     rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
@@ -136,6 +108,8 @@ export function WorkspaceLauncher() {
     url.searchParams.set("fresh", "1");
     navigateTo(url.toString());
   };
+
+  const startNew = () => openCreated(newWorkspaceId(), generateOwnerKey());
 
   const importFile = async (file: File | undefined) => {
     if (!file) return;
@@ -471,19 +445,6 @@ export function WorkspaceLauncher() {
           Fully open-source and MIT Licensed (c) {new Date().getFullYear()} Suite
         </footer>
       </div>
-      {choice ? (
-        <Suspense fallback={null}>
-          <RecoveryKeyDialog
-            mode="creation-prompt"
-            workspaceId={choice.workspaceId}
-            ownerKey={choice.ownerKey}
-            title="Untitled workspace"
-            onClose={() => setChoice(null)}
-            onSkip={() => openCreated(choice.workspaceId, choice.ownerKey)}
-            onSetPassphrase={(derivedKey) => openCreated(choice.workspaceId, derivedKey)}
-          />
-        </Suspense>
-      ) : null}
       {prompt ? (
         <Suspense fallback={null}>
           <RecoveryKeyDialog

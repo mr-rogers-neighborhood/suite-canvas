@@ -16,7 +16,7 @@ import { RecoveryKeyDialog } from "./RecoveryKeyDialog";
 import { ShareDialog } from "./ShareDialog";
 
 /**
- * Share management and the recovery key need the relay. Every branch below tests
+ * Share management and the owner file need the relay. Every branch below tests
  * `import.meta.env.VITE_SUITE_MODE` literally — Vite inlines it at build time, so
  * a standalone build drops the branch and the `/api/shares` and `/api/workspaces`
  * clients behind it, while the File menu with export stays. A constant or an
@@ -204,7 +204,7 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
                   setRecoveryOpen(true);
                 }}
               >
-                Recovery key…
+                Owner file…
                 {savedOnDevice ? (
                   <span
                     className="ml-auto pl-2 text-[10px] text-[var(--ink-muted)]"

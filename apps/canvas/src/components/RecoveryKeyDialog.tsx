@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  deriveOwnerKey,
   generateOwnerKey,
-  passphraseProblem,
   reloadWithOwnerKey,
   rotateOwnerKey,
   writeOwnerKey,
@@ -20,7 +18,7 @@ import { revokeAllShares } from "../session/shares";
 import { downloadText, fileStem, workspaceUrl } from "../session/workspaceTransfer";
 import { useCanvasStore } from "../store/useCanvasStore";
 
-export type RecoveryKeyMode = "manage" | "backup-prompt" | "creation-prompt";
+export type RecoveryKeyMode = "manage" | "backup-prompt";
 
 export interface RecoveryKeyDialogProps {
   workspaceId: string;
@@ -31,16 +29,10 @@ export interface RecoveryKeyDialogProps {
   title?: string;
   /**
    * `manage` is the File-menu dialog. `backup-prompt` is the one contextual
-   * offer after a backup export: save a separate key, or decline.
-   * `creation-prompt` is the one first-run choice for a new workspace: a
-   * passphrase, or skip and keep the generated key.
+   * offer after a backup export: save a separate owner file, or decline.
    */
   mode?: RecoveryKeyMode;
   onClose: () => void;
-  /** Creation: continue with the key this browser generated. */
-  onSkip?: () => void;
-  /** Creation: the key derived from the chosen passphrase. */
-  onSetPassphrase?: (ownerKey: string) => void;
   /** Tests replace the network call. */
   rotate?: typeof rotateOwnerKey;
   /** Tests replace the link revocation call. */
@@ -50,30 +42,19 @@ export interface RecoveryKeyDialogProps {
 }
 
 type Stage = "idle" | "confirm" | "rotating" | "rotated" | "forget" | "forgetting";
-type PassphraseStage = "idle" | "confirm" | "rotating";
-type RotatedWith = "key" | "passphrase";
 
 const MANAGE_COPY =
-  "This file restores owner access if this browser is lost. Keep it separate from document backups.";
+  "This owner file restores owner access if this browser is lost. Keep it separate from document backups.";
 const PROMPT_COPY =
-  "Backup saved. Save a separate recovery key too? It restores owner access if this browser is lost. Keep it separate from the backup.";
+  "Backup saved. Save a separate owner file too? It restores owner access if this browser is lost. Keep it separate from the backup.";
 const ROTATE_WARNING =
-  "Existing editor links and old recovery files will stop working. You can also revoke every share link.";
+  "Existing editor links and old owner files will stop working. You can also revoke every share link.";
 const OWNER_LINK_WARNING =
   "This is owner access. Anyone with it can manage links and rotate the key.";
 const FORGET_WARNING =
-  "The owner key and cached copy will be removed from this browser. The workspace stays on the server and can be reopened with your recovery key or owner link.";
+  "The owner key and cached copy will be removed from this browser. The workspace stays on the server and can be reopened with your owner file or owner link.";
 const WORDS_COPY =
-  "Recovery words survive a lost browser and a lost file: written down in order, they rebuild this key on any device.";
-const PASSPHRASE_COPY =
-  "A passphrase survives a lost browser, a lost file and a new device: the same words derive the same key here and anywhere else.";
-const PASSPHRASE_WARNING =
-  "Existing editor links and old .suitekey recovery files will stop working, because this workspace will accept only the key derived from the passphrase.";
-const PASSPHRASE_HINT =
-  "Use at least four words and 16 characters. Suite never stores the passphrase.";
-const CREATION_COPY =
-  "A passphrase survives a lost device and opens this workspace on any device with the URL; a recovery file survives a lost browser; skip both, and if the browser and the device are both lost, the workspace is gone.";
-const CREATION_LATER = "You can set a passphrase later from File \u2192 Recovery key.";
+  "These 24 words are this owner key written out, for when you would rather keep it on paper than in a file. They are not a second credential: whoever holds them holds this key.";
 
 function savedLabel(saved: SavedRecoveryKey): string {
   if (saved.savedAt === null) return "Saved on this device";
@@ -85,7 +66,7 @@ function savedLabel(saved: SavedRecoveryKey): string {
 }
 
 /**
- * One small dialog for the recovery key: save it, or replace it. It is only
+ * One small dialog for the owner file: save it, or replace it. It is only
  * reachable from the File menu (and once after a backup export), so normal
  * editing never carries recovery chrome.
  */
@@ -96,8 +77,6 @@ export function RecoveryKeyDialog({
   title = "workspace",
   mode = "manage",
   onClose,
-  onSkip,
-  onSetPassphrase,
   rotate = rotateOwnerKey,
   revokeShares = revokeAllShares,
   leave = () => window.location.assign("/"),
@@ -110,16 +89,11 @@ export function RecoveryKeyDialog({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokeLinks, setRevokeLinks] = useState(true);
-  const [rotatedWith, setRotatedWith] = useState<RotatedWith>("key");
   const [words, setWords] = useState<string | null>(null);
   const [wordsError, setWordsError] = useState<string | null>(null);
   const [wordsCopied, setWordsCopied] = useState(false);
-  const [passphrase, setPassphrase] = useState("");
-  const [passStage, setPassStage] = useState<PassphraseStage>("idle");
-  const [deriving, setDeriving] = useState(false);
 
   const activeKey = newKey ?? ownerKey;
-  const passphraseIssue = passphrase.trim().length === 0 ? null : passphraseProblem(passphrase);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -139,7 +113,7 @@ export function RecoveryKeyDialog({
       downloadOwnerKit(workspaceId, ownerKey, title);
       setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The recovery key could not be saved.");
+      setError(cause instanceof Error ? cause.message : "The owner file could not be saved.");
     }
   };
 
@@ -150,7 +124,7 @@ export function RecoveryKeyDialog({
       downloadOwnerKit(workspaceId, newKey, title);
       setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The new recovery key could not be saved.");
+      setError(cause instanceof Error ? cause.message : "The new owner file could not be saved.");
     }
   };
 
@@ -171,9 +145,7 @@ export function RecoveryKeyDialog({
     try {
       setWords(await encodeKey(activeKey));
     } catch (cause) {
-      setWordsError(
-        cause instanceof Error ? cause.message : "Recovery words could not be prepared.",
-      );
+      setWordsError(cause instanceof Error ? cause.message : "The words could not be prepared.");
     }
   };
 
@@ -193,51 +165,13 @@ export function RecoveryKeyDialog({
     setWordsError(null);
     try {
       downloadText(
-        `${fileStem(title)}-recovery-words.txt`,
+        `${fileStem(title)}-owner-words.txt`,
         recoveryWordsDocument(workspaceId, words),
         "text/plain",
       );
     } catch {
       setWordsError("The words could not be saved. Copy them instead.");
     }
-  };
-
-  const setWithPassphrase = async () => {
-    const problem = passphraseProblem(passphrase);
-    if (problem !== null) {
-      setError(problem);
-      return;
-    }
-    setPassStage("rotating");
-    setError(null);
-    let next: string;
-    try {
-      next = await deriveOwnerKey(passphrase, workspaceId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The passphrase key could not be derived.");
-      setPassStage("idle");
-      return;
-    }
-    try {
-      await rotate(workspaceId, ownerKey, next);
-    } catch (cause) {
-      // The old key still owns the workspace, so the page keeps working.
-      setError(cause instanceof Error ? cause.message : "The owner key was not replaced.");
-      setPassStage("confirm");
-      return;
-    }
-    const linksError = await revokeLinksAfterRotate(next);
-    writeOwnerKey(workspaceId, next);
-    clearSavedRecoveryKey(workspaceId);
-    setNewKey(next);
-    setWords(null);
-    setWordsCopied(false);
-    setRotatedWith("passphrase");
-    setSaved(null);
-    setPassStage("idle");
-    setPassphrase("");
-    setStage("rotated");
-    if (linksError) setError(linksError);
   };
 
   const replace = async () => {
@@ -258,7 +192,6 @@ export function RecoveryKeyDialog({
     clearSavedRecoveryKey(workspaceId);
     setNewKey(next);
     setWords(null);
-    setRotatedWith("key");
     setSaved(null);
     setStage("rotated");
     if (linksError) setError(linksError);
@@ -268,7 +201,7 @@ export function RecoveryKeyDialog({
       downloadOwnerKit(workspaceId, next, title);
       setSaved(readSavedRecoveryKey(workspaceId) ?? { savedAt: Date.now() });
     } catch {
-      setError("The key was replaced, but the recovery file could not be saved. Save it now.");
+      setError("The key was replaced, but the owner file could not be saved. Save it now.");
     }
   };
 
@@ -307,148 +240,30 @@ export function RecoveryKeyDialog({
     reloadWithOwnerKey(newKey);
   };
 
-  /**
-   * Creation has nothing to rotate: no key has claimed the new workspace yet, so
-   * the derived key is simply its first key — the same end state `replace`
-   * reaches later, where only the derived key can claim the workspace. The
-   * button stays enabled on purpose: a weak passphrase gets the reason here.
-   */
-  const choosePassphrase = async () => {
-    const problem = passphraseProblem(passphrase);
-    if (problem !== null) {
-      setError(problem);
-      return;
-    }
-    setError(null);
-    setDeriving(true);
-    try {
-      onSetPassphrase?.(await deriveOwnerKey(passphrase, workspaceId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The passphrase key could not be derived.");
-      setDeriving(false);
-    }
-  };
-
-  if (mode === "creation-prompt") {
-    return createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center">
-        <button
-          type="button"
-          aria-label="Close passphrase choice"
-          className="absolute inset-0 cursor-default border-0 bg-black/25 backdrop-blur-[2px]"
-          onClick={onClose}
-        />
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Set a passphrase for this workspace"
-          data-testid="recovery-creation"
-          className="relative w-[min(420px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <h2 className="text-sm font-semibold">Set a passphrase?</h2>
-            <button
-              type="button"
-              aria-label="Close passphrase choice"
-              className="rounded-md px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-              onClick={onClose}
-            >
-              {"\u00d7"}
-            </button>
-          </div>
-
-          <p
-            className="mt-1 text-[11px] leading-relaxed text-[var(--ink-muted)]"
-            data-testid="recovery-creation-copy"
-          >
-            {CREATION_COPY}
-          </p>
-
-          <input
-            type="password"
-            aria-label="Passphrase"
-            autoComplete="new-password"
-            spellCheck={false}
-            data-testid="recovery-passphrase-input"
-            className="mt-2 w-full rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)] outline-none"
-            value={passphrase}
-            onChange={(event) => {
-              setPassphrase(event.currentTarget.value);
-              setError(null);
-            }}
-          />
-          <p
-            data-testid="recovery-passphrase-problem"
-            className={`mt-1 text-[10px] leading-relaxed ${
-              passphraseIssue ? "text-amber-700 dark:text-amber-300" : "text-[var(--ink-muted)]"
-            }`}
-          >
-            {passphraseIssue ?? PASSPHRASE_HINT}
-          </p>
-
-          {error ? (
-            <p
-              role="alert"
-              data-testid="recovery-error"
-              className="mt-2 text-[11px] leading-relaxed text-red-600 dark:text-red-300"
-            >
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3 flex items-center justify-end gap-1.5">
-            <button
-              type="button"
-              data-testid="recovery-creation-skip"
-              disabled={deriving}
-              className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:opacity-40 dark:hover:bg-white/10"
-              onClick={onSkip}
-            >
-              Skip for now
-            </button>
-            <button
-              type="button"
-              data-testid="recovery-creation-set"
-              disabled={deriving}
-              className="rounded-md bg-[var(--ink)] px-3 py-1.5 text-[11px] text-[var(--surface)] transition-opacity hover:opacity-90 disabled:opacity-40"
-              onClick={() => void choosePassphrase()}
-            >
-              {deriving ? "Setting\u2026" : "Set passphrase"}
-            </button>
-          </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-muted)]">
-            {CREATION_LATER}
-          </p>
-        </div>
-      </div>,
-      document.body,
-    );
-  }
-
   const closing = mode === "backup-prompt";
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center">
       <button
         type="button"
-        aria-label="Close recovery key dialog"
+        aria-label="Close owner file dialog"
         className="absolute inset-0 cursor-default border-0 bg-black/25 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={closing ? "Save a recovery key" : "Recovery key"}
+        aria-label={closing ? "Save an owner file" : "Owner file"}
         data-testid={closing ? "recovery-prompt" : "recovery-dialog"}
         className="relative w-[min(420px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-sm font-semibold">
-            {closing ? "Save a recovery key?" : "Recovery key"}
+            {closing ? "Save an owner file?" : "Owner file"}
           </h2>
           <button
             type="button"
-            aria-label="Close recovery key dialog"
+            aria-label="Close owner file dialog"
             className="rounded-md px-1.5 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
             onClick={onClose}
           >
@@ -465,11 +280,7 @@ export function RecoveryKeyDialog({
             className="mt-2 text-[11px] leading-relaxed text-[var(--ink)]"
             data-testid="recovery-saved"
           >
-            {rotatedWith === "passphrase"
-              ? "Passphrase set. This workspace now accepts only the key derived from it."
-              : saved
-                ? "New recovery key saved."
-                : "Save the new recovery key before reloading."}
+            {saved ? "New owner file saved." : "Save the new owner file before reloading."}
           </p>
         ) : saved ? (
           <p className="mt-2 text-[11px] text-[var(--ink)]" data-testid="recovery-saved">
@@ -559,23 +370,14 @@ export function RecoveryKeyDialog({
         <div className="mt-3 flex items-center justify-end gap-1.5">
           {stage === "rotated" ? (
             <>
-              {rotatedWith === "passphrase" ? (
-                <p
-                  className="mr-auto max-w-[240px] text-left text-[10px] leading-relaxed text-[var(--ink-muted)]"
-                  data-testid="recovery-passphrase-stale"
-                >
-                  Old editor links and old .suitekey files no longer open this workspace.
-                </p>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="recovery-rotate-download"
-                  className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-                  onClick={saveNew}
-                >
-                  Download new recovery key
-                </button>
-              )}
+              <button
+                type="button"
+                data-testid="recovery-rotate-download"
+                className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+                onClick={saveNew}
+              >
+                Download new owner file
+              </button>
               <button
                 type="button"
                 data-testid="recovery-reload"
@@ -604,7 +406,7 @@ export function RecoveryKeyDialog({
                   className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
                   onClick={() => setStage("confirm")}
                 >
-                  Replace recovery key…
+                  Replace owner file…
                 </button>
               )}
               <button
@@ -618,7 +420,7 @@ export function RecoveryKeyDialog({
                   ? "Replacing\u2026"
                   : saved
                     ? "Save again"
-                    : "Save recovery key"}
+                    : "Save owner file"}
               </button>
             </>
           )}
@@ -631,7 +433,7 @@ export function RecoveryKeyDialog({
                 data-testid="recovery-words-open"
                 className="cursor-pointer text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
               >
-                Save recovery words
+                Save the words for this key
               </summary>
               <p
                 className="mt-1 text-[10px] leading-relaxed text-[var(--ink-muted)]"
@@ -646,6 +448,8 @@ export function RecoveryKeyDialog({
                     className="mt-1.5 grid grid-cols-3 gap-x-2 gap-y-0.5 font-mono text-[10px] text-[var(--ink)]"
                   >
                     {words.split(" ").map((word, index) => (
+                      // The wordlist is test-guaranteed distinct, so the word is a
+                      // stable key and the index is only shown, never identified by.
                       <li key={word} className="list-none">
                         <span className="mr-1 text-[var(--ink-muted)]">{index + 1}</span>
                         {word}
@@ -678,7 +482,7 @@ export function RecoveryKeyDialog({
                   className="mt-1.5 rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
                   onClick={() => void revealWords()}
                 >
-                  Show recovery words
+                  Show the words
                 </button>
               )}
               {wordsError ? (
@@ -690,95 +494,6 @@ export function RecoveryKeyDialog({
                   {wordsError}
                 </p>
               ) : null}
-            </details>
-
-            <details>
-              <summary
-                data-testid="recovery-passphrase-open"
-                className="cursor-pointer text-[11px] text-[var(--ink-muted)] hover:text-[var(--ink)]"
-              >
-                Set a passphrase
-              </summary>
-              <p
-                className="mt-1 text-[10px] leading-relaxed text-[var(--ink-muted)]"
-                data-testid="recovery-passphrase-copy"
-              >
-                {PASSPHRASE_COPY}
-              </p>
-              <input
-                type="password"
-                aria-label="Passphrase"
-                autoComplete="new-password"
-                spellCheck={false}
-                data-testid="recovery-passphrase-input"
-                className="mt-1.5 w-full rounded-md border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px] text-[var(--ink)] outline-none"
-                value={passphrase}
-                onChange={(event) => {
-                  setPassphrase(event.currentTarget.value);
-                  setPassStage("idle");
-                }}
-              />
-              <p
-                data-testid="recovery-passphrase-problem"
-                className={`mt-1 text-[10px] leading-relaxed ${
-                  passphraseIssue ? "text-amber-700 dark:text-amber-300" : "text-[var(--ink-muted)]"
-                }`}
-              >
-                {passphraseIssue ?? PASSPHRASE_HINT}
-              </p>
-
-              {passStage === "confirm" || passStage === "rotating" ? (
-                <div className="mt-1.5 rounded-lg border border-[var(--hairline)] p-2">
-                  <p
-                    className="text-[11px] leading-relaxed text-[var(--ink)]"
-                    data-testid="recovery-passphrase-warning"
-                  >
-                    {PASSPHRASE_WARNING}
-                  </p>
-                  <label className="mt-2 flex items-start gap-1.5 text-[11px] text-[var(--ink)]">
-                    <input
-                      type="checkbox"
-                      data-testid="recovery-passphrase-revoke-links"
-                      checked={revokeLinks}
-                      onChange={(event) => setRevokeLinks(event.target.checked)}
-                      className="mt-0.5"
-                    />
-                    <span>
-                      Also revoke all share links (recommended if the old key may have leaked)
-                    </span>
-                  </label>
-                  <div className="mt-2 flex items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      data-testid="recovery-passphrase-cancel"
-                      disabled={passStage === "rotating"}
-                      className="rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] disabled:opacity-40 dark:hover:bg-white/10"
-                      onClick={() => setPassStage("idle")}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="recovery-passphrase-confirm"
-                      disabled={passStage === "rotating"}
-                      className="rounded-md bg-[var(--ink)] px-2.5 py-1 text-[11px] text-[var(--surface)] transition-opacity hover:opacity-90 disabled:opacity-40"
-                      onClick={() => void setWithPassphrase()}
-                    >
-                      {passStage === "rotating" ? "Replacing\u2026" : "Use passphrase"}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="recovery-passphrase-continue"
-                  disabled={passphraseIssue !== null || stage === "rotated"}
-                  className="mt-1.5 rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
-                  onClick={() => setPassStage("confirm")}
-                >
-                  Set a passphrase…
-                </button>
-              )}
             </details>
           </div>
         )}

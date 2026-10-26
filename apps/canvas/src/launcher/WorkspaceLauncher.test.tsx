@@ -1,12 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  claimWorkspace,
-  deriveOwnerKey,
-  generateOwnerKey,
-  readOwnerKey,
-  writeOwnerKey,
-} from "../session/ownerKey";
+import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
 import { createOwnerKit, downloadOwnerKit } from "../session/ownerKit";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
@@ -17,7 +11,6 @@ import {
 import {
   downloadWorkspaceById,
   navigateTo,
-  openNewWorkspace,
   readRecentWorkspaces,
 } from "../session/workspaceTransfer";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
@@ -33,7 +26,6 @@ vi.mock("../session/workspaceTransfer", async (importOriginal) => {
     ...actual,
     downloadWorkspaceById: vi.fn(async () => {}),
     navigateTo: vi.fn(),
-    openNewWorkspace: vi.fn(),
   };
 });
 
@@ -45,12 +37,10 @@ vi.mock("../session/ownerKit", async (importOriginal) => {
 const exportWorkspace = vi.mocked(downloadWorkspaceById);
 const navigate = vi.mocked(navigateTo);
 const download = vi.mocked(downloadOwnerKit);
-const startNewWorkspace = vi.mocked(openNewWorkspace);
 const renameCached = vi.mocked(renameCachedWorkspace);
 
 const WORKSPACE = "ws-recent";
 const TITLE = "Research";
-const PASSPHRASE = "velvet otter lantern meadow";
 
 function ownerSession(): SessionConfig {
   return {
@@ -80,37 +70,6 @@ function shareSession(role: "editor" | "viewer"): SessionConfig {
     readOnly: role === "viewer",
     ownerKey: null,
   };
-}
-
-function ownerKeys(): string[] {
-  return Object.keys(window.localStorage).filter((key) => key.startsWith("suite.owner."));
-}
-
-function reply(status: number): Response {
-  return { ok: status >= 200 && status < 300, status, json: async () => ({}) } as Response;
-}
-
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-/** A relay that records the first key to claim a workspace, like the real one. */
-function stubRelay() {
-  const owners = new Map<string, string>();
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? "{}")) as { ownerKey?: string };
-    const workspaceId = new URL(url).pathname.split("/").at(-2) ?? "";
-    const presented = await sha256(body.ownerKey ?? "");
-    const owner = owners.get(workspaceId);
-    if (owner === undefined) {
-      owners.set(workspaceId, presented);
-      return reply(200);
-    }
-    return reply(owner === presented ? 200 : 409);
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
 }
 
 function seedRecent(): void {
@@ -148,7 +107,6 @@ beforeEach(() => {
   exportWorkspace.mockClear();
   navigate.mockClear();
   download.mockClear();
-  startNewWorkspace.mockClear();
   renameCached.mockClear();
 });
 
@@ -167,7 +125,7 @@ describe("WorkspaceLauncher recovery flow", () => {
 
     await waitFor(() => expect(screen.getByTestId("recovery-prompt")).toBeVisible());
     expect(screen.getByTestId("recovery-prompt")).toHaveTextContent(
-      "Backup saved. Save a separate recovery key too?",
+      "Backup saved. Save a separate owner file too?",
     );
 
     fireEvent.click(screen.getByTestId("recovery-prompt-save"));
@@ -264,74 +222,52 @@ describe("WorkspaceLauncher recovery flow", () => {
   });
 });
 
-describe("WorkspaceLauncher passphrase choice at creation", () => {
-  it("asks before making the workspace and writes nothing until answered", () => {
+describe("WorkspaceLauncher new workspace", () => {
+  it("opens a new workspace straight away, with one key and a fresh flag", () => {
     render(<WorkspaceLauncher />);
 
     fireEvent.click(screen.getByTestId("launcher-new"));
 
-    expect(screen.getByTestId("recovery-creation")).toHaveTextContent("Set a passphrase?");
-    expect(screen.getByTestId("recovery-creation-copy")).toHaveTextContent(
-      "A passphrase survives a lost device and opens this workspace on any device with the URL",
-    );
-    expect(navigate).not.toHaveBeenCalled();
-    expect(readRecentWorkspaces()).toEqual([]);
-    expect(ownerKeys()).toEqual([]);
-  });
-
-  it("makes the derived key the workspace's only key, so URL plus passphrase owns it", async () => {
-    stubRelay();
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
-      target: { value: PASSPHRASE },
-    });
-    fireEvent.click(screen.getByTestId("recovery-creation-set"));
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1), { timeout: 10_000 });
+    expect(navigate).toHaveBeenCalledTimes(1);
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
     const workspaceId = url.searchParams.get("workspace") ?? "";
-    const derived = await deriveOwnerKey(PASSPHRASE, workspaceId);
+    const generated = readOwnerKey(workspaceId);
 
-    // The stored key is the derived one, and the link opens with it.
-    expect(readOwnerKey(workspaceId)).toBe(derived);
-    expect(url.hash).toBe(`#owner=${derived}`);
+    expect(generated).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(url.hash).toBe(`#owner=${generated}`);
     expect(url.searchParams.get("fresh")).toBe("1");
+    expect(readRecentWorkspaces().map((entry) => entry.id)).toEqual([workspaceId]);
     expect(window.localStorage.getItem(`suite.recoverySaved.${workspaceId}`)).toBeNull();
-
-    // A fresh browser has the URL and the passphrase: the same words derive the
-    // key that claims this workspace, and any other key is refused.
-    window.localStorage.clear();
-    expect(await claimWorkspace(workspaceId, await deriveOwnerKey(PASSPHRASE, workspaceId))).toBe(
-      "claimed",
-    );
-    expect(await claimWorkspace(workspaceId, generateOwnerKey())).toBe("conflict");
+    // No dialog stands between the button and the board.
+    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
   });
 
-  it("skips with the generated key and still offers the recovery file after a backup", async () => {
+  it.each([
+    ["a share session", "editor"],
+    ["a viewer", "viewer"],
+  ] as const)("creates a local workspace for %s too, with no dialog", (_label, role) => {
+    configureSession(shareSession(role));
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
+  });
+
+  it("offers the owner file after a launcher export of a key never saved", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const first = render(<WorkspaceLauncher />);
 
     fireEvent.click(screen.getByTestId("launcher-new"));
-    fireEvent.click(screen.getByTestId("recovery-creation-skip"));
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
     const workspaceId = url.searchParams.get("workspace") ?? "";
     const generated = readOwnerKey(workspaceId);
-
-    // Skip keeps the key this browser generated, untouched.
-    expect(generated).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(url.hash).toBe(`#owner=${generated}`);
-    expect(readRecentWorkspaces().map((entry) => entry.id)).toEqual([workspaceId]);
-    // Nothing else is written and no key is rotated.
-    expect(window.localStorage.getItem(`suite.recoverySaved.${workspaceId}`)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
 
     // The backup prompt is intact: this key has never been saved, so an export
-    // still offers the recovery file for it.
+    // still offers the owner file for it.
     first.unmount();
     render(<WorkspaceLauncher />);
     fireEvent.click(screen.getByTestId(`launcher-export-${workspaceId}`));
@@ -343,59 +279,6 @@ describe("WorkspaceLauncher passphrase choice at creation", () => {
       generated,
       expect.stringMatching(/^[A-Z][a-z]+ [A-Z][a-z]+$/),
     );
-  });
-
-  it("refuses a weak passphrase with the reason instead of only disabling the button", async () => {
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
-      target: { value: "cat dog" },
-    });
-
-    expect(screen.getByTestId("recovery-passphrase-problem")).toHaveTextContent(
-      "at least 4 words and 16 characters",
-    );
-    const set = screen.getByTestId("recovery-creation-set");
-    expect(set).toBeEnabled();
-
-    fireEvent.click(set);
-
-    expect(await screen.findByTestId("recovery-error")).toHaveTextContent(
-      "at least 4 words and 16 characters",
-    );
-    expect(navigate).not.toHaveBeenCalled();
-    expect(readRecentWorkspaces()).toEqual([]);
-    expect(ownerKeys()).toEqual([]);
-  });
-
-  it("closes on Escape and on the backdrop without changing anything", () => {
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByTestId("recovery-creation")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-    fireEvent.click(screen.getAllByLabelText("Close passphrase choice")[0] as HTMLElement);
-    expect(screen.queryByTestId("recovery-creation")).not.toBeInTheDocument();
-
-    expect(navigate).not.toHaveBeenCalled();
-    expect(readRecentWorkspaces()).toEqual([]);
-    expect(ownerKeys()).toEqual([]);
-  });
-
-  it.each([
-    ["a share session", "editor"],
-    ["a viewer", "viewer"],
-  ] as const)("never offers the choice to %s", (_label, role) => {
-    configureSession(shareSession(role));
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-
-    expect(screen.queryByTestId("recovery-creation")).not.toBeInTheDocument();
-    expect(startNewWorkspace).toHaveBeenCalledTimes(1);
   });
 });
 

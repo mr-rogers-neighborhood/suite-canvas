@@ -223,6 +223,9 @@ describe("standalone guard rails", () => {
   const RELAY_MODULES: Readonly<Record<string, readonly string[]>> = {
     "session/ownerKey.ts": ["main.tsx"],
     "session/shares.ts": ["main.tsx", "App.tsx", "components/WorkspaceActions.tsx"],
+    // The Better Auth client. `App.tsx` reaches it only through a lazy chunk that
+    // the standalone branch never renders, so a standalone build has no auth code.
+    "auth/client.ts": ["App.tsx"],
     // The operator panel is its own `admin.html` entry; the app never imports it.
     "admin/api.ts": [],
   };

@@ -124,17 +124,6 @@ export function navigateTo(url: string): void {
   window.location.assign(url);
 }
 
-/** A new workspace starts empty; the flag keeps the starter demo cards out. */
-export function openNewWorkspace(): void {
-  const id = newWorkspaceId();
-  const ownerKey = generateOwnerKey();
-  writeOwnerKey(id, ownerKey);
-  rememberWorkspace({ id, title: "Untitled workspace" });
-  const url = new URL(workspaceUrl(id, null, ownerKey));
-  url.searchParams.set("fresh", "1");
-  navigateTo(url.toString());
-}
-
 export function openWorkspace(id: string, boardId?: string | null): void {
   rememberWorkspace({ id, ...(boardId ? { boardId } : {}) });
   navigateTo(workspaceUrl(id, boardId, readOwnerKey(id)));

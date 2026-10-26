@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deriveOwnerKey, readOwnerKey, recordClaimOutcome } from "../session/ownerKey";
+import { readOwnerKey, recordClaimOutcome } from "../session/ownerKey";
 import { createOwnerKit } from "../session/ownerKit";
 import { encodeKey } from "../session/recoveryWords";
 import { WorkspaceProtected } from "./WorkspaceProtected";
@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceProtected", () => {
-  it("offers a recovery file, a paste disclosure and the launcher", () => {
+  it("offers one question: an owner file, its words, or the launcher", () => {
     render(<WorkspaceProtected workspaceId="ws-1" />);
 
     expect(screen.getByTestId("recovery-open")).toBeVisible();
@@ -38,7 +38,7 @@ describe("WorkspaceProtected", () => {
     expect(detail).toHaveAttribute("data-conflict", "unknown");
     expect(detail).toHaveTextContent("Another browser's owner key already owns this workspace.");
     expect(detail).toHaveTextContent(
-      "Open a recovery key file, or the editor link that includes the current owner key.",
+      "Open the owner file, paste it, or use the editor link that includes the current owner key.",
     );
     // No local copy exists, so the screen must not promise to keep one.
     expect(detail).not.toHaveTextContent("edits on this device are kept");
@@ -77,7 +77,7 @@ describe("WorkspaceProtected", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("recovery-error")).toHaveTextContent(
-        "That recovery key does not own this workspace.",
+        "That owner file does not own this workspace.",
       ),
     );
     expect(fetchMock).not.toHaveBeenCalled();
@@ -110,14 +110,14 @@ describe("WorkspaceProtected", () => {
     upload("{not json");
 
     await waitFor(() =>
-      expect(screen.getByTestId("recovery-error")).toHaveTextContent("not a Suite recovery key"),
+      expect(screen.getByTestId("recovery-error")).toHaveTextContent("not a Suite owner file"),
     );
   });
 
   it("reports a malformed pasted key instead of navigating", () => {
     render(<WorkspaceProtected workspaceId="ws-1" />);
 
-    fireEvent.click(screen.getByText("Paste recovery key"));
+    fireEvent.click(screen.getByText("Paste an owner file"));
     fireEvent.change(screen.getByTestId("recovery-paste"), {
       target: { value: '{"kind":"suite.workspace"}' },
     });
@@ -129,68 +129,10 @@ describe("WorkspaceProtected", () => {
 
 /** Bytes 0..31 as base64url, the same fixed key the word tests use. */
 const OWNER_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
-const PASSPHRASE = "velvet otter lantern meadow";
 
 function reply(status: number): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => ({}) } as Response;
 }
-
-describe("WorkspaceProtected passphrase recovery", () => {
-  it("derives the key from the passphrase in the URL and claims with it", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => reply(200));
-    vi.stubGlobal("fetch", fetchMock);
-    const applyKey = vi.fn();
-    render(<WorkspaceProtected workspaceId="ws-1" applyKey={applyKey} />);
-
-    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
-    expect(screen.getByTestId("recovery-passphrase-copy")).toHaveTextContent(
-      "A passphrase survives a lost browser, a lost file and a new device",
-    );
-    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
-      target: { value: PASSPHRASE },
-    });
-    fireEvent.click(screen.getByTestId("recovery-passphrase-apply"));
-
-    await waitFor(() => expect(applyKey).toHaveBeenCalledTimes(1), { timeout: 10_000 });
-    const derived = await deriveOwnerKey(PASSPHRASE, "ws-1");
-    expect(applyKey).toHaveBeenCalledWith(derived);
-    expect(readOwnerKey("ws-1")).toBe(derived);
-    expect(screen.queryByTestId("recovery-error")).toBeNull();
-
-    // The workspace id comes from the page; the derived key is the only secret.
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(String(url)).toBe("http://localhost:1235/api/workspaces/ws-1/claim");
-    expect(JSON.parse(String(init?.body))).toEqual({ ownerKey: derived });
-  });
-
-  it("shows one readable error for a wrong passphrase and writes nothing", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => reply(409)),
-    );
-    const applyKey = vi.fn();
-    render(<WorkspaceProtected workspaceId="ws-1" applyKey={applyKey} />);
-
-    fireEvent.click(screen.getByTestId("recovery-passphrase-open"));
-    fireEvent.change(screen.getByTestId("recovery-passphrase-input"), {
-      target: { value: PASSPHRASE },
-    });
-    fireEvent.click(screen.getByTestId("recovery-passphrase-apply"));
-
-    await waitFor(
-      () =>
-        expect(screen.getByTestId("recovery-error")).toHaveTextContent(
-          "That passphrase does not open this workspace.",
-        ),
-      { timeout: 10_000 },
-    );
-    expect(screen.getByTestId("recovery-error")).toHaveTextContent(
-      "nothing on this device was changed",
-    );
-    expect(readOwnerKey("ws-1")).toBeNull();
-    expect(applyKey).not.toHaveBeenCalled();
-  });
-});
 
 describe("WorkspaceProtected recovery words", () => {
   it("restores the key from words typed off paper", async () => {
@@ -203,7 +145,7 @@ describe("WorkspaceProtected recovery words", () => {
 
     fireEvent.click(screen.getByTestId("recovery-words-open"));
     expect(screen.getByTestId("recovery-words-copy")).toHaveTextContent(
-      "Recovery words survive a lost browser and a lost file",
+      "The words are this workspace's owner key written out",
     );
     fireEvent.change(screen.getByTestId("recovery-words-input"), {
       target: { value: await encodeKey(OWNER_KEY) },

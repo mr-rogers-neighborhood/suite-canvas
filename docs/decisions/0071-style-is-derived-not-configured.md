@@ -305,3 +305,49 @@ choose 28px, the disagreement became visible as a notch inside the card's own cu
 
 Recorded because the bug is evidence for Batch A: the components of a silhouette drifted as soon as one
 of them became configurable, and the answer is the same one the utilities index already gives.
+
+## Amendment — the silhouette contract (Phase 18 Batch A)
+
+The previous amendment published one radius so the parts of a card could not disagree. That fixed the
+*inside* of the card. It did not touch the other consumer of a silhouette: **a connector's position is a
+slot on the box, and a rounded card does not paint its box's corners.** At 28px a corner dot floated a
+third of the short side away from the card it belonged to — reported twice, second time confirmed on a
+fresh card.
+
+`apps/canvas/src/canvas/silhouette.ts` is now the contract, and it is three pure functions:
+
+| function | the question it answers |
+| --- | --- |
+| `clampRadius` | how round can this box actually paint? CSS silently scales a radius past half the short side, so the geometry has to clamp *first* or it measures an arc nobody draws |
+| `edgePoint` | given a normalised position on the box, where is the painted edge? |
+| `cornerInset` | `r - r/√2` — how far a corner is pulled in along the diagonal |
+
+Three properties are asserted rather than described, because each one is a thing that could quietly stop
+being true: **a side midpoint never moves** (so this is a correction, not a change of geometry), **a box
+corner lands exactly on the arc** (measured as a distance from the arc's centre), and **radius 0 is the
+identity** (so a board that never rounds anything pays nothing).
+
+**Measured, not resolved, at the one place it matters.** `NodeConnectors` reads the silhouette from the
+DOM — `offsetWidth`/`offsetHeight` of the connector layer plus the inherited `--card-radius` — rather
+than re-deriving it from the rules. The radius is the end of a ladder (`rules.ts` owns it: paint, type
+rule, kind rule, reader preference, 12px default) and a second implementation of that ladder is exactly
+the drift ADR-0071 exists to prevent. The layer is the box a percentage position resolves against, which
+is why it is the box measured: the card has a 1px border, and positioning in the layer while measuring
+the card is a sub-pixel disagreement that only shows up when a corner dot has to sit on an arc.
+
+**What implementing settled.** Two things the plan did not anticipate:
+
+1. **A corner dot's link follows for free.** The dot *is* a React Flow handle, so re-measuring the handle
+   after the correction is all it takes for a link to route from where the dot is drawn. No second
+   geometry path, no per-edge special case.
+2. **The first measurement must be silent.** It happens inside React Flow's initial fit, and calling
+   `updateNodeInternals` there clamps the viewport to that one node and hides every other node behind
+   visibility culling — a hazard this codebase had already written down once (the connector-count effect
+   in the same file) and which cost an hour to rediscover. The guard has to skip *both* "no answer yet"
+   and "same answer as last time": the first measure can legitimately return `null` before layout, which
+   slips past a naive `previous !== null` check.
+
+**Still open, and deliberately not in this batch:** a painted *outline* (ADR-0060's family) is inset by
+nothing, so a drawn border still cuts the corner; and the card's shadow follows `border-radius` by
+accident rather than being derived. Both are consumers this contract now makes possible, not work it
+finished.

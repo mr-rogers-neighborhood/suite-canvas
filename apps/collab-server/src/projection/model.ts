@@ -86,6 +86,28 @@ export type ProjectionRun =
   | { kind: "refused"; workspaceId: string; outstanding: number }
   | { kind: "failed"; workspaceId: string; error: string };
 
+/**
+ * One timing line from the projection path, emitted only when
+ * `SUITE_PROJECTION_TRACE=1`.
+ *
+ * The relay's own counters say *what* a rebuild did; they cannot say where the
+ * wall time between an owner's save and a reader's update went. Those are three
+ * different clocks — the save that asks for the rebuild (`scheduled`), the pass
+ * that reads the rooms (`refresh`) and one room's rebuild (`rebuild`) — so each
+ * is reported separately with the stage timings inside it.
+ */
+export interface ProjectionTrace {
+  /** Which step of the path this line times. */
+  phase: "scheduled" | "refresh" | "rebuild";
+  workspaceId: string;
+  /** The room, for `rebuild` lines only. */
+  shareId?: string;
+  /** Milliseconds this step took, or how long it waited before it ran. */
+  ms: number;
+  /** Stage timings, counts and flags inside the step. */
+  detail: Record<string, number | string | boolean>;
+}
+
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
   url: string;
@@ -144,6 +166,12 @@ export interface ProjectionWorkerOptions {
   outstanding?: number;
   /** Reports every rebuild outcome, so the server can count it once. */
   onRun?: (run: ProjectionRun) => void;
+  /**
+   * Timing sink for the rebuild path. Defaults to `console.log` when
+   * `SUITE_PROJECTION_TRACE=1`, and to nothing at all otherwise, so a production
+   * relay pays one env lookup per worker.
+   */
+  trace?: (line: ProjectionTrace) => void;
   /** Clock for idle accounting; tests replace it. */
   now?: () => number;
   logger?: Pick<Console, "warn">;
@@ -245,6 +273,21 @@ export function targetOf(share: Share): ProjectionTarget | null {
       : null;
   }
   return null;
+}
+
+/**
+ * Stable key for "what this share shows", so a refresh can build one projection
+ * per distinct target instead of one per room.
+ *
+ * Four viewer links to the same board are four rooms showing one board; the
+ * projection they need is the same document, and building it four times per
+ * save round was four times the work for one answer. Selection links carry their
+ * card list, because two selections of the same board are different targets.
+ */
+export function projectionTargetKey(target: ProjectionTarget): string {
+  if (target.scope === "board") return `board:${target.boardId}`;
+  if (target.scope === "card") return `card:${target.cardId}`;
+  return `selection:${target.boardId}:${[...target.cardIds].sort().join(",")}`;
 }
 
 /**

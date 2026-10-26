@@ -140,8 +140,13 @@ export function postgresDatabase(options: PostgresOptions): PostgresDatabase {
     queryable: poolQueryable(pool),
     kysely,
     close: async () => {
+      // Kysely ends the pool it was handed, the first time a connection is acquired
+      // (`PostgresDriver.destroy`). Ending it again rejects with "Called end on pool
+      // more than once", which a unit test that never opened a socket cannot see and a
+      // shutdown after one query always hits. `ending` is pg's own flag; there is no
+      // public way to ask whether a pool was already ended.
       await kysely.destroy();
-      await pool.end();
+      if ((pool as Pool & { ending?: boolean }).ending !== true) await pool.end();
     },
   };
 }

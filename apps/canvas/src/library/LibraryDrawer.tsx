@@ -21,7 +21,7 @@ import { LibrarySearchRow } from "./LibrarySearchRow";
 import { LibrarySelectionBar } from "./LibrarySelectionBar";
 import type { LibraryBoard, LibraryDrawerProps, LibraryEntry, LibraryItem } from "./libraryTypes";
 import { useLibraryHold } from "./useLibraryHold";
-import { useLibraryList } from "./useLibraryList";
+import { type LibrarySort, useLibraryList } from "./useLibraryList";
 import { useLibraryRowActions } from "./useLibraryRowActions";
 import { useLibrarySelection } from "./useLibrarySelection";
 
@@ -113,10 +113,17 @@ export function LibraryDrawer({
   const views = useSavedViews(workspace);
   const activeView = views.find((view) => view.id === activeViewId);
   const [activeResult, setActiveResult] = useState(0);
+  /**
+   * The list's order. A saved view carries its own when it is applied, so this
+   * starts wherever the last view left it and the reader can change it after.
+   */
+  const [sort, setSort] = useState<LibrarySort>("title");
   /** A Locate that found nothing says so instead of moving the camera. */
   const [locateMiss, setLocateMiss] = useState<string | null>(null);
   /** The board whose delete is being asked about; the only place a board is deleted. */
   const [pendingDelete, setPendingDelete] = useState<LibraryBoard | null>(null);
+  /** The trashed card whose permanent delete is being asked about. */
+  const [pendingPurge, setPendingPurge] = useState<{ id: string; title: string } | null>(null);
   /**
    * The row whose actions menu is open, and where it opened. One piece of state
    * for both rows and both entry points (the ⋯ button and a right-click), so the
@@ -141,6 +148,7 @@ export function LibraryDrawer({
     countsByFacet,
     ordered,
     filtering,
+    truncated,
     grouped,
     sectionsById,
     visibleBoards,
@@ -161,7 +169,7 @@ export function LibraryDrawer({
     sectionOrder,
     groupBySection,
     workspace,
-    viewOrder: activeView?.query.order,
+    sort,
     initialQuery,
   });
   /** The keyboard cursor row, when a search is active. */
@@ -201,7 +209,11 @@ export function LibraryDrawer({
     }
     if (appliedView.current === activeViewId) return;
     appliedView.current = activeViewId;
-    updateQuery(workspace?.getView(activeViewId)?.query.text ?? "");
+    const query = workspace?.getView(activeViewId)?.query;
+    updateQuery(query?.text ?? "");
+    setSort(
+      query?.order === "updated" ? "updated" : query?.order === "relevance" ? "relevance" : "title",
+    );
   }, [activeViewId, workspace, updateQuery]);
 
   useEscapeLayer(() => {
@@ -276,6 +288,7 @@ export function LibraryDrawer({
     if (!open) {
       resetHold();
       setPendingDelete(null);
+      setPendingPurge(null);
       setLocateMiss(null);
     }
   }, [open, resetHold]);
@@ -294,7 +307,6 @@ export function LibraryDrawer({
     onSetBoardTemplate,
     onUnplaceBoardCards,
     onRestore,
-    onDeleteForever,
     onOpenCard,
     onGoToBoard,
     onPlace,
@@ -302,6 +314,7 @@ export function LibraryDrawer({
     onTrash,
     setLocateMiss,
     setPendingDelete,
+    setPendingPurge,
   });
 
   const openRowMenu = useCallback(
@@ -336,13 +349,11 @@ export function LibraryDrawer({
 
   const pressRow = (item: LibraryItem, event: ReactPointerEvent) => {
     if (event.button !== 0) return;
-    if (
-      (event.target as HTMLElement).closest(
-        'button, input, textarea, select, [contenteditable="true"]',
-      )
-    ) {
-      return;
-    }
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    // The row's own open button is part of the row's surface, so a press on the
+    // title still lifts it; every other button (the ⋯) keeps its own press.
+    if (target.closest("button:not([data-row-open])")) return;
     // Keep the gesture from selecting text across the board.
     event.preventDefault();
     if (selecting) {
@@ -373,6 +384,8 @@ export function LibraryDrawer({
     sectionLabel,
     onOpenMenu: openRowMenu,
     onPressRow: pressRow,
+    onOpenCard,
+    onOpenBoard,
   };
 
   const entries: LibraryEntry[] =
@@ -438,6 +451,8 @@ export function LibraryDrawer({
           if (target !== undefined) onOpenCard(target.id);
         }}
         enabled={searching && ordered.length > 0}
+        sort={sort}
+        onSort={setSort}
       />
 
       <LibraryFacets
@@ -475,6 +490,7 @@ export function LibraryDrawer({
         query={query}
         filtering={filtering}
         entryCount={entries.length}
+        truncated={truncated}
         rows={<LibraryRowList entries={entries} grouped={grouped} context={rowContext} />}
         templates={visibleTemplates}
         starters={visibleStarters}
@@ -484,6 +500,12 @@ export function LibraryDrawer({
       />
 
       <LibraryOverlays
+        pendingPurge={pendingPurge}
+        onDismissPurge={() => setPendingPurge(null)}
+        onDeleteForever={(cardId) => {
+          onDeleteForever(cardId);
+          setPendingPurge(null);
+        }}
         pendingDelete={pendingDelete}
         onDismissDelete={() => setPendingDelete(null)}
         onDeleteBoard={onDeleteBoard}

@@ -9,6 +9,7 @@
  * cookie) and removes the token from the URL; see `resolveShare`.
  */
 
+import { readerPath, readerSlug, SHARE_READER_PREFIX } from "../sharing/readerAddress";
 import { collabHttpBase } from "./endpoints";
 
 export const SHARE_API_PATH = "/api/shares";
@@ -28,6 +29,21 @@ export const SHARE_SESSION_RESUME = "session-cookie";
 
 /** Fragment marker left behind after the token leaves the URL, so a reload can resume. */
 export const SHARE_SESSION_FRAGMENT = "#share-session";
+
+/**
+ * Path prefix of the reader route: a published page lives at
+ * `/s/<slug>?share=<token>`. The slug is the page's stable name, so the address
+ * survives a reload, keeps working after the author's tab closes, and is the
+ * same one the author copied; the token is what makes it readable, and it
+ * leaves the address bar as soon as the session cookie replaces it.
+ */
+export const SHARE_READER_PATH = SHARE_READER_PREFIX;
+
+/** The reader route and its slug read back out, re-exported for share callers. */
+export { readerPath, readerSlug };
+
+/** Refusal code the relay sends when the draft is over its publish byte cap. */
+export const SHARE_REFUSAL_DRAFT_TOO_LARGE = "draft-too-large";
 
 export type ShareScope = "workspace" | "board" | "card" | "selection";
 export type ShareRole = "viewer" | "editor";
@@ -67,6 +83,13 @@ export interface Share {
   cardIds: string[];
   /** How many cards the link projects: the selection size, 1 for a card share. */
   cardCount: number;
+  /**
+   * Page name of the published link: the reader address is `/s/<slug>`. The
+   * relay derives it once, when the link is created, and never reuses it, so a
+   * card renamed later keeps the address the author copied. Absent only on a
+   * response from a server older than the column.
+   */
+  slug?: string;
 }
 
 export interface CreateShareInput {
@@ -77,6 +100,11 @@ export interface CreateShareInput {
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];
+  /**
+   * Name of what is being published (the card or board title). The relay spends
+   * it once on the page slug and forgets it, so this is not a rename.
+   */
+  name?: string | null;
   /**
    * Epoch milliseconds, or null (or 0) for a link that never expires. Omit it to
    * accept the server's default: no expiry on a self-host, 30 days when hosted.
@@ -304,7 +332,7 @@ export async function resolveShare(token: string): Promise<Share> {
   try {
     const { share, session } = await openShareSession(token);
     activeSession = session;
-    rewriteShareUrl();
+    rewriteShareUrl(share);
     return share;
   } catch {
     activeSession = null;
@@ -312,12 +340,19 @@ export async function resolveShare(token: string): Promise<Share> {
   }
 }
 
-/** Replaces the address bar URL with a token-free one, keeping the resume marker. */
-function rewriteShareUrl(): void {
+/**
+ * Replaces the address bar URL with a token-free one: the canonical reader
+ * address `/s/<slug>` plus the resume marker. The slug comes from the resolved
+ * share, so a link made before slugs existed, or one whose path was edited,
+ * settles on the page's real name.
+ */
+function rewriteShareUrl(share?: Share): void {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   if (!url.searchParams.has("share")) return;
   url.searchParams.delete("share");
+  const slug = share?.slug ?? null;
+  if (slug) url.pathname = readerPath(slug);
   url.hash = SHARE_SESSION_FRAGMENT;
   window.history.replaceState(null, "", url.toString());
 }
@@ -388,15 +423,18 @@ export async function revokeAllShares(
 }
 
 /**
- * The recipient URL of a token share. It carries the token only, so opening it
- * cannot leak the workspace id before the token is validated.
+ * The recipient URL of a token share: `/s/<slug>?share=<token>`. The slug names
+ * the page, so the address is the same one a reader can come back to; the token
+ * is the credential, and it is what the exchange trades for a session cookie.
+ * Nothing else travels: no workspace id, no board id, no leftover fragment from
+ * the page that made the link. A share with no slug (an older relay) keeps the
+ * current path, which is how links were built before the reader route existed.
  */
-export function shareLink(token: string): string {
+export function shareLink(token: string, slug?: string | null): string {
   const url = new URL(window.location.href);
+  if (slug) url.pathname = readerPath(slug);
   url.search = "";
   url.searchParams.set("share", token);
-  // A viewer link carries the token and nothing else: no workspace id, no
-  // fragment left over from the page that made it.
   url.hash = "";
   return url.toString();
 }
@@ -427,6 +465,12 @@ export interface SharePublishConflict {
   unsupported: SharePublishConflictEntry[];
   /** Why the publish was rejected, when the server offers a summary. */
   reason: string | null;
+  /**
+   * Stable refusal code, when the plan hit a named cap rather than a conflict.
+   * `draft-too-large` is the publish size cap; the editor can say what wall it
+   * met instead of quoting the server's prose.
+   */
+  code: string | null;
 }
 
 /** Body of a successful publish or reload. */
@@ -441,6 +485,18 @@ export interface ShareStatus {
   hasBaseline: boolean;
 }
 
+/**
+ * What the editor sees for a named refusal, or null when the code is not one
+ * this build knows. The limit itself is the relay's number and is published on
+ * the limits page; naming the wall is the client's job.
+ */
+export function publishRefusalMessage(code: string | null | undefined): string | null {
+  if (code === SHARE_REFUSAL_DRAFT_TOO_LARGE) {
+    return "This draft is over the publish size limit, so nothing was published. Trim it, then publish again.";
+  }
+  return null;
+}
+
 /** A publish rejected because the draft and the source diverged. */
 export class SharePublishConflictError extends Error {
   readonly conflict: SharePublishConflict;
@@ -449,7 +505,8 @@ export class SharePublishConflictError extends Error {
     const count = conflict.conflicts.length + conflict.unsupported.length;
     const first = conflict.conflicts[0] ?? conflict.unsupported[0];
     super(
-      conflict.reason ??
+      publishRefusalMessage(conflict.code) ??
+        conflict.reason ??
         (first
           ? `${first.message} (${first.key})`
           : `The publish conflicted in ${count} place${count === 1 ? "" : "s"}.`),
@@ -490,12 +547,13 @@ function conflictEntries(value: unknown): SharePublishConflictEntry[] {
 
 function conflictBody(body: unknown): SharePublishConflict {
   if (!isRecord(body)) {
-    return { conflicts: [], unsupported: [], reason: null };
+    return { conflicts: [], unsupported: [], reason: null, code: null };
   }
   return {
     conflicts: conflictEntries(body.conflicts),
     unsupported: conflictEntries(body.unsupported),
     reason: typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null,
+    code: errorCode(body),
   };
 }
 

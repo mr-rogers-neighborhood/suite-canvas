@@ -1,4 +1,7 @@
 import { err, fromPromise, ok, type Result } from "neverthrow";
+import { eraseAccount } from "../account/erase.js";
+import { accountExport, accountExportFileName } from "../account/export.js";
+import type { AccountStore, WorkspaceDataStore } from "../account/store.js";
 import { capabilitiesForRole } from "../identity/capabilities.js";
 import type { EnrollmentRedeemInput, RedemptionRefusal } from "../invitations/enrollment.js";
 import { licenceStateFor } from "../licensing/licences.js";
@@ -21,7 +24,7 @@ import {
 } from "./response.js";
 
 /**
- * The three routes of the control plane.
+ * The account-surface routes of the control plane.
  *
  * Every reader here answers with a `Result`, so validation composes instead of being
  * thrown up a level: a route lists the fields it needs, hands the first refusal back
@@ -31,6 +34,8 @@ import {
 const REDEEM_PATH = "/api/invites/redeem";
 const CLAIM_PATH = "/api/workspaces/claim";
 const MEMBERS_PATH = /^\/api\/workspaces\/([^/]+)\/members$/u;
+const ACCOUNT_PATH = "/api/account";
+const ACCOUNT_EXPORT_PATH = "/api/account/export";
 
 /**
  * The request body, as a refusal rather than an exception.
@@ -349,6 +354,131 @@ async function membersRoute(
   );
 }
 
+/** The stores the account routes need, or the refusal a deployment earns by omitting them. */
+function accountStores(
+  deps: AuthHandlerDeps,
+): Result<{ accounts: AccountStore; workspaceData: WorkspaceDataStore | null }, HandlerRefusal> {
+  const accounts = deps.accounts ?? null;
+  if (accounts === null) {
+    return err(new AuthError("auth-not-configured", "the account store is not wired"));
+  }
+  return ok({ accounts, workspaceData: deps.workspaceData ?? null });
+}
+
+/**
+ * `GET /api/account/export` — everything the account owns, as one download.
+ *
+ * The file references documents instead of copying them, and the reason is inside the
+ * file: a `.suite` export already exists per workspace, and this service holds no
+ * document store to copy from. Share metadata comes from the relay when a deployment
+ * wired one, and a workspace says so when it did not, so an empty list is never
+ * mistaken for "no links".
+ */
+async function exportRoute(
+  deps: AuthHandlerDeps,
+  event: AuthHttpEvent,
+  now: () => number,
+  log: AuthLogger,
+): Promise<RouteResult> {
+  if (methodOf(event) !== "GET") return ok(methodNotAllowed("GET"));
+
+  const session = await requireSession(deps, event);
+  if (session.isErr()) return err(session.error);
+  const stores = accountStores(deps);
+  if (stores.isErr()) return err(stores.error);
+
+  const document = await accountExport(
+    { userId: session.value.userId },
+    { accounts: stores.value.accounts, workspaceData: stores.value.workspaceData, now },
+  );
+  log("info", "account exported", {
+    userId: session.value.userId,
+    organizations: document.organizations.length,
+  });
+  return ok({
+    statusCode: 200,
+    body: JSON.stringify(document),
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "content-disposition": `attachment; filename="${accountExportFileName(
+        document.account.userId,
+        document.exportedAt,
+      )}"`,
+      "cache-control": "no-store",
+    },
+  });
+}
+
+/**
+ * The body of a delete, as a confirmation the caller meant it.
+ *
+ * Same shape as the relay's workspace delete: the body repeats the id the route already
+ * knows, so a request that arrives from the wrong tab or a stale form cannot erase an
+ * account it never named.
+ */
+function eraseConfirmationOf(event: AuthHttpEvent, userId: string): Result<true, HandlerRefusal> {
+  const body = bodyOf(event);
+  if (body.isErr()) {
+    return err(
+      new AuthError("invalid-request", `deleting an account requires {"confirm":"${userId}"}`),
+    );
+  }
+  const confirm = body.value.confirm;
+  if (typeof confirm !== "string" || confirm.trim() !== userId) {
+    return err(
+      new AuthError("invalid-request", `deleting an account requires {"confirm":"${userId}"}`),
+    );
+  }
+  return ok(true);
+}
+
+/**
+ * `DELETE /api/account` — the account, and every store it owns.
+ *
+ * The answer is the report, never a bare success: what each store removed, what it
+ * could not, and what a retry does. `200` means the account row is gone; `500` means it
+ * is not, because the ordering stops before the control plane when a relay delete fails
+ * and Postgres rolls back as one transaction. In both cases the body says which.
+ */
+async function eraseRoute(
+  deps: AuthHandlerDeps,
+  event: AuthHttpEvent,
+  now: () => number,
+  log: AuthLogger,
+): Promise<RouteResult> {
+  if (methodOf(event) !== "DELETE") return ok(methodNotAllowed("DELETE"));
+
+  const session = await requireSession(deps, event);
+  if (session.isErr()) return err(session.error);
+  const stores = accountStores(deps);
+  if (stores.isErr()) return err(stores.error);
+
+  const confirmed = eraseConfirmationOf(event, session.value.userId);
+  if (confirmed.isErr()) return err(confirmed.error);
+
+  const report = await eraseAccount(
+    { userId: session.value.userId },
+    {
+      accounts: stores.value.accounts,
+      workspaceData: stores.value.workspaceData,
+      now,
+    },
+  );
+  log(report.deleted ? "info" : "warn", "account erased", {
+    userId: report.userId,
+    deleted: report.deleted,
+    complete: report.complete,
+    remaining: report.stores
+      .filter((store) => store.status !== "removed")
+      .map((store) => `${store.store}:${store.status}`),
+  });
+  return ok({
+    statusCode: report.deleted ? 200 : 500,
+    body: JSON.stringify(report),
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
 /** The route table, as one function: path first, then method, then the work. */
 export async function routeOf(
   deps: AuthHandlerDeps,
@@ -368,6 +498,8 @@ export async function routeOf(
 
   if (path === REDEEM_PATH) return redeemRoute(deps, event, log);
   if (path === CLAIM_PATH) return claimRoute(deps, event, now, log);
+  if (path === ACCOUNT_EXPORT_PATH) return exportRoute(deps, event, now, log);
+  if (path === ACCOUNT_PATH) return eraseRoute(deps, event, now, log);
 
   const membersMatch = MEMBERS_PATH.exec(path);
   if (membersMatch !== null) {

@@ -15,7 +15,7 @@ those surfaces and nothing reaches past them:
 | Folder | What lives there |
 | --- | --- |
 | `identity/` | `betterAuth.ts` (the only module that knows Better Auth exists), `relayToken.ts` (the claims the relay verifies), `mfa.ts` (advice and enforcement), `principal.ts`, `capabilities.ts` |
-| `organizations/` | `workspaces.ts` (claim), `adoption.ts` (anonymous to account), `seats.ts` (the licence allowances) |
+| `organizations/` | `workspaces.ts` (claim), `adoption.ts` (anonymous to account), `seats.ts` (the licence allowances), `freeTier.ts` (the free licence every organization starts on) |
 | `invitations/` | `enrollment.ts` (the invitation engine and its redemption port), `admission.ts` (the review queue's gate) |
 | `licensing/` | `licences.ts` (the licence port), `entitlements.ts` (the tier and limits the token carries) |
 | `mail/` | `mail.ts`: the transport interface, the console transport, and the three senders |
@@ -34,7 +34,7 @@ return a `Result`, and `http/response.ts` holds the single code to status mappin
 | --- | --- |
 | `better-auth` 1.7.12 | Constructed by `createAuthService` with organization, magic link, passkey, Google, anonymous, admin, `twoFactor`, `jwt`, `emailHarmony` and the invitation engine |
 | Database adapter | Kysely over a `pg` pool. `postgresDatabase` builds `{ db, type: "postgres" }` for Better Auth and a raw-SQL `Queryable` over the same pool for our repositories and the migration runner. `store/adapter.test.ts` pins the shape: a query executor, not an arbitrary object |
-| Postgres path | Composed and typechecked, never executed against a server here. `pnpm test` has no database, so the first live run belongs to the lane that deploys this |
+| Postgres path | `pnpm test` has no database, so the unit suite asserts the adapter as a shape. `pnpm db:verify` is what executes it: a throwaway cluster, every migration, the real repositories, and the real organization plugin creating an organization |
 | Sign-up | Open, with a verified email required before a session is issued (ADR-0077). See “Sign-up” below |
 | Magic link, verification, invitations | Delivered through `mail/mail.ts`. The console transport is the development one; a deployment injects a `MailTransport` |
 | Session JWT | `jwt()` mints a five-minute token and publishes the key set at `/api/auth/jwks`. See “The relay credential” |
@@ -121,6 +121,29 @@ Seats are one policy with two call sites. A redemption writes its `member` row t
 `beforeAddMember` never fires for it; the same licence decision reaches it as `resolveSeatLimit`, which
 reads `seatCeiling`, the function `checkSeatAllowance` also uses. `beforeAddMember` remains the only
 seat gate for member rows the organization plugin writes.
+
+### Where the licence row comes from
+
+Every organization is born on the free tier. `0009_free_licence_provisioning.sql` puts a trigger on
+`organization` that writes the organization's `organization_licences` row in the same transaction, so
+a create that fails at any point rolls the organization back rather than leaving an ownerless row
+behind — the orphan the seat refusal used to produce. The numbers are `FREE_LICENCE_TIER` in
+`src/organizations/freeTier.ts`: one workspace, one seat (the owner's), 64 MiB per document, 8 MiB per
+attachment, for a hundred years. `pnpm db:verify` reads the row the trigger wrote and compares it with
+that object, so the SQL and the TypeScript cannot describe two different free tiers.
+
+The free row is a default, not a second kind of licence. `organization_licences.organization_id` is
+the primary key, so a paid subscription *replaces* the row: a second row for one organization is not
+representable, and the write that replaces it has to be an upsert. Nothing in this package writes that
+paid row; the entitlement read (`src/licensing/entitlements.ts`) answers tier `free` with no limits
+when there is no live `subscription`, and `services/billing`'s `createEntitlementReader` is what turns
+a live one into a plan.
+
+A missing row is consequently a deployment fault and not a customer's state. `checkSeatAllowance`
+reports it as `licence-unprovisioned`, whose sentence says the row was never provisioned; a free
+organization that has spent its one seat reports `seat-allowance-exhausted`, which is the answer an
+upgrade fixes. One place still loses that distinction: the invitation plugin turns `seatCeiling`'s `0`
+into its own `SEAT_LIMIT_REACHED`, which `enrollment.ts` maps to `seat-refused` (see ADR-0065 §7).
 
 ## Sessions and devices
 
@@ -268,8 +291,11 @@ makes the rules testable without a database.
 `sql/` is the schema, in order: `0001_control_plane.sql` creates the control plane,
 `0002_plugins.sql` adds what the plugin set contributes, `0003_billing.sql` adds the billing tables,
 `0004_licence_limits.sql` adds the licence ceilings, `0005_enrollment.sql` retires our hand-rolled
-invitations in favour of `better-enrollment`, and `0006_jwks.sql` creates the `jwt` plugin's key
-table.
+invitations in favour of `better-enrollment`, `0006_jwks.sql` creates the `jwt` plugin's key table,
+`0007_subscription.sql` adds the plugin's own `subscription` row, `0008_drop_billing_tables.sql`
+drops the two tables the retired hand-written billing function owned, and
+`0009_free_licence_provisioning.sql` gives every organization its free licence row in the
+transaction that creates it.
 
 `src/store/migrate.ts` applies them at boot through `createMigratedAuthEntry`:
 
@@ -297,5 +323,13 @@ pnpm vitest run --project auth
 ```
 
 No network, no database, no clock: the licence, the repositories and `now` are injected. What the
-suite does not prove is a live Postgres connection: the adapter is asserted as a shape, not as a
-query a server answered.
+suite does not prove is a live Postgres connection, so that lives outside it:
+
+```sh
+pnpm db:verify
+```
+
+It starts a throwaway cluster, applies `sql/` in order, and drives the shipped code against it —
+including `POST /api/auth/organization/create` through the real plugin, asserting that the creator
+becomes the organization's first member. That is the one check that would have caught a new
+organization being refused its own owner.

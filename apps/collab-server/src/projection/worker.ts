@@ -1,4 +1,5 @@
-import { PROJECTION_APPLY_ORIGIN, WorkspaceDocument } from "@suite/graph";
+import { performance } from "node:perf_hooks";
+import { PROJECTION_APPLY_ORIGIN, type ProjectionResult, WorkspaceDocument } from "@suite/graph";
 import { LoroAdaptor } from "loro-adaptors/loro";
 import { LoroDoc } from "loro-crdt";
 import { LoroWebsocketClient, RoomJoinStatus } from "loro-websocket";
@@ -10,6 +11,7 @@ import type {
   PendingRebuild,
   ProjectionRoomStats,
   ProjectionRun,
+  ProjectionTrace,
   ProjectionWorkerOptions,
   RoomState,
   SharePublishResult,
@@ -48,6 +50,16 @@ import {
   seedRoomDocument,
 } from "./snapshot.js";
 import { RoomSweeper } from "./sweep.js";
+
+/**
+ * The default timing sink: one JSON line per step, on for `SUITE_PROJECTION_TRACE=1`.
+ *
+ * Written to stdout rather than through the logger, because it is a measurement a
+ * script reads (`bench/load.mjs --verbose`), not an operator message.
+ */
+function logTrace(line: ProjectionTrace): void {
+  process.stdout.write(`${JSON.stringify({ trace: "projection", at: Date.now(), ...line })}\n`);
+}
 
 /**
  * Keeps every board, card and selection share room in sync with the workspace
@@ -92,6 +104,8 @@ export class ProjectionWorker implements DraftHost {
 
   constructor(options: ProjectionWorkerOptions) {
     this.options = options;
+    this.trace =
+      options.trace ?? (process.env.SUITE_PROJECTION_TRACE === "1" ? logTrace : undefined);
     // One bundle for both steps; the maps are live, so a room opened later is
     // visible without rebuilding it.
     this.sweeper = new RoomSweeper({
@@ -118,6 +132,7 @@ export class ProjectionWorker implements DraftHost {
       maxCards: options.maxCards ?? projectionCardLimit(),
       buildCapMs: options.buildCapMs ?? projectionBuildCap(),
       report: (run) => this.note(run),
+      ...(this.trace === undefined ? {} : { trace: this.trace }),
     };
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.maxRooms = options.maxRooms ?? projectionRoomLimit();
@@ -167,6 +182,8 @@ export class ProjectionWorker implements DraftHost {
    */
   private readonly snapshotDeps: SnapshotDeps;
   private readonly sweeper: RoomSweeper;
+  /** Timing sink for `SUITE_PROJECTION_TRACE=1`; absent unless tracing is on. */
+  private readonly trace: ((line: ProjectionTrace) => void) | undefined;
 
   isStarted(): boolean {
     return this.started;
@@ -358,6 +375,15 @@ export class ProjectionWorker implements DraftHost {
    */
   schedule(workspaceId: string, options: { immediate?: boolean } = {}): Promise<void> {
     if (!this.started || workspaceId.length === 0) return Promise.resolve();
+    // The moment a save asked for a rebuild. A reader's latency starts from the
+    // owner's edit, so the gap between this line and the `refresh` line is the
+    // debounce plus however long the pass had to wait for its turn.
+    this.trace?.({
+      phase: "scheduled",
+      workspaceId,
+      ms: 0,
+      detail: { immediate: options.immediate === true, debounceMs: this.debounceMs },
+    });
 
     const pending = this.pending.get(workspaceId);
     if (options.immediate) {
@@ -499,7 +525,9 @@ export class ProjectionWorker implements DraftHost {
 
   private async refresh(workspaceId: string): Promise<void> {
     if (!this.started) return;
+    const started = performance.now();
     await this.reconcileRooms(workspaceId);
+    const reconciledAt = performance.now();
 
     const rooms = [...this.rooms.values()].filter((room) => room.workspaceId === workspaceId);
     if (rooms.length === 0) return;
@@ -507,8 +535,22 @@ export class ProjectionWorker implements DraftHost {
     const source = loadSourceDocument(workspaceId, this.snapshotDeps);
     // A workspace that was never saved is rebuilt from scratch on the next save.
     if (!source) return;
+    const sourcedAt = performance.now();
 
-    for (const room of rooms) projectInto(source, room, this.snapshotDeps);
+    // One build per distinct target: every viewer link to the same board shows
+    // the same projection, so a board with four of them costs one build.
+    const builds = new Map<string, ProjectionResult>();
+    for (const room of rooms) projectInto(source, room, this.snapshotDeps, builds);
+    this.trace?.({
+      phase: "refresh",
+      workspaceId,
+      ms: performance.now() - started,
+      detail: {
+        reconcileMs: Number((reconciledAt - started).toFixed(2)),
+        sourceMs: Number((sourcedAt - reconciledAt).toFixed(2)),
+        rooms: rooms.length,
+      },
+    });
   }
 
   /**

@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-26T17:14:59.990Z",
+  "measuredAt": "2026-10-26T17:55:36.703Z",
   "hardware": {
     "platform": "linux x64",
     "cpus": 16,
@@ -13,27 +13,59 @@
     "peersPerRoom": 4,
     "peers": 16,
     "edits": 6,
-    "documentBytes": 219022
+    "documentBytes": 219326
   },
   "latency": {
     "socketMs": {
-      "p50": 10.58,
-      "p99": 861.73,
+      "p50": 10.22,
+      "p99": 22.24,
       "samples": 6
     },
     "shareMs": {
-      "p50": 20534.6,
-      "p99": 40959.73,
+      "p50": 1993.73,
+      "p99": 2094.78,
       "samples": 6
     }
   },
   "eventLoopLagSeconds": {
-    "p50": 0.0025,
-    "p99": 0.005,
-    "samples": 2701
+    "p50": 0.0026,
+    "p99": 0.515,
+    "samples": 291
   },
-  "rssPeakBytes": 438489088,
-  "metricsSamples": 47,
+  "rssPeakBytes": 329601024,
+  "edits": [
+    {
+      "edit": 0,
+      "socketMs": 18.05,
+      "shareMs": 2094.78
+    },
+    {
+      "edit": 1,
+      "socketMs": 18.49,
+      "shareMs": 1993.73
+    },
+    {
+      "edit": 2,
+      "socketMs": 22.24,
+      "shareMs": 1688.41
+    },
+    {
+      "edit": 3,
+      "socketMs": 5.58,
+      "shareMs": 2053.44
+    },
+    {
+      "edit": 4,
+      "socketMs": 8.55,
+      "shareMs": 2081.97
+    },
+    {
+      "edit": 5,
+      "socketMs": 10.22,
+      "shareMs": 1906.04
+    }
+  ],
+  "metricsSamples": 38,
   "missedPropagations": 0,
   "relayExitCode": 0,
   "relayLog": []

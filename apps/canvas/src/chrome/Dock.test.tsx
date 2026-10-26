@@ -125,3 +125,33 @@ describe("Dock mirrors the canvas's new-thing menu", () => {
     expect(screen.queryByTestId("dock-new-section")).toBeNull();
   });
 });
+
+describe("Dock menus", () => {
+  it("moves focus into the type menu when it opens", () => {
+    mount();
+
+    fireEvent.click(screen.getByTestId("dock-new-card"));
+
+    expect(screen.getByTestId("dock-type-note")).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId("dock-type-note"), { key: "ArrowDown" });
+    expect(screen.getByTestId("dock-type-project")).toHaveFocus();
+  });
+});
+
+describe("Dock controls", () => {
+  it("offers undo, redo and the shortcut sheet beside the create menu", () => {
+    mount();
+
+    expect(screen.getByTestId("dock-undo")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-redo")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-shortcuts")).toBeInTheDocument();
+  });
+
+  it("opens the shortcut sheet from the dock", async () => {
+    mount();
+
+    fireEvent.click(screen.getByTestId("dock-shortcuts"));
+
+    expect(await screen.findByTestId("shortcut-sheet")).toBeInTheDocument();
+  });
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { relayCredential } from "../auth/credential";
 import { noteRefusal } from "../auth/refusal";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
 import type {
   CreatedShare,
   CreateShareInput,
@@ -143,6 +144,9 @@ export function ShareDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /** "Revoke all" asks inside the dialog, rather than in a platform confirm. */
+  const [confirmingRevokeAll, setConfirmingRevokeAll] = useState(false);
+  const panel = useRef<HTMLDivElement | null>(null);
 
   // Tokens are only ever returned at creation time; remember the ones this
   // dialog made so the list can still offer a copy button for them.
@@ -162,6 +166,7 @@ export function ShareDialog({
   // the exception for now: they are always read-only.
 
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   useEffect(
     () => () => {
@@ -281,12 +286,18 @@ export function ShareDialog({
           boardId: scope === "board" || scope === "selection" ? boardId : null,
           cardId: scope === "card" ? cardId : null,
           ...(scope === "selection" ? { cardIds: selectionCardIds } : {}),
+          // Spent once on the page slug: the reader address is `/s/<slug>`, so
+          // it has to name what the author published while they still know it.
+          name: exposureName,
           expiresAt: expiryDays === 0 ? null : Date.now() + expiryDays * 24 * 60 * 60 * 1000,
         },
         await credential(),
       );
       tokens.current.set(created.share.id, created.token);
-      setLink({ url: sharesApi.shareLink(created.token), shareId: created.share.id });
+      setLink({
+        url: sharesApi.shareLink(created.token, created.share.slug ?? null),
+        shareId: created.share.id,
+      });
       void load();
     } catch (cause) {
       report(cause);
@@ -312,7 +323,7 @@ export function ShareDialog({
   };
 
   const revokeAll = async () => {
-    if (!window.confirm("Revoke every active link? Anyone using one will lose access.")) return;
+    setConfirmingRevokeAll(false);
     setError(null);
     setBusy(true);
     try {
@@ -329,8 +340,22 @@ export function ShareDialog({
 
   const urlFor = (share: Share): string | null => {
     const token = tokens.current.get(share.id);
-    return token ? sharesApi.shareLink(token) : null;
+    return token ? sharesApi.shareLink(token, share.slug ?? null) : null;
   };
+
+  // What the author is about to expose, named the way the dialog already names
+  // it. The sentence under the create button says it once, at the moment of
+  // publishing; nothing is gated behind a warning.
+  const exposureName =
+    scope === "card" ? cardTitle : scope === "board" || scope === "selection" ? boardName : null;
+  const exposureTarget =
+    scope === "card"
+      ? (cardTitle ?? "this card")
+      : scope === "board"
+        ? (boardName ?? "this board")
+        : scope === "selection"
+          ? `these ${selectionCardIds.length} cards`
+          : "this workspace";
 
   const hint =
     scope === "workspace"
@@ -356,9 +381,11 @@ export function ShareDialog({
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Share"
+        tabIndex={-1}
         data-testid="share-dialog"
         className="relative w-[min(460px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
@@ -485,6 +512,13 @@ export function ShareDialog({
           {hint}
         </p>
 
+        <p
+          className="mt-1 text-[11px] leading-relaxed text-[var(--ink-muted)]"
+          data-testid="share-exposure"
+        >
+          {`Publishing ${exposureTarget} makes it, and every link inside it, readable by anyone who has the link, without an account.`}
+        </p>
+
         <div className="mt-2 flex items-center justify-end">
           <button
             type="button"
@@ -536,19 +570,46 @@ export function ShareDialog({
               {loading ? (
                 <span className="text-[10px] text-[var(--ink-muted)]">{"Loading\u2026"}</span>
               ) : null}
-              {shares.length > 0 ? (
+              {shares.length > 0 && !confirmingRevokeAll ? (
                 <button
                   type="button"
                   data-testid="share-revoke-all"
                   disabled={busy}
                   className="rounded-md px-1 py-0.5 text-[10px] text-[var(--ink-muted)] hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/15 dark:hover:text-red-300"
-                  onClick={() => void revokeAll()}
+                  onClick={() => setConfirmingRevokeAll(true)}
                 >
                   Revoke all
                 </button>
               ) : null}
             </div>
           </div>
+          {confirmingRevokeAll ? (
+            <div
+              data-testid="share-revoke-all-confirm"
+              className="mt-1 flex flex-wrap items-center gap-2 rounded-lg bg-red-500/10 px-2 py-1 text-[10px]"
+            >
+              <span className="min-w-0 flex-1">
+                Revoke every active link? Anyone using one will lose access.
+              </span>
+              <button
+                type="button"
+                data-testid="share-revoke-all-yes"
+                disabled={busy}
+                className="rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 disabled:opacity-40 dark:text-red-300 dark:hover:bg-red-500/15"
+                onClick={() => void revokeAll()}
+              >
+                Revoke every link
+              </button>
+              <button
+                type="button"
+                data-testid="share-revoke-all-no"
+                className="rounded px-1.5 py-0.5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => setConfirmingRevokeAll(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
           {!loading && shares.length === 0 ? (
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="share-empty">
               No active links yet.
@@ -569,6 +630,14 @@ export function ShareDialog({
                         {share.scope === "selection"
                           ? `Selection \u00b7 ${share.cardCount} card${share.cardCount === 1 ? "" : "s"}`
                           : `${SCOPE_LABELS[share.scope]} \u00b7 ${ROLE_LABELS[share.role]}`}
+                        {share.slug ? (
+                          <span
+                            data-testid={`share-slug-${share.id}`}
+                            className="ml-1 font-mono text-[10px] text-[var(--ink-muted)]"
+                          >
+                            {`/s/${share.slug}`}
+                          </span>
+                        ) : null}
                       </p>
                       <p className="text-[10px] text-[var(--ink-muted)]">
                         Created {createdLabel(share.createdAt)}

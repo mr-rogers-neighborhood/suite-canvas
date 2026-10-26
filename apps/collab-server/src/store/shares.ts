@@ -18,6 +18,22 @@ export const SHARE_STORE_SCHEMA = 1;
 export const MAX_SELECTION_CARDS = 200;
 
 /**
+ * Longest slug a published link carries. A slug is the page name in the reader
+ * address (`/s/<slug>?share=<token>`), so it stays short enough to read out
+ * loud and is cut at a word boundary rather than mid-word.
+ */
+export const MAX_SHARE_SLUG_LENGTH = 48;
+
+/**
+ * Name bytes read when deriving a slug. A card title can be longer than any slug
+ * needs to be; the rest is only cut work, never a refusal.
+ */
+export const MAX_SHARE_NAME_LENGTH = 200;
+
+/** Suffixes tried before a slug falls back to a random tail. */
+const SLUG_COLLISION_LIMIT = 50;
+
+/**
  * Lifetime of an exchanged share session. A link token is a permanent
  * capability; a session is the short-lived stand-in a browser presents after
  * the exchange, so a leaked log line or history entry stops mattering. Every
@@ -69,6 +85,14 @@ export interface Share {
   cardIds: string[];
   /** How many cards the link projects: the selection size, 1 for a card share. */
   cardCount: number;
+  /**
+   * Page name of the published link, derived once when the link is created and
+   * then frozen: the reader address is `/s/<slug>?share=<token>`, so changing it
+   * would move a page people already hold. Unique per workspace and never
+   * reused, including after revocation, which is what lets an author reason
+   * about what a slug names. It is not a credential: the token still resolves.
+   */
+  slug: string;
 }
 
 export interface CreateShareInput {
@@ -79,6 +103,13 @@ export interface CreateShareInput {
   cardId?: string | null;
   /** Cards of a selection share; ignored by every other scope. */
   cardIds?: readonly string[];
+  /**
+   * Human name of what the link publishes (a card or board title). It is read
+   * once, at creation, to derive `Share.slug`; it is not stored and never
+   * re-read, so renaming the card leaves the page address alone. Without it the
+   * slug starts from the scope word.
+   */
+  name?: string | null;
   /**
    * Epoch milliseconds, or null (or 0) for a link that never expires. Leaving it
    * out asks the server for its default: no expiry on a self-host, 30 days on
@@ -174,6 +205,8 @@ interface ShareRow {
   card_ids: string | null;
   /** Epoch milliseconds of the last resolve; null on rows never used. */
   last_used_at: number | null;
+  /** Null on rows created before the column existed; the migration backfills it. */
+  slug: string | null;
 }
 
 interface ShareSessionRow {
@@ -194,6 +227,47 @@ export function hashShareToken(token: string): string {
 /** Sessions are stored like tokens: as a hash, so a stolen database cannot be replayed. */
 export function hashShareSession(session: string): string {
   return createHash("sha256").update(session, "utf8").digest("hex");
+}
+
+/**
+ * A name as a URL page name: lowercase ASCII words joined by `-`.
+ * `"Q4 · Planning (draft)"` → `"q4-planning-draft"`. Returns `""` when nothing
+ * survives, so the caller can fall back to the scope word.
+ */
+export function slugifyShareName(name: string | null | undefined): string {
+  if (typeof name !== "string") return "";
+  const flattened = name
+    .slice(0, MAX_SHARE_NAME_LENGTH)
+    // Decompose first so `é` becomes `e` instead of a separator.
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+/u, "")
+    .replace(/-+$/u, "");
+  if (flattened.length <= MAX_SHARE_SLUG_LENGTH) return flattened;
+
+  const cut = flattened.slice(0, MAX_SHARE_SLUG_LENGTH);
+  const boundary = cut.lastIndexOf("-");
+  // Cut at the last whole word only when that keeps most of the name.
+  const kept = boundary > MAX_SHARE_SLUG_LENGTH / 2 ? cut.slice(0, boundary) : cut;
+  return kept.replace(/-+$/u, "");
+}
+
+/**
+ * The slug a link starts from: the target's name, or the scope word when the
+ * name is missing or has no URL-safe characters left.
+ */
+export function shareSlugBase(name: string | null | undefined, scope: ShareScope): string {
+  const fromName = slugifyShareName(name);
+  return fromName.length > 0 ? fromName : scope;
+}
+
+/** `<base>-<suffix>`, trimmed so the suffix always fits the length cap. */
+export function shareSlugWithSuffix(base: string, suffix: string): string {
+  const room = MAX_SHARE_SLUG_LENGTH - suffix.length - 1;
+  const stem = base.slice(0, Math.max(1, room)).replace(/-+$/u, "");
+  return `${stem.length > 0 ? stem : base.slice(0, 1)}-${suffix}`;
 }
 
 function isId(value: unknown): value is string {
@@ -238,6 +312,7 @@ export function validateShareInput(input: {
   boardId?: unknown;
   cardId?: unknown;
   cardIds?: unknown;
+  name?: unknown;
   expiresAt?: unknown;
 }): string | null {
   if (!isId(input.workspaceId)) return "A workspace id is required.";
@@ -247,6 +322,10 @@ export function validateShareInput(input: {
   if (!shareRoles.includes(input.role as ShareRole)) {
     return "Role must be viewer or editor.";
   }
+  // A name is only ever spent on the slug, so a long one is trimmed rather than
+  // refused: a title nobody can publish would be a worse answer than a short
+  // page name.
+  if (input.name != null && typeof input.name !== "string") return "The name must be a string.";
 
   const scope = input.scope as ShareScope;
   const boardId = normalizeId(input.boardId);
@@ -324,14 +403,49 @@ function toShare(row: ShareRow, token: string | null): Share {
     roomId,
     cardIds,
     cardCount: cardIds.length > 0 ? cardIds.length : cardId ? 1 : 0,
+    slug: row.slug ?? "",
   };
+}
+
+/**
+ * Gives every row written before slugs existed one. The backfill is the
+ * explicit migration that documents the derivation: a workspace share takes
+ * `workspace`, a board share `board`, and so on, and a second row in the same
+ * workspace falls to `board-2`. The rule matches creation, so the store never
+ * holds two spellings of the same rule.
+ */
+function backfillShareSlugs(db: DatabaseSync): void {
+  const rows = db
+    .prepare(
+      "SELECT id, workspace_id, scope FROM shares WHERE slug IS NULL ORDER BY created_at, rowid",
+    )
+    .all() as { id: string; workspace_id: string; scope: string }[];
+  if (rows.length === 0) return;
+
+  const taken = db.prepare("SELECT 1 FROM shares WHERE workspace_id = ? AND slug = ?");
+  const assign = db.prepare("UPDATE shares SET slug = ? WHERE id = ?");
+  for (const row of rows) {
+    const base = shareSlugBase(null, row.scope as ShareScope);
+    let slug = base;
+    for (let suffix = 2; taken.get(row.workspace_id, slug) !== undefined; suffix += 1) {
+      // A slug is never reused, so even a revoked row keeps its own.
+      slug = shareSlugWithSuffix(base, String(suffix));
+      if (suffix > SLUG_COLLISION_LIMIT) {
+        slug = shareSlugWithSuffix(base, randomBytes(4).toString("hex"));
+        break;
+      }
+    }
+    assign.run(slug, row.id);
+  }
 }
 
 /**
  * Adds the columns of stores created before they existed. Older board and card
  * rows keep a null room id, which only affects projections that were never
  * rebuilt; `resolve` still derives the room from the token. Rows without card
- * ids read as an empty selection, which only predates the selection scope.
+ * ids read as an empty selection, which only predates the selection scope. Rows
+ * without a slug get one from the migration, because a published page without
+ * an address is a page nobody can return to.
  */
 function migrateShareColumns(db: DatabaseSync): void {
   const columns = db.prepare("PRAGMA table_info(shares)").all() as { name?: string }[];
@@ -350,6 +464,15 @@ function migrateShareColumns(db: DatabaseSync): void {
   if (!columns.some((column) => column.name === "last_used_at")) {
     db.exec("ALTER TABLE shares ADD COLUMN last_used_at INTEGER");
   }
+  if (!columns.some((column) => column.name === "slug")) {
+    db.exec("ALTER TABLE shares ADD COLUMN slug TEXT");
+    backfillShareSlugs(db);
+  }
+  // One page name per workspace, revoked rows included: reusing a slug would
+  // silently repoint an address someone already holds.
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS shares_by_workspace_slug ON shares (workspace_id, slug)",
+  );
 }
 
 export function createShareStore(path: string): ShareStore {
@@ -371,7 +494,8 @@ export function createShareStore(path: string): ShareStore {
        expires_at INTEGER,
        room_id TEXT,
        card_ids TEXT,
-       last_used_at INTEGER
+       last_used_at INTEGER,
+       slug TEXT
      );
      CREATE INDEX IF NOT EXISTS shares_by_workspace ON shares (workspace_id, created_at);
      CREATE TABLE IF NOT EXISTS share_baselines (
@@ -390,8 +514,8 @@ export function createShareStore(path: string): ShareStore {
   migrateShareColumns(db);
 
   const insert = db.prepare(
-    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+    `INSERT INTO shares (id, token_hash, scope, role, workspace_id, board_id, card_id, created_at, revoked_at, expires_at, room_id, card_ids, slug)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
   );
   const selectByHash = db.prepare("SELECT * FROM shares WHERE token_hash = ?");
   const countByHash = db.prepare("SELECT 1 AS found FROM shares WHERE token_hash = ?");
@@ -443,6 +567,24 @@ export function createShareStore(path: string): ShareStore {
   const backfillRoomId = db.prepare(
     "UPDATE shares SET room_id = ? WHERE id = ? AND room_id IS NULL",
   );
+  const selectSlug = db.prepare("SELECT 1 FROM shares WHERE workspace_id = ? AND slug = ?");
+
+  /**
+   * The first free slug for a workspace: the base, then `-2`, `-3`, … and
+   * finally a random tail. Taken means taken forever — a revoked row keeps its
+   * slug — so a published address never changes owner.
+   */
+  const uniqueSlug = (workspaceId: string, base: string): string => {
+    if (selectSlug.get(workspaceId, base) === undefined) return base;
+    for (let suffix = 2; suffix <= SLUG_COLLISION_LIMIT; suffix += 1) {
+      const candidate = shareSlugWithSuffix(base, String(suffix));
+      if (selectSlug.get(workspaceId, candidate) === undefined) return candidate;
+    }
+    for (;;) {
+      const candidate = shareSlugWithSuffix(base, randomBytes(4).toString("hex"));
+      if (selectSlug.get(workspaceId, candidate) === undefined) return candidate;
+    }
+  };
 
   const get = (id: string): Share | null => {
     const row = selectById.get(id) as ShareRow | undefined;
@@ -472,6 +614,9 @@ export function createShareStore(path: string): ShareStore {
       const workspaceId = input.workspaceId.trim();
       const roomId = shareRoomId(input.scope, workspaceId, token);
       const cardIds = input.scope === "selection" ? normalizeCardIds(input.cardIds).cardIds : [];
+      // Derived once, here: the address a reader holds never moves because a
+      // card was renamed later.
+      const slug = uniqueSlug(workspaceId, shareSlugBase(input.name, input.scope));
       insert.run(
         id,
         hashShareToken(token),
@@ -484,6 +629,7 @@ export function createShareStore(path: string): ShareStore {
         input.expiresAt ?? null,
         roomId,
         JSON.stringify(cardIds),
+        slug,
       );
       const share = get(id);
       if (!share) throw new Error("The share could not be created.");

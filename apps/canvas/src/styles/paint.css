@@ -23,6 +23,14 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+.style-tab__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
 .style-tab__scope .style-tab__row {
   font-weight: 500;
 }
@@ -79,14 +87,6 @@
 .style-chip[data-checked="true"] {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.style-tab__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
 }
 
 .style-tab__row select,

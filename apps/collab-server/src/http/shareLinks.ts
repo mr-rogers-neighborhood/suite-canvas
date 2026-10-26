@@ -62,6 +62,11 @@ function parseCreateInput(body: unknown): CreateShareInput {
     boardId: (record.boardId as string | null | undefined) ?? null,
     cardId: (record.cardId as string | null | undefined) ?? null,
   };
+  // The target's name is read once, to name the page; the link keeps that name
+  // even after the card is renamed, so a copied address does not move.
+  if (typeof record.name === "string" && record.name.trim().length > 0) {
+    input.name = record.name.trim();
+  }
   // `undefined` and "never" are different answers: leaving the key out asks the
   // server for its default, while `null` (or `0`) says the link never expires.
   const expiresAt = record.expiresAt;
@@ -180,6 +185,8 @@ export async function revokeShare(
  * viewer joins. Card ids are dropped for every projection share: the link holder
  * only ever sees what the projection serves, so the id list would leak cards
  * outside the selection. The count stays, because it describes their own link.
+ * The slug stays too: it is the page name in the address the holder is reading,
+ * and it is not a credential — the token is.
  */
 export function publicShare(share: Share): Share {
   if (share.scope === "workspace") return share;

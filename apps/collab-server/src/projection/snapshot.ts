@@ -1,14 +1,22 @@
-import { applyProjection, planPublish, projectWorkspace, WorkspaceDocument } from "@suite/graph";
+import { performance } from "node:perf_hooks";
+import {
+  type ProjectionResult,
+  planPublish,
+  projectWorkspace,
+  WorkspaceDocument,
+} from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import type { DocumentStore } from "../store/persistence.js";
+import { type MirrorStats, mirrorWorkspace } from "./mirror.js";
 import type {
   ProjectionRun,
   ProjectionTarget,
+  ProjectionTrace,
   ProjectionWorkerShares,
   RoomState,
   SourceRoom,
 } from "./model.js";
-import { message, publishTarget, versionJson } from "./model.js";
+import { message, projectionTargetKey, publishTarget, versionJson } from "./model.js";
 import { loadLoroDocument } from "./rooms.js";
 
 /**
@@ -32,6 +40,13 @@ export interface SnapshotDeps {
   buildCapMs: number;
   /** Reports every rebuild outcome once, for the counters. */
   report: (run: ProjectionRun) => void;
+  /** Emits one timing line per rebuild when the operator turned tracing on. */
+  trace?: (line: ProjectionTrace) => void;
+}
+
+/** Milliseconds on a monotonic clock, for stage timings a wall clock cannot hold. */
+function elapsed(started: number): number {
+  return performance.now() - started;
 }
 
 /**
@@ -132,8 +147,18 @@ export function loadSourceDocument(
  *
  * The rebuild itself is timed, because that number is what the cap and the
  * operator's report are made of.
+ *
+ * `builds` is the one-pass cache a refresh passes in: rooms that show the same
+ * target share one projection, because a board with four viewer links needs one
+ * build, not four. It is keyed by `projectionTargetKey` and lives only as long
+ * as the pass, so it can never serve a projection built from a stale source.
  */
-export function projectInto(source: WorkspaceDocument, room: RoomState, deps: SnapshotDeps): void {
+export function projectInto(
+  source: WorkspaceDocument,
+  room: RoomState,
+  deps: SnapshotDeps,
+  builds?: Map<string, ProjectionResult>,
+): void {
   // An owner save is activity even when the rebuild is held back: the room is
   // still the one this workspace projects into.
   deps.touch(room);
@@ -152,6 +177,11 @@ export function projectInto(source: WorkspaceDocument, room: RoomState, deps: Sn
   }
 
   const started = deps.now();
+  const timing = performance.now();
+  let projectMs = 0;
+  let applyMs = 0;
+  let persistMs = 0;
+  let mirror: MirrorStats = { written: 0, removed: 0, kept: 0 };
   try {
     const cards = projectionCardCount(source, room.target);
     if (cards > deps.maxCards) {
@@ -168,12 +198,23 @@ export function projectInto(source: WorkspaceDocument, room: RoomState, deps: Sn
       });
       return;
     }
-    const projection = projectWorkspace(source, room.target);
-    applyProjection(room.workspace, projection.workspace);
+    const projectedAt = performance.now();
+    const key = projectionTargetKey(room.target);
+    let projection = builds?.get(key);
+    if (projection === undefined) {
+      projection = projectWorkspace(source, room.target);
+      builds?.set(key, projection);
+    }
+    const appliedAt = performance.now();
+    projectMs = elapsed(projectedAt);
+    mirror = mirrorWorkspace(room.workspace, projection.workspace);
+    const persistedAt = performance.now();
+    applyMs = elapsed(appliedAt);
     // Viewers never publish; only an editor draft needs a baseline snapshot.
     // That snapshot also re-measures the room, so only viewers measure here.
     if (room.role === "editor") persistBaseline(room, deps);
     else measureRoom(room, deps.warn);
+    persistMs = elapsed(persistedAt);
   } catch (error) {
     // A trashed or deleted card has nothing to publish; keep the last good
     // projection rather than emptying a share the viewer may be reading.
@@ -187,6 +228,21 @@ export function projectInto(source: WorkspaceDocument, room: RoomState, deps: Sn
   room.buildMs = buildMs;
   room.builtAt = deps.now();
   room.sourceVersion = sourceVersion;
+  deps.trace?.({
+    phase: "rebuild",
+    workspaceId: room.workspaceId,
+    shareId: room.shareId,
+    ms: elapsed(timing),
+    detail: {
+      projectMs: Number(projectMs.toFixed(2)),
+      applyMs: Number(applyMs.toFixed(2)),
+      persistMs: Number(persistMs.toFixed(2)),
+      written: mirror.written,
+      removed: mirror.removed,
+      kept: mirror.kept,
+      documentBytes: room.bytes,
+    },
+  });
   if (buildMs > deps.buildCapMs) {
     room.capped = true;
     deps.warn(
@@ -218,7 +274,7 @@ export function reprojectInto(
 ): void {
   const started = deps.now();
   const projection = projectWorkspace(source, room.target);
-  applyProjection(room.workspace, projection.workspace);
+  mirrorWorkspace(room.workspace, projection.workspace);
   // Viewers never publish; only an editor draft needs a baseline snapshot.
   // That snapshot also re-measures the room, so only viewers measure here.
   if (room.role === "editor") persistBaseline(room, deps);

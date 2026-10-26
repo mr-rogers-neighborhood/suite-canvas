@@ -13,8 +13,8 @@ const card: LibraryItem = {
   properties: {},
 };
 
-function rowActions(overrides: { onDeleteForever?: (id: string) => void } = {}) {
-  const onDeleteForever = vi.fn(overrides.onDeleteForever ?? (() => {}));
+function rowActions() {
+  const setPendingPurge = vi.fn();
   const { result } = renderHook(() =>
     useLibraryRowActions({
       tab: "trash",
@@ -30,7 +30,6 @@ function rowActions(overrides: { onDeleteForever?: (id: string) => void } = {}) 
       onSetBoardTemplate: undefined,
       onUnplaceBoardCards: () => {},
       onRestore: () => {},
-      onDeleteForever,
       onOpenCard: () => {},
       onGoToBoard: () => {},
       onPlace: () => {},
@@ -38,10 +37,11 @@ function rowActions(overrides: { onDeleteForever?: (id: string) => void } = {}) 
       onTrash: () => {},
       setLocateMiss: () => {},
       setPendingDelete: () => {},
+      setPendingPurge,
     }),
   );
   const item = result.current.menuFor(card.id).find((entry) => entry.label === "Delete forever");
-  return { item, onDeleteForever };
+  return { item, setPendingPurge };
 }
 
 afterEach(() => {
@@ -50,26 +50,24 @@ afterEach(() => {
 
 /**
  * "Delete forever" is the one row action with no undo. It used to fire on the
- * menu click itself, so a slipped pointer destroyed a card permanently.
+ * menu click itself, so a slipped pointer destroyed a card permanently; the
+ * question it asks is the drawer's own `Dialog`, not `window.confirm`.
  */
 describe("deleting a trashed card forever", () => {
-  it("asks first, and deletes nothing when the reader declines", () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const { item, onDeleteForever } = rowActions();
+  it("asks the drawer for its dialog instead of deleting on the click", () => {
+    const { item, setPendingPurge } = rowActions();
 
     item?.onSelect?.();
 
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(confirm.mock.calls[0]?.[0]).toContain("Receipt");
-    expect(onDeleteForever).not.toHaveBeenCalled();
+    expect(setPendingPurge).toHaveBeenCalledWith({ id: card.id, title: card.title });
   });
 
-  it("deletes the card once the reader confirms", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    const { item, onDeleteForever } = rowActions();
+  it("never falls back to the platform confirm", () => {
+    const confirm = vi.spyOn(window, "confirm");
+    const { item } = rowActions();
 
     item?.onSelect?.();
 
-    expect(onDeleteForever).toHaveBeenCalledWith(card.id);
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

@@ -31,6 +31,19 @@ function withSectionTags(items: LibraryItem[], workspace: WorkspaceDocument | nu
   });
 }
 
+/**
+ * The three orders a library list can be in. Relevance is the search ranking;
+ * a list with no query has no ranking to show, so it stays in facet order.
+ */
+export type LibrarySort = "relevance" | "title" | "updated";
+
+/**
+ * `hooks/useLibrarySearch.ts` ranks at most this many hits. A result set that
+ * reaches the cap is a truncated one, and the list has to say so: a search that
+ * silently stops at 200 looks like "this is everything".
+ */
+export const SEARCH_HIT_LIMIT = 200;
+
 export interface LibraryListArgs {
   tab: LibraryTab;
   scope: LibraryScope;
@@ -46,8 +59,8 @@ export interface LibraryListArgs {
   sectionOrder: SectionOrderEntry[];
   groupBySection: boolean;
   workspace: WorkspaceDocument | null;
-  /** The order an applied view asks for, when one is open. */
-  viewOrder: string | undefined;
+  /** How the reader asked for the list to be ordered. */
+  sort: LibrarySort;
   /** Seeds the query box. Stories and tests only. */
   initialQuery: string;
 }
@@ -71,7 +84,7 @@ export function useLibraryList({
   sectionOrder,
   groupBySection,
   workspace,
-  viewOrder,
+  sort,
   initialQuery,
 }: LibraryListArgs) {
   const boardScope = tab === "cards" && scope === "board" && activeBoardId !== null;
@@ -103,18 +116,19 @@ export function useLibraryList({
       })
     : null;
   const visible = searched ?? facetFiltered;
-  // An applied view carries its own order, the same rule `runView` uses:
-  // relevance needs text, otherwise it reads like title.
+  // Relevance is whatever the search produced; the other two orders are a sort
+  // over it, because a reader who asks for "recently updated" means the list
+  // they can see.
   const ordered = useMemo(() => {
-    if (!viewOrder || (viewOrder === "relevance" && searching)) return visible;
+    if (sort === "relevance") return visible;
     const byTitle = (a: LibraryItem, b: LibraryItem) =>
       a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
-    if (viewOrder === "updated") {
+    if (sort === "updated") {
       const updatedAt = (item: LibraryItem) => workspace?.getCard(item.id)?.updatedAt ?? 0;
       return [...visible].sort((a, b) => updatedAt(b) - updatedAt(a) || byTitle(a, b));
     }
     return [...visible].sort(byTitle);
-  }, [visible, viewOrder, searching, workspace]);
+  }, [visible, sort, workspace]);
   const filtering = typeFilter.length > 0 || tagFilter.length > 0 || activeSectionFilter.length > 0;
   const grouped =
     boardScope && groupBySection && !searching ? groupSections(ordered, sectionOrder) : null;
@@ -152,6 +166,8 @@ export function useLibraryList({
     countsByFacet,
     ordered,
     filtering,
+    /** The search stopped at its cap, so the list is not the whole result. */
+    truncated: searching && rankedIds.length >= SEARCH_HIT_LIMIT,
     grouped,
     sectionsById,
     visibleBoards,

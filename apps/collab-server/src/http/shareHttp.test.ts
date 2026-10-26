@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SharePublishResult } from "../projection/index.js";
 import { createShareStore, type Share, type ShareStore } from "../store/shares.js";
@@ -9,6 +10,7 @@ import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/worksp
 import { createWorkspaceAccess } from "./access.js";
 import { resetRateLimits } from "./rateLimit.js";
 import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
+import { PUBLISH_REFUSAL_CODES } from "./shareDraft.js";
 import { handleShareRequest } from "./shareHttp.js";
 
 const MANAGED_WORKSPACES = ["ws-1", "ws-owner", "ws-secret"];
@@ -1279,5 +1281,254 @@ describe("share session exchange", () => {
 
     expect(response.status).toBe(200);
     expect(published.map((entry) => entry.id)).toEqual([share.id]);
+  });
+});
+
+describe("published page names", () => {
+  it("derives a slug from the name the author published", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      boardId: "board-1",
+      cardId: "card-1",
+      name: "Q4 · Planning (draft)",
+    });
+
+    expect(created.status).toBe(201);
+    const { share } = (await created.json()) as { share: { slug: string } };
+    expect(share.slug).toBe("q4-planning-draft");
+
+    // The slug is part of the record, so a listing and a resolve agree on the
+    // address the author copied.
+    const listed = (await (await list("ws-1")).json()) as { shares: { slug: string }[] };
+    expect(listed.shares[0]?.slug).toBe("q4-planning-draft");
+  });
+
+  it("falls back to the scope word when the name has nothing URL-safe left", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "board",
+      role: "viewer",
+      boardId: "board-1",
+      name: "···",
+    });
+
+    const { share } = (await created.json()) as { share: { slug: string } };
+    expect(share.slug).toBe("board");
+  });
+
+  it("suffixes a collision and never reuses the slug of a revoked link", async () => {
+    const first = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      boardId: "board-1",
+      cardId: "card-1",
+      name: "Roadmap",
+    });
+    const second = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      boardId: "board-1",
+      cardId: "card-2",
+      name: "Roadmap",
+    });
+
+    const firstBody = (await first.json()) as { share: { id: string; slug: string } };
+    const secondBody = (await second.json()) as { share: { id: string; slug: string } };
+    expect(firstBody.share.slug).toBe("roadmap");
+    expect(secondBody.share.slug).toBe("roadmap-2");
+
+    // A revoked page keeps its name: reusing it would repoint an address
+    // somebody already holds at a different page.
+    await revoke(firstBody.share.id);
+    const third = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      boardId: "board-1",
+      cardId: "card-3",
+      name: "Roadmap",
+    });
+    const thirdBody = (await third.json()) as { share: { slug: string } };
+    expect(thirdBody.share.slug).toBe("roadmap-3");
+  });
+
+  it("scopes a page name to its own workspace", async () => {
+    const mine = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+      name: "Roadmap",
+    });
+    const elsewhere = await post({
+      workspaceId: "ws-owner",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-9",
+      name: "Roadmap",
+    });
+
+    const mineBody = (await mine.json()) as { share: { slug: string } };
+    const otherBody = (await elsewhere.json()) as { share: { slug: string } };
+    expect(mineBody.share.slug).toBe("roadmap");
+    expect(otherBody.share.slug).toBe("roadmap");
+  });
+
+  it("trims a name longer than any page name needs instead of refusing it", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+      name: "quarterly-planning-review-with-every-stakeholder-in-the-company-and-more-words",
+    });
+
+    expect(created.status).toBe(201);
+    const { share } = (await created.json()) as { share: { slug: string } };
+    // A title nobody could publish would be a worse answer than a short name.
+    expect(share.slug.length).toBeLessThanOrEqual(48);
+    expect(share.slug.startsWith("quarterly-planning-review")).toBe(true);
+  });
+
+  it("rejects a name that is not a string", async () => {
+    const response = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+      name: 42,
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("revocation reads to a visitor", () => {
+  it("stops serving the link and hands its projection room to the host to drop", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "viewer",
+      cardId: "card-1",
+      name: "Roadmap",
+    });
+    const { token, share } = (await created.json()) as {
+      token: string;
+      share: { id: string; roomId: string };
+    };
+    store.setBaseline(share.id, new Uint8Array([9, 9, 9]));
+
+    // Published: the address resolves and there is a projection to serve.
+    expect((await fetch(`${baseUrl}/api/shares/${token}`)).status).toBe(200);
+    expect(store.getBaseline(share.id)).not.toBeNull();
+
+    expect((await revoke(share.id)).status).toBe(200);
+
+    // Revoked: the address answers 404 rather than an empty projection, the
+    // draft it served is gone, and the host is told which room to close.
+    expect((await fetch(`${baseUrl}/api/shares/${token}`)).status).toBe(404);
+    expect(store.getBaseline(share.id)).toBeNull();
+    expect(store.listAllActive().map((entry) => entry.id)).not.toContain(share.id);
+    expect(removed.map((entry) => entry.id)).toEqual([share.id]);
+    expect(removed[0]?.roomId).toBe(`share-${token}`);
+  });
+});
+
+describe("the publish size cap", () => {
+  it("names the refusal so the editor can say which cap it hit", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    const { token } = (await created.json()) as { token: string };
+    publishResult = {
+      ok: false,
+      conflicts: [],
+      unsupported: [
+        {
+          key: "publish:size",
+          kind: "unsupported",
+          message: "The draft holds 900 bytes; publishing is limited to 800 bytes.",
+        },
+      ],
+    };
+
+    const response = await fetch(`${baseUrl}/api/shares/${encodeURIComponent(token)}/publish`, {
+      method: "POST",
+      headers: { authorization: ["Bearer", token].join(" ") },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: PUBLISH_REFUSAL_CODES.draftTooLarge,
+      unsupported: [{ key: "publish:size" }],
+    });
+  });
+
+  it("leaves a conflict refusal without a code", async () => {
+    const created = await post({
+      workspaceId: "ws-1",
+      scope: "card",
+      role: "editor",
+      cardId: "card-1",
+    });
+    const { token } = (await created.json()) as { token: string };
+    publishResult = {
+      ok: false,
+      conflicts: [{ key: "card:card-1:body", kind: "body", message: "changed" }],
+      unsupported: [],
+    };
+
+    const response = await fetch(`${baseUrl}/api/shares/${encodeURIComponent(token)}/publish`, {
+      method: "POST",
+      headers: { authorization: ["Bearer", token].join(" ") },
+    });
+
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(response.status).toBe(409);
+    expect(body.code).toBeUndefined();
+  });
+});
+
+describe("a store written before slugs existed", () => {
+  it("derives a page name for every legacy row when the store opens", () => {
+    const path = join(directory, "legacy-shares.sqlite");
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE shares (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        scope TEXT NOT NULL,
+        role TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        board_id TEXT,
+        card_id TEXT,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+    `);
+    const insert = legacy.prepare(
+      `INSERT INTO shares (id, token_hash, scope, role, workspace_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run("share-old", "b".repeat(64), "board", "viewer", "ws-1", 1_700_000_000_000);
+    insert.run("share-older", "c".repeat(64), "board", "viewer", "ws-1", 1_700_000_000_001);
+    legacy.close();
+
+    const migrated = createShareStore(path);
+    try {
+      // The explicit migration, not a read-time guess: a board link is named
+      // `board`, and the second one falls to `board-2`.
+      expect(migrated.get("share-old")?.slug).toBe("board");
+      expect(migrated.get("share-older")?.slug).toBe("board-2");
+    } finally {
+      migrated.close();
+    }
   });
 });

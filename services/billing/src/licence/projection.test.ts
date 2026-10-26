@@ -1,0 +1,368 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { entitlementFor, freeEntitlement } from "../entitlement/entitlement.ts";
+import { BillingError } from "../errors.ts";
+import { billingPluginOptions } from "../stripe/plugin.ts";
+import { fixtureLimits, NOW, tierTableFixture } from "../testing/fixtures.ts";
+import {
+  createLicenceProjection,
+  freeLicenceRow,
+  type LicenceRow,
+  type LicenceRows,
+  licenceRowFor,
+  licenceRowValues,
+  type SubscriptionView,
+  subscriptionViewOf,
+  UPSERT_LICENCE_SQL,
+} from "./projection.ts";
+
+const TIERS = tierTableFixture();
+const DAY = 24 * 60 * 60 * 1000;
+const ORG = "org_1";
+
+/** The free tier exactly as `@suite/auth`'s `FREE_LICENCE_TIER` names it. */
+const FREE = {
+  tier: "free",
+  workspaces: 1,
+  seats: 1,
+  documentBytes: 64 * 1024 * 1024,
+  attachmentBytes: 8 * 1024 * 1024,
+  days: 36_525,
+};
+
+function view(overrides: Partial<SubscriptionView> = {}): SubscriptionView {
+  return {
+    organizationId: ORG,
+    plan: "solo",
+    status: "active",
+    periodEnd: NOW + DAY,
+    cancelAtPeriodEnd: false,
+    seats: null,
+    subscriptionId: "sub_1",
+    ...overrides,
+  };
+}
+
+function recording(): LicenceRows & { rows: LicenceRow[] } {
+  const rows: LicenceRow[] = [];
+  return {
+    rows,
+    upsert: async (row) => {
+      rows.push(row);
+    },
+  };
+}
+
+describe("subscriptionViewOf", () => {
+  it("should read the plugin's row as the licence projection needs it", () => {
+    assert.deepEqual(
+      subscriptionViewOf({
+        referenceId: ORG,
+        plan: "solo",
+        status: "active",
+        periodEnd: new Date(NOW + DAY),
+        cancelAtPeriodEnd: false,
+        seats: 3,
+        stripeSubscriptionId: "sub_1",
+      }),
+      {
+        organizationId: ORG,
+        plan: "solo",
+        status: "active",
+        periodEnd: NOW + DAY,
+        cancelAtPeriodEnd: false,
+        seats: 3,
+        subscriptionId: "sub_1",
+      },
+    );
+  });
+
+  it("should report a missing period end and seat count as absent, not as zero", () => {
+    const read = subscriptionViewOf({ referenceId: ORG, plan: "solo", status: "active" });
+    assert.equal(read.periodEnd, null);
+    assert.equal(read.seats, null);
+    assert.equal(read.subscriptionId, null);
+  });
+});
+
+describe("licenceRowFor", () => {
+  it("should write the plan's tier and limits for a live subscription", () => {
+    const solo = fixtureLimits("solo");
+    const subscription = view();
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription,
+      entitlement: entitlementFor(subscription, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+
+    assert.deepEqual(row, {
+      organizationId: ORG,
+      licenceId: "stripe:sub_1",
+      tier: "solo",
+      workspaces: solo.workspaces,
+      seats: FREE.seats,
+      documentBytes: solo.documentBytes,
+      attachmentBytes: solo.attachmentBytes,
+      // The paid horizon is the period Stripe last billed, so a lapsed renewal stops
+      // granting the plan at the same instant the token does.
+      expiresAt: NOW + DAY,
+    });
+  });
+
+  it("should carry the seats a plan sells, never fewer than the free tier's", () => {
+    const withSeats = (seats: number) => {
+      const subscription = view({ seats });
+      return licenceRowFor({
+        organizationId: ORG,
+        subscription,
+        entitlement: entitlementFor(subscription, TIERS, NOW),
+        free: FREE,
+        now: NOW,
+      });
+    };
+
+    assert.equal(withSeats(4).seats, 4);
+    assert.equal(withSeats(0).seats, FREE.seats);
+  });
+
+  it("should write the free row for a cancelled subscription, not delete anything", () => {
+    const subscription = view({ status: "canceled" });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription,
+      entitlement: entitlementFor(subscription, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+
+    assert.deepEqual(row, freeLicenceRow(ORG, FREE, NOW));
+    assert.equal(row.tier, FREE.tier);
+    assert.equal(row.workspaces, FREE.workspaces);
+    assert.equal(row.seats, FREE.seats);
+  });
+
+  it("should fall back to free once a past-due grace window has closed", () => {
+    const lapsed = view({ status: "past_due", periodEnd: NOW - 1 });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription: lapsed,
+      entitlement: entitlementFor(lapsed, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+    assert.equal(row.tier, FREE.tier);
+  });
+
+  it("should refuse a paid row for a subscription with no period end", () => {
+    const subscription = view({ periodEnd: null });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription,
+      entitlement: entitlementFor(subscription, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+    // The entitlement read still grants the plan (an `active` row is live), but a paid
+    // licence with no horizon is worse than the honest free row: it would never expire.
+    assert.equal(row.tier, FREE.tier);
+  });
+
+  it("should keep a plan that left the tier table on the free row", () => {
+    const subscription = view({ plan: "retired" });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription,
+      entitlement: entitlementFor(subscription, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+    assert.equal(row.tier, FREE.tier);
+  });
+});
+
+describe("the licence row and the entitlement read", () => {
+  /**
+   * The deliverable: one answer.
+   *
+   * The seat check counts the tier written to `organization_licences`; the relay's token
+   * carries the tier `entitlementFor` answers. A paying customer used to hold both, one
+   * tier apart. Every status Stripe can report is asserted here, because the bug was
+   * never in one branch — it was that the licence row was never written at all.
+   */
+  const statuses: readonly { name: string; subscription: SubscriptionView | null; tier: string }[] =
+    [
+      { name: "active", subscription: view({ status: "active" }), tier: "solo" },
+      { name: "trialing", subscription: view({ status: "trialing" }), tier: "solo" },
+      {
+        name: "past due inside the period",
+        subscription: view({ status: "past_due" }),
+        tier: "solo",
+      },
+      {
+        name: "past due past the period",
+        subscription: view({ status: "past_due", periodEnd: NOW - 1 }),
+        tier: "free",
+      },
+      { name: "cancelled", subscription: view({ status: "canceled" }), tier: "free" },
+      { name: "paused", subscription: view({ status: "paused" }), tier: "free" },
+      { name: "unpaid", subscription: view({ status: "unpaid" }), tier: "free" },
+      { name: "no subscription", subscription: null, tier: "free" },
+    ];
+
+  for (const status of statuses) {
+    it(`should name one tier for ${status.name}`, async () => {
+      const rows = recording();
+      const licence = createLicenceProjection({ rows, tiers: TIERS, free: FREE, now: () => NOW });
+
+      const written =
+        status.subscription === null
+          ? await licence.release(ORG)
+          : await licence.project(status.subscription);
+
+      const carried =
+        status.subscription === null
+          ? freeEntitlement
+          : entitlementFor(status.subscription, TIERS, NOW);
+
+      assert.equal(written.tier, carried.tier, "the written tier is not the minted one");
+      assert.equal(written.tier, status.tier);
+      assert.deepEqual(rows.rows, [written], "the write did not happen exactly once");
+    });
+  }
+});
+
+describe("createLicenceProjection", () => {
+  it("should replace the row rather than add one, through one upsert", async () => {
+    const rows = recording();
+    const licence = createLicenceProjection({ rows, tiers: TIERS, free: FREE, now: () => NOW });
+
+    await licence.project(view({ status: "active" }));
+    await licence.project(view({ status: "canceled" }));
+
+    assert.deepEqual(
+      rows.rows.map((row) => row.tier),
+      ["solo", "free"],
+    );
+    assert.equal(UPSERT_LICENCE_SQL.includes("ON CONFLICT (organization_id) DO UPDATE"), true);
+  });
+
+  it("should bind the row's values in the order the statement names them", () => {
+    const row = freeLicenceRow(ORG, FREE, NOW);
+    const columns = /INSERT INTO organization_licences \(([\s\S]*?)\)\s*VALUES/iu
+      .exec(UPSERT_LICENCE_SQL)?.[1]
+      ?.split(",")
+      .map((name) => name.trim());
+
+    assert.deepEqual(columns, [
+      "organization_id",
+      "licence_id",
+      "tier",
+      "workspaces",
+      "seats",
+      "document_bytes",
+      "attachment_bytes",
+      "expires_at",
+    ]);
+    const values = licenceRowValues(row);
+    assert.equal(values.length, columns?.length);
+    assert.equal(values[0], ORG);
+    assert.equal(values[2], FREE.tier);
+    assert.deepEqual(values[7], new Date(NOW + FREE.days * DAY));
+  });
+
+  it("should report a failed write instead of throwing through the webhook", async () => {
+    const failures: string[] = [];
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async () => {
+          throw new BillingError("invalid-config", "the database is gone");
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+      onError: (error, context) => {
+        failures.push(`${context.organizationId}:${(error as Error).message}`);
+      },
+    });
+
+    const row = await licence.project(view());
+    // The row is still answered: the caller is the plugin's hook, and the plugin treats a
+    // thrown hook as "log it and answer the webhook 200" either way.
+    assert.equal(row.tier, "solo");
+    assert.deepEqual(failures, [`${ORG}:the database is gone`]);
+  });
+});
+
+describe("the plugin's lifecycle hooks", () => {
+  const subscription = {
+    id: "row_1",
+    referenceId: ORG,
+    plan: "solo",
+    status: "active",
+    periodEnd: new Date(NOW + DAY),
+    cancelAtPeriodEnd: false,
+    seats: 2,
+    stripeSubscriptionId: "sub_1",
+  };
+
+  function hooksOf(projected: LicenceRow[]) {
+    const licence = createLicenceProjection({
+      rows: {
+        upsert: async (row) => {
+          projected.push(row);
+        },
+      },
+      tiers: TIERS,
+      free: FREE,
+      now: () => NOW,
+    });
+    const options = billingPluginOptions({
+      secretKey: "sk_test_51Nfixture",
+      webhookSecret: "whsec_fixture",
+      tiers: TIERS,
+      authorizeOrganization: async () => true,
+      licence,
+    });
+    const configured = options.subscription;
+    if (configured === undefined || configured.enabled !== true) {
+      throw new Error("expected enabled subscription options");
+    }
+    return configured;
+  }
+
+  it("should write the licence from every hook that sees a subscription change", async () => {
+    const projected: LicenceRow[] = [];
+    const hooks = hooksOf(projected);
+
+    await hooks.onSubscriptionCreated?.({ subscription } as never);
+    await hooks.onSubscriptionComplete?.({ subscription } as never, undefined as never);
+    await hooks.onSubscriptionUpdate?.({ subscription } as never);
+    // `deleted` stores `canceled` before the hook runs, which is the fallback path.
+    await hooks.onSubscriptionDeleted?.({
+      subscription: { ...subscription, status: "canceled" },
+    } as never);
+
+    assert.deepEqual(
+      projected.map((row) => row.tier),
+      ["solo", "solo", "solo", "free"],
+    );
+    assert.equal(projected[0]?.seats, 2);
+  });
+
+  it("should register no hook at all when no projection is supplied", () => {
+    const options = billingPluginOptions({
+      secretKey: "sk_test_51Nfixture",
+      webhookSecret: "whsec_fixture",
+      tiers: TIERS,
+      authorizeOrganization: async () => true,
+    });
+    const configured = options.subscription;
+    if (configured === undefined || configured.enabled !== true) {
+      throw new Error("expected enabled subscription options");
+    }
+    assert.equal(configured.onSubscriptionUpdate, undefined);
+  });
+});

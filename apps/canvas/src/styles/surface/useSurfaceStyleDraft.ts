@@ -78,7 +78,7 @@ export function useSurfaceStyleDraft(
 
   const writeRule = useCallback(
     (next: SurfaceStyle) => {
-      if (!target || target.rung !== "rule") return;
+      if (target?.rung !== "rule") return;
       // A rule that does not exist yet is created on its first *edit*, never on selection, so browsing the
       // scope picker leaves the document alone.
       const existing = rules.find((entry) => entry.id === target.ruleId);
@@ -105,7 +105,7 @@ export function useSurfaceStyleDraft(
 
   const writeSurface = useCallback(
     (next: SurfaceStyle | null) => {
-      if (!target || target.rung !== "surface") return;
+      if (target?.rung !== "surface") return;
       switch (target.kind) {
         case "card":
           workspace.setCardStyle(target.id, next);

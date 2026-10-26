@@ -454,12 +454,22 @@ describe("organization policy through the plugin's hooks", () => {
     });
     const second = addUser("tester@example.com");
 
-    await expect(
-      auth.api.addMember({
+    // The refusal reads as a sentence now: `seatProblemMessage` is the one place that
+    // turns a seat refusal into words, so the person refused reads "this organization
+    // has more members than its licence allows" instead of the enum name. The machine
+    // reason travels in `body.reason`, which is what a client acts on.
+    const thrown: unknown = await auth.api
+      .addMember({
         body: { userId: second, role: "member", organizationId: organization?.id ?? "" },
         headers: new Headers({ cookie }),
-      }),
-    ).rejects.toThrow(/seat/u);
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(thrown).toMatchObject({
+      body: { code: "seat-refused", reason: "seat-allowance-exhausted" },
+    });
   });
 
   it("admits the same member once the licence holds enough seats", async () => {
@@ -694,6 +704,36 @@ describe("invitations, and the password §11 now allows", () => {
 
     expect(redeemed.status).toBe(422);
     expect(redeemed.body).toMatchObject({ code: "SEAT_LIMIT_REACHED" });
+  });
+
+  it("names a missing licence row as a provisioning fault, not a spent seat", async () => {
+    // The distinction the provisioning lane added, kept at the one place that can lose
+    // it: the invitation plugin answers `SEAT_LIMIT_REACHED`, an ordinal, so
+    // `resolveSeatLimit` raises `LICENCE_UNPROVISIONED` before a number is answered.
+    const { auth, signIn, invitations, setLicence } = harness({ seats: 2 });
+    const { cookie } = await signIn("owner@example.com");
+    const organization = await organizationOf(auth, cookie);
+
+    await auth.api.createInvite({
+      body: {
+        type: "private",
+        kind: "org-join",
+        email: "late@example.com",
+        organizationId: organization.id,
+      },
+      headers: new Headers({ cookie }),
+    });
+    setLicence(null);
+
+    const invitation = invitations[0];
+    if (invitation === undefined) throw new Error("no invitation was sent");
+    const late = await signIn("late@example.com");
+    const redeemed = await redeem(auth, { token: invitation.token }, { cookie: late.cookie });
+
+    expect(redeemed.status).toBe(422);
+    expect(redeemed.body).toMatchObject({ code: "LICENCE_UNPROVISIONED" });
+    // The sentence is the one `seatProblemMessage` owns, and it says the fault is ours.
+    expect(String(redeemed.body.message)).toMatch(/never provisioned/u);
   });
 
   it("joins a signed-in person through a shareable invite, and stops at maxUses", async () => {

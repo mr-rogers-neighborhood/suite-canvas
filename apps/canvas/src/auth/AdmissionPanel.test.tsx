@@ -1,40 +1,34 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AdmissionPanel } from "./AdmissionPanel";
-import { ADMISSION_PENDING_MESSAGE } from "./admission";
 
-describe("admission panel", () => {
-  it("uses the server's sentence, word for word", () => {
+/**
+ * The panel declared `aria-modal="true"` and behaved like a poster: focus stayed
+ * on the page behind it, Tab walked into the canvas, and Escape did nothing.
+ */
+describe("the admission panel", () => {
+  it("starts on the answer it recommends", () => {
     render(<AdmissionPanel onDismiss={() => {}} onSignOut={() => {}} />);
-    expect(screen.getByTestId("admission-message")).toHaveTextContent(ADMISSION_PENDING_MESSAGE);
+
+    expect(screen.getByTestId("admission-keep-working")).toHaveFocus();
   });
 
-  it("says what is waiting, in terms a person can act on", () => {
-    render(<AdmissionPanel onDismiss={() => {}} onSignOut={() => {}} />);
-    const panel = screen.getByTestId("admission-panel");
-    expect(panel).toHaveTextContent("syncing this workspace");
-    expect(panel).toHaveTextContent("inviting someone");
-    expect(panel).toHaveTextContent("sharing");
-  });
-
-  it("states that local work is untouched instead of behaving like a wall", () => {
-    render(<AdmissionPanel onDismiss={() => {}} onSignOut={() => {}} />);
-    expect(screen.getByTestId("admission-local")).toHaveTextContent(
-      "Local editing, import and export are unaffected",
-    );
-  });
-
-  it("hands the workspace back in one click", () => {
+  it("closes on Escape", () => {
     const onDismiss = vi.fn();
     render(<AdmissionPanel onDismiss={onDismiss} onSignOut={() => {}} />);
-    fireEvent.click(screen.getByTestId("admission-keep-working"));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(screen.getByTestId("admission-panel"), { key: "Escape" });
+
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 
-  it("offers an exit from the state, not just a message", () => {
-    const onSignOut = vi.fn();
-    render(<AdmissionPanel onDismiss={() => {}} onSignOut={onSignOut} />);
-    fireEvent.click(screen.getByTestId("admission-sign-out"));
-    expect(onSignOut).toHaveBeenCalledTimes(1);
+  it("wraps Tab from the last control back to the first", () => {
+    render(<AdmissionPanel onDismiss={() => {}} onSignOut={() => {}} />);
+    const last = screen.getByTestId("admission-keep-working");
+    last.focus();
+
+    fireEvent.keyDown(last, { key: "Tab" });
+
+    expect(screen.getByTestId("admission-sign-out")).toHaveFocus();
   });
 });

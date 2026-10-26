@@ -7,8 +7,9 @@
  * and reads an organization's tier through `createEntitlementReader`.
  *
  * There is no webhook handler, checkout call, event claim or subscription store here:
- * the plugin owns that state and its table. What lives in this package is the tier table
- * and the two functions that turn a row into limits.
+ * the plugin owns that state and its table. What lives in this package is the tier table,
+ * the two functions that turn a row into limits, and the projection that writes the same
+ * answer into `organization_licences` so the seat check and the token agree.
  */
 
 export {
@@ -32,6 +33,23 @@ export {
 } from "./entitlement/postgres.ts";
 export { BillingError, type BillingFailure, billingFailureOf } from "./errors.ts";
 export { MAX_BODY_BYTES, readJsonBody, sendJson, statusOf } from "./http/json.ts";
+export {
+  createLicenceProjection,
+  type FreeLicenceTier,
+  freeLicenceRow,
+  type LicenceProjection,
+  type LicenceProjectionDeps,
+  type LicenceRow,
+  type LicenceRowInput,
+  type LicenceRows,
+  licenceRowFor,
+  licenceRowValues,
+  type PluginSubscription,
+  postgresLicenceRows,
+  type SubscriptionView,
+  subscriptionViewOf,
+  UPSERT_LICENCE_SQL,
+} from "./licence/projection.ts";
 export {
   type AuthorizeOrganizationInput,
   type BillingPluginDeps,

@@ -11,6 +11,13 @@
  * carry a decision, and then calls the real repositories — the `pg` driver, the
  * real SQL, no fakes.
  *
+ * The last block goes one level further, because a repository cannot reach the bug
+ * that made this necessary: a brand-new organization was refused its own creator
+ * (`seat-refused: licence-missing`) because nothing wrote its `organization_licences`
+ * row. Only the real plugin, its real hooks and a real Postgres show that, so the
+ * script constructs the auth instance and creates an organization through
+ * `auth.api.createOrganization`.
+ *
  * Three outcomes, deliberately different:
  *   - `initdb` absent          → skip with exit 0. Most machines have no Postgres.
  *   - Postgres present, broken → exit 1. A cluster that starts and then refuses the
@@ -605,6 +612,7 @@ async function main() {
       const { authEnvironment } = await import(
         pathToFileURL(join(root, "services/auth/src/http/env.ts")).href
       );
+      const { randomBytes } = await import("node:crypto");
       const { postgresDatabase } = await import(
         pathToFileURL(join(root, "services/auth/src/store/postgres.ts")).href
       );
@@ -624,7 +632,9 @@ async function main() {
         const service = createAuthService({
           env: authEnvironment({
             SUITE_AUTH_ENABLED: "1",
-            SUITE_AUTH_SECRET: "v".repeat(32),
+            // Better Auth warns about a low-entropy secret, and the warning is noise
+            // in a gate that is already green or red.
+            SUITE_AUTH_SECRET: randomBytes(32).toString("hex"),
             SUITE_AUTH_URL: "http://localhost:1236",
           }),
           database: database.database,
@@ -635,20 +645,18 @@ async function main() {
           sendOrganizationInvitation: async () => {},
         });
 
-        const response = await service.handler(
-          new Request("http://localhost:1236/api/auth/organization/create", {
-            method: "POST",
-            headers: { "content-type": "application/json", origin: "http://localhost:1236" },
-            body: JSON.stringify({
-              name: "Grace's Agency",
-              slug: "graces-agency",
-              userId: "user-founder",
-            }),
-          }),
-        );
-        const body = await response.json();
-        assert.equal(response.status, 200, `the plugin refused: ${JSON.stringify(body)}`);
-        const organizationId = body.id;
+        // `auth.api.*` is the plugin's own server entry point: no request, no cookie,
+        // and `userId` names the creator, which is the same code path the HTTP handler
+        // reaches with a session. A `Request` through the handler would answer 401,
+        // because the plugin only accepts a body-supplied user from a server call.
+        const organization = await service.api.createOrganization({
+          body: {
+            name: "Grace's Agency",
+            slug: "graces-agency",
+            userId: "user-founder",
+          },
+        });
+        const organizationId = organization.id;
         assert.ok(typeof organizationId === "string" && organizationId.length > 0);
 
         // The member row is the proof: `beforeAddMember` let the creator through, which
@@ -716,6 +724,282 @@ async function main() {
       assert.ok(Math.abs(Date.now() - createdAt) < DAY, `createdAt ${createdAt} is not recent`);
     });
 
+    // --- the account export and erase, on real rows ----------------------------
+    //
+    // The erase is the one operation in this service that must be all-or-nothing
+    // across a dozen tables, and the unit suite cannot prove the SQL: it runs against
+    // a memory store. This seeds the shape the route reports on, reads it, erases it,
+    // and then asks the tables directly whether the workspace's rows are gone.
+
+    const { postgresAccountStore } = await import(
+      pathToFileURL(join(root, "services/auth/src/account/postgres.ts")).href
+    );
+    const { accountExport } = await import(
+      pathToFileURL(join(root, "services/auth/src/account/export.ts")).href
+    );
+    const { eraseAccount } = await import(
+      pathToFileURL(join(root, "services/auth/src/account/erase.ts")).href
+    );
+
+    // Two organizations: one the account is alone in, one a colleague also uses. A
+    // third person's seat in the shared organization is the row the erase must leave.
+    await query(`INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)`, [
+      "user-erase",
+      "Erasmus",
+      "erase@example.com",
+    ]);
+    await query(`INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)`, [
+      "user-other",
+      "Ola",
+      "ola@example.com",
+    ]);
+    await query(`INSERT INTO organization (id, name, slug) VALUES ($1, $2, $3)`, [
+      "org-erase-own",
+      "Erasmus Studio",
+      "erasmus-studio",
+    ]);
+    await query(`INSERT INTO organization (id, name, slug) VALUES ($1, $2, $3)`, [
+      "org-erase-shared",
+      "Shared Studio",
+      "shared-studio",
+    ]);
+    for (const [id, organizationId, userId, role] of [
+      ["member-erase-own", "org-erase-own", "user-erase", "owner"],
+      ["member-erase-shared", "org-erase-shared", "user-erase", "admin"],
+      ["member-erase-other", "org-erase-shared", "user-other", "owner"],
+    ]) {
+      await query(
+        `INSERT INTO member (id, "organizationId", "userId", role) VALUES ($1, $2, $3, $4)`,
+        [id, organizationId, userId, role],
+      );
+    }
+    await query(`INSERT INTO workspaces (id, organization_id, name) VALUES ($1, $2, $3)`, [
+      "ws-erase",
+      "org-erase-own",
+      "Erasmus Q4",
+    ]);
+    await query(`INSERT INTO workspaces (id, organization_id, name) VALUES ($1, $2, $3)`, [
+      "ws-other",
+      "org-erase-shared",
+      "Shared Q4",
+    ]);
+    await query(`INSERT INTO session (id, "userId", token, "expiresAt") VALUES ($1, $2, $3, $4)`, [
+      "session-erase",
+      "user-erase",
+      "token-erase",
+      new Date(NOW + DAY),
+    ]);
+    await query(
+      `INSERT INTO account (id, "userId", "providerId", "accountId") VALUES ($1, $2, $3, $4)`,
+      ["credential-erase", "user-erase", "credential", "erase@example.com"],
+    );
+    await query(
+      `INSERT INTO passkey (id, name, "publicKey", "userId", "credentialID", "deviceType")
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      ["passkey-erase", "Laptop", "pk-public", "user-erase", "pk-credential", "singleDevice"],
+    );
+    await query(
+      `INSERT INTO "twoFactor" (id, secret, "backupCodes", "userId") VALUES ($1, $2, $3, $4)`,
+      ["twofactor-erase", "secret", "codes", "user-erase"],
+    );
+    await query(
+      `INSERT INTO invitation (id, "organizationId", email, role, "expiresAt", "inviterId")
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        "invitation-erase",
+        "org-erase-own",
+        "new@example.com",
+        "member",
+        new Date(NOW + DAY),
+        "user-erase",
+      ],
+    );
+    await query(
+      `INSERT INTO "invite" (
+         id, type, kind, email, role, "tokenHash", mode, "organizationId",
+         "createdByUserId", "inviterName", "inviterEmail", "expiresAt",
+         "createdAt", "updatedAt"
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $12)`,
+      [
+        "invite-erase",
+        "private",
+        "org-join",
+        "new@example.com",
+        "member",
+        "hash-erase",
+        "private",
+        "org-erase-own",
+        "user-erase",
+        "Erasmus",
+        "erase@example.com",
+        new Date(NOW + DAY),
+      ],
+    );
+    // The enrollment engine's invitation in an organization that survives, sent by the
+    // account being erased: the row carries the inviter's name and address, so it goes
+    // with the account even though its organization stays.
+    await query(
+      `INSERT INTO "invite" (
+         id, type, kind, email, role, "tokenHash", mode, "organizationId",
+         "createdByUserId", "inviterName", "inviterEmail", "expiresAt",
+         "createdAt", "updatedAt"
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $12)`,
+      [
+        "invite-erase-shared",
+        "private",
+        "org-join",
+        "someone@example.com",
+        "member",
+        "hash-erase-shared",
+        "private",
+        "org-erase-shared",
+        "user-erase",
+        "Erasmus",
+        "erase@example.com",
+        new Date(NOW + DAY),
+      ],
+    );
+    await query(
+      `INSERT INTO verification (id, identifier, value, "expiresAt")
+       VALUES ($1, $2, $3, $4)`,
+      ["verification-erase", "erase@example.com", "token-value", new Date(NOW + DAY)],
+    );
+    await query(
+      `INSERT INTO subscription (id, plan, "referenceId", status) VALUES ($1, $2, $3, $4)`,
+      ["subscription-erase", "team", "org-erase-own", "active"],
+    );
+
+    // The script holds one `pg` client, so the store is given a `Queryable` over it
+    // without a `connect`: `BEGIN` and `COMMIT` then land on that one connection,
+    // which is the guarantee a transaction needs and a pool cannot give.
+    const accounts = postgresAccountStore({
+      query: (text, values) => client.query(text, values),
+    });
+
+    await check(
+      "postgresAccountStore.read names both organizations and the seat in each",
+      async () => {
+        const snapshot = await accounts.read("user-erase");
+        assert.ok(snapshot !== null, "an account with rows read back as missing");
+        assert.equal(snapshot.profile.email, "erase@example.com");
+        assert.deepEqual(
+          snapshot.organizations.map(
+            (organization) =>
+              `${organization.organizationId}:${organization.role}:${organization.otherMembers}`,
+          ),
+          ["org-erase-own:owner:0", "org-erase-shared:admin:1"],
+        );
+        assert.deepEqual(
+          snapshot.workspaces.map((workspace) => workspace.workspaceId),
+          ["ws-erase", "ws-other"],
+        );
+      },
+    );
+
+    await check("the export references the document instead of copying it", async () => {
+      const document = await accountExport(
+        { userId: "user-erase" },
+        { accounts, workspaceData: null, now: () => NOW },
+      );
+      assert.equal(document.format, "suite-account");
+      assert.equal(document.exportedAt, NOW);
+      const own = document.organizations.find(
+        (organization) => organization.organizationId === "org-erase-own",
+      );
+      assert.ok(own !== undefined, "the organization the account owns is not in the export");
+      assert.equal(own.membership.role, "owner");
+      assert.equal(typeof own.membership.joinedAt, "number");
+      assert.equal(own.workspaces[0]?.workspaceId, "ws-erase");
+      assert.equal(own.workspaces[0]?.document.exportedHere, false);
+      assert.equal(own.workspaces[0]?.document.exportPath, "/api/admin/workspaces/ws-erase/export");
+      // No relay store is wired here, so the file says that instead of "no links".
+      assert.match(own.workspaces[0]?.sharesUnavailableReason ?? "", /no relay store/u);
+      return "profile, both organizations, the workspace reference and a note for shares";
+    });
+
+    const eraseReport = await eraseAccount(
+      { userId: "user-erase" },
+      { accounts, workspaceData: null, now: () => NOW },
+    );
+
+    await check(
+      "the erase deletes the account's own organization and every row under it",
+      async () => {
+        assert.equal(
+          eraseReport.deleted,
+          true,
+          `the erase did not commit: ${JSON.stringify(eraseReport.stores.filter((store) => store.reason).map((store) => store.reason))}`,
+        );
+        const remaining = await query(
+          `SELECT id FROM workspaces WHERE id IN ('ws-erase', 'ws-other') ORDER BY id`,
+        );
+        // The workspace row is the one the report's `workspaces` count is about: it is
+        // gone, and the colleague's is not.
+        assert.deepEqual(
+          remaining.map((row) => row.id),
+          ["ws-other"],
+        );
+        for (const [table, column, value] of [
+          ["workspaces", "id", "ws-erase"],
+          ["organization", "id", "org-erase-own"],
+          ["member", "id", "member-erase-own"],
+          ["invite", "id", "invite-erase"],
+          ["invite", "id", "invite-erase-shared"],
+          ["invitation", "id", "invitation-erase"],
+          ["verification", "id", "verification-erase"],
+          ["organization_licences", "organization_id", "org-erase-own"],
+          ["subscription", "id", "subscription-erase"],
+          ["session", "id", "session-erase"],
+          ["account", "id", "credential-erase"],
+          ["passkey", "id", "passkey-erase"],
+          ['"twoFactor"', "id", "twofactor-erase"],
+          ['"user"', "id", "user-erase"],
+        ]) {
+          const { rows } = await client.query(
+            `SELECT 1 FROM ${table} WHERE ${column} = $1 LIMIT 1`,
+            [value],
+          );
+          assert.equal(rows.length, 0, `${table} still holds ${value}`);
+        }
+        return "workspace, organization, member, invitations, enrollment invites, verification, licence, subscription, session, credential, passkey, second factor and user are gone";
+      },
+    );
+
+    await check("the erase leaves the colleague's organization and seat alone", async () => {
+      const organizations = await query(
+        `SELECT id FROM organization WHERE id = 'org-erase-shared'`,
+      );
+      assert.equal(organizations.length, 1);
+      const seats = await query(
+        `SELECT "userId" FROM member WHERE "organizationId" = 'org-erase-shared' ORDER BY "userId"`,
+      );
+      assert.deepEqual(
+        seats.map((row) => row.userId),
+        ["user-other"],
+      );
+      const other = await query(`SELECT id FROM "user" WHERE id = 'user-other'`);
+      assert.equal(other.length, 1);
+      // The report says which organization was kept, and why, rather than counting it.
+      const retained = eraseReport.organizations.find(
+        (organization) => organization.organizationId === "org-erase-shared",
+      );
+      assert.equal(retained?.outcome, "retained");
+    });
+
+    await check("the erase report names the relay stores it could not reach", async () => {
+      const relay = eraseReport.stores.filter((store) =>
+        ["documents", "shares", "attachments"].includes(store.store),
+      );
+      assert.equal(relay.length, 3);
+      for (const store of relay) {
+        assert.equal(store.status, "not-configured");
+        assert.equal(store.removed, 0);
+        assert.match(store.reason ?? "", /no relay store/u);
+      }
+      assert.equal(eraseReport.complete, false);
+      return "documents, shares and attachments report not-configured with the command that finishes them";
+    });
+
     await check("the entitlement read sees an active subscription", async () => {
       await query(
         `INSERT INTO subscription (
@@ -776,6 +1060,110 @@ async function main() {
       assert.equal(cancelled.tier, "free");
       return "a cancelled plan reads as free, not team";
     });
+
+    await check(
+      "a subscription projects onto organization_licences, so one tier answers both",
+      async () => {
+        // The reported bug, on the real schema: the token said `team` while the seat check
+        // counted the row 0009's trigger wrote, which said `free`. Both readers below are
+        // the shipped ones — `postgresLicences` is what `checkSeatAllowance` counts against
+        // and `createEntitlementReader` is what mints the claim — so a disagreement is the
+        // bug rather than a difference between fakes.
+        const {
+          createEntitlementReader,
+          createLicenceProjection,
+          parseTierTable,
+          postgresLicenceRows,
+          postgresSubscriptions,
+        } = await import(pathToFileURL(join(root, "services/billing/src/index.ts")).href);
+        const tiers = parseTierTable(
+          JSON.stringify({
+            price_team: {
+              tier: "team",
+              workspaces: 3,
+              documentBytes: 268435456,
+              attachmentBytes: 1073741824,
+            },
+          }),
+        );
+        if (tiers.isErr()) throw new Error(tiers.error.message);
+
+        const queryable = { query: (text, values) => client.query(text, values) };
+        const subscriptions = postgresSubscriptions(queryable);
+        // Both sides are given the same clock, explicitly: the fixture timestamps are fixed
+        // (`NOW`), so a reader on the wall clock would answer a different question from the
+        // projection and the comparison would say nothing.
+        const reader = createEntitlementReader({
+          subscriptions,
+          tiers: tiers.value,
+          now: () => NOW,
+        });
+        const projection = createLicenceProjection({
+          rows: postgresLicenceRows(queryable),
+          tiers: tiers.value,
+          free: FREE_LICENCE_TIER,
+          now: () => NOW,
+        });
+
+        const statuses = [
+          ["active", NOW + DAY, "team"],
+          ["trialing", NOW + DAY, "team"],
+          ["past_due", NOW + DAY, "team"],
+          // The grace window closed: Stripe is still retrying, the token has said `free`
+          // since `periodEnd`, and the row has to say the same thing.
+          ["past_due", NOW - DAY, "free"],
+          ["canceled", NOW - DAY, "free"],
+        ];
+
+        const answers = [];
+        for (const [status, periodEnd, expected] of statuses) {
+          await query(`UPDATE subscription SET status = $1, "periodEnd" = $2 WHERE id = $3`, [
+            status,
+            new Date(periodEnd),
+            "sub-1",
+          ]);
+          const row = await subscriptions.forOrganization("org-1");
+          assert.ok(row !== null, "the subscription row the projection reads is gone");
+
+          await projection.project({
+            organizationId: "org-1",
+            seats: 1,
+            subscriptionId: "sub_stripe_1",
+            ...row,
+          });
+
+          const token = await reader.forOrganization("org-1");
+          const seat = await repositories.licences.forOrganization("org-1");
+          assert.ok(seat !== null, "the projection wrote no licence row");
+          assert.equal(
+            seat.claims.tier,
+            token.tier,
+            `${status} mints ${token.tier} but the seat check reads ${seat.claims.tier}`,
+          );
+          assert.equal(seat.claims.tier, expected);
+          if (expected === "free") {
+            assert.equal(seat.claims.id, "free:org-1", "the fallback is not the free row");
+            assert.equal(seat.seats, FREE_LICENCE_TIER.seats);
+          } else {
+            assert.equal(seat.claims.workspaces, 3);
+            // The paid horizon is the period Stripe billed, so a stale row expires instead
+            // of granting a plan forever.
+            assert.equal(seat.claims.expiresAt, periodEnd);
+          }
+          answers.push(`${status}→${seat.claims.tier}`);
+        }
+
+        // An organization with no subscription keeps the free row rather than losing it.
+        await projection.release("org-2");
+        const nobody = await repositories.licences.forOrganization("org-2");
+        assert.ok(nobody !== null);
+        assert.equal(nobody.claims.tier, FREE_LICENCE_TIER.tier);
+        assert.equal((await reader.forOrganization("org-2")).tier, FREE_LICENCE_TIER.tier);
+        answers.push(`no subscription→${nobody.claims.tier}`);
+
+        return answers.join(", ");
+      },
+    );
 
     const [{ server_version: version }] = await query("SHOW server_version");
 

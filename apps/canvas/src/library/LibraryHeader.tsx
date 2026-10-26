@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Dialog } from "../dialogs/Dialog";
+import { tabKeyDown } from "../dialogs/tabKeys";
 import type { LibraryTab } from "../store/useUiStore";
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -60,15 +61,37 @@ export function LibraryHeader({
 }) {
   const [confirmingEmptyTrash, setConfirmingEmptyTrash] = useState(false);
   const trashNoun = trashCount === 1 ? "card" : "cards";
+  const tabs = TABS.filter((entry) => canManageTrash || entry.id !== "trash");
 
   return (
     <div className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5">
-      <div role="tablist" aria-label="Library sections" className="flex items-center gap-1">
-        {TABS.filter((entry) => canManageTrash || entry.id !== "trash").map((entry) => (
+      <div
+        role="tablist"
+        aria-label="Library sections"
+        className="flex items-center gap-1"
+        // One tab stop for the strip, arrows inside it: the role promises it,
+        // and three tabs in the tab order made the drawer a maze.
+        onKeyDown={(event) =>
+          tabKeyDown(
+            event,
+            tabs.findIndex((entry) => entry.id === tab),
+            tabs.length,
+            (index) => {
+              const next = tabs[index];
+              if (next === undefined) return;
+              onTab(next.id);
+              document.getElementById(`library-tab-${next.id}`)?.focus();
+            },
+          )
+        }
+      >
+        {tabs.map((entry) => (
           <button
             key={entry.id}
             type="button"
             role="tab"
+            id={`library-tab-${entry.id}`}
+            tabIndex={tab === entry.id ? 0 : -1}
             aria-selected={tab === entry.id}
             data-testid={`library-tab-${entry.id}`}
             className="library-tab"

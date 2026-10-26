@@ -1,3 +1,5 @@
+import { postgresAccountStore } from "../account/postgres.js";
+import type { AccountStore, WorkspaceDataStore } from "../account/store.js";
 import {
   type AuthDatabase,
   type AuthServiceDeps,
@@ -55,6 +57,16 @@ export interface AuthEntryDeps
   /** Slack for `onLinkAccount`. */
   transferAnonymousWorkspaces?: AuthServiceDeps["transferAnonymousWorkspaces"];
   now?: AuthServiceDeps["now"];
+  /**
+   * The account store, when the caller owns it. `createPostgresAuthEntry` builds one
+   * over the pool it already has, so only a test or a second backend passes this.
+   */
+  account?: AccountStore;
+  /**
+   * The relay's per-workspace stores, for the account erase. Omitted, the report names
+   * those three stores as not configured.
+   */
+  workspaceData?: WorkspaceDataStore | null;
 }
 
 export interface AuthEntry {
@@ -73,6 +85,14 @@ export interface AuthEntry {
     licences: LicenceStore;
     memberships: MembershipReader;
     workspaces: WorkspaceRepository;
+    /**
+     * The account's own rows. `createAuthEntry` always sets it; a fixture that mounts
+     * only the workspace routes may leave it out, and the account routes then refuse as
+     * unconfigured.
+     */
+    account?: AccountStore | null;
+    /** The relay's stores, or null when this deployment did not wire one. */
+    workspaceData?: WorkspaceDataStore | null;
   };
   close: () => Promise<void>;
 }
@@ -145,6 +165,8 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
       licences: deps.licences,
       memberships: deps.memberships,
       workspaces: deps.workspaces,
+      account: deps.account ?? null,
+      workspaceData: deps.workspaceData ?? null,
     },
     close: async () => {
       await deps.close?.();
@@ -179,7 +201,7 @@ export interface PostgresAuthEntryDeps
       | "entitlements"
       | "billingPlugin"
     >,
-    Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now"> {
+    Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now" | "workspaceData"> {
   /** Raw SQL over a pool or client the caller owns. */
   queryable?: Queryable;
   /** Better Auth's adapter over that same pool. Required with `queryable`. */
@@ -214,6 +236,8 @@ export function createPostgresAuthEntry(
   if (pair !== null) {
     return createAuthEntry(env, {
       ...postgresRepositories(pair.queryable),
+      account: postgresAccountStore(pair.queryable),
+      ...(deps.workspaceData === undefined ? {} : { workspaceData: deps.workspaceData }),
       database: pair.database,
       sendMagicLink: deps.sendMagicLink,
       sendVerificationEmail: deps.sendVerificationEmail,
@@ -231,6 +255,8 @@ export function createPostgresAuthEntry(
   });
   return createAuthEntry(env, {
     ...postgresRepositories(opened.queryable),
+    account: postgresAccountStore(opened.queryable),
+    ...(deps.workspaceData === undefined ? {} : { workspaceData: deps.workspaceData }),
     database: opened.database,
     sendMagicLink: deps.sendMagicLink,
     sendVerificationEmail: deps.sendVerificationEmail,

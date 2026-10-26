@@ -265,3 +265,28 @@ describe("ViewsBar", () => {
     expect(useUiStore.getState().activeViewId).toBeNull();
   });
 });
+
+describe("ViewsBar menu keyboard", () => {
+  it("moves focus into the saved views when the menu opens", () => {
+    const workspace = fixture();
+    workspace.createView({
+      name: "Grading",
+      query: {
+        text: "grading",
+        typeIds: [],
+        tagIds: [],
+        sectionIds: [],
+        scope: "all",
+        groupBySection: false,
+        order: "relevance",
+      },
+    });
+    render(<ViewsBar workspace={workspace} canManage />);
+
+    fireEvent.click(screen.getByTestId("views-menu-button"));
+
+    const menu = screen.getByTestId("views-menu");
+    expect(menu.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toHaveAttribute("role", "menuitem");
+  });
+});

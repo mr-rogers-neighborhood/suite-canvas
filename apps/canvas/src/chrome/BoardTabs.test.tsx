@@ -119,3 +119,16 @@ describe("BoardTabs close", () => {
     expect(useUiStore.getState().activeBoardId).toBe("b1");
   });
 });
+
+describe("BoardTabs chooser keyboard", () => {
+  it("moves focus into the chooser when it opens, so the arrows arrive", () => {
+    const openable = boards.filter((board) => board.id !== "b1");
+    render(<BoardTabs {...baseProps} openableBoards={openable} />);
+
+    fireEvent.click(screen.getByTestId("board-create"));
+
+    expect(screen.getByTestId("board-chooser-open-b2")).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId("board-chooser-open-b2"), { key: "End" });
+    expect(screen.getByTestId("board-chooser-new")).toHaveFocus();
+  });
+});

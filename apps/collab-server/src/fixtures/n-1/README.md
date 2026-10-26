@@ -21,7 +21,7 @@ as a baseline for the *next* bump:
 | --- | --- | --- |
 | `documents.sqlite` | `documents` with untagged Loro snapshot blobs, `PRAGMA user_version = 0` | Yes — pre-format-tag |
 | `documents-newer.sqlite` | `documents` with `user_version = 99` | Negative case: must be refused |
-| `shares.sqlite` | `shares` without `room_id`, `expires_at`, `card_ids`, `last_used_at` | Yes — the shape `migrateShareColumns` predates |
+| `shares.sqlite` | `shares` without `room_id`, `expires_at`, `card_ids`, `last_used_at`, `slug` | Yes — the shape `migrateShareColumns` predates |
 | `workspaces.sqlite` | current shape | No migration has ever run on this table |
 | `settings.sqlite` | `settings(key, value)` without `updated_at` | Yes — `migrateSettingsColumns` |
 | `licences.sqlite` | `workspace_licences` without `quota_json`, `email`, `expires_at` | Yes — `migrateLicenceColumns` |
@@ -51,8 +51,9 @@ with `doc.export({ mode: "snapshot" })` and stored **without** the
 - The old blob imports, the board and both cards are present, and no stored
   bytes are rewritten on read (`PRAGMA user_version` is stamped to the current
   store version; the blob stays untagged until the next save).
-- `shares` gains its newer columns and `room_id` is backfilled from
-  `workspace_id`; the baseline bytes are unchanged.
+- `shares` gains its newer columns, `room_id` is backfilled from
+  `workspace_id`, and every row without a slug gets a page name from the scope
+  word (`workspace`, then `workspace-2`); the baseline bytes are unchanged.
 - `settings` and `licences` gain their newer columns and keep their rows.
 - A `user_version` above the current store version throws
   `UnsupportedStoreVersionError`. Nothing is opened "best effort".

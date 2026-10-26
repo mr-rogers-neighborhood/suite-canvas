@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
-import { menuKeyDown } from "../dialogs/menuKeys";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { isShareSession } from "../session/session";
 import type { ShareScope } from "../session/shares";
@@ -152,6 +152,7 @@ export function WorkspaceActions({
         </button>
         {menuOpen ? (
           <div
+            ref={focusFirstMenuItem}
             role="menu"
             data-testid="workspace-menu-list"
             onKeyDown={menuKeyDown}

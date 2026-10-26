@@ -1,6 +1,7 @@
 import type { SearchHit, Tag } from "@suite/graph";
 import { highlightRanges } from "@suite/graph";
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
   PointerEvent as ReactPointerEvent,
@@ -46,6 +47,49 @@ function RowMenuButton({
       {"\u22ef"}
     </button>
   );
+}
+
+const ROW_OPEN = "[data-row-open]";
+const ROW_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
+
+/**
+ * Arrows walk the rows; Enter is the row's own button.
+ *
+ * The rows carried `onPointerDown` alone, so a reader with no pointer could not
+ * reach a row at all until a query put the search box's cursor on one. Every row
+ * now holds an open button — that is the tab stop — and this moves between those
+ * buttons the way a list does.
+ */
+function rowsKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
+  if (!ROW_KEYS.has(event.key)) return;
+  const list = event.currentTarget.closest(".library-list");
+  if (list === null) return;
+  const rows = [...list.querySelectorAll<HTMLElement>(ROW_OPEN)];
+  if (rows.length === 0) return;
+
+  event.preventDefault();
+  const here = rows.indexOf(document.activeElement as HTMLElement);
+  const at =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? rows.length - 1
+        : event.key === "ArrowDown"
+          ? (here + 1) % rows.length
+          : (here <= 0 ? rows.length : here) - 1;
+  rows[at]?.focus();
+}
+
+/**
+ * The row's own keyboard path: a button around the text column.
+ *
+ * A pointer press belongs to the row, which lifts it for a drag or opens it when
+ * it never moved, so this ignores pointer clicks (`detail` is 1 or more) and
+ * takes only the keyboard's own activation (a synthesized click reports 0).
+ */
+function openOnKeyboard(event: ReactMouseEvent<HTMLButtonElement>, open: () => void): void {
+  if (event.detail !== 0) return;
+  open();
 }
 
 /** Highlighted runs of a result title or snippet, straight from the index terms. */
@@ -94,6 +138,10 @@ export interface LibraryRowContext {
   ) => void;
   /** A press starts a hold-to-place, or selects, in selection mode. */
   onPressRow: (item: LibraryItem, event: ReactPointerEvent) => void;
+  /** The keyboard path into a card row. */
+  onOpenCard: (cardId: string) => void;
+  /** The keyboard path into a board row. */
+  onOpenBoard: (boardId: string) => void;
 }
 
 /** One card row: title, match snippet, tags and the board/section line. */
@@ -117,6 +165,7 @@ export function LibraryCardRow({
     sectionLabel,
     onOpenMenu,
     onPressRow,
+    onOpenCard,
   } = context;
   const hit: SearchHit | undefined = searching ? hits.get(item.id) : undefined;
   const current = activeId === item.id;
@@ -138,41 +187,51 @@ export function LibraryCardRow({
           onOpenMenu(item.id, item.title, { x: event.clientX, y: event.clientY }, event)
         }
         onPointerDown={(event) => onPressRow(item, event)}
+        onKeyDown={rowsKeyDown}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px]" data-testid={`library-title-${item.id}`}>
-            <Highlighted text={item.title} terms={searching ? terms : []} />
-          </p>
+          {/* The title is the button, so the row's accessible name is the card's
+              name and not its metadata. The rest of the row reads beside it. */}
+          <button
+            type="button"
+            data-row-open={item.id}
+            className="library-row__open block max-w-full truncate text-left text-[12px]"
+            onClick={(event) => openOnKeyboard(event, () => onOpenCard(item.id))}
+          >
+            <span data-testid={`library-title-${item.id}`}>
+              <Highlighted text={item.title} terms={searching ? terms : []} />
+            </span>
+          </button>
           {hit?.field === "body" ? (
-            <p
-              className="truncate text-[10px] text-[var(--ink-muted)]"
+            <span
+              className="block truncate text-[10px] text-[var(--ink-muted)]"
               data-testid={`library-snippet-${item.id}`}
             >
               <Highlighted text={hit.snippet} terms={terms} />
-            </p>
+            </span>
           ) : null}
           {item.tagIds.length > 0 ? (
-            <p className="truncate text-[10px] text-[var(--ink-muted)]">
+            <span className="block truncate text-[10px] text-[var(--ink-muted)]">
               {item.tagIds
                 .map((id) => tags.find((tag) => tag.id === id))
                 .filter((tag): tag is Tag => tag !== undefined)
                 .map((tag) => `#${tag.name}`)
                 .join(" ")}
-            </p>
+            </span>
           ) : null}
           {boardScope ? (
-            <p
-              className="truncate text-[10px] text-[var(--ink-muted)]"
+            <span
+              className="block truncate text-[10px] text-[var(--ink-muted)]"
               data-testid="library-row-meta"
             >
               {sectionLabel(item)}
               {" \u00b7 "}
               {activeBoardName ?? "This board"}
-            </p>
+            </span>
           ) : item.boards.length > 0 ? (
-            <p className="truncate text-[10px] text-[var(--ink-muted)]">
+            <span className="block truncate text-[10px] text-[var(--ink-muted)]">
               {item.boards.map((board) => board.name).join(" \u00b7 ")}
-            </p>
+            </span>
           ) : null}
         </div>
 
@@ -194,10 +253,13 @@ export function LibraryBoardRow({
   searching,
   terms,
   onOpenMenu,
+  onOpen,
 }: {
   board: LibraryBoard;
   searching: boolean;
   terms: readonly string[];
+  /** The keyboard path: the row's own open button. */
+  onOpen: (boardId: string) => void;
   onOpenMenu: (
     id: string,
     label: string,
@@ -215,12 +277,20 @@ export function LibraryBoardRow({
         onContextMenu={(event) =>
           onOpenMenu(board.id, board.title, { x: event.clientX, y: event.clientY }, event)
         }
+        onKeyDown={rowsKeyDown}
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px]" data-testid={`library-title-${board.id}`}>
-            <Highlighted text={board.title} terms={searching ? terms : []} />
-          </p>
-          <p className="truncate text-[10px] text-[var(--ink-muted)]">
+          <button
+            type="button"
+            data-row-open={board.id}
+            className="library-row__open block max-w-full truncate text-left text-[12px]"
+            onClick={(event) => openOnKeyboard(event, () => onOpen(board.id))}
+          >
+            <span data-testid={`library-title-${board.id}`}>
+              <Highlighted text={board.title} terms={searching ? terms : []} />
+            </span>
+          </button>
+          <span className="block truncate text-[10px] text-[var(--ink-muted)]">
             <span data-testid={`library-board-state-${board.id}`}>
               {board.open ? "Open" : "Closed"}
             </span>
@@ -233,7 +303,7 @@ export function LibraryBoardRow({
             {board.template === true ? (
               <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 blueprint"}</span>
             ) : null}
-          </p>
+          </span>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -267,6 +337,7 @@ export function LibraryRowList({
         searching={context.searching}
         terms={context.terms}
         onOpenMenu={context.onOpenMenu}
+        onOpen={context.onOpenBoard}
       />
     ) : (
       <LibraryCardRow key={key} item={entry.card} context={context} />

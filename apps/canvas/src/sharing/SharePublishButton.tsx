@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { getSession } from "../session/session";
 import {
+  publishRefusalMessage,
   publishShare,
   reloadShare,
   type SharePublishConflict,
@@ -114,10 +116,6 @@ export function SharePublishButton({ token: tokenProp, client }: SharePublishBut
 
   const reload = async () => {
     if (reloading) return;
-    const confirmed = window.confirm(
-      "Reload from the workspace? Your unpublished changes will be discarded.",
-    );
-    if (!confirmed) return;
     setReloading(true);
     setError(null);
     try {
@@ -227,7 +225,7 @@ function entryText(entry: SharePublishConflictEntry, group: ConflictGroup): stri
   return label;
 }
 
-function ConflictDialog({
+export function ConflictDialog({
   conflict,
   publishing,
   reloading,
@@ -245,11 +243,18 @@ function ConflictDialog({
   // Unchecked is the default and means "keep the workspace version"; checking a
   // row is the only way a draft value overwrites the workspace's.
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  /** Reloading throws the draft away, so it asks here rather than in a platform dialog. */
+  const [confirmingReload, setConfirmingReload] = useState(false);
   const blocked = conflict.unsupported.length > 0;
   const onlyUnsupported = blocked && conflict.conflicts.length === 0;
+  // A named refusal beats a wall of prose: the cap says "too large", so the
+  // dialog says that instead of "some new items depend on workspace data".
+  const refusal = publishRefusalMessage(conflict.code);
   const groups = groupConflicts(conflict.conflicts);
+  const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   const toggle = (key: string) => {
     setSelected((previous) => {
@@ -269,19 +274,26 @@ function ConflictDialog({
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Resolve publish conflicts"
+        tabIndex={-1}
         data-testid="publish-conflict"
         className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
         <h2 className="text-sm font-semibold">
-          {onlyUnsupported ? "Can't publish yet" : "Resolve publish conflicts"}
+          {refusal
+            ? "This draft is too large to publish"
+            : onlyUnsupported
+              ? "Can't publish yet"
+              : "Resolve publish conflicts"}
         </h2>
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--ink-muted)]">
-          {onlyUnsupported
-            ? "Some new items depend on workspace data that changed. Nothing has been published; your draft is still here."
-            : "The workspace changed since this draft started. Check a field to keep your version; unchecked fields keep the workspace version."}
+          {refusal ??
+            (onlyUnsupported
+              ? "Some new items depend on workspace data that changed. Nothing has been published; your draft is still here."
+              : "The workspace changed since this draft started. Check a field to keep your version; unchecked fields keep the workspace version.")}
         </p>
         {conflict.reason ? (
           <p className="mt-2 text-[11px] text-[var(--ink-muted)]">{conflict.reason}</p>
@@ -353,6 +365,33 @@ function ConflictDialog({
             </p>
           </div>
         ) : null}
+        {confirmingReload ? (
+          <div
+            data-testid="publish-reload-confirm"
+            className="mt-3 flex flex-wrap items-center justify-end gap-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px]"
+          >
+            <span className="min-w-0 flex-1">
+              Reload from the workspace? Your unpublished changes will be discarded.
+            </span>
+            <button
+              type="button"
+              data-testid="publish-reload-yes"
+              disabled={reloading}
+              className="rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 disabled:opacity-40 dark:text-red-300 dark:hover:bg-red-500/15"
+              onClick={onReload}
+            >
+              {reloading ? "Reloading\u2026" : "Discard and reload"}
+            </button>
+            <button
+              type="button"
+              data-testid="publish-reload-no"
+              className="rounded px-1.5 py-0.5 text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => setConfirmingReload(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
             type="button"
@@ -362,16 +401,18 @@ function ConflictDialog({
           >
             {onlyUnsupported ? "Keep editing" : "Close"}
           </button>
-          <button
-            type="button"
-            data-testid="publish-reload"
-            disabled={reloading || publishing}
-            className="rounded-md px-3 py-1.5 text-xs text-[var(--ink-muted)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
-            onClick={onReload}
-            title="Discard this draft and rebuild it from the workspace."
-          >
-            {reloading ? "Reloading\u2026" : "Reload from workspace"}
-          </button>
+          {confirmingReload ? null : (
+            <button
+              type="button"
+              data-testid="publish-reload"
+              disabled={reloading || publishing}
+              className="rounded-md px-3 py-1.5 text-xs text-[var(--ink-muted)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+              onClick={() => setConfirmingReload(true)}
+              title="Discard this draft and rebuild it from the workspace."
+            >
+              {reloading ? "Reloading\u2026" : "Reload from workspace"}
+            </button>
+          )}
           {onlyUnsupported ? null : (
             <button
               type="button"

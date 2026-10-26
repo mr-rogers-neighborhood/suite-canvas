@@ -1,4 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+import type { LibrarySort } from "./useLibraryList";
 
 /** The query box; the drawer owns the focus ref and the keyboard cursor. */
 export function LibrarySearchRow({
@@ -9,6 +10,8 @@ export function LibrarySearchRow({
   onNavigate,
   onPick,
   enabled,
+  sort,
+  onSort,
 }: {
   inputRef: RefObject<HTMLInputElement | null>;
   query: string;
@@ -20,6 +23,9 @@ export function LibrarySearchRow({
   onPick: () => void;
   /** Only an active search takes arrow keys and Enter. */
   enabled: boolean;
+  /** The list's order; relevance only means something while a query is active. */
+  sort: LibrarySort;
+  onSort: (sort: LibrarySort) => void;
 }) {
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (!enabled) return;
@@ -51,6 +57,17 @@ export function LibrarySearchRow({
         onChange={(event) => onQuery(event.target.value)}
         onKeyDown={onKeyDown}
       />
+      <select
+        data-testid="library-sort"
+        aria-label="Sort the library"
+        value={sort}
+        onChange={(event) => onSort(event.target.value as LibrarySort)}
+        className="shrink-0 rounded border border-[var(--hairline)] bg-[var(--surface)] px-1 py-0.5 text-[11px] text-[var(--ink-muted)]"
+      >
+        <option value="title">Title</option>
+        <option value="updated">Recently updated</option>
+        <option value="relevance">Relevance</option>
+      </select>
       {query.length > 0 ? (
         <button
           type="button"

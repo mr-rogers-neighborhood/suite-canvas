@@ -1,5 +1,7 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import type { AuthAvailability } from "./availability";
 import {
   emailProblem,
@@ -70,14 +72,10 @@ export function SignInDialog({
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const offers = useMemo(() => signInOffers(last), [last]);
+  const panel = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   const passkey = useCallback(async () => {
     setBusy("passkey");
@@ -200,9 +198,11 @@ export function SignInDialog({
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label={mode === "sign-up" ? "Create an account" : "Sign in"}
+        tabIndex={-1}
         data-testid="sign-in-dialog"
         data-availability={availability}
         data-mode={mode}

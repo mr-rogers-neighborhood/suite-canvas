@@ -8,6 +8,11 @@ import type { BetterAuthPlugin } from "better-auth";
 import { APIError } from "better-auth/api";
 import Stripe from "stripe";
 import { BillingError } from "../errors.ts";
+import {
+  type LicenceProjection,
+  type PluginSubscription,
+  subscriptionViewOf,
+} from "../licence/projection.ts";
 import { limitsOf, type TierTable } from "./tiers.ts";
 
 /**
@@ -15,7 +20,7 @@ import { limitsOf, type TierTable } from "./tiers.ts";
  *
  * `@better-auth/stripe` owns the customer, checkout, the billing portal, the webhook,
  * the subscription row, trials and seat sync (ADR-0078). What this module adds is the
- * three decisions the plugin cannot make for us:
+ * four decisions the plugin cannot make for us:
  *
  * 1. **The plan list.** One plan per tier, with the caps from `STRIPE_PRICE_TIERS`
  *    attached as `limits`, so the price a customer chooses is the limit the relay later
@@ -25,6 +30,11 @@ import { limitsOf, type TierTable } from "./tiers.ts";
  *    `customerType` to `user`, so a checkout that names no organization is refused
  *    rather than quietly billing an individual.
  * 3. **The webhook secret.** Passed in, never read from a global at request time.
+ * 4. **The licence row.** `organization_licences` is what the seat check counts
+ *    against, and the plugin's lifecycle hooks are the only place that learns a
+ *    subscription changed, so {@link BillingPluginDeps.licence} is called from each of
+ *    them (ADR-0075: the tier the token carries and the tier the seat check enforces are
+ *    one answer).
  *
  * Everything is registered under `/api/auth/*` by the auth instance this is handed to.
  * The webhook path is `/api/auth/stripe/webhook`, and nothing else may serve it.
@@ -36,6 +46,16 @@ export interface AuthorizeOrganizationInput {
   organizationId: string;
   action: AuthorizeReferenceAction;
 }
+
+/** The enabled half of the plugin's `subscription` option, which the hooks live on. */
+type SubscriptionHooks = Extract<NonNullable<StripeOptions["subscription"]>, { enabled: true }>;
+
+/** The four hooks a subscription change reaches; every one of them writes the licence. */
+type LifecycleHook =
+  | "onSubscriptionCreated"
+  | "onSubscriptionComplete"
+  | "onSubscriptionUpdate"
+  | "onSubscriptionDeleted";
 
 export interface BillingPluginDeps {
   /** Stripe secret or restricted key. A test key is what a local flow uses. */
@@ -52,8 +72,40 @@ export interface BillingPluginDeps {
    * every subscription action.
    */
   authorizeOrganization: (input: AuthorizeOrganizationInput) => Promise<boolean>;
+  /**
+   * Writes the organization's licence row from the subscription the plugin just stored.
+   *
+   * Optional because a deployment may run billing for checkout alone, but a deployment
+   * that leaves it out keeps the bug this exists to fix: a subscriber's token says
+   * `solo` while their seat check counts a `free` row.
+   */
+  licence?: LicenceProjection;
   /** Creates a Stripe customer on sign-up. On by default; off is not a supported shape. */
   createCustomerOnSignUp?: boolean;
+}
+
+/**
+ * The subscription lifecycle hooks, as the plugin declares them.
+ *
+ * `created` and `complete` both fire for a fresh checkout (`customer.subscription.created`
+ * and `checkout.session.completed` are separate deliveries), so the projection is called
+ * twice for one subscription. That is safe and deliberate: the write is an upsert keyed
+ * by the organization, and a duplicate that lands out of order would otherwise leave the
+ * older answer in the row.
+ */
+function licenceHooks(
+  licence: LicenceProjection | undefined,
+): Partial<Pick<SubscriptionHooks, LifecycleHook>> {
+  if (licence === undefined) return {};
+  const project = async (subscription: PluginSubscription): Promise<void> => {
+    await licence.project(subscriptionViewOf(subscription));
+  };
+  return {
+    onSubscriptionCreated: async ({ subscription }) => project(subscription),
+    onSubscriptionComplete: async ({ subscription }) => project(subscription),
+    onSubscriptionUpdate: async ({ subscription }) => project(subscription),
+    onSubscriptionDeleted: async ({ subscription }) => project(subscription),
+  };
 }
 
 /**
@@ -114,6 +166,16 @@ export function billingPluginOptions(deps: BillingPluginDeps): StripeOptions {
       // from starting a subscription through an endpoint called directly.
       requireEmailVerification: true,
       plans,
+      /**
+       * The licence row, written from the row the plugin just stored.
+       *
+       * `@better-auth/stripe` is the only writer of `subscription`, and its lifecycle
+       * hooks are the only notification that the row changed, so the projection rides
+       * them rather than polling. A hook that fails is reported by the projection and
+       * the plugin answers the webhook 200, which is why the next event repairs the row
+       * instead of Stripe retrying this one.
+       */
+      ...licenceHooks(deps.licence),
       authorizeReference: async ({ user, referenceId, action }) =>
         deps.authorizeOrganization({
           userId: user.id,

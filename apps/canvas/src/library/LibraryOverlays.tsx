@@ -5,6 +5,9 @@ import type { LibraryBoard, LibraryItem } from "./libraryTypes";
 
 /** The drawer's portalled extras: delete confirmation, row menu and drag ghost. */
 export function LibraryOverlays({
+  pendingPurge,
+  onDismissPurge,
+  onDeleteForever,
   pendingDelete,
   onDismissDelete,
   onDeleteBoard,
@@ -13,6 +16,10 @@ export function LibraryOverlays({
   onCloseMenu,
   hold,
 }: {
+  /** The trashed card whose permanent delete is being asked about. */
+  pendingPurge: { id: string; title: string } | null;
+  onDismissPurge: () => void;
+  onDeleteForever: (cardId: string) => void;
   pendingDelete: LibraryBoard | null;
   onDismissDelete: () => void;
   onDeleteBoard: (boardId: string, cards: "keep" | "trash") => void;
@@ -24,6 +31,22 @@ export function LibraryOverlays({
 }) {
   return (
     <>
+      {pendingPurge ? (
+        <Dialog
+          title="Delete this card forever?"
+          description={`\u201c${pendingPurge.title}\u201d is in the trash. Deleting it for good cannot be undone, and no backup holds it.`}
+          onClose={onDismissPurge}
+          actions={[
+            { label: "Cancel", onSelect: () => {} },
+            {
+              label: "Delete forever",
+              danger: true,
+              onSelect: () => onDeleteForever(pendingPurge.id),
+            },
+          ]}
+        />
+      ) : null}
+
       {pendingDelete ? (
         <Dialog
           title="Delete board?"

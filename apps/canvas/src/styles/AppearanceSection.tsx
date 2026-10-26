@@ -7,52 +7,32 @@ import { useWorkspaceTheme } from "../theme/useWorkspaceTheme";
 import { themedRoles } from "../theme/workspaceTheme";
 
 /**
- * The appearance entry point (ADR-0071),
- * reached from the theme switcher — the button that already asks "how should this look".
+ * The appearance controls (ADR-0071): density, corner rounding, the canvas
+ * treatment and motion.
  *
- * It offers the four things a reader owns alone: density, corner rounding, the canvas
- * treatment and motion. Nothing here can restyle a card for anybody else, which is the
- * line the ADR draws: what a reader controls is how *their* screen draws; what the
- * document controls is how the work looks to everyone.
- *
- * Every change is applied immediately (the store paints `<html>`), so the preview is the
- * canvas behind this panel rather than a mock inside it.
+ * It offers the four things a reader owns alone. Nothing here can restyle a card
+ * for anybody else, which is the line the ADR draws: what a reader controls is
+ * how *their* screen draws; what the document controls is how the work looks to
+ * everyone. Every change is applied immediately, so the preview is the canvas
+ * behind the panel rather than a mock inside it.
  */
-export function AppearanceDialog({ onClose }: { onClose: () => void }) {
+export function AppearanceSection() {
   const appearance = useAppearanceStore((state) => state.appearance);
   const workspace = useCanvasStore((state) => state.workspace);
   const mode = useThemeStore((state) => state.theme);
   const themed = themedRoles(useWorkspaceTheme(workspace), mode);
   const set = useAppearanceStore((state) => state.set);
   const reset = useAppearanceStore((state) => state.reset);
-  const titleId = useId();
+  const noteId = useId();
 
   const change = (patch: Partial<Appearance>) => set(patch);
 
   return (
-    <div
-      className="appearance-dialog"
-      data-testid="appearance-dialog"
-      role="dialog"
-      aria-labelledby={titleId}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <header className="appearance-dialog__header">
-        <h2 id={titleId} className="appearance-dialog__title">
-          Appearance
-        </h2>
-        <button
-          type="button"
-          className="appearance-dialog__close"
-          data-testid="appearance-close"
-          aria-label="Close appearance"
-          onClick={onClose}
-        >
-          {"\u00d7"}
-        </button>
-      </header>
-
-      <p className="appearance-dialog__note">
+    <section aria-labelledby={noteId} data-testid="appearance-dialog">
+      <h3 id={noteId} className="text-[12px] font-semibold">
+        Appearance
+      </h3>
+      <p className="mt-0.5 text-[11px] leading-4 text-[var(--ink-muted)]">
         These change this device only. The workspace's own colours and shapes stay as its authors
         set them.
       </p>
@@ -136,6 +116,6 @@ export function AppearanceDialog({ onClose }: { onClose: () => void }) {
       >
         Reset to defaults
       </button>
-    </div>
+    </section>
   );
 }

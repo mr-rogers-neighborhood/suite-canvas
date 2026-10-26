@@ -1,4 +1,5 @@
 import { err } from "neverthrow";
+import type { AccountStore, WorkspaceDataStore } from "../account/store.js";
 import type { EnrollmentRedemption } from "../invitations/enrollment.js";
 import type { LicenceStore, MembershipReader } from "../licensing/licences.js";
 import type { WorkspaceRepository } from "../organizations/workspaces.js";
@@ -50,6 +51,21 @@ export interface AuthHandlerDeps {
   enrollment: { redeem: EnrollmentRedemption } | null;
   /** Null when the account service is off: every route then refuses as unconfigured. */
   sessions: AuthSessionReader | null;
+  /**
+   * The account's own rows, for `GET /api/account/export` and `DELETE /api/account`.
+   *
+   * Absent or null is a deployment that mounted this service without the account
+   * store, and both routes then refuse as unconfigured rather than exporting nothing.
+   */
+  accounts?: AccountStore | null;
+  /**
+   * The relay's per-workspace stores: the document, share rows and attachment bytes.
+   *
+   * This service holds no credential that reaches them. A deployment that runs a
+   * relay beside it wires this port; without it the erase report names those three
+   * stores as not configured, because an unscoped `200` would read as "all gone".
+   */
+  workspaceData?: WorkspaceDataStore | null;
   now?: () => number;
   log?: AuthLogger;
 }

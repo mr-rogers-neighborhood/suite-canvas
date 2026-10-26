@@ -65,11 +65,10 @@ describe("SharePublishButton", () => {
           conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
           unsupported: [{ key: "card:c2", kind: "unsupported", message: "No new cards." }],
           reason: null,
+          code: null,
         });
       }),
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-
     render(<SharePublishButton client={client} />);
     fireEvent.click(screen.getByTestId("share-publish"));
 
@@ -78,10 +77,12 @@ describe("SharePublishButton", () => {
     expect(dialog).toHaveTextContent("Body changed.");
     expect(dialog).toHaveTextContent("No new cards.");
 
+    // Reloading discards the draft, so the dialog asks inside itself first.
     fireEvent.click(screen.getByTestId("publish-reload"));
+    expect(client.reloadShare).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("publish-reload-yes"));
 
     await waitFor(() => expect(client.reloadShare).toHaveBeenCalledWith("tok-1"));
-    expect(confirm).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByTestId("publish-conflict")).not.toBeInTheDocument());
   });
 
@@ -99,6 +100,7 @@ describe("SharePublishButton", () => {
             },
           ],
           reason: null,
+          code: null,
         });
       }),
     });
@@ -121,18 +123,17 @@ describe("SharePublishButton", () => {
           conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
           unsupported: [],
           reason: null,
+          code: null,
         });
       }),
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-
     render(<SharePublishButton client={client} />);
     fireEvent.click(screen.getByTestId("share-publish"));
     await screen.findByTestId("publish-conflict");
 
     fireEvent.click(screen.getByTestId("publish-reload"));
+    fireEvent.click(screen.getByTestId("publish-reload-no"));
     expect(client.reloadShare).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalled();
     expect(screen.getByTestId("publish-conflict")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("publish-close"));
@@ -166,6 +167,7 @@ describe("SharePublishButton", () => {
           ],
           unsupported: [],
           reason: null,
+          code: null,
         }),
       )
       .mockResolvedValueOnce({ applied: 1 });
@@ -198,6 +200,7 @@ describe("SharePublishButton", () => {
           conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
           unsupported: [],
           reason: null,
+          code: null,
         }),
       )
       .mockResolvedValueOnce({ applied: 0 });
@@ -219,6 +222,7 @@ describe("SharePublishButton", () => {
         conflicts: [{ key: "card:c1:body", kind: "body", message: "Body changed." }],
         unsupported: [{ key: "card:c2", kind: "unsupported", message: "No new cards." }],
         reason: null,
+        code: null,
       });
     });
     const client = fakeClient({ publishShare });
@@ -256,6 +260,7 @@ describe("SharePublishButton", () => {
           ],
           unsupported: [],
           reason: null,
+          code: null,
         }),
       )
       .mockResolvedValueOnce({ applied: 2 });

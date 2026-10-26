@@ -20,6 +20,8 @@ export interface PaletteItem {
   keywords?: readonly string[] | undefined;
   /** Lower runs first among equal scores (navigation before actions). */
   weight?: number | undefined;
+  /** The keys that run this row, printed at its right edge. */
+  shortcut?: string | undefined;
   run: () => void;
 }
 

@@ -6,4 +6,9 @@ export {
   freeEntitlement,
   noEntitlements,
 } from "./entitlements.js";
-export { type LicenceStore, licenceStateFor, type MembershipReader } from "./licences.js";
+export {
+  type LicenceStore,
+  licenceStateFor,
+  type MembershipReader,
+  UNPROVISIONED,
+} from "./licences.js";

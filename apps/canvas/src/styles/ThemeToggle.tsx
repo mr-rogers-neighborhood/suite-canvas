@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ThemeMode } from "../theme/theme";
 import { useThemeStore } from "../theme/useThemeStore";
-import { AppearanceDialog } from "./AppearanceDialog";
+import { SettingsHost } from "./SettingsDialog";
+import { openSettings } from "./settingsEvents";
 
 const OPTIONS: Array<{ mode: ThemeMode; label: string }> = [
   { mode: "light", label: "Light" },
@@ -32,16 +34,15 @@ function ThemeIcon({ mode }: { mode: ThemeMode }) {
  * and a half-lit disc for Auto; the transition is skipped when the platform
  * asks for reduced motion.
  *
- * The menu also holds the way into **Appearance** (ADR-0071):
- * this is the reader's "how should this look" button already, so it is the honest door to
- * the preferences that shape the shell — though not the only one, and deliberately not a
- * settings page.
+ * The menu also holds the way into **Settings** (ADR-0071): this is the reader's
+ * "how should this look" button already, so it is the honest door to the
+ * preferences that shape the shell. The preferences themselves live in
+ * `SettingsDialog`, which the palette opens too.
  */
 export function ThemeToggle() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
   const [open, setOpen] = useState(false);
-  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const container = useRef<HTMLDivElement | null>(null);
   const active = OPTIONS.find((option) => option.mode === mode) ?? OPTIONS[2];
 
@@ -72,9 +73,16 @@ export function ThemeToggle() {
       >
         <ThemeIcon mode={mode} />
       </button>
-      {appearanceOpen ? <AppearanceDialog onClose={() => setAppearanceOpen(false)} /> : null}
+      <SettingsHost />
       {open ? (
-        <div role="menu" aria-label="Color theme" data-testid="theme-menu" className="theme-menu">
+        <div
+          ref={focusFirstMenuItem}
+          role="menu"
+          aria-label="Color theme"
+          data-testid="theme-menu"
+          className="theme-menu"
+          onKeyDown={menuKeyDown}
+        >
           {OPTIONS.map((option) => (
             <button
               key={option.mode}
@@ -107,11 +115,11 @@ export function ThemeToggle() {
             className="theme-menu__item"
             onClick={() => {
               setOpen(false);
-              setAppearanceOpen(true);
+              openSettings();
             }}
           >
             <span aria-hidden="true">{"\u25d1"}</span>
-            <span>Appearance…</span>
+            <span>Settings…</span>
           </button>
         </div>
       ) : null}

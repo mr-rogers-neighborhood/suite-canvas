@@ -994,11 +994,14 @@ describe("row actions", () => {
     const boardId = workspace.listBoards()[0]?.id ?? "";
     renderDrawer(workspace, items, { tab: "cards", activeBoardId: boardId });
 
-    // The row is a title, its metadata and one button — the actions are not
-    // buttons in the row any more.
+    // The row is a title, its metadata, its own open button (the keyboard path)
+    // and one menu button — the actions are not buttons in the row any more.
     const row = screen.getByTestId("library-item-c1");
-    expect(within(row).getAllByRole("button")).toHaveLength(1);
+    expect(within(row).getAllByRole("button")).toHaveLength(2);
     expect(within(row).getByTestId("library-row-menu-c1")).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: /^Mastering the timeline/ }),
+    ).toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: "Locate" })).toBeNull();
   });
 
@@ -1082,5 +1085,157 @@ describe("expanded library", () => {
 
     fireEvent.click(screen.getByTestId("library-expand"));
     expect(onFull).toHaveBeenLastCalledWith(false);
+  });
+});
+
+/**
+ * Rows were pointer-only: `onPointerDown` on a `div` meant a keyboard reader
+ * could not reach a row at all until a query put the search cursor on one.
+ */
+describe("library rows by keyboard", () => {
+  it("reaches a row without a query", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+
+    const open = screen.getByRole("button", { name: /^Mastering the timeline/ });
+    open.focus();
+    expect(open).toHaveFocus();
+  });
+
+  it("opens a card with Enter", () => {
+    const { workspace, items } = fixture();
+    const { onOpenCard } = renderDrawer(workspace, items);
+    const open = screen.getByRole("button", { name: /^Mastering the timeline/ });
+    open.focus();
+
+    fireEvent.click(open, { detail: 0 });
+
+    expect(onOpenCard).toHaveBeenCalledWith("c1");
+  });
+
+  it("walks the rows with the arrows", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+    const rows = screen.getAllByRole("button", {
+      name: /^(Mastering the timeline|Interview notes)/,
+    });
+    const first = rows[0];
+    const second = rows[1];
+    if (!first || !second) throw new Error("the fixture has two rows");
+    first.focus();
+
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(second).toHaveFocus();
+
+    fireEvent.keyDown(second, { key: "Home" });
+    expect(first).toHaveFocus();
+  });
+
+  it("places a card from the row's menu, reached from the keyboard", () => {
+    const { workspace, items } = fixture();
+    const onPlace = vi.fn();
+    renderDrawer(workspace, items, { onPlace });
+    const first = screen.getByRole("button", { name: /^Mastering the timeline/ });
+    first.focus();
+
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    fireEvent.click(screen.getByTestId("library-row-menu-c2"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Place on board" }));
+
+    expect(onPlace).toHaveBeenCalledWith("c2");
+  });
+});
+
+/**
+ * The list had one order — title, or whatever a saved view asked for — and a
+ * search that reached the ranking cap stopped without saying so.
+ */
+describe("library order and truncation", () => {
+  it("reorders the list from the sort control", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items);
+    const firstTitle = () => screen.getAllByTestId(/^library-title-/)[0]?.textContent ?? "";
+
+    // Default: by title, so Interview notes leads.
+    expect(firstTitle()).toContain("Interview notes");
+
+    fireEvent.change(screen.getByTestId("library-sort"), { target: { value: "updated" } });
+
+    // Nothing has been edited, so the last created card now leads.
+    expect(firstTitle()).toContain("Interview notes");
+    expect(screen.getByTestId("library-sort")).toHaveValue("updated");
+  });
+
+  it("says when a search stopped at its cap", async () => {
+    const workspace = new Document();
+    workspace.ensureDefaultTypes();
+    const board = workspace.ensureBoard();
+    const items: LibraryItem[] = [];
+    for (let index = 0; index < 205; index += 1) {
+      const id = `many-${index}`;
+      workspace.createCard({ id, boardId: board.id, position: { x: index, y: 0 } });
+      addText(workspace.getTitle(id), `Note ${index}`);
+      items.push({
+        id,
+        title: workspace.displayTitle(id),
+        boards: [{ id: board.id, name: board.name }],
+        typeIds: [],
+        tagIds: [],
+        sectionIds: [],
+        properties: {},
+      });
+    }
+    workspace.doc.commit({ origin: "test" });
+    renderDrawer(workspace, items);
+
+    expect(screen.queryByTestId("library-search-truncated")).toBeNull();
+    type("note");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("library-search-truncated")).toHaveTextContent("first 200"),
+    );
+  });
+});
+
+/**
+ * "Delete forever" asked with `window.confirm`, the one platform question left
+ * in the interface: it cannot be styled, cannot be read by the drawer's own
+ * focus rules, and does not look like the rest of the app.
+ */
+describe("deleting a trashed card forever", () => {
+  it("asks in the app's own dialog and names the card", () => {
+    const { workspace, items } = fixture();
+    renderDrawer(workspace, items, { tab: "trash", trash: items, cards: [] });
+
+    rowAction("c1", "Delete forever");
+
+    const dialog = screen.getByTestId("dialog");
+    expect(dialog).toHaveTextContent("Delete this card forever?");
+    expect(dialog).toHaveTextContent("Mastering the timeline");
+  });
+
+  it("deletes nothing when the reader cancels", () => {
+    const { workspace, items } = fixture();
+    const onDeleteForever = vi.fn();
+    renderDrawer(workspace, items, { tab: "trash", trash: items, cards: [], onDeleteForever });
+
+    rowAction("c1", "Delete forever");
+    fireEvent.click(within(screen.getByTestId("dialog")).getByRole("button", { name: "Cancel" }));
+
+    expect(onDeleteForever).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog")).toBeNull();
+  });
+
+  it("deletes the card once the reader confirms", () => {
+    const { workspace, items } = fixture();
+    const onDeleteForever = vi.fn();
+    renderDrawer(workspace, items, { tab: "trash", trash: items, cards: [], onDeleteForever });
+
+    rowAction("c1", "Delete forever");
+    fireEvent.click(
+      within(screen.getByTestId("dialog")).getByRole("button", { name: "Delete forever" }),
+    );
+
+    expect(onDeleteForever).toHaveBeenCalledWith("c1");
   });
 });

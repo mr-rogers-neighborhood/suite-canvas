@@ -245,6 +245,34 @@ function parsePublishPayload(body: unknown): PublishPayload {
   return payload;
 }
 
+/**
+ * Refusal codes a publish answers with. They are stable strings, like the room
+ * limits in `sync/limits.ts`, because the client names the wall it hit and
+ * `scripts/generate-limits.mjs` publishes them into `docs/reference/limits.md`.
+ */
+export const PUBLISH_REFUSAL_CODES = {
+  /**
+   * The draft is over `SUITE_PUBLISH_MAX_DRAFT_BYTES`. The plan reports the cap
+   * as an unsupported change under this key; the route turns it into a code so
+   * the editor can say "too large to publish" instead of matching prose.
+   */
+  draftTooLarge: "draft-too-large",
+} as const;
+
+export type PublishRefusalCode = (typeof PUBLISH_REFUSAL_CODES)[keyof typeof PUBLISH_REFUSAL_CODES];
+
+/** The plan key the draft byte cap refuses under (`publish/planRun.ts`). */
+const DRAFT_SIZE_KEY = "publish:size";
+
+/** The code a rejected plan carries, or null when the refusal has no name. */
+export function publishRefusalCode(result: {
+  unsupported: readonly { key: string }[];
+}): PublishRefusalCode | null {
+  return result.unsupported.some((entry) => entry.key === DRAFT_SIZE_KEY)
+    ? PUBLISH_REFUSAL_CODES.draftTooLarge
+    : null;
+}
+
 export async function draftAction(
   request: IncomingMessage,
   store: ShareStore,
@@ -280,10 +308,12 @@ export async function draftAction(
     sendJson(response, 200, { applied: result.applied });
     return;
   }
+  const code = publishRefusalCode(result);
   sendJson(response, 409, {
     conflicts: result.conflicts,
     unsupported: result.unsupported,
     ...(result.reason ? { reason: result.reason } : {}),
+    ...(code ? { code } : {}),
   });
 }
 

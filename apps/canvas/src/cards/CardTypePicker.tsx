@@ -1,6 +1,6 @@
 import type { Card, CardType } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
-import { menuKeyDown } from "../dialogs/menuKeys";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 
 /**
  * The multi-type picker (ADR-0053).
@@ -93,6 +93,7 @@ export function CardTypePicker({
             </span>
             {menu === "primary" ? (
               <div
+                ref={focusFirstMenuItem}
                 role="menu"
                 aria-label="Primary type"
                 data-testid="type-primary-options"
@@ -168,6 +169,7 @@ export function CardTypePicker({
             </button>
             {menu === "add" ? (
               <div
+                ref={focusFirstMenuItem}
                 role="menu"
                 aria-label="Add a type"
                 data-testid="type-add-menu"

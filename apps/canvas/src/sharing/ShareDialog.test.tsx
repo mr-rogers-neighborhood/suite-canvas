@@ -132,6 +132,7 @@ describe("ShareDialog", () => {
           role: "editor",
           boardId: null,
           cardId: null,
+          name: null,
           expiresAt: null,
         },
         CREDENTIAL,
@@ -160,6 +161,7 @@ describe("ShareDialog", () => {
           role: "viewer",
           boardId: "board-1",
           cardId: null,
+          name: "Research",
           expiresAt: null,
         },
         CREDENTIAL,
@@ -186,6 +188,7 @@ describe("ShareDialog", () => {
           role: "viewer",
           boardId: null,
           cardId: "card-1",
+          name: "Roadmap",
           expiresAt: null,
         },
         CREDENTIAL,
@@ -215,6 +218,7 @@ describe("ShareDialog", () => {
           role: "viewer",
           boardId: null,
           cardId: null,
+          name: null,
           expiresAt: null,
         },
         CREDENTIAL,
@@ -248,6 +252,7 @@ describe("ShareDialog", () => {
           role: "editor",
           boardId: "board-1",
           cardId: null,
+          name: "Research",
           expiresAt: null,
         },
         CREDENTIAL,
@@ -276,6 +281,7 @@ describe("ShareDialog", () => {
           role: "editor",
           boardId: null,
           cardId: "card-1",
+          name: "Roadmap",
           expiresAt: null,
         },
         CREDENTIAL,
@@ -379,6 +385,7 @@ describe("ShareDialog selection scope", () => {
           boardId: "board-1",
           cardId: null,
           cardIds: ["card-1", "card-2", "card-3"],
+          name: "Research",
           expiresAt: null,
         },
         CREDENTIAL,
@@ -435,13 +442,30 @@ describe("ShareDialog limits", () => {
     expect(input.expiresAt).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000 + 1000);
   });
 
-  it("revokes every link after confirmation", async () => {
+  it("revokes every link after confirmation, asked inside the dialog", async () => {
     const client = fakeClient([shareAt({ id: "share-1" })]);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderDialog(client);
 
     fireEvent.click(await screen.findByTestId("share-revoke-all"));
+
+    // The question replaces the button; nothing is revoked until it is answered.
+    expect(client.revokeAllShares).not.toHaveBeenCalled();
+    expect(screen.getByTestId("share-revoke-all-confirm")).toHaveTextContent("lose access");
+
+    fireEvent.click(screen.getByTestId("share-revoke-all-yes"));
     await waitFor(() => expect(client.revokeAllShares).toHaveBeenCalledWith("ws-1", CREDENTIAL));
+  });
+
+  it("keeps every link when the revoke-all question is cancelled", async () => {
+    const client = fakeClient([shareAt({ id: "share-1" })]);
+    renderDialog(client);
+
+    fireEvent.click(await screen.findByTestId("share-revoke-all"));
+    fireEvent.click(screen.getByTestId("share-revoke-all-no"));
+
+    expect(client.revokeAllShares).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("share-revoke-all-confirm")).toBeNull();
+    expect(screen.getByTestId("share-revoke-all")).toBeInTheDocument();
   });
 });
 
@@ -529,5 +553,48 @@ describe("ShareDialog hosted expiry default", () => {
 
     await waitFor(() => expect(client.defaults).toHaveBeenCalled());
     expect(screen.getByTestId("share-expiry")).toHaveValue("7");
+  });
+});
+
+describe("the published page address", () => {
+  it("reads the slug into the link the author copies", async () => {
+    const client = fakeClient();
+    client.createShare.mockResolvedValue({
+      token: "tok-9",
+      share: shareAt({ id: "share-9", scope: "card", cardId: "card-1", slug: "roadmap" }),
+    });
+    renderDialog(client);
+
+    fireEvent.click(screen.getByTestId("share-tab-card"));
+    fireEvent.click(screen.getByTestId("share-create"));
+
+    const input = await screen.findByLabelText("Share link");
+    const url = new URL((input as HTMLInputElement).value);
+    // One address a reader can come back to: the page name in the path, the
+    // capability in the query.
+    expect(url.pathname).toBe("/s/roadmap");
+    expect(url.searchParams.get("share")).toBe("tok-9");
+    expect(url.searchParams.get("workspace")).toBeNull();
+    expect(url.hash).toBe("");
+  });
+
+  it("names an active link by its page", async () => {
+    const client = fakeClient([
+      shareAt({ id: "share-1", scope: "card", cardId: "card-1", slug: "roadmap" }),
+    ]);
+    renderDialog(client);
+
+    expect(await screen.findByTestId("share-slug-share-1")).toHaveTextContent("/s/roadmap");
+  });
+
+  it("says what publishing exposes before the link exists", async () => {
+    const client = fakeClient();
+    renderDialog(client);
+
+    fireEvent.click(screen.getByTestId("share-tab-card"));
+
+    expect(screen.getByTestId("share-exposure")).toHaveTextContent(
+      "Publishing Roadmap makes it, and every link inside it, readable by anyone who has the link, without an account.",
+    );
   });
 });

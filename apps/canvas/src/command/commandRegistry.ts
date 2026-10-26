@@ -1,6 +1,8 @@
 import { PORTAL_TYPE_ID } from "@suite/graph";
 import type { SessionCapabilities } from "../session/session";
 import type { LibraryTab } from "../store/useUiStore";
+import { openSettings } from "../styles/settingsEvents";
+import { openShortcutSheet } from "./shortcutSheet";
 
 /**
  * Every user-invokable action, described once.
@@ -135,6 +137,13 @@ export interface CommandActions {
   openShare(): void;
   toggleTheme(): void;
   /**
+   * Structure undo and redo. Optional because they act on the document rather
+   * than on a surface, and a share viewer has nothing to undo; the Dock supplies
+   * both, and a palette row appears only when a handler does.
+   */
+  undo?: (() => void) | undefined;
+  redo?: (() => void) | undefined;
+  /**
    * Arranges the selected card and its subtree on rings (`radialLayout`). Optional
    * until the board supplies it: a mind map needs the board's placements, so the
    * command is listed only where a surface can actually run it.
@@ -178,6 +187,8 @@ export interface CommandTarget {
   subtitle?: string | undefined;
   keywords?: readonly string[] | undefined;
   weight?: number | undefined;
+  /** The keys that run this row, when the registry knows them. */
+  shortcut?: string | undefined;
   run(context: CommandContext): void;
 }
 
@@ -213,6 +224,8 @@ export interface CommandInvocation {
   group: string;
   weight: number;
   keywords: readonly string[];
+  /** Printed in the palette's shortcut column. */
+  shortcut?: string | undefined;
   run: () => void;
 }
 
@@ -243,12 +256,19 @@ const onCard = (context: CommandContext) => context.state.cardId !== null;
 const hasTrash = (context: CommandContext) =>
   context.state.workspaceSurface && context.state.trashedCount > 0;
 
+/**
+ * One spelling of a chord, so the palette, the shortcut sheet and the docs agree.
+ * `Mod` is Command on macOS and Control elsewhere; the sheet says so once.
+ */
+export const MOD_K = "\u2318K";
+export const MOD_SHIFT_K = "\u2318\u21e7K";
+
 export const commands: readonly CommandDefinition[] = [
   define({
     id: "palette.open",
     label: "Open the command palette",
     group: "navigation",
-    shortcut: "⌘K",
+    shortcut: MOD_K,
     owner: "canvas",
     capabilities: [],
     available: (context) => !context.state.paletteOpen,
@@ -273,7 +293,7 @@ export const commands: readonly CommandDefinition[] = [
     id: "library.search",
     label: "Search every card",
     group: "navigation",
-    shortcut: "⌘⇧K",
+    shortcut: MOD_SHIFT_K,
     owner: "palette",
     capabilities: [],
     available: onWorkspace,
@@ -345,6 +365,8 @@ export const commands: readonly CommandDefinition[] = [
     id: "card.create",
     label: "New card",
     group: "create",
+    // Quick capture: Cmd/Ctrl+Enter adds a card at the centre of the viewport.
+    shortcut: "\u2318Enter",
     owner: "palette",
     capabilities: ["canCreateContent"],
     available: (context) => onBoard(context) && context.state.types.length > 0,
@@ -519,6 +541,7 @@ export const commands: readonly CommandDefinition[] = [
     id: "section.create",
     label: "New section",
     group: "create",
+    shortcut: "\u2318G",
     owner: "canvas",
     capabilities: ["canCreateContent"],
     available: onBoard,
@@ -556,6 +579,71 @@ export const commands: readonly CommandDefinition[] = [
           weight: 56,
           run: (live) => live.actions.createPortalOnBoard?.(board.id),
         })),
+  }),
+  define({
+    id: "edit.undo",
+    label: "Undo",
+    group: "edit",
+    shortcut: "\u2318Z",
+    owner: "palette",
+    // Undo acts on the document, so it is offered only where a surface supplies
+    // the handler; the capability matrix is not the gate, the handler is.
+    capabilities: [],
+    available: (context) => onWorkspace(context) && context.actions.undo !== undefined,
+    palette: {
+      group: "Edit",
+      weight: 20,
+      subtitle: "The last change",
+      keywords: ["undo", "back", "revert"],
+    },
+    run: (context) => context.actions.undo?.(),
+  }),
+  define({
+    id: "edit.redo",
+    label: "Redo",
+    group: "edit",
+    shortcut: "\u2318\u21e7Z",
+    owner: "palette",
+    capabilities: [],
+    available: (context) => onWorkspace(context) && context.actions.redo !== undefined,
+    palette: {
+      group: "Edit",
+      weight: 21,
+      subtitle: "The change just undone",
+      keywords: ["redo", "forward", "again"],
+    },
+    run: (context) => context.actions.redo?.(),
+  }),
+  define({
+    id: "help.shortcuts",
+    label: "Keyboard shortcuts",
+    group: "system",
+    shortcut: "?",
+    owner: "palette",
+    capabilities: [],
+    available: onWorkspace,
+    palette: {
+      group: "Actions",
+      weight: 80,
+      subtitle: "Every key the app answers",
+      keywords: ["keys", "shortcut", "keyboard", "help", "help sheet"],
+    },
+    run: () => openShortcutSheet(),
+  }),
+  define({
+    id: "system.settings",
+    label: "Settings",
+    group: "system",
+    owner: "palette",
+    capabilities: [],
+    available: onWorkspace,
+    palette: {
+      group: "Actions",
+      weight: 82,
+      subtitle: "Appearance, density and motion",
+      keywords: ["settings", "preferences", "appearance", "theme", "density", "motion"],
+    },
+    run: () => openSettings(),
   }),
   define({
     id: "card.edit",
@@ -754,6 +842,7 @@ export function paletteInvocations(context: CommandContext): CommandInvocation[]
         id: command.id,
         label: command.label,
         ...(meta.subtitle ? { subtitle: meta.subtitle } : {}),
+        ...(command.shortcut ? { shortcut: command.shortcut } : {}),
         group: meta.group,
         weight: meta.weight,
         keywords: meta.keywords ?? [],
@@ -767,6 +856,7 @@ export function paletteInvocations(context: CommandContext): CommandInvocation[]
         id: `${command.id}:${target.key}`,
         label: target.label,
         ...(target.subtitle ? { subtitle: target.subtitle } : {}),
+        ...(command.shortcut ? { shortcut: command.shortcut } : {}),
         group: meta.group,
         weight: target.weight ?? meta.weight,
         keywords: target.keywords ?? meta.keywords ?? [],

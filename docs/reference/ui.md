@@ -30,6 +30,12 @@ Search and facets feed the same list. A saved view fills those same controls thr
 
 Rows share one action menu, opened from the `⋯` button or a right-click, and one piece of state (`rowMenu`), so both entry points cannot show different actions for the same row. A card row can be dragged onto the canvas: the hold and drop run through `useLibraryHold`, and the drop places the card at the pointer instead of at the drawer.
 
+A row also holds an open button, and that button is the row's tab stop. Enter opens the card or the board; `ArrowUp`, `ArrowDown`, `Home` and `End` move between rows through `rowsKeyDown`; the `⋯` menu is how a keyboard reaches Place, Trash and the rest. The pointer gesture is unchanged: a press on the title still lifts the row for a drag, because the open button ignores pointer activations and only answers a keyboard click.
+
+`library-sort` chooses title, recently updated or relevance, and `useLibraryList` applies it to whatever the facets and the query left. Relevance is the search ranking, so a list with no query keeps its facet order. A search that reaches the 200-hit cap in `hooks/useLibrarySearch.ts` says so above the rows, because a list that stops at 200 otherwise reads as complete.
+
+Deleting a trashed card for good asks in the app's own `Dialog`, through `pendingPurge` in `LibraryDrawer`. `useLibraryRowActions` only reports the request, because the menu is data and has no component to host a dialog.
+
 `libraryFull` widens the drawer to the whole window for browsing; the floating width stays the default because a row has to be draggable onto the canvas beside it. `LibrarySelectionBar` appears with the selection mode, not with the first row, and offers placing the selection as a run.
 
 ## Board navigation
@@ -93,9 +99,13 @@ Marquee and drag boxes ride the same ephemeral channels as the pointer. They are
 
 Every overlay portals into `document.body`. A `position: fixed` menu rendered inside the canvas would be positioned against that transformed ancestor instead of the window, which puts it off screen; portalling is the reason a menu opens where the pointer is.
 
-`ContextMenu` clamps itself to the viewport and flips a submenu to the left of its parent when the menu was opened near the right edge. A submenu opens on hover, on focus and on click, and a click never toggles it shut, because the pointer already opened it.
+`ContextMenu` clamps itself to the viewport and flips a submenu to the left of its parent when the menu was opened near the right edge. A submenu opens on hover, on focus and on click, and a click never toggles it shut, because the pointer already opened it. It also takes focus on its first item when it opens, for the reason in [Focus and keyboard](#focus-and-keyboard).
 
 `Dialog` is the confirmation shell: a title, optional description, and a list of actions marked primary or danger. The scrim is a labelled button, so a pointer press outside the panel is a dismissal a screen reader can also reach.
+
+Every dialog that says `aria-modal="true"` traps Tab. `SignInDialog`, `AdmissionPanel`, `ShareDialog`, the publish conflict dialog in `SharePublishButton.tsx`, `SettingsDialog` and the shortcut sheet all call `useFocusTrap`, and `AdmissionPanel` starts on the answer it recommends ("Keep working locally") and closes on Escape. Card focus mode is a modal for the board rather than for the window: `CardFocusSurface` carries `role="dialog"` and the same trap, and a sketch's drawing surface takes the initial focus, because a sketch listens for keys and had none of them before.
+
+Three questions that used `window.confirm` ask in the surface that owns them. Deleting a trashed card for good opens the library's `Dialog` through `pendingPurge`. Revoking every share link and reloading a draft both replace the control with an inline confirmation inside the dialog they belong to, so the thing about to be lost stays on screen.
 
 Two confirmations ask for more than a press. `DeleteWorkspaceDialog` requires the workspace name or id to be typed and reports a failure inline without touching the local copy. `LeavingDialog` offers a backup export before the reader leaves a workspace that exists only in this browser.
 
@@ -105,7 +115,9 @@ Two confirmations ask for more than a press. `DeleteWorkspaceDialog` requires th
 
 Workspace style is document data. `apps/canvas/src/styles/StylesDialog.tsx` lists style rules, ordered by rung, and `StyleTab` edits one surface or one rule. Rules are stored in the document, resolved through `resolveSurfaceStyle`, and painted as variables, so a collaborator sees the same colours (ADR-0071). A rule that does not exist yet is created on its first edit, never on selection.
 
-Device appearance is local. `apps/canvas/src/styles/AppearanceDialog.tsx` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`) plus a `--reader-card-radius` variable. Nothing about it is synced, because it changes how this screen draws and never what a peer sees.
+Device appearance is local, and it lives in Settings. `apps/canvas/src/styles/SettingsDialog.tsx` is a modal dialog with a focus trap, Escape through the escape stack, and one section for now: `AppearanceSection` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`) plus a `--reader-card-radius` variable. Nothing about it is synced, because it changes how this screen draws and never what a peer sees.
+
+The dialog opens from the theme menu (`theme-appearance`, which reads "Settings…") and from the palette's `system.settings` row. Both go through `openSettings` in `apps/canvas/src/styles/settingsEvents.ts`, a window event, so neither surface has to own the other's state. The appearance controls keep their `appearance-*` test ids.
 
 Theme mode is separate again: `apps/canvas/src/theme/theme.ts` resolves `light`, `dark` or `system` and toggles the `dark` class plus `data-theme` on the root, so both the class-based and attribute-based CSS see one decision.
 
@@ -136,9 +148,11 @@ The reader's density setting changes one rule: `[data-density="compact"] .node-c
 
 `paletteProviders.ts` projects those definitions into rows, `paletteRank.ts` ranks them, and the palette draws the first 40. The palette holds only its query and its highlighted row, so closing it leaves nothing behind.
 
-Keys: typing filters, `ArrowDown` and `ArrowUp` move the highlight, `Enter` runs the row after closing, `Escape` closes. The search input is a `combobox` with `aria-activedescendant` pointing at the highlighted `option`, so a screen reader announces the row that Enter would run.
+Keys: typing filters, `ArrowDown` and `ArrowUp` move the highlight, `Enter` runs the row after closing, `Escape` closes. The search input is a `combobox` with `aria-activedescendant` pointing at the highlighted `option`, so a screen reader announces the row that Enter would run. A command that declares a `shortcut` prints it in a column at the row's right edge, from the same field the shortcut sheet reads.
 
 The library, the inspector and the canvas context menu read the same registry. Availability is a property of the command, which is why a read-only session loses a command everywhere at once rather than in the surfaces someone remembered to guard.
+
+`help.shortcuts` opens the shortcut sheet and `system.settings` opens Settings, both through the window events their hosts listen for. `edit.undo` and `edit.redo` are listed only while a surface supplies a handler in `CommandActions`, which is why the dock's own pair of buttons is the visible control today.
 
 Two commands arrived with their handlers. `layout.arrangeRadial` runs `arrangeRadialSelection`, and `type.installBlueprint` runs `installBlueprintSelection`; both handlers live in `apps/canvas/src/canvas/board/useBoardCommands.ts`. Each is listed only while its `CommandActions` field is supplied, so the palette and the dock never offer a row the board cannot run. `type.installBlueprint` needs `canManageSchema`, which the board reads from the same capability matrix as every other write.
 
@@ -150,13 +164,23 @@ A modal panel traps Tab. `useFocusTrap` in `apps/canvas/src/dialogs/useFocusTrap
 
 Menus answer the arrows. Every `role="menu"` container handles `ArrowUp`, `ArrowDown`, `Home` and `End` through `menuKeyDown` in `apps/canvas/src/dialogs/menuKeys.ts`, moving focus among its own items and skipping a nested submenu's rows. Without it the role announced behaviour the keys did not have.
 
+A menu also takes focus when it opens. `focusFirstMenuItem` is the menu's `ref`, so the first item holds focus on the frame the menu appears, which is what lets the key handler run at all; before it, focus stayed on the trigger and `ContextMenu`, portalled to `body`, sent Tab to the end of the document. The same ref restores focus to the opener when the menu unmounts, unless something else already took it.
+
+A tablist is one tab stop. `tabKeyDown` in `apps/canvas/src/dialogs/tabKeys.ts` handles `ArrowRight`, `ArrowLeft`, `Home` and `End`, and selection follows focus; `LibraryHeader` and `ContainerPanel` use it, and `CardPanelTabs` follows the same pattern.
+
+The shortcut sheet is the reference for every key. `apps/canvas/src/command/shortcutSheet.ts` builds its rows from the registry's `shortcut` fields and adds the board keys the registry does not own (`[` for the outline, Enter, Delete, Shift+Delete, Escape). `ShortcutSheetHost` opens it on the `suite:shortcuts-open` event or on `?` outside a text field, and the dock's `?` button is the visible trigger.
+
+Undo and redo are a pair of buttons in the dock (`apps/canvas/src/chrome/UndoRedo.tsx`). They read the document's own `canUndo` and `canRedo`, subscribe through `useWorkspaceSnapshot`, and clear the selection after a step, because the card that just went away must not stay selected.
+
 Reveals are a request, not a scroll. A surface that wants a card or a section shown writes `focusTarget` (`focusCard`, `focusSection`), and the canvas consumes it once. No panel calls `setCenter` or `fitBounds`.
 
-Global shortcuts: `Mod+K` opens the palette, `Mod+Shift+K` opens the library on its cards tab and focuses the search box, `Enter` opens the selected node from the canvas keyboard chain, and the title commits on `Enter` rather than adding a line.
+Global shortcuts: `Mod+K` opens the palette, `Mod+Shift+K` opens the library on its cards tab and focuses the search box, `Mod+Enter` creates a card at the centre of the viewport, `Mod+G` creates a section around the selection, `Mod+Z` and `Mod+Shift+Z` undo and redo structure, `[` toggles the outline, and `?` opens the shortcut sheet. `Enter` opens the selected node from the canvas keyboard chain, and a title commits on `Enter` rather than adding a line.
 
 ## Accessibility
 
-Dialogs and the palette carry `role="dialog"` with `aria-modal="true"` and a label. The library drawer is a labelled dialog without `aria-modal`, because it docks beside the canvas and the canvas stays usable.
+Dialogs and the palette carry `role="dialog"` with `aria-modal="true"` and a label, and every one of them traps Tab. The library drawer is a labelled dialog without `aria-modal`, because it docks beside the canvas and the canvas stays usable.
+
+Focus is drawn one way. `--accent` is the ring colour for every `:focus-visible` rule in `apps/canvas/src/styles/`, at 2px with a 1px offset. The app bar, the board tabs, the dock buttons, the library tabs and the library rows had no rule of their own and fell back to the browser's ring while the rest of the app used three different colours.
 
 State is never colour alone. The status cursor carries a glyph per purpose and names its owner and purpose in a label; sync status pairs a coloured dot with a word; the value controls use shapes and glyphs as well as the role hues.
 
@@ -169,7 +193,16 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Behaviour | Test |
 | --- | --- |
 | Focus trap and focus restore | `apps/canvas/src/dialogs/useFocusTrap.test.tsx` |
-| Menu arrow keys | `apps/canvas/src/dialogs/menuKeys.test.tsx` |
+| Menu arrow keys, and focus entering the menu | `apps/canvas/src/dialogs/menuKeys.test.tsx` |
+| Tab strip keyboard | `apps/canvas/src/dialogs/tabKeys.test.tsx` |
+| Each menu takes focus on open | `ContextMenu.test.tsx`, `Dock.test.tsx`, `ViewsBar.test.tsx`, `BoardTabs.test.tsx`, `WorkspaceActions.test.tsx`, `ThemeToggle.test.tsx` and `CardTypePicker.test.tsx` beside each component |
+| Each modal dialog traps Tab | `SignInDialog.test.tsx` and `AdmissionPanel.test.tsx` in `apps/canvas/src/auth/`, `ShareDialog.trap.test.tsx` and `ConflictDialog.test.tsx` in `apps/canvas/src/sharing/`, `SettingsDialog.test.tsx` |
+| Card focus mode as a dialog | `apps/canvas/src/cards/CardFocusSurface.test.tsx` |
+| Library rows by keyboard, sort and truncation | `apps/canvas/src/library/LibraryDrawer.test.tsx` |
+| Shortcut rows and the sheet | `apps/canvas/src/command/ShortcutSheet.test.tsx` |
+| Undo and redo buttons | `apps/canvas/src/chrome/UndoRedo.test.tsx` |
+| One focus ring token | `apps/canvas/src/styles/focusRing.test.ts` |
+| Questions that replaced the platform confirm | `useLibraryRowActions.test.ts` and `LibraryDrawer.test.tsx` in `apps/canvas/src/library/`, `ShareDialog.test.tsx` and `ConflictDialog.test.tsx` in `apps/canvas/src/sharing/` |
 | Palette ranking and rows | `apps/canvas/src/command/CommandPalette.test.tsx` |
 | Command availability | `apps/canvas/src/command/commandRegistry.test.ts` |
 | Tab strip keyboard | `apps/canvas/src/cards/CardPanel.test.tsx` |
@@ -184,3 +217,7 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Error codes and the catalogue | `apps/canvas/src/i18n/i18n.test.ts` |
 
 Storybook covers the components whose look is the behaviour: `*.stories.tsx` beside each component in `apps/canvas/src/chrome/`, `apps/canvas/src/library/`, `apps/canvas/src/presence/` and `apps/canvas/src/dialogs/`.
+
+The surfaces that mount without a live document have a story: `WorkspaceLauncher.stories.tsx` (empty state, because the recents come from this browser), `CommandPalette.stories.tsx` (static rows, including the shortcut column), `ShortcutSheet.stories.tsx`, `SettingsDialog.stories.tsx`, `ConflictDialog.stories.tsx` in `apps/canvas/src/sharing/`, and `ContainerPanel.stories.tsx` in `apps/canvas/src/panels/` with a plain document fixture.
+
+Three surfaces cannot be mounted that way, so the story suite cannot catch a regression in them: the canvas (`apps/canvas/src/canvas/**`) needs the projection, the camera and a real `LoroDoc` fed by the provider; the shell (`apps/canvas/src/app/WorkspaceShellView.tsx`) needs the same document plus a live session; and the share dialogs that call the relay need a `/api/shares` answer, which is why only the pure `ConflictDialog` has a story.

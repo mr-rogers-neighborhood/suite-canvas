@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "../shell/escapeLayers";
-import { menuKeyDown } from "./menuKeys";
+import { focusFirstMenuItem, menuKeyDown } from "./menuKeys";
 
 export interface ContextMenuItem {
   label: string;
@@ -52,6 +52,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         onContextMenu={(event) => event.preventDefault()}
       />
       <div
+        ref={focusFirstMenuItem}
         data-testid="context-menu"
         role="menu"
         className="fixed z-50 min-w-[180px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"

@@ -217,3 +217,28 @@ describe("ContainerPanel tabs", () => {
     expect(screen.queryByTestId("container-tags")).toBeNull();
   });
 });
+
+/**
+ * The strip is a real tablist: one tab stop, arrows inside it. It carried the
+ * roles with every tab in the tab order and no key handling at all.
+ */
+describe("ContainerPanel tab strip keyboard", () => {
+  it("is one tab stop, with the selected tab in it", () => {
+    const { workspace, section } = setup();
+    renderPanel(sectionModel(workspace, section.id), workspace);
+
+    expect(screen.getByTestId("container-tab-details")).toHaveAttribute("tabindex", "0");
+    expect(screen.getByTestId("container-tab-style")).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("moves the selection and the focus with the arrows", () => {
+    const { workspace, section } = setup();
+    renderPanel(sectionModel(workspace, section.id), workspace);
+    const details = screen.getByTestId("container-tab-details");
+
+    fireEvent.keyDown(details, { key: "ArrowRight" });
+
+    expect(screen.getByTestId("container-tab-style")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("container-tab-style")).toHaveFocus();
+  });
+});

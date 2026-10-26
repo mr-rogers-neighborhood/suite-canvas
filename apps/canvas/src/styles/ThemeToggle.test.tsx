@@ -26,3 +26,15 @@ describe("ThemeToggle", () => {
     expect(screen.getByTestId("theme-toggle")).toHaveAttribute("data-mode", "dark");
   });
 });
+
+describe("ThemeToggle keyboard", () => {
+  it("moves focus into the menu and walks it with the arrows", () => {
+    render(<ThemeToggle />);
+
+    fireEvent.click(screen.getByTestId("theme-toggle"));
+
+    expect(screen.getByTestId("theme-light")).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId("theme-light"), { key: "End" });
+    expect(screen.getByTestId("theme-appearance")).toHaveFocus();
+  });
+});

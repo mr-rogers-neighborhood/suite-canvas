@@ -1,6 +1,6 @@
 import type { Board } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
-import { menuKeyDown } from "../dialogs/menuKeys";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** Peers whose active board is this one, named for the tab's tooltip. */
@@ -194,6 +194,7 @@ export function BoardTabs({
           </button>
           {chooserOpen && !newTabBoardId ? (
             <div
+              ref={focusFirstMenuItem}
               role="menu"
               aria-label="Open or create a board"
               data-testid="board-chooser"

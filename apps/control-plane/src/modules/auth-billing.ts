@@ -1,10 +1,16 @@
+import { FREE_LICENCE_TIER } from "@suite/auth";
 import {
   createBillingPlugin,
   createEntitlementReader,
+  createLicenceProjection,
+  type FreeLicenceTier,
+  type LicenceProjection,
   type OrganizationEntitlements,
   parseTierTable,
+  postgresLicenceRows,
   postgresSubscriptions,
   type Queryable,
+  type TierTable,
 } from "@suite/billing";
 import type { Logger } from "../logging.js";
 
@@ -70,16 +76,64 @@ export interface BillingComposition {
   plugin: ReturnType<typeof createBillingPlugin>;
   /** Read on every token mint, so a cancelled plan stops working within one TTL. */
   entitlements: OrganizationEntitlements;
+  /** Written on every subscription change, so the seat check reads the same tier. */
+  licence: LicenceProjection;
   /** Releases the pool. Called on shutdown. */
   close: () => Promise<void>;
+}
+
+/** The tier a token carries, and the same tier in the row the seat check counts against. */
+export interface TierParts {
+  entitlements: OrganizationEntitlements;
+  licence: LicenceProjection;
+}
+
+export interface TierPartsDeps {
+  queryable: Queryable;
+  /** `STRIPE_PRICE_TIERS`, parsed: the only place a paid limit is written. */
+  tiers: TierTable;
+  /**
+   * `FREE_LICENCE_TIER` from `@suite/auth`.
+   *
+   * Passed rather than imported by `@suite/billing`, because the numbers live with the
+   * seat check that enforces them and the provisioning trigger that writes them.
+   */
+  free: FreeLicenceTier;
+  now?: () => number;
+  onProjectionError?: (error: unknown, context: { organizationId: string }) => void;
+}
+
+/**
+ * The one answer, assembled: a read and a write over one database and one tier table.
+ *
+ * The two are built together on purpose. `createEntitlementReader` mints the token from
+ * the `subscription` row, and `createLicenceProjection` writes `organization_licences`
+ * from the *same* function — `entitlementFor` — so a subscriber's seat check and their
+ * token cannot name different tiers. Building them apart is how the bug happened.
+ */
+export function tierParts(deps: TierPartsDeps): TierParts {
+  return {
+    entitlements: createEntitlementReader({
+      subscriptions: postgresSubscriptions(deps.queryable),
+      tiers: deps.tiers,
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    }),
+    licence: createLicenceProjection({
+      rows: postgresLicenceRows(deps.queryable),
+      tiers: deps.tiers,
+      free: deps.free,
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+      ...(deps.onProjectionError === undefined ? {} : { onError: deps.onProjectionError }),
+    }),
+  };
 }
 
 /**
  * Builds the billing plugin and the entitlement reader, or `null` when billing is off.
  *
- * One pool serves both the subscription read and the membership check, for the life of
- * the process. The entitlement read runs on every token mint, so a pool per request
- * would be a connection storm under a login rush.
+ * One pool serves the subscription read, the licence write and the membership check, for
+ * the life of the process. The entitlement read runs on every token mint, so a pool per
+ * request would be a connection storm under a login rush.
  */
 export async function composeBilling(env: Env, logger: Logger): Promise<BillingComposition | null> {
   if (!billingConfigured(env)) {
@@ -98,9 +152,18 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
     query: async (text, values) => pool.query(text, values as unknown[] | undefined),
   };
 
-  const entitlements = createEntitlementReader({
-    subscriptions: postgresSubscriptions(queryable),
+  const parts = tierParts({
+    queryable,
     tiers,
+    free: FREE_LICENCE_TIER,
+    onProjectionError: (error, { organizationId }) => {
+      // The plugin answers the webhook 200 whatever a hook does, so this log line is the
+      // only evidence a licence write failed. The next lifecycle event repairs it.
+      logger.error("licence projection failed", {
+        organizationId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    },
   });
 
   /**
@@ -133,8 +196,10 @@ export async function composeBilling(env: Env, logger: Logger): Promise<BillingC
       webhookSecret: (env.STRIPE_WEBHOOK_SECRET ?? "").trim(),
       tiers,
       authorizeOrganization,
+      licence: parts.licence,
     }),
-    entitlements,
+    entitlements: parts.entitlements,
+    licence: parts.licence,
     close: async () => {
       await pool.end();
     },

@@ -19,7 +19,6 @@ export function useLibraryRowActions({
   onSetBoardTemplate,
   onUnplaceBoardCards,
   onRestore,
-  onDeleteForever,
   onOpenCard,
   onGoToBoard,
   onPlace,
@@ -27,6 +26,7 @@ export function useLibraryRowActions({
   onTrash,
   setLocateMiss,
   setPendingDelete,
+  setPendingPurge,
 }: {
   tab: string;
   ordered: LibraryItem[];
@@ -41,7 +41,6 @@ export function useLibraryRowActions({
   onSetBoardTemplate: ((boardId: string, template: boolean) => void) | undefined;
   onUnplaceBoardCards: (boardId: string) => void;
   onRestore: (cardId: string) => void;
-  onDeleteForever: (cardId: string) => void;
   onOpenCard: (cardId: string) => void;
   onGoToBoard: (boardId: string) => void;
   onPlace: (cardId: string) => void;
@@ -49,6 +48,8 @@ export function useLibraryRowActions({
   onTrash: (cardId: string) => void;
   setLocateMiss: (message: string | null) => void;
   setPendingDelete: (board: LibraryBoard) => void;
+  /** Asks before a permanent delete; the drawer owns the dialog that asks. */
+  setPendingPurge: (card: { id: string; title: string }) => void;
 }) {
   // A card row only offers Locate when the card is on the board in front of the
   // reader, so a failed Locate is not a state a card row can reach: an unplaced
@@ -109,16 +110,10 @@ export function useLibraryRowActions({
         {
           label: "Delete forever",
           danger: true,
-          // One click here is irreversible, and the row menu is data: there is
-          // no component in this file to host the app's Dialog. The platform
-          // confirm is the one that can still ask first (as the share dialog's
-          // "Revoke every active link?" does).
-          onSelect: () => {
-            const confirmed = window.confirm(
-              `Delete \u201c${card.title}\u201d forever? This cannot be undone.`,
-            );
-            if (confirmed) onDeleteForever(card.id);
-          },
+          // One click here is irreversible. The menu is data, so it asks the
+          // drawer to open the app's own `Dialog` rather than the platform's
+          // confirm, which cannot say what the rest of the app says.
+          onSelect: () => setPendingPurge({ id: card.id, title: card.title }),
         },
       ];
     }

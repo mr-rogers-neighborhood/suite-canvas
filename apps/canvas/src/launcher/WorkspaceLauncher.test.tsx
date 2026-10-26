@@ -380,3 +380,66 @@ describe("WorkspaceLauncher Obsidian drop", () => {
     expect(screen.getByTestId("toast-failure")).toHaveTextContent("Open it from the list once");
   });
 });
+
+/**
+ * The list of recent workspaces had no way to narrow or reorder itself, and an
+ * import or export showed nothing at all until it finished.
+ */
+describe("WorkspaceLauncher recents", () => {
+  it("narrows the list to a name", () => {
+    seedRecents([
+      { id: "ws-a", title: "Research" },
+      { id: "ws-b", title: "Field notes" },
+    ]);
+    render(<WorkspaceLauncher />);
+
+    fireEvent.change(screen.getByTestId("launcher-search"), { target: { value: "field" } });
+
+    expect(screen.queryByTestId("launcher-recent-ws-a")).toBeNull();
+    expect(screen.getByTestId("launcher-recent-ws-b")).toBeTruthy();
+  });
+
+  it("says so when the query hides everything", () => {
+    seedRecent();
+    render(<WorkspaceLauncher />);
+
+    fireEvent.change(screen.getByTestId("launcher-search"), { target: { value: "zebra" } });
+
+    expect(screen.getByTestId("launcher-search-empty")).toHaveTextContent("zebra");
+  });
+
+  it("reorders the list by name", () => {
+    seedRecents([
+      { id: "ws-a", title: "Alpha" },
+      { id: "ws-b", title: "Zebra" },
+    ]);
+    render(<WorkspaceLauncher />);
+
+    // Last opened puts the newest first, which is the second seed.
+    const first = () => screen.getAllByTestId(/^launcher-recent-/)[0];
+    expect(first()).toBe(screen.getByTestId("launcher-recent-ws-b"));
+
+    fireEvent.change(screen.getByTestId("launcher-sort"), { target: { value: "name" } });
+
+    expect(first()).toBe(screen.getByTestId("launcher-recent-ws-a"));
+  });
+
+  it("shows what an export is doing while it runs", async () => {
+    seedRecent();
+    let finish: (() => void) | undefined;
+    exportWorkspace.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
+
+    expect(await screen.findByTestId("launcher-progress")).toHaveTextContent("Exporting");
+
+    finish?.();
+    await waitFor(() => expect(screen.queryByTestId("launcher-progress")).toBeNull());
+  });
+});

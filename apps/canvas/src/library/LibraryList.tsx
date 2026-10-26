@@ -10,6 +10,7 @@ export function LibraryList({
   query,
   filtering,
   entryCount,
+  truncated,
   rows,
   templates,
   starters,
@@ -23,6 +24,8 @@ export function LibraryList({
   query: string;
   filtering: boolean;
   entryCount: number;
+  /** The search stopped at its cap, so more matches exist than are listed. */
+  truncated: boolean;
   rows: ReactNode;
   templates: LibraryBoard[];
   starters: readonly BoardStarter[];
@@ -33,6 +36,14 @@ export function LibraryList({
 }) {
   return (
     <div className="library-list overflow-y-auto p-1.5">
+      {truncated ? (
+        <p
+          data-testid="library-search-truncated"
+          className="px-2 py-1 text-[11px] text-[var(--ink-muted)]"
+        >
+          Showing the first 200 matches. Add a word to narrow them.
+        </p>
+      ) : null}
       {tab === "boards" && onUseTemplate && templates.length + starters.length > 0 ? (
         <TemplateGallery
           templates={templates}

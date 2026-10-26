@@ -114,7 +114,7 @@
 }
 
 .board-outline__row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--section-blue) 60%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 

@@ -24,12 +24,12 @@
  *
  * It cannot be created through the API in this checkout. `beforeAddMember` in
  * `services/auth/src/identity/betterAuth.ts` refuses the creator's own membership
- * with `seat-refused: licence-missing`, and nothing in the repository writes
- * `organization_licences` except `scripts/db-verify.mjs`. So the harness writes
- * the three rows a paid deployment's billing webhook would write — organization,
- * owner member, licence — and then drives the rest (`set-active`, the token mint,
- * the workspace claim) through the product's own HTTP API. Reported rather than
- * patched: the product gap is in `services/`, outside this suite's boundary.
+ * with `seat-refused: licence-missing` when the organization has no licence row, and this
+ * harness signs in as an anonymous account that never pays, so no subscription webhook
+ * would be reachable here only through Stripe. So the harness writes the three rows a paid
+ * deployment's billing webhook would write — organization, owner member, licence — replacing
+ * the free row `0009_free_licence_provisioning.sql` wrote, then drives the rest (`set-active`,
+ * the token mint, the workspace claim) through the product's own HTTP API.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
@@ -94,6 +94,8 @@ function provisionOrganization(userId: string): string {
     INSERT INTO organization (id, name, slug) VALUES ('${organizationId}', 'E2E', '${slug}');
     INSERT INTO member (id, "organizationId", "userId", role)
       VALUES ('${memberId}', '${organizationId}', '${userId}', 'owner');
+    -- The 0009 trigger already wrote a free row in the organization's own
+    -- transaction, so this is an upsert, not an insert: the run's row replaces it.
     INSERT INTO organization_licences
       (organization_id, licence_id, tier, workspaces, seats, expires_at)
       VALUES (
@@ -103,7 +105,13 @@ function provisionOrganization(userId: string): string {
         ${RUN_LICENCE.workspaces},
         ${RUN_LICENCE.seats},
         now() + interval '${RUN_LICENCE.days} days'
-      );
+      )
+    ON CONFLICT (organization_id) DO UPDATE SET
+      licence_id = EXCLUDED.licence_id,
+      tier       = EXCLUDED.tier,
+      workspaces = EXCLUDED.workspaces,
+      seats      = EXCLUDED.seats,
+      expires_at = EXCLUDED.expires_at;
     `,
   );
   return organizationId;

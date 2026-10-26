@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { menuKeyDown } from "../dialogs/menuKeys";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { UNSORTED_SECTION } from "../library/libraryFilters";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -191,6 +191,7 @@ export function ViewsBar({
 
       {open ? (
         <div
+          ref={focusFirstMenuItem}
           role="menu"
           aria-label="Saved views"
           data-testid="views-menu"

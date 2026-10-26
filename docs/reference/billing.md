@@ -96,6 +96,75 @@ the customer keeps minting.
 the row turns `canceled` when it ends. `past_due` keeps the plan only until `periodEnd`,
 which bounds the grace window to the period Stripe last collected for.
 
+## The free tier and the licence row
+
+The entitlement read answers `free` for an organization with no live subscription, and the
+seat check reads a different row to decide what that organization may hold:
+`organization_licences` in the control-plane database. The two agree about the tier label,
+and the licence row is the one with numbers on it.
+
+Every organization starts on the free tier. Migration `0009_free_licence_provisioning.sql`
+puts a trigger on `organization` that writes the licence row in the same transaction, so an
+organization and its licence appear together or not at all. The ceilings are
+`FREE_LICENCE_TIER` in `services/auth/src/organizations/freeTier.ts`: one workspace, one
+seat (the owner), 64 MiB per document and 8 MiB per attachment, for a hundred years.
+`pnpm db:verify` compares the row the trigger writes with that object.
+
+That row is a default, and it is replaced rather than joined. `organization_licences` is
+keyed by `organization_id`, so one organization holds exactly one licence: a second row
+that would outrank the free one cannot exist.
+
+### The projection
+
+`@better-auth/stripe` is the only writer of the `subscription` row, so its lifecycle hooks
+are the only notification that a subscription changed. `createLicenceProjection`
+(`services/billing/src/licence/projection.ts`) is called from `onSubscriptionCreated`,
+`onSubscriptionComplete`, `onSubscriptionUpdate` and `onSubscriptionDeleted`, and
+`apps/control-plane/src/modules/auth-billing.ts` is where it is built: the one file that
+knows both packages, because the free tier's numbers live in `@suite/auth` and the write
+lives in `@suite/billing`.
+
+The decision is not a second policy. Both sides call `entitlementFor`: the token is minted
+from it and the licence row is written from it, so the tier a seat check enforces and the
+tier a token carries are the same value for the same organization at the same moment. Each
+status lands on one row:
+
+| Subscription status | Licence row written |
+| --- | --- |
+| `active` | the plan's tier, its workspace and byte limits, `expires_at` = `periodEnd` |
+| `trialing` | the same: a trial is inside a period Stripe will bill |
+| `past_due`, `periodEnd` in the future | the plan, expiring at `periodEnd`: the grace window is bounded by the period Stripe last collected for |
+| `past_due`, `periodEnd` passed | the free row |
+| `canceled`, `paused`, `unpaid`, `incomplete`, `incomplete_expired` | the free row |
+| no subscription row | the free row |
+| a status a later Stripe version adds | the free row |
+
+A lapsed subscription falls back to the free row rather than deleting it: a lapsed account
+loses the plan and keeps its data, where a missing row would read as
+`licence-unprovisioned` (a provisioning fault no upgrade fixes) and a workspace nobody can
+reach. The fallback row is byte-for-byte the row the trigger writes, `free:<org>` and
+all, so "downgraded" and "never subscribed" are the same state.
+
+`seats` is the subscription's seat quantity, never below the free tier's one seat: a plan
+that sells no seats still admits the owner it always admitted. Per-seat billing is what
+makes that number larger; the plugin syncs the quantity from member rows when a plan carries
+a `seatPriceId`.
+
+Two limits are worth stating rather than hiding:
+
+- **The hooks fire on Stripe's events, not on a clock.** A `past_due` subscription whose
+  period runs out with no further event keeps a paid row until one arrives. That row's
+  `expires_at` is the period end, so the seat check refuses at the same instant instead of
+  granting the plan indefinitely, and the next event rewrites it.
+- **A failed write is logged, not retried.** The plugin catches a hook's error and answers
+  the webhook `200`, so `composeBilling` reports the failure through its logger and the
+  following lifecycle event repairs the row.
+
+A missing licence row is therefore a fault and not a customer state: `services/auth`
+reports it as `licence-unprovisioned`, which says the row was never provisioned. A free
+organization that has spent its seat reports `seat-allowance-exhausted`, which is the answer
+a plan fixes.
+
 The read answers `free` with empty limits when the plan name is not in the table. Limits
 come from configuration, so a table edited under a live subscription loses caps rather
 than failing every token mint.
@@ -176,6 +245,7 @@ device keeps editing its local copy.
 | Postgres | The control-plane database: the plugin's `subscription` row is the record of what is paid |
 | Stripe webhook | `https://<control-plane>/api/auth/stripe/webhook`, subscribed to the subscription and invoice events |
 
-The plugin creates its own tables. Migration `0003_billing.sql` in `services/auth/sql` still
-declares `billing_event` and `billing_customer`; nothing writes or reads them now, and they
-should be dropped with the migration that named them.
+The plugin creates its own tables. Migration `0003_billing.sql` in `services/auth/sql`
+declared `billing_event` and `billing_customer` for the retired hand-written billing
+function; `0008_drop_billing_tables.sql` drops both, so the `subscription` row is the only
+record of what is paid.

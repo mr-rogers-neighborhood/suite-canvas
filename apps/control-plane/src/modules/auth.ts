@@ -29,6 +29,8 @@ import { composeBilling } from "./auth-billing.js";
  * | `POST /api/workspaces/claim` | `createAuthHandler` | gives an anonymous workspace an owner; this is the account-side claim, not the relay's `/api/workspaces/:id/claim` |
  * | `POST /api/invites/redeem` | `createAuthHandler` | the organization invitation, in our error codes |
  * | `GET /api/workspaces/:id/members` | `createAuthHandler` | members and roles, never addresses |
+ * | `GET /api/account/export` | `createAuthHandler` | everything the account owns, as one download |
+ * | `DELETE /api/account` | `createAuthHandler` | the account and every store it owns, reported per store |
  *
  * Everything else is declined, so the next module is asked and the host answers 404.
  *
@@ -46,7 +48,12 @@ import { composeBilling } from "./auth-billing.js";
 const AUTH_PREFIX = "/api/auth";
 
 /** The account-side routes that are ours rather than Better Auth's. */
-const ACCOUNT_PATHS: readonly string[] = ["/api/workspaces/claim", "/api/invites/redeem"];
+const ACCOUNT_PATHS: readonly string[] = [
+  "/api/workspaces/claim",
+  "/api/invites/redeem",
+  "/api/account",
+  "/api/account/export",
+];
 
 /** `GET /api/workspaces/:id/members`. The relay's `:id/claim` deliberately does not match. */
 const MEMBERS_PATH = /^\/api\/workspaces\/[^/]+\/members$/u;
@@ -173,6 +180,8 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       memberships: entry.repositories.memberships,
       enrollment: { redeem: entry.redeem },
       sessions: entry.sessions,
+      accounts: entry.repositories.account ?? null,
+      workspaceData: entry.repositories.workspaceData ?? null,
       log: (level, message, fields) => {
         const write =
           level === "info" ? logger.info : level === "warn" ? logger.warn : logger.error;

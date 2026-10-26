@@ -19,5 +19,6 @@ export function buildPaletteItems(context: CommandContext): PaletteItem[] {
     keywords: invocation.keywords,
     run: invocation.run,
     ...(invocation.subtitle ? { subtitle: invocation.subtitle } : {}),
+    ...(invocation.shortcut ? { shortcut: invocation.shortcut } : {}),
   }));
 }

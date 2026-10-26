@@ -46,6 +46,7 @@ import {
 } from "../store/shares.js";
 import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import { joinRefusal, limitRoomOf, peersPerRoomLimit } from "../sync/limits.js";
+import { fragmentOutboundFrames } from "../sync/outboundFragments.js";
 import {
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
@@ -288,50 +289,52 @@ function socketRoomCount(): number | null {
   return rooms instanceof Map ? rooms.size : null;
 }
 
-const server = new SimpleServer({
-  port,
-  // Coalesce writes so an active editing session does not hammer SQLite.
-  saveInterval: 2000,
+const server = fragmentOutboundFrames(
+  new SimpleServer({
+    port,
+    // Coalesce writes so an active editing session does not hammer SQLite.
+    saveInterval: 2000,
 
-  async onLoadDocument(roomId) {
-    // Falls back to the keys earlier builds wrote, so an upgrade keeps its data.
-    return loadLoroDocument(store, roomId);
-  },
+    async onLoadDocument(roomId) {
+      // Falls back to the keys earlier builds wrote, so an upgrade keeps its data.
+      return loadLoroDocument(store, roomId);
+    },
 
-  async onSaveDocument(roomId, _crdtType, data) {
-    // Ephemeral rooms never get here: their descriptor has `shouldPersist: false`.
-    // `crdtType` is unreliable anyway (see `loroDocumentKey`).
-    store.save(loroDocumentKey(roomId), data);
-    // A saved workspace is a new projection source; share rooms save their own
-    // projected output and must not feed back into the worker.
-    if (isWorkspaceRoom(roomId)) scheduleProjection(roomId);
-  },
+    async onSaveDocument(roomId, _crdtType, data) {
+      // Ephemeral rooms never get here: their descriptor has `shouldPersist: false`.
+      // `crdtType` is unreliable anyway (see `loroDocumentKey`).
+      store.save(loroDocumentKey(roomId), data);
+      // A saved workspace is a new projection source; share rooms save their own
+      // projected output and must not feed back into the worker.
+      if (isWorkspaceRoom(roomId)) scheduleProjection(roomId);
+    },
 
-  async authenticate(roomId, _crdtType, auth) {
-    const permission = await authorize(roomId, auth, {
-      shares: countedShares,
-      ...(sessions === undefined ? {} : { sessions }),
-      workspaces: workspaceClaims,
-      projectionToken,
-      sourceToken,
-      seats: seatGate,
-    });
-    if (permission === null) return null;
-    // A credential is not an answer to "is this room too big to serve". The
-    // ceiling is per room, checked before the session exists, so a refusal
-    // writes nothing and a workspace keeps saving whatever it is told here.
-    const refusal = joinRefusal(limitRoomOf(roomId), joinFacts(roomId));
-    if (refusal === null) return permission;
-    if (refusal.code === "peer-limit") processMetrics.peerLimitRejected();
-    else processMetrics.documentLimitRejected();
-    logger.warn("join refused by a room limit", {
-      code: refusal.code,
-      message: refusal.message,
-      room: limitRoomOf(roomId),
-    });
-    return null;
-  },
-});
+    async authenticate(roomId, _crdtType, auth) {
+      const permission = await authorize(roomId, auth, {
+        shares: countedShares,
+        ...(sessions === undefined ? {} : { sessions }),
+        workspaces: workspaceClaims,
+        projectionToken,
+        sourceToken,
+        seats: seatGate,
+      });
+      if (permission === null) return null;
+      // A credential is not an answer to "is this room too big to serve". The
+      // ceiling is per room, checked before the session exists, so a refusal
+      // writes nothing and a workspace keeps saving whatever it is told here.
+      const refusal = joinRefusal(limitRoomOf(roomId), joinFacts(roomId));
+      if (refusal === null) return permission;
+      if (refusal.code === "peer-limit") processMetrics.peerLimitRejected();
+      else processMetrics.documentLimitRejected();
+      logger.warn("join refused by a room limit", {
+        code: refusal.code,
+        message: refusal.message,
+        room: limitRoomOf(roomId),
+      });
+      return null;
+    },
+  }),
+);
 
 await server.start();
 await worker.start();

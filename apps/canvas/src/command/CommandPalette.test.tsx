@@ -282,3 +282,28 @@ describe("CommandPalette", () => {
     }
   });
 });
+
+/**
+ * The registry has always named each command's keys, and nothing printed them,
+ * so the palette listed actions without saying how to reach them directly.
+ */
+describe("the palette's shortcut column", () => {
+  it("prints the keys a row answers to", () => {
+    const rows = buildPaletteItems(paletteContext());
+
+    expect(rows.find((row) => row.commandId === "library.search")?.shortcut).toBe("\u2318\u21e7K");
+    expect(rows.find((row) => row.commandId === "card.create")?.shortcut).toBe("\u2318Enter");
+  });
+
+  it("draws them beside the row", () => {
+    const rows: PaletteItem[] = [
+      item({ id: "palette.open", title: "Open the command palette", shortcut: "\u2318K" }),
+      item({ id: "theme.toggle", title: "Toggle the theme" }),
+    ];
+    render(<CommandPalette items={rows} onClose={() => {}} />);
+
+    const shortcuts = screen.getAllByTestId("palette-shortcut");
+    expect(shortcuts).toHaveLength(1);
+    expect(shortcuts[0]).toHaveTextContent("\u2318K");
+  });
+});

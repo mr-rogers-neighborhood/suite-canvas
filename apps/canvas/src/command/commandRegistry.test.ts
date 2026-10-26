@@ -69,6 +69,8 @@ function actions(overrides: Partial<CommandActions> = {}): CommandActions {
     openTypes: vi.fn(),
     openShare: vi.fn(),
     toggleTheme: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
     arrangeRadial: vi.fn(),
     installBlueprint: vi.fn(),
     ...overrides,
@@ -146,6 +148,10 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   "type.installBlueprint": { unavailable: { state: { cardId: null } } },
   "workspace.exportBackup": { unavailable: { state: { workspaceSurface: false } } },
   "share.publish": { unavailable: { capabilities: [] } },
+  "edit.undo": { unavailable: { state: { workspaceSurface: false } } },
+  "edit.redo": { unavailable: { state: { workspaceSurface: false } } },
+  "help.shortcuts": { unavailable: { state: { workspaceSurface: false } } },
+  "system.settings": { unavailable: { state: { workspaceSurface: false } } },
 };
 
 describe("commands", () => {
@@ -184,6 +190,28 @@ describe("commands", () => {
     for (const id of ["card.createSketch", "section.create", "portal.create"]) {
       expect(commands.find((command) => command.id === id)?.palette, id).toBeDefined();
     }
+  });
+
+  it("should give every declared shortcut one owner and one meaning", () => {
+    const declared = commands.flatMap((command) =>
+      command.shortcut === undefined ? [] : [{ id: command.id, keys: command.shortcut }],
+    );
+    const keys = declared.map((entry) => entry.keys);
+    expect(new Set(keys).size, keys.join(", ")).toBe(keys.length);
+    // The three keys that were documented nowhere until the sheet.
+    for (const id of ["card.create", "section.create", "edit.undo"]) {
+      expect(declared.find((entry) => entry.id === id)?.keys, id).toBeDefined();
+    }
+  });
+
+  it("should hide undo and redo until a surface supplies the handler", () => {
+    const context = {
+      ...commandContext(),
+      actions: { ...actions(), undo: undefined, redo: undefined },
+    };
+    const ids = commandsFor("palette", context).map((command) => command.id);
+    expect(ids).not.toContain("edit.undo");
+    expect(ids).not.toContain("edit.redo");
   });
 
   it("should give every owner at least one command", () => {

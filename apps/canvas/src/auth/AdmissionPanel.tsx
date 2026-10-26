@@ -1,4 +1,7 @@
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { ADMISSION_PENDING_MESSAGE } from "./admission";
 
 /**
@@ -22,6 +25,16 @@ export interface AdmissionPanelProps {
 }
 
 export function AdmissionPanel({ onDismiss, onSignOut }: AdmissionPanelProps) {
+  const panel = useRef<HTMLDivElement | null>(null);
+  const primary = useRef<HTMLButtonElement | null>(null);
+
+  useEscapeLayer(onDismiss);
+  useFocusTrap(panel);
+  // The panel asks one question, so the answer it recommends is where focus
+  // starts. This runs after the trap, which focuses the first control it finds.
+  useEffect(() => {
+    primary.current?.focus();
+  }, []);
   return createPortal(
     <div className="fixed inset-0 z-[65] flex items-center justify-center">
       <button
@@ -31,9 +44,11 @@ export function AdmissionPanel({ onDismiss, onSignOut }: AdmissionPanelProps) {
         onClick={onDismiss}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Admission"
+        tabIndex={-1}
         data-testid="admission-panel"
         className="relative w-[min(400px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
@@ -62,6 +77,7 @@ export function AdmissionPanel({ onDismiss, onSignOut }: AdmissionPanelProps) {
             Sign out
           </button>
           <button
+            ref={primary}
             type="button"
             data-testid="admission-keep-working"
             onClick={onDismiss}

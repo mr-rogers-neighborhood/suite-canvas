@@ -81,19 +81,39 @@ describe("the plugin's error codes become ours, or nothing", () => {
   });
 
   it.each([
-    ["INVITE_NOT_FOUND", "invite-not-found"],
-    ["INVITE_EXPIRED", "invite-expired"],
-    ["INVITE_REVOKED", "invite-revoked"],
-    ["INVITE_ALREADY_USED", "invite-exhausted"],
-    ["INVITE_USES_EXHAUSTED", "invite-exhausted"],
-    ["SEAT_LIMIT_REACHED", "seat-refused"],
-    ["ORG_DISABLED", "forbidden"],
-    ["USER_BANNED", "forbidden"],
-    ["PASSWORD_REQUIRED", "invalid-request"],
-  ] as const)("maps %s to %s", (code, expected) => {
+    ["INVITE_NOT_FOUND", "invite-not-found", undefined],
+    ["INVITE_EXPIRED", "invite-expired", undefined],
+    ["INVITE_REVOKED", "invite-revoked", undefined],
+    ["INVITE_ALREADY_USED", "invite-exhausted", undefined],
+    ["INVITE_USES_EXHAUSTED", "invite-exhausted", undefined],
+    ["SEAT_LIMIT_REACHED", "seat-refused", "seat-allowance-exhausted"],
+    ["LICENCE_UNPROVISIONED", "seat-refused", "licence-unprovisioned"],
+    ["ORG_DISABLED", "forbidden", undefined],
+    ["USER_BANNED", "forbidden", undefined],
+    ["PASSWORD_REQUIRED", "invalid-request", undefined],
+  ] as const)("maps %s to %s", (code, expected, reason) => {
     const answer = answeredBy(redemptionResult(400, { code, message: "from the plugin" }));
     // The plugin's sentence is carried through, because it is the one a person reads.
-    expect(answer).toEqual({ kind: "refused", code: expected, message: "from the plugin" });
+    // `reason` appears only where the refusal is a seat refusal, and it is what keeps
+    // `LICENCE_UNPROVISIONED` from reading as "buy more seats".
+    expect(answer).toEqual({
+      kind: "refused",
+      code: expected,
+      message: "from the plugin",
+      ...(reason === undefined ? {} : { reason }),
+    });
+  });
+
+  it("keeps a missing licence row out of the billing answer", () => {
+    // The plugin's `SEAT_LIMIT_REACHED` is an ordinal: an organization with no row at all
+    // would arrive as a spent allowance. `resolveSeatLimit` names the fault instead, and
+    // this is the mapping that carries the name through to the route.
+    const answer = answeredBy(redemptionResult(422, { code: "LICENCE_UNPROVISIONED" }));
+    expect(answer).toMatchObject({
+      kind: "refused",
+      code: "seat-refused",
+      reason: "licence-unprovisioned",
+    });
   });
 
   it("turns a 429 into our own 'rate-limited', not into a generic refusal", () => {
@@ -247,9 +267,15 @@ describe("the plugin's options", () => {
     });
     await expect(withSeats.organization?.resolveSeatLimit?.(ORG)).resolves.toBe(5);
 
+    // No row is not "no seats": it is a provisioning fault, and the plugin's ordinal
+    // answer would report it as the customer's billing problem. It is named here, before
+    // a number is answered, so `redemptionResult` can carry `licence-unprovisioned`.
     const noLicence = enrollmentOptions({ licences: licences(null), now: () => NOW });
-    await expect(noLicence.organization?.resolveSeatLimit?.(ORG)).resolves.toBe(0);
+    await expect(noLicence.organization?.resolveSeatLimit?.(ORG)).rejects.toMatchObject({
+      body: { code: "LICENCE_UNPROVISIONED" },
+    });
 
+    // An expired licence is a billing answer, so it keeps the fail-closed number.
     const expired = enrollmentOptions({
       licences: licences(seatLicence(claims({ expiresAt: NOW - 1 }), 5)),
       now: () => NOW,

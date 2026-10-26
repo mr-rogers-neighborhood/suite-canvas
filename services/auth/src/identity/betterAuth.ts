@@ -32,7 +32,7 @@ import {
   type MembershipReader,
 } from "../licensing/licences.js";
 import type { OrganizationInvitation } from "../mail/mail.js";
-import { checkSeatAllowance } from "../organizations/seats.js";
+import { checkSeatAllowance, seatProblemMessage } from "../organizations/seats.js";
 import type { AccountSession, AuthEnvironment } from "../types.js";
 import { mfaEnrollment, mfaExemptPath, mfaGate } from "./mfa.js";
 import { RELAY_TOKEN_TTL, relayClaims } from "./relayToken.js";
@@ -193,10 +193,13 @@ async function seatRefusal(
     now,
   });
   if (decision.ok) return null;
-  return refusal(
-    "seat-refused",
-    `the organization has no seat for another member: ${decision.reason}`,
-  );
+  // `seatProblemMessage` is the one sentence per refusal this service already owns, so
+  // the text a refused member reads is the same text the relay gives: "this organization
+  // has more members than its licence allows" rather than the enum's `seat-allowance-
+  // exhausted`. The reason still travels in `details`, so a client can act on it.
+  return refusal("seat-refused", seatProblemMessage(decision.reason), {
+    reason: decision.reason,
+  });
 }
 
 /**

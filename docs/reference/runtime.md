@@ -75,11 +75,13 @@ The shape is two processes behind one Caddy. `apps/control-plane` hosts that ser
 
 Presence binds once the provider exists. A reconnect reuses the same document and sends the local oplog version, so a peer that missed updates receives the diff rather than a full snapshot.
 
+One message carries at most `loro-protocol`'s `MAX_MESSAGE_SIZE` of 256 KiB. A larger payload travels as a fragment header plus 240 KiB chunks, and the receiving peer applies the batch only after the last fragment arrives. The client fragments what it sends; `apps/collab-server/src/sync/outboundFragments.ts` fragments what the relay sends, which covers the join backfill and any large forward to another peer. Both numbers are published in [limits.md](limits.md#transport).
+
 ## Share projections
 
 A board or card share opens `share-<token>`, a room holding a self-contained projection.
 
-`apps/collab-server/src/projection/worker.ts` joins every active share with the internal token, keeps one `LoroDoc` per room, and rebuilds a workspace's shares after each save. A rebuild calls `projectWorkspace` then `applyProjection`, which clears and rewrites every projection root in one commit. The room keeps one peer for its lifetime so each rebuild wins the LWW race against the previous one.
+`apps/collab-server/src/projection/worker.ts` joins every active share with the internal token, keeps one `LoroDoc` per room, and rebuilds a workspace's shares after each save. A rebuild calls `projectWorkspace` once per distinct share target (four viewer links to one board are one build), then `mirrorWorkspace` (`projection/mirror.ts`), which writes only the entries that differ from what the room already holds, in one commit. It used to call `applyProjection`, which clears and rewrites every projection root: a room document is a CRDT with history, so clearing it appended a whole board to that history on every save and the room grew by ~211 KB per rebuild round, taking the update each viewer receives, the stored row and the join with it. A mirror pass that finds nothing changed writes nothing, not even a commit. The room keeps one peer for its lifetime so each rebuild wins the LWW race against the previous one.
 
 A share row stores a `room_id` and only the token hash. The worker can name a room without seeing the token, and resolving a board or card token reports that room as its `workspaceId`, so a share link cannot be exchanged for a workspace link.
 

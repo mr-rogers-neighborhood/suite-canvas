@@ -80,3 +80,25 @@ describe("emptying the trash", () => {
     expect(screen.getByTestId("dialog")).toHaveTextContent("1 card will be deleted for good");
   });
 });
+
+/**
+ * The strip declared `role="tablist"` with all four tabs in the tab order and no
+ * arrow handling, so the role promised movement it did not have.
+ */
+describe("library section tabs", () => {
+  it("is one tab stop, with the selected tab in it", () => {
+    renderHeader();
+
+    expect(screen.getByTestId("library-tab-trash")).toHaveAttribute("tabindex", "0");
+    expect(screen.getByTestId("library-tab-inbox")).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("moves between tabs with the arrows and reports the new tab", () => {
+    const onTab = vi.fn();
+    renderHeader({ onTab });
+
+    fireEvent.keyDown(screen.getByTestId("library-tab-trash"), { key: "ArrowLeft" });
+
+    expect(onTab).toHaveBeenCalledWith("boards");
+  });
+});

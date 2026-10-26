@@ -9,10 +9,13 @@ import {
   type CommandState,
   commandsFor,
 } from "../command/commandRegistry";
-import { menuKeyDown } from "../dialogs/menuKeys";
+import { ShortcutSheetHost } from "../command/ShortcutSheet";
+import { openShortcutSheet } from "../command/shortcutSheet";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
+import { UndoRedo } from "./UndoRedo";
 
 export interface DockProps {
   inboxCount: number;
@@ -216,6 +219,7 @@ export function Dock({
 
         {menuOpen ? (
           <div
+            ref={focusFirstMenuItem}
             role="menu"
             data-testid="dock-type-menu"
             onKeyDown={menuKeyDown}
@@ -366,6 +370,27 @@ export function Dock({
           </div>
         ) : null}
       </div>
+
+      <span className="dock-separator" aria-hidden="true" />
+
+      <UndoRedo />
+
+      <span className="dock-separator" aria-hidden="true" />
+
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        data-testid="dock-shortcuts"
+        aria-label="Keyboard shortcuts"
+        title="Keyboard shortcuts (?)"
+        className="dock-button"
+        onClick={openShortcutSheet}
+      >
+        <span aria-hidden="true" className="text-[13px] leading-none">
+          ?
+        </span>
+      </button>
+      <ShortcutSheetHost />
     </div>
   );
 }

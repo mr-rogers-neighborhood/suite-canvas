@@ -3,6 +3,7 @@ import { sectionColors } from "@suite/graph";
 import { useState } from "react";
 import { SECTION_STROKE } from "../canvas/sections/sectionPalette";
 import { TagPicker } from "../cards/TagPicker";
+import { tabKeyDown } from "../dialogs/tabKeys";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -72,6 +73,17 @@ export function ContainerPanel({
    */
   const [tab, setTab] = useState<"details" | "contents" | "style">("details");
   const contentsCount = model.contents.reduce((total, group) => total + group.cards.length, 0);
+  // The strip is one tab stop: the selected tab carries `tabIndex=0` and the
+  // arrows move the selection, which is what the role promises.
+  const tabs: readonly ("details" | "contents" | "style")[] = portal
+    ? ["details", "contents", "style"]
+    : ["details", "style"];
+  const moveTab = (index: number) => {
+    const next = tabs[index];
+    if (next === undefined) return;
+    setTab(next);
+    document.getElementById(`container-tab-${next}`)?.focus();
+  };
   // A section has no contents tab, so its details are never hidden behind one.
   const details = !portal || tab === "details";
 
@@ -140,10 +152,17 @@ export function ContainerPanel({
       </header>
 
       <div className="card-panel-tabs px-3 pb-2" data-testid="container-panel-tabs">
-        <div role="tablist" aria-label="Container sections" className="segmented">
+        <div
+          role="tablist"
+          aria-label="Container sections"
+          className="segmented"
+          onKeyDown={(event) => tabKeyDown(event, tabs.indexOf(tab), tabs.length, moveTab)}
+        >
           <button
             type="button"
             role="tab"
+            id="container-tab-details"
+            tabIndex={tab === "details" ? 0 : -1}
             aria-selected={tab === "details"}
             data-testid="container-tab-details"
             className="segmented-option"
@@ -156,6 +175,8 @@ export function ContainerPanel({
             <button
               type="button"
               role="tab"
+              id="container-tab-contents"
+              tabIndex={tab === "contents" ? 0 : -1}
               aria-selected={tab === "contents"}
               data-testid="container-tab-contents"
               className="segmented-option"
@@ -168,6 +189,8 @@ export function ContainerPanel({
           <button
             type="button"
             role="tab"
+            id="container-tab-style"
+            tabIndex={tab === "style" ? 0 : -1}
             aria-selected={tab === "style"}
             data-testid="container-tab-style"
             className="segmented-option"

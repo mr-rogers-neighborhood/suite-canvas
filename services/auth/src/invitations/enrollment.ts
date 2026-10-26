@@ -1,9 +1,10 @@
 import { type BetterEnrollmentOptions, betterEnrollment } from "@octopi-ai/better-enrollment";
 import type { BetterAuthPlugin } from "better-auth";
+import { APIError } from "better-auth/api";
 import { err, ok, type Result } from "neverthrow";
 import type { AuthErrorCode } from "../http/errors.js";
 import { type LicenceStore, licenceStateFor } from "../licensing/licences.js";
-import { seatCeiling } from "../organizations/seats.js";
+import { type SeatRefusal, seatCeiling, seatProblemMessage } from "../organizations/seats.js";
 
 /**
  * `better-enrollment`: the invitation engine, and our wrapper around it
@@ -39,6 +40,14 @@ export interface InvitationEmail {
   inviterEmail: string;
   expiresAt: number | null;
 }
+
+/**
+ * The plugin code that names a missing licence row.
+ *
+ * `SEAT_LIMIT_REACHED` is the plugin's own ordinal answer and cannot carry a reason, so
+ * a provisioning fault is given its own code where the seat limit is resolved.
+ */
+export const UNPROVISIONED_CODE = "LICENCE_UNPROVISIONED";
 
 export interface EnrollmentDeps {
   licences: LicenceStore;
@@ -91,14 +100,27 @@ export function enrollmentOptions(deps: EnrollmentDeps): BetterEnrollmentOptions
        * The seat gate the plugin can see. It writes `member` rows through the
        * adapter, so the organization plugin's `beforeAddMember` hook never fires for
        * a redemption; this callback is how the *same* licence decision reaches it
-       * (see `seatCeiling`, which `checkSeatAllowance` also reads). `0` for a
-       * missing or expired licence is the fail-closed answer.
+       * (see `seatCeiling`, which `checkSeatAllowance` also reads). `0` for a missing
+       * or expired licence is the fail-closed answer.
+       *
+       * The plugin compares the member count against this number and refuses with its
+       * own `SEAT_LIMIT_REACHED`, which is an ordinal and not a reason: an organization
+       * with no row at all would arrive as "this organization has no seats remaining"
+       * and read as a billing answer. A missing row is a provisioning fault, so it is
+       * named here — before the number is answered — and `redemptionResult` maps the
+       * code back to `licence-unprovisioned`.
        */
-      resolveSeatLimit: async (organization) =>
-        seatCeiling({
-          licence: licenceStateFor(true, await deps.licences.forOrganization(organization.id)),
-          now: now(),
-        }),
+      resolveSeatLimit: async (organization) => {
+        const licence = await deps.licences.forOrganization(organization.id);
+        const state = licenceStateFor(true, licence);
+        if (state.kind === "unlicensed") {
+          throw new APIError("UNPROCESSABLE_ENTITY", {
+            code: UNPROVISIONED_CODE,
+            message: seatProblemMessage("licence-unprovisioned"),
+          });
+        }
+        return seatCeiling({ licence: state, now: now() });
+      },
     },
     sendPrivateInvitation: async (data) => {
       const send = deps.sendInvitation;
@@ -192,15 +214,33 @@ export type EnrollmentRedemption = (
  * retryable 5xx.
  */
 export type RedemptionRefusal =
-  | { readonly kind: "refused"; readonly code: AuthErrorCode; readonly message: string }
+  | {
+      readonly kind: "refused";
+      readonly code: AuthErrorCode;
+      readonly message: string;
+      /**
+       * The seat refusal behind a `seat-refused`, when this route could name it.
+       *
+       * `seat-refused` is the family; the reason is what tells a provisioning fault
+       * (`licence-unprovisioned`) from "buy a plan" (`seat-allowance-exhausted`), and
+       * the message says the same thing in words the browser can render.
+       */
+      readonly reason?: SeatRefusal;
+    }
   | { readonly kind: "engine-failed"; readonly message: string };
 
-function refused(code: AuthErrorCode, message: string): RedemptionRefusal {
-  return { kind: "refused", code, message };
+function refused(code: AuthErrorCode, message: string, reason?: SeatRefusal): RedemptionRefusal {
+  return { kind: "refused", code, message, ...(reason === undefined ? {} : { reason }) };
 }
 
 /** The one Better Auth route this wrapper is allowed to call. */
 const REDEEM_PATH = "/api/auth/invite/redeem";
+
+/** One refusal in our vocabulary, with the seat reason it came from when there is one. */
+interface RefusalMapping {
+  code: AuthErrorCode;
+  reason?: SeatRefusal;
+}
 
 /**
  * The plugin's error code → ours.
@@ -209,27 +249,32 @@ const REDEEM_PATH = "/api/auth/invite/redeem";
  * browser already renders. A code that is not in this table is **not** a success: it
  * becomes `forbidden` (or a 5xx, for a server fault), which is the failing-closed
  * direction for an unrecognised answer.
+ *
+ * `LICENCE_UNPROVISIONED` is ours, not the plugin's: `resolveSeatLimit` raises it because
+ * the plugin's own `SEAT_LIMIT_REACHED` is an ordinal and would report a missing licence
+ * row as a spent allowance.
  */
-const OUTCOME_BY_PLUGIN_CODE: Readonly<Record<string, AuthErrorCode>> = {
-  INVITE_NOT_FOUND: "invite-not-found",
-  INVITE_EXPIRED: "invite-expired",
-  INVITE_REVOKED: "invite-revoked",
-  INVITE_ALREADY_USED: "invite-exhausted",
-  INVITE_USES_EXHAUSTED: "invite-exhausted",
-  SEAT_LIMIT_REACHED: "seat-refused",
-  ORG_DISABLED: "forbidden",
-  ORG_INVITE_NOT_ALLOWED: "forbidden",
-  USER_BANNED: "forbidden",
-  EMAIL_MISMATCH: "forbidden",
-  EMAIL_NOT_VERIFIED: "forbidden",
-  INVITATION_REQUIRED: "forbidden",
+const OUTCOME_BY_PLUGIN_CODE: Readonly<Record<string, RefusalMapping>> = {
+  INVITE_NOT_FOUND: { code: "invite-not-found" },
+  INVITE_EXPIRED: { code: "invite-expired" },
+  INVITE_REVOKED: { code: "invite-revoked" },
+  INVITE_ALREADY_USED: { code: "invite-exhausted" },
+  INVITE_USES_EXHAUSTED: { code: "invite-exhausted" },
+  SEAT_LIMIT_REACHED: { code: "seat-refused", reason: "seat-allowance-exhausted" },
+  [UNPROVISIONED_CODE]: { code: "seat-refused", reason: "licence-unprovisioned" },
+  ORG_DISABLED: { code: "forbidden" },
+  ORG_INVITE_NOT_ALLOWED: { code: "forbidden" },
+  USER_BANNED: { code: "forbidden" },
+  EMAIL_MISMATCH: { code: "forbidden" },
+  EMAIL_NOT_VERIFIED: { code: "forbidden" },
+  INVITATION_REQUIRED: { code: "forbidden" },
   // The invitation is fine and the account is fine; the request is not.
-  NAME_REQUIRED: "invalid-request",
-  PASSWORD_REQUIRED: "invalid-request",
-  PASSWORD_NOT_AVAILABLE: "invalid-request",
-  ADDITIONAL_FIELD_REQUIRED: "invalid-request",
-  ADDITIONAL_FIELD_INVALID: "invalid-request",
-  ORG_INFO_REQUIRED: "invalid-request",
+  NAME_REQUIRED: { code: "invalid-request" },
+  PASSWORD_REQUIRED: { code: "invalid-request" },
+  PASSWORD_NOT_AVAILABLE: { code: "invalid-request" },
+  ADDITIONAL_FIELD_REQUIRED: { code: "invalid-request" },
+  ADDITIONAL_FIELD_INVALID: { code: "invalid-request" },
+  ORG_INFO_REQUIRED: { code: "invalid-request" },
 };
 
 interface PluginBody {
@@ -283,7 +328,8 @@ export function redemptionResult(
     const mapped = code === null ? undefined : OUTCOME_BY_PLUGIN_CODE[code];
     // An unrecognised 4xx: `invalid-request` would tell a caller what to fix, which
     // we cannot know; `forbidden` is the honest, closed answer.
-    return err(refused(mapped ?? "forbidden", refusalMessage));
+    if (mapped === undefined) return err(refused("forbidden", refusalMessage));
+    return err(refused(mapped.code, refusalMessage, mapped.reason));
   }
 
   if (body.action === "SIGN_IN_REQUIRED") return ok({ status: "sign-in-required" });

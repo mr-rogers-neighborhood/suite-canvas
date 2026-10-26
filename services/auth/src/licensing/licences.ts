@@ -32,5 +32,17 @@ export interface MembershipReader {
  */
 export function licenceStateFor(owned: boolean, licence: SeatLicence | null): LicenceState {
   if (!owned) return { kind: "anonymous" };
-  return licence === null ? { kind: "unlicensed" } : { kind: "licensed", licence };
+  return licence === null ? UNPROVISIONED : { kind: "licensed", licence };
 }
+
+/**
+ * No licence row where one must exist.
+ *
+ * The state means *unprovisioned*: every organization gets a free row from
+ * `sql/0009_free_licence_provisioning.sql` and a paid one from the billing projection, so
+ * a null read is a deployment fault and never a customer's plan. The discriminant string
+ * is `unlicensed` because `organizations/seats.ts` declares the `LicenceState` union and
+ * this module must not invent a member; the refusal it produces is already named
+ * correctly (`licence-unprovisioned`), which is the name a caller sees.
+ */
+export const UNPROVISIONED: LicenceState = Object.freeze({ kind: "unlicensed" });

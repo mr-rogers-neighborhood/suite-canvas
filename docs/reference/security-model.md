@@ -97,9 +97,22 @@ session cookie, and later requests carry the session, which has a 15-minute TTL,
 deleted when the share is revoked. A link never becomes a seat and is never asked for one; it is bounded by
 its own expiry and revocation. Hosted links default to 30 days.
 
+A published page has one address: `/s/<slug>?share=<token>`. The slug is derived once, when the link is
+created, from the name of the card or board it publishes, or from the scope word when there is no name; it
+is unique inside its workspace and never reused, revocation included, so a copied address never comes to
+mean a different page. The slug is not a credential: it resolves nothing on its own, and the token, or the
+session the token was exchanged for, remains the only thing that opens the projection. The address keeps
+its slug for good, so a reader can reload the page, or come back to the address the author copied, with no
+account; what they present is the session cookie, which slides while the page is used and dies with the
+link.
+
 A leaked share link is fixed by revoking that link. Revocation stops new joins, closes the open sockets
 that hold it, and removes the projected draft. It does not change the workspace, and it does not close the
-account that is editing the workspace.
+account that is editing the workspace. A reader who returns to a revoked address is told the page was
+unpublished; the shell never renders an empty projection in its place.
+
+What publishing costs in exposure: the card, and every link inside it, becomes readable by anyone holding
+the address, and the author is told that in the share dialog before the link exists.
 
 ## What the relay can see
 
@@ -301,32 +314,88 @@ other browsers still implement.
 
 Two things are true at once, and the difference matters to anyone filing an erasure request.
 
-**What exists today.**
+### Workspaces
 
-- A workspace export: the app writes a `.suite` file from the live document, and an operator can export
-  the same workspace through `GET /api/admin/workspaces/:id/export`. The file opens without an account and
-  contains the document; it does not contain account rows or the relay's share records.
-- A workspace delete, by the account that owns it (`DELETE /api/workspaces/:id`) or by an operator
-  (`admin delete`). It removes, in one pass: the workspace document and every projected share room, the
-  share rows and their draft baselines, the recorded organization row, the licence record when the relay
-  is hosted, and every attachment row and byte of that workspace. The response reports each count, so a delete that removed less than expected is visible
-  instead of assumed.
-- The local half: `purgeWorkspaceLocally` clears this browser's cached document, recents entry, cached
-  credential and licence token. Another device keeps its copy until it opens the workspace again and
-  finds the relay empty.
+A workspace export: the app writes a `.suite` file from the live document, and an operator can export
+the same workspace through `GET /api/admin/workspaces/:id/export`. The file opens without an account and
+contains the document; it does not contain account rows or the relay's share records.
 
-**What does not exist, and is not implied.** There is no account-level self-service export and no
-account-level delete. Nothing in the control plane removes a user row, an organization, its members, its
-invitations or its subscription rows, and `apps/control-plane/src/modules/auth.ts` mounts no such route.
-An erasure request against a hosted account is therefore a manual operation today: delete the
-organization's workspaces through the routes above, then remove the account in Postgres with the queries
-in `services/auth/sql/`, then rotate any operator token the account knew. Treat that as the current
-procedure rather than as a feature.
+A workspace delete, by the account that owns it (`DELETE /api/workspaces/:id`) or by an operator
+(`admin delete`). It removes, in one pass: the workspace document and every projected share room, the
+share rows and their draft baselines, the recorded organization row, the licence record when the relay
+is hosted, and every attachment row and byte of that workspace. The response reports each count, so a
+delete that removed less than expected is visible instead of assumed.
+
+The local half: `purgeWorkspaceLocally` clears this browser's cached document, recents entry, cached
+credential and licence token. Another device keeps its copy until it opens the workspace again and
+finds the relay empty.
+
+### The account
+
+An account can take its data and close itself. Both actions are control-plane routes in
+`services/auth/src/http/routes.ts` and need the session cookie only.
+
+`GET /api/account/export` answers one download, `suite-account-<userId>-<date>.json`, with
+`content-type: application/json` and `content-disposition: attachment`. The shape is versioned with
+`format` (`suite-account`) and `version` (1):
+
+| Field | Holds |
+| --- | --- |
+| `account` | the `user` row: id, address, name, address verification, second-factor state, and the created and admitted times |
+| `organizations[]` | every organization the account belongs to, its name and slug, and the account's own `membership` (role and joined time) |
+| `organizations[].workspaces[]` | the workspace id, name and timestamps, a `document` reference, and the workspace's `shares` |
+| `shares[]` | share id, scope, role, created, expiry and revocation times |
+| `notes` | what the file does not contain, in the file itself |
+
+Document bytes are referenced, never copied. `document.exportedHere` is `false` and
+`document.exportPath` names the operator export route, because a `.suite` file already exports one
+workspace and this service holds no document store. `notes.documents` says the same thing to a reader
+who never saw this page.
+
+The file carries nothing that belongs to another person. A member row contributes the account's own
+role, never somebody else's id, role or address, and a share contributes no token and no hash: a hash is
+a working credential, and this file leaves the deployment. `notes.otherPeople` states that.
+
+Share metadata comes from the relay when the deployment injects a `WorkspaceDataStore` into the account
+routes. Without one, each workspace carries `sharesUnavailableReason` instead of an empty list, so "no
+links" and "could not read the links" do not look the same.
+
+`DELETE /api/account` requires the account's own id in the body as `{"confirm":"<userId>"}`, the shape the
+relay's workspace delete already uses, so a stale tab cannot erase an account it never named.
+
+The erase runs in this order, and the order is the design:
+
+1. Read the account once. An organization the account is the only member of is deleted whole. An
+   organization another person still holds a seat in is kept, and only the account's own member row is
+   removed from it.
+2. Delete the relay-owned data for the workspaces of the deleted organizations: the document and its
+   projection rooms, the share rows and their baselines, the attachment rows and their bytes. Every one
+   of those deletes is idempotent.
+3. Delete every control-plane row in one Postgres transaction, with the `user` row last.
+
+A failure before step 3 leaves the account whole and able to sign in, so the same request can be sent
+again and the idempotent relay deletes finish the job. A failure inside step 3 rolls the transaction
+back, so the account is equally intact. The `user` row goes last because it is the row that
+authenticates the retry. The account is never usable and half-deleted: its rows leave in one
+transaction, and the part that cannot join that transaction runs first and is reported.
+
+The answer is a per-store report, never a bare success. `200` means the account row is gone and `500`
+means it is not; in both cases `deleted`, `complete`, `organizations`, `workspaces`, `stores` and
+`retry` describe what happened. Each entry in `stores` names one store (`organizations`, `members`,
+`workspaces`, `invitations`, `invites`, `licences`, `subscriptions`, `sessions`, `accounts`,
+`verifications`, `passkeys`, `twoFactor`, `users`, `documents`, `shares`, `attachments`) with a status
+(`removed`, `not-removed`, `not-attempted` or `not-configured`), the number it removed, and a reason and
+follow-up command when it removed less.
+
+The three relay stores report `not-configured` on a deployment that mounts the account routes without a
+workspace data port. The account is still deleted, and the report names the route that finishes each
+workspace: `DELETE /api/workspaces/<id>` with the owning account's session, or
+`pnpm --filter @suite/collab-server admin delete <id> --force`.
 
 **Backups age out; they do not vanish.** A delete is immediate on the live stores and permanent for the
 relay, but the snapshot that contains the deleted rows is kept until its retention window passes:
 `deploy/backup.sh` writes a daily copy and a weekly copy on Sundays, and the bucket lifecycle rule expires
 `daily/` after 7 days and `weekly/` after 35 days. The local `/srv/backups` directory is pruned by the
-`find … -mtime +14` cron entry in [deploy.md](../how-to/deploy.md). So a deleted workspace can remain
-recoverable from backup for up to 35 days, and from a Postgres dump on the same schedule for the identity
-rows. That is the honest answer to "when is it really gone": after the window, not on the click.
+`find … -mtime +14` cron entry in [deploy.md](../how-to/deploy.md). So a deleted workspace or account can
+remain recoverable from backup for up to 35 days, and from a Postgres dump on the same schedule for the
+identity rows. That is the honest answer to "when is it really gone": after the window, not on the click.

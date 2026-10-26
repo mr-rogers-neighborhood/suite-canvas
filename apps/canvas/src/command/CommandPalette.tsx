@@ -119,14 +119,65 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
           </kbd>
         </div>
 
-        <div
-          ref={listbox}
-          id="command-palette-list"
-          role="listbox"
-          aria-label="Results"
-          className="max-h-[52vh] overflow-y-auto p-1"
-          data-testid="command-palette-results"
-        >
+        <div className="max-h-[52vh] overflow-y-auto p-1" data-testid="command-palette-results">
+          {/*
+            The listbox holds options and nothing else, so the empty state sits
+            beside it rather than in it: a paragraph inside `role="listbox"` is a
+            required-child violation, and the box still has to exist for the
+            combobox's `aria-controls`.
+          */}
+          <div ref={listbox} id="command-palette-list" role="listbox" aria-label="Results">
+            {ranked.length === 0
+              ? null
+              : groups.map((group) => (
+                  <div key={group.group}>
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-wide text-[var(--ink-muted)] uppercase">
+                      {group.group}
+                    </p>
+                    {group.items.map((item) => {
+                      index += 1;
+                      const rowIndex = index;
+                      const active = rowIndex === activeIndex;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="option"
+                          id={`palette-row-${item.id}`}
+                          aria-selected={active}
+                          data-index={rowIndex}
+                          data-command-id={item.commandId}
+                          data-testid="command-palette-row"
+                          className={`flex w-full items-baseline gap-2 rounded px-3 py-1.5 text-left text-[12px] ${
+                            active
+                              ? "bg-[var(--segmented-bg)] text-[var(--ink)]"
+                              : "text-[var(--ink)] hover:bg-[var(--segmented-bg)]"
+                          }`}
+                          onPointerMove={() => setActiveIndex(rowIndex)}
+                          onClick={() => run(item)}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                          {item.subtitle ? (
+                            <span className="shrink-0 text-[11px] text-[var(--ink-muted)]">
+                              {item.subtitle}
+                            </span>
+                          ) : null}
+                          {/* The registry has always named the keys; the column is
+                          where a reader learns them. */}
+                          {item.shortcut ? (
+                            <kbd
+                              data-testid="palette-shortcut"
+                              className="shrink-0 rounded border border-[var(--hairline)] px-1 text-[10px] text-[var(--ink-muted)]"
+                            >
+                              {item.shortcut}
+                            </kbd>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+          </div>
           {ranked.length === 0 ? (
             <p
               className="px-3 py-4 text-center text-[12px] text-[var(--ink-muted)]"
@@ -134,46 +185,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
             >
               Nothing matches “{query.trim()}”.
             </p>
-          ) : (
-            groups.map((group) => (
-              <div key={group.group}>
-                <p className="px-3 pt-2 pb-1 text-[10px] font-medium tracking-wide text-[var(--ink-muted)] uppercase">
-                  {group.group}
-                </p>
-                {group.items.map((item) => {
-                  index += 1;
-                  const rowIndex = index;
-                  const active = rowIndex === activeIndex;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      role="option"
-                      id={`palette-row-${item.id}`}
-                      aria-selected={active}
-                      data-index={rowIndex}
-                      data-command-id={item.commandId}
-                      data-testid="command-palette-row"
-                      className={`flex w-full items-baseline gap-2 rounded px-3 py-1.5 text-left text-[12px] ${
-                        active
-                          ? "bg-[var(--segmented-bg)] text-[var(--ink)]"
-                          : "text-[var(--ink)] hover:bg-[var(--segmented-bg)]"
-                      }`}
-                      onPointerMove={() => setActiveIndex(rowIndex)}
-                      onClick={() => run(item)}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                      {item.subtitle ? (
-                        <span className="shrink-0 text-[11px] text-[var(--ink-muted)]">
-                          {item.subtitle}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ))
-          )}
+          ) : null}
         </div>
       </div>
     </div>,

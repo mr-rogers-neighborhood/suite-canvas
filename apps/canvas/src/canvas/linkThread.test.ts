@@ -30,11 +30,11 @@ describe("isChaining", () => {
 
 describe("stepThread", () => {
   it("arms the first connector without drawing a link", () => {
-    expect(stepThread(null, a)).toEqual({ armed: a, link: null });
+    expect(stepThread(null, a)).toEqual({ armed: a, link: null, handoff: false });
   });
 
   it("links from the armed connector and arms the one just clicked", () => {
-    expect(stepThread(a, b)).toEqual({ armed: b, link: { from: a, to: b } });
+    expect(stepThread(a, b)).toEqual({ armed: b, link: { from: a, to: b }, handoff: false });
   });
 
   it("keeps growing from its own tail", () => {
@@ -44,29 +44,52 @@ describe("stepThread", () => {
   });
 
   it("disarms when the armed connector is clicked again", () => {
-    expect(stepThread(a, a)).toEqual({ armed: null, link: null });
+    expect(stepThread(a, a)).toEqual({ armed: null, link: null, handoff: false });
   });
 
-  it("links a card to itself when a different port is clicked", () => {
+  it("hands the thread off to another port of the same card", () => {
     // A thread is a route through a card and a route has ports, so top -> bottom on
-    // one card is one step, not a cancel. Only the *same* connector disarms.
+    // one card is one step, not a cancel — but it is a *handoff*: the thread leaves
+    // from the port it just picked. Drawing A.top -> A.bottom instead would say the
+    // card points at itself, which is the opposite of passing through it.
     const top = { kind: "card" as const, id: "a", connectorId: "a-top" };
     const bottom = { kind: "card" as const, id: "a", connectorId: "a-bottom" };
 
     const step = stepThread(top, bottom);
 
-    expect(step.link).toEqual({ from: top, to: bottom });
-    // The thread keeps the port it just entered, so it can leave by another.
+    expect(step.handoff).toBe(true);
+    expect(step.link).toBeNull();
+    // The port moved, so the next click leaves the card by the bottom.
     expect(step.armed).toEqual(bottom);
   });
 
-  it("ignores where the cards are, because the reader chose the ports", () => {
-    // The same two ports in the opposite order produce the opposite route: no
-    // bounding box decides this, which is the whole difference from fan and branch.
+  it("hands off without depending on where the cards are", () => {
+    // The reader chose both ports: no bounding box decides which one is the way in.
     const top = { kind: "card" as const, id: "a", connectorId: "a-top" };
     const bottom = { kind: "card" as const, id: "a", connectorId: "a-bottom" };
 
-    expect(stepThread(bottom, top).link).toEqual({ from: bottom, to: top });
+    expect(stepThread(bottom, top).armed).toEqual(top);
+    expect(stepThread(bottom, top).handoff).toBe(true);
+  });
+
+  it("leaves the through-line to the next click, which links from the new port", () => {
+    const top = { kind: "card" as const, id: "a", connectorId: "a-top" };
+    const bottom = { kind: "card" as const, id: "a", connectorId: "a-bottom" };
+    const other = { kind: "card" as const, id: "b", connectorId: "b-left" };
+
+    const handoff = stepThread(top, bottom);
+    const leave = stepThread(handoff.armed, other);
+
+    // One edge, and it starts at the port the handoff chose — nothing points at A.
+    expect(leave.link).toEqual({ from: bottom, to: other });
+    expect(leave.handoff).toBe(false);
+  });
+
+  it("hands off between sections too", () => {
+    const north = { kind: "section" as const, id: "s1", connectorId: "s1-top" };
+    const south = { kind: "section" as const, id: "s1", connectorId: "s1-bottom" };
+
+    expect(stepThread(north, south)).toEqual({ armed: south, link: null, handoff: true });
   });
 
   it("links across kinds, so a thread can leave a card for a section", () => {
@@ -95,7 +118,7 @@ describe("fan mode", () => {
 
   it("arms the first click and links every later click from that origin", () => {
     const first = stepFan(null, origin);
-    expect(first).toEqual({ armed: origin, link: null });
+    expect(first).toEqual({ armed: origin, link: null, handoff: false });
 
     const second = stepFan(first.armed, spokeB);
     expect(second.link).toEqual({ from: origin, to: spokeB });
@@ -109,7 +132,18 @@ describe("fan mode", () => {
   });
 
   it("disarms when the origin itself is clicked again", () => {
-    expect(stepFan(origin, origin)).toEqual({ armed: null, link: null });
+    expect(stepFan(origin, origin)).toEqual({ armed: null, link: null, handoff: false });
+  });
+
+  it("keeps the self-loop, because every spoke leaves the same port", () => {
+    // A fan has no route to hand off: the origin is an anchor, not a way through,
+    // so a spoke to another port of it is the loop it always was (ADR-0061 §7).
+    const other = { kind: "card" as const, id: "a", connectorId: "a2" };
+
+    const step = stepFan(origin, other);
+
+    expect(step.link).toEqual({ from: origin, to: other });
+    expect(step.handoff).toBe(false);
   });
 
   it("a thread and a fan draw different graphs from the same three clicks", () => {

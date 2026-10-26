@@ -66,52 +66,34 @@ test("holding shift chains link after link until shift is released", async ({ pa
   await expect(edges(page)).toHaveCount(2);
 });
 
-test("a card can be threaded to itself, and the loop goes around it", async ({ page }) => {
-  await page.goto(workspaceUrl("self-loop"));
+test("a thread passes through a card instead of looping back into it", async ({ page }) => {
+  await page.goto(workspaceUrl("handoff"));
   await expect(cards(page)).toHaveCount(2);
 
-  // In thread mode a dot click arms; the connector it *lands* on is the reader's
-  // choice, and choosing one on the same card is a legitimate edge: a trailing "and
-  // back" rather than a mistake (ADR-0061). Two different dots, because the same dot
-  // twice is how you disarm.
   await page.getByTestId("link-mode-toggle").click();
   await expect(page.getByTestId("link-mode-toggle")).toHaveAttribute("data-mode", "thread");
 
-  const card = cards(page).first();
-  await selectCard(page, card);
-  const box = await card.boundingBox();
-  if (!box) throw new Error("the card is not measurable");
+  const dots = (cardIndex: number) =>
+    cards(page).nth(cardIndex).locator('[data-testid="connector"]');
+  const armed = page.locator('[data-testid="connector"][data-armed="true"]');
 
+  // Arm one port: nothing is drawn yet, and one dot carries the armed state.
   await clickDot(page, 0, 1);
   await expect(edges(page)).toHaveCount(0);
+  await expect(armed).toHaveCount(1);
+
+  // A second port on the same card moves the way out and writes nothing. The card
+  // is something a thread passes *through*; an edge from a card to itself would say
+  // the opposite, so the click is a handoff rather than a loop (ADR-0061 amendment).
   await clickDot(page, 0, 3);
+  await expect(edges(page)).toHaveCount(0);
+  await expect(armed).toHaveCount(1);
+  await expect(dots(0).nth(3)).toHaveAttribute("data-armed", "true");
+
+  // The thread now leaves by the port the handoff chose, so the next click writes
+  // exactly one edge — from that port, not from either of the ones before it.
+  await clickDot(page, 1, 3);
   await expect(edges(page)).toHaveCount(1);
-
-  // The route is bowed *outside* the card: a self-loop drawn straight would run back
-  // along the card's own edge and read as a border rather than a link. Both rectangles
-  // are read in screen space — the SVG path is in flow space, so its points cannot be
-  // compared with a `getBoundingClientRect` directly.
-  const shape = await page.evaluate(() => {
-    const path = document.querySelector(".react-flow__edge-path");
-    const card = document.querySelector('[data-testid="node-card"]');
-    if (!path || !card) return null;
-    const drawn = path.getBoundingClientRect();
-    const face = card.getBoundingClientRect();
-    return {
-      drawn: { left: drawn.left, top: drawn.top, right: drawn.right, bottom: drawn.bottom },
-      face: { left: face.left, top: face.top, right: face.right, bottom: face.bottom },
-    };
-  });
-  if (!shape) throw new Error("no edge path to measure");
-
-  const clearsHorizontally =
-    shape.drawn.left < shape.face.left - 4 || shape.drawn.right > shape.face.right + 4;
-  const clearsVertically =
-    shape.drawn.top < shape.face.top - 4 || shape.drawn.bottom > shape.face.bottom + 4;
-  expect(
-    clearsHorizontally || clearsVertically,
-    `the loop stays inside the card: ${JSON.stringify(shape)}`,
-  ).toBe(true);
 });
 
 test("the connector menu toggles the same mode as the widget bar", async ({ page }) => {

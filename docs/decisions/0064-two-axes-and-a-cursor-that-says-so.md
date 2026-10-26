@@ -295,3 +295,31 @@ measure 7.2, 9.5 and 6.7 against the floor.
 
 `e2e/tests/modifier-matrix.spec.ts` now runs its whole grid in both themes as well, so "the preview paints
 like the committed value" is asserted per theme rather than only in the one the runner happens to open.
+
+## Amendment — one status in the chrome, and everything about this device under it
+
+The author's note: *"Synced indicates 'This is how many people you are syncing/live with now'. But it
+simply has three modes — Synced, Offline (grey), Syncing. Anything else necessary for the user to know
+regarding their local storage and connection to peers can be contained under there, so no big 'Saved on
+this device' pill necessary."*
+
+The chrome had two controls answering one question. `Live` reported the room; a pill reported the
+browser. To a reader they are the same question — *is my work safe, and is anyone else in it* — and the
+pill was the larger of the two while being the less certain one.
+
+1. **Three words, and no more.** `Synced` (connected), `Syncing` (connecting or catching up), `Offline`
+   (grey). The count rides the same control — `Synced · 3 here` — because "how many people" is part of
+   the claim rather than a separate readout.
+2. **A role is not a connection state.** `Editor` / `Viewer` used to replace the label, which meant a
+   share could never say whether it was synced. The role moved into the panel, as a sentence.
+3. **The indicator is a disclosure.** One press opens a panel with the room in a sentence, the count,
+   the role, and the whole storage surface (the ladder's status line, the detail, the estimate, the
+   sign-in and export actions, the durability gesture, the offline scope, the crash opt-in). It closes
+   on Escape, on a press outside, and on a second press of the button.
+4. **The pill is gone, not hidden.** A second status surface outside this one would be the same mistake
+   again: two places to look for one answer, differing by a word when they disagree.
+5. **It is still a status, never a warning.** The rung decides the words, and only `blocking` paints
+   amber. Moving it behind a press does not license nagging: nothing about the panel opens itself.
+
+Storage is a reader preference and a browser promise, so it stays a *panel* rather than a mode on either
+axis (§ the two axes are what the canvas is for). The ladder's own amendment lives on ADR-0025.

@@ -14,6 +14,13 @@ export interface ThreadStep {
   armed: LinkConnectorRef | null;
   /** The link this click completed, when it completed one. */
   link: { from: LinkConnectorRef; to: LinkConnectorRef } | null;
+  /**
+   * A click on another port of the thing the thread is already on. The thread
+   * enters by the armed port and leaves by the clicked one, so the port moves and
+   * nothing is drawn: a card is something a thread passes *through*, and a line
+   * from a card to itself says the opposite (ADR-0061 amendment).
+   */
+  handoff: boolean;
 }
 
 /**
@@ -47,16 +54,26 @@ export function sameConnector(left: LinkConnectorRef, right: LinkConnectorRef): 
   return left.kind === right.kind && left.id === right.id && left.connectorId === right.connectorId;
 }
 
+/** Whether two ports belong to the same thing, whatever ports they are. */
+export function sameEnd(left: LinkConnectorRef, right: LinkConnectorRef): boolean {
+  return left.kind === right.kind && left.id === right.id;
+}
+
 /**
  * One click of a thread. The first click arms; every later click links from the
  * armed connector and arms the one just clicked, so a thread keeps growing from
  * its own tail. Clicking the armed connector again disarms instead of drawing a
  * link from a thing to itself.
+ *
+ * A *different* port on the same thing is a handoff rather than a loop: the thread
+ * entered through the armed port and leaves through the clicked one, which is how
+ * "in the top, out the bottom" is expressed without a line through the card.
  */
 export function stepThread(armed: LinkConnectorRef | null, clicked: LinkConnectorRef): ThreadStep {
-  if (!armed) return { armed: clicked, link: null };
-  if (sameConnector(armed, clicked)) return { armed: null, link: null };
-  return { armed: clicked, link: { from: armed, to: clicked } };
+  if (!armed) return { armed: clicked, link: null, handoff: false };
+  if (sameConnector(armed, clicked)) return { armed: null, link: null, handoff: false };
+  if (sameEnd(armed, clicked)) return { armed: clicked, link: null, handoff: true };
+  return { armed: clicked, link: { from: armed, to: clicked }, handoff: false };
 }
 
 /**
@@ -64,11 +81,14 @@ export function stepThread(armed: LinkConnectorRef | null, clicked: LinkConnecto
  * *from that same origin*, so a hub costs one click per spoke instead of writing
  * a chain that says B→C. Clicking the origin again disarms, which is the only way
  * to end a fan without leaving the mode.
+ *
+ * A fan has no route to hand off — every spoke leaves the same port — so a spoke
+ * to another port of the origin card is the self-loop it always was.
  */
 export function stepFan(armed: LinkConnectorRef | null, clicked: LinkConnectorRef): ThreadStep {
-  if (!armed) return { armed: clicked, link: null };
-  if (sameConnector(armed, clicked)) return { armed: null, link: null };
-  return { armed, link: { from: armed, to: clicked } };
+  if (!armed) return { armed: clicked, link: null, handoff: false };
+  if (sameConnector(armed, clicked)) return { armed: null, link: null, handoff: false };
+  return { armed, link: { from: armed, to: clicked }, handoff: false };
 }
 
 /** One click of whichever mode is in force. */

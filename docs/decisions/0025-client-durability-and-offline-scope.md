@@ -215,3 +215,30 @@ What that leaves, and what the shipped guard does:
    do not pretend to detect it.
 
 Recorded so this is not re-attempted as a bug: it is a platform boundary, not an unfinished feature.
+
+## Amendment — the warning is for a reader who is the only copy
+
+The author's note: *"When two users are live/synced, should the local-first warning display? Probably only
+if there is a conflict or not at all, because if you're signed in and working collaboratively, constant
+warnings would be disruptive?"*
+
+The ladder learned one input: `synced` — **another device is in the room right now**. Not "my socket is
+open": a reader alone in a workspace is still the only copy, and the relay room for an anonymous
+workspace is not the account's copy. Presence is the fact that changes the answer, which is exactly the
+fact the author described.
+
+1. **`banner` gives way to `quiet` while someone else is present.** The line becomes "Saved here and
+   synced", the sentence names why ("Another device in this room has a copy, so this one can clear its
+   own safely"), and no sign-in or export is offered. A collaborating reader has somewhere else to go.
+2. **`blocking` does not move.** A write failing is present tense and local: another copy does not make
+   the reader's next edit land. The quota banner and its export stay.
+3. **`persisted` does not move either.** Where the work is does not change because a room is live; the
+   durable anonymous reader keeps "Saved on this device" and no banner.
+4. **The leaving guard follows the ladder, as it must.** With the rung at `quiet`, nobody is prompted on
+   the way out — that is the point of the change, and it is asserted in `leavingGuard.test.ts` rather
+   than left to the dialog.
+5. **The claim is about a copy, not about permission.** Sync does not make a share safer, and a share
+   already excludes itself from the leaving prompt.
+
+The status line itself moved out of the chrome in the same pass; see the ADR-0064 amendment on one status
+surface.

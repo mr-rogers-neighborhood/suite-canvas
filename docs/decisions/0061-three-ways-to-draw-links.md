@@ -256,3 +256,30 @@ both:
 
 The rule in one line: **geometry proposes, the reader disposes, and the proposal is on screen while it
 is still a proposal.**
+
+## Amendment — a port on the same card is a handoff, not a loop
+
+Point 7 said self-links stay legal, and the section above argued that a card threading to itself is a real
+use case rather than a curiosity. The author's refinement keeps the use case and changes the *record*: a
+card is something a thread passes **through**, and a line from a card to itself says the opposite.
+
+1. **A second port on the same card is a handoff.** Clicking another dot of the card the thread is already
+   on moves the thread's exit there and writes nothing. `A.top → A.bottom` is still one thread step — the
+   route through a card the section above described — but it is *state*, not an edge: the next click draws
+   from `A.bottom`.
+2. **Self-links stop existing in thread mode.** They stay legal in the document (`addEdge`'s rule is
+   unchanged, so fan mode, imported data and a hand-edited document keep working) and `selfLoopRoute` still
+   draws them. What changed is the gesture: threading cannot produce one, because the click that would have
+   now means "leave from here".
+3. **This is the override, for free.** The previous amendment asked that "any other dot overrules the
+   inference". In a thread the same click is both the override and the handoff, so the mechanism has one
+   meaning instead of two.
+4. **The armed dot is the whole feedback.** The port moves from the one clicked first to the one clicked
+   second, and that is what the reader sees; nothing else is drawn. Two highlights on one card would read as
+   a selection rather than a route.
+5. **Fan keeps its loop.** A fan's origin is an anchor, not a way through — every spoke leaves the same port
+   — so a spoke to another port of the origin card is the self-loop it always was.
+
+`stepThread` returns `handoff: true` with no link; `stepFan` never returns it. The e2e that proved the loop
+("a card can be threaded to itself, and the loop goes around it") is now the proof of the handoff, and the
+geometry it guarded stays covered by `edgeRoute.test.ts`.

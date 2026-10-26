@@ -263,3 +263,29 @@ three keys name the whole family exactly once" holds from every state. The imple
 missing slot rather than hard-coding index 0, so a family of a different size still closes. Both
 matrices assert the property, not the table: `modifierPreview.test.ts` for the values,
 `e2e/tests/modifier-matrix.spec.ts` for the values *and* their colours.
+
+## Open question — one axis at a time
+
+The author: *"What if the user wants to choose one on one axis, but not the other? … Maybe instead
+cycling into a mode locks the modifier choice until explicitly changed back … Trying to decide if it's a
+matter of user practice and worth the investment, or if it's genuinely over-engineered and confusing."*
+
+It is a real limitation, and it is structural rather than incidental: a held key is **one vocabulary**
+covering both axes, so while a key is down it proposes a value on each of them. A reader who has cycled
+the link tool to `thread` and wants the placement tool under control still gets the link tool moved by
+the same key.
+
+Three postures, with the trade each one buys:
+
+| posture | what it buys | what it costs |
+| --- | --- | --- |
+| **momentary, as it is** | a key means one thing everywhere; the matrix stays exhaustive and testable | you cannot move one axis with a key |
+| **a lock on the cycled axis** | the axis you touched is yours; the key owns the other one | the key now means two things depending on history, and the lock needs its own visible state and its own way out |
+| **pin the axis you last clicked** (candidate) | the same benefit, and it expires by the next chip click instead of by an unrelated one — one `lastTouched` field, no reset | a reader who never touched a chip gets the current behaviour, so two behaviours exist in the one control |
+
+**Recommendation:** none of them yet. The current matrix is freshly stabilised, has an exhaustive e2e
+matrix in both themes, and the author is still building the muscle memory the question is about. If it
+still trips them after using run, record and explain, the **pin** is the one to implement — the lock is
+the only option that creates a state the reader cannot see.
+
+Recorded here so the next pass starts from the analysis rather than from the preference.

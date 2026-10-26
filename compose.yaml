@@ -4,7 +4,7 @@
 #
 # Run with: cp .env.example .env && docker compose up -d --build
 # A real deployment (instance sizing, EBS, Cloudflare, backups) is
-# documented in docs/deploy-aws.md. Every setting the server validates is in
+# documented in docs/how-to/deploy.md. Every setting the server validates is in
 # .env.example; empty means "use the built-in default".
 #
 # Single replica by design: rooms, presence, projection state and rate-limit
@@ -91,6 +91,23 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 20s
+      retries: 3
+
+  docs:
+    # Reader-facing docs site. Off by default: `docker compose --profile docs up`.
+    # It reads only the built site and needs no volume or database.
+    profiles: ["docs"]
+    build:
+      context: .
+      dockerfile: apps/docs/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/docs').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
       retries: 3
 
   caddy:

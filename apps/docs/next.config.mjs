@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The container copies `.next/standalone` and runs `node apps/docs/server.js`.
+  output: "standalone",
   async rewrites() {
     return [
       {

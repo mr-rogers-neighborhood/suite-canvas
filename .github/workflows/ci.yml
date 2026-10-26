@@ -57,12 +57,15 @@ jobs:
       - name: Billing service tests (payment path)
         run: pnpm turbo run test --filter=@suite/billing
 
-      # Documentation drifts silently; these two are cheap and mechanical.
-      - name: Docs check (links, fences, retired terms, version)
-        run: node scripts/docs-check.mjs
+      # Documentation drifts silently; these are cheap and mechanical.
+      - name: Docs check (links, fences, prose, generated indexes)
+        run: pnpm docs:check
 
-      - name: Limits page is generated from the code
-        run: node scripts/generate-limits.mjs --check
+      - name: Docs symbols (paths, scripts, ADR references)
+        run: pnpm docs:symbols
+
+      - name: Shape check (file length, observe sites, raw Loro writes)
+        run: pnpm shape
 
       - name: Coverage (reported, graph thresholds enforced)
         run: pnpm coverage
@@ -85,6 +88,17 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Docs site smoke
+        run: |
+          pnpm --filter @suite/docs start > /tmp/docs.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3001/docs > /dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3001/docs > /dev/null
+          curl -fsS http://127.0.0.1:3001/llms.txt > /dev/null
+          curl -fsS http://127.0.0.1:3001/docs/tutorials/run-locally.md | grep -q '^#'
 
       - name: Upload app build
         uses: actions/upload-artifact@v4
@@ -126,8 +140,44 @@ jobs:
           path: reports/mutation
           retention-days: 14
 
+  e2e-smoke:
+    name: End-to-end (smoke)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @suite/e2e exec playwright install --with-deps chromium
+
+      - name: Run smoke end-to-end tests
+        run: pnpm e2e:smoke
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+
   e2e:
-    name: End-to-end
+    name: End-to-end (full)
+    # The full suite runs before a merge to main, on a tag, or on demand. A pull
+    # request gets the smoke tier; the unit and story suites cover the rest.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

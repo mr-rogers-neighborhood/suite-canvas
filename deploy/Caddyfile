@@ -4,7 +4,7 @@
 # 80/443 reachable and a DNS A/AAAA record. `localhost` uses Caddy's local CA.
 #
 # One host, one instance, one `app` replica: rooms, presence and rate limits
-# live in that process and the databases are local files. See docs/deploy-aws.md.
+# live in that process and the databases are local files. See docs/how-to/deploy.md.
 {
 	# Uncomment to register the ACME account with an email from the environment.
 	# email {$SUITE_ACME_EMAIL}

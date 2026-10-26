@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { crashReportingAvailable, readCrashConsent, setCrashConsent } from "../crash/consent";
 import { startCrashReporting } from "../crash/report";
 import { getSession } from "../session/session";
+import { storageLadder } from "../session/storageLadder";
 import { buildDiagnostics, copyText, safeRoute, useDiagnosticsStore } from "../shell/diagnostics";
 import {
   formatEstimate,
-  type PersistState,
   refreshEstimate,
   requestPersistence,
   useDurabilityStore,
@@ -21,28 +21,19 @@ import {
 export const OFFLINE_SCOPE =
   "Offline means the open tab keeps working. A reload while offline is not supported in Alpha.";
 
-const PERSIST_COPY: Record<PersistState, { label: string; detail: string }> = {
-  unknown: {
-    label: "Not requested yet",
-    detail: "This browser is asked for durable storage after your first edit.",
-  },
-  persisted: {
-    label: "Persisted",
-    detail: "This browser has agreed not to evict this workspace on its own.",
-  },
-  denied: {
-    label: "Best-effort",
-    detail:
-      "This browser declined durable storage, so it may evict the local copy when the device runs low on space. Your workspace still saves here; export a copy if it matters.",
-  },
-  unsupported: {
-    label: "Best-effort",
-    detail:
-      "This browser cannot promise durable storage. The local copy works, but it may be cleared without warning. Export a copy if it matters.",
-  },
-};
+export interface StoragePanelProps {
+  workspaceId: string;
+  /**
+   * Whether this device has an account behind it. Absent until the session surface lands, which keeps
+   * today's answer honest: with no account the anonymous rungs of the ladder apply
+   * ([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §6).
+   */
+  signedIn?: boolean;
+  /** Opens the sign-in surface the banner offers. Absent while there is none. */
+  onSignIn?: (() => void) | undefined;
+}
 
-export function StoragePanel({ workspaceId }: { workspaceId: string }) {
+export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: StoragePanelProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
   const [exported, setExported] = useState<"idle" | "done" | "failed">("idle");
@@ -91,8 +82,11 @@ export function StoragePanel({ workspaceId }: { workspaceId: string }) {
     });
   }, []);
 
-  const copyBlock = useMemo(() => PERSIST_COPY[persist], [persist]);
-  const atRisk = persist === "denied" || persist === "unsupported";
+  const ladder = useMemo(
+    () => storageLadder({ persist, signedIn, failing: quota !== null }),
+    [persist, signedIn, quota],
+  );
+  const atRisk = ladder.rung === "banner" || ladder.rung === "blocking";
 
   return (
     <div className="storage-host pointer-events-auto relative" data-testid="storage-panel-host">
@@ -104,12 +98,12 @@ export function StoragePanel({ workspaceId }: { workspaceId: string }) {
         onClick={() => setOpen((value) => !value)}
         title="Storage and offline scope"
         className={`rounded-full border px-2.5 py-1 text-[11px] ${
-          quota
+          ladder.alarm
             ? "border-amber-500/60 text-amber-700 dark:text-amber-300"
             : "border-[var(--hairline)] text-[var(--ink-muted)]"
         }`}
       >
-        {quota ? "Storage full" : copyBlock.label}
+        {ladder.pill}
       </button>
 
       {open ? (
@@ -121,14 +115,34 @@ export function StoragePanel({ workspaceId }: { workspaceId: string }) {
         >
           <h2 className="text-[13px] font-semibold text-[var(--ink)]">Storage</h2>
 
+          {ladder.headline === null ? null : (
+            <p data-testid="storage-headline" className="mt-2 leading-5 text-[var(--ink)]">
+              {ladder.headline}
+            </p>
+          )}
           <p data-testid="storage-persist" className="mt-2 leading-5 text-[var(--ink-muted)]">
-            <span className="font-medium text-[var(--ink)]">{copyBlock.label}. </span>
-            {copyBlock.detail}
+            {ladder.detail}
           </p>
 
           <p data-testid="storage-estimate" className="mt-2 text-[var(--ink-muted)]">
             Used on this device: <span className="font-mono">{formatEstimate(estimate)}</span>
           </p>
+
+          {/* The banner's one action, next to the sentence that asked for it. */}
+          {ladder.action === "sign-in" ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onSignIn === undefined ? null : (
+                <button
+                  type="button"
+                  data-testid="storage-sign-in"
+                  onClick={onSignIn}
+                  className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  Sign in
+                </button>
+              )}
+            </div>
+          ) : null}
 
           {atRisk ? (
             <p

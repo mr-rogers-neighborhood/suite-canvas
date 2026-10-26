@@ -26,7 +26,9 @@ describe("storage panel", () => {
     expect(screen.getByTestId("storage-status")).toHaveAttribute("data-persist", "denied");
 
     fireEvent.click(screen.getByTestId("storage-status"));
-    expect(screen.getByTestId("storage-persist")).toHaveTextContent("may evict the local copy");
+    // The detail row may speak technically; the banner is what has to sound human.
+    expect(screen.getByTestId("storage-persist")).toHaveTextContent("may clear the local copy");
+    expect(screen.getByTestId("storage-headline")).toHaveTextContent("Sign in to keep it");
     expect(screen.getByTestId("storage-warning")).toBeInTheDocument();
     expect(screen.getByTestId("storage-export")).toBeInTheDocument();
   });

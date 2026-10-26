@@ -27,6 +27,12 @@ export interface ConnectorProps {
   /** Called when this client starts/stops dragging the connector. */
   onMoveStart?: (() => void) | undefined;
   onMoveFinished?: (() => void) | undefined;
+  /**
+   * Where to draw this dot, when the node's painted edge is not its box edge. Absent
+   * means the stored position, which is right for a square node and for anything that
+   * measures nothing (a story, a test).
+   */
+  position?: Point | undefined;
 }
 
 /** Magnetic radius around a corner/side midpoint, in screen pixels. */
@@ -150,6 +156,7 @@ export function Connector({
   onMove,
   onMoveStart,
   onMoveFinished,
+  position: basePosition,
 }: ConnectorProps) {
   // Which dot a held card would use. Read from the run store so every dot asks the
   // same question and only one of them answers yes.
@@ -168,7 +175,15 @@ export function Connector({
       ? { user: selectingPeers[0], state: "selected" as const }
       : undefined;
 
-  const position = livePosition ?? peerLive ?? { x: connector.x, y: connector.y };
+  /**
+   * Where the dot is drawn. The stored position is a slot on the node's *box*; a rounded
+   * card paints an inset edge, so the layer passes the point on that edge instead
+   * ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+   * amendment). Drags and peer movement stay in the drawn space, which is the space the
+   * reader is aiming in.
+   */
+  const anchored = basePosition ?? { x: connector.x, y: connector.y };
+  const position = livePosition ?? peerLive ?? anchored;
   const side = sideOf(position);
 
   // A peer's drag arrives as a stream of targets; ease toward the newest one so
@@ -295,7 +310,9 @@ export function Connector({
       data-selected={selected ? "true" : undefined}
       data-armed={armed ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
-      data-anchored={isAnchor(position) ? "true" : "false"}
+      // The stored slot, not the drawn point: whether a dot sits on a corner is a
+      // property of the document, and the drawn point is corrected onto the paint.
+      data-anchored={isAnchor({ x: connector.x, y: connector.y }) ? "true" : "false"}
       // The dot a held card would leave from if it landed where the pointer is: the
       // preview of a choice, so a reader can aim without committing (ADR-0061).
       data-proposed={proposed ? "true" : undefined}

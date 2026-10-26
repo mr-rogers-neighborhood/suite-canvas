@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { Connector, type Point } from "../components/Connector";
 import { usePlacementRunStore } from "./placementRun";
+import { edgePoint, readSilhouette, type Silhouette } from "./silhouette";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
 export interface ConnectorPeerState {
@@ -171,6 +172,81 @@ export function NodeConnectors({
     updateNodeInternals(nodeId);
   }, [updateNodeInternals, nodeId, count]);
 
+  /**
+   * The silhouette this node is painted with, measured from the DOM because the radius
+   * is the end of a ladder (`rules.ts` owns it) and the painted answer is the truth.
+   *
+   * A dot on a corner slot sits on the *box's* corner, which a rounded card does not
+   * paint: at 28px a corner dot floats a third of the short side away from the card it
+   * belongs to. `edgePoint` moves it onto the arc, and the re-measure is what makes the
+   * link start there too — React Flow routes from the handle's measured bounds.
+   */
+  const [shape, setShape] = useState<Silhouette | null>(null);
+  useEffect(() => {
+    // The layer is the box a connector's percentage position resolves against, so it is
+    // the box the silhouette is measured from; its radius is inherited from the card.
+    const surface = layerRef.current;
+    if (!surface) return;
+    let last = "";
+    const measure = () => {
+      const next = readSilhouette(surface);
+      const key = next ? `${next.width}x${next.height}@${next.radius}` : "";
+      if (key === last) return;
+      last = key;
+      setShape(next);
+    };
+    measure();
+    // Three things can change the silhouette, and all three are observed rather than
+    // assumed: a resize (the observer), a reader preference (attributes and the inline
+    // custom property on `<html>`), and a card's own painted radius (an inline style on
+    // the surface). Missing any one of them is how a dot ends up placed for a radius the
+    // card no longer has.
+    //
+    // jsdom has neither observer and lays nothing out, so `readSilhouette` has already
+    // answered null there and the observation is skipped.
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    resize?.observe(surface);
+    const mutations =
+      typeof MutationObserver === "undefined" ? null : new MutationObserver(measure);
+    mutations?.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "data-density", "data-canvas"],
+    });
+    mutations?.observe(surface, { attributes: true, attributeFilter: ["style", "class"] });
+    // One frame after mount as well: the first paint is when the radius the card actually
+    // resolved is readable.
+    const frame = window.requestAnimationFrame(measure);
+    return () => {
+      resize?.disconnect();
+      mutations?.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  /**
+   * A corrected dot is a moved handle, so React Flow has to re-measure it before the next
+   * link is drawn from where the dot used to be — but *not* on the first answer.
+   *
+   * The mount measurement fires inside React Flow's initial fit, and re-measuring then
+   * clamps the viewport to this node and hides every other one behind visibility culling.
+   * That is the same hazard the count effect above documents; the difference is that a
+   * count change is always a real move, while the first shape is the state the mount
+   * already measured. The position prop is applied during that first render, so the handle
+   * that was measured is already the corrected one.
+   */
+  const previousShape = useRef<string | null>(null);
+  useEffect(() => {
+    const key = shape ? `${shape.width}x${shape.height}@${shape.radius}` : "";
+    const was = previousShape.current;
+    previousShape.current = key;
+    // Two ways to have nothing to re-measure for: no answer yet (`""` is the first
+    // measure arriving before layout), or the same answer as last time. Both must be
+    // silent — the mount measurement happens inside React Flow's initial fit, and forcing
+    // a re-measure there clamps the viewport to this one node.
+    if (was === null || was === "" || key === "" || was === key) return;
+    updateNodeInternals(nodeId);
+  }, [shape, updateNodeInternals, nodeId]);
+
   if (count === 0) return null;
 
   return (
@@ -185,6 +261,9 @@ export function NodeConnectors({
         <Connector
           key={connector.id}
           connector={connector}
+          // The paint's edge, not the box's: a corner dot is a slot on the box, and a
+          // rounded card does not paint its box's corners.
+          {...(shape ? { position: edgePoint(shape, { x: connector.x, y: connector.y }) } : {})}
           nodeId={nodeId}
           color={color}
           selected={selectedConnectorId === connector.id}

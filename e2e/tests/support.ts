@@ -10,6 +10,15 @@ export function workspaceIdFactory(prefix: string): (name: string) => string {
   return (name) => `${prefix}-${name}-${Date.now()}-${++sequence}`;
 }
 
+/**
+ * A new board from the tab strip. `+` asks which board — open one or make one — so
+ * a test that wants a fresh board says so once here instead of in twenty places.
+ */
+export async function newBoard(page: Page): Promise<void> {
+  await page.getByTestId("board-create").click();
+  await page.getByTestId("board-chooser-new").click();
+}
+
 export const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
 export const cardByTitle = (page: Page, title: string): Locator =>

@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { cards } from "./support";
+import { cards, newBoard } from "./support";
 
 /**
  * Every kind of thing that can hold a connector, linked to every other kind, in
@@ -154,7 +154,7 @@ async function createSketch(page: Page): Promise<void> {
 }
 
 async function createPortal(page: Page): Promise<void> {
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await page
     .getByRole("navigation", { name: "Boards" })

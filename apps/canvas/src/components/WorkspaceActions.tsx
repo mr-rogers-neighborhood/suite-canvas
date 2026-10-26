@@ -57,6 +57,11 @@ export function WorkspaceActions({
   const shareRequest = useUiStore((state) => state.shareRequest);
   const clearShareRequest = useUiStore((state) => state.clearShareRequest);
   const [menuOpen, setMenuOpen] = useState(false);
+  const activeBoardId = useUiStore((state) => state.activeBoardId);
+  // Read at render rather than kept as a copy: these live in the document, and
+  // this menu is the only place that writes them, so closing it re-reads them.
+  const isHomeBoard = activeBoardId !== null && workspace.workspaceHomeBoardId() === activeBoardId;
+  const isNewTabBoard = activeBoardId !== null && workspace.newTabBoardId() === activeBoardId;
   useEscapeLayer(() => setMenuOpen(false), menuOpen);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareScope, setShareScope] = useState<ShareScope>("workspace");
@@ -251,6 +256,40 @@ export function WorkspaceActions({
                     Saved on this device
                   </span>
                 ) : null}
+              </button>
+            ) : null}
+            <hr className="my-1 border-[var(--hairline)]" />
+            {/* Navigation lives here because it is a fact about the workspace, not
+                about the board on screen: which board is home, and which one a new
+                tab opens (ADR-0040, gate A24). */}
+            {activeBoardId ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="workspace-home-board"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  workspace.setWorkspaceHomeBoardId(isHomeBoard ? null : activeBoardId);
+                }}
+              >
+                {isHomeBoard ? "Stop using this board as home" : "Use this board as home"}
+              </button>
+            ) : null}
+            {activeBoardId ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="workspace-new-tab-board"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  workspace.setNewTabBoardId(isNewTabBoard ? null : activeBoardId);
+                }}
+              >
+                {isNewTabBoard
+                  ? "Stop opening this board in new tabs"
+                  : "Open this board in new tabs"}
               </button>
             ) : null}
             <hr className="my-1 border-[var(--hairline)]" />

@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { selectCard } from "../interactions";
-import { libraryRowAction } from "./support";
+import { libraryRowAction, newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now()}-${++sequence}`;
@@ -37,7 +37,7 @@ async function renameCard(page: Page, card: Locator, title: string): Promise<voi
 
 async function createBoard(page: Page): Promise<void> {
   const before = await page.locator('[data-testid^="board-tab"]').count();
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(before + 1);
 }
 

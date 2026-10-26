@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
-import { cardByTitle, cards, createNote, workspaceIdFactory } from "./support";
+import { cardByTitle, cards, createNote, newBoard, workspaceIdFactory } from "./support";
 
 const id = workspaceIdFactory("e2e-org");
 const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
@@ -54,7 +54,7 @@ test("moves a card to a second board and it leaves the first", async ({ page }) 
   await createNote(page, "Movable note");
   await expect(cards(page)).toHaveCount(3);
 
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   // A new board opens empty; the card is still on the first one.
   await expect(cards(page)).toHaveCount(0);

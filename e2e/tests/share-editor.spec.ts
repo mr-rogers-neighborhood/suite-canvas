@@ -1,4 +1,5 @@
 import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
+import { newBoard } from "./support";
 
 test.describe.configure({ timeout: 60_000 });
 
@@ -167,7 +168,7 @@ async function openEditor(browser: Browser, url: string): Promise<Page> {
 test.fixme("board editor moves and edits a card, then publishes", async ({ page, browser }) => {
   await page.goto(workspaceUrl("board-publish"));
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await createNote(page, "Shared card");
   const shared = cardByTitle(page, "Shared card");
   await typeBody(page, shared, "Owner baseline");
@@ -215,7 +216,7 @@ test.fixme("board editor moves and edits a card, then publishes", async ({ page,
 test("a conflicting publish is resolved field by field", async ({ page, browser }) => {
   await page.goto(workspaceUrl("board-conflict"));
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await createNote(page, "Conflict card");
   await typeBody(page, cardByTitle(page, "Conflict card"), "Owner first");
 
@@ -297,7 +298,7 @@ test.fixme("card editor publishes one card and leaves the other alone", async ({
 }) => {
   await page.goto(workspaceUrl("card"));
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await createNote(page, "First card");
   await createNote(page, "Second card");
   await typeBody(page, cardByTitle(page, "First card"), "First body");
@@ -354,7 +355,7 @@ test("board editor creates content but has no library, board or schema chrome", 
 }) => {
   await page.goto(workspaceUrl("capabilities"));
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await createNote(page, "Unplaced by editor");
 
   const link = await createEditorLink(page, "board");

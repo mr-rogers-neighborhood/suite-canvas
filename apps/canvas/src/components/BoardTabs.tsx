@@ -1,5 +1,6 @@
 import type { Board } from "@suite/graph";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** Peers whose active board is this one, named for the tab's tooltip. */
 export interface BoardPresence {
@@ -13,6 +14,15 @@ export interface BoardTabsProps {
   activeBoardId: string | null;
   onSelect: (boardId: string) => void;
   onCreate: () => void;
+  /**
+   * Boards with no open tab, so `+` can open one instead of only making one.
+   * Empty is fine: the chooser then offers "New board" alone.
+   */
+  openableBoards?: readonly Board[];
+  /** The board `+` opens directly, when the workspace named one (ADR-0040, A24). */
+  newTabBoardId?: string | null;
+  /** The board a workspace opens when nothing else is open, named in its menu. */
+  homeBoardId?: string | null;
   onRename: (boardId: string, name: string) => void;
   /**
    * Closes the board's tab and nothing else: the board keeps its cards and stays
@@ -33,6 +43,9 @@ export function BoardTabs({
   activeBoardId,
   onSelect,
   onCreate,
+  openableBoards = [],
+  newTabBoardId = null,
+  homeBoardId = null,
   onRename,
   onClose,
   canCreateBoards = true,
@@ -41,6 +54,18 @@ export function BoardTabs({
 }: BoardTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const chooser = useRef<HTMLDivElement | null>(null);
+  useEscapeLayer(() => setChooserOpen(false), chooserOpen);
+
+  useEffect(() => {
+    if (!chooserOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!chooser.current?.contains(event.target as Node)) setChooserOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [chooserOpen]);
 
   const commit = () => {
     if (renamingId) onRename(renamingId, draft);
@@ -60,6 +85,18 @@ export function BoardTabs({
      * "you are here" and the strip is free to hold what it needs (ADR-0064 amendment).
      */
     <div className="group flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+      {homeBoardId && homeBoardId !== activeBoardId ? (
+        <button
+          type="button"
+          aria-label="Open the home board"
+          data-testid="board-home"
+          title="Home board"
+          className="shrink-0 rounded px-1.5 py-1 text-[12px] leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          onClick={() => onSelect(homeBoardId)}
+        >
+          {"\u2302"}
+        </button>
+      ) : null}
       <nav className="board-tabs flex min-w-0 items-center gap-1" aria-label="Boards">
         {boards.map((board) => {
           const active = board.id === activeBoardId;
@@ -130,15 +167,75 @@ export function BoardTabs({
       </nav>
 
       {canCreateBoards ? (
-        <button
-          type="button"
-          aria-label="New board"
-          data-testid="board-create"
-          className="shrink-0 rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-          onClick={onCreate}
-        >
-          +
-        </button>
+        <div className="relative shrink-0" ref={chooser}>
+          {/*
+            `+` asks which board, because "a new tab" and "a new board" were the
+            same button and only one of them was ever the reader's intent. A
+            workspace may name the board it always wants (`newTabBoardId`), and
+            then the button opens it without asking.
+          */}
+          <button
+            type="button"
+            aria-label={newTabBoardId ? "Open the board new tabs open" : "New board or open one"}
+            aria-haspopup={newTabBoardId ? undefined : "menu"}
+            aria-expanded={newTabBoardId ? undefined : chooserOpen}
+            data-testid="board-create"
+            className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => {
+              if (newTabBoardId) {
+                onSelect(newTabBoardId);
+                return;
+              }
+              setChooserOpen((open) => !open);
+            }}
+          >
+            +
+          </button>
+          {chooserOpen && !newTabBoardId ? (
+            <div
+              role="menu"
+              aria-label="Open or create a board"
+              data-testid="board-chooser"
+              className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+            >
+              {openableBoards.length > 0 ? (
+                <>
+                  <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
+                    Open
+                  </p>
+                  {openableBoards.map((board) => (
+                    <button
+                      key={board.id}
+                      type="button"
+                      role="menuitem"
+                      data-testid={`board-chooser-open-${board.id}`}
+                      className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                      onClick={() => {
+                        setChooserOpen(false);
+                        onSelect(board.id);
+                      }}
+                    >
+                      <span className="min-w-0 truncate">{board.name}</span>
+                    </button>
+                  ))}
+                  <hr className="my-1 border-[var(--hairline)]" />
+                </>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="board-chooser-new"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setChooserOpen(false);
+                  onCreate();
+                }}
+              >
+                New board
+              </button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

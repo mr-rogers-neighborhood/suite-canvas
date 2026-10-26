@@ -1390,6 +1390,50 @@ export class WorkspaceDocument {
     this.commit(`${STRUCT_ORIGIN}rename-workspace`);
   }
 
+  // ------------------------------------------------------------ navigation
+
+  /**
+   * The board a workspace opens when nothing else is open — "home"
+   * ([ADR-0040](../../../../docs/decisions/0040-a-board-and-a-section-are-identities.md),
+   * gate A24). Stored as the board id rather than a flag on the board: a board can be
+   * deleted while a second one is home, and one key is one truth to clear.
+   */
+  workspaceHomeBoardId(): string | null {
+    return this.navigationBoard("homeBoardId");
+  }
+
+  /** Names the home board, or clears it when the id is null or no longer a board. */
+  setWorkspaceHomeBoardId(boardId: string | null): void {
+    this.setNavigationBoard("homeBoardId", boardId);
+  }
+
+  /**
+   * The board a new tab opens, when the reader has one they always want. Absent
+   * means a new tab asks which board instead of guessing.
+   */
+  newTabBoardId(): string | null {
+    return this.navigationBoard("newTabBoardId");
+  }
+
+  setNewTabBoardId(boardId: string | null): void {
+    this.setNavigationBoard("newTabBoardId", boardId);
+  }
+
+  /** A stored board reference, dropped if the board it names has since gone. */
+  private navigationBoard(key: "homeBoardId" | "newTabBoardId"): string | null {
+    const stored = this.meta.get(key);
+    if (typeof stored !== "string" || stored.length === 0) return null;
+    return this.getBoard(stored) ? stored : null;
+  }
+
+  private setNavigationBoard(key: "homeBoardId" | "newTabBoardId", boardId: string | null): void {
+    const next = boardId !== null && this.getBoard(boardId) ? boardId : null;
+    if (this.meta.get(key) === next) return;
+    if (next === null) this.meta.delete(key);
+    else this.meta.set(key, next);
+    this.commit(`${STRUCT_ORIGIN}set-${key}`);
+  }
+
   // ------------------------------------------------------------ shell paint
 
   /**
@@ -1629,6 +1673,11 @@ export class WorkspaceDocument {
       if (isMap(fields) && readString(fields, "boardId") === id) this.sections.delete(sectionId);
     }
     this.boards.delete(id);
+    // A reference to a board that no longer exists would read as a home that opens
+    // nothing; the delete clears it instead of leaving a dangling id on screen.
+    for (const key of ["homeBoardId", "newTabBoardId"] as const) {
+      if (this.meta.get(key) === id) this.meta.delete(key);
+    }
 
     if (cardsOption === "trash") {
       const now = Date.now();

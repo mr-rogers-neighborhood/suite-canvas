@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { cards } from "./support";
+import { cards, newBoard } from "./support";
 
 /**
  * A board's cover is an image that stands in for the live miniature inside every
@@ -82,7 +82,7 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number }> {
 
 /** Board 2 with a portal to it, on Board 1. */
 async function boardWithPortal(page: Page): Promise<void> {
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await page
     .getByRole("navigation", { name: "Boards" })

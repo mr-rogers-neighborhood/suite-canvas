@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
-import { libraryRowAction } from "./support";
+import { libraryRowAction, newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -32,7 +32,7 @@ async function selectedBoardId(page: Page): Promise<string> {
 
 async function createBoard(page: Page): Promise<string> {
   const before = await tabs(page).count();
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(tabs(page)).toHaveCount(before + 1);
   return selectedBoardId(page);
 }

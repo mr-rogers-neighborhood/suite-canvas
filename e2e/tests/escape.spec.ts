@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
+import { newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -112,4 +113,42 @@ test("the inspector fades while a link is drawn and comes back", async ({ page }
 
   await page.mouse.up();
   await expect(drawer).toHaveCSS("opacity", "1");
+});
+
+/**
+ * Gate A24's navigation corner: the home board and the new-tab chooser are two
+ * settings because they answer two questions — where do I land, and where does a
+ * blank tab start.
+ */
+test("closing the last board lands on the home board", async ({ page }) => {
+  await page.goto(workspaceUrl("home"));
+  await expect(cards(page)).toHaveCount(2);
+  const first = await page
+    .locator('[data-testid^="board-tab-"]')
+    .first()
+    .getAttribute("data-testid");
+  if (!first) throw new Error("no board tab");
+  const firstId = first.replace("board-tab-", "");
+
+  await newBoard(page);
+  const tabs = page.locator('[data-testid^="board-tab-"]');
+  await expect(tabs).toHaveCount(2);
+
+  // Name the first board as home from the workspace menu.
+  await page.getByTestId(`board-tab-${firstId}`).click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-home-board").click();
+  // The home control appears because home is not the board on screen next time.
+  await expect(page.getByTestId("board-home")).toHaveCount(0);
+
+  const second = await tabs.nth(1).getAttribute("data-testid");
+  const secondId = second?.replace("board-tab-", "") ?? "";
+  await page.getByTestId(`board-tab-${secondId}`).click();
+  await expect(page.getByTestId("board-home")).toBeVisible();
+
+  // Closing the last tab lands on home rather than on whatever comes first.
+  await page.getByTestId(`board-close-${secondId}`).click();
+  await page.getByTestId(`board-close-${firstId}`).click();
+  await expect(page.getByTestId("board-home")).toHaveCount(0);
+  await expect(page.getByTestId(`board-tab-${firstId}`)).toBeVisible();
 });

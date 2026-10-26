@@ -1,5 +1,6 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startBodyEdit as editBody } from "../interactions";
+import { newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -90,7 +91,7 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
   // A card on the first board: it must not appear in the shared projection.
   await createNote(page, "Off board note");
 
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Shared card");
   const shared = cards(page).filter({ hasText: "Shared card" });
@@ -144,7 +145,7 @@ test("card viewer opens its inspector and keeps out-of-share links inert", async
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Off board note");
 
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Shared card");
   const shared = cards(page).filter({ hasText: "Shared card" });
@@ -213,7 +214,7 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   await createNote(page, "First board note");
 
   // A second board: the viewer must reach it through the tabs.
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Second board note");
   await expect(cards(page)).toHaveCount(1);

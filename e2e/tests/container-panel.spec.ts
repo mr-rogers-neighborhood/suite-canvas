@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { cardByTitle, cards, createNote, libraryRowAction } from "./support";
+import { cardByTitle, cards, createNote, libraryRowAction, newBoard } from "./support";
 
 /**
  * A portal and a section are containers, not cards (ADR-0040): they have no
@@ -56,7 +56,7 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number }> {
 
 /** Board 2 plus a portal to it on Board 1. */
 async function boardWithPortal(page: Page): Promise<void> {
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await page
     .getByRole("navigation", { name: "Boards" })
@@ -285,7 +285,7 @@ test("a portal's panel lists the target board, and a row opens it", async ({ pag
   await page.goto(workspaceUrl("contents"));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await createNote(page, "Inside board two");
   await page
@@ -345,10 +345,10 @@ test("an orphaned portal reads as empty, and can be pointed at a board or remove
   await expect(cards(page)).toHaveCount(2);
 
   // Two boards besides Board 1: one to lose, one to point at afterwards.
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   const lostBoardId = await currentBoardId(page);
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(3);
   const spareBoardId = await currentBoardId(page);
   await page

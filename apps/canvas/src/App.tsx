@@ -109,6 +109,39 @@ function documentLabel(share: ShareSession, workspaceId: string): string {
  * the document meta. It re-renders only when that paint actually changes, so a
  * keystroke in a card never repaints the shell (ADR-0046 §3).
  */
+/**
+ * Where the workspace says its navigation goes: the board that opens when nothing
+ * is open, and the board a new tab opens. Both are workspace meta, which is not a
+ * snapshot section, so this reads them the same way the paint hook does — and only
+ * when they actually change.
+ */
+function useWorkspaceNavigation(workspace: WorkspaceDocument): {
+  homeBoardId: string | null;
+  newTabBoardId: string | null;
+} {
+  const read = useCallback(
+    () => ({
+      homeBoardId: workspace.workspaceHomeBoardId(),
+      newTabBoardId: workspace.newTabBoardId(),
+    }),
+    [workspace],
+  );
+  const [navigation, setNavigation] = useState(read);
+  const signature = useRef(JSON.stringify(navigation));
+  useEffect(() => {
+    const sync = () => {
+      const next = read();
+      const key = JSON.stringify(next);
+      if (key === signature.current) return;
+      signature.current = key;
+      setNavigation(next);
+    };
+    sync();
+    return workspace.observeWorkspacePaint(sync);
+  }, [read, workspace]);
+  return navigation;
+}
+
 function useWorkspacePaint(workspace: WorkspaceDocument): {
   shellStyle: SurfaceStyle | undefined;
   rules: StyleRule[];
@@ -216,6 +249,7 @@ function WorkspaceShell({
   const shellRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLElement>(null);
   const workspacePaint = useWorkspacePaint(workspace);
+  const navigation = useWorkspaceNavigation(workspace);
   const themeMode = useThemeStore((state) => state.mode);
   const palette = useSurfacePalette(shellRef, themeMode);
   const shellPaint = useMemo(
@@ -544,10 +578,27 @@ function WorkspaceShell({
     }
     if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
 
+    // What the reader asked for, then the board they named as home, then the
+    // first board: closing every tab lands somewhere they chose (ADR-0040, A24).
     const requested = resolveBoardId();
-    const next = boards.find((board) => board.id === requested)?.id ?? boards[0]?.id ?? null;
+    const home = navigation.homeBoardId;
+    const next =
+      boards.find((board) => board.id === requested)?.id ??
+      boards.find((board) => board.id === home)?.id ??
+      boards[0]?.id ??
+      null;
     if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [ready, synced, snapshot.boards, activeBoardId, setActiveBoardId, workspace, readOnly, share]);
+  }, [
+    ready,
+    synced,
+    snapshot.boards,
+    activeBoardId,
+    setActiveBoardId,
+    workspace,
+    readOnly,
+    share,
+    navigation.homeBoardId,
+  ]);
 
   // Keep the URL shareable without a reload. A share keeps its token and never
   // gains a workspace id: the link is the whole credential.
@@ -1335,6 +1386,9 @@ function WorkspaceShell({
               <BoardTabs
                 boards={openBoards}
                 activeBoardId={activeBoardId}
+                homeBoardId={navigation.homeBoardId}
+                newTabBoardId={navigation.newTabBoardId}
+                openableBoards={snapshot.boards.filter((board) => !openBoardIds.includes(board.id))}
                 onSelect={activateBoard}
                 peersByBoard={peersByBoard}
                 canCreateBoards={canCreateBoards}

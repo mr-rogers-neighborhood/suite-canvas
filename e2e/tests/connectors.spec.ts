@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { createNote } from "./support";
+import { createNote, newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -59,7 +59,7 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number }> {
 }
 
 async function createBoard(page: Page): Promise<void> {
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
 }
 
@@ -312,7 +312,7 @@ test("a portal's miniature draws the links on the board it opens", async ({ page
 
   // A portal to Board 1, sitting on the new Board 2, must paint that link inside
   // its picture — the same anchors the board uses, not a second set of rules.
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   await createPortal(page, "Board 1");
 

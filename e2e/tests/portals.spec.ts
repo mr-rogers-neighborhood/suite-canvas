@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emptyPanePoint } from "./marquee";
 import { withOwnerKey } from "./ownerUrl";
-import { createNote, libraryRowAction } from "./support";
+import { createNote, libraryRowAction, newBoard } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -11,7 +11,7 @@ const portalNodes = (page: Page) => page.getByTestId("portal-node");
 const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 async function createBoard(page: Page): Promise<string> {
-  await page.getByTestId("board-create").click();
+  await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   const testId = await page
     .locator('[data-testid^="board-tab"][aria-current="page"]')

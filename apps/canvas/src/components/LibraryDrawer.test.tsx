@@ -732,7 +732,7 @@ describe("LibraryDrawer boards", () => {
   });
 });
 
-describe("LibraryDrawer templates", () => {
+describe("LibraryDrawer board blueprints", () => {
   interface TemplateFixture {
     workspace: WorkspaceDocument;
     template: { id: string; name: string };
@@ -794,7 +794,7 @@ describe("LibraryDrawer templates", () => {
     };
   };
 
-  it("should save a board as a template and offer it in the Templates group", () => {
+  it("should save a board as a blueprint and offer it in the Blueprints group", () => {
     const { workspace, template, entries } = templateFixture();
     const view = renderDrawer(workspace, [], {
       tab: "boards",
@@ -808,7 +808,7 @@ describe("LibraryDrawer templates", () => {
     // Nothing is a template yet, so the group is not there to be read.
     expect(screen.queryByTestId("library-templates")).not.toBeInTheDocument();
 
-    rowAction(template.id, "Save as template");
+    rowAction(template.id, "Save as blueprint");
     expect(workspace.getBoard(template.id)?.template).toBe(true);
 
     view.rerender({ boards: entries() });
@@ -818,10 +818,10 @@ describe("LibraryDrawer templates", () => {
       "Research",
     );
     // The row says what it acts on, so a keyboard or screen-reader user knows.
-    expect(screen.getByRole("button", { name: "Use template Research" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit template Research" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use blueprint Research" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit blueprint Research" })).toBeInTheDocument();
 
-    rowAction(template.id, "Stop being a template");
+    rowAction(template.id, "Stop being a blueprint");
     expect(workspace.getBoard(template.id)?.template).toBeUndefined();
   });
 
@@ -1058,7 +1058,7 @@ describe("row actions", () => {
       "Open",
       "Place on board",
       "Locate",
-      "Save as template",
+      "Save as blueprint",
       "Unplace its cards",
       "Delete board\u2026",
     ]);

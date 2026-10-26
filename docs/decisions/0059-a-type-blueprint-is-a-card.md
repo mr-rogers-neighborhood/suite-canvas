@@ -127,6 +127,12 @@ originally took:
 
 This is why decision 8's "Templates tab" is a **Blueprints** tab.
 
+**Shipped 2026-10-26:** the interface caught up with the word. The gallery heading, its row detail
+(`Blueprint · N cards`), its row actions ("Save as blueprint", "Stop being a blueprint", "Use blueprint
+…") and a marked board's row badge (`· blueprint`) all say blueprint; `Board.template` and
+`setBoardTemplate` did not move, and the field editor's own "Template" (a format string, ADR-0057) keeps
+its word because it means something else.
+
 ## Amendment 2026-10-25: three ways in, and a Types tab
 
 The author specified where the shelf is reached, which is a usability decision worth recording because a

@@ -185,7 +185,7 @@ export function TemplateGallery({
       data-testid="library-templates"
     >
       <h3 id="library-templates-heading" className="library-group-heading px-1">
-        <span className="min-w-0 truncate">Templates</span>
+        <span className="min-w-0 truncate">Blueprints</span>
         <span className="tabular-nums">{templates.length + starters.length}</span>
       </h3>
 
@@ -202,7 +202,7 @@ export function TemplateGallery({
                     {template.title}
                   </p>
                   <p className="truncate text-[10px] text-[var(--ink-muted)]">
-                    Template {"\u00b7"} {template.cardCount}{" "}
+                    Blueprint {"\u00b7"} {template.cardCount}{" "}
                     {template.cardCount === 1 ? "card" : "cards"}
                   </p>
                 </div>
@@ -210,7 +210,7 @@ export function TemplateGallery({
                   <button
                     type="button"
                     className="library-action"
-                    aria-label={`Use template ${template.title}`}
+                    aria-label={`Use blueprint ${template.title}`}
                     data-testid={`library-template-use-${template.id}`}
                     onClick={() => onUseTemplate(template.id)}
                   >
@@ -219,7 +219,7 @@ export function TemplateGallery({
                   <button
                     type="button"
                     className="library-action"
-                    aria-label={`Edit template ${template.title}`}
+                    aria-label={`Edit blueprint ${template.title}`}
                     data-testid={`library-template-edit-${template.id}`}
                     onClick={() => onEditTemplate(template.id)}
                   >

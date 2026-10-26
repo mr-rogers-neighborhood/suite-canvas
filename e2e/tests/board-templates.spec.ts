@@ -56,8 +56,10 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   expect(sourceCardId).toBeTruthy();
 
   await page.getByTestId("library-tab-boards").click();
-  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Save as template");
-  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText("\u00b7 template");
+  await libraryRowAction(page.getByTestId(`library-item-${boardId}`), "Save as blueprint");
+  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText(
+    "\u00b7 blueprint",
+  );
 
   // It now sits in the Templates group, above the board list.
   await expect(page.getByTestId("library-templates")).toBeVisible();
@@ -86,7 +88,9 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   await expect(cards(page).first()).toHaveAttribute("data-node-id", sourceCardId);
   await openLibrary(page, "boards");
   await expect(page.getByTestId(`library-title-${boardId}`)).toHaveText("Board 2");
-  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText("\u00b7 template");
+  await expect(page.getByTestId(`library-board-template-${boardId}`)).toHaveText(
+    "\u00b7 blueprint",
+  );
   await page.getByRole("button", { name: "Close library" }).click();
 
   // Duplication is one undoable batch, so the copy goes away in one step.

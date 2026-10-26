@@ -665,7 +665,7 @@ export function LibraryDrawer({
         ...(onSetBoardTemplate
           ? [
               {
-                label: board.template === true ? "Stop being a template" : "Save as template",
+                label: board.template === true ? "Stop being a blueprint" : "Save as blueprint",
                 onSelect: () => onSetBoardTemplate(board.id, board.template !== true),
               },
             ]
@@ -880,10 +880,11 @@ export function LibraryDrawer({
             {" \u00b7 "}
             {board.cardCount} {board.cardCount === 1 ? "card" : "cards"}
             {/* The state moved out of the row's buttons into its menu, so the row
-                says it in words: a template is a fact about the board, not only
-                something you can toggle. */}
+                says it in words: a blueprint is a fact about the board, not only
+                something you can toggle. The word is the interface's; the record
+                still calls the flag `template` (ADR-0059). */}
             {board.template === true ? (
-              <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 template"}</span>
+              <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 blueprint"}</span>
             ) : null}
           </p>
         </div>

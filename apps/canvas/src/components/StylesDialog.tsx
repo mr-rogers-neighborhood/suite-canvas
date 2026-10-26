@@ -15,6 +15,7 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { StyleTab } from "./surface/StyleTab";
 import { useStyleRules } from "./surface/useStyleRules";
+import { WorkspaceThemeEditor } from "./surface/WorkspaceThemeEditor";
 
 export interface StylesDialogProps {
   open: boolean;
@@ -78,6 +79,7 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
   const snapshot = useWorkspaceSnapshot();
   const rules = useStyleRules(workspace);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   useEscapeLayer(onClose, open);
 
@@ -138,6 +140,22 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
         className="relative flex h-[min(560px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] shadow-xl"
       >
         <div className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-[var(--hairline)] p-2">
+          <button
+            type="button"
+            data-testid="styles-workspace-theme"
+            aria-current={themeOpen ? "true" : undefined}
+            className="mb-1.5 block w-full rounded-lg px-1.5 py-1 text-left hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => {
+              setThemeOpen(true);
+              setEditingId(null);
+            }}
+          >
+            <span className="block text-[12px] text-[var(--ink)]">Workspace colours</span>
+            <span className="block text-[10px] text-[var(--ink-muted)]">
+              The palette every reader sees, per mode
+            </span>
+          </button>
+
           <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
             Rules, in resolution order
           </p>
@@ -165,7 +183,10 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
                             className="block w-full text-left"
                             data-testid={`styles-select-${rule.id}`}
                             aria-current={active ? "true" : undefined}
-                            onClick={() => setEditingId(rule.id)}
+                            onClick={() => {
+                              setThemeOpen(false);
+                              setEditingId(rule.id);
+                            }}
                           >
                             <span className="block text-[12px] text-[var(--ink)]">{rule.name}</span>
                             <span className="block text-[10px] text-[var(--ink-muted)]">
@@ -247,7 +268,9 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-3">
-          {editing ? (
+          {themeOpen ? (
+            <WorkspaceThemeEditor workspace={doc} canEdit={canEdit} />
+          ) : editing ? (
             <>
               <header className="mb-3 border-b border-[var(--hairline)] pb-2">
                 <h2 className="text-[13px] font-semibold text-[var(--ink)]">{editing.name}</h2>

@@ -1,6 +1,10 @@
 import { useId } from "react";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { type Appearance, RADIUS_RANGE } from "../theme/appearance";
 import { useAppearanceStore } from "../theme/useAppearanceStore";
+import { useThemeStore } from "../theme/useThemeStore";
+import { useWorkspaceTheme } from "../theme/useWorkspaceTheme";
+import { themedRoles } from "../theme/workspaceTheme";
 
 /**
  * The appearance entry point ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)),
@@ -16,6 +20,9 @@ import { useAppearanceStore } from "../theme/useAppearanceStore";
  */
 export function AppearanceDialog({ onClose }: { onClose: () => void }) {
   const appearance = useAppearanceStore((state) => state.appearance);
+  const workspace = useCanvasStore((state) => state.workspace);
+  const mode = useThemeStore((state) => state.theme);
+  const themed = themedRoles(useWorkspaceTheme(workspace), mode);
   const set = useAppearanceStore((state) => state.set);
   const reset = useAppearanceStore((state) => state.reset);
   const titleId = useId();
@@ -48,6 +55,21 @@ export function AppearanceDialog({ onClose }: { onClose: () => void }) {
       <p className="appearance-dialog__note">
         These change this device only. The workspace's own colours and shapes stay as its authors
         set them.
+      </p>
+
+      {/*
+        The mirror, not a second editor: a palette belongs to the document and is
+        written in the Styles list, so this names the scope and the roles it speaks
+        for and says no more. Two editors for one value is how the save pill
+        happened.
+      */}
+      <p className="appearance-dialog__row" data-testid="appearance-workspace-theme">
+        <span>Workspace colours</span>
+        <span className="appearance-dialog__value">
+          {themed.length === 0
+            ? "Built-in palette"
+            : `${themed.length} role(s) set here, ${mode === "dark" ? "dark" : "light"} mode`}
+        </span>
       </p>
 
       <label className="appearance-dialog__row">

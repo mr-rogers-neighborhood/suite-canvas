@@ -91,6 +91,8 @@ import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme, useThemeStore } from "./theme/useThemeStore";
+import { useWorkspaceTheme } from "./theme/useWorkspaceTheme";
+import { applyWorkspaceTheme } from "./theme/workspaceTheme";
 
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
@@ -250,7 +252,20 @@ function WorkspaceShell({
   const boardRef = useRef<HTMLElement>(null);
   const workspacePaint = useWorkspacePaint(workspace);
   const navigation = useWorkspaceNavigation(workspace);
+  const workspaceTheme = useWorkspaceTheme(workspace);
   const themeMode = useThemeStore((state) => state.mode);
+  const resolvedTheme = useThemeStore((state) => state.theme);
+  // The theme's colours are painted onto the shell root, which is where every
+  // token is read, and taken back when the mode or the palette changes.
+  const appliedThemeTokens = useRef(new Set<string>());
+  useEffect(() => {
+    applyWorkspaceTheme(
+      document.documentElement,
+      workspaceTheme,
+      resolvedTheme,
+      appliedThemeTokens.current,
+    );
+  }, [workspaceTheme, resolvedTheme]);
   const palette = useSurfacePalette(shellRef, themeMode);
   const shellPaint = useMemo(
     () => shellPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),

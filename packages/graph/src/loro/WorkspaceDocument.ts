@@ -80,8 +80,8 @@ import {
   type Tag,
   tagSchema,
 } from "../schema.js";
-import type { SurfaceStyle } from "../style.js";
-import { isEmptyStyle, surfaceStyleSchema } from "../style.js";
+import type { SurfaceStyle, WorkspaceTheme } from "../style.js";
+import { isEmptyStyle, isEmptyTheme, surfaceStyleSchema, workspaceThemeSchema } from "../style.js";
 import { normalizeTemplate } from "../template.js";
 import { expandTitleTemplate, hasTitleToken, titleTemplateValues } from "../templateTitle.js";
 import type { SavedView, ViewQuery } from "../views.js";
@@ -432,6 +432,13 @@ export function readSurfaceStyle(fields: LoroMap): SurfaceStyle | undefined {
 function readSurfaceStyleValue(value: unknown): SurfaceStyle | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const parsed = surfaceStyleSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** A workspace palette from a raw value; a hand-edited one that half parses is dropped. */
+function readWorkspaceThemeValue(value: unknown): WorkspaceTheme | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const parsed = workspaceThemeSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -1443,6 +1450,28 @@ export class WorkspaceDocument {
    */
   shellStyle(): SurfaceStyle | undefined {
     return readSurfaceStyleValue(this.meta.get("shellStyle"));
+  }
+
+  /**
+   * The workspace's own palette, per mode ([ADR-0071](../../../../docs/decisions/0071-style-is-derived-not-configured.md)
+   * Q2–Q3). Document data on purpose: a share renders the author's colours, and a
+   * visitor's light/dark choice still works inside them.
+   */
+  workspaceTheme(): WorkspaceTheme | undefined {
+    return readWorkspaceThemeValue(this.meta.get("theme"));
+  }
+
+  /** Writes the workspace palette, or clears it when it names no colour. */
+  setWorkspaceTheme(theme: WorkspaceTheme | null): void {
+    if (!theme) {
+      this.meta.delete("theme");
+      this.commit(`${STRUCT_ORIGIN}set-workspace-theme`);
+      return;
+    }
+    const parsed = workspaceThemeSchema.parse(theme);
+    if (isEmptyTheme(parsed)) this.meta.delete("theme");
+    else this.meta.set("theme", parsed);
+    this.commit(`${STRUCT_ORIGIN}set-workspace-theme`);
   }
 
   /** Writes the shell's style, or removes it when the style says nothing. */

@@ -145,11 +145,14 @@ CSS.
    preference for some readers. The current answer is that the audience is one — a workspace looks like
    itself — but this is the question most likely to be revisited, and the honest cost of changing it is a
    fifth rung and a rule for what a screenshot means.
-2. **Does a shared workspace carry its style to a visitor?** A public share link opens someone else's
-   workspace: do they see the author's palette or their own? Today nobody has asked, because sharing
-   exists before styles do; the decision must be made before editable surfaces ship.
-3. **Where does a *workspace* default live?** A dedicated record, or one flagged board of the system
-   workspace? The latter reuses everything (ADR-0068) and the former is simpler to query.
+2. ~~**Does a shared workspace carry its style to a visitor?**~~ **Answered 2026-10-26: yes, in the
+   visitor's own mode.** A palette is authored *per mode*, so "the author's colours" never means "the
+   author's brightness": the document carries two maps, the visitor's light/dark choice picks which one
+   applies, and a share therefore looks like the workspace without overruling the reader's screen.
+3. ~~**Where does a *workspace* default live?**~~ **Answered 2026-10-26: workspace meta**, as one `theme`
+   record beside the shell style and the rules — not a flagged board. It is the same answer Q3 was really
+   asking for: a palette is a property of the workspace, and a property that has to be found by scanning
+   boards is a property with a second source of truth.
 4. **Does density belong to style at all?** It changes layout rather than paint, and layout is the
    document's business (positions are stored). Density would have to be a *render* preference, which puts
    it on the reader rung rather than the document ladder.
@@ -402,3 +405,25 @@ byte-identical and "the dock is blue" cannot leak into the app bar.
 
 **What this does not do, on purpose:** named presets as a browsable library, and a per-reader override of a
 workspace style (Q1 above). Both are decisions rather than wiring.
+
+## Amendment 2026-10-26: the workspace carries a palette
+
+Q2 and Q3 are answered by shipping them. A workspace has a **`theme`** record — `light` and `dark`, each a
+partial map from the roles `styleColourRoles` names to a colour — stored in workspace meta, so it syncs,
+versions, exports with the backup and travels to a share. Nothing about *which* role a value is becomes
+document data; the eight mode values stay fixed by the build, as this record requires.
+
+**Resolution is the ladder, unchanged.** A theme writes the token a role resolves to (`--surface`, `--ink`,
+`--canvas-bg`, …) and names nothing else: an unauthored role keeps the built-in token, exactly like an unset
+rung. Everything the shell derives from those tokens — a tint, a hairline, `accent-strong`, `mention-ink` —
+is still derived and still floored, which is why a palette cannot be used to make text unreadable by
+authored values alone: the emphasis roles that carry contrast risk are not among the ten.
+
+**One editor, one mirror.** The palette is authored in the Styles list (`WorkspaceThemeEditor`), the place
+every other rung is authored; the Appearance panel *mirrors* it read-only, naming how many roles are set in
+the mode on screen, because two editors for one value is the mistake the save pill already was. Values are
+typed rather than picked, because the vocabulary already carries `rgba(…)` and `color-mix(…)` and a colour
+picker would refuse half of what the tokens themselves contain.
+
+**What this does not do, on purpose:** a palette *preset* library, and Q1's per-reader override.
+

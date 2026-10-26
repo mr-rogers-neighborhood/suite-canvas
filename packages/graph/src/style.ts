@@ -187,6 +187,34 @@ export function sideEdgeStyle(
   return resolved.sides[side];
 }
 
+/**
+ * A workspace's own palette ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * Q2–Q3): the value each role resolves to, per mode.
+ *
+ * Per *mode*, not one flat map, because a workspace has to look like itself at
+ * both brightnesses — that is what keeps "the author's palette" from meaning "the
+ * author's brightness", and why a visitor's light/dark choice still works inside
+ * somebody else's colours. It names base tokens only: everything the shell derives
+ * from them (a muted ink, a tint, a border) is still derived, and still floors.
+ */
+export const workspaceThemeSchema = z.object({
+  light: z.partialRecord(z.enum(styleColourRoles), z.string().min(1)).default(() => ({})),
+  dark: z.partialRecord(z.enum(styleColourRoles), z.string().min(1)).default(() => ({})),
+});
+export type WorkspaceTheme = z.infer<typeof workspaceThemeSchema>;
+export type WorkspaceThemeMode = "light" | "dark";
+
+/** The colours a theme names for one mode, as authored. */
+export function themeColours(theme: WorkspaceTheme | undefined, mode: WorkspaceThemeMode) {
+  return theme?.[mode] ?? {};
+}
+
+/** True when a theme names nothing in either mode, so it can be dropped. */
+export function isEmptyTheme(theme: WorkspaceTheme | undefined): boolean {
+  if (!theme) return true;
+  return Object.keys(theme.light).length === 0 && Object.keys(theme.dark).length === 0;
+}
+
 /** True when a style changes anything at all, so callers can drop an empty record. */
 export function isEmptyStyle(style: SurfaceStyle | undefined): boolean {
   if (!style) return true;

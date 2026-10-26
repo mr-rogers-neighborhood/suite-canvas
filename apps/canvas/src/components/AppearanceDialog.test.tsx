@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { DEFAULT_APPEARANCE } from "../theme/appearance";
 import { useAppearanceStore } from "../theme/useAppearanceStore";
 import { AppearanceDialog } from "./AppearanceDialog";
@@ -93,5 +94,26 @@ describe("the appearance entry point", () => {
     fireEvent.click(screen.getByTestId("appearance-close"));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the workspace palette mirror", () => {
+  it("names the scope and the roles rather than offering a second editor", () => {
+    const workspace = useCanvasStore.getState().workspace;
+    workspace.setWorkspaceTheme(null);
+    render(<AppearanceDialog onClose={() => {}} />);
+
+    // No palette: the built-in one, said plainly.
+    expect(screen.getByTestId("appearance-workspace-theme")).toHaveTextContent("Built-in palette");
+    // Nothing here writes the document — the Styles list is the one editor.
+    expect(screen.queryByTestId("workspace-theme-light-surface")).toBeNull();
+
+    workspace.setWorkspaceTheme({ light: { surface: "#fdf6e3", ink: "#201c14" }, dark: {} });
+    cleanup();
+    render(<AppearanceDialog onClose={() => {}} />);
+    expect(screen.getByTestId("appearance-workspace-theme")).toHaveTextContent(
+      "2 role(s) set here, light mode",
+    );
+    workspace.setWorkspaceTheme(null);
   });
 });

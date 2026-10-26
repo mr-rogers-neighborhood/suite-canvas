@@ -95,8 +95,10 @@ describe("the schema the plugins produce", () => {
     expect(user).toContain("banExpires");
     // twoFactor
     expect(user).toContain("twoFactorEnabled");
-    // anonymous — the field that marks a session as claimable rather than owned
-    expect(user).toContain("isAnonymous");
+    // No `isAnonymous`: the plugin that added it is gone, and a browser with no
+    // session simply has no session. Asserted as an absence so a re-introduction
+    // cannot land as a schema detail.
+    expect(user).not.toContain("isAnonymous");
     // `lastLoginMethod` deliberately adds *no* column: it remembers the method in a
     // cookie, so the sign-in screen can offer it without us storing login history
     // server-side. Asserted as an absence, because adding a column later would be a

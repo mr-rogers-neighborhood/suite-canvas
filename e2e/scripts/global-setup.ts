@@ -80,6 +80,17 @@ function psql(sql: string): string {
   }).trim();
 }
 
+/**
+ * The setup account.
+ *
+ * One per run, because a cluster left behind by an interrupted run still holds
+ * the previous address and a sign-up would then be refused as a duplicate. The
+ * password is fixed: nothing else knows it, and the session cookie is what the
+ * specs use.
+ */
+const RUN_EMAIL = `e2e-${crypto.randomUUID().slice(0, 8)}@example.com`;
+const RUN_PASSWORD = "e2e-run-password-not-a-secret";
+
 function randomId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`;
 }
@@ -158,9 +169,14 @@ export default async function globalSetup(): Promise<void> {
       );
     }
 
+    // A real account, signed up the way a person signs up. The suite used to take
+    // an anonymous session here; there is no anonymous sign-in any more, and a
+    // session with no account would be refused by the relay anyway.
     const signedIn = await expectOk(
-      await api.post("/api/auth/sign-in/anonymous", { data: {} }),
-      "the anonymous sign-in",
+      await api.post("/api/auth/sign-up/email", {
+        data: { email: RUN_EMAIL, password: RUN_PASSWORD, name: "E2E" },
+      }),
+      "the account sign-up",
     );
     const session: unknown = await signedIn.json();
     const userId =
@@ -168,7 +184,7 @@ export default async function globalSetup(): Promise<void> {
         ? (session as { user?: { id?: unknown } }).user?.id
         : undefined;
     if (typeof userId !== "string" || userId.length === 0) {
-      throw new Error("the anonymous sign-in returned no user id");
+      throw new Error("the sign-up returned no user id");
     }
 
     const organizationId = provisionOrganization(userId);

@@ -9,11 +9,8 @@ const id = workspaceIdFactory("e2e-sign-in");
  *
  * The suite runs the real control plane (`scripts/control-plane.mjs`), so
  * `/api/auth/ok` answers `{ ok: true }` on the hosted origin and the app's own
- * bootstrap runs for real: a browser with no session is given an anonymous one
- * (ADR-0077), which is what makes "sign up later and keep this work" true. The
- * old version of this spec asserted the opposite — a 404 from the bare dev server
- * — which is now only one of the deployment shapes the suite covers, and not the
- * one an account spec should be measuring.
+ * bootstrap runs for real. A browser with no session is left alone: no identity
+ * is created for it, the board is local, and the status control says so.
  *
  * The pending-account case still has no server of its own, so it stays stubbed at
  * the network boundary on the plain dev origin: `/api/auth/ok` answers `ok`, the
@@ -25,36 +22,31 @@ const id = workspaceIdFactory("e2e-sign-in");
 
 const dialog = (page: import("@playwright/test").Page) => page.getByTestId("sign-in-dialog");
 
-test("a deployment with accounts gives the browser an anonymous session", {
+test("a deployment with accounts leaves a browser with no session local", {
   tag: "@smoke",
 }, async ({ page }) => {
   // Deliberately no storage state: a first visit is the case under test.
-  await page.goto(hostedUrl(`/?workspace=${id("anonymous-session")}`));
+  await page.goto(hostedUrl(`/?workspace=${id("no-session")}`));
   await expect(cards(page)).toHaveCount(2);
 
-  // The bootstrap probes, finds no session and mints an anonymous one, so the
-  // header offers the account rather than a Sign in button nobody needs.
-  const chip = page.getByTestId("account-chip");
-  await expect(chip).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("sign-in-entry")).toHaveCount(0);
+  // No session is created, so the header offers the sign-in entry rather than an
+  // account chip. The relay never saw this browser, so nothing was refused.
+  await expect(page.getByTestId("sign-in-entry")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("account-chip")).toHaveCount(0);
 
-  await chip.click();
-  await expect(page.getByTestId("account-menu")).toBeVisible();
-  await page.getByTestId("account-menu-account").click();
-  await expect(page.getByTestId("account-panel")).toBeVisible();
-  // The anonymous row has a real address the server minted; it is not a guess by
-  // the client, which is the point of reading it back from the session.
-  await expect(page.getByTestId("account-email")).not.toBeEmpty();
-  await page.getByTestId("account-panel-close").click();
-  await expect(page.getByTestId("account-panel")).toHaveCount(0);
+  const status = page.getByTestId("sync-status");
+  await expect(status).toHaveText("Local");
+  await status.click();
+  await expect(page.getByTestId("sync-room")).toContainText("Local only");
+  await expect(page.getByTestId("sync-room")).not.toContainText(/refused/i);
+  // The storage surface is a row in the same panel, so one press answers both.
+  await expect(page.getByTestId("storage-status")).toBeVisible();
+  await expect(dialog(page)).toHaveCount(0);
 
-  // The session never had the workspace: local editing is the same as it was
+  // The workspace never left this browser: local editing is the same as it was
   // before accounts existed.
   await createNote(page, "Local note");
   await expect(cardByTitle(page, "Local note")).toHaveCount(1);
-  await page.getByTestId("sync-status").click();
-  await expect(page.getByTestId("storage-status")).toBeVisible();
-  await expect(dialog(page)).toHaveCount(0);
 });
 
 test("an account that is not admitted still edits locally", { tag: "@smoke" }, async ({ page }) => {

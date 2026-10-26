@@ -65,6 +65,10 @@ const child = spawn(tsx, ["src/server.ts"], {
     SUITE_AUTH_ENABLED: "1",
     SUITE_AUTH_SECRET: E2E_AUTH_SECRET,
     SUITE_AUTH_URL: HOSTED_ORIGIN,
+    // The console transport redacts the token it prints, so a required mailbox
+    // would stop the setup account from ever signing in. This is the same setting
+    // a local `.env` uses.
+    SUITE_AUTH_REQUIRE_VERIFICATION: "0",
     // The suite creates an account per authenticated test; a production limiter
     // would start refusing them halfway through a run. `info` keeps the lines the
     // captured log is for.

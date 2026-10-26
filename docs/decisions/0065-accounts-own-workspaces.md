@@ -163,3 +163,27 @@ correction is the right shape and it is more useful than either:
   relaxes it.
 - **A second, lighter auth system just for invite links.** Two identity systems is how a workspace ends
   up with two owners who disagree.
+
+## Amendment — 2026-10-25: identity, invitations and seats move to three successors
+
+This ADR settled *who owns a workspace*. Three of its mechanisms have since been superseded by
+decisions that take the same model further, and leaving them here would make the record lie.
+
+1. **Item 3 (`invite_keys` are rows, our redemption SQL) is superseded by
+   [ADR-0067](./0067-the-account-is-the-identity.md) §10.** Shareable, capped and revocable invites are
+   still the requirement; they are now `better-enrollment`'s public invites, and our `invite_keys`
+   table, `redeem_invite_key()` function and bespoke redemption route are deleted. The invariant that
+   made the row design correct — one guarded atomic write, so two racers on a one-seat invite produce
+   one winner — is preserved by the plugin, and the seat hook stays ours.
+2. **Item 4 (the owner key survives as the offline key, `File → Recovery key…` stays) is superseded by
+   [ADR-0067](./0067-the-account-is-the-identity.md) §1–§5.** The owner key still survives as the
+   transport credential and a valid offline way in, but it is no longer presented as something a person
+   keeps: the passphrase path is deleted, recovery words are retired to a single advanced *Owner file*,
+   and the account is the recovery story.
+3. **Item 5 (entitlement is checked from the licence) stands, and gains a source.** The relay is
+   unchanged — it verifies an Ed25519 token offline. What changes is where that token's numbers come
+   from: [ADR-0069](./0069-billing-runs-on-the-stripe-plugin.md) makes plan `limits` the single
+   definition, with the issuer reading subscription state instead of a hand-rolled webhook.
+
+The org-owns-many-workspaces model itself is untouched: `workspaces.id` is still the document id, and
+claiming is still one `UPDATE` that changes no id and no share link.

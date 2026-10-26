@@ -55,6 +55,35 @@ control plane is unreachable — and share links still grant exactly what their 
 link, rotating the owner key and the operator commands above behave the same. Anonymous workspaces
 (no organization) are still first-class, still ungated by any licence, and still need no login.
 
+**What changed with [ADR-0067](decisions/0067-the-account-is-the-identity.md).** The account became
+the identity and the key became plumbing, which removes the confusing part of the model rather than
+documenting it:
+
+- **The passphrase path is gone.** It derived a key from recovery words and silently rotated the owner
+  key, invalidating every link and `.suitekey` file a person had already saved. A recovery mechanism
+  that breaks the other recovery mechanisms is worse than none.
+- **Recovery words are no longer a user-facing concept.** The encoder survives as one advanced *Owner
+  file* export beside `.suitekey`, for self-hosters who deliberately keep no account. A forgotten
+  credential is the account's job — magic link, passkey or a provider login.
+- **Signing in claims rather than migrates.** The claim is still one `UPDATE` of `organization_id`, so
+  the sentence above — no id, no URL, no share link changes — remains the security property that makes
+  accounts safe to adopt late.
+- **Registration is open and admission is reviewed.** A new account has `admittedAt: null` and **one**
+  server-side gate refuses three things until an operator admits it: creating an organization, claiming
+  a workspace, and opening a sync connection. Local editing, import and export are never gated, because
+  local-first is not a privilege. This is a *licensing* control, not an authentication one: it is not a
+  substitute for the capability model and it never decides who may read a document.
+- **The front door is normalized before it is filtered.** Emails are normalized
+  (`foo+temp@gmail.com` → `foo@gmail.com`) with a unique index, and 55k disposable domains are blocked,
+  because per-seat billing turns a duplicate account into a duplicate seat. An invisible Turnstile
+  challenge sits in front, since a human reviews the admission queue.
+
+**What is still true, and still the sharpest sentence here.** Removing four names for one secret does
+not change this: *the owner key is the only secret that protects a workspace, and it lives where XSS can
+read it.* Sessions do not fix that — a stolen cookie is a stolen session — and neither does a nicer
+recovery flow. The fixes are the ones already listed (CSP, accounts, and eventually device-bound
+sessions), not better copy.
+
 **One resolver, one precedence: session > owner key > share token.** A request may carry all three.
 The session wins *only* if it names the organization that owns this workspace and the account still
 has a `member` row there; otherwise the owner key applies, and otherwise the share token. Two

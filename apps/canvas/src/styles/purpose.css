@@ -1,44 +1,29 @@
 /*
- * The purpose control (ADR-0064). Two questions, one column: "what the canvas is
- * for" and "what the next click does" are separate controls but a single pill —
- * zoom, then link mode, then purpose on the floor. Each segment owns its corners
- * only at the ends, so the stack reads as one object rather than a button stuck
- * under a rounded pill.
+ * The purpose control (ADR-0064). Two questions, one column: "what the canvas is for"
+ * and "what the next click does" are separate controls but a single pill — zoom, fit,
+ * link mode, purpose on the floor.
+ *
+ * The pill has one owner now (`.react-flow__controls` in `global.css`): it draws the
+ * border, the radius, the shadow and the clipping. This file says only how a *value* is
+ * painted, which is why nothing here names a border width, a corner or a position.
  *
  * The palette comes from `--value-*` in `global.css` (ADR-0064 fifth amendment):
- * `data-purpose` selects the value, and this file only decides *how* a value is
- * painted. No hue is named here, so a theme can re-tune one without a component
- * knowing, and `run`'s inverted chip is the same pair the link tool uses for
- * `thread` — which is what makes holding shift look like the mode you get.
+ * `data-purpose` selects the value, and this file decides how that value is emphasised.
+ * No hue is named here, so a theme can re-tune one without a component knowing, and
+ * `run`'s inverted chip is the same pair the link tool uses for `thread` — which is what
+ * makes holding shift look like the mode you get.
+ */
+/*
+ * The purpose segment — the pill's floor.
+ *
+ * It used to be an absolutely-positioned button with its own border, its own bottom
+ * corners and a second shadow, sitting under React Flow's container and pretending to
+ * continue it. The container is the pill now (see `global.css`), so this rule is only
+ * what is specific to the purpose: it is painted by its value and it is the last
+ * segment, so the container's radius already rounds it.
  */
 .purpose-control {
-  position: absolute;
-  left: 15px;
-  /* The pill's bottom segment: the zoom controls end 57px above the floor, the
-     link mode fills 31–57px, and this fills 5–31px. */
-  bottom: 5px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 27.33px;
-  height: 26px;
-  margin: 0;
-  padding: 0;
-  /* The palette decides the colour; this rule only decides the geometry and that a
-     value is painted at all. `data-purpose` selects which value. The edge is softened
-     because the resting purpose is the same colour as the pill it sits in. */
-  border: 1px solid color-mix(in srgb, var(--value-hue) 40%, var(--hairline));
-  /* Continues the link mode above it: no seam, and the pill's own bottom corners. */
-  border-top: 0;
-  border-radius: 0 0 10px 10px;
-  background: var(--value-fill);
-  box-shadow: var(--card-shadow);
-  color: var(--value-ink);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
+  border-radius: 0;
 }
 
 /*
@@ -53,17 +38,15 @@
  * the committed control are the same painting — which is the whole point of the note
  * that started this. In a dark theme the chip reads white; in a light one, black.
  */
+/*
+ * The treatments are all fill-and-ink now, because the segment has no border of its own:
+ * the palette already supplies both for every value, so the only thing left to say is
+ * that these three are *engaged* rather than resting.
+ */
 .purpose-control[data-purpose="run"],
-.purpose-control[data-purpose="present"] {
-  border-color: var(--value-hue);
-}
-
-/* Recording is live capture: the fill is the signal, so it keeps the solid treatment
-   even though it is also a "choice". */
+.purpose-control[data-purpose="present"],
 .purpose-control[data-purpose="record"] {
-  background: var(--value-fill);
-  color: var(--value-ink);
-  border-color: var(--value-hue);
+  box-shadow: inset 0 0 0 1px var(--value-hue);
 }
 
 /*
@@ -75,15 +58,16 @@
  * an engaged purpose looks untouched, which is the state outranking the pointer.
  */
 .purpose-control:hover {
-  border-color: var(--value-hue);
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
-/* A modifier is showing what the click would choose. Dashed, not filled: a
-   preview is not a state, so it must not look like one (ADR-0066). */
+/* A modifier is showing what the click would choose. Dashed, not filled: a preview is
+   not a state, so it must not look like one (ADR-0066). It is an inset outline rather
+   than a border, because the border belongs to the pill now — and a dashed border on a
+   borderless segment would draw nothing at all. */
 .purpose-control[data-preview] {
-  border-style: dashed;
-  border-color: var(--ink-muted);
+  outline: 1px dashed var(--ink-muted);
+  outline-offset: -3px;
 }
 
 /*

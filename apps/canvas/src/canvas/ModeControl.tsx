@@ -20,7 +20,7 @@ import type { PlacementEngine } from "./usePlacementEngine";
  * shows the *shape* its mode draws, which is why they read as a set: one thing, a
  * chain, a star, a tree.
  */
-const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
+export const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
   place: {
     label: "Place mode: one at a time — drag a link, or drop a card",
     glyph: "\u2194",
@@ -46,7 +46,7 @@ function switchLabel(mode: CanvasMode): string {
 }
 
 /** "Thread mode", the name without the clause after the colon, for a label that embeds it. */
-function shortLabel(mode: CanvasMode): string {
+export function shortLabel(mode: CanvasMode): string {
   return MODES[mode].label.split(":")[0] ?? MODES[mode].label;
 }
 
@@ -71,8 +71,6 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   // A live run turns this control into its progress and steering wheel: the mode
   // that decided where the last card went is the mode that decides the next one.
   const run = usePlacementRunStore((state) => state.run);
-  const skipRun = usePlacementRunStore((state) => state.skip);
-  const finishRun = usePlacementRunStore((state) => state.finish);
 
   const button = useRef<HTMLButtonElement | null>(null);
   const glyph = useRef<HTMLSpanElement | null>(null);
@@ -162,51 +160,11 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   const current = MODES[mode];
   const active = mode !== "place";
 
-  if (run && engine) {
-    const total = run.placed.length + run.queue.length;
-    return (
-      <div className="placement-run" data-testid="placement-run" data-mode={mode}>
-        <span className="placement-run__count" data-testid="placement-run-count">
-          {`${run.placed.length} / ${total}`}
-        </span>
-        <button
-          type="button"
-          className="placement-run__action"
-          data-testid="placement-run-place-all"
-          title="Place the rest now, as one undo step"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => engine.placeAll()}
-        >
-          Place all
-        </button>
-        <button
-          type="button"
-          className="placement-run__action"
-          data-testid="placement-run-skip"
-          title="Skip this one and take the next"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            skipRun();
-            // Skipping is a step: the engine places whatever the queue now heads
-            // with, so the run never stalls waiting for another gesture.
-            engine.step();
-          }}
-        >
-          Skip
-        </button>
-        <button
-          type="button"
-          className="placement-run__action"
-          data-testid="placement-run-stop"
-          title="Stop placing (Escape)"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => finishRun()}
-        >
-          Stop
-        </button>
-      </div>
-    );
-  }
+  // During a run the bar *is* the mode control — it carries the count and the verbs
+  // that would otherwise be spread across the mode button and the widget. It is
+  // mounted beside this control, not inside the pill, because it is a panel and the
+  // pill is a column of segments (see `PlacementRunBar`).
+  if (run && engine) return null;
 
   // One button that walks a four-state cycle rather than a segmented control:
   // the four are one tool with four readings, and four buttons would imply four

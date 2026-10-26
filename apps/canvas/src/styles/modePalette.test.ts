@@ -163,10 +163,29 @@ describe("the value palette", () => {
     }
   });
 
-  it("paints the link control from the palette rather than from per-mode colours", () => {
-    const start = global.indexOf(".link-mode-control {");
-    const block = global.slice(start, start + 900);
+  it("paints both segments from the palette rather than from per-mode colours", () => {
+    // The rule moved into the pill's own block when the container became the one owner:
+    // every segment is styled in one place, so the link tool and the purpose cannot
+    // disagree about what a value is painted with. Both segments are named by two rules
+    // there — one for geometry, one for paint — so read every rule that names them.
+    const shared = [...global.matchAll(/\.react-flow__controls \.link-mode-control,[^}]*}/g)].map(
+      (match) => match[0],
+    );
+    expect(shared).toHaveLength(2);
+    const block = shared.join("\n");
     expect(block).toContain("background: var(--value-fill)");
     expect(block).toContain("color: var(--value-ink)");
+
+    // And neither segment may own a border again: that is what produced the seams.
+    for (const segment of [".link-mode-control {", ".purpose-control {"]) {
+      const at = segment.startsWith(".purpose")
+        ? purpose.indexOf(segment)
+        : global.indexOf(segment);
+      const source = segment.startsWith(".purpose") ? purpose : global;
+      const own = source.slice(at, source.indexOf("}", at));
+      expect(own, segment).not.toContain("border:");
+      expect(own, segment).not.toContain("box-shadow:");
+      expect(own, segment).not.toContain("position: absolute");
+    }
   });
 });

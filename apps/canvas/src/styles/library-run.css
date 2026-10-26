@@ -11,19 +11,30 @@
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
-/* The run's progress and steering, under the zoom widget where the mode lives. */
+/*
+ * The run's progress and steering ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)
+ * third amendment).
+ *
+ * A panel, not a segment. It sits above the viewport pill with a gap, has all four
+ * corners, and owns its own chrome — because it is wider than the pill will ever be and
+ * it carries verbs, not a mode. It used to live *in* the pill's slot with a top-only
+ * radius, hoping to read as its continuation; that is what made it a fourth owner of a
+ * pill that already had three (see the `.react-flow__controls` block in `global.css`).
+ */
 .placement-run {
   position: absolute;
   left: 15px;
-  bottom: 31px;
-  z-index: 5;
+  /* Clear of the pill: it is a panel above it, and the gap says so. The pill is four
+     segments during a run (the link tool withdraws), so 5px margin + 4x26 + 2px border
+     puts its top at 111px, and the bar stops 8px short of that. */
+  bottom: 119px;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border: 1px solid var(--hairline);
-  border-top: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--card-shadow);
   font-size: 11px;
@@ -34,6 +45,21 @@
   padding: 0 4px;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
+}
+
+/* The mode the run is placing with. The pill's segment withdraws for the duration, so
+   this chip is the only place the value shows; it is painted from the same tokens. */
+.placement-run__mode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--value-fill);
+  color: var(--value-ink);
+  font-size: 11px;
+  line-height: 1;
 }
 
 .placement-run__action {

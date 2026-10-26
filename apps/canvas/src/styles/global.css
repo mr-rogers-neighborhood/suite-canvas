@@ -464,12 +464,24 @@ body {
   transform: scale(1.01);
 }
 
-/* React Flow chrome, themed through its CSS variables. */
-/* React Flow positions panels with `bottom: 0` plus a 15px margin, and its
-   stylesheet loads after this one. Three classes out-specify it, and the margin
-   is replaced so the pill's bottom edge lands on the toggle's top edge. */
+/*
+ * The viewport pill: zoom, fit, the link mode and the purpose — one column, one owner.
+ *
+ * It used to be two owners. React Flow drew a container with a top-only radius, and this
+ * stylesheet drew two more boxes underneath it with their own borders and (for the
+ * purpose) another shadow. The seams showed: doubled hairlines where the boxes met, a
+ * shadow beginning mid-pill, a 27.33px segment under a 26px button, and React Flow's own
+ * `-default` colours leaking through any state we had not overridden — which is why the
+ * `.dark` block below used to repeat four rules to win a specificity race.
+ *
+ * The container owns everything now: border, radius, shadow, clipping and the flex
+ * column. Our segments are its children, so they inherit the geometry instead of
+ * imitating it. `--xy-controls-*` is the honest way to theme React Flow: its own rules
+ * keep working and simply read our values, so there is no fight to win.
+ */
 .react-flow__panel.react-flow__controls.bottom {
-  bottom: 57px;
+  /* The pill reaches the floor: the purpose segment is its bottom edge. */
+  bottom: 5px;
   margin: 0 0 0 15px;
 }
 
@@ -477,47 +489,71 @@ body {
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--hairline);
-  /* Square bottom: the link-mode toggle continues the pill below it. */
-  border-radius: 10px 10px 0 0;
-  box-shadow: var(--card-shadow);
+  border-radius: 12px;
+
+  /* React Flow's chain is `props → --xy-… → --xy-…-default`; setting the middle
+     variable is enough, and it means a theme changes a token rather than a rule. The
+     shadow has to go through the variable too: React Flow's own `box-shadow` rule loads
+     after this sheet at equal specificity, so a declaration here loses. */
+  --xy-controls-box-shadow: var(--card-shadow);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--segmented-bg);
+  --xy-controls-button-color: var(--ink);
+  --xy-controls-button-color-hover: var(--ink);
+  --xy-controls-button-border-color: var(--hairline);
 }
 
-.react-flow__controls-button {
-  background: var(--surface);
+/* One segment geometry for all five: React Flow's buttons and ours. The border belongs
+   to the container, so a segment is exactly 26px and fills the column's width. */
+.react-flow__controls-button,
+.react-flow__controls .link-mode-control,
+.react-flow__controls .purpose-control {
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  /* One separator per segment, the same for all five. Without it the last two read as
+     one tall segment, which is exactly how the two-owner version looked. */
+  border: 0;
   border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* The floor of the pill: the container's radius and border close it. */
+.react-flow__controls > :last-child {
+  border-bottom: 0;
+}
+
+.react-flow__controls .link-mode-control,
+.react-flow__controls .purpose-control {
+  /* Painted by its value (ADR-0064 fifth amendment); the container paints the chrome. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--value-fill);
+  color: var(--value-ink);
+  cursor: pointer;
 }
 
 .react-flow__controls-button svg {
   fill: var(--ink);
 }
 
+/* React Flow's own buttons hover like the segmented controls elsewhere: ink at 8%.
+   A painted segment below keeps its value on hover instead — the pointer tints, it never
+   repaints, which is the rule the mode controls follow everywhere (ADR-0064). */
 .react-flow__controls-button:hover {
-  background: var(--segmented-bg);
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface));
 }
 
-.react-flow__controls-button:last-child {
-  border-bottom: none;
-}
-
-/*
- * React Flow ships a light control panel. The base rules above lose to its
- * stylesheet when both have the same specificity, so the dark overrides are
- * scoped to `.dark` and repeat the container, button, icon and hover rules.
- */
-.dark .react-flow__controls,
-.dark .react-flow__controls-button {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--hairline);
-}
-
-.dark .react-flow__controls-button svg {
-  fill: var(--ink);
-}
-
-.dark .react-flow__controls-button:hover {
-  background: var(--segmented-bg);
+.react-flow__controls .link-mode-control:hover,
+.react-flow__controls .purpose-control:hover {
+  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
 /*
@@ -2693,52 +2729,13 @@ body {
   }
 }
 
-/* The link tool is the pill's middle segment: same width, same border, square at
-   both ends. The purpose control below it owns the pill's bottom corners, so this
-   one only continues the column (ADR-0064 §11). */
-.link-mode-control {
-  position: absolute;
-  left: 15px;
-  bottom: 31px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 27.33px;
-  height: 26px;
-  margin: 0;
-  padding: 0;
-  /* Painted by its value (ADR-0064 fifth amendment): `data-mode` selects which one,
-     and this rule decides only the geometry and that a value is painted at all. The
-     resting value blends with the bar, so its edge is softened. */
-  border: 1px solid color-mix(in srgb, var(--value-hue) 40%, var(--hairline));
-  border-top: 0;
-  border-radius: 0;
-  background: var(--value-fill);
-  color: var(--value-ink);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* The chip treatments soften their border: a chip is identified by its glyph, and an
-   ink hairline around an ink glyph reads as a filled button that lost its fill. */
-.link-mode-control[data-mode="thread"] {
-  border-color: var(--value-hue);
-}
-
-.link-mode-control:hover {
-  border-color: var(--value-hue);
-  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
-}
-
 /* A held modifier previews on this axis too, with the same dashed edge the purpose
-   control uses: one glance says the key is doing this and a click will not. After
-   `:hover` because the two tie on specificity and the preview must win. */
+   control uses: one glance says the key is doing this and a click will not. An inset
+   outline, not a border — the pill owns the border, and a dashed border on a segment
+   that has none draws nothing. */
 .link-mode-control[data-hint="true"] {
-  border-style: dashed;
-  border-color: var(--ink-muted);
+  outline: 1px dashed var(--ink-muted);
+  outline-offset: -3px;
 }
 
 /* The armed end of a thread reads as "the next click goes here". */

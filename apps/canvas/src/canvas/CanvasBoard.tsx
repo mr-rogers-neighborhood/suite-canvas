@@ -85,6 +85,7 @@ import {
   usePublishLibraryDrag,
 } from "./PeerLibraryDragLayer";
 import { PeerReconnectLayer } from "./PeerReconnectLayer";
+import { PlacementRunBar } from "./PlacementRunBar";
 import { portalSizeForBounds } from "./PortalCard";
 import { PortalNode } from "./PortalNode";
 import { PortalTransitionLayer } from "./PortalTransitionLayer";
@@ -3428,7 +3429,10 @@ export function CanvasBoard() {
           toFlow={(client) => screenToFlowPosition(client)}
         />
         <Background color="var(--rf-dot)" />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false}>
+          <ModeControl engine={placementEngine} />
+          <PurposeControl />
+        </Controls>
         <PresenceLayer />
         <PeerReconnectLayer />
         <PeerLibraryDragLayer />
@@ -3443,8 +3447,7 @@ export function CanvasBoard() {
           boardId={activeBoardId}
         />
       ) : null}
-      <ModeControl engine={placementEngine} />
-      <PurposeControl />
+      <PlacementRunBar engine={placementEngine} />
       <ExplainPanel />
       <StatusCursorLayer />
       <HeldStackCursor engine={placementEngine} />

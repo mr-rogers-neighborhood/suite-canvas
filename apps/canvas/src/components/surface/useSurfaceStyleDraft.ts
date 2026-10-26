@@ -1,6 +1,8 @@
 import type { SurfaceStyle, WorkspaceDocument } from "@suite/graph";
 import { isEmptyStyle, resolveSurfaceStyle } from "@suite/graph";
 import { useCallback } from "react";
+import { matchingRules, type SurfaceSubject } from "../../canvas/rules";
+import { styleProvenance } from "../../canvas/styleUtilities";
 import { useCanvasStore } from "../../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../../store/workspaceStore";
 
@@ -32,6 +34,8 @@ export function useSurfaceStyleDraft(
 ): {
   style: SurfaceStyle | undefined;
   resolved: ReturnType<typeof resolveSurfaceStyle>;
+  /** What an "Inherit" would leave this surface with, named for the reader. */
+  inherited: (utilityId: string) => { label: string; value: unknown } | null;
   patch: (next: SurfaceStyle) => void;
   reset: () => void;
 } {
@@ -87,5 +91,53 @@ export function useSurfaceStyleDraft(
 
   const paintAs = target?.kind === "edge" ? "link" : (target?.kind ?? "card");
 
-  return { style, resolved: resolveSurfaceStyle(style, paintAs), patch, reset };
+  /**
+   * The rung an empty control would fall back to, named.
+   *
+   * "Inherit" used to be a word with no object — a reader could not tell whether they
+   * were inheriting a default, their type's rule or the workspace's. This walks the same
+   * ladder the painter walks (ADR-0071) and reports the source, so the option can read
+   * "Inherit from Concept".
+   */
+  const inherited = useCallback(
+    (utilityId: string) => {
+      if (!target) return null;
+      const subject: SurfaceSubject = {
+        surface: paintAs,
+        ...(target.kind === "card"
+          ? {
+              typeId: snapshot.cards.find((entry) => entry.id === target.id)?.primaryTypeId,
+            }
+          : {}),
+      };
+      const typeNames = new Map(snapshot.types.map((type) => [type.id, type.name]));
+      const rules = matchingRules(subject, workspace.styleRules()).map((rule) => ({
+        style: rule.style,
+        rung:
+          rule.scope.kind === "type"
+            ? ("type" as const)
+            : rule.scope.kind === "global"
+              ? ("global" as const)
+              : ("kind" as const),
+        label:
+          rule.scope.kind === "type"
+            ? (typeNames.get(rule.scope.id ?? "") ?? "this type")
+            : rule.scope.kind === "global"
+              ? "this workspace"
+              : rule.scope.kind === "kind"
+                ? "cards like this"
+                : rule.name,
+      }));
+      const provenance = styleProvenance({ style: undefined, rules, surface: paintAs }).get(
+        utilityId,
+      );
+      if (!provenance || provenance.from === "built-in") {
+        return { label: "the default", value: provenance?.value };
+      }
+      return { label: provenance.label, value: provenance.value };
+    },
+    [paintAs, snapshot, target, workspace],
+  );
+
+  return { style, resolved: resolveSurfaceStyle(style, paintAs), inherited, patch, reset };
 }

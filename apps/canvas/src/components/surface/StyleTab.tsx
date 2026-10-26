@@ -79,8 +79,18 @@ export interface StyleTabProps {
  */
 export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps) {
   const target: StyledSurface = { kind, id };
-  const { style, resolved, patch, reset } = useSurfaceStyleDraft(target, workspace);
+  const { style, resolved, inherited, patch, reset } = useSurfaceStyleDraft(target, workspace);
   const current = style ?? {};
+
+  /**
+   * "Inherit" says where it inherits from once a rule names it — "Inherit from Concept"
+   * rather than a word with no object (ADR-0071). When nothing wider has an opinion it
+   * stays plain, because "Inherit from the default" is longer and says no more.
+   */
+  const inheritLabel = (utilityId: string): string => {
+    const source = inherited(utilityId);
+    return source && source.label !== "the default" ? `Inherit from ${source.label}` : "Inherit";
+  };
 
   // A link is one stroke rather than a box with four sides (ADR-0051 §1), so its
   // editor shows the line and hides what a line cannot have: a silhouette, a
@@ -166,7 +176,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
                 });
               }}
             >
-              <option value="">Inherit</option>
+              <option value="">{inheritLabel("colour")}</option>
               <option value="none">Seamless</option>
               {styleColourRoles.map((role) => (
                 <option key={role} value={role}>
@@ -187,7 +197,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
               update({ ...current, ink: value === "" ? undefined : (value as StyleColourRole) });
             }}
           >
-            <option value="">Inherit</option>
+            <option value="">{inheritLabel("ink")}</option>
             {styleColourRoles.map((role) => (
               <option key={role} value={role}>
                 {roleLabel(role)}

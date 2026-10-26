@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ThemeMode } from "../theme/theme";
 import { useThemeStore } from "../theme/useThemeStore";
+import { AppearanceDialog } from "./AppearanceDialog";
 
 const OPTIONS: Array<{ mode: ThemeMode; label: string }> = [
   { mode: "light", label: "Light" },
@@ -29,11 +30,17 @@ function ThemeIcon({ mode }: { mode: ThemeMode }) {
  * One control, one menu. The icon is a sun in light mode, a crescent in dark,
  * and a half-lit disc for Auto; the transition is skipped when the platform
  * asks for reduced motion.
+ *
+ * The menu also holds the way into **Appearance** ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)):
+ * this is the reader's "how should this look" button already, so it is the honest door to
+ * the preferences that shape the shell — though not the only one, and deliberately not a
+ * settings page.
  */
 export function ThemeToggle() {
   const mode = useThemeStore((state) => state.mode);
   const setMode = useThemeStore((state) => state.setMode);
   const [open, setOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const container = useRef<HTMLDivElement | null>(null);
   const active = OPTIONS.find((option) => option.mode === mode) ?? OPTIONS[2];
 
@@ -69,6 +76,7 @@ export function ThemeToggle() {
       >
         <ThemeIcon mode={mode} />
       </button>
+      {appearanceOpen ? <AppearanceDialog onClose={() => setAppearanceOpen(false)} /> : null}
       {open ? (
         <div role="menu" aria-label="Color theme" data-testid="theme-menu" className="theme-menu">
           {OPTIONS.map((option) => (
@@ -94,6 +102,21 @@ export function ThemeToggle() {
               ) : null}
             </button>
           ))}
+          {/* A separator rather than a fourth radio: this is not a mode. */}
+          <hr className="theme-menu__separator" />
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="theme-appearance"
+            className="theme-menu__item"
+            onClick={() => {
+              setOpen(false);
+              setAppearanceOpen(true);
+            }}
+          >
+            <span aria-hidden="true">{"\u25d1"}</span>
+            <span>Appearance…</span>
+          </button>
         </div>
       ) : null}
     </div>

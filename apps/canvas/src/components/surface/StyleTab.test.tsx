@@ -53,6 +53,42 @@ describe("StyleTab for a box", () => {
     expect(doc.getCard(card.id)?.style?.sides?.left).toBeUndefined();
   });
 
+  it("names the rung an Inherit would fall back to, instead of the bare word", () => {
+    const { doc, card } = seed();
+    // A type rule that paints every card of this card's type: the thing an empty control
+    // actually falls back to, and the thing "Inherit" used to leave unstated (ADR-0071).
+    const typeId = doc.getCard(card.id)?.primaryTypeId;
+    if (!typeId) throw new Error("the seeded card has no type");
+    doc.setStyleRules([
+      {
+        id: "rule-1",
+        name: "Concept paint",
+        order: 0,
+        scope: { kind: "type", id: typeId },
+        style: { surface: "canvas" },
+      },
+    ]);
+    const typeName = doc.getType(typeId)?.name ?? "this type";
+
+    render(<StyleTab kind="card" id={card.id} canEdit />);
+
+    const option = screen
+      .getByTestId("style-surface")
+      .querySelector('option[value=""]') as HTMLOptionElement | null;
+    expect(option?.textContent).toBe(`Inherit from ${typeName}`);
+  });
+
+  it("leaves Inherit plain when no rule has an opinion", () => {
+    const { card } = seed();
+    render(<StyleTab kind="card" id={card.id} canEdit />);
+
+    const option = screen
+      .getByTestId("style-surface")
+      .querySelector('option[value=""]') as HTMLOptionElement | null;
+    // "Inherit from the default" is longer and says no more.
+    expect(option?.textContent).toBe("Inherit");
+  });
+
   it("styles a section through the same editor", () => {
     const { doc, section } = seed();
     render(<StyleTab kind="section" id={section.id} canEdit />);

@@ -2884,3 +2884,123 @@ body {
     0 0 0 2px var(--surface),
     0 0 0 5px color-mix(in srgb, var(--ink) 45%, transparent);
 }
+
+/*
+ * Reader appearance ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ *
+ * The preferences are attributes on `<html>` and the consequence lives here, which is
+ * what makes the preview live: the canvas repaints because its inputs changed, not
+ * because a component re-rendered. A card's own radius still wins — this only supplies
+ * the default the document left unset.
+ */
+.node-card,
+.portal-node {
+  border-radius: var(--reader-card-radius, 12px);
+}
+
+/* Compact trims the air a card spends on padding; it never changes type size, so a
+   compact board stays readable. */
+[data-density="compact"] .node-card__body {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* Plain canvas: the dot grid is the only difference, so nothing else moves. */
+[data-canvas="plain"] .react-flow__background {
+  display: none;
+}
+
+.appearance-dialog {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  width: 260px;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.appearance-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.appearance-dialog__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.appearance-dialog__close,
+.appearance-dialog__reset {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.appearance-dialog__close {
+  padding: 0 6px;
+  line-height: 18px;
+}
+
+.appearance-dialog__note {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.appearance-dialog__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.appearance-dialog__slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.appearance-dialog__value {
+  min-width: 34px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.theme-menu__separator {
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: var(--hairline);
+}
+
+/* Reduced motion is a preference, so it applies even where the OS has not asked.
+   `!important` is the point rather than laziness: a component's own transition rule is
+   more specific than any selector that catches every element, and a preference that
+   loses to one of them is not a preference. */
+/* biome-ignore-start lint/complexity/noImportantStyles: a reader preference must beat every component transition */
+/* biome-ignore lint/style/noDescendingSpecificity: this rule is deliberately broader than everything above it */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: end of the preference override */

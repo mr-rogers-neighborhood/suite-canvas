@@ -25,12 +25,11 @@ describe("storage panel", () => {
     render(<StoragePanel workspaceId="ws-1" />);
     expect(screen.getByTestId("storage-status")).toHaveAttribute("data-persist", "denied");
 
-    // The pill is a status even when the browser will not promise to keep the copy.
+    // The status line is a status even when the browser will not promise to keep the copy.
     expect(screen.getByTestId("storage-status")).toHaveTextContent("Saved on this device");
     expect(screen.getByTestId("storage-status")).not.toHaveTextContent("temporarily");
 
-    fireEvent.click(screen.getByTestId("storage-status"));
-    // The risk lives here, in the panel, with the action that fixes it.
+    // The risk lives beside it, with the action that fixes it.
     expect(screen.getByTestId("storage-persist")).toHaveTextContent("not promised to keep");
     expect(screen.getByTestId("storage-headline")).toHaveTextContent(
       "Sign in to keep this workspace anywhere",
@@ -43,7 +42,6 @@ describe("storage panel", () => {
     await requestPersistence({ persist: async () => true, persisted: async () => true });
 
     render(<StoragePanel workspaceId="ws-1" />);
-    fireEvent.click(screen.getByTestId("storage-status"));
 
     expect(screen.getByTestId("storage-persist")).toHaveTextContent("agreed to keep the copy");
     expect(screen.queryByTestId("storage-warning")).not.toBeInTheDocument();
@@ -52,7 +50,6 @@ describe("storage panel", () => {
 
   it("publishes the offline scope in the UI", () => {
     render(<StoragePanel workspaceId="ws-1" />);
-    fireEvent.click(screen.getByTestId("storage-status"));
     expect(screen.getByTestId("offline-scope")).toHaveTextContent(
       "Offline means the open tab keeps working",
     );
@@ -68,7 +65,6 @@ describe("storage panel", () => {
     render(<StoragePanel workspaceId="ws-1" />);
     await waitFor(() => expect(screen.getByTestId("storage-status")).toHaveTextContent("full"));
 
-    fireEvent.click(screen.getByTestId("storage-status"));
     expect(screen.getByTestId("quota-warning")).toHaveRole("alert");
     expect(screen.getByTestId("quota-warning")).toHaveTextContent("out of quota");
     expect(screen.getByTestId("storage-export")).toBeInTheDocument();
@@ -103,7 +99,6 @@ describe("storage panel and the account", () => {
     const onSignIn = vi.fn();
 
     render(<StoragePanel workspaceId="ws-1" signedIn={false} onSignIn={onSignIn} />);
-    fireEvent.click(screen.getByTestId("storage-status"));
 
     expect(screen.getByTestId("storage-headline")).toHaveTextContent(
       "Sign in to keep this workspace anywhere",
@@ -117,7 +112,6 @@ describe("storage panel and the account", () => {
     // from a gesture is the point rather than a wasted press.
     await requestPersistence({ persist: async () => false, persisted: async () => false });
     const { unmount } = render(<StoragePanel workspaceId="ws-1" />);
-    fireEvent.click(screen.getByTestId("storage-status"));
     expect(screen.getByTestId("storage-request-persist")).toHaveTextContent(
       "Keep a copy on this device",
     );
@@ -126,14 +120,24 @@ describe("storage panel and the account", () => {
     // Once the browser has agreed, there is nothing left to ask for.
     await requestPersistence({ persist: async () => true, persisted: async () => true });
     render(<StoragePanel workspaceId="ws-1" />);
-    fireEvent.click(screen.getByTestId("storage-status"));
     expect(screen.queryByTestId("storage-request-persist")).not.toBeInTheDocument();
   });
 
   it("shows no sign-in action when nothing is wired to it", async () => {
     await requestPersistence({ persist: async () => false, persisted: async () => false });
     render(<StoragePanel workspaceId="ws-1" />);
-    fireEvent.click(screen.getByTestId("storage-status"));
+    expect(screen.queryByTestId("storage-sign-in")).not.toBeInTheDocument();
+  });
+
+  it("stays quiet for an anonymous reader while another device is in the room", async () => {
+    // The sign-in banner asks for something because this browser may be the only
+    // copy. In a live room it is not, and the author's note was explicit that
+    // warnings during collaboration are disruptive.
+    await requestPersistence({ persist: async () => false, persisted: async () => false });
+    render(<StoragePanel workspaceId="ws-1" synced />);
+
+    expect(screen.getByTestId("storage-status")).toHaveTextContent("Saved here and synced");
+    expect(screen.queryByTestId("storage-warning")).not.toBeInTheDocument();
     expect(screen.queryByTestId("storage-sign-in")).not.toBeInTheDocument();
   });
 
@@ -142,7 +146,6 @@ describe("storage panel and the account", () => {
     const onSignIn = vi.fn();
 
     render(<StoragePanel workspaceId="ws-1" signedIn onSignIn={onSignIn} />);
-    fireEvent.click(screen.getByTestId("storage-status"));
 
     expect(screen.queryByTestId("storage-sign-in")).not.toBeInTheDocument();
     expect(screen.getByTestId("storage-headline")).toHaveTextContent("synced");
@@ -151,7 +154,6 @@ describe("storage panel and the account", () => {
   it("says nothing at all when the account's copy makes the browser's copy a footnote", async () => {
     await requestPersistence({ persist: async () => true, persisted: async () => true });
     render(<StoragePanel workspaceId="ws-1" signedIn />);
-    fireEvent.click(screen.getByTestId("storage-status"));
 
     expect(screen.queryByTestId("storage-headline")).not.toBeInTheDocument();
     expect(screen.getByTestId("storage-status")).toHaveTextContent("Saved");

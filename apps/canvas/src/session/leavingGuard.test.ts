@@ -17,26 +17,115 @@ import { storageLadder } from "./storageLadder";
  * anonymous, no-promise one — and it is shown once, until the work changes. Everything else is copy.
  */
 
-const ladderFor = (persist: PersistState, signedIn: boolean, failing = false) =>
-  storageLadder({ persist, signedIn, failing });
+const ladderFor = (persist: PersistState, signedIn: boolean, failing = false, synced = false) =>
+  storageLadder({ persist, signedIn, synced, failing });
 
 describe("the leave guard", () => {
   // One row per rung a person can actually reach, so an alarm added to the wrong rung
   // fails here instead of in someone's face on the way to the launcher.
   it.each([
-    { persist: "unknown", signedIn: false, failing: false, warn: true, rung: "banner" },
-    { persist: "denied", signedIn: false, failing: false, warn: true, rung: "banner" },
-    { persist: "unsupported", signedIn: false, failing: false, warn: true, rung: "banner" },
-    { persist: "persisted", signedIn: false, failing: false, warn: false, rung: "quiet" },
-    { persist: "unknown", signedIn: true, failing: false, warn: false, rung: "quiet" },
-    { persist: "denied", signedIn: true, failing: false, warn: false, rung: "quiet" },
-    { persist: "persisted", signedIn: true, failing: false, warn: false, rung: "nothing" },
-    { persist: "unknown", signedIn: false, failing: true, warn: false, rung: "blocking" },
-    { persist: "persisted", signedIn: true, failing: true, warn: false, rung: "blocking" },
+    {
+      persist: "unknown",
+      signedIn: false,
+      synced: false,
+      failing: false,
+      warn: true,
+      rung: "banner",
+    },
+    {
+      persist: "denied",
+      signedIn: false,
+      synced: false,
+      failing: false,
+      warn: true,
+      rung: "banner",
+    },
+    {
+      persist: "unsupported",
+      signedIn: false,
+      synced: false,
+      failing: false,
+      warn: true,
+      rung: "banner",
+    },
+    {
+      persist: "persisted",
+      signedIn: false,
+      synced: false,
+      failing: false,
+      warn: false,
+      rung: "quiet",
+    },
+    // Someone else is in the room, so this browser is not the only copy: the warning,
+    // which exists for exactly that case, does not apply.
+    {
+      persist: "unknown",
+      signedIn: false,
+      synced: true,
+      failing: false,
+      warn: false,
+      rung: "quiet",
+    },
+    {
+      persist: "denied",
+      signedIn: false,
+      synced: true,
+      failing: false,
+      warn: false,
+      rung: "quiet",
+    },
+    {
+      persist: "unknown",
+      signedIn: true,
+      synced: false,
+      failing: false,
+      warn: false,
+      rung: "quiet",
+    },
+    {
+      persist: "denied",
+      signedIn: true,
+      synced: false,
+      failing: false,
+      warn: false,
+      rung: "quiet",
+    },
+    {
+      persist: "persisted",
+      signedIn: true,
+      synced: false,
+      failing: false,
+      warn: false,
+      rung: "nothing",
+    },
+    {
+      persist: "unknown",
+      signedIn: false,
+      synced: false,
+      failing: true,
+      warn: false,
+      rung: "blocking",
+    },
+    {
+      persist: "denied",
+      signedIn: false,
+      synced: true,
+      failing: true,
+      warn: false,
+      rung: "blocking",
+    },
+    {
+      persist: "persisted",
+      signedIn: true,
+      synced: false,
+      failing: true,
+      warn: false,
+      rung: "blocking",
+    },
   ] as const)(
-    "$rung for persist=$persist signedIn=$signedIn failing=$failing",
-    ({ persist, signedIn, failing, warn, rung }) => {
-      const ladder = ladderFor(persist, signedIn, failing);
+    "$rung for persist=$persist signedIn=$signedIn synced=$synced failing=$failing",
+    ({ persist, signedIn, synced, failing, warn, rung }) => {
+      const ladder = ladderFor(persist, signedIn, failing, synced);
 
       expect(ladder.rung).toBe(rung);
       // The rung is the only input: the guard asks the ladder, and never a second rule.

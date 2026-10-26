@@ -29,12 +29,21 @@ export interface StoragePanelProps {
    * tells the truth ([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §6).
    */
   signedIn?: boolean;
+  /**
+   * Whether the relay holds this workspace right now. It is the input that keeps the
+   * panel quiet while two people are working in it.
+   */
+  synced?: boolean;
   /** Opens the sign-in dialog the banner offers. Absent when there is no dialog to open. */
   onSignIn?: (() => void) | undefined;
 }
 
-export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: StoragePanelProps) {
-  const [open, setOpen] = useState(false);
+export function StoragePanel({
+  workspaceId,
+  signedIn = false,
+  synced = false,
+  onSignIn,
+}: StoragePanelProps) {
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
   const [exported, setExported] = useState<"idle" | "done" | "failed">("idle");
   const [crash, setCrash] = useState(readCrashConsent);
@@ -44,9 +53,8 @@ export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: Storag
   const lastError = useDiagnosticsStore((state) => state.lastError);
 
   useEffect(() => {
-    if (!open) return;
     void refreshEstimate();
-  }, [open]);
+  }, []);
 
   const copy = useCallback(async () => {
     const text = buildDiagnostics({
@@ -82,155 +90,136 @@ export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: Storag
     });
   }, []);
 
-  const ladder = useStorageLadder(signedIn);
+  const ladder = useStorageLadder(signedIn, synced);
   const atRisk = ladder.rung === "banner" || ladder.rung === "blocking";
 
   return (
-    <div className="storage-host pointer-events-auto relative" data-testid="storage-panel-host">
-      <button
-        type="button"
+    <div data-testid="storage-panel" className="text-[12px]">
+      <h2 className="text-[13px] font-semibold text-[var(--ink)]">This device</h2>
+
+      <p
         data-testid="storage-status"
         data-persist={persist}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        title="Storage and offline scope"
-        className={`rounded-full border px-2.5 py-1 text-[11px] ${
-          ladder.alarm
-            ? "border-amber-500/60 text-amber-700 dark:text-amber-300"
-            : "border-[var(--hairline)] text-[var(--ink-muted)]"
+        className={`mt-2 text-[11px] ${
+          ladder.alarm ? "text-amber-700 dark:text-amber-300" : "text-[var(--ink-muted)]"
         }`}
       >
         {ladder.pill}
-      </button>
+      </p>
 
-      {open ? (
-        <div
-          data-testid="storage-panel"
-          role="dialog"
-          aria-label="Storage"
-          className="absolute top-8 right-0 z-50 w-[320px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 text-[12px] shadow-lg"
-        >
-          <h2 className="text-[13px] font-semibold text-[var(--ink)]">Storage</h2>
+      {ladder.headline === null ? null : (
+        <p data-testid="storage-headline" className="mt-2 leading-5 text-[var(--ink)]">
+          {ladder.headline}
+        </p>
+      )}
+      <p data-testid="storage-persist" className="mt-2 leading-5 text-[var(--ink-muted)]">
+        {ladder.detail}
+      </p>
 
-          {ladder.headline === null ? null : (
-            <p data-testid="storage-headline" className="mt-2 leading-5 text-[var(--ink)]">
-              {ladder.headline}
-            </p>
-          )}
-          <p data-testid="storage-persist" className="mt-2 leading-5 text-[var(--ink-muted)]">
-            {ladder.detail}
-          </p>
+      <p data-testid="storage-estimate" className="mt-2 text-[var(--ink-muted)]">
+        Used on this device: <span className="font-mono">{formatEstimate(estimate)}</span>
+      </p>
 
-          <p data-testid="storage-estimate" className="mt-2 text-[var(--ink-muted)]">
-            Used on this device: <span className="font-mono">{formatEstimate(estimate)}</span>
-          </p>
-
-          {/* The banner's one action, next to the sentence that asked for it. */}
-          {ladder.action === "sign-in" ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {onSignIn === undefined ? null : (
-                <button
-                  type="button"
-                  data-testid="storage-sign-in"
-                  onClick={onSignIn}
-                  className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-                >
-                  Sign in
-                </button>
-              )}
-            </div>
-          ) : null}
-
-          {atRisk ? (
-            <p
-              data-testid="storage-warning"
-              className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 leading-5 text-amber-800 dark:text-amber-200"
-            >
-              Export a copy to keep this workspace independent of this browser's storage.
-            </p>
-          ) : null}
-
-          {quota ? (
-            <p
-              data-testid="quota-warning"
-              role="alert"
-              className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1.5 leading-5 text-red-800 dark:text-red-200"
-            >
-              {quota.message}
-            </p>
-          ) : null}
-
-          <p
-            data-testid="offline-scope"
-            className="mt-3 border-t border-[var(--hairline)] pt-2 leading-5 text-[var(--ink-muted)]"
-          >
-            {OFFLINE_SCOPE}
-          </p>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {atRisk || quota ? (
-              <button
-                type="button"
-                data-testid="storage-export"
-                onClick={() => void exportCopy()}
-                className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-              >
-                {exported === "done"
-                  ? "Exported"
-                  : exported === "failed"
-                    ? "Export unavailable"
-                    : "Export copy"}
-              </button>
-            ) : null}
+      {/* The banner's one action, next to the sentence that asked for it. */}
+      {ladder.action === "sign-in" ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {onSignIn === undefined ? null : (
             <button
               type="button"
-              data-testid="storage-copy-diagnostics"
-              onClick={() => void copy()}
+              data-testid="storage-sign-in"
+              onClick={onSignIn}
               className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
             >
-              {copied === "done"
-                ? "Copied"
-                : copied === "failed"
-                  ? "Copy failed"
-                  : "Copy diagnostics"}
+              Sign in
             </button>
-            {/*
+          )}
+        </div>
+      ) : null}
+
+      {atRisk ? (
+        <p
+          data-testid="storage-warning"
+          className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 leading-5 text-amber-800 dark:text-amber-200"
+        >
+          Export a copy to keep this workspace independent of this browser's storage.
+        </p>
+      ) : null}
+
+      {quota ? (
+        <p
+          data-testid="quota-warning"
+          role="alert"
+          className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1.5 leading-5 text-red-800 dark:text-red-200"
+        >
+          {quota.message}
+        </p>
+      ) : null}
+
+      <p
+        data-testid="offline-scope"
+        className="mt-3 border-t border-[var(--hairline)] pt-2 leading-5 text-[var(--ink-muted)]"
+      >
+        {OFFLINE_SCOPE}
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {atRisk || quota ? (
+          <button
+            type="button"
+            data-testid="storage-export"
+            onClick={() => void exportCopy()}
+            className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            {exported === "done"
+              ? "Exported"
+              : exported === "failed"
+                ? "Export unavailable"
+                : "Export copy"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          data-testid="storage-copy-diagnostics"
+          onClick={() => void copy()}
+          className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+        >
+          {copied === "done" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy diagnostics"}
+        </button>
+        {/*
               A genuine click is what the browser weighs, so this is where durability is
               actually won: the automatic attempt on first edit is often declined because
               there was no intent behind it. Offered for `denied` as well as `unknown` —
               engagement can change the answer — and never for `unsupported`, where the
               promise cannot be made at all.
             */}
-            {persist === "unknown" || persist === "denied" ? (
-              <button
-                type="button"
-                data-testid="storage-request-persist"
-                onClick={() => void requestPersistence().then(() => refreshEstimate())}
-                title="Ask this browser to keep the copy on this device"
-                className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
-              >
-                Keep a copy on this device
-              </button>
-            ) : null}
-          </div>
+        {persist === "unknown" || persist === "denied" ? (
+          <button
+            type="button"
+            data-testid="storage-request-persist"
+            onClick={() => void requestPersistence().then(() => refreshEstimate())}
+            title="Ask this browser to keep the copy on this device"
+            className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            Keep a copy on this device
+          </button>
+        ) : null}
+      </div>
 
-          {crashReportingAvailable() ? (
-            <label className="mt-3 flex items-start gap-2 border-t border-[var(--hairline)] pt-2 leading-5 text-[var(--ink-muted)]">
-              <input
-                type="checkbox"
-                data-testid="crash-opt-in"
-                checked={crash}
-                onChange={(event) => void toggleCrash(event.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Send crash reports to this deployment's GlitchTip. Reports carry the build, route,
-                browser/OS, stack trace and a hashed workspace id — never card text, attachments,
-                document bytes, share tokens or your owner key.
-              </span>
-            </label>
-          ) : null}
-        </div>
+      {crashReportingAvailable() ? (
+        <label className="mt-3 flex items-start gap-2 border-t border-[var(--hairline)] pt-2 leading-5 text-[var(--ink-muted)]">
+          <input
+            type="checkbox"
+            data-testid="crash-opt-in"
+            checked={crash}
+            onChange={(event) => void toggleCrash(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            Send crash reports to this deployment's GlitchTip. Reports carry the build, route,
+            browser/OS, stack trace and a hashed workspace id — never card text, attachments,
+            document bytes, share tokens or your owner key.
+          </span>
+        </label>
       ) : null}
     </div>
   );

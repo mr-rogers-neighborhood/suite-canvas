@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectPeersConnected } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 import { cards, workspaceIdFactory } from "./support";
 
@@ -19,18 +20,42 @@ test("an anonymous workspace says where the work is, never that it is temporary"
   await page.goto(withOwnerKey(`/?workspace=${id("anonymous")}`));
   await expect(cards(page)).toHaveCount(2);
 
-  const status = page.getByTestId("storage-status");
-  await expect(status).toBeVisible();
-  await expect(status).toHaveText(/^Saved on this device$/);
-  await expect(status).not.toHaveText(/temporary/i);
-
-  // The uncertainty lives in the panel, with an action beside it.
+  // One status in the chrome, and it answers "is anyone else here" — everything
+  // about this device's own copy is one press away under the same control.
+  const status = page.getByTestId("sync-status");
+  await expect(status).toHaveText(/Synced/);
   await status.click();
-  await expect(page.getByTestId("storage-panel")).toBeVisible();
+  await expect(page.getByTestId("sync-panel")).toBeVisible();
+
+  const copy = page.getByTestId("storage-status");
+  await expect(copy).toBeVisible();
+  await expect(copy).toHaveText(/^Saved on this device$/);
+  await expect(copy).not.toHaveText(/temporary/i);
   await expect(page.getByTestId("storage-headline")).toContainText(
     "Sign in to keep this workspace anywhere",
   );
   await expect(page.getByTestId("storage-persist")).not.toBeEmpty();
+});
+
+test("goes quiet about this device once someone else is in the room", async ({ browser }) => {
+  const url = withOwnerKey(`/?workspace=${id("shared-copy")}-${crypto.randomUUID()}`);
+  const context = await browser.newContext();
+  try {
+    const peer = await context.newPage();
+    await peer.goto(url);
+    const me = await context.newPage();
+    await me.goto(url);
+    await expectPeersConnected(me, peer);
+
+    // Two copies exist, so this browser's own copy is not the only one: the warning
+    // that exists for exactly that case gives way to one calm line.
+    await me.getByTestId("sync-status").click();
+    await expect(me.getByTestId("storage-status")).toHaveText("Saved here and synced");
+    await expect(me.getByTestId("storage-warning")).toHaveCount(0);
+    await expect(me.getByTestId("storage-sign-in")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });
 
 test("a local-only reader is warned before leaving for the launcher", async ({ page }) => {

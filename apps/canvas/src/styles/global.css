@@ -2603,10 +2603,6 @@ body {
   .workspace-name {
     max-width: 110px;
   }
-
-  .storage-host {
-    display: none;
-  }
 }
 
 /*

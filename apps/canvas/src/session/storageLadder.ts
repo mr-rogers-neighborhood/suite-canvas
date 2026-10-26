@@ -15,12 +15,16 @@ import type { PersistState } from "../storage/durability";
  * - `quiet`    — persisted without an account: one calm line, no nagging.
  * - `banner`   — no account and no promise of durability: the only rung that asks for something.
  *
- * **The pill is a status, never a warning** (author's note, ADR-0025 amendment). "Saved
+ * **The status line is a status, never a warning** (author's note, ADR-0025 amendment). "Saved
  * temporarily" asked a reader to work out whether their work still existed, and answered
- * nothing: the work *is* saved on every edit. So the pill says where — "Saved on this
- * device" — and the one thing that is genuinely uncertain, how firmly the browser will keep
- * it, is a sentence in the panel with room to explain it and an action to fix it. The single
- * exception is `blocking`, where the risk is present tense and hiding it would be a lie.
+ * nothing: the work *is* saved on every edit. So the line says where — "Saved on this device" —
+ * and the one thing that is genuinely uncertain, how firmly the browser will keep it, is a
+ * sentence with room to explain it and an action to fix it. The single exception is `blocking`,
+ * where the risk is present tense and hiding it would be a lie.
+ *
+ * The line lives inside the sync panel rather than beside it (ADR-0064 amendment): the chrome
+ * answers "is anyone else here, and is it going anywhere", and everything about *this* device is
+ * one press away under the same control.
  *
  * `signedIn` is a parameter rather than a store read so the ladder is testable before the session
  * exists, and so exactly one place decides what an account changes about the copy.
@@ -31,15 +35,22 @@ export interface StorageLadderInput {
   persist: PersistState;
   /** Whether this device has an account behind it. */
   signedIn: boolean;
+  /**
+   * Whether the relay holds this workspace right now, so a copy exists that this
+   * browser cannot lose. It is what lets the ladder stay quiet while two people are
+   * working: a warning about this device's storage is noise when the work is in the
+   * room (author's note, ADR-0025 amendment).
+   */
+  synced: boolean;
   /** Whether a write failed just now (quota exhausted, storage denied). */
   failing: boolean;
 }
 
 export interface StorageLadder {
   rung: StorageRung;
-  /** What the header pill reads. Short, because it lives in the chrome. */
+  /** What this device can claim about the copy. A line in the status panel, not chrome. */
   pill: string;
-  /** Whether the pill should look like a warning. */
+  /** Whether the status line should look like a warning. */
   alarm: boolean;
   /** One sentence a person would say, or `null` when there is nothing worth saying. */
   headline: string | null;
@@ -64,7 +75,7 @@ const DETAIL: Record<PersistState, string> = {
 };
 
 export function storageLadder(input: StorageLadderInput): StorageLadder {
-  const { persist, signedIn, failing } = input;
+  const { persist, signedIn, synced, failing } = input;
   const detail = DETAIL[persist];
 
   if (failing) {
@@ -105,16 +116,29 @@ export function storageLadder(input: StorageLadderInput): StorageLadder {
         detail,
         action: "none",
       }
-    : {
-        rung: "banner",
-        // The same pill as the durable case: where the work is does not change because the
-        // browser has not promised to keep it, and a different pill here was the hedge.
-        pill: "Saved on this device",
-        alarm: false,
-        // The act, not the threat. What can go wrong is the panel's sentence, where there is
-        // room for it and a button beside it.
-        headline: "Sign in to keep this workspace anywhere.",
-        detail,
-        action: "sign-in",
-      };
+    : synced
+      ? {
+          // Someone else is in the room, so the browser clearing its own copy costs
+          // nothing: there is a second one, and asking a collaborating reader to
+          // sign in or export while they work is the interruption the author called
+          // out. This is the rung the banner gives way to.
+          rung: "quiet",
+          pill: "Saved here and synced",
+          alarm: false,
+          headline: "Another device in this room has a copy, so this one can clear its own safely.",
+          detail,
+          action: "none",
+        }
+      : {
+          rung: "banner",
+          // The same pill as the durable case: where the work is does not change because the
+          // browser has not promised to keep it, and a different pill here was the hedge.
+          pill: "Saved on this device",
+          alarm: false,
+          // The act, not the threat. What can go wrong is the panel's sentence, where there is
+          // room for it and a button beside it.
+          headline: "Sign in to keep this workspace anywhere.",
+          detail,
+          action: "sign-in",
+        };
 }

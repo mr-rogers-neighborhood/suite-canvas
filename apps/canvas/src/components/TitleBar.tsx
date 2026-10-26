@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -7,11 +7,16 @@ export type TitleBarRole = "editor" | "viewer";
 export interface TitleBarProps {
   status: ConnectionStatus;
   /**
-   * Present on a share link: the connected slot then names what the reader can
-   * do instead of claiming a live editing session.
+   * Present on a share link. It is not a sync state, so it reads inside the status
+   * panel rather than in the chrome, which answers "is anyone else here".
    */
   role?: TitleBarRole;
   peerCount?: number;
+  /**
+   * What this device can say about its own copy, shown under the sync indicator.
+   * Absent when the host has no storage surface to offer.
+   */
+  storage?: React.ReactNode;
   /** The workspace's own label; a share passes its scope label instead. */
   workspaceName?: string;
   canRenameWorkspace?: boolean;
@@ -32,13 +37,28 @@ export interface TitleBarProps {
 }
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connected: "Live",
+  connected: "Synced",
   connecting: "Syncing",
-  // Back from offline and pushing the local edits; the same amber as a first
-  // sync, because it is the same "catching up" state.
-  rejoining: "Reconnecting",
+  // Back from offline and pushing the local edits: the same word as a first sync,
+  // because it is the same "catching up" state, and the panel says which one it is.
+  rejoining: "Syncing",
   disconnected: "Offline",
 };
+
+/** The room, in one sentence: how many people, and whether it is going anywhere. */
+function roomSentence(status: ConnectionStatus, peerCount: number, role?: TitleBarRole): string {
+  if (status === "disconnected") {
+    return "Working offline. This tab keeps working; a reload will not.";
+  }
+  if (status === "connecting") return "Connecting to the relay.";
+  if (status === "rejoining") return "Back online, catching up with the room.";
+  if (role !== undefined) {
+    return role === "viewer"
+      ? "You are viewing this workspace."
+      : "You are editing this workspace.";
+  }
+  return peerCount === 0 ? "You are the only one here." : `${peerCount + 1} here, including you.`;
+}
 
 const STATUS_DOT: Record<ConnectionStatus, string> = {
   connected: "bg-emerald-500",
@@ -51,6 +71,7 @@ export function TitleBar({
   status,
   role,
   peerCount = 0,
+  storage,
   workspaceName,
   canRenameWorkspace = false,
   onRenameWorkspace,
@@ -62,12 +83,26 @@ export function TitleBar({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(workspaceName ?? "");
   const [error, setError] = useState<string | null>(null);
-  const statusLabel =
-    status === "connected" && role
-      ? role === "viewer"
-        ? "Viewer"
-        : "Editor"
-      : STATUS_LABEL[status];
+  const [statusOpen, setStatusOpen] = useState(false);
+  const statusRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!statusOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!statusRef.current?.contains(event.target as Node)) setStatusOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setStatusOpen(false);
+    };
+    // Capture, so a press on the board closes the panel even though React Flow
+    // claims the press for the canvas.
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [statusOpen]);
 
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
@@ -172,15 +207,39 @@ export function TitleBar({
       ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-3">
-        <span
-          data-testid="sync-status"
-          data-role={role}
-          className="inline-flex h-6 items-center gap-1.5 text-[11px] leading-none text-[var(--ink-muted)]"
-        >
-          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
-          {statusLabel}
-          {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
-        </span>
+        <div className="relative" ref={statusRef}>
+          <button
+            type="button"
+            data-testid="sync-status"
+            data-status={status}
+            data-role={role}
+            aria-expanded={statusOpen}
+            aria-haspopup="dialog"
+            title="Sync, people and storage"
+            className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={() => setStatusOpen((value) => !value)}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
+            {STATUS_LABEL[status]}
+            {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
+          </button>
+          {statusOpen ? (
+            <div
+              data-testid="sync-panel"
+              role="dialog"
+              aria-label="Sync and storage"
+              className="absolute top-7 right-0 z-50 w-[320px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 text-[12px] shadow-lg"
+            >
+              <h2 className="text-[13px] font-semibold text-[var(--ink)]">Sync</h2>
+              <p data-testid="sync-room" className="mt-2 leading-5 text-[var(--ink)]">
+                {roomSentence(status, peerCount, role)}
+              </p>
+              {storage ? (
+                <div className="mt-3 border-t border-[var(--hairline)] pt-3">{storage}</div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {actions}
         <ThemeToggle />
       </div>

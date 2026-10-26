@@ -235,7 +235,9 @@ test("a selection link projects exactly the shared cards and stays a snapshot", 
   await page.getByTestId("share-close").click();
 
   const viewer = await openViewer(browser, link);
-  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+  await expect(viewer.getByTestId("sync-status")).toHaveAttribute("data-role", "viewer", {
+    timeout: 15_000,
+  });
   await expectCardsInView(viewer, 2);
   const visible = viewer.locator('[data-testid="node-card"]');
   await expect(visible.filter({ hasText: "Shared A" })).toHaveCount(1);
@@ -291,7 +293,9 @@ test("a reference outside a projection reads as not shared, not unavailable", as
   await page.getByTestId("share-close").click();
 
   const viewer = await openViewer(browser, link);
-  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+  await expect(viewer.getByTestId("sync-status")).toHaveAttribute("data-role", "viewer", {
+    timeout: 15_000,
+  });
   await expectCardsInView(viewer, 1);
   const visible = viewer.locator('[data-testid="node-card"]');
   await expect(visible.filter({ hasText: "Subject card" })).toHaveCount(1);

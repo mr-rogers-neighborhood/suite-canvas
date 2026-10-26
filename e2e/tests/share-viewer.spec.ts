@@ -102,7 +102,9 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
   await page.getByTestId("share-close").click();
 
   const viewer = await openViewer(browser, link);
-  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+  await expect(viewer.getByTestId("sync-status")).toHaveAttribute("data-role", "viewer", {
+    timeout: 15_000,
+  });
   // Projections are built asynchronously; the card arrives when the room does.
   const visible = viewer.locator('[data-testid="node-card"]');
   await expect(visible).toHaveCount(1, { timeout: 15_000 });
@@ -163,7 +165,9 @@ test("card viewer opens its inspector and keeps out-of-share links inert", async
   await page.getByTestId("share-close").click();
 
   const viewer = await openViewer(browser, link);
-  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+  await expect(viewer.getByTestId("sync-status")).toHaveAttribute("data-role", "viewer", {
+    timeout: 15_000,
+  });
   const inspector = viewer.getByTestId("card-inspector");
   await expect(inspector).toBeVisible({ timeout: 15_000 });
   await expect(inspector).toContainText("Shared card");
@@ -217,7 +221,9 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   await page.getByTestId("share-close").click();
 
   const viewer = await openViewer(browser, link);
-  await expect(viewer.getByTestId("sync-status")).toHaveText(/Viewer/, { timeout: 15_000 });
+  await expect(viewer.getByTestId("sync-status")).toHaveAttribute("data-role", "viewer", {
+    timeout: 15_000,
+  });
 
   // The viewer joins the real workspace room: every board is reachable.
   await expect(boardTabs(viewer)).toHaveCount(2);
@@ -231,6 +237,10 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
 
   // Presence works for a viewer: the owner is another peer in the room.
   await expect(viewer.getByTestId("sync-status")).toContainText("here", { timeout: 15_000 });
+  // And the panel under the same control says what this share lets them do.
+  await viewer.getByTestId("sync-status").click();
+  await expect(viewer.getByTestId("sync-room")).toContainText("viewing this workspace");
+  await viewer.keyboard.press("Escape");
 
   // No management or editing chrome.
   await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);

@@ -423,7 +423,12 @@ function WorkspaceShell({
   // The leave guard ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md)
   // amendment). `banner` is the ladder's own answer — anonymous, and no promise
   // that this browser will keep the copy — so it is the only condition here.
-  const ladder = useStorageLadder(signedIn);
+  // Whether *another* device is in the room right now, which is what lets the ladder
+  // stay quiet while two people work: a warning about this device's storage is noise
+  // once a second copy exists (author's note, ADR-0025 amendment). A socket of our
+  // own is not enough — a single reader alone in a workspace is still the only copy.
+  const inRoom = !standalone && peerCount > 0;
+  const ladder = useStorageLadder(signedIn, inRoom);
   const leavingGuard = useRef(createLeavingGuard());
   // Set synchronously by a navigation the reader chose, so the native prompt does
   // not ask again during the unload that gesture just started.
@@ -1201,6 +1206,16 @@ function WorkspaceShell({
           status={standalone ? "disconnected" : status}
           {...(share ? { role: share.role } : {})}
           peerCount={standalone ? 0 : peerCount}
+          // Everything about *this* device's copy lives under the same control that
+          // says who else is here (ADR-0064 amendment): one status, one press.
+          storage={
+            <StoragePanel
+              workspaceId={workspaceId}
+              signedIn={signedIn}
+              synced={inRoom}
+              onSignIn={openSignIn}
+            />
+          }
           workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
           canRenameWorkspace={!share && !readOnly}
           onRenameWorkspace={(name) => {
@@ -1241,7 +1256,6 @@ function WorkspaceShell({
                 ) : null}
                 {/* A standalone build has no server, so it has no accounts to offer. */}
                 {standalone ? null : <SignInEntry />}
-                <StoragePanel workspaceId={workspaceId} signedIn={signedIn} onSignIn={openSignIn} />
               </>
             )
           }

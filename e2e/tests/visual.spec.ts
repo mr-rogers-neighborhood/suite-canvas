@@ -212,7 +212,7 @@ test.describe("visual: app", () => {
     await expect(page.getByTestId("canvas-board")).toBeVisible({ timeout: 30_000 });
     await expect(cards(page)).toHaveCount(2, { timeout: 30_000 });
     await expect(page.locator(".app-canvas")).toHaveAttribute("data-ready", "true");
-    await expect(page.getByTestId("sync-status")).toHaveText("Live");
+    await expect(page.getByTestId("sync-status")).toHaveText("Synced");
   }
 
   test("board with a section and a connector after Fit View", async ({ page }) => {

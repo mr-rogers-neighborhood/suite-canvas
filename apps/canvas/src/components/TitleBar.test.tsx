@@ -7,32 +7,70 @@ import { TitleBar } from "./TitleBar";
 const bar = (props: Parameters<typeof TitleBar>[0]) => render(<TitleBar {...props} />);
 
 describe("TitleBar", () => {
-  it("names the role once a share is connected", () => {
+  it("says Synced, and puts what the share allows in the panel", () => {
     bar({ status: "connected", role: "viewer" });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("Viewer");
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Synced");
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("viewing this workspace");
   });
 
-  it("shows Editor for an editable share", () => {
+  it("says editing for an editable share", () => {
     bar({ status: "connected", role: "editor" });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("Editor");
+    fireEvent.click(screen.getByTestId("sync-status"));
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("editing this workspace");
   });
 
-  it("keeps the connection words while syncing, rejoining or offline", () => {
+  it("keeps the connection words to three: Synced, Syncing, Offline", () => {
     bar({ status: "connecting", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing");
 
     cleanup();
     bar({ status: "rejoining", role: "viewer" });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("Reconnecting");
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing");
 
     cleanup();
     bar({ status: "disconnected", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Offline");
   });
 
-  it("still says Live outside a share", () => {
+  it("says Synced outside a share too", () => {
     bar({ status: "connected" });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("Live");
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Synced");
+  });
+
+  it("counts the people in the room", () => {
+    bar({ status: "connected", peerCount: 2 });
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("3 here");
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("3 here, including you");
+  });
+
+  it("keeps everything about this device under the same control", () => {
+    bar({ status: "connected", storage: <p data-testid="device-copy">device</p> });
+
+    // One status, one press: there is no second pill beside this one.
+    expect(screen.queryByTestId("device-copy")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+
+    expect(screen.getByTestId("device-copy")).toBeInTheDocument();
+  });
+
+  it("closes its panel on Escape and on a press outside", () => {
+    bar({ status: "connected", storage: <p>device</p> });
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+    expect(screen.getByTestId("sync-panel")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("sync-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId("sync-panel")).not.toBeInTheDocument();
   });
 });
 

@@ -12,11 +12,16 @@ import { storageLadder } from "./storageLadder";
 const INTERNAL_WORDS = ["evict", "eviction", "quota", "durable", "persist", "best-effort"];
 
 const anonymous = (persist: "unknown" | "persisted" | "denied" | "unsupported", failing = false) =>
-  storageLadder({ persist, signedIn: false, failing });
+  storageLadder({ persist, signedIn: false, synced: false, failing });
 
 describe("the storage ladder", () => {
   it("says nothing to a signed-in reader whose storage is durable", () => {
-    const rung = storageLadder({ persist: "persisted", signedIn: true, failing: false });
+    const rung = storageLadder({
+      persist: "persisted",
+      signedIn: true,
+      synced: false,
+      failing: false,
+    });
 
     // Nothing to say is a real rung: a reader with an account and a durable browser is the normal case.
     expect(rung.rung).toBe("nothing");
@@ -60,7 +65,12 @@ describe("the storage ladder", () => {
   });
 
   it("does not nag a signed-in reader about a non-durable browser", () => {
-    const rung = storageLadder({ persist: "denied", signedIn: true, failing: false });
+    const rung = storageLadder({
+      persist: "denied",
+      signedIn: true,
+      synced: false,
+      failing: false,
+    });
 
     // The account is the other copy, so this is a footnote, not a warning.
     expect(rung.rung).toBe("quiet");
@@ -68,8 +78,52 @@ describe("the storage ladder", () => {
     expect(rung.action).toBe("none");
   });
 
+  it("stays quiet for an anonymous reader while another device is in the room", () => {
+    // The warning is about *this* device being the only copy. With someone else in
+    // the room it is not, so asking a collaborating reader to sign in or export is
+    // the interruption the author called out (ADR-0025 amendment).
+    for (const persist of ["denied", "unsupported", "unknown"] as const) {
+      const rung = storageLadder({ persist, signedIn: false, synced: true, failing: false });
+
+      expect(rung.rung).toBe("quiet");
+      expect(rung.alarm).toBe(false);
+      expect(rung.action).toBe("none");
+      expect(rung.pill).toBe("Saved here and synced");
+      expect(rung.headline).toContain("Another device");
+    }
+  });
+
+  it("keeps a durable browser's own answer even while synced", () => {
+    // Where the work is does not change because the room is live: only the rung that
+    // asks for something does.
+    const rung = storageLadder({
+      persist: "persisted",
+      signedIn: false,
+      synced: true,
+      failing: false,
+    });
+
+    expect(rung.rung).toBe("quiet");
+    expect(rung.pill).toBe("Saved on this device");
+  });
+
+  it("still blocks a failing write with someone else in the room", () => {
+    // A write failing is present tense and local: another copy does not make the
+    // reader's next edit land.
+    const rung = storageLadder({ persist: "denied", signedIn: false, synced: true, failing: true });
+
+    expect(rung.rung).toBe("blocking");
+    expect(rung.alarm).toBe(true);
+    expect(rung.action).toBe("export");
+  });
+
   it("treats a failing write as present-tense, whatever the storage answer was", () => {
-    const rung = storageLadder({ persist: "persisted", signedIn: true, failing: true });
+    const rung = storageLadder({
+      persist: "persisted",
+      signedIn: true,
+      synced: false,
+      failing: true,
+    });
 
     // The one blocking case: quota exhausted, so the risk is now.
     expect(rung.rung).toBe("blocking");
@@ -83,8 +137,8 @@ describe("the storage ladder", () => {
       anonymous("persisted"),
       anonymous("denied"),
       anonymous("unsupported"),
-      storageLadder({ persist: "denied", signedIn: true, failing: false }),
-      storageLadder({ persist: "persisted", signedIn: true, failing: true }),
+      storageLadder({ persist: "denied", signedIn: true, synced: false, failing: false }),
+      storageLadder({ persist: "persisted", signedIn: true, synced: false, failing: true }),
     ];
 
     for (const rung of rungs) {

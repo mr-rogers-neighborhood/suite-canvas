@@ -148,7 +148,9 @@ async function openEditor(browser: Browser, url: string): Promise<Page> {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(url);
-  await expect(page.getByTestId("sync-status")).toHaveText(/Editor/, { timeout: 15_000 });
+  await expect(page.getByTestId("sync-status")).toHaveAttribute("data-role", "editor", {
+    timeout: 15_000,
+  });
   return page;
 }
 
@@ -455,7 +457,9 @@ test("workspace editor token edits the workspace without owner chrome", async ({
     const editor = await context.newPage();
     await editor.goto(link);
     await expect(cards(editor)).toHaveCount(2, { timeout: 15_000 });
-    await expect(editor.getByTestId("sync-status")).toHaveText(/Editor/, { timeout: 15_000 });
+    await expect(editor.getByTestId("sync-status")).toHaveAttribute("data-role", "editor", {
+      timeout: 15_000,
+    });
     await expect(editor.getByTestId("workspace-share")).toHaveCount(0);
     await expect(editor.getByTestId("workspace-file")).toHaveCount(0);
     // Full live workspace editing: dock, library, board creation, type settings.

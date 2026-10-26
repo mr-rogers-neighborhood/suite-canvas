@@ -49,7 +49,7 @@ export async function startBodyEdit(page: Page, card: Locator): Promise<void> {
  */
 export async function expectPeersConnected(pageA: Page, pageB: Page): Promise<void> {
   for (const page of [pageA, pageB]) {
-    await expect(page.getByTestId("sync-status")).toHaveText(/Live/);
+    await expect(page.getByTestId("sync-status")).toHaveText(/Synced/);
     await expect(page.getByTestId("sync-status")).toHaveText(/2 here/);
     await expect(page.getByTestId("node-card")).toHaveCount(2);
   }

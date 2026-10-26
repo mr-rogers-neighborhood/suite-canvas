@@ -50,6 +50,7 @@ test("the header's Sign in opens a dialog that says so when accounts are unavail
   // The point of the whole dialog: it never had the workspace to begin with.
   await createNote(page, "Local note");
   await expect(cardByTitle(page, "Local note")).toHaveCount(1);
+  await page.getByTestId("sync-status").click();
   await expect(page.getByTestId("storage-status")).toBeVisible();
 });
 

@@ -152,7 +152,7 @@ test("stays interactive when a peer drags during the marquee", async ({ browser 
   // `expectPeersConnected` asserts the seeded starter cards, and this board is
   // blank on purpose: wait for the same warm channel without the card count.
   for (const peer of [pageA, pageB]) {
-    await expect(peer.getByTestId("sync-status")).toHaveText(/Live/);
+    await expect(peer.getByTestId("sync-status")).toHaveText(/Synced/);
     await expect(peer.getByTestId("sync-status")).toHaveText(/2 here/);
   }
 

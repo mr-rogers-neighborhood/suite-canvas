@@ -79,21 +79,29 @@ purpose.**
   third value *is*. Accepted, because the labels and the glyphs carry the meaning and the position is
   what makes one rule cover both widgets.
 
-## Open questions
+## Settled by default
 
-Recorded rather than guessed; the answers change the shape of the implementation.
+Four things the author raised and had not decided when this was written. They are settled here with
+the pragmatic option so implementation is not blocked, and any of them can be overruled by editing this
+section — none of them is load-bearing for the others.
 
-1. **The name.** `explain` is a working name; the author also called it "handbook mode" and "handbook
-   inspector mode". The id is cheap to change now and expensive after presence carries it.
-2. **How wide the preview listens.** The gesture control listens on `window`, so every `ctrl` press
-   anywhere paints a hint. Do the purpose hints listen as widely, or only while the pointer is over the
-   widget, or only during a canvas gesture?
-3. **Which key takes which value.** Positional (shift = run, ctrl = record, alt = explain) matches the
-   gesture family's order; a semantic map (ctrl = run, because a run is a queue) would be easier to
-   explain once and harder to keep parallel.
-4. **What a selection produces first.** (a) a handbook context panel for the selection, (b) a prefilled
-   library/view query listing it, or (c) both, with "save as view" as the link between them. This is an
-   alpha-scope question, not a detail: (a) is a reader, (c) is an authoring tool.
+1. **The name is `explain`.** Internal id `explain`, label "Explain". "Handbook" describes the *content*
+   (ADR-0045) and "inspector" describes a *panel* we already have ([ADR-0050](./0050-one-inspector.md)),
+   so both would collide with something that already means a thing. `explain` names the act.
+2. **The preview listens window-wide, as the gesture control does.** Consistency is the entire point of
+   this ADR, and a hint that only appeared when the pointer happened to be over one widget would be a
+   different rule on each control. Two guards keep it honest: a hint is suppressed while a text editor
+   has focus (so `ctrl+s` inside a card does not flash a mode), and it is suppressed while `ctrl`/`alt`
+   is held with another key, because that is a command rather than a modifier. A preview is still only
+   paint — nothing is committed by holding a key.
+3. **The map is positional.** Shift = the second value (`thread`, `run`), ctrl = the third (`web`,
+   `record`), alt = the fourth (`pattern`, `explain`). One rule for both widgets beats two clever ones,
+   and the labels and glyphs already carry the meaning the position does not.
+4. **A selection produces both, and "save as view" links them.** The context panel is the reading
+   (what this collection is, what documents it), and the save action turns the same context into a
+   prefilled query — the authoring path. Building the panel without the save would leave `explain` a
+   reader with no output; building the save without the panel would leave it a query builder wearing a
+   mode's clothes.
 
 ## Rejected alternatives
 

@@ -3,6 +3,7 @@ import { PORTAL_TYPE_ID } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { PORTAL_GLYPH } from "../cards/portal";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
 
 export interface DockProps {
@@ -84,16 +85,11 @@ export function Dock({
     const onPointerDown = (event: PointerEvent) => {
       if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
     window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpen]);
+
+  useEscapeLayer(() => setMenuOpen(false), menuOpen);
 
   const create = (typeId: string) => {
     setMenuOpen(false);

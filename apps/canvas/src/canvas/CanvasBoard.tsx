@@ -47,6 +47,7 @@ import { StatusCursorLayer } from "../cursor/StatusCursorLayer";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -389,6 +390,16 @@ export function CanvasBoard() {
   const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const setLinkingInProgress = useUiStore((state) => state.setLinkingInProgress);
+  /**
+   * A held run and an armed thread are modes the reader is *in*, so Escape ends
+   * them before it closes anything they are standing on — a card in hand keeps its
+   * selection, which keeps the inspector open, and the run still owns the key.
+   * They are layers rather than branches of the chain below for exactly that
+   * reason: a layer is ordered by when it started, and a run starts after the
+   * panel it is standing over.
+   */
+  const armedRun = usePlacementRunStore((state) => state.run !== null);
+  useEscapeLayer(() => usePlacementRunStore.getState().finish(), armedRun);
   const mode = useUiStore((state) => state.mode);
   /** The record lane's one engine, beside the placement run's (ADR-0064 §9). */
   const recordEngine = useRecordEngine();
@@ -399,6 +410,10 @@ export function CanvasBoard() {
    */
   const threadStepAt = useRef(0);
   const armedThread = useLinkThreadStore((state) => state.armed);
+  useEscapeLayer(() => {
+    useLinkThreadStore.getState().clear();
+    setSelectedConnector(null);
+  }, armedThread !== null);
   const [threadCursor, setThreadCursor] = useState<LinkAnchor | null>(null);
   /**
    * The connector a gesture started on, readable synchronously. A click fires
@@ -2031,24 +2046,9 @@ export function CanvasBoard() {
         return;
       }
 
-      if (
-        event.key === "Escape" &&
-        // Escape in an editor belongs to the editor: leaving a title with Escape
-        // must not also end the run that created the card.
-        !(target instanceof HTMLElement && target.closest(".ProseMirror")) &&
-        usePlacementRunStore.getState().run
-      ) {
-        // A run ends where the arm ends: the same key, the same meaning, so a
-        // reader who escapes one escapes the other (ADR-0063 §9).
-        usePlacementRunStore.getState().finish();
-        return;
-      }
-
-      if (event.key === "Escape" && useLinkThreadStore.getState().armed) {
-        useLinkThreadStore.getState().clear();
-        state.setSelectedConnector(null);
-        return;
-      }
+      // A held run and an armed thread are layers (`useEscapeLayer` above), not
+      // branches here: they start after the surface they stand over, and Escape
+      // has to end the most recently started thing.
       if (event.key === "Escape" && state.editingSectionId) {
         state.setEditingSection(null);
         return;

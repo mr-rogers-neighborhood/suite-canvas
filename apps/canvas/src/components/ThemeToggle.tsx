@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ThemeMode } from "../theme/theme";
 import { useThemeStore } from "../theme/useThemeStore";
 import { AppearanceDialog } from "./AppearanceDialog";
@@ -50,16 +51,11 @@ export function ThemeToggle() {
       if (container.current?.contains(event.target as Node)) return;
       setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
     window.addEventListener("pointerdown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointerdown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("pointerdown", onPointer);
   }, [open]);
+
+  useEscapeLayer(() => setOpen(false), open);
 
   return (
     <div className="theme-picker" ref={container}>

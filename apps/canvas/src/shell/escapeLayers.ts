@@ -20,8 +20,25 @@ type Dismiss = () => void;
 const layers: { dismiss: Dismiss }[] = [];
 let listening = false;
 
+/**
+ * A text entry clears before it closes.
+ *
+ * The rule the library already had (`Escape` empties the query, the next one
+ * closes) generalised: while the caret is in a field, Escape belongs to that
+ * field, whoever owns the layer underneath it. The exception is a modal dialog,
+ * because a dialog is the thing Escape is *for* — a field inside one would
+ * otherwise trap the reader in it.
+ */
+function ownsEscape(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const field = target.closest('input, textarea, [contenteditable="true"], .ProseMirror');
+  if (!field) return false;
+  return field.closest('[role="dialog"]') === null;
+}
+
 const dispatch = (event: KeyboardEvent) => {
   if (event.key !== "Escape" || layers.length === 0) return;
+  if (ownsEscape(event.target)) return;
   // Claimed: the top layer consumes this keypress and the canvas chain below
   // never sees it. `stopPropagation` in the capture phase stops the bubble-phase
   // listeners, which is where every canvas and component handler lives.

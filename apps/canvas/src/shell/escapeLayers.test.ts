@@ -78,4 +78,33 @@ describe("escape layers", () => {
       window.removeEventListener("keydown", below);
     }
   });
+
+  it("leaves Escape to the field the caret is in", () => {
+    const dismiss = vi.fn();
+    layer(dismiss);
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(dismiss).not.toHaveBeenCalled();
+    input.remove();
+  });
+
+  it("still closes a dialog while its own field has the caret", () => {
+    const dismiss = vi.fn();
+    layer(dismiss);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const input = document.createElement("input");
+    dialog.append(input);
+    document.body.append(dialog);
+    input.focus();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    dialog.remove();
+  });
 });

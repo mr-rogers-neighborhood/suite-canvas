@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -91,18 +92,13 @@ export function TitleBar({
     const onPointerDown = (event: PointerEvent) => {
       if (!statusRef.current?.contains(event.target as Node)) setStatusOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setStatusOpen(false);
-    };
     // Capture, so a press on the board closes the panel even though React Flow
     // claims the press for the canvas.
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [statusOpen]);
+
+  useEscapeLayer(() => setStatusOpen(false), statusOpen);
 
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">

@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { UNSORTED_SECTION } from "./libraryFilters";
@@ -112,21 +113,16 @@ export function ViewsBar({
     setConfirmId(null);
   }, []);
 
+  useEscapeLayer(close, open);
+
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => {
       if (container.current?.contains(event.target as Node)) return;
       close();
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
     window.addEventListener("pointerdown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointerdown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("pointerdown", onPointer);
   }, [open, close]);
 
   // A view whose query is the current search is saved from these same controls:

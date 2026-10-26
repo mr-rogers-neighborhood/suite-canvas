@@ -280,3 +280,28 @@ The author's own instinct about the canvas control bar is also recorded as a con
 full.** Four mode values, four purposes, zoom and fit already share one column; a sixth segment would make
 it a menu of menus. Anything new that is a preference belongs in Appearance, and anything that is a mode
 belongs on the axis it changes — not in the bar.
+
+## Amendment — the silhouette is published, not restated
+
+The radius slice shipped the mechanism and missed its second half. `--reader-card-radius` reached the
+card's box, and `.whiteboard-card` and `.whiteboard-surface` were already written to read a
+`--card-radius` that **nothing ever set**. The card's own chrome kept a fixed `rounded-t-md`, and a
+painted card's underlay fell back to `6px`. Below 6px nobody could tell; the moment the reader could
+choose 28px, the disagreement became visible as a notch inside the card's own curve.
+
+1. **One value per node kind, published.** `.node-card`/`.portal-node` set
+   `--card-radius: var(--paint-radius, var(--reader-card-radius, 12px))` and derive their own
+   `border-radius` from it; `.whiteboard-node` publishes the reader default alone, because a sketch has
+   no paint. That is the ladder, expressed once, in the order the ladder resolves.
+2. **Everything that hugs the corner reads it back**, subtracting only what it actually sits inside: the
+   header is `calc(var(--card-radius) - 1px)` on an ordinary card (it is inside the box's 1px border) and
+   the full radius on a painted one (whose border lives on the underlay).
+3. **A fixed radius anywhere inside a card is now a defect**, not a detail, which is the same rule the
+   mode palette got: the value is chosen in one place so the parts cannot disagree.
+4. **The prior-art claim is unchanged.** The shadow still follows the box's radius rather than being
+   computed separately, and connectors still anchor by normalised point — the silhouette *contract*
+   (`silhouette.ts`, Batch A of Phase 18) is what will make a dot land on the painted edge rather than on
+   the box's. This amendment only stops the corners contradicting each other.
+
+Recorded because the bug is evidence for Batch A: the components of a silhouette drifted as soon as one
+of them became configurable, and the answer is the same one the utilities index already gives.

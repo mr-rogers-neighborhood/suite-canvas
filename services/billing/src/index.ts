@@ -60,6 +60,7 @@ export {
 export {
   limitsOf,
   parseTierTable,
+  SEATS_PER_PLAN,
   type TierPlan,
   type TierTable,
   tierTableByTier,

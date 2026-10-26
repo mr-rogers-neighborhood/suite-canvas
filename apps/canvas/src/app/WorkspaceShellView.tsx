@@ -33,7 +33,9 @@ import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
+import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
+import { RollupSummaryHost } from "./RollupSummaryHost";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
@@ -444,6 +446,7 @@ export function WorkspaceShellView({
             </div>
           ) : null}
           <BoardOutlineHost />
+          <RollupSummaryHost workspace={workspace} />
           <CardInspectorHost />
           <CardFocusHost />
           <TourOverlayHost />
@@ -573,6 +576,11 @@ export function WorkspaceShellView({
             onLeave={leaveAnyway}
             onDismiss={dismissLeavePrompt}
           />
+        ) : null}
+
+        {/* The type a card's title and body declare, previewed before it is written. */}
+        {workspaceSurface && canManageSchema ? (
+          <BlueprintInstallHost workspace={workspace} />
         ) : null}
 
         {/* Toasts, the live regions and the failure routing, once for the shell. */}

@@ -16,9 +16,20 @@ import { BillingError } from "../errors.ts";
  *   name up here and finds no numbers anywhere else.
  */
 
+/**
+ * Seats a plan sells when the table does not say: one.
+ *
+ * A plan admits the people it sells seats for, and this build has no per-seat price, so
+ * one is the only number `planList` will sell (ADR-0082). The default is here rather than
+ * in the projection because a table written before seats existed sold one seat.
+ */
+export const SEATS_PER_PLAN = 1;
+
 /** A tier is configuration: `STRIPE_PRICE_TIERS` maps price ids onto these. */
 export interface TierPlan {
   tier: string;
+  /** Members the plan admits, owner included. One in this build (ADR-0082). */
+  seats: number;
   workspaces: number;
   documentBytes: number;
   attachmentBytes: number;
@@ -39,6 +50,7 @@ function isPlanEntry(value: unknown): value is TierPlan {
     typeof entry.tier === "string" &&
     entry.tier.trim().length > 0 &&
     entry.tier.length <= MAX_TIER_LENGTH &&
+    (entry.seats === undefined || isWholeNumber(entry.seats, 1)) &&
     isWholeNumber(entry.workspaces, 1) &&
     isWholeNumber(entry.documentBytes, 0) &&
     isWholeNumber(entry.attachmentBytes, 0)
@@ -48,7 +60,11 @@ function isPlanEntry(value: unknown): value is TierPlan {
 /**
  * Reads `STRIPE_PRICE_TIERS`:
  *
- *   {"price_123":{"tier":"solo","workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}
+ *   {"price_123":{"tier":"solo","seats":1,"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}
+ *
+ * `seats` may be left out, which sells one seat: that is what every table written before
+ * the field existed sold. A number other than one is refused by `planList`, because this
+ * build has no per-seat price to charge for it (ADR-0082).
  *
  * A price that is missing from the table is a configuration failure, not a silent free
  * plan: the customer paid, so the operator has to fix the table.
@@ -80,12 +96,13 @@ export function parseTierTable(raw: string | null | undefined): Result<TierTable
       return err(
         new BillingError(
           "invalid-config",
-          `STRIPE_PRICE_TIERS["${priceId}"] needs tier, workspaces, documentBytes and attachmentBytes`,
+          `STRIPE_PRICE_TIERS["${priceId}"] needs tier, workspaces, documentBytes and attachmentBytes; seats, when named, is a whole number of at least one`,
         ),
       );
     }
     table.set(priceId.trim(), {
       tier: entry.tier.trim(),
+      seats: entry.seats ?? SEATS_PER_PLAN,
       workspaces: entry.workspaces,
       documentBytes: entry.documentBytes,
       attachmentBytes: entry.attachmentBytes,
@@ -112,7 +129,14 @@ export function tierTableByTier(tiers: TierTable): ReadonlyMap<string, TierPlan>
   return byTier;
 }
 
-/** The caps a plan carries, as the `limits` record the plugin and the token both use. */
+/**
+ * The caps a plan carries, as the `limits` record the plugin and the token both use.
+ *
+ * `seats` is not one of them: seats bound an organization's member rows and are enforced
+ * from `organization_licences` by the control plane, while `limits` is what the relay
+ * enforces against a document. Putting a seat count in the token would give one number
+ * two readers with no way to tell which answer is which.
+ */
 export function limitsOf(plan: TierPlan): Readonly<Record<string, number>> {
   return {
     workspaces: plan.workspaces,

@@ -3,6 +3,7 @@ import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/re
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shellPaletteItems } from "./app/palette";
 import { useBoardDerivations } from "./app/useBoardDerivations";
+import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useLeaveGuard } from "./app/useLeaveGuard";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
@@ -469,6 +470,9 @@ function WorkspaceShell({
     [activeBoardId, canvasPoint, workspace, canCreateContent, setSelectedNodeIds],
   );
 
+  /** The rows that act on the document, so the palette and the dock agree. */
+  const boardActions = useBoardPaletteActions();
+
   /**
    * The palette's entries, built from the command registry. Navigation and
    * creation are wired to the same store actions and helpers the shell already
@@ -477,6 +481,7 @@ function WorkspaceShell({
   const paletteItems = useMemo(
     () =>
       shellPaletteItems({
+        ...boardActions,
         workspace,
         snapshot,
         savedViews,
@@ -517,6 +522,7 @@ function WorkspaceShell({
         themeMode,
       }),
     [
+      boardActions,
       snapshot,
       savedViews,
       activeBoardId,

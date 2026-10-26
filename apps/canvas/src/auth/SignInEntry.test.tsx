@@ -60,6 +60,20 @@ describe("the header's account slot", () => {
     expect(useAccountStore.getState().panelTab).toBe("plan");
   });
 
+  it("moves focus into the menu as it opens, so the arrows can arrive", () => {
+    useAccountStore.getState().applySession({
+      availability: "available",
+      account: { userId: "u1", email: "reader@example.com", name: null, admittedAt: 1 },
+    });
+    render(<SignInEntry onSignOut={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("account-chip"));
+
+    expect(screen.getByTestId("account-menu-account")).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId("account-menu-account"), { key: "End" });
+    expect(screen.getByTestId("account-sign-out")).toHaveFocus();
+  });
+
   it("is a plain 'Sign in' on a deployment with no accounts, rather than nothing", () => {
     useAccountStore.setState({ availability: "unavailable", phase: "anonymous", account: null });
     render(<SignInEntry onSignOut={() => {}} />);

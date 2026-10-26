@@ -79,6 +79,7 @@ services:
       SUITE_PUBLIC_URL: ${SUITE_PUBLIC_URL:-}
       SUITE_HOSTED: ${SUITE_HOSTED:-0}
       SUITE_LICENCE_PUBLIC_KEY: ${SUITE_LICENCE_PUBLIC_KEY:-}
+      SUITE_RELAY_PURGE_TOKEN: ${SUITE_RELAY_PURGE_TOKEN:-}
       SUITE_TRUST_PROXY: ${SUITE_TRUST_PROXY:-0}
       SUITE_LOG_LEVEL: ${SUITE_LOG_LEVEL:-info}
       # Quotas. Empty means the built-in default for the mode (unlimited for a
@@ -202,6 +203,11 @@ services:
       SUITE_SELF_HOST_URL: ${SUITE_SELF_HOST_URL:-}
       SES_FROM_ADDRESS: ${SES_FROM_ADDRESS:-}
       SUITE_SES_REGION: ${SUITE_SES_REGION:-}
+      # Account deletion reaches the relay's own delete route with this pair.
+      # Empty leaves documents, shares and attachments in place and reports them
+      # as not-configured, which is the self-host answer.
+      SUITE_RELAY_URL: ${SUITE_RELAY_URL:-}
+      SUITE_RELAY_PURGE_TOKEN: ${SUITE_RELAY_PURGE_TOKEN:-}
     expose:
       - "1236"
     healthcheck:

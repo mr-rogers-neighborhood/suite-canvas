@@ -100,6 +100,31 @@ describe("minting", () => {
     expect(cachedCredential()).toBe(first);
   });
 
+  it("stops asking a deployment that has no mint endpoint", async () => {
+    // A self-host running only the relay answers 404 forever. Asking once and
+    // remembering it keeps a reconnect storm from firing a doomed request, and
+    // keeps one 404 per gesture out of the console.
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await relayCredential()).toBeNull();
+    expect(await relayCredential()).toBeNull();
+    expect(await relayCredential()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again after a sign-in, which can create the endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await relayCredential()).toBeNull();
+
+    // Signing in clears the memory, so a deployment that gained accounts is not
+    // hidden behind a stale refusal.
+    forgetCredential();
+    expect(await relayCredential()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("mints once for concurrent joins", async () => {
     const fetchMock = vi.fn(async () => mintResponse({ token: token() }));
     vi.stubGlobal("fetch", fetchMock);

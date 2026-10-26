@@ -1165,6 +1165,275 @@ async function main() {
       },
     );
 
+    // --- the relay purge, end to end ------------------------------------------
+    //
+    // The account erase owns Postgres. The relay owns the documents, the share rows
+    // and the attachment bytes, and it removes them through one route. These two
+    // checks drive that route through the port `apps/control-plane/src/modules/auth.ts`
+    // builds, so the URL, the credential, the shape of the delete and the counts the
+    // report carries are the shipped ones rather than a re-description of them.
+
+    /**
+     * The relay, in this process, over the files a deployment would use.
+     *
+     * `SUITE_RELAY_URL` and `SUITE_RELAY_PURGE_TOKEN` are set rather than passed in,
+     * because those two variables are the whole wiring: the route reads the token and
+     * the control-plane port reads both.
+     */
+    const relayFixture = async () => {
+      const relayDir = join(dir, "relay");
+      mkdirSync(relayDir, { recursive: true });
+      const paths = {
+        documents: join(relayDir, "documents.sqlite"),
+        shares: join(relayDir, "shares.sqlite"),
+        workspaces: join(relayDir, "workspaces.sqlite"),
+      };
+      const attachmentsPath = join(relayDir, "attachments.sqlite");
+      const importFrom = (relative) => import(pathToFileURL(join(root, relative)).href);
+
+      // The relay's route is TypeScript this script cannot load by stripping types
+      // alone (`HttpError` is a class with a parameter property), and the point of
+      // these checks is to call the shipped handler rather than a re-description of
+      // it. `tsx` is the compiler the control plane already runs on.
+      const tsx = createRequire(join(root, "apps/control-plane/package.json"));
+      const { register: registerTsx } = await import(
+        pathToFileURL(tsx.resolve("tsx/esm/api")).href
+      );
+      registerTsx();
+
+      const [{ createDocumentStore }, { createShareStore }, { createSqliteAttachmentStore }] =
+        await Promise.all([
+          importFrom("apps/collab-server/src/store/persistence.ts"),
+          importFrom("apps/collab-server/src/store/shares.ts"),
+          importFrom("apps/collab-server/src/store/attachments.ts"),
+        ]);
+      const { createWorkspaceOrgStore } = await importFrom(
+        "apps/collab-server/src/store/workspaceOrgs.ts",
+      );
+      const [{ handleWorkspaceRequest }, { createWorkspaceAccess }, { noSessionVerifier }] =
+        await Promise.all([
+          importFrom("apps/collab-server/src/http/workspaceHttp.ts"),
+          importFrom("apps/collab-server/src/http/access.ts"),
+          importFrom("apps/collab-server/src/http/sessionToken.ts"),
+        ]);
+      const { relayWorkspaceData } = await importFrom("apps/control-plane/src/modules/auth.ts");
+      const { createServer: createHttpServer } = await import("node:http");
+      const { DatabaseSync } = await import("node:sqlite");
+
+      const documents = createDocumentStore(paths.documents);
+      const fileShares = createShareStore(paths.shares);
+      const orgs = createWorkspaceOrgStore(paths.workspaces);
+      const attachments = createSqliteAttachmentStore(attachmentsPath);
+      // A relay with no control plane verifies no session. That is the deployment this
+      // route's service half exists for: the only caller left is the purge.
+      const access = createWorkspaceAccess({ sessions: noSessionVerifier, orgs });
+
+      // The credential a deployment puts in `SUITE_RELAY_PURGE_TOKEN`. The route and
+      // the port below are given the same value, which is the pair this check is about.
+      const purgeToken = "db-verify-purge-token";
+      const server = createHttpServer((request, response) => {
+        void handleWorkspaceRequest(request, response, {
+          access,
+          storage: paths,
+          attachments,
+          purgeToken,
+          exists: (workspaceId) =>
+            documents.load(`%LOR:${workspaceId}`) !== null ||
+            fileShares.list(workspaceId).length > 0,
+          forgetWorkspace: (workspaceId) => {
+            orgs.remove(workspaceId);
+          },
+        }).then((handled) => {
+          if (handled) return;
+          response.writeHead(404, { "content-type": "text/plain" });
+          response.end("not found");
+        });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("expected a TCP address");
+
+      // The two variables, named the way a deployment names them.
+      const port = relayWorkspaceData({
+        SUITE_RELAY_URL: `http://127.0.0.1:${address.port}`,
+        SUITE_RELAY_PURGE_TOKEN: purgeToken,
+      });
+      assert.ok(port !== null, "the port was not built from the two variables");
+
+      const rows = (path, table) => {
+        const db = new DatabaseSync(path);
+        try {
+          return Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count);
+        } finally {
+          db.close();
+        }
+      };
+
+      return {
+        address,
+        port,
+        paths,
+        attachmentsPath,
+        documents,
+        fileShares,
+        orgs,
+        attachments,
+        rows,
+        close: async () => {
+          await new Promise((resolve) => server.close(resolve));
+          documents.close();
+          fileShares.close();
+          orgs.close();
+          attachments.close();
+        },
+      };
+    };
+
+    const relay = await relayFixture();
+    try {
+      await check(
+        "the control plane purges a workspace's document, share rows and attachment bytes",
+        async () => {
+          const workspaceId = "ws-purge";
+          relay.documents.save(`%LOR:${workspaceId}`, new TextEncoder().encode("workspace one"));
+          const created = relay.fileShares.create({
+            workspaceId,
+            scope: "board",
+            role: "viewer",
+            boardId: "board-1",
+          });
+          relay.fileShares.setBaseline(created.share.id, new Uint8Array([1, 2, 3]));
+          relay.documents.save(
+            `%LOR:share-${created.token}`,
+            new TextEncoder().encode("projected board"),
+          );
+          relay.documents.flush();
+          relay.attachments.put(workspaceId, new Uint8Array([0x89, 0x50, 0x4e, 0x47]), "image/png");
+          relay.orgs.claim(workspaceId, "org-erase-own");
+
+          // A wrong credential is refused, and nothing was removed: the service half
+          // is a credential, not a fallback for a request that presents no session.
+          const denied = await fetch(
+            `http://127.0.0.1:${relay.address.port}/api/workspaces/${workspaceId}`,
+            {
+              method: "DELETE",
+              headers: {
+                authorization: "Bearer wrong-token",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({ confirm: workspaceId }),
+            },
+          );
+          assert.equal(denied.status, 401, "a wrong purge token was not refused");
+          assert.equal(relay.rows(relay.paths.documents, "documents"), 2);
+
+          const counts = await relay.port.erase(workspaceId);
+          // The workspace document and its projected share room; the share row and its
+          // draft baseline; the attachment row that carries the bytes.
+          assert.deepEqual(counts, { documents: 2, shares: 2, attachments: 1 });
+
+          assert.equal(relay.rows(relay.paths.documents, "documents"), 0, "a row survived");
+          assert.equal(relay.rows(relay.paths.shares, "shares"), 0, "a share row survived");
+          assert.equal(relay.rows(relay.paths.shares, "share_baselines"), 0, "a baseline survived");
+          assert.equal(
+            relay.rows(relay.paths.workspaces, "workspace_orgs"),
+            0,
+            "an org row survived",
+          );
+          assert.equal(relay.rows(relay.attachmentsPath, "attachments"), 0, "an image survived");
+          assert.equal(relay.attachments.usage(workspaceId), 0, "attachment bytes survived");
+
+          // The retry an interrupted erase depends on: zero rows, not 404.
+          assert.deepEqual(await relay.port.erase(workspaceId), {
+            documents: 0,
+            shares: 0,
+            attachments: 0,
+          });
+
+          // The export's share read is not part of this credential, and the port says
+          // so rather than answering an empty list that would read as "no links".
+          await assert.rejects(relay.port.shares(workspaceId), /no service read/u);
+
+          return "2 document rows, 2 share rows and 1 attachment row with its bytes removed; the retry removed nothing";
+        },
+      );
+
+      await check(
+        "an account erase reports the relay stores as removed, with the counts it removed",
+        async () => {
+          // A second account, alone in its own organization, so the erase owns the
+          // workspace and the relay has something to take.
+          await query(`INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)`, [
+            "user-purge",
+            "Puri",
+            "purge@example.com",
+          ]);
+          await query(`INSERT INTO organization (id, name, slug) VALUES ($1, $2, $3)`, [
+            "org-purge",
+            "Purge Studio",
+            "purge-studio",
+          ]);
+          await query(
+            `INSERT INTO member (id, "organizationId", "userId", role) VALUES ($1, $2, $3, $4)`,
+            ["member-purge", "org-purge", "user-purge", "owner"],
+          );
+          await query(`INSERT INTO workspaces (id, organization_id, name) VALUES ($1, $2, $3)`, [
+            "ws-purge-2",
+            "org-purge",
+            "Purge Q4",
+          ]);
+
+          relay.documents.save("%LOR:ws-purge-2", new TextEncoder().encode("second workspace"));
+          relay.fileShares.create({
+            workspaceId: "ws-purge-2",
+            scope: "workspace",
+            role: "viewer",
+          });
+          relay.documents.flush();
+          relay.attachments.put("ws-purge-2", new Uint8Array([1, 1, 1, 1]), "image/png");
+          relay.orgs.claim("ws-purge-2", "org-purge");
+
+          const report = await eraseAccount(
+            { userId: "user-purge" },
+            { accounts, workspaceData: relay.port, now: () => NOW },
+          );
+          assert.equal(report.deleted, true, "the account row survived");
+          assert.equal(report.complete, true, "a store reported leftovers");
+          const entry = (name) => report.stores.find((store) => store.store === name);
+          // The three that used to be not-configured are now counts, and the report
+          // keeps its shape: same stores, same status vocabulary.
+          assert.deepEqual(entry("documents"), {
+            store: "documents",
+            status: "removed",
+            removed: 1,
+          });
+          assert.deepEqual(entry("shares"), { store: "shares", status: "removed", removed: 1 });
+          assert.deepEqual(entry("attachments"), {
+            store: "attachments",
+            status: "removed",
+            removed: 1,
+          });
+          assert.equal(
+            report.stores.filter((store) => store.status !== "removed").length,
+            0,
+            "a store reported leftovers",
+          );
+          assert.equal(
+            report.workspaces.find((workspace) => workspace.workspaceId === "ws-purge-2")?.outcome,
+            "removed",
+          );
+          assert.equal(relay.attachments.usage("ws-purge-2"), 0, "attachment bytes survived");
+          assert.equal(relay.rows(relay.paths.documents, "documents"), 0, "a document survived");
+          assert.equal(relay.rows(relay.attachmentsPath, "attachments"), 0, "an image survived");
+          const remaining = await query(`SELECT id FROM workspaces WHERE id = 'ws-purge-2'`);
+          assert.equal(remaining.length, 0, "the control-plane workspace row survived");
+          return "documents, shares and attachments report removed 1/1/1; the account and its workspace are gone";
+        },
+      );
+    } finally {
+      await relay.close();
+    }
+
     const [{ server_version: version }] = await query("SHOW server_version");
 
     if (checks.failed.length > 0) {

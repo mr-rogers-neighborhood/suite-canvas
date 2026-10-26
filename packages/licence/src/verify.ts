@@ -14,17 +14,15 @@ import { parseLicencePublicKey } from "./keys.js";
 const MAX_TOKEN_LENGTH = 4096;
 
 /**
- * Verifies a licence token. Signature first (so a tampered payload reports a
- * signature failure, not a version or expiry one), then version, shape, expiry.
+ * Verifies one token against one key, with no environment consulted. The boot
+ * licence path calls this directly: a self-hosted relay is not hosted, so the
+ * environment gate in `verifyLicence` would answer before reading the token.
  */
-export function verifyLicence(
+export function verifyLicenceToken(
   token: unknown,
   now: number,
   publicKeyPem: string | null | undefined,
 ): LicenceVerification {
-  // Self-host: no token is read, no key is required, nothing ever fails.
-  if (!licenceRequired()) return { ok: true, claims: SELF_HOSTED_CLAIMS };
-
   if (typeof token !== "string" || token.length === 0 || token.length > MAX_TOKEN_LENGTH) {
     return { ok: false, reason: "malformed" };
   }
@@ -62,4 +60,18 @@ export function verifyLicence(
   if (claims === null) return { ok: false, reason: "malformed" };
   if (claims.expiresAt <= now) return { ok: false, reason: "expired" };
   return { ok: true, claims };
+}
+
+/**
+ * Hosted-mode verification. Signature first (so a tampered payload reports a
+ * signature failure, not a version or expiry one), then version, shape, expiry.
+ */
+export function verifyLicence(
+  token: unknown,
+  now: number,
+  publicKeyPem: string | null | undefined,
+): LicenceVerification {
+  // Self-host: no token is read, no key is required, nothing ever fails.
+  if (!licenceRequired()) return { ok: true, claims: SELF_HOSTED_CLAIMS };
+  return verifyLicenceToken(token, now, publicKeyPem);
 }

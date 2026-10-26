@@ -1,14 +1,18 @@
 import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { LICENCE_FORMAT_VERSION, type LicenceClaims, signLicence } from "@suite/licence";
 import { describe, expect, it } from "vitest";
 import {
+  applyLicenceLimits,
   type ConfigEnv,
+  type ConfigProblem,
   MIN_TOKEN_LENGTH,
   packageVersion,
   serverVersion,
   validateConfig,
 } from "./config.js";
+import { resolveLimits } from "./limits.js";
 
 const packageJson = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -237,6 +241,142 @@ describe("validateConfig", () => {
     const result = validateConfig({});
     expect(result.ok).toBe(true);
     expect(result.config.authUrl).toBeNull();
+  });
+});
+
+/**
+ * The self-host path (ADR-0081): one token in `SUITE_LICENCE`, verified once at
+ * boot, and a refusal that names its reason. Every case here runs with
+ * `SUITE_HOSTED` unset, which is the mode a licence file is for.
+ */
+describe("SUITE_LICENCE", () => {
+  const pair = generateKeyPairSync("ed25519");
+  const publicPem = pair.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privatePem = pair.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const foreign = generateKeyPairSync("ed25519").privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }) as string;
+
+  const ISSUED_AT = 1_800_000_000_000;
+  const EXPIRES_AT = ISSUED_AT + 30 * 24 * 60 * 60 * 1000;
+  const NOW = ISSUED_AT + 24 * 60 * 60 * 1000;
+
+  function licence(overrides: Partial<LicenceClaims> = {}): LicenceClaims {
+    return {
+      v: LICENCE_FORMAT_VERSION,
+      id: "team-2026",
+      tier: "team",
+      workspaces: 25,
+      documentBytes: 5 * 1024 * 1024,
+      attachmentBytes: 25 * 1024 * 1024,
+      issuedAt: ISSUED_AT,
+      expiresAt: EXPIRES_AT,
+      ...overrides,
+    };
+  }
+
+  const token = signLicence(licence(), privatePem);
+
+  function refusal(env: ConfigEnv, code: string, now: number = NOW): ConfigProblem | undefined {
+    const result = validateConfig(env, now);
+    expect(result.ok).toBe(false);
+    const problem = result.problems.find((entry) => entry.variable === "SUITE_LICENCE");
+    expect(problem?.message).toContain(code);
+    return problem;
+  }
+
+  it("boots with a valid licence and applies its caps", () => {
+    const env = { SUITE_LICENCE: token, SUITE_LICENCE_PUBLIC_KEY: publicPem };
+    const result = validateConfig(env, NOW);
+
+    expect(result.problems).toEqual([]);
+    expect(result.config.hosted).toBe(false);
+    expect(result.config.licence?.claims.id).toBe("team-2026");
+    expect(result.config.licence?.caps).toEqual({
+      workspaces: 25,
+      documentBytes: 5 * 1024 * 1024,
+      attachmentBytes: 25 * 1024 * 1024,
+    });
+
+    // The quota layer reads the environment, so the boot writes the caps there.
+    const applied: Record<string, string | undefined> = { ...env };
+    applyLicenceLimits(result.config.licence, applied);
+    const limits = resolveLimits(applied).limits;
+    expect(limits.maxWorkspaces).toBe(25);
+    expect(limits.documentBytesPerWorkspace).toBe(5 * 1024 * 1024);
+    expect(limits.attachmentBytesPerWorkspace).toBe(25 * 1024 * 1024);
+  });
+
+  it("keeps the tighter of the licence and the operator's own limit", () => {
+    const env = {
+      SUITE_LICENCE: token,
+      SUITE_LICENCE_PUBLIC_KEY: publicPem,
+      SUITE_MAX_WORKSPACES: "4",
+      SUITE_DOCUMENT_BYTES_PER_WORKSPACE: "unlimited",
+    };
+    const applied: Record<string, string | undefined> = { ...env };
+    applyLicenceLimits(validateConfig(env, NOW).config.licence, applied);
+
+    expect(resolveLimits(applied).limits.maxWorkspaces).toBe(4);
+    expect(resolveLimits(applied).limits.documentBytesPerWorkspace).toBe(5 * 1024 * 1024);
+  });
+
+  it("refuses an expired licence with licence-expired", () => {
+    const problem = refusal(
+      { SUITE_LICENCE: token, SUITE_LICENCE_PUBLIC_KEY: publicPem },
+      "licence-expired",
+      EXPIRES_AT,
+    );
+
+    expect(problem?.message).toContain("SUITE_LICENCE");
+    expect(problem?.message).not.toContain(token);
+  });
+
+  it("refuses a licence signed by another key with licence-bad-signature", () => {
+    const forged = signLicence(licence(), foreign);
+    const result = validateConfig(
+      { SUITE_LICENCE: forged, SUITE_LICENCE_PUBLIC_KEY: publicPem },
+      NOW,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.config.licence).toBeNull();
+    expect(result.problems).toContainEqual({
+      variable: "SUITE_LICENCE",
+      message: expect.stringContaining("licence-bad-signature"),
+    });
+  });
+
+  it("refuses a malformed token with licence-malformed", () => {
+    refusal(
+      { SUITE_LICENCE: "not-a-token", SUITE_LICENCE_PUBLIC_KEY: publicPem },
+      "licence-malformed",
+    );
+  });
+
+  it("refuses a licence whose key is not configured, naming the key", () => {
+    const result = validateConfig({ SUITE_LICENCE: token }, NOW);
+
+    expect(result.ok).toBe(false);
+    expect(result.config.licence).toBeNull();
+    expect(variables({ SUITE_LICENCE: token })).toContain("SUITE_LICENCE_PUBLIC_KEY");
+  });
+
+  it("refuses a licence beside SUITE_HOSTED=1 rather than merging the two", () => {
+    const problem = refusal(
+      { SUITE_HOSTED: "1", SUITE_LICENCE: token, SUITE_LICENCE_PUBLIC_KEY: publicPem },
+      "SUITE_HOSTED=1",
+    );
+
+    expect(problem?.message).toContain("subscription");
+  });
+
+  it("treats an empty SUITE_LICENCE as unset", () => {
+    const result = validateConfig({ SUITE_LICENCE: "" }, NOW);
+
+    expect(result.problems).toEqual([]);
+    expect(result.config.licence).toBeNull();
   });
 });
 

@@ -48,6 +48,16 @@ export interface ShellPaletteArgs {
   requestShare: UiState["requestShare"];
   setThemeMode: (mode: "light" | "dark") => void;
   themeMode: string;
+  /**
+   * The document rows, supplied by `useBoardPaletteActions`. Optional, and each
+   * row appears only once its handler does: a share viewer has nothing to undo,
+   * and a board with no selection has nothing to arrange.
+   */
+  undo?: (() => void) | undefined;
+  redo?: (() => void) | undefined;
+  arrangeRadial?: (() => void) | undefined;
+  /** Opens the install panel for that card; the row names which card it means. */
+  installBlueprint?: ((cardId: string) => void) | undefined;
 }
 
 /** The palette rows for the shell. Pure: every effect arrives as a callback. */
@@ -91,6 +101,10 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
     requestShare,
     setThemeMode,
     themeMode,
+    undo,
+    redo,
+    arrangeRadial,
+    installBlueprint,
   } = args;
 
   const capabilities: Capability[] = [];
@@ -219,6 +233,19 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
       openTypes: () => openTypeSettings(),
       openShare: () => requestShare("workspace"),
       toggleTheme: () => setThemeMode(themeMode === "dark" ? "light" : "dark"),
+      // Undo, redo and the radial arrange act on the document, so each is
+      // offered exactly while the shell hands over a handler. A read-only
+      // session has nothing to step: the document is not its to undo, which is
+      // also why the dock hides its pair for a viewer.
+      undo: readOnly ? undefined : undo,
+      redo: readOnly ? undefined : redo,
+      arrangeRadial,
+      // The row names the card it acts on; the plan is previewed in the install
+      // panel, so the row opens that host rather than writing an unseen type.
+      installBlueprint:
+        installBlueprint && targetCardId !== null
+          ? () => installBlueprint(targetCardId)
+          : undefined,
     },
   });
 }

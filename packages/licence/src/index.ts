@@ -12,6 +12,13 @@
 
 export { decodeBase64Url } from "./base64Url.js";
 export {
+  type BootLicence,
+  type BootLicenceRefusal,
+  type BootLicenceRefusalCode,
+  type BootLicenceResult,
+  verifyBootLicence,
+} from "./boot.js";
+export {
   isEntry,
   LICENCE_FORMAT_VERSION,
   type LicenceClaims,
@@ -23,6 +30,6 @@ export {
 export { licencePublicKey, licenceRequired } from "./environment.js";
 export { parseLicencePublicKey } from "./keys.js";
 export { licenceProblemMessage } from "./messages.js";
-export { type LicenceQuota, licenceQuota, UNLIMITED_QUOTA } from "./quota.js";
+export { claimsQuota, type LicenceQuota, licenceQuota, UNLIMITED_QUOTA } from "./quota.js";
 export { signLicence } from "./sign.js";
-export { verifyLicence } from "./verify.js";
+export { verifyLicence, verifyLicenceToken } from "./verify.js";

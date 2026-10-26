@@ -119,7 +119,7 @@ openssl rand -base64 32     # SUITE_PROJECTION_TOKEN
 openssl rand -base64 32     # SUITE_SOURCE_TOKEN
 ```
 
-Set `SUITE_DOMAIN`, `SUITE_ACME_EMAIL`, and `SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1`. Pin a
+Set `SUITE_DOMAIN`, `SUITE_ACME_EMAIL`, and `SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0`. Pin a
 release, because `:latest` moves under you. For a hosted relay also set `SUITE_HOSTED=1` and
 `SUITE_LICENCE_PUBLIC_KEY`, generating and signing on a workstation so the private key never reaches
 the relay:
@@ -209,7 +209,7 @@ Caddy keeps proxying while `app` is down, so visitors see 502 for the length of 
 ```sh
 cd /srv/suite
 sudo bash -c 'set -a; . /etc/suite/backup.env; set +a; /srv/suite/deploy/backup.sh /srv/backups'
-$EDITOR .env                      # SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1
+$EDITOR .env                      # SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0
 docker compose pull app && docker compose up -d app     # Caddy keeps running
 curl -fsS https://canvas.example.com/health
 ```

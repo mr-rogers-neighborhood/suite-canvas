@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createLogger } from "../logging.js";
 import { type AdminPaths, adminPaths, deleteWorkspace } from "../ops/admin.js";
@@ -5,22 +6,43 @@ import type { LicenceClaimStore } from "../store/licenceClaims.js";
 import type { WorkspaceAccess } from "./access.js";
 import { HttpError, toProblem } from "./errors.js";
 import { clientAddress, rotateLimiter } from "./rateLimit.js";
-import { readJsonBody } from "./request.js";
+import { bearerToken, readJsonBody } from "./request.js";
 import { applyCors, methodNotAllowed, sendEmpty, sendJson, sendProblem } from "./respond.js";
 
 /**
  * The workspace routes that survive the owner key (ADR-0076).
  *
- * There is exactly one: the account-authorized delete. Claim, rotate and status
+ * There is exactly one route: the workspace delete. Claim, rotate and status
  * are gone with the key they were built around — a workspace's organization is
  * recorded by the first verified session that opens it (`access.ts`), a
  * credential is never rotated by this process (the control plane's session TTL
  * bounds it), and the client reads its quota from the same session it syncs
  * with.
+ *
+ * The delete takes two credentials, because it has two callers. An account
+ * presents its session and deletes what it owns. The control plane, executing
+ * an account erasure, has no session to present and no browser to ask, so it
+ * presents `SUITE_RELAY_PURGE_TOKEN`: one operation, the purge of the workspace
+ * named in the path, and nothing on `/api/admin/*`. A dedicated token rather
+ * than `SUITE_ADMIN_TOKEN`, because the identity process should not hold the
+ * relay's root key: a bug in the account service would otherwise reach every
+ * workspace's limits, rooms and links.
  */
 const logger = createLogger().child({ component: "workspaces" });
 
 export const WORKSPACE_API_PATH = "/api/workspaces";
+
+/**
+ * Where the service credential is read. Both the relay and the control plane
+ * read this name, so one secret is configured once on each side.
+ */
+export const PURGE_TOKEN_ENV = "SUITE_RELAY_PURGE_TOKEN";
+
+function sameSecret(left: string, right: string): boolean {
+  const a = Buffer.from(left, "utf8");
+  const b = Buffer.from(right, "utf8");
+  return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
+}
 
 export interface WorkspaceRequestHooks {
   /**
@@ -36,6 +58,17 @@ export interface WorkspaceRequestHooks {
   storage?: AdminPaths;
   /** The entitlement record a delete drops, or null on a self-host. */
   licences?: Pick<LicenceClaimStore, "remove"> | null;
+  /**
+   * The credential a peer service presents instead of an account session.
+   *
+   * Defaults to `SUITE_RELAY_PURGE_TOKEN`, read here rather than passed in from
+   * `sync/server.ts`, for the same reason `storage` defaults to `adminPaths()`:
+   * the route's service half is configuration, and a deployment that sets the
+   * variable does not also have to change the server's wiring. Unset means no
+   * service call is accepted, so a relay that never asked for one cannot be
+   * purged by a token nobody configured.
+   */
+  purgeToken?: string;
   /**
    * The attachment bytes the workspace owns. A workspace export carries its
    * images, so an erasure that left the bytes behind would be a delete in name
@@ -69,10 +102,25 @@ function deleteConfirmMessage(workspaceId: string): string {
 }
 
 /**
- * Deletes a workspace on the account's own authority: the session JWT in the
- * `Authorization` header, checked against the organization the relay recorded
- * for this workspace. The body repeats the workspace id, so a stray request
- * cannot wipe a workspace it did not name.
+ * Deletes a workspace on the account's own authority — or on the control plane's.
+ *
+ * ## Two callers, one implementation
+ *
+ * An account deletes on the session JWT in the `Authorization` header, checked
+ * against the organization the relay recorded for this workspace. The body
+ * repeats the workspace id, so a stray request cannot wipe a workspace it did
+ * not name.
+ *
+ * The control plane deletes on the purge token, while running an account
+ * erasure: it holds the account's rows, not its session, so there is no JWT to
+ * present. The shape is the same, so the body still repeats the id and the
+ * counts are the same counts. Two differences, and both are about convergence:
+ * the purge is not charged to the per-address delete budget (one account can
+ * own more workspaces than that budget allows per minute, and stopping halfway
+ * would leave a half-erased account), and a purge of a workspace the relay no
+ * longer holds answers zero rows instead of 404 (a retry after a partial
+ * failure has to succeed, not report "not found" at the caller that already
+ * deleted the row it learned the id from).
  *
  * The data is removed by the operator CLI's `delete` (`admin.ts`), so both entry
  * points share one implementation: documents and projected share rooms, share
@@ -86,22 +134,35 @@ async function remove(
   deps: WorkspaceRequestDeps,
   workspaceId: string,
 ): Promise<void> {
+  const id = workspaceId.trim();
+  // The control plane presents a token, not a session. Checked before the rate
+  // budget, because which credential arrived decides whether that budget applies.
+  const serviceToken = (deps.purgeToken ?? process.env[PURGE_TOKEN_ENV] ?? "").trim();
+  const presented = bearerToken(request);
+  const service = presented !== null && sameSecret(presented, serviceToken);
+
   // Deletion spends the rate budget that rotation used to: both were rare,
   // destructive operations, and a flood of either must not reach the database.
-  const removal = rotateLimiter.take(clientAddress(request));
-  if (!removal.ok) {
-    throw HttpError.rateLimited(
-      removal.retryAfter,
-      "Too many workspace deletions. Wait a moment and try again.",
-    );
+  // An account erasure is not that flood: it is one process deleting the
+  // workspaces of one account, and its budget is the control plane's own.
+  if (!service) {
+    const removal = rotateLimiter.take(clientAddress(request));
+    if (!removal.ok) {
+      throw HttpError.rateLimited(
+        removal.retryAfter,
+        "Too many workspace deletions. Wait a moment and try again.",
+      );
+    }
   }
 
-  const id = workspaceId.trim();
   // Authorization first: an unknown workspace and someone else's workspace must
   // look the same from outside, and only an entitled account learns the
   // difference (its organization is recorded, so the 404 below is its own data).
-  const principal = await deps.access.forWorkspace(request, id);
-  if (deps.exists !== undefined && !deps.exists(id)) {
+  const principal = service ? null : await deps.access.forWorkspace(request, id);
+  // A purge answers zero rows for a workspace already gone: the caller deleted
+  // its own row for that workspace, so "not found" here would be the one answer
+  // that cannot converge on a retry.
+  if (!service && deps.exists !== undefined && !deps.exists(id)) {
     throw HttpError.notFound("Workspace not found.");
   }
 
@@ -120,16 +181,30 @@ async function remove(
   const licenceRows = deps.licences?.remove(id) ?? 0;
   // No card survives the delete, so every attachment row of the workspace is
   // unreferenced by construction.
-  const attachmentBytes = deps.attachments?.gc(id, []) ?? 0;
+  const attachmentRows = deps.attachments?.gc(id, []) ?? 0;
   deps.forgetWorkspace?.(id);
+
+  // The host still runs its own hook below; this line is the only record that the
+  // delete came from a service rather than from the account it belonged to.
+  if (service) {
+    logger.info("workspace purged by a service", {
+      workspaceId: id,
+      documents: result.documents + result.projected,
+      shares: result.shares + result.baselines,
+      attachments: attachmentRows,
+    });
+  }
 
   sendJson(response, 200, {
     workspaceId: id,
     deleted: true,
-    organizationId: principal.organizationId,
+    // A service call names no account: it has no principal to report.
+    organizationId: principal?.organizationId ?? null,
     ...result,
     licenceRows,
-    attachments: attachmentBytes,
+    // Rows, not bytes: on the disk store a row *is* its bytes, and an object
+    // store's `gc` counts the objects it deleted.
+    attachments: attachmentRows,
   });
   try {
     deps.onDeleted?.(id);

@@ -40,8 +40,11 @@ stores in one file. Two stores must never share a file, whatever the mode.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `SUITE_HOSTED` | `0` | `1` enforces licences and installs the hosted quota defaults; `SUITE_LICENCE_PUBLIC_KEY` becomes required |
-| `SUITE_LICENCE_PUBLIC_KEY` | none | Ed25519 public key that verifies licences, as PEM or the base64url raw key |
+| `SUITE_HOSTED` | `0` | `1` enforces hosted licences and installs the hosted quota defaults; `SUITE_LICENCE_PUBLIC_KEY` becomes required and `SUITE_LICENCE` is refused |
+| `SUITE_LICENCE` | none | signed licence token for a self-hosted instance, verified at boot; see [Self-host licence](#self-host-licence) |
+| `SUITE_LICENCE_PUBLIC_KEY` | none | Ed25519 public key that verifies `SUITE_LICENCE` and the relay's licence tokens, as PEM or the base64url raw key |
+| `SUITE_RELAY_PURGE_TOKEN` | none | bearer the control plane presents to the relay's own workspace delete, so an account erase removes documents, shares and attachments. Distinct from `SUITE_ADMIN_TOKEN`: it opens one route |
+| `SUITE_RELAY_URL` | none | where the control plane reaches that relay. Empty leaves the three stores in place and reports them as not-configured |
 | `SUITE_ADMIN_TOKEN` | none | operator token for `/api/admin/*`, `/metrics` and `/admin`, at least 16 characters; unset answers `404`, which is the safe default |
 | `SUITE_PROJECTION_TOKEN` | random per start | the projection worker's credential; writes only `share-` rooms |
 | `SUITE_SOURCE_TOKEN` | random per start | the source worker's credential; writes only a workspace with an active editor share |
@@ -54,6 +57,33 @@ stores in one file. Two stores must never share a file, whatever the mode.
 
 An unset worker token is generated per start, which only matters if a worker reconnects after a restart.
 Neither worker token may reach a browser or a log.
+
+## Self-host licence
+
+A self-hosted relay starts with no control plane, so nothing mints it a session token and no
+organization subscription holds its capacity. `SUITE_LICENCE` is the whole entitlement: one signed
+token, the line `pnpm --filter @suite/collab-server licence sign` prints, plus
+`SUITE_LICENCE_PUBLIC_KEY` holding the public half of the key that signed it.
+
+The relay verifies the token at boot. A token that is malformed, expired, signed by another key,
+or of a format this build does not read stops the process, and the error names the case:
+`licence-malformed`, `licence-expired`, `licence-bad-signature`, `licence-unknown-version`. A token
+with no key configured is reported on `SUITE_LICENCE_PUBLIC_KEY`, and an empty value means no
+licence.
+
+The claims become the instance caps. `workspaces` caps `SUITE_MAX_WORKSPACES`, `documentBytes`
+caps `SUITE_DOCUMENT_BYTES_PER_WORKSPACE` and `attachmentBytes` caps
+`SUITE_ATTACHMENT_BYTES_PER_WORKSPACE`; a lower value set in the environment still wins. The boot
+writes each cap into that variable before the quota layer reads it, so `GET /api/admin/limits`
+reports the cap with the source `env`. Changing the licence or its caps takes effect at the next
+start.
+
+`SUITE_LICENCE` beside `SUITE_HOSTED=1` is a contradiction, and the process refuses to start. A
+hosted relay takes capacity from the organization's subscription and reads it from the session
+token, so there is no merge to define. A session token on a self-hosted instance, which is
+possible when the operator runs a control plane as well, authenticates a person and adds no
+capacity: the per-workspace claim record is written only in hosted mode. [billing.md](billing.md)
+has the seller's command and the operator's side.
 
 ## Quotas
 
@@ -69,9 +99,10 @@ Neither worker token may reach a browser or a log.
 | `SUITE_DISK_HARD_BYTES` | unlimited | 5 GiB |
 
 Bytes, counts or `unlimited`. A hosted licence carries its own `workspaces`, `documentBytes` and
-`attachmentBytes`, and the tighter of the licence and the instance value wins. Setting `unlimited` by hand
-overrides the hosted guardrails, which is why leaving the variable unset is the safe choice. The exact
-numbers and the code that enforces each one are in [limits.md](limits.md).
+`attachmentBytes`, and the tighter of the licence and the instance value wins. A self-host licence
+caps the same three and follows the same rule. Setting `unlimited` by hand overrides the hosted
+guardrails, which is why leaving the variable unset is the safe choice. The exact numbers and the
+code that enforces each one are in [limits.md](limits.md).
 
 ## Rate limits
 

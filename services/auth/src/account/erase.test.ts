@@ -242,6 +242,28 @@ describe("eraseAccount", () => {
     expect(report.retry).toContain("rolled back");
   });
 
+  it("reports the relay stores as removed, with the counts the port returned", async () => {
+    const store = twoOrganizations();
+
+    const report = await eraseAccount(
+      { userId: OWNER },
+      { accounts: store, workspaceData: store.workspaceData, now: () => NOW },
+    );
+
+    // The composition this file guards: a wired port turns three not-configured
+    // entries into three counts, and nothing else in the report changes shape.
+    expect(report.complete).toBe(true);
+    for (const name of ["documents", "shares", "attachments"] as const) {
+      expect(storeReport(report, name)).toEqual({
+        store: name,
+        status: "removed",
+        removed: name === "shares" ? 2 : name === "attachments" ? 2 : 1,
+      });
+    }
+    expect(report.stores.filter((entry) => entry.status === "not-configured")).toEqual([]);
+    expect(report.retry).toContain("nothing");
+  });
+
   it("names documents, shares and attachments as not configured when no relay store is wired", async () => {
     const store = twoOrganizations();
 

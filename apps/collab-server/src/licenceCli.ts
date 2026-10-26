@@ -8,6 +8,10 @@
  *
  * The private key is written once, with mode 0600, and is never printed. Only
  * the public key is; paste it into the relay as `SUITE_LICENCE_PUBLIC_KEY`.
+ * `sign` prints the token on one line of stdout, and that line is
+ * `SUITE_LICENCE` on the relay the licence is for (ADR-0081). The relay verifies
+ * it at boot and refuses to start when it does not verify, so a token minted
+ * here is either accepted whole or reported by name.
  */
 
 import { createPublicKey, generateKeyPairSync, randomUUID, verify } from "node:crypto";
@@ -82,7 +86,7 @@ function generateKeypair(flags: Map<string, string>): number {
   console.error(
     `Wrote the private key to ${target} (mode 0600). Keep it offline and never commit it.`,
   );
-  console.error("Set this on the hosted relay:");
+  console.error("Set this on the relay as SUITE_LICENCE_PUBLIC_KEY:");
   console.log(publicKeyBase64(publicKey.export({ type: "spki", format: "pem" }).toString()));
   return 0;
 }
@@ -131,6 +135,9 @@ function sign(flags: Map<string, string>): number {
   console.error(
     `Signed ${claims.tier} licence ${claims.id} for ${claims.workspaces} workspaces, valid ${days} days.`,
   );
+  console.error(
+    "Set the line below as SUITE_LICENCE on the relay, and set SUITE_LICENCE_PUBLIC_KEY there to the public half of this key.",
+  );
   console.log(token);
   return 0;
 }
@@ -142,8 +149,10 @@ function usage(): void {
                --document-bytes <n> --attachment-bytes <n> --days <n>
                [--email <address>] [--id <identifier>]
 
-The private key never leaves its file. Only the public key is printed, for
-SUITE_LICENCE_PUBLIC_KEY on the hosted relay.`);
+The private key never leaves its file and is never printed. generate-keypair
+prints the public key for SUITE_LICENCE_PUBLIC_KEY; sign prints the licence token
+for SUITE_LICENCE on the relay that verifies with that key. The token is one
+line: copy it whole, with no line breaks.`);
 }
 
 function main(argv: readonly string[]): number {

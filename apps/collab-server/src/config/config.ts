@@ -1,6 +1,11 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
-import { parseLicencePublicKey } from "@suite/licence";
+import {
+  type BootLicence,
+  type LicenceQuota,
+  parseLicencePublicKey,
+  verifyBootLicence,
+} from "@suite/licence";
 import { type LogLevel, logLevels } from "../logging.js";
 import { LIMIT_ENV, LIMIT_KEYS, type Limits, limitsProblem, resolveLimits } from "./limits.js";
 
@@ -54,6 +59,12 @@ export interface ServerConfig {
     source: string | null;
   };
   licencePublicKey: string | null;
+  /**
+   * The self-host licence verified at boot (`SUITE_LICENCE`), or null when the
+   * instance runs unlicensed. `applyLicenceLimits` turns it into the caps the
+   * quota layer already reads.
+   */
+  licence: BootLicence | null;
   /**
    * The control plane's origin (`SUITE_AUTH_URL`). Null means no session token
    * can be verified here, so no account reaches a room; the relay still serves
@@ -462,18 +473,18 @@ function authUrlValue(env: ConfigEnv): {
  */
 function licenceKey(
   env: ConfigEnv,
-  hosted: boolean,
+  required: boolean,
 ): { value: string | null; problem: ConfigProblem | null } {
   const raw = text(env, "SUITE_LICENCE_PUBLIC_KEY");
   const value = raw !== null && raw.length > 0 ? raw : null;
   if (value === null) {
     return {
       value: null,
-      problem: hosted
+      problem: required
         ? {
             variable: "SUITE_LICENCE_PUBLIC_KEY",
             message:
-              "SUITE_LICENCE_PUBLIC_KEY is required when SUITE_HOSTED=1; a relay cannot verify licences without it.",
+              "SUITE_LICENCE_PUBLIC_KEY is required when SUITE_HOSTED=1 or SUITE_LICENCE is set; a relay cannot verify licences without it.",
           }
         : null,
     };
@@ -489,6 +500,76 @@ function licenceKey(
     };
   }
   return { value, problem: null };
+}
+
+/**
+ * `SUITE_LICENCE` is the self-host entitlement (ADR-0081): the signed token a
+ * seller issued, verified once at boot against `SUITE_LICENCE_PUBLIC_KEY`. A
+ * hosted relay takes its capacity from the organization's subscription instead,
+ * so a licence beside `SUITE_HOSTED=1` is a contradiction rather than a merge.
+ * A token that does not verify stops the process; running unlimited while the
+ * operator believes capacity was bought is the worse failure.
+ */
+function bootLicence(
+  token: string | null,
+  key: string | null,
+  hosted: boolean,
+  now: number,
+): { value: BootLicence | null; problem: ConfigProblem | null } {
+  if (token === null) return { value: null, problem: null };
+  if (hosted) {
+    return {
+      value: null,
+      problem: {
+        variable: "SUITE_LICENCE",
+        message:
+          "SUITE_LICENCE is set with SUITE_HOSTED=1; a hosted relay reads capacity from the organization's subscription, so unset one of the two.",
+      },
+    };
+  }
+  // Without a key the refusal is the variable above, reported once.
+  if (key === null) return { value: null, problem: null };
+
+  const result = verifyBootLicence(token, key, now);
+  if (result.ok) return { value: result.licence, problem: null };
+  return { value: null, problem: { variable: "SUITE_LICENCE", message: result.refusal.message } };
+}
+
+/** The limits a licence caps, paired with the claim that carries each number. */
+const LICENCE_LIMITS = [
+  { limit: "maxWorkspaces", cap: "workspaces" },
+  { limit: "documentBytesPerWorkspace", cap: "documentBytes" },
+  { limit: "attachmentBytesPerWorkspace", cap: "attachmentBytes" },
+] as const satisfies readonly { limit: keyof Limits; cap: keyof LicenceQuota }[];
+
+/** A `SUITE_*` limit value as the quota layer reads it, or null when unreadable. */
+function limitText(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim().length === 0) return null;
+  const value = raw.trim().toLowerCase();
+  if (value === "unlimited" || value === "infinity" || value === "none") {
+    return Number.POSITIVE_INFINITY;
+  }
+  return /^\d+$/u.test(value) ? Number(value) : null;
+}
+
+/**
+ * Applies a verified licence to the limits the quota layer reads. `resolveLimits`
+ * runs at boot and again on every runtime override, always against the
+ * environment, so the caps have to become environment values. The tighter of the
+ * licence and the operator's own value wins, which is the rule a hosted licence
+ * already follows.
+ */
+export function applyLicenceLimits(
+  licence: BootLicence | null,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  if (licence === null) return;
+  for (const { limit, cap } of LICENCE_LIMITS) {
+    const configured = limitText(env[LIMIT_ENV[limit]]);
+    const capped =
+      configured === null ? licence.caps[cap] : Math.min(configured, licence.caps[cap]);
+    env[LIMIT_ENV[limit]] = Number.isFinite(capped) ? String(capped) : "unlimited";
+  }
 }
 
 /** Version stamps from a tag are short and printable; anything else is a typo. */
@@ -529,9 +610,13 @@ function logLevel(env: ConfigEnv): { value: LogLevel; problem: ConfigProblem | n
 /**
  * Reads, type-checks and defaults the whole configuration. `problems` is empty
  * exactly when the process may start; every entry names the variable at fault
- * and never repeats a credential.
+ * and never repeats a credential. `now` is the instant a `SUITE_LICENCE` is
+ * checked against, so an expired one is a startup error and a test can fix time.
  */
-export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
+export function validateConfig(
+  env: ConfigEnv = process.env,
+  now: number = Date.now(),
+): ConfigResult {
   const problems: ConfigProblem[] = [];
   const fail = (problem: ConfigProblem | null): void => {
     if (problem) problems.push(problem);
@@ -591,7 +676,11 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
   fail(trustProxy.problem);
   fail(versionProblem(env));
 
-  const licence = licenceKey(env, hosted.value);
+  const licenceRaw = text(env, "SUITE_LICENCE");
+  const licenceToken = licenceRaw !== null && licenceRaw.length > 0 ? licenceRaw : null;
+  const key = licenceKey(env, hosted.value || licenceToken !== null);
+  fail(key.problem);
+  const licence = bootLicence(licenceToken, key.value, hosted.value, now);
   fail(licence.problem);
   fail(urlProblem(env));
   const auth = authUrlValue(env);
@@ -647,7 +736,8 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
         projection: projection.value ?? legacyInternal.value,
         source: source.value,
       },
-      licencePublicKey: licence.value,
+      licencePublicKey: key.value,
+      licence: licence.value,
       authUrl: auth.value,
       allowedOrigins: origins.value,
       trustProxy: trustProxy.value,

@@ -280,6 +280,19 @@ interface UiState extends SessionCapabilities {
   exitView: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
+  /**
+   * Whether the rollup rail is open (ADR-0060): the card in focus reduced to its
+   * header line and the count it hides. Reader state, like `outlineOpen` — two
+   * people on one board may want it open or shut, and a collapse is not written
+   * to the document.
+   */
+  rollupOpen: boolean;
+  /**
+   * The card whose blueprint install is on screen, if any. The panel previews a
+   * type written in a card's title and body, so it opens over the board rather
+   * than inside the palette row that asked for it.
+   */
+  blueprintCardId: string | null;
   /** The command palette: one surface for navigation and actions from `⌘K`. */
   paletteOpen: boolean;
   /**
@@ -369,6 +382,9 @@ interface UiState extends SessionCapabilities {
   setLibraryScope: (scope: LibraryScope) => void;
   toggleLibraryGroupBySection: () => void;
   toggleOutline: () => void;
+  toggleRollup: () => void;
+  openBlueprintInstall: (cardId: string) => void;
+  closeBlueprintInstall: () => void;
   openContextMenu: (menu: ContextMenuState) => void;
   closeContextMenu: () => void;
 }
@@ -420,6 +436,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   activeViewId: null,
   libraryQuery: "",
   outlineOpen: true,
+  rollupOpen: false,
+  blueprintCardId: null,
   contextMenu: null,
   selectedConnector: null,
   shareRequest: null,
@@ -760,6 +778,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       libraryGroupBySection: false,
     }),
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
+  toggleRollup: () => set((state) => ({ rollupOpen: !state.rollupOpen })),
+  openBlueprintInstall: (blueprintCardId) => set({ blueprintCardId }),
+  closeBlueprintInstall: () => set({ blueprintCardId: null }),
   openContextMenu: (contextMenu) => set({ contextMenu }),
   closeContextMenu: () => set({ contextMenu: null }),
 }));

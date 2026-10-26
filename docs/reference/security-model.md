@@ -17,6 +17,7 @@ This page describes the current architecture. It is not a promise of end-to-end 
 | Selection viewer link | `?share=<token>` | Read-only access to a live projection of the selected cards on one board, the geometry of the sections those cards occupy, and the titles of cards they reference, marked not shared | The unselected cards, the workspace index or id, the selected ids, any write |
 | Board or card editor link | `?share=<token>` | Editing a draft in its own `share-<token>` room, then publishing that draft | Writing the workspace directly, managing links |
 | Internal worker tokens | `SUITE_PROJECTION_TOKEN` (legacy `SUITE_INTERNAL_TOKEN`) and `SUITE_SOURCE_TOKEN` | Server-to-server access for the projection worker: projection rooms only, and a workspace room only while it has an active editor share | Anything user-facing; they must never reach a browser or a log |
+| Workspace purge token | `SUITE_RELAY_PURGE_TOKEN`, presented by the control plane as a bearer token | Delete the workspace named in the path, with `{"confirm":"<id>"}` in the body. Nothing else | Every other workspace route, `/api/admin/*`, any read |
 
 A share token is random and stored only as a SHA-256 hash. The relay resolves it per room as `read` or
 `write`. A share token can never mint or revoke another link, and it is not a session: a management route
@@ -74,6 +75,28 @@ TTL, so a generous value would widen the revocation window by the same amount.
 
 The relay fetches nothing at boot. A control plane that is down means no account can join; a control plane
 that comes back is picked up by the next fetch, without restarting the relay.
+
+## What an anonymous workspace can do
+
+A workspace with no account is local-only. It opens, edits, exports and deletes from the browser with no
+prompt and no credential, and it never reaches a relay. The socket answers `Authentication failed`
+because a room credential is a session token, and a token names an organization; there is nothing else on
+the wire that could attribute a room to an owner.
+
+This is a deliberate narrowing, not a gap left open. The owner key used to authorise an anonymous room by
+being a bearer secret nobody else had. Deleting it removed the only attribution an anonymous connection had,
+and inventing a second anonymous credential would have recreated the thing that was deleted. Sync also
+costs a seat, so it needs an owner to charge.
+
+The local-first promise survives intact: everything a reader can do alone still works with no account, and
+the document is theirs to export. What changes is the second browser. A workspace becomes visible to
+another machine at the moment it is claimed by an account, which is also the moment it can be paid for.
+`onLinkAccount` moves the claimed rows and the ids do not change, so a link shared point-to-point before
+sign-up still resolves afterwards.
+
+A self-hosted instance that runs only the relay therefore has no sync either. It is the same rule seen from
+the other side: the relay has no way to decide who may join, so it refuses everyone. A self-host that wants
+collaboration runs the control plane beside it, which `compose.yaml` already does.
 
 ## Which organization owns a workspace
 
@@ -320,7 +343,8 @@ A workspace export: the app writes a `.suite` file from the live document, and a
 the same workspace through `GET /api/admin/workspaces/:id/export`. The file opens without an account and
 contains the document; it does not contain account rows or the relay's share records.
 
-A workspace delete, by the account that owns it (`DELETE /api/workspaces/:id`) or by an operator
+A workspace delete, by the account that owns it (`DELETE /api/workspaces/:id`), by the control plane while
+it erases an account (the same route with `SUITE_RELAY_PURGE_TOKEN`), or by an operator
 (`admin delete`). It removes, in one pass: the workspace document and every projected share room, the
 share rows and their draft baselines, the recorded organization row, the licence record when the relay
 is hosted, and every attachment row and byte of that workspace. The response reports each count, so a
@@ -387,10 +411,17 @@ means it is not; in both cases `deleted`, `complete`, `organizations`, `workspac
 (`removed`, `not-removed`, `not-attempted` or `not-configured`), the number it removed, and a reason and
 follow-up command when it removed less.
 
-The three relay stores report `not-configured` on a deployment that mounts the account routes without a
-workspace data port. The account is still deleted, and the report names the route that finishes each
-workspace: `DELETE /api/workspaces/<id>` with the owning account's session, or
+The three relay stores report `removed` with the count the relay answered when the deployment sets
+`SUITE_RELAY_URL` and `SUITE_RELAY_PURGE_TOKEN`. The control plane then sends the same delete the account
+sends, on its own credential, and the report carries what came back. Without that pair they report
+`not-configured`: the account is still deleted, and the report names the route that finishes each
+workspace, which is `DELETE /api/workspaces/<id>` with the owning account's session, or
 `pnpm --filter @suite/collab-server admin delete <id> --force`.
+
+The purge credential is a third token rather than `SUITE_ADMIN_TOKEN`. The account service is the process
+with a public sign-in surface, and the operator token would let a fault there reach every workspace's
+limits, rooms and links. This one deletes the workspace it is handed and opens nothing else, and it is set
+on each side independently, so rotating it costs one restart of each process.
 
 **Backups age out; they do not vanish.** A delete is immediate on the live stores and permanent for the
 relay, but the snapshot that contains the deleted rows is kept until its retention window passes:

@@ -130,14 +130,21 @@ point turns the row `canceled`, and the entitlement read answers `free`.
 
 ## Fixture prices
 
-`fixtures.json` holds the amounts and the caps, and it is the only copy: `pnpm stripe`
-creates these prices from it, the printed `STRIPE_PRICE_TIERS` carries its caps, and the
-billing unit tests read the same file. A limit edited there is a limit the suite asserts.
+`fixtures.json` holds the amounts, the seat counts and the caps, and it is the only copy:
+`pnpm stripe` creates these prices from it, the printed `STRIPE_PRICE_TIERS` carries its
+seats and caps, and the billing unit tests read the same file. A limit edited there is a
+limit the suite asserts.
 
-| Tier | Lookup key | Price |
-| --- | --- | --- |
-| `solo` | `suite_solo_monthly` | $12/month |
-| `studio` | `suite_studio_monthly` | $49/month |
+| Tier | Lookup key | Seats | Price |
+| --- | --- | --- | --- |
+| `solo` | `suite_solo_monthly` | 1 | $12/month |
+| `solo-pro` | `suite_solo_pro_monthly` | 1 | $49/month |
+
+`seats` is how many people a plan admits. Both plans sell one, because the tier table
+carries no per-seat price and the licence keeps no headroom over the member count; a plan
+that claims more is refused when the plugin is built (ADR-0082). The lookup keys changed
+with the rename from `studio`, so `pnpm stripe` creates a new price the first time it runs
+after this and an existing `STRIPE_PRICE_TIERS` has to be regenerated.
 
 ## When it does not work
 

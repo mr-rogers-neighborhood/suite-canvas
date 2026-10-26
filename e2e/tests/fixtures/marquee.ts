@@ -345,7 +345,16 @@ export async function expectPageInteractive(page: Page, cardCount: number): Prom
  * only expected console error, and it is matched on its URL rather than its text
  * so a genuine missing asset still fails the gate.
  */
-const expectedMiss = (url: string) => url.endsWith("/api/auth/ok");
+/**
+ * The two requests a deployment without an account service legitimately 404s.
+ *
+ * `/ok` is the availability probe and `/token` is the room-credential mint. Both
+ * are the documented "accounts do not exist here" answer (ADR-0067 §8), so a 404
+ * from them is information rather than a fault. The app asks each at most once
+ * per page, and any other failed request still fails the test.
+ */
+const expectedMiss = (url: string) =>
+  url.endsWith("/api/auth/ok") || url.endsWith("/api/auth/token");
 
 /** Console errors and uncaught exceptions seen so far; empty when the page is healthy. */
 export function watchErrors(page: Page): string[] {

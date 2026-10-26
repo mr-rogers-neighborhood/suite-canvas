@@ -23,8 +23,28 @@ publish validator (`packages/graph`).
 
 A hosted licence carries its own `workspaces`, `documentBytes` and
 `attachmentBytes`; the tighter of the licence and the instance value wins.
-Self-hosting has no licence, so the storage quotas are unlimited unless you set
-one. `unlimited` is also accepted as a value for every quota.
+Self-hosting has no licence unless `SUITE_LICENCE` supplies one, so the storage
+quotas above are unlimited until then. `unlimited` is also accepted as a value
+for every quota.
+
+### What an account actually gets
+
+The table above is the instance ceiling, not the answer a reader wants. A hosted
+account is capped by its licence row, and a new organization starts on the free
+tier. These are the numbers the seat check enforces, read from
+`FREE_LICENCE_TIER`.
+
+| Cap | Free tier | Plan tier |
+| --- | --- | --- |
+| Workspaces | 1 | from the plan |
+| Seats | 1 | from the plan |
+| Document bytes per workspace | 64 MiB (67,108,864 bytes) | from the plan |
+| Attachment bytes per workspace | 8 MiB (8,388,608 bytes) | from the plan |
+
+A plan sells one seat in this build (ADR-0082): there is no per-seat price, so a
+plan that declared more would bill one person and admit one person. The plan
+figures are in `deploy/stripe/fixtures.json` and are not repeated here, because
+they change with pricing rather than with code.
 
 The projection budget is also a serving ceiling. A projection room whose stored
 document is over it refuses a new join with `document-limit`, because

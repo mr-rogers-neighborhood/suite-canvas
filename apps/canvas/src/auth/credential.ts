@@ -49,6 +49,16 @@ interface Cached {
 let cached: Cached | null = null;
 let inflight: Promise<string | null> | null = null;
 
+/**
+ * Set when the deployment answered "there is no mint here" once.
+ *
+ * A self-host that runs only the relay has no account service, so
+ * `GET /api/auth/token` is a 404 on every join. Asking once and remembering the
+ * answer keeps a local-first session from firing a doomed request at every
+ * reconnect, and keeps the browser console free of one 404 per gesture.
+ */
+let noMintEndpoint = false;
+
 function decodeBase64Url(value: string): string | null {
   const normalised = value.replace(/-/gu, "+").replace(/_/gu, "/");
   const padded = normalised.padEnd(normalised.length + ((4 - (normalised.length % 4)) % 4), "=");
@@ -122,10 +132,16 @@ export function currentCredentialClaims(now = Date.now()): CredentialClaims | nu
   return credentialClaims(cachedCredential(now));
 }
 
-/** Drops the cached token. Sign-out, and between tests. */
+/**
+ * Drops the cached token. Sign-out, and between tests.
+ *
+ * The "no mint here" memory is cleared too: a sign-in can turn a deployment that
+ * had no accounts into one that does, and a stale refusal would hide it.
+ */
 export function forgetCredential(): void {
   cached = null;
   inflight = null;
+  noMintEndpoint = false;
 }
 
 export interface MintCredentialInput {
@@ -140,6 +156,7 @@ async function mintCredential(input: MintCredentialInput): Promise<string | null
   const base = input.base ?? authClientBase();
   const send = input.fetch ?? globalThis.fetch;
   if (typeof send !== "function") return null;
+  if (noMintEndpoint) return null;
   const controller = typeof AbortController === "undefined" ? null : new AbortController();
   const timer = controller
     ? setTimeout(() => controller.abort(), input.timeoutMs ?? MINT_TIMEOUT_MS)
@@ -153,7 +170,12 @@ async function mintCredential(input: MintCredentialInput): Promise<string | null
       credentials: "include",
       ...(controller ? { signal: controller.signal } : {}),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // 404 is the documented "accounts do not exist in this deployment" answer,
+      // so stop asking. 401 is a signed-out person, which a later sign-in fixes.
+      if (response.status === 404) noMintEndpoint = true;
+      return null;
+    }
     const body: unknown = await response.json();
     if (typeof body !== "object" || body === null) return null;
     const token = (body as { token?: unknown }).token;

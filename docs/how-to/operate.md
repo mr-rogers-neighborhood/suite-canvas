@@ -25,8 +25,8 @@ pnpm --filter @suite/collab-server start     # from the repo root
 `/api/*` and `/ws`. A released image needs no Node and no checkout:
 
 ```sh
-docker pull ghcr.io/<owner>/suite:v0.2.0-beta.1
-SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1 docker compose up -d
+docker pull ghcr.io/<owner>/suite:v1.0.0
+SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0 docker compose up -d
 ```
 
 `compose.yaml` keeps both `image:` and `build:`, so `--build` builds and tags locally while a deployed

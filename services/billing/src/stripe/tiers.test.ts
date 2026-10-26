@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { BillingError } from "../errors.ts";
 import { fixturedTiersJson, fixturePlans } from "../testing/fixtures.ts";
-import { limitsOf, parseTierTable, tierTableByTier } from "./tiers.ts";
+import { limitsOf, parseTierTable, SEATS_PER_PLAN, tierTableByTier } from "./tiers.ts";
 
 function failureOf(raw: string | null): BillingError {
   const parsed = parseTierTable(raw);
@@ -21,10 +21,35 @@ describe("parseTierTable", () => {
     assert.equal(parsed.value.size, fixturePlans().length);
     assert.deepEqual(parsed.value.get("price_solo"), {
       tier: solo.tier,
+      seats: solo.seats,
       workspaces: solo.workspaces,
       documentBytes: solo.documentBytes,
       attachmentBytes: solo.attachmentBytes,
     });
+  });
+
+  it("should sell one seat for a plan that does not name one", () => {
+    const parsed = parseTierTable(
+      JSON.stringify({
+        price_1: { tier: "solo", workspaces: 3, documentBytes: 1, attachmentBytes: 2 },
+      }),
+    );
+    assert.equal(parsed.isOk(), true);
+    if (parsed.isErr()) return;
+
+    assert.equal(parsed.value.get("price_1")?.seats, SEATS_PER_PLAN);
+  });
+
+  it("should refuse a seat count that is not a whole number of at least one", () => {
+    const plan = { tier: "solo", workspaces: 3, documentBytes: 1, attachmentBytes: 2 };
+
+    for (const seats of [0, 1.5, -1, "1"]) {
+      assert.match(
+        failureOf(JSON.stringify({ price_1: { ...plan, seats } })).message,
+        /price_1/u,
+        `${String(seats)} seats should be refused`,
+      );
+    }
   });
 
   it("should refuse a missing, malformed or empty table", () => {
@@ -66,7 +91,7 @@ describe("tierTableByTier", () => {
 });
 
 describe("limitsOf", () => {
-  it("should name the three caps the relay enforces", () => {
+  it("should name the three caps the relay enforces, and no seat count", () => {
     const plan = fixturePlans()[0];
     assert.ok(plan !== undefined);
 

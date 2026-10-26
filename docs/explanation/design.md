@@ -39,6 +39,7 @@ Splitting the workspace into one index document plus a document per card would b
 | What a template is | A creation recipe duplicated on use; a type blueprint is itself a card | ADR-0038, ADR-0059 |
 | What a tutorial is | A card whose body holds tour steps, presentable on the canvas | ADR-0054 |
 | Which field kinds compose | `rating`, `group` and `list` compose from the built-in kinds | ADR-0057 |
+| What an anonymous workspace may do | Local-only: it edits and exports with no account and never joins a relay, because sync needs an owner to attribute and to charge | ADR-0076 |
 
 ## What is not settled
 

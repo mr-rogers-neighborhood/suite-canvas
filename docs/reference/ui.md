@@ -13,7 +13,9 @@ How the shell, the library, the panels, the styling surfaces and the command pal
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
 | Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence |
+| Rollup rail | `apps/canvas/src/app/RollupSummaryHost.tsx` | The card in front of the reader as its header line and the count it hides |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
+| Blueprint install | `apps/canvas/src/app/BlueprintInstallHost.tsx` | The type a card's title and body declare, previewed before it is written |
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search and facets |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
@@ -152,9 +154,9 @@ Keys: typing filters, `ArrowDown` and `ArrowUp` move the highlight, `Enter` runs
 
 The library, the inspector and the canvas context menu read the same registry. Availability is a property of the command, which is why a read-only session loses a command everywhere at once rather than in the surfaces someone remembered to guard.
 
-`help.shortcuts` opens the shortcut sheet and `system.settings` opens Settings, both through the window events their hosts listen for. `edit.undo` and `edit.redo` are listed only while a surface supplies a handler in `CommandActions`, which is why the dock's own pair of buttons is the visible control today.
+`help.shortcuts` opens the shortcut sheet and `system.settings` opens Settings, both through the window events their hosts listen for. `edit.undo` and `edit.redo` are listed only while `CommandActions` holds a handler. The shell supplies both from `apps/canvas/src/app/useBoardPaletteActions.ts`, which steps the document's undo manager and clears the selection afterwards, exactly as the dock's pair of buttons does.
 
-Two commands arrived with their handlers. `layout.arrangeRadial` runs `arrangeRadialSelection`, and `type.installBlueprint` runs `installBlueprintSelection`; both handlers live in `apps/canvas/src/canvas/board/useBoardCommands.ts`. Each is listed only while its `CommandActions` field is supplied, so the palette and the dock never offer a row the board cannot run. `type.installBlueprint` needs `canManageSchema`, which the board reads from the same capability matrix as every other write.
+Three commands act on the document rather than on a surface, and each is listed only while its `CommandActions` field is supplied, so the palette and the dock never offer a row that cannot run. `layout.arrangeRadial` runs the shell's arrangement, which reads the selection in paint order and hands `planRadial` and `childrenFromLinks` (the same pure functions `arrangeRadialSelection` in `apps/canvas/src/canvas/board/useBoardCommands.ts` uses for the board's own menu) to `applyLayoutPlan`. `type.installBlueprint` opens `apps/canvas/src/app/BlueprintInstallHost.tsx` on the card the row names: the palette previews the type the card declares and installs it on one press through `installBlueprintCard`, the same call `installBlueprintSelection` makes. It needs `canManageSchema`, which the registry reads from the same capability matrix as every other write.
 
 ## Focus and keyboard
 
@@ -165,6 +167,8 @@ A modal panel traps Tab. `useFocusTrap` in `apps/canvas/src/dialogs/useFocusTrap
 Menus answer the arrows. Every `role="menu"` container handles `ArrowUp`, `ArrowDown`, `Home` and `End` through `menuKeyDown` in `apps/canvas/src/dialogs/menuKeys.ts`, moving focus among its own items and skipping a nested submenu's rows. Without it the role announced behaviour the keys did not have.
 
 A menu also takes focus when it opens. `focusFirstMenuItem` is the menu's `ref`, so the first item holds focus on the frame the menu appears, which is what lets the key handler run at all; before it, focus stayed on the trigger and `ContextMenu`, portalled to `body`, sent Tab to the end of the document. The same ref restores focus to the opener when the menu unmounts, unless something else already took it.
+
+A combobox is not a menu. `apps/canvas/src/cards/CardPicker.tsx` keeps focus in its search field and names the highlighted row with `aria-activedescendant`, because focus moving into the list would end the query after the first keystroke. `focusFirstMenuItem` looks for `menuitem` rows, so it is not the helper that surface needs; `Home` and `End` stay caret keys there for the same reason.
 
 A tablist is one tab stop. `tabKeyDown` in `apps/canvas/src/dialogs/tabKeys.ts` handles `ArrowRight`, `ArrowLeft`, `Home` and `End`, and selection follows focus; `LibraryHeader` and `ContainerPanel` use it, and `CardPanelTabs` follows the same pattern.
 
@@ -195,7 +199,8 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Focus trap and focus restore | `apps/canvas/src/dialogs/useFocusTrap.test.tsx` |
 | Menu arrow keys, and focus entering the menu | `apps/canvas/src/dialogs/menuKeys.test.tsx` |
 | Tab strip keyboard | `apps/canvas/src/dialogs/tabKeys.test.tsx` |
-| Each menu takes focus on open | `ContextMenu.test.tsx`, `Dock.test.tsx`, `ViewsBar.test.tsx`, `BoardTabs.test.tsx`, `WorkspaceActions.test.tsx`, `ThemeToggle.test.tsx` and `CardTypePicker.test.tsx` beside each component |
+| Each menu takes focus on open | `ContextMenu.test.tsx`, `Dock.test.tsx`, `ViewsBar.test.tsx`, `BoardTabs.test.tsx`, `WorkspaceActions.test.tsx`, `ThemeToggle.test.tsx`, `CardTypePicker.test.tsx` and `SignInEntry.test.tsx` beside each component |
+| A combobox keeps focus in its field | `apps/canvas/src/cards/CardPicker.test.tsx` |
 | Each modal dialog traps Tab | `SignInDialog.test.tsx` and `AdmissionPanel.test.tsx` in `apps/canvas/src/auth/`, `ShareDialog.trap.test.tsx` and `ConflictDialog.test.tsx` in `apps/canvas/src/sharing/`, `SettingsDialog.test.tsx` |
 | Card focus mode as a dialog | `apps/canvas/src/cards/CardFocusSurface.test.tsx` |
 | Library rows by keyboard, sort and truncation | `apps/canvas/src/library/LibraryDrawer.test.tsx` |

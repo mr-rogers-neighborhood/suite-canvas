@@ -5,10 +5,10 @@ owns the Stripe customer, Checkout, the billing portal, the webhook, the subscri
 trials and seat sync. This repository supplies the plan list, the organization rule and the
 entitlement read.
 
-A licence is a signed token you paste into a workspace that runs a hosted relay. Local
-editing never consults it, and self-hosting needs no key at all. Since ADR-0075 the hosted
-proof is the session JWT the auth instance signs, so the Ed25519 licence file is the
-self-host path only.
+A licence is a signed token. A self-hosted relay reads one from `SUITE_LICENCE` and verifies it
+at boot ([ADR-0081](../../internal/decisions/open/0081-a-self-host-licence-arrives-in-the-environment.md));
+a hosted relay reads none, because its proof is the session JWT the auth instance signs
+(ADR-0075). Local editing consults neither.
 
 ## What the plugin owns
 
@@ -62,8 +62,8 @@ and the deployment's configuration all come from this one table.
 
 ```json
 {
-  "price_1PAbCdEfGhIjKl": { "tier": "solo", "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
-  "price_1PAbCdEfGhIjKm": { "tier": "studio", "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
+  "price_1PAbCdEfGhIjKl": { "tier": "solo", "seats": 1, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
+  "price_1PAbCdEfGhIjKm": { "tier": "solo-pro", "seats": 1, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
 }
 ```
 
@@ -71,6 +71,32 @@ The plugin sells one plan per tier name. Two prices naming one tier, as a monthl
 annual do, collapse to the first price in the table. A price missing from the table is a
 configuration failure: the customer paid, so the deployment has to be fixed rather than
 granting a free plan.
+
+`seats` is how many people the plan admits, the owner included. `seats` is not part of
+`limits`: the relay enforces the three caps against a document, and a seat count bounds
+member rows, so the two numbers have different readers.
+
+## Seats in v1: one per plan
+
+Both hosted plans sell one seat, so an organization on a paid plan has its owner and no
+second member. The plans are named for that, `solo` and `solo-pro`, and the site states it
+where a buyer reads the price (ADR-0082).
+
+The number is enforced, not asserted. `planList` refuses a table that declares more than
+one seat, because there is no per-seat price to charge for the rest:
+
+```
+plan "team" sells 2 seats, and this build sells 1: there is no per-seat price to charge
+for the rest (ADR-0082)
+```
+
+`@better-auth/stripe` writes `subscription.seats` from the member count for any plan that
+carries a `seatPriceId`, and `licenceRowFor` copies that quantity into
+`organization_licences.seats`, which `checkSeatAllowance` treats as a ceiling on the
+organization's members. Quantity and ceiling are then the same number, so the join that
+would raise the quantity is the join the ceiling refuses. Seat pricing needs a purchased
+quantity above the current headcount, and that is a change to the admission rule in
+`@suite/auth` as much as to this service.
 
 ## The entitlement read
 
@@ -146,9 +172,12 @@ reach. The fallback row is byte-for-byte the row the trigger writes, `free:<org>
 all, so "downgraded" and "never subscribed" are the same state.
 
 `seats` is the subscription's seat quantity, never below the free tier's one seat: a plan
-that sells no seats still admits the owner it always admitted. Per-seat billing is what
-makes that number larger; the plugin syncs the quantity from member rows when a plan carries
-a `seatPriceId`.
+that sells no seats still admits the owner it always admitted. The plugin reports that
+quantity on create and on every update, and a quantity that is not a whole number is read
+as absent rather than as a fractional ceiling. A member whose join would take the count past
+it is refused with `seat-refused` and `reason: seat-allowance-exhausted` before the row is
+written, so the plan is never silently oversold. No plan prices seats today, so the quantity
+is one and so is the row; the section above says why.
 
 Two limits are worth stating rather than hiding:
 
@@ -169,6 +198,44 @@ The read answers `free` with empty limits when the plan name is not in the table
 come from configuration, so a table edited under a live subscription loses caps rather
 than failing every token mint.
 
+## The self-host licence
+
+A self-hosted relay starts with no control plane, so nothing mints it a session token and no
+subscription row holds its capacity. The entitlement is a token the operator holds:
+`SUITE_LICENCE`, one line of text, verified once at boot against `SUITE_LICENCE_PUBLIC_KEY`.
+
+The seller signs a licence for that operator:
+
+```sh
+pnpm --filter @suite/collab-server licence sign --key ./licence-private.pem \
+  --tier team --workspaces 25 --document-bytes 5368709120 --attachment-bytes 26843545600 --days 365
+```
+
+The command prints the token on stdout. The operator pastes that line, whole and unbroken, into
+the relay's environment:
+
+```sh
+SUITE_LICENCE=eyJ2IjoxLCJpZCI6InRlYW0tMjAyNiIs...
+SUITE_LICENCE_PUBLIC_KEY=<the public half of the key the seller signed with>
+```
+
+The relay exits on a token it cannot use, and the message names the case: `licence-malformed`,
+`licence-expired`, `licence-bad-signature`, `licence-unknown-version`. A token with no key
+configured is reported on `SUITE_LICENCE_PUBLIC_KEY`. Starting anyway would run the instance
+unlimited while the operator believes capacity was bought.
+
+The claims cap the instance. `workspaces` caps `SUITE_MAX_WORKSPACES`, `documentBytes` caps
+`SUITE_DOCUMENT_BYTES_PER_WORKSPACE` and `attachmentBytes` caps
+`SUITE_ATTACHMENT_BYTES_PER_WORKSPACE`, and a lower value in the environment still wins. `tier` is
+a label for support and gates nothing.
+
+`SUITE_HOSTED=1` and `SUITE_LICENCE` together refuse to boot. A hosted relay takes capacity from
+the organization's subscription, so there is no second source to merge.
+
+A session token and a licence do not compete on a self-hosted relay. Capacity comes from
+`SUITE_LICENCE`; a session token, when the operator runs a control plane as well, authenticates a
+person and raises no cap, because the per-workspace claim record is written only in hosted mode.
+
 ## Environment
 
 | Variable | When | Meaning |
@@ -178,6 +245,7 @@ than failing every token mint.
 | `STRIPE_PRICE_TIERS` | always | The tier table above, as JSON keyed by price id |
 | `SUITE_CONTROL_PLANE_DATABASE_URL` | entitlement read | The one Postgres holding `subscription` (ADR-0070) |
 | `SUITE_CONTROL_PLANE_PORT` | local runs | Listener port, `1236` by default |
+| `SUITE_LICENCE` | self-host relay | The signed token, verified at boot against the public key |
 | `SUITE_LICENCE_PUBLIC_KEY` | self-host relay | The key that verifies a signed licence file |
 
 `/api/billing/*` answers `503` with `not-configured` when the tier table or the database

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { entitlementFor, freeEntitlement } from "../entitlement/entitlement.ts";
 import { BillingError } from "../errors.ts";
 import { billingPluginOptions } from "../stripe/plugin.ts";
-import { fixtureLimits, NOW, tierTableFixture } from "../testing/fixtures.ts";
+import { fixtureLimits, fixturePlans, NOW, tierTableFixture } from "../testing/fixtures.ts";
 import {
   createLicenceProjection,
   freeLicenceRow,
@@ -83,6 +83,15 @@ describe("subscriptionViewOf", () => {
     assert.equal(read.seats, null);
     assert.equal(read.subscriptionId, null);
   });
+
+  it("should read a seat count that is not a whole quantity as absent", () => {
+    // `seats` becomes a ceiling compared against a member count, so a fraction would admit
+    // a fraction of a person and a negative number would fall below the free tier.
+    for (const seats of [2.5, -1, Number.NaN]) {
+      const read = subscriptionViewOf({ referenceId: ORG, plan: "solo", status: "active", seats });
+      assert.equal(read.seats, null, `${String(seats)} is not a seat count`);
+    }
+  });
 });
 
 describe("licenceRowFor", () => {
@@ -125,6 +134,51 @@ describe("licenceRowFor", () => {
 
     assert.equal(withSeats(4).seats, 4);
     assert.equal(withSeats(0).seats, FREE.seats);
+  });
+
+  it("should grant every fixture plan one seat, so no plan admits a second member", () => {
+    // The gap this closes: a plan priced for a team wrote one seat, because the plugin's
+    // quantity is one when the plan carries no seat price. `services/auth` compares the
+    // organization's member count plus the invitee against this number and answers
+    // `seat-refused` with `reason: "seat-allowance-exhausted"` above it
+    // (`checkSeatAllowance`, `services/auth/src/organizations/seats.ts`), so one seat is
+    // the owner and nobody else.
+    for (const plan of fixturePlans()) {
+      const subscription = view({ plan: plan.tier });
+      const row = licenceRowFor({
+        organizationId: ORG,
+        subscription,
+        entitlement: entitlementFor(subscription, TIERS, NOW),
+        free: FREE,
+        now: NOW,
+      });
+
+      assert.equal(row.tier, plan.tier);
+      assert.equal(row.seats, plan.seats, `${plan.tier} must sell the seats it declares`);
+      assert.equal(row.seats, 1);
+    }
+  });
+
+  it("should keep a two-member organization readable when the subscription drops to one seat", () => {
+    const solo = fixtureLimits("solo");
+    const downgraded = view({ seats: 1 });
+    const row = licenceRowFor({
+      organizationId: ORG,
+      subscription: downgraded,
+      entitlement: entitlementFor(downgraded, TIERS, NOW),
+      free: FREE,
+      now: NOW,
+    });
+
+    // Downgrading writes a row rather than deleting one, so the organization keeps its
+    // plan, its documents and a horizon in the future; a missing row would read
+    // `licence-unprovisioned`, a fault no upgrade fixes. What no longer fits is the second
+    // member, and the refusal says so: "this organization has more members than its
+    // licence allows" with `seat-allowance-exhausted`.
+    assert.equal(row.tier, "solo");
+    assert.equal(row.workspaces, solo.workspaces);
+    assert.equal(row.seats, 1);
+    assert.ok(row.expiresAt > NOW);
   });
 
   it("should write the free row for a cancelled subscription, not delete anything", () => {

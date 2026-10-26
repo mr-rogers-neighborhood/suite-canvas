@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { type AccountTab, awaitingAdmission, useAccountStore } from "./useAccountStore";
 
 /** The account surfaces, in the order the menu lists them. */
@@ -91,9 +92,12 @@ export function SignInEntry({ onSignOut = signOutLazily }: SignInEntryProps = {}
         </button>
         {menuOpen ? (
           <div
+            ref={focusFirstMenuItem}
             role="menu"
+            aria-label="Account"
             data-testid="account-menu"
             className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+            onKeyDown={menuKeyDown}
           >
             {MENU.map((entry) => (
               <button

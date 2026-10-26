@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminPaths } from "../ops/admin.js";
+import { type AttachmentStore, createSqliteAttachmentStore } from "../store/attachments.js";
 import { createLicenceClaimStore, type LicenceClaimStore } from "../store/licenceClaims.js";
 import { createDocumentStore } from "../store/persistence.js";
 import { createShareStore } from "../store/shares.js";
@@ -25,15 +26,20 @@ let orgs: WorkspaceOrgStore;
 let licenceClaims: LicenceClaimStore;
 let documents: ReturnType<typeof createDocumentStore>;
 let shares: ReturnType<typeof createShareStore>;
+let attachments: AttachmentStore;
 let sessions: SessionFixture;
 let server: Server;
 let baseUrl: string;
 let paths: AdminPaths;
 let deletions: string[];
+/** The service credential the control plane presents, and how often the session path was asked. */
+const PURGE_TOKEN = "purge-token-for-tests";
+let sessionChecks: string[];
 
 beforeEach(async () => {
   resetRateLimits();
   deletions = [];
+  sessionChecks = [];
   directory = mkdtempSync(join(tmpdir(), "suite-workspace-api-"));
   // Every store is file-backed: the account delete runs the operator CLI's
   // implementation, which edits the files named here.
@@ -46,17 +52,29 @@ beforeEach(async () => {
   licenceClaims = createLicenceClaimStore(join(directory, "licences.sqlite"));
   documents = createDocumentStore(paths.documents);
   shares = createShareStore(paths.shares);
+  // The same store the attachment route serves from: an erasure that left the
+  // bytes behind would be a delete in name only.
+  attachments = createSqliteAttachmentStore(join(directory, "attachments.sqlite"));
   sessions = await createSessionFixture();
-  const access = createWorkspaceAccess({
+  const real = createWorkspaceAccess({
     sessions: sessions.verifier,
     orgs,
     licences: licenceClaims,
   });
+  const access = {
+    session: real.session,
+    forWorkspace: (request: Parameters<typeof real.forWorkspace>[0], workspaceId: string) => {
+      sessionChecks.push(workspaceId);
+      return real.forWorkspace(request, workspaceId);
+    },
+  };
 
   server = createServer((request, response) => {
     void handleWorkspaceRequest(request, response, {
       access,
       licences: licenceClaims,
+      attachments,
+      purgeToken: PURGE_TOKEN,
       exists: (workspaceId) =>
         documents.load(`%LOR:${workspaceId}`) !== null || shares.list(workspaceId).length > 0,
       forgetWorkspace: (workspaceId) => {
@@ -85,6 +103,7 @@ afterEach(async () => {
   licenceClaims.close();
   documents.close();
   shares.close();
+  attachments.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -120,6 +139,7 @@ function seedWorkspace(): { token: string; shareId: string } {
   });
   shares.setBaseline(created.share.id, new Uint8Array([1, 2, 3]));
   documents.save(`%LOR:share-${created.token}`, new TextEncoder().encode("projected board"));
+  attachments.put("ws-1", new Uint8Array([1, 2, 3, 4]), "image/png");
   // The delete route removes rows through its own connection, so the fixture has
   // to be on disk the way `sync/server.ts` makes it before a delete.
   documents.flush();
@@ -246,6 +266,160 @@ describe("workspace delete API", () => {
     expect(response.status).toBe(401);
     expect(orgs.has("ws-1")).toBe(true);
     expect(shares.list("ws-1")).toHaveLength(1);
+  });
+});
+
+describe("the control plane's purge credential", () => {
+  /** A delete as the control plane sends it: the token, and the id repeated in the body. */
+  function purge(workspaceId: string, token: string | null = PURGE_TOKEN): Promise<Response> {
+    return deleteRequest(workspaceId, token, { confirm: workspaceId });
+  }
+
+  it("purges a workspace without a session and reports every count", async () => {
+    orgs.claim("ws-1", "org-a");
+    const seeded = seedWorkspace();
+
+    const response = await purge("ws-1");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    // The account's own delete reports these same six numbers; a service call
+    // differs only in that it has no organization to name.
+    expect(body).toMatchObject({
+      workspaceId: "ws-1",
+      deleted: true,
+      organizationId: null,
+      documents: 1,
+      projected: 1,
+      shares: 1,
+      baselines: 1,
+      attachments: 1,
+    });
+
+    expect(orgs.has("ws-1")).toBe(false);
+    expect(documents.load("%LOR:ws-1")).toBeNull();
+    expect(documents.load(`%LOR:share-${seeded.token}`)).toBeNull();
+    expect(shares.list("ws-1")).toEqual([]);
+    expect(shares.getBaseline(seeded.shareId)).toBeNull();
+    expect(attachments.usage("ws-1")).toBe(0);
+    // The session path was never consulted: this credential is the authorization.
+    expect(sessionChecks).toEqual([]);
+    // The host still gets its hook, so live sessions close for a service delete too.
+    expect(deletions).toEqual(["ws-1"]);
+  });
+
+  it("converges on a retry, reporting zero rows instead of 404", async () => {
+    orgs.claim("ws-1", "org-a");
+    seedWorkspace();
+
+    expect((await purge("ws-1")).status).toBe(200);
+    // `exists` now answers false, which is exactly the state a retry after a
+    // partial failure lands in: the caller deleted the row it learned the id from.
+    const retry = await purge("ws-1");
+    expect(retry.status).toBe(200);
+    const body = (await retry.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      deleted: true,
+      documents: 0,
+      projected: 0,
+      shares: 0,
+      baselines: 0,
+      attachments: 0,
+    });
+  });
+
+  it("refuses a token that is not the purge credential", async () => {
+    orgs.claim("ws-1", "org-a");
+    seedWorkspace();
+
+    const wrong = await purge("ws-1", "not-the-purge-token");
+    expect(wrong.status).toBe(401);
+    expect(documents.load("%LOR:ws-1")).not.toBeNull();
+    expect(shares.list("ws-1")).toHaveLength(1);
+    expect(attachments.usage("ws-1")).toBeGreaterThan(0);
+    // A token that is not the service credential is read as a session and refused
+    // there, so there is no third way in.
+    expect(sessionChecks).toEqual(["ws-1"]);
+  });
+
+  it("accepts no service call at all while the relay has no purge token", async () => {
+    // The server under test is the one without the variable, built here because the
+    // fixture's has it.
+    const bare = createServer((request, response) => {
+      void handleWorkspaceRequest(request, response, {
+        access: createWorkspaceAccess({
+          sessions: sessions.verifier,
+          orgs,
+          licences: licenceClaims,
+        }),
+        // Unset, so a token nobody configured cannot purge a workspace.
+        purgeToken: "",
+        storage: paths,
+      }).then((handled) => {
+        if (!handled) response.writeHead(404);
+      });
+    });
+    await new Promise<void>((resolve) => bare.listen(0, "127.0.0.1", resolve));
+    const address = bare.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/workspaces/ws-1`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json", authorization: `Bearer ${PURGE_TOKEN}` },
+        body: JSON.stringify({ confirm: "ws-1" }),
+      });
+      // The presented token is read as a session and refused there: a relay with no
+      // purge credential has no service path, rather than one guarded by "".
+      expect(response.status).toBe(401);
+    } finally {
+      await new Promise<void>((resolve) => bare.close(() => resolve()));
+    }
+  });
+
+  it("reads the credential from the environment when the host passes none", async () => {
+    // `sync/server.ts` does not pass one: the route reads `SUITE_RELAY_PURGE_TOKEN`
+    // itself, so a deployment wires the service half by setting the variable.
+    const fromEnv = "purge-token-from-env";
+    vi.stubEnv("SUITE_RELAY_PURGE_TOKEN", fromEnv);
+    const envServer = createServer((request, response) => {
+      void handleWorkspaceRequest(request, response, {
+        access: createWorkspaceAccess({
+          sessions: sessions.verifier,
+          orgs,
+          licences: licenceClaims,
+        }),
+        storage: paths,
+        attachments,
+      }).then((handled) => {
+        if (!handled) response.writeHead(404);
+      });
+    });
+    await new Promise<void>((resolve) => envServer.listen(0, "127.0.0.1", resolve));
+    const address = envServer.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP address");
+
+    try {
+      seedWorkspace();
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/workspaces/ws-1`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json", authorization: `Bearer ${fromEnv}` },
+        body: JSON.stringify({ confirm: "ws-1" }),
+      });
+      expect(response.status).toBe(200);
+      expect(documents.load("%LOR:ws-1")).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+      await new Promise<void>((resolve) => envServer.close(() => resolve()));
+    }
+  });
+
+  it("does not spend the account delete's rate budget", async () => {
+    // The limiter allows ten deletes a minute per address. An account may own more
+    // workspaces than that, and stopping halfway would leave it half-erased.
+    for (let index = 0; index < 12; index += 1) {
+      const response = await purge(`ws-batch-${index}`);
+      expect(response.status).toBe(200);
+    }
   });
 });
 

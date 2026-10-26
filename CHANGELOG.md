@@ -2,12 +2,105 @@
 
 Notable changes, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) with a pre-release
-suffix while the product is in beta.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). A pre-release suffix
+says a line is not ready to be depended on.
 
 A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
+
+## [1.0.0] - 2026-10-26
+
+The first release with accounts. Two processes, one identity, and a payment path
+that can be completed in test mode without touching the Stripe dashboard.
+
+### Added
+
+- `apps/control-plane`: a second server process that owns Postgres, Better Auth
+  and Stripe. It mounts route modules it does not know by name, so the relay
+  keeps its sockets, its SQLite stores and its projection and gained no `pg`
+  dependency.
+- Sign-up in the browser: email and password, magic link, passkeys and Google.
+  Email verification is required, Turnstile is used when configured, and the
+  sign-in route is rate limited.
+- Organizations, members with roles, invitations, a device list with revoke, and
+  MFA for admin actions.
+- Billing through `@better-auth/stripe`: checkout, the customer portal, the
+  webhook, trials and plan limits. `pnpm stripe` sets up the fixtures and
+  `pnpm stripe --listen` forwards deliveries to the control plane.
+- A session JWT minted by Better Auth's `jwt()` plugin and verified at the relay
+  against a cached JWKS. Five-minute TTL, re-minted on every room join.
+- Account export and account deletion, with a per-store report of what was
+  removed and what was not.
+- `packages/licence`: the licence token format and its Ed25519 verifier, shared
+  by the relay and the billing service.
+- `SUITE_LICENCE`: a self-hosted instance takes a signed licence at boot and
+  runs at its tier. An expired, wrong-key or malformed token refuses to start.
+- `apps/site`: the marketing page at `suite.run`. `apps/docs` moved to Astro and
+  Starlight, still serving the dashboard, the four sections, `llms.txt`,
+  `llms-full.txt` and Markdown for every page.
+- A toast layer and a live-region announcer; a connection banner that
+  distinguishes "not authorised" from "offline"; a save indicator separate from
+  the sync dot.
+- An Obsidian vault importer: folders become boards, `.canvas` geometry becomes
+  placements, frontmatter maps onto type fields, wikilinks resolve, and every
+  loss is reported.
+- Version history with a revertable restore, starter templates, annotations
+  anchored on a quote, type blueprints installed as a name-keyed diff, hover
+  peek, a rollup summary, radial layout, and a closed error-code catalogue.
+- Published cards have a slug and a reader URL that survives a reload and needs
+  no account.
+- `deploy/stripe/`: fixtures, a setup script and a test clock for renewals.
+
+### Changed
+
+- A persisted document is written off the event loop, by a worker that owns the
+  only write connection and applies batches in arrival order.
+- A projection rebuild writes only the entries that differ. Share build p50 fell
+  from 20.5 s to 2.0 s on the load fixture; socket p99 from 862 ms to 22 ms.
+- Every store sets WAL, `busy_timeout` and a schema stamp, and refuses a file
+  stamped by a newer build.
+- Peer, document, card, projection-build and per-room backpressure limits are
+  enforced with named codes and published from the constants.
+- The container runs non-root with a read-only root filesystem, no added
+  capabilities and resource limits.
+
+### Fixed
+
+- A board above roughly 240 cards never reached a peer: the relay's join backfill
+  sent one `DocUpdate` that `loro-protocol` refuses to encode above 256 KiB. The
+  relay now fragments, and a 2.1 MiB board syncs.
+- Arrow keys moved a focused card and the move was never saved.
+- A fresh deployment could not create its first organization, because a seat
+  check read a licence row nothing wrote.
+- A paying organization was enforced at the free tier, because a subscription
+  never reached `organization_licences`.
+- Six menus never took focus, so their arrow keys were dead. Five dialogs
+  declared `aria-modal` without a trap. Library rows were pointer-only.
+- The in-app reduced-motion setting never reached JavaScript.
+
+### Removed
+
+- The owner key, in full: the claim, rotate and status routes, the URL fragment,
+  `.suitekey` files, 24-word recovery phrases, `reset-owner`, and the
+  `workspaces.sqlite` owner hash. There is no migration; see the upgrade notes.
+- The hand-written Stripe webhook, checkout, portal, event verification and
+  store, replaced by the plugin.
+
+### Upgrade notes
+
+This release cannot read a workspace that was shared by owner key.
+
+- A `.suitekey` file or a 24-word recovery phrase no longer opens anything.
+- A URL containing `#owner=` is treated as a plain workspace URL.
+- An anonymous workspace opens, edits and exports as before, and does not sync.
+  It is local-only until an account claims it, which is also when it can be paid
+  for. Claiming does not change the workspace id.
+- A deployment moving from `0.2.0-beta.1` keeps its six SQLite stores. Postgres
+  is new: run the migrations by starting the control plane with
+  `SUITE_AUTH_MIGRATE` on, which is the default.
+- Billing now reads `STRIPE_PRICE_TIERS` and the plugin's table. The retired
+  `SUITE_BILLING_STORE=dynamodb` and `SUITE_BILLING_TABLE` are ignored.
 
 ## [0.2.0-beta.1] - 2026-10-26
 

@@ -6,15 +6,17 @@
       "name": "Suite Solo",
       "lookupKey": "suite_solo_monthly",
       "unitAmount": 1200,
+      "seats": 1,
       "workspaces": 3,
       "documentBytes": 268435456,
       "attachmentBytes": 1073741824
     },
     {
-      "tier": "studio",
-      "name": "Suite Studio",
-      "lookupKey": "suite_studio_monthly",
+      "tier": "solo-pro",
+      "name": "Suite Solo Pro",
+      "lookupKey": "suite_solo_pro_monthly",
       "unitAmount": 4900,
+      "seats": 1,
       "workspaces": 25,
       "documentBytes": 2147483648,
       "attachmentBytes": 8589934592

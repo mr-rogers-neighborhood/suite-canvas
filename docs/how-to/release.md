@@ -1,16 +1,16 @@
 # Release and roll back
 
 A release is a tag, an image built from it, the digest that identifies that image, a smoke test against
-a host, and a rollback path. This page is written against `0.2.0-beta.1`; every release edits the tag
+a host, and a rollback path. This page is written against `1.0.0`; every release edits the tag
 and the digest recorded below.
 
 ## What a release is
 
 | Thing | Value |
 | --- | --- |
-| Version | `0.2.0-beta.1` in `package.json` and the newest `CHANGELOG.md` heading |
-| Git tag | `v0.2.0-beta.1` on the release commit |
-| Image | `ghcr.io/<owner>/suite:v0.2.0-beta.1`, also `:sha-<12>` and `:latest` |
+| Version | `1.0.0` in `package.json` and the newest `CHANGELOG.md` heading |
+| Git tag | `v1.0.0` on the release commit |
+| Image | `ghcr.io/<owner>/suite:v1.0.0`, also `:sha-<12>` and `:latest` |
 | Identity | the image digest, `ghcr.io/<owner>/suite@sha256:…`, in the release notes |
 | Change record | the matching `CHANGELOG.md` section |
 | Evidence | the Beta gate rows in the internal roadmap |
@@ -24,13 +24,13 @@ The lead creates the tag after integration. A workstream does not push one.
 
 ## Cut one
 
-1. `package.json` and the newest `CHANGELOG.md` heading both say `0.2.0-beta.1`.
+1. `package.json` and the newest `CHANGELOG.md` heading both say `1.0.0`.
 2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
 3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
    in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where
    the full suite runs; the commands are in [test-and-verify.md](test-and-verify.md).
-4. `git tag -a v0.2.0-beta.1 -m "Suite 0.2.0-beta.1"`.
-5. `git push origin v0.2.0-beta.1`.
+4. `git tag -a v1.0.0 -m "Suite 1.0.0"`.
+5. `git push origin v1.0.0`.
 
 If workflows can start, `.github/workflows/release.yml` runs three jobs:
 
@@ -50,10 +50,10 @@ three tags and the same build argument, record the digest in the release notes, 
 built manually so nobody assumes `release.yml` produced it.
 
 ```sh
-docker build --target runtime --build-arg SUITE_VERSION=v0.2.0-beta.1 \
-  -t ghcr.io/<owner>/suite:v0.2.0-beta.1 -t ghcr.io/<owner>/suite:latest .
-docker push ghcr.io/<owner>/suite:v0.2.0-beta.1 && docker push ghcr.io/<owner>/suite:latest
-docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<owner>/suite:v0.2.0-beta.1
+docker build --target runtime --build-arg SUITE_VERSION=v1.0.0 \
+  -t ghcr.io/<owner>/suite:v1.0.0 -t ghcr.io/<owner>/suite:latest .
+docker push ghcr.io/<owner>/suite:v1.0.0 && docker push ghcr.io/<owner>/suite:latest
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<owner>/suite:v1.0.0
 ```
 
 Do not tag unless the local gate is green on the exact commit. The tag is the only quality claim this
@@ -64,15 +64,15 @@ project can currently make.
 Against the host that will serve it, before announcing anything:
 
 ```sh
-SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1 docker compose pull app
-SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1 docker compose up -d
+SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0 docker compose pull app
+SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0 docker compose up -d
 docker compose ps                                     # app healthy, caddy up
 curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
 curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/api/admin/status | head -c 400
 curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/metrics | grep suite_build_info
 ```
 
-`/api/admin/status` must report `"version":"0.2.0-beta.1"` and `suite_build_info` must carry the same
+`/api/admin/status` must report `"version":"1.0.0"` and `suite_build_info` must carry the same
 tag. Then, by hand: open a workspace, upload an attachment, reload, open the same workspace in a second
 tab, and confirm the published limits still match what the server reports on a refusal
 ([reference/limits.md](../reference/limits.md)). A container that reports the wrong version is not a

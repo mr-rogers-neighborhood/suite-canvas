@@ -62,7 +62,10 @@ export interface FreeLicenceTier {
 export interface SubscriptionView extends SubscriptionRow {
   /** The organization the subscription belongs to: its `referenceId`. */
   organizationId: string;
-  /** Seats the subscription sells, when a plan prices them. */
+  /**
+   * Seats the subscription sells: the plugin's quantity, which is the member count for a
+   * plan that prices seats and one for a plan that does not.
+   */
   seats: number | null;
   /** The Stripe subscription id, so a licence can name the subscription it came from. */
   subscriptionId: string | null;
@@ -88,8 +91,27 @@ export interface PluginSubscription {
   status: string;
   periodEnd?: Date | undefined;
   cancelAtPeriodEnd?: boolean | undefined;
+  /**
+   * The quantity the plugin resolved for this subscription, on create and on every update
+   * (`resolveQuantity` in `@better-auth/stripe`): the seat item's quantity when the plan
+   * carries a `seatPriceId`, and otherwise the plan item's quantity, which checkout sets to
+   * one. No plan here prices seats, so it is one.
+   */
   seats?: number | undefined;
   stripeSubscriptionId?: string | undefined;
+}
+
+/**
+ * A seat quantity as the plugin reports it, or null when the row does not carry a count.
+ *
+ * `seats` becomes a licence ceiling, and `checkSeatAllowance` admits `memberCount <=
+ * seats`, so a fractional or negative number from a row nobody validated would admit a
+ * fraction of a person or drop below the free tier. Anything that is not a whole count is
+ * read as "not stated" and the free tier's floor decides.
+ */
+function seatCountOf(seats: number | undefined): number | null {
+  if (typeof seats !== "number" || !Number.isSafeInteger(seats) || seats < 0) return null;
+  return seats;
 }
 
 /** The plugin's row, as the projection reads it. */
@@ -100,7 +122,7 @@ export function subscriptionViewOf(subscription: PluginSubscription): Subscripti
     status: subscription.status,
     periodEnd: subscription.periodEnd === undefined ? null : subscription.periodEnd.getTime(),
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === true,
-    seats: typeof subscription.seats === "number" ? subscription.seats : null,
+    seats: seatCountOf(subscription.seats),
     subscriptionId: subscription.stripeSubscriptionId ?? null,
   };
 }
@@ -146,7 +168,11 @@ function paidLicenceRow(
     tier: entitlement.tier,
     workspaces: limitOf(entitlement, "workspaces", free.workspaces),
     // A plan that sells no seats still admits the owner the free tier admitted, so an
-    // upgrade can never take away a seat the organization already had.
+    // upgrade can never take away a seat the organization already had. The number is a
+    // ceiling: `checkSeatAllowance` refuses the member whose join would take the count
+    // past it with `seat-allowance-exhausted`, which the auth hook reports as
+    // `seat-refused`. This build sells one seat per plan (ADR-0082), so a subscriber is
+    // the owner and no one else until per-seat pricing exists.
     seats: Math.max(subscription.seats ?? 0, free.seats),
     documentBytes: limitOf(entitlement, "documentBytes", free.documentBytes),
     attachmentBytes: limitOf(entitlement, "attachmentBytes", free.attachmentBytes),

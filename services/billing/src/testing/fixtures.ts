@@ -11,7 +11,7 @@ import type { TierPlan, TierTable } from "../stripe/tiers.ts";
  */
 
 export const PRICE_SOLO = "price_solo";
-export const PRICE_STUDIO = "price_studio";
+export const PRICE_SOLO_PRO = "price_solo_pro";
 
 export const NOW = 1_800_000_000_000;
 export const DAY = 24 * 60 * 60 * 1000;
@@ -21,6 +21,7 @@ export interface FixturePlan {
   name: string;
   lookupKey: string;
   unitAmount: number;
+  seats: number;
   workspaces: number;
   documentBytes: number;
   attachmentBytes: number;
@@ -60,6 +61,7 @@ export function fixturePlans(): FixturePlan[] {
       name: text(plan.name, `plans[${index}].name`),
       lookupKey: text(plan.lookupKey, `plans[${index}].lookupKey`),
       unitAmount: whole(plan.unitAmount, `plans[${index}].unitAmount`),
+      seats: whole(plan.seats, `plans[${index}].seats`),
       workspaces: whole(plan.workspaces, `plans[${index}].workspaces`),
       documentBytes: whole(plan.documentBytes, `plans[${index}].documentBytes`),
       attachmentBytes: whole(plan.attachmentBytes, `plans[${index}].attachmentBytes`),
@@ -69,13 +71,14 @@ export function fixturePlans(): FixturePlan[] {
 
 /** `STRIPE_PRICE_TIERS` as a local development environment would have it. */
 export function tierTableFixture(): TierTable {
-  const priceIds = [PRICE_SOLO, PRICE_STUDIO];
+  const priceIds = [PRICE_SOLO, PRICE_SOLO_PRO];
   const table = new Map<string, TierPlan>();
   for (const [index, plan] of fixturePlans().entries()) {
     const priceId = priceIds[index];
     if (priceId === undefined) throw new Error("more fixture plans than price ids");
     table.set(priceId, {
       tier: plan.tier,
+      seats: plan.seats,
       workspaces: plan.workspaces,
       documentBytes: plan.documentBytes,
       attachmentBytes: plan.attachmentBytes,
@@ -90,6 +93,7 @@ export function fixtureLimits(tier: string): TierPlan {
   if (plan === undefined) throw new Error(`no fixture plan named ${tier}`);
   return {
     tier: plan.tier,
+    seats: plan.seats,
     workspaces: plan.workspaces,
     documentBytes: plan.documentBytes,
     attachmentBytes: plan.attachmentBytes,
@@ -98,13 +102,14 @@ export function fixtureLimits(tier: string): TierPlan {
 
 /** The fixture plans as the `STRIPE_PRICE_TIERS` JSON an operator would set. */
 export function fixturedTiersJson(): string {
-  const priceIds = [PRICE_SOLO, PRICE_STUDIO];
+  const priceIds = [PRICE_SOLO, PRICE_SOLO_PRO];
   const table: Record<string, TierPlan> = {};
   for (const [index, plan] of fixturePlans().entries()) {
     const priceId = priceIds[index];
     if (priceId === undefined) throw new Error("more fixture plans than price ids");
     table[priceId] = {
       tier: plan.tier,
+      seats: plan.seats,
       workspaces: plan.workspaces,
       documentBytes: plan.documentBytes,
       attachmentBytes: plan.attachmentBytes,

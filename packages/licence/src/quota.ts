@@ -15,12 +15,17 @@ export const UNLIMITED_QUOTA: LicenceQuota = {
   attachmentBytes: Number.POSITIVE_INFINITY,
 };
 
-/** Caps the relay should enforce. Inert — and therefore unlimited — on a self-host. */
-export function licenceQuota(claims: LicenceClaims): LicenceQuota {
-  if (!licenceRequired()) return UNLIMITED_QUOTA;
+/** The caps a claims object carries. No environment, so a boot licence uses it too. */
+export function claimsQuota(claims: LicenceClaims): LicenceQuota {
   return {
     workspaces: claims.workspaces,
     documentBytes: claims.documentBytes,
     attachmentBytes: claims.attachmentBytes,
   };
+}
+
+/** Caps the relay should enforce. Inert — and therefore unlimited — on a self-host. */
+export function licenceQuota(claims: LicenceClaims): LicenceQuota {
+  if (!licenceRequired()) return UNLIMITED_QUOTA;
+  return claimsQuota(claims);
 }

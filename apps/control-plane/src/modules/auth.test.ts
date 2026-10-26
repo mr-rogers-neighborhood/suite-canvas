@@ -8,7 +8,12 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
-import { createAuthModule } from "./auth.js";
+import {
+  createAuthModule,
+  RELAY_PURGE_TOKEN_VARIABLE,
+  RELAY_URL_VARIABLE,
+  relayWorkspaceData,
+} from "./auth.js";
 import { loadModules } from "./index.js";
 
 /**
@@ -343,5 +348,91 @@ describe("the auth module's refusals", () => {
     ]);
 
     expect(booted()).toBe(1);
+  });
+});
+
+describe("the relay workspace data port", () => {
+  const BASE = "http://relay:1235";
+  const TOKEN = "purge-token";
+
+  /** The relay's answer, recorded rather than sent. */
+  function recorder(status = 200, body: unknown = {}) {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    return { calls, fetcher };
+  }
+
+  it("stays absent while either half of the pair is missing", () => {
+    // One variable is not a deployment that can purge, and a port that answered
+    // every call with a connection error would report `not-removed` instead of
+    // `not-configured` for a store this process never had.
+    expect(relayWorkspaceData({})).toBeNull();
+    expect(relayWorkspaceData({ [RELAY_URL_VARIABLE]: BASE })).toBeNull();
+    expect(relayWorkspaceData({ [RELAY_PURGE_TOKEN_VARIABLE]: TOKEN })).toBeNull();
+  });
+
+  it("refuses a relay URL that is not one, at boot", () => {
+    expect(() =>
+      relayWorkspaceData({
+        [RELAY_URL_VARIABLE]: "relay:1235",
+        [RELAY_PURGE_TOKEN_VARIABLE]: TOKEN,
+      }),
+    ).toThrow();
+  });
+
+  it("purges one workspace on its own credential and maps the relay's counts", async () => {
+    const recorded = recorder(200, {
+      workspaceId: "ws-1",
+      deleted: true,
+      organizationId: null,
+      documents: 1,
+      projected: 2,
+      shares: 3,
+      baselines: 4,
+      attachments: 5,
+    });
+    const port = relayWorkspaceData(
+      { [RELAY_URL_VARIABLE]: BASE, [RELAY_PURGE_TOKEN_VARIABLE]: TOKEN },
+      recorded.fetcher,
+    );
+    expect(port).not.toBeNull();
+
+    const counts = await port?.erase("ws-1");
+
+    // The document store is the workspace's own rows and the rooms projected from
+    // them; the share store is the rows and their baselines. The report's three
+    // numbers therefore mean what it says they mean.
+    expect(counts).toEqual({ documents: 3, shares: 7, attachments: 5 });
+    expect(recorded.calls).toHaveLength(1);
+    const [call] = recorded.calls;
+    if (call === undefined) throw new Error("the port sent no request");
+    expect(call.url).toBe(`${BASE}/api/workspaces/ws-1`);
+    expect(call.init.method).toBe("DELETE");
+    expect((call.init.headers as Record<string, string>).authorization).toContain(TOKEN);
+    // The relay refuses a delete that does not repeat the id it was given.
+    expect(call.init.body).toBe(JSON.stringify({ confirm: "ws-1" }));
+  });
+
+  it("throws on a refusal, so the erase stops before the account is touched", async () => {
+    const recorded = recorder(503, { error: "The workspace request failed." });
+    const port = relayWorkspaceData(
+      { [RELAY_URL_VARIABLE]: BASE, [RELAY_PURGE_TOKEN_VARIABLE]: TOKEN },
+      recorded.fetcher,
+    );
+
+    await expect(port?.erase("ws-1")).rejects.toThrow(/503/u);
+  });
+
+  it("carries the variable names the relay reads, so one secret is set twice", async () => {
+    // The relay reads the same two names; a rename on one side would leave a purge
+    // credential that authenticates nothing.
+    expect(RELAY_URL_VARIABLE).toBe("SUITE_RELAY_URL");
+    expect(RELAY_PURGE_TOKEN_VARIABLE).toBe("SUITE_RELAY_PURGE_TOKEN");
   });
 });

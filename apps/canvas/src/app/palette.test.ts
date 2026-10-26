@@ -1,5 +1,5 @@
 import { PORTAL_TYPE_ID, WorkspaceDocument } from "@suite/graph";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readWorkspace } from "../store/workspaceSnapshotStore";
 import { type ShellPaletteArgs, shellPaletteItems } from "./palette";
 
@@ -25,7 +25,11 @@ function workspaceWithTwoBoards(): {
   return { workspace, home: home.id, target: target.id };
 }
 
-function args(workspace: WorkspaceDocument, activeBoardId: string): ShellPaletteArgs {
+function args(
+  workspace: WorkspaceDocument,
+  activeBoardId: string,
+  overrides: Partial<ShellPaletteArgs> = {},
+): ShellPaletteArgs {
   const noop = () => {};
   return {
     workspace,
@@ -66,6 +70,7 @@ function args(workspace: WorkspaceDocument, activeBoardId: string): ShellPalette
     requestShare: noop,
     setThemeMode: noop,
     themeMode: "light",
+    ...overrides,
   };
 }
 
@@ -107,5 +112,100 @@ describe("shellPaletteItems portal rows", () => {
       (item) => item.commandId === "portal.create",
     );
     expect(rows).toHaveLength(0);
+  });
+});
+
+/**
+ * The document rows: undo, redo, the radial arrange and the blueprint install.
+ *
+ * Each is listed only while `CommandActions` holds a handler, so a row existing is
+ * the proof the shell wired it — the registry has carried the definitions all along.
+ */
+
+function workspaceWithOneCard(): {
+  workspace: WorkspaceDocument;
+  board: string;
+  card: string;
+} {
+  const workspace = new WorkspaceDocument();
+  workspace.ensureDefaultTypes();
+  const board = workspace.ensureBoard();
+  const card = workspace.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+  workspace.setTitleText(card.id, "Root");
+  return { workspace, board: board.id, card: card.id };
+}
+
+describe("shellPaletteItems document rows", () => {
+  it("lists undo, redo and the radial arrange once the shell supplies them", () => {
+    const { workspace, board, card } = workspaceWithOneCard();
+    const rows = shellPaletteItems(
+      args(workspace, board, {
+        selectedNodeIds: [card],
+        undo: () => {},
+        redo: () => {},
+        arrangeRadial: () => {},
+      }),
+    ).map((row) => row.commandId);
+
+    expect(rows).toContain("edit.undo");
+    expect(rows).toContain("edit.redo");
+    expect(rows).toContain("layout.arrangeRadial");
+  });
+
+  it("lists none of them while the shell has no handler", () => {
+    const { workspace, board, card } = workspaceWithOneCard();
+    const rows = shellPaletteItems(args(workspace, board, { selectedNodeIds: [card] })).map(
+      (row) => row.commandId,
+    );
+
+    expect(rows).not.toContain("edit.undo");
+    expect(rows).not.toContain("edit.redo");
+    expect(rows).not.toContain("layout.arrangeRadial");
+    expect(rows).not.toContain("type.installBlueprint");
+  });
+
+  it("runs the undo, redo and arrange the shell handed over", () => {
+    const { workspace, board, card } = workspaceWithOneCard();
+    const undo = vi.fn();
+    const redo = vi.fn();
+    const arrangeRadial = vi.fn();
+    const rows = shellPaletteItems(
+      args(workspace, board, { selectedNodeIds: [card], undo, redo, arrangeRadial }),
+    );
+
+    for (const commandId of ["edit.undo", "edit.redo", "layout.arrangeRadial"]) {
+      rows.find((row) => row.commandId === commandId)?.run();
+    }
+
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(redo).toHaveBeenCalledTimes(1);
+    expect(arrangeRadial).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the install panel on the card the row names", () => {
+    const { workspace, board, card } = workspaceWithOneCard();
+    const installBlueprint = vi.fn();
+    const row = shellPaletteItems(
+      args(workspace, board, { selectedNodeIds: [card], installBlueprint }),
+    ).find((entry) => entry.commandId === "type.installBlueprint");
+
+    row?.run();
+
+    expect(installBlueprint).toHaveBeenCalledWith(card);
+  });
+
+  it("keeps undo and redo away from a read-only session", () => {
+    const { workspace, board, card } = workspaceWithOneCard();
+    const rows = shellPaletteItems(
+      args(workspace, board, {
+        selectedNodeIds: [card],
+        readOnly: true,
+        undo: () => {},
+        redo: () => {},
+      }),
+    ).map((row) => row.commandId);
+
+    expect(rows).not.toContain("edit.undo");
+    expect(rows).not.toContain("edit.redo");
   });
 });

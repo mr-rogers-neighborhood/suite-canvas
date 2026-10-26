@@ -203,10 +203,12 @@ arc proportional to how many cards hang off it. The tree is read from the docume
 breadth-first walk means a cyclic or diamond-shaped graph draws each card once, at its shallowest depth.
 
 The command is `layout.arrangeRadial` in `apps/canvas/src/command/commandRegistry.ts`, so the palette and
-the dock cannot disagree about it. It is listed only while `CommandActions.arrangeRadial` is supplied;
-`arrangeRadialSelection` in `board/useBoardCommands.ts` is the board's handler, and the shell passes it into
-the action table. Sections a moved card leaves grow to contain it again, by the same rule align and
-distribute follow.
+the dock cannot disagree about it. It is listed only while `CommandActions.arrangeRadial` is supplied. Two
+surfaces supply it from the same plan: the board's menu runs `arrangeRadialSelection` in
+`board/useBoardCommands.ts`, and the shell's palette row runs `useBoardPaletteActions` in
+`apps/canvas/src/app/useBoardPaletteActions.ts`, which reads the selection in paint order and hands the
+same `planRadial` and `childrenFromLinks` the board uses to `applyLayoutPlan`. Sections a moved card leaves
+grow to contain it again, by the same rule align and distribute follow.
 
 ## Rollups
 
@@ -218,6 +220,13 @@ prints the same list, so a header cannot claim three cards while two rows exist.
 `canvas/RollupSummary.tsx` draws the header and, on a press, the rows. Each row is a button that opens the
 card it names, which is the way back the record asks for, and every row is reachable by Tab. A card that
 points at nothing says "Nothing to summarise" and offers no disclosure rather than showing a zero.
+
+The collapse control is the rail in `apps/canvas/src/app/RollupSummaryHost.tsx`, because neither obvious
+home can hold one yet: a card's chrome belongs to the board projection and a section cannot collapse, so a
+fold there would have nothing to fold. `rollupOpen` in `apps/canvas/src/store/useUiStore.ts` is the flag,
+reader state beside `outlineOpen` and never a document write, and the rail reads the card in front of the
+reader: the focus surface's card, else the inspector's, else the first selected card. A row opens its
+member on the board that member sits on.
 
 ## Presence and cursors
 

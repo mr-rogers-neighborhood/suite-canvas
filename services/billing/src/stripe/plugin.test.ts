@@ -79,6 +79,22 @@ describe("planList", () => {
       ["price_monthly"],
     );
   });
+
+  it("should refuse a plan that sells more than one seat", () => {
+    // Seats are a ceiling on members and this build writes it from the subscription
+    // quantity, which the plugin sets to the member count. A team plan priced at one
+    // person is the bug this refuses: it would charge for a team and admit an owner.
+    const team = { tier: "team", seats: 2, workspaces: 5, documentBytes: 1, attachmentBytes: 2 };
+
+    assert.throws(
+      () => planList(new Map([["price_team", team]])),
+      (error: unknown) =>
+        error instanceof BillingError &&
+        error.code === "invalid-config" &&
+        /"team" sells 2 seats/u.test(error.message) &&
+        /no per-seat price/u.test(error.message),
+    );
+  });
 });
 
 describe("billingPluginOptions", () => {
@@ -90,7 +106,7 @@ describe("billingPluginOptions", () => {
     assert.equal(options.organization?.enabled, true);
     assert.deepEqual(
       plansOf(options).map((plan) => plan.name),
-      ["solo", "studio"],
+      ["solo", "solo-pro"],
     );
   });
 

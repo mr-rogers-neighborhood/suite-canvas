@@ -105,9 +105,9 @@ create_fixtures() {
   currency="$(node -e 'process.stdout.write(require(process.argv[1]).currency)' "$fixtures")"
 
   local tiers="{" sep="" created=0 reused=0
-  local tier name lookup amount workspaces document_bytes attachment_bytes price
+  local tier name lookup amount seats workspaces document_bytes attachment_bytes price
 
-  while IFS=$'\t' read -r tier name lookup amount workspaces document_bytes attachment_bytes; do
+  while IFS=$'\t' read -r tier name lookup amount seats workspaces document_bytes attachment_bytes; do
     price="$(stripe prices list --format json -d "lookup_keys[]=$lookup" -d limit=1 | first_id)"
     if [ -n "$price" ]; then
       reused=$((reused + 1))
@@ -123,14 +123,14 @@ create_fixtures() {
       [ -n "$price" ] || die "Stripe created no price for $lookup"
       created=$((created + 1))
     fi
-    tiers="$tiers$sep\"$price\":{\"tier\":\"$tier\",\"workspaces\":$workspaces,\"documentBytes\":$document_bytes,\"attachmentBytes\":$attachment_bytes}"
+    tiers="$tiers$sep\"$price\":{\"tier\":\"$tier\",\"seats\":$seats,\"workspaces\":$workspaces,\"documentBytes\":$document_bytes,\"attachmentBytes\":$attachment_bytes}"
     sep=","
   done < <(
     node -e '
       const fixture = require(process.argv[1]);
       for (const plan of fixture.plans) {
         process.stdout.write(
-          [plan.tier, plan.name, plan.lookupKey, plan.unitAmount, plan.workspaces, plan.documentBytes, plan.attachmentBytes].join("\t") + "\n",
+          [plan.tier, plan.name, plan.lookupKey, plan.unitAmount, plan.seats, plan.workspaces, plan.documentBytes, plan.attachmentBytes].join("\t") + "\n",
         );
       }
     ' "$fixtures"

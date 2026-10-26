@@ -9,6 +9,46 @@
   gap: 14px;
 }
 
+/*
+ * The scope picker ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * amendment). It sits above the controls because it decides what they mean: the same row that edits this
+ * card edits every Concept when the scope says so, and a reader has to be able to see which before they
+ * touch anything.
+ */
+.style-tab__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.style-tab__scope .style-tab__row {
+  font-weight: 500;
+}
+
+.style-tab__note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.style-tab__promote {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.style-tab__link {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .style-tab__group {
   display: flex;
   flex-direction: column;
@@ -292,6 +332,57 @@
 
 .app-canvas[data-shell-paint~="surface"] .board-tab[data-active="true"] {
   background: color-mix(in srgb, var(--shell-paint-ink, var(--ink)) 8%, transparent);
+}
+
+/*
+ * A region rule paints one region (ADR-0071 amendment). The root names only the regions that have their
+ * own paint, and each region's variables are its own, so "the dock is blue" cannot leak into the app bar
+ * — which is the whole reason the region exists as a scope rather than as a second shell.
+ *
+ * These come after the shell-wide rules above on purpose: a region's paint is a refinement of the shell's,
+ * so equal specificity is won by order rather than by a more specific selector that would be harder to
+ * reason about.
+ */
+.app-canvas[data-shell-regions~="app-bar"] .app-bar {
+  background: var(--shell-app-bar-paint-surface, var(--shell-paint-surface));
+}
+
+.app-canvas[data-shell-regions~="dock"] .dock {
+  background: color-mix(
+    in srgb,
+    var(--shell-dock-paint-surface, var(--shell-paint-surface)) 78%,
+    transparent
+  );
+}
+
+.app-canvas[data-shell-regions~="drawer"] .library-drawer {
+  background: color-mix(
+    in srgb,
+    var(--shell-drawer-paint-surface, var(--shell-paint-surface)) 92%,
+    transparent
+  );
+}
+
+.app-canvas[data-shell-regions~="tabs"] .board-tab[data-active="true"] {
+  background: color-mix(
+    in srgb,
+    var(--shell-tabs-paint-surface, var(--shell-paint-surface)) 18%,
+    transparent
+  );
+}
+
+.app-canvas[data-shell-regions~="app-bar"] .app-bar,
+.app-canvas[data-shell-regions~="dock"] .dock,
+.app-canvas[data-shell-regions~="drawer"] .library-drawer {
+  color: var(--shell-app-bar-paint-ink, var(--shell-paint-ink, inherit));
+}
+
+.app-canvas[data-shell-regions~="tabs"] .board-tab {
+  color: color-mix(
+    in srgb,
+    var(--shell-tabs-paint-ink, var(--shell-paint-ink, var(--ink))) 70%,
+    transparent
+  );
 }
 
 .app-canvas[data-shell-paint~="ink"] .app-bar,

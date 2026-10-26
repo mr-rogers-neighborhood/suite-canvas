@@ -420,6 +420,10 @@ code follows:
   section, board, link or field definition — surface, ink, silhouette, per-side edges with a
   geometry-derived dash direction, opacity with a floor, text scale, icon. It runs **before** the other
   gates, because every surface either inherits it or has to be migrated to it (A29).
+- **Style is a ladder you can write** ([ADR-0071](./decisions/0071-style-is-derived-not-configured.md)):
+  a surface's own style, then a `type`, `kind` or `global` rule, then the reader's preferences, then the
+  tokens. The inspector's Style tab edits *whichever rung the scope picker names*, and the rule list
+  (`Styles…`) edits a rule with the same controls — one editor, because two would drift.
 - **A link is a route** ([ADR-0052](./decisions/0052-a-link-is-a-route.md)): `bends` in flow coordinates
   relative to the source anchor, and a `layer` that defaults to beneath the cards.
 - **A tutorial is a card and a tour is its timeline**

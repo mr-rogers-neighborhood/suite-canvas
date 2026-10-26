@@ -211,7 +211,7 @@ export function WorkspaceLauncher() {
             <div>
               <h1 className="text-[34px] font-semibold tracking-tight">Suite</h1>
               <p className="mt-1 max-w-[420px] text-[13px] leading-5 text-[var(--ink-muted)]">
-                <i>An infinite, local-first, collaborative canvas.</i>
+                <i>A structured, local-first, collaborative canvas.</i>
                 <br />
                 <br />
                 You can open a workspace file, pick from a list of recent workspaces, or create a

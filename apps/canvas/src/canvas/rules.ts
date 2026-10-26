@@ -299,9 +299,7 @@ export const SHELL_PAINT_FIELDS = ["surface", "ink", "sides", "shape", "radius"]
  * the style actually says, so a shell style that names an ink does not also
  * repaint the app bar's translucency.
  *
- * The shell resolves as one surface today; a region-scoped rule (`shell` scope)
- * is read by the region's own paint once the app bar, tabs, dock and drawer each
- * take a surface of their own — the same function, called per region.
+ * This is the shell-wide answer, which every region falls back to.
  */
 export function shellPaintFor(
   style: SurfaceStyle | undefined,
@@ -377,4 +375,43 @@ export const SurfaceRulesContext = createContext<SurfaceRules>(NO_SURFACE_RULES)
 /** Cards read this; without a provider the answer is "no rules", which is today. */
 export function useSurfaceRules(): SurfaceRules {
   return useContext(SurfaceRulesContext);
+}
+
+/**
+ * The shell resolved **per region** ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * amendment).
+ *
+ * A rule scoped to `shell` names a region — the app bar, the board tabs, the dock or the library — and until
+ * this existed no subject ever carried a region, so the scope matched nothing and was read-only fiction in
+ * the same way an unwritable `type` rule was.
+ *
+ * The workspace's own shell style is the base for every region: a reader who painted "the shell" meant all of
+ * it. A region rule then overrides that region alone, which is why the answer has two halves — the region's
+ * own paint, and whether it has one at all.
+ */
+export function shellRegionPaintFor(
+  style: SurfaceStyle | undefined,
+  rules: readonly StyleRule[],
+  palette: SurfacePalette,
+): Record<string, { vars: Record<string, string>; fields: string }> {
+  const regions: Record<string, { vars: Record<string, string>; fields: string }> = {};
+  for (const region of shellRegions) {
+    const resolved = resolveSurfaceStyleWithRules(
+      style,
+      { surface: "shell", region },
+      rules,
+      palette,
+    );
+    if (!resolved.applied) {
+      regions[region] = { vars: {}, fields: "" };
+      continue;
+    }
+    const vars: Record<string, string> = {};
+    for (const [name, value] of Object.entries(surfacePaintVars(resolved.style))) {
+      vars[name.replace("--paint-", `--shell-${region}-paint-`)] = value;
+    }
+    const fields = SHELL_PAINT_FIELDS.filter((field) => resolved.declared[field] !== undefined);
+    regions[region] = { vars, fields: fields.join(" ") };
+  }
+  return regions;
 }

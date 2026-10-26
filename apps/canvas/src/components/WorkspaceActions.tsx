@@ -33,6 +33,8 @@ export interface WorkspaceActionsProps {
    * nothing to warn about.
    */
   onLeave?: (() => void) | undefined;
+  /** Opens the named style rules. Absent for a surface that may not manage them. */
+  onOpenStyles?: (() => void) | undefined;
 }
 
 /**
@@ -40,7 +42,13 @@ export interface WorkspaceActionsProps {
  * board or a card, export the exact backup, and return to the launcher. Import
  * lives on the launcher so it can never merge into the open document.
  */
-export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: WorkspaceActionsProps) {
+export function WorkspaceActions({
+  workspaceId,
+  boardId,
+  title,
+  onLeave,
+  onOpenStyles,
+}: WorkspaceActionsProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const flush = useCanvasStore((state) => state.flush);
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
@@ -201,6 +209,20 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
             >
               Export Markdown…
             </button>
+            {onOpenStyles ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="workspace-styles"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenStyles();
+                }}
+              >
+                Styles…
+              </button>
+            ) : null}
             {ownerKey && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
               <button
                 type="button"

@@ -351,3 +351,54 @@ the card is a sub-pixel disagreement that only shows up when a corner dot has to
 nothing, so a drawn border still cuts the corner; and the card's shadow follows `border-radius` by
 accident rather than being derived. Both are consumers this contract now makes possible, not work it
 finished.
+
+## Amendment — the ladder is writable (Phase 19)
+
+Every part of this system existed except the authoring. `styleRuleSchema` has named four scopes since it was
+written, `rules.ts` has resolved them by specificity, and `styleUtilities.ts` has said which rungs may state
+each value and what removing one falls back to. Nothing could write a rule: a reader could paint **one card**
+and had no way to say "every Concept looks like this". The three rungs above the card were read-only fiction,
+and `p15-style-controls-shared` was stuck behind that.
+
+**One abstraction, not a second editor.** A style edit now has a *target*:
+
+```ts
+type StyleTarget =
+  | { rung: "surface"; kind; id }   // the card, section, board or link
+  | { rung: "rule"; ruleId }        // the same controls, one rung up
+```
+
+`useSurfaceStyleDraft` reads and writes either, so `StyleTab` — which was already a generic `{kind, id}`
+editor — edits a rule with no knowledge that it is doing so. A parallel rule editor was the obvious build and
+the wrong one: two sets of controls is precisely the drift this ADR exists to prevent.
+
+**The scope picker is the whole feature, in one row.** `This applies to: [this card ▾]` offers the rungs that
+can state the value being edited, and nothing else — a section has no type, so it is not offered a type rung.
+
+- **Choosing a rung writes nothing.** A rule is created by the first *edit*, named for its scope and ordered
+  last, so browsing the ladder never litters the document with rules that name nothing and never reorders the
+  ladder a reader is looking at.
+- **The caption states the blast radius before the edit**, because the next click is no longer about the card
+  in front of them.
+- **Clearing every control keeps the rule.** A rule that names nothing answers a real question ("what would
+  this look like if it said nothing?"); deleting is the list's verb, and removing a rule as a side effect of a
+  reset is the kind of surprise that stops people editing.
+
+**A list, because "what rules exist?" was unanswerable.** `StylesDialog` groups rules the way the resolver
+walks them (everywhere, types, kinds, shell regions), edits the selected one with the *same* `StyleTab`, and
+reorders by writing `order` — the number the resolver already compares, so the arrow a reader presses and the
+comparison the engine makes are the same number. Removing a rule names how many surfaces fall back.
+
+**Promotion says what it changes.** "Apply to every Concept…" is the gesture that makes the ladder
+discoverable, and it is a document-wide write behind one press. The confirm counts the **cards that actually
+change**: a card's own style wins over any rule, so a card that already has one is unaffected — and so is the
+card being promoted, which already looks like that. The write states the rule and strips nobody, so the
+exceptions that made the board readable survive and undo is one step.
+
+**The shell's scope stopped being fiction too.** `shellRegionPaintFor` resolves the shell once per region
+(`app-bar`, `tabs`, `dock`, `drawer`) with the workspace's shell style as every region's base; the root names
+only the regions that have their own paint and carries per-region variables, so an untouched shell is still
+byte-identical and "the dock is blue" cannot leak into the app bar.
+
+**What this does not do, on purpose:** named presets as a browsable library, and a per-reader override of a
+workspace style (Q1 above). Both are decisions rather than wiring.

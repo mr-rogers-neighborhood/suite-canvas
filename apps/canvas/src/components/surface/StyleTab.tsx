@@ -8,6 +8,7 @@ import type {
   WorkspaceDocument,
 } from "@suite/graph";
 import {
+  isEmptyStyle,
   styleColourRoles,
   styleEdgeFlows,
   styleEdgePaints,
@@ -16,11 +17,26 @@ import {
   TEXT_SCALE_MAX,
   TEXT_SCALE_MIN,
 } from "@suite/graph";
+import { useState } from "react";
+import { cardsChangedByPromotion, upsertScopedRule } from "../../canvas/styleTargets";
+import { useCanvasStore } from "../../store/useCanvasStore";
+import { useWorkspaceSnapshot } from "../../store/workspaceStore";
+import { Dialog } from "../Dialog";
+import { type StyleScopeChoice, StyleScopePicker, scopeOfChoice } from "./StyleScopePicker";
+import { useStyleRules } from "./useStyleRules";
 import {
-  type StyledSurface,
   type StyledSurfaceKind,
+  type StyleTarget,
   useSurfaceStyleDraft,
 } from "./useSurfaceStyleDraft";
+
+/** The plural a create-on-first-edit rule is named with. */
+const KIND_WORDS: Record<StyledSurfaceKind, string> = {
+  card: "card",
+  section: "section",
+  board: "board",
+  edge: "link",
+};
 
 const SHAPE_LABELS: Record<StyleShape, string> = {
   rect: "Rectangle",
@@ -66,6 +82,17 @@ export interface StyleTabProps {
   canEdit: boolean;
   /** The document to write through; defaults to the live one. */
   workspace?: WorkspaceDocument | null;
+  /** The card's primary type, so the picker can offer "every Concept". */
+  typeId?: string | null | undefined;
+  /** The type's name, for the same option's label. */
+  typeName?: string | null | undefined;
+  /** Opens the rule list. Absent when the host has no dialog to offer. */
+  onManageRules?: (() => void) | undefined;
+  /**
+   * Edit this rule rather than a surface. The rule list sets it: it has already said which scope the
+   * reader chose, so the picker would be a second place to change it.
+   */
+  ruleId?: string | undefined;
 }
 
 /**
@@ -77,9 +104,69 @@ export interface StyleTabProps {
  * theme change still moves it. A field left alone is absent from the record, so
  * "reset" and "never set" are the same state.
  */
-export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps) {
-  const target: StyledSurface = { kind, id };
-  const { style, resolved, inherited, patch, reset } = useSurfaceStyleDraft(target, workspace);
+export function StyleTab({
+  kind,
+  id,
+  canEdit,
+  workspace = null,
+  typeId = null,
+  typeName = null,
+  onManageRules,
+  ruleId,
+}: StyleTabProps) {
+  /**
+   * Where this edit is going. The picker changes the *target*, not the controls: "this card" writes the
+   * surface's own style and "every Concept" writes a rule, and everything between them is the same editor
+   * (ADR-0071 amendment).
+   */
+  const [choice, setChoice] = useState<StyleScopeChoice>({ rung: "surface" });
+  /**
+   * The id a not-yet-created rule will be written under. Generated when the scope is chosen so the draft
+   * has a target to edit; the rule itself only appears on the first change, so browsing costs nothing.
+   */
+  const [pendingRuleId, setPendingRuleId] = useState(() => `rule-${crypto.randomUUID()}`);
+  const scope = scopeOfChoice(choice);
+
+  const onScope = (next: StyleScopeChoice) => {
+    setChoice(next);
+    // A fresh id per scope: two rules must never be created under one identity because the reader
+    // looked at two rungs before deciding.
+    setPendingRuleId(`rule-${crypto.randomUUID()}`);
+  };
+
+  const rules = useStyleRules(workspace);
+  const scopedRule = scope
+    ? rules.find(
+        (rule) => rule.scope.kind === scope.kind && (rule.scope.id ?? "") === (scope.id ?? ""),
+      )
+    : null;
+
+  const target: StyleTarget = ruleId
+    ? { rung: "rule", ruleId }
+    : scope === null
+      ? { rung: "surface", kind, id }
+      : { rung: "rule", ruleId: scopedRule?.id ?? pendingRuleId };
+
+  const createAs =
+    scope && !ruleId
+      ? {
+          scope,
+          name:
+            scope.kind === "type"
+              ? `Every ${typeName ?? "card of this type"}`
+              : scope.kind === "global"
+                ? "Everywhere"
+                : scope.kind === "shell"
+                  ? `Every ${scope.id}`
+                  : `Every ${KIND_WORDS[kind]}`,
+        }
+      : null;
+
+  const { style, resolved, inherited, patch, reset } = useSurfaceStyleDraft(
+    target,
+    workspace,
+    createAs,
+  );
   const current = style ?? {};
 
   /**
@@ -98,6 +185,41 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
   const isLink = kind === "edge";
   const hasShape = !isLink;
   const hasText = !isLink;
+
+  /**
+   * Promoting a card's own style into a rule ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+   * amendment).
+   *
+   * "Make every Concept look like this" is the gesture that makes the ladder discoverable, and it is a
+   * document-wide write behind one press. The confirm counts the cards that will *actually* change: a card's
+   * own style wins over any rule, so a card that already has one is not affected, and promising the type's
+   * whole population would be a number the write does not deliver.
+   */
+  const snapshot = useWorkspaceSnapshot();
+  const storeWorkspace = useCanvasStore((state) => state.workspace);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const promotable =
+    kind === "card" &&
+    typeId !== null &&
+    typeId !== undefined &&
+    style !== undefined &&
+    !isEmptyStyle(style);
+  const promotionCount = promotable && typeId ? cardsChangedByPromotion(snapshot.cards, typeId) : 0;
+
+  const promote = () => {
+    if (!canEdit || !typeId || !style) return;
+    const doc = workspace ?? storeWorkspace;
+    doc.setStyleRules(
+      upsertScopedRule(rules, {
+        scope: { kind: "type", id: typeId },
+        style,
+        name: `Every ${typeName ?? "card of this type"}`,
+        id: `rule-${crypto.randomUUID()}`,
+      }),
+    );
+    // Nobody's own style is stripped: promotion states the rule and leaves every card as it is, so undo is
+    // one step and a reader who liked their exception keeps it.
+  };
 
   const update = (next: SurfaceStyle) => {
     if (!canEdit) return;
@@ -126,6 +248,19 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
 
   return (
     <div className="style-tab" data-testid="style-tab">
+      {ruleId ? null : (
+        <StyleScopePicker
+          kind={kind}
+          typeId={typeId}
+          typeName={typeName}
+          choice={choice}
+          rules={rules}
+          canEdit={canEdit}
+          onChange={onScope}
+          onManageRules={onManageRules}
+        />
+      )}
+
       {hasShape ? (
         <section className="style-tab__group">
           <h3 className="style-tab__heading">Shape</h3>
@@ -349,6 +484,18 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
         </label>
       </section>
 
+      {promotable ? (
+        <button
+          type="button"
+          className="style-tab__promote"
+          data-testid="style-promote"
+          disabled={!canEdit}
+          onClick={() => setPromoteOpen(true)}
+        >
+          Apply to every {typeName ?? "card of this type"}…
+        </button>
+      ) : null}
+
       <button
         type="button"
         className="style-tab__reset"
@@ -358,6 +505,21 @@ export function StyleTab({ kind, id, canEdit, workspace = null }: StyleTabProps)
       >
         Reset style
       </button>
+
+      {promoteOpen ? (
+        <Dialog
+          title={`Apply to every ${typeName ?? "card of this type"}?`}
+          description={
+            promotionCount === 0
+              ? "Every card of this type already has a style of its own, so this rule would change none of them. It still records the intent for new cards."
+              : `This sets a rule for ${promotionCount} ${
+                  promotionCount === 1 ? "card" : "cards"
+                } of this type. Cards with a style of their own keep it — a card beats a rule.`
+          }
+          onClose={() => setPromoteOpen(false)}
+          actions={[{ label: "Apply", primary: true, onSelect: promote }]}
+        />
+      ) : null}
     </div>
   );
 }

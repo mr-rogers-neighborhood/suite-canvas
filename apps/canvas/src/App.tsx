@@ -36,6 +36,7 @@ import {
   type SurfacePalette,
   SurfaceRulesContext,
   shellPaintFor,
+  shellRegionPaintFor,
 } from "./canvas/rules";
 import { surfacePaintVars } from "./canvas/surfacePaint";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
@@ -153,6 +154,11 @@ function useSurfacePalette(root: RefObject<HTMLElement | null>, themeMode: strin
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
+const StylesDialog = lazy(async () => {
+  const module = await import("./components/StylesDialog");
+  return { default: module.StylesDialog };
+});
+
 const WorkspaceActions = lazy(async () => {
   const module = await import("./components/WorkspaceActions");
   return { default: module.WorkspaceActions };
@@ -216,6 +222,29 @@ function WorkspaceShell({
     () => shellPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),
     [workspacePaint, palette],
   );
+
+  /**
+   * The shell per region (ADR-0071 amendment): a rule scoped to the app bar paints the app bar and nothing
+   * else. Only the regions that have their own paint are named on the root, so an untouched shell renders
+   * byte-identically — the property `shellPaintFor` was careful about.
+   */
+  const shellRegionsPaint = useMemo(
+    () => shellRegionPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),
+    [workspacePaint, palette],
+  );
+  const shellRegionVars = useMemo(() => {
+    const vars: Record<string, string> = {};
+    for (const region of Object.values(shellRegionsPaint)) Object.assign(vars, region.vars);
+    return vars;
+  }, [shellRegionsPaint]);
+  const paintedShellRegions = useMemo(
+    () =>
+      Object.entries(shellRegionsPaint)
+        .filter(([, paint]) => paint.fields !== "")
+        .map(([region]) => region)
+        .join(" "),
+    [shellRegionsPaint],
+  );
   const surfaceRules = useMemo(
     () => ({ rules: workspacePaint.rules, palette }),
     [workspacePaint.rules, palette],
@@ -236,6 +265,8 @@ function WorkspaceShell({
 
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const setActiveBoardId = useUiStore((state) => state.setActiveBoardId);
+  const stylesOpen = useUiStore((state) => state.stylesOpen);
+  const setStylesOpen = useUiStore((state) => state.setStylesOpen);
   const libraryOpen = useUiStore((state) => state.libraryOpen);
   const libraryTab = useUiStore((state) => state.libraryTab);
   const setLibraryOpen = useUiStore((state) => state.setLibraryOpen);
@@ -1196,7 +1227,8 @@ function WorkspaceShell({
         // The shell's own paint: present only when the workspace names a style,
         // so an unstyled workspace renders exactly as it did before the rules.
         data-shell-paint={shellPaint.fields || undefined}
-        style={shellPaint.vars as CSSProperties}
+        data-shell-regions={paintedShellRegions || undefined}
+        style={{ ...shellPaint.vars, ...shellRegionVars } as CSSProperties}
       >
         <TitleBar
           onNavigateHome={requestLeave}
@@ -1243,6 +1275,7 @@ function WorkspaceShell({
                     boardId={activeBoardId}
                     title={activeBoardName ?? "Workspace"}
                     onLeave={requestLeave}
+                    {...(canManageSchema ? { onOpenStyles: () => setStylesOpen(true) } : {})}
                   />
                 </Suspense>
                 {standalone ? (
@@ -1383,6 +1416,16 @@ function WorkspaceShell({
         ) : null}
 
         {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
+
+        {/*
+          The rule list is a view of the document, not a mode: it opens over the board and closes on
+          Escape, like the type settings it sits beside.
+        */}
+        {workspaceSurface && canManageSchema && stylesOpen ? (
+          <Suspense fallback={null}>
+            <StylesDialog open canEdit onClose={() => setStylesOpen(false)} />
+          </Suspense>
+        ) : null}
 
         {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
 

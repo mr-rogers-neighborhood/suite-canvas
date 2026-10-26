@@ -7,6 +7,7 @@ import {
   resolveSurfaceStyleWithRules,
   type SurfacePalette,
   shellPaintFor,
+  shellRegionPaintFor,
   surfacePaintFor,
 } from "./rules";
 
@@ -228,5 +229,56 @@ describe("the shell's own paint", () => {
     ];
     const { fields } = shellPaintFor(undefined, rules, {});
     expect(fields).toBe("ink radius");
+  });
+});
+
+/**
+ * Shell regions ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md) amendment).
+ *
+ * A `shell` scope used to match no subject at all, so it was the same read-only fiction an unwritable `type`
+ * rule was. The property that matters now: a region rule paints that region and leaves the others to the
+ * shell-wide answer.
+ */
+describe("shellRegionPaintFor", () => {
+  const palette = {
+    surface: "#ffffff",
+    canvas: "#f5f5f7",
+    ink: "#1d1d1f",
+    "ink-muted": "#68686d",
+    accent: "#0a84ff",
+  } as unknown as Parameters<typeof shellRegionPaintFor>[2];
+
+  it("resolves every region, so the caller always has an answer", () => {
+    const regions = shellRegionPaintFor(undefined, [], palette);
+    expect(Object.keys(regions).sort()).toEqual(["app-bar", "dock", "drawer", "tabs"]);
+    // Nothing named: no region claims a field, which is what keeps an untouched shell byte-identical.
+    for (const paint of Object.values(regions)) expect(paint.fields).toBe("");
+  });
+
+  it("gives a region rule only to the region it names", () => {
+    const regions = shellRegionPaintFor(
+      undefined,
+      [
+        {
+          id: "r-dock",
+          name: "Every dock",
+          order: 0,
+          scope: { kind: "shell", id: "dock" },
+          style: { surface: "accent" },
+        },
+      ],
+      palette,
+    );
+
+    expect(regions.dock?.fields).toBe("surface");
+    expect(regions.dock?.vars["--shell-dock-paint-surface"]).toBeDefined();
+    // The other regions are untouched, and the variable is region-prefixed so it cannot leak.
+    expect(regions["app-bar"]?.fields).toBe("");
+    expect(regions["app-bar"]?.vars).toEqual({});
+  });
+
+  it("keeps the workspace shell style as every region's base", () => {
+    const regions = shellRegionPaintFor({ ink: "ink" }, [], palette);
+    for (const paint of Object.values(regions)) expect(paint.fields).toBe("ink");
   });
 });

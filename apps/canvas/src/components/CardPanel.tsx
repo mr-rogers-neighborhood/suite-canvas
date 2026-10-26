@@ -29,6 +29,7 @@ import {
 } from "react";
 import { hasTourSteps } from "../cards/tour";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { useUiStore } from "../store/useUiStore";
 import { CardBodyEditor, CardTitleEditor } from "./CardBodyEditor";
 import type { CardPickerOption } from "./CardPicker";
 import { PeerNameTag } from "./PeerNameTag";
@@ -847,6 +848,9 @@ export function CardPanel({
   };
 
   const typesById = new Map(types.map((type) => [type.id, type]));
+  // Opening the rule list from "Applies to" is the same door the File menu opens, so the panel does not
+  // need a second dialog or a prop threaded from the shell.
+  const setStylesOpen = useUiStore((state) => state.setStylesOpen);
   const boardNames = new Map(boards.map((board) => [board.id, board.name]));
   // Fields union in type order with the primary first (ADR-0053 §2). The order
   // is presentation only: nothing below asks how many types there are.
@@ -1399,7 +1403,14 @@ export function CardPanel({
           id={stylePanelId}
           aria-labelledby={styleTabId}
         >
-          <StyleTab kind="card" id={card.id} canEdit={editLayout} />
+          <StyleTab
+            kind="card"
+            id={card.id}
+            canEdit={editLayout}
+            typeId={card.primaryTypeId}
+            typeName={typesById.get(card.primaryTypeId)?.name ?? null}
+            {...(setStylesOpen ? { onManageRules: () => setStylesOpen(true) } : {})}
+          />
         </div>
       ) : null}
     </div>

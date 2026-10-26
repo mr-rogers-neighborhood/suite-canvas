@@ -311,6 +311,9 @@ interface UiState extends SessionCapabilities {
   openCardFocus: (cardId: string) => void;
   closeCardFocus: () => void;
   setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
+  /** The named style rules: the list and its editor. */
+  stylesOpen: boolean;
+  setStylesOpen: (open: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedEdgeIds: (ids: string[]) => void;
@@ -376,6 +379,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   setCapabilities: (capabilities) => set(capabilities),
   libraryOpen: false,
   libraryReason: "reader",
+  stylesOpen: false,
   libraryTab: "inbox",
   selectedNodeIds: [],
   selectedEdgeIds: [],
@@ -540,6 +544,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         : {}),
     })),
   setLibraryOpen: (libraryOpen, libraryReason = "reader") => set({ libraryOpen, libraryReason }),
+  setStylesOpen: (stylesOpen) => set({ stylesOpen }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),

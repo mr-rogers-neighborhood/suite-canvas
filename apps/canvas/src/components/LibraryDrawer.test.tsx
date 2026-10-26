@@ -318,15 +318,45 @@ describe("LibraryDrawer search", () => {
 describe("LibraryDrawer dismissal", () => {
   afterEach(() => {
     usePlacementRunStore.setState({ run: null, proposal: null, suspended: [] });
+    document.querySelector('[data-testid="canvas-board"]')?.remove();
   });
 
-  it("should close when a press lands outside it", () => {
+  /**
+   * A stand-in for the board, since the drawer dismisses on a press anywhere inside
+   * it. Returns the child the press will land on.
+   */
+  function board(child: "pane" | "card"): HTMLElement {
+    const host = document.createElement("div");
+    host.setAttribute("data-testid", "canvas-board");
+    const target = document.createElement("div");
+    target.className = child === "pane" ? "react-flow__pane" : "node-card";
+    host.append(target);
+    document.body.append(host);
+    return target;
+  }
+
+  it("should close when a press lands on the board's pane, and the pane keeps none of it", () => {
     const { workspace, items } = fixture();
     const onClose = vi.fn();
     renderDrawer(workspace, items, { onClose });
 
-    fireEvent.pointerDown(document.body);
+    // Default prevented: the press dismisses the drawer and places nothing behind it.
+    const kept = fireEvent.pointerDown(board("pane"));
 
+    expect(kept).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should close on a card too, without swallowing the card's press", () => {
+    // A card is the board as much as the empty space is; only the *pane* has nothing
+    // to do with the press, so only the pane loses it.
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    const kept = fireEvent.pointerDown(board("card"));
+
+    expect(kept).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -348,38 +378,25 @@ describe("LibraryDrawer dismissal", () => {
     const onClose = vi.fn();
     renderDrawer(workspace, items, { onClose });
 
-    fireEvent.pointerDown(document.body);
+    fireEvent.pointerDown(board("pane"));
 
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("should take a press on the pane as the dismissal, not as a placement", () => {
+  it("should leave the chrome alone, because the canvas is what is outside it", () => {
+    // The app bar, the tab strip and the dock are deliberate targets: pressing one is
+    // not a way of putting the drawer away, and the drawer's own controls are.
     const { workspace, items } = fixture();
     const onClose = vi.fn();
     renderDrawer(workspace, items, { onClose });
-    const pane = document.createElement("div");
-    pane.className = "react-flow__pane";
-    document.body.append(pane);
+    const tab = document.createElement("button");
+    document.body.append(tab);
 
-    const kept = fireEvent.pointerDown(pane);
-
-    expect(kept).toBe(false);
-    expect(onClose).toHaveBeenCalledTimes(1);
-    pane.remove();
-  });
-
-  it("should dismiss without swallowing a press on chrome", () => {
-    const { workspace, items } = fixture();
-    const onClose = vi.fn();
-    renderDrawer(workspace, items, { onClose });
-    const chip = document.createElement("button");
-    document.body.append(chip);
-
-    const kept = fireEvent.pointerDown(chip);
+    const kept = fireEvent.pointerDown(tab);
 
     expect(kept).toBe(true);
-    expect(onClose).toHaveBeenCalledTimes(1);
-    chip.remove();
+    expect(onClose).not.toHaveBeenCalled();
+    tab.remove();
   });
 
   it("should offer a close button that reads as its own control", () => {

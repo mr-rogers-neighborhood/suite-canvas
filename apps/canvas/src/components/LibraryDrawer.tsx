@@ -474,20 +474,23 @@ export function LibraryDrawer({
   }, [open, onClose, query, updateQuery]);
 
   /**
-   * A press outside the drawer closes it. On the board's own pane the press *is* the
-   * dismissal — it must not also place a card behind the drawer — while chrome and
-   * cards keep their press, because a control you aimed at is one you meant to click.
-   * The trigger is exempt entirely (it toggles, and a dismissal followed by a toggle
-   * would reopen what the press just closed), and so is everything the drawer itself
-   * opened: its row menu and its dialogs are portalled outside this element, and a
-   * press there is still a press on the library.
+   * A press on the canvas closes the drawer: the canvas is what "outside" means here,
+   * because it is the surface the drawer is standing in front of. On the pane the
+   * press *is* the dismissal — it must not also place a card behind the drawer — while
+   * a card and the chrome keep their press, because a control you aimed at is one you
+   * meant to click, and the tab strip is not a way of putting the drawer away. The
+   * trigger is exempt entirely (it toggles, and a dismissal followed by a toggle would
+   * reopen what the press just closed), and so is everything the drawer itself opened:
+   * its row menu and its dialogs are portalled out of its tree, so a press there is
+   * still a press on the library.
    */
   useEffect(() => {
     if (!open || holdingCard) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
       if (target?.closest?.(LIBRARY_PRESS_KEEP)) return;
-      if (target?.closest?.(".react-flow__pane")) {
+      if (!target?.closest?.('[data-testid="canvas-board"]')) return;
+      if (target.closest(".react-flow__pane")) {
         event.preventDefault();
         event.stopPropagation();
       }

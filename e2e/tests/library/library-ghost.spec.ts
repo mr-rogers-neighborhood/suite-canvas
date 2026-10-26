@@ -57,9 +57,10 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   // board space, so the drop is not a guess (ADR-0011 §2).
   await expect(pageA.getByTestId("library-drop-preview")).toHaveCount(1);
   // The frame names the card being held. The row's text also carries its `⋯`, so
-  // the comparison is on the title line rather than the whole row.
+  // the comparison is on the title line (`library-title-<id>`) rather than the
+  // whole row.
   await expect(pageA.locator(".library-drop-preview__title")).toHaveText(
-    (await row.locator("p").first().innerText()).trim(),
+    (await row.locator('[data-testid^="library-title-"]').first().innerText()).trim(),
   );
   await expect(pageB.getByTestId("peer-library-ghost")).toHaveCount(1);
   // It carries the peer's name, so the ghost is attributable: who is dragging

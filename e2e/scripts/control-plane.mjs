@@ -21,7 +21,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ensurePostgres, stopPostgres } from "./postgres.mjs";
+import { ensurePostgres, postgresAnswers, stopPostgres } from "./postgres.mjs";
 
 const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = path.resolve(E2E_DIR, "..");
@@ -76,20 +76,27 @@ const child = spawn(tsx, ["src/server.ts"], {
 let closing = false;
 
 /**
- * Stops the cluster first, then the server.
+ * Stops the server, then the cluster.
  *
- * The order matters because Playwright gives a web server a short grace period
- * before it kills the process tree, and Postgres is a detached child that
- * outlives a SIGKILLed wrapper. A cluster left listening on the fixed port turns
- * the *next* run's preflight into a failure, so the thing that must not survive
- * is stopped while there is still time to do it.
+ * The order matters, and it is the opposite of "stop the database first": the
+ * server holds a pooled connection, and a cluster that goes away underneath it
+ * makes `pg` emit an unhandled `error` on an idle client — which exits 1 and
+ * looks like a crash at the end of every run. Asking the server to stop first
+ * lets it close its pool; the cluster is stopped once it has, or after a short
+ * grace period if it will not.
  */
 function shutdown(signal) {
   if (closing) return;
   closing = true;
-  stopPostgres();
   child.kill(signal);
-  process.exit(0);
+  const deadline = Date.now() + 2_000;
+  const timer = setInterval(() => {
+    if (child.exitCode !== null || Date.now() > deadline) {
+      clearInterval(timer);
+      stopPostgres();
+      process.exit(0);
+    }
+  }, 50);
 }
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
@@ -101,10 +108,26 @@ process.on("exit", () => {
   if (!closing) stopPostgres();
 });
 
-child.on("exit", (code) => {
-  if (!closing) {
-    closing = true;
-    stopPostgres();
+child.on("exit", (code, signal) => {
+  if (closing) {
+    // We asked for this; the cluster is stopped by the shutdown timer.
+    process.exit(0);
   }
+  closing = true;
+  stopPostgres();
+  // A server that stops while its database is going away was being torn down, not
+  // crashing: `global-teardown.mjs` signals this process and then closes the
+  // cluster, and the pool reports the disconnect as an error. Say what happened,
+  // but do not report a failed run.
+  if (!postgresAnswers()) {
+    console.error(
+      "[control-plane] stopped with the run's Postgres. That is the end of a run, not a failure.",
+    );
+    process.exit(0);
+  }
+  console.error(
+    `[control-plane] the server exited on its own (${signal ?? code ?? "unknown"}). ` +
+      "The account specs need it: the reason is in e2e/.artifacts/control-plane.log.",
+  );
   process.exit(code ?? 1);
 });

@@ -18,10 +18,22 @@ import {
   watchErrors,
 } from "../fixtures/marquee";
 
+/**
+ * This suite runs on the hosted origin with the run's account.
+ *
+ * A marquee is a *gesture over the whole pane*, so it cannot share the top strip
+ * with the chrome a refused connection draws there: on a page the relay would not
+ * admit, "Not syncing" and the storage prompt sit over the pane and a box that
+ * starts a few pixels above a card's corner starts on that banner instead. The
+ * peer test below needs the account anyway — it opens two browsers on one
+ * document — so the file has one origin rather than two behaviours.
+ */
+test.use({ storageState: ACCOUNT_STATE });
+
 let sequence = 0;
 /** A blank board: `fresh=1` skips the two starter cards, so counts are exact. */
 const workspaceUrl = (name: string) =>
-  `/?fresh=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`;
+  hostedUrl(`/?fresh=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`);
 
 /**
  * Gate A10, §6.3: a marquee must never break the page.
@@ -145,7 +157,7 @@ test("stays interactive when a peer drags during the marquee", async ({ browser 
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
   const errors = watchErrors(pageA);
-  const url = hostedUrl(workspaceUrl("peer-drag"));
+  const url = workspaceUrl("peer-drag");
 
   await pageA.goto(url);
   await pageB.goto(url);

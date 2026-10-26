@@ -9,12 +9,21 @@
  *
  * `--fix` stops the listeners this script found. It never matches a process by
  * name, so an unrelated `node` process on the same machine is not a candidate.
+ *
+ * `--clean` throws the run's data away, so it acts only *after* the port scan has
+ * proved nothing else is using it. Doing it first was a harness bug with a real
+ * footprint: a second `pnpm e2e:*` started while another run was live deleted that
+ * run's database and stopped its Postgres, and the only symptoms were a control
+ * plane exiting 1 and a handful of unrelated specs failing afterwards. The one
+ * exception is the run's own Postgres, whose pid lives in this directory: a
+ * cluster left behind by an interrupted run is stopped, because no live run can
+ * own it.
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { describe, listeners, portIsBusy, stopListeners } from "./ports.mjs";
 import { PG_PORT, stopPostgres } from "./postgres.mjs";
 
 const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,136 +47,33 @@ const PORTS = [
   ...(visual ? [{ port: 6006, name: "storybook preview" }] : []),
 ];
 
-function windowsListeners(port) {
-  try {
-    const out = execFileSync("netstat", ["-ano", "-p", "tcp"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return [
-      ...new Set(
-        [...out.matchAll(new RegExp(`:${port}\\s+\\S+\\s+LISTENING\\s+(\\d+)`, "g"))].map((m) =>
-          Number(m[1]),
-        ),
-      ),
-    ];
-  } catch {
-    return [];
-  }
-}
-
-function macListeners(port) {
-  try {
-    const out = execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return [...new Set(out.split("\n").map(Number).filter(Number.isInteger))];
-  } catch {
-    return [];
-  }
-}
-
-function linuxListeners(port) {
-  try {
-    const out = execFileSync("ss", ["-H", "-ltnp", `sport = :${port}`], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return [...new Set([...out.matchAll(/pid=(\d+)/g)].map((m) => Number(m[1])))];
-  } catch {
-    return [];
-  }
-}
-
-function listeners(port) {
-  if (process.platform === "win32") return windowsListeners(port);
-  if (process.platform === "darwin") return macListeners(port);
-  return linuxListeners(port);
-}
-
-function portIsBusy(port) {
-  if (process.platform === "win32") {
-    try {
-      const out = execFileSync("netstat", ["-ano", "-p", "tcp"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      return out.includes(`:${port}`) && out.includes("LISTENING");
-    } catch {
-      return false;
-    }
-  }
-  if (process.platform === "darwin") {
-    try {
-      execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
-        stdio: "ignore",
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  try {
-    const out = execFileSync("ss", ["-H", "-ltn", `sport = :${port}`], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return out.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function describe(pid) {
-  try {
-    const out = execFileSync("ps", ["-o", "pid=,etime=,command=", "-p", String(pid)], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return out.replace(/\s+/g, " ") || `pid ${pid}`;
-  } catch {
-    return `pid ${pid} (process details unavailable)`;
-  }
-}
-
-async function stop(pids, port) {
-  for (const pid of pids) {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // The process may have exited between the scan and the signal.
-    }
-  }
+/**
+ * Stops the cluster this run's directory holds, if anything is on its port.
+ *
+ * `stopPostgres` only ever acts on the pid in `e2e/.data/pg/postmaster.pid`, so it
+ * cannot reach a Postgres somebody else started — and a run whose servers are all
+ * gone cannot be using it.
+ */
+async function stopOrphanedCluster() {
+  if (!portIsBusy(PG_PORT)) return true;
+  stopPostgres();
   for (let attempt = 0; attempt < 25; attempt += 1) {
-    if (!portIsBusy(port)) return true;
-    await sleep(200);
-  }
-  for (const pid of pids) {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // Already gone.
+    if (!portIsBusy(PG_PORT)) {
+      console.log(`e2e preflight: stopped the run's leftover e2e Postgres :${PG_PORT}`);
+      return true;
     }
-  }
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (!portIsBusy(port)) return true;
     await sleep(200);
   }
   return false;
 }
 
-if (clean) {
-  // Stop the cluster before its directory goes away: a Postgres whose data
-  // directory has been deleted under it cannot be asked to shut down afterwards.
-  stopPostgres();
-  rmSync(DATA_DIR, { recursive: true, force: true });
-  rmSync(ARTIFACT_DIR, { recursive: true, force: true });
-}
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 let blocked = false;
+/** Whether anything other than the cluster holds a port — the cluster is stoppable, a live run is not. */
+let serversBusy = false;
+
 for (const { port, name } of PORTS) {
   const pids = listeners(port);
   if (pids.length === 0) {
@@ -176,23 +82,37 @@ for (const { port, name } of PORTS) {
       continue;
     }
     console.error(`e2e preflight: ${name} :${port} is in use, but the owning process is hidden.`);
+    if (port !== PG_PORT) serversBusy = true;
     blocked = true;
     continue;
   }
 
   console.error(`e2e preflight: ${name} :${port} is already in use:`);
   for (const pid of pids) console.error(`  ${describe(pid)}`);
+  if (port !== PG_PORT) serversBusy = true;
 
   if (!fix) {
-    blocked = true;
+    // The cluster is the exception: `--clean` stops it below, since an interrupted
+    // run leaves it behind and nothing else can release the fixed port.
+    if (port !== PG_PORT || !clean) blocked = true;
     continue;
   }
 
-  const stopped = await stop(pids, port);
+  const stopped = await stopListeners(pids, port);
   if (stopped) {
     console.log(`e2e preflight: stopped ${name} :${port}`);
   } else {
     console.error(`e2e preflight: could not stop ${name} :${port}`);
+    blocked = true;
+    serversBusy = true;
+  }
+}
+
+// Only when nothing else of the suite is listening: stopping the cluster under a
+// live control plane is exactly what killed a run before this checked for it.
+if (clean && !serversBusy) {
+  if (!(await stopOrphanedCluster())) {
+    console.error(`e2e preflight: e2e Postgres :${PG_PORT} would not stop`);
     blocked = true;
   }
 }
@@ -201,6 +121,17 @@ if (blocked) {
   console.error("");
   console.error("Stale servers make the suite reuse old code. Run `pnpm e2e:stop`, then retry.");
   process.exit(1);
+}
+
+// The ports are clear, so the data directory belongs to nobody: stop the cluster
+// before its directory goes away (a Postgres whose data directory has been deleted
+// under it cannot be asked to shut down afterwards).
+if (clean) {
+  stopPostgres();
+  rmSync(DATA_DIR, { recursive: true, force: true });
+  rmSync(ARTIFACT_DIR, { recursive: true, force: true });
+  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
 }
 
 console.log("e2e preflight: ports are clear");

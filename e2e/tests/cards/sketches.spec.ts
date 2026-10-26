@@ -36,6 +36,10 @@ async function emptyPoint(page: Page): Promise<{ x: number; y: number }> {
 
 /** New sketch from the canvas menu, then out of the editor it opens. */
 async function createSketch(page: Page): Promise<void> {
+  // The canvas frame paints before the workspace document is hydrated, and a menu
+  // opened in that window has verbs but no board to write them to. Waiting for the
+  // seeded cards is the same readiness the first test below already asserts.
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   const point = await emptyPoint(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
   await expect(page.getByTestId("context-menu")).toBeVisible();

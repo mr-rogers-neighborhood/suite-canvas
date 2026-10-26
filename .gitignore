@@ -15,6 +15,7 @@ blob-report/
 # disposable, and a committed log is a stale clue.
 e2e/.data/
 e2e/.artifacts/
+e2e/.runlogs/
 .DS_Store
 *.tsbuildinfo
 *.log

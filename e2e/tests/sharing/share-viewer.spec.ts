@@ -136,6 +136,11 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
   const body = visible.getByTestId("card-body");
   await body.dblclick();
   await expect(body.locator(".node-card-editor")).toHaveAttribute("contenteditable", "false");
+  // A double click opens the card's focus surface, which stands over the board:
+  // close it before pressing the body again, or the press lands on the panel.
+  await viewer.getByTestId("card-focus").waitFor({ state: "visible" });
+  await viewer.getByTestId("card-focus-close").click();
+  await expect(viewer.getByTestId("card-focus")).toHaveCount(0);
   await body.click();
   await viewer.keyboard.type("hacked");
   await expect(body).toContainText("Visible to viewers");
@@ -296,14 +301,18 @@ test("revoking a link makes the viewer unavailable", async ({ page, browser }) =
   await page.getByTestId("share-close").click();
   await page.getByTestId("workspace-menu").click();
   await page.getByTestId("workspace-menu-share").click();
-  page.once("dialog", (dialog) => void dialog.accept());
+  // Revoking every link is confirmed inside the dialog now that no `window.confirm`
+  // is left in the canvas, so the confirmation is a press of its own.
   await page.getByTestId("share-revoke-all").click();
+  await page.getByTestId("share-revoke-all-yes").click();
   await expect(page.getByTestId("share-empty")).toBeVisible();
 
   await viewer.reload();
   const unavailable = viewer.getByTestId("share-unavailable");
   await expect(unavailable).toBeVisible({ timeout: 15_000 });
-  await expect(unavailable).toContainText("This link is no longer available.");
+  // The page says why: unpublished, with the board named, rather than a bare code.
+  await expect(unavailable).toContainText("This page was unpublished.");
+  await expect(unavailable).toContainText("revoked the link");
   await expect(viewer.getByTestId("canvas-board")).toHaveCount(0);
 
   await viewer.context().close();

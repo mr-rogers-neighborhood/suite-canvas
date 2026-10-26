@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 /**
  * ADR-0071 Q2: does a shared workspace carry its style to a visitor?
@@ -8,6 +9,12 @@ import { expect, test } from "@playwright/test";
  * brightness". The visitor below is in the opposite mode from the author and
  * still sees the author's surface, painted from the palette that travels in the
  * document.
+ *
+ * The authoring half needs an account: the link is minted by the relay, which
+ * authorises share creation with the same session JWT it accepts for sync
+ * (ADR-0074, ADR-0076), so that page runs on the hosted origin. The second test
+ * only reads a palette back out of a local workspace, so it keeps the plain dev
+ * origin — anonymous local use is still a supported deployment.
  */
 
 const LIGHT_SURFACE = "#fdf6e3";
@@ -32,56 +39,65 @@ async function paint(page: import("@playwright/test").Page) {
   });
 }
 
-test("a share renders the author's palette in the visitor's own mode", async ({
-  page,
-  browser,
-}) => {
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.goto(`/?workspace=e2e-theme-${Date.now()}`);
-  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+test.describe("a shared palette", () => {
+  test.use({ storageState: ACCOUNT_STATE });
 
-  // Author the two modes from the one place styles are written.
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-styles").click();
-  await expect(page.getByTestId("styles-dialog")).toBeVisible();
-  await page.getByTestId("styles-workspace-theme").click();
-  await expect(page.getByTestId("workspace-theme")).toBeVisible();
-  await page.getByTestId("workspace-theme-light-surface").fill(LIGHT_SURFACE);
-  await page.getByTestId("workspace-theme-dark-surface").fill(DARK_SURFACE);
-  await page.getByTestId("styles-close").click();
+  test("a share renders the author's palette in the visitor's own mode", async ({
+    page,
+    browser,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto(hostedUrl(`/?workspace=e2e-theme-${Date.now()}`));
+    await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
 
-  // The author is in light mode and sees the light value, painted on the root.
-  await expect
-    .poll(async () => (await paint(page)).token.toLowerCase())
-    .toBe(LIGHT_SURFACE.toLowerCase());
+    // Author the two modes from the one place styles are written.
+    await page.getByTestId("workspace-menu").click();
+    await page.getByTestId("workspace-styles").click();
+    await expect(page.getByTestId("styles-dialog")).toBeVisible();
+    await page.getByTestId("styles-workspace-theme").click();
+    await expect(page.getByTestId("workspace-theme")).toBeVisible();
+    await page.getByTestId("workspace-theme-light-surface").fill(LIGHT_SURFACE);
+    await page.getByTestId("workspace-theme-dark-surface").fill(DARK_SURFACE);
+    await page.getByTestId("styles-close").click();
 
-  // A viewer link for the workspace, then a visitor who prefers dark.
-  await page.getByTestId("workspace-menu").click();
-  await page.getByTestId("workspace-menu-share").click();
-  await expect(page.getByTestId("share-dialog")).toBeVisible();
-  await page.getByTestId("share-role-viewer").click();
-  await page.getByTestId("share-create").click();
-  const link = await page.getByLabel("Share link").inputValue();
-  await page.getByTestId("share-close").click();
-
-  const context = await browser.newContext({ colorScheme: "dark" });
-  try {
-    const visitor = await context.newPage();
-    await visitor.goto(link);
-    await expect(visitor.locator('[data-testid="node-card"]').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Same palette, the visitor's mode: dark resolves to the author's dark value.
+    // The author is in light mode and sees the light value, painted on the root.
     await expect
-      .poll(async () => (await paint(visitor)).token.toLowerCase())
-      .toBe(DARK_SURFACE.toLowerCase());
-    const visitorPaint = await paint(visitor);
-    expect(visitorPaint.dark).toBe(true);
-    expect(visitorPaint.card).toBe(rgbOf(DARK_SURFACE));
-  } finally {
-    await context.close();
-  }
+      .poll(async () => (await paint(page)).token.toLowerCase())
+      .toBe(LIGHT_SURFACE.toLowerCase());
+
+    // A viewer link for the workspace, then a visitor who prefers dark.
+    await page.getByTestId("workspace-menu").click();
+    await page.getByTestId("workspace-menu-share").click();
+    await expect(page.getByTestId("share-dialog")).toBeVisible();
+    await page.getByTestId("share-role-viewer").click();
+    await page.getByTestId("share-create").click();
+    const link = await page.getByLabel("Share link").inputValue();
+    await page.getByTestId("share-close").click();
+
+    // Somebody else's browser: the visitor opens the capability link without the
+    // author's cookie.
+    const context = await browser.newContext({
+      colorScheme: "dark",
+      storageState: { cookies: [], origins: [] },
+    });
+    try {
+      const visitor = await context.newPage();
+      await visitor.goto(link);
+      await expect(visitor.locator('[data-testid="node-card"]').first()).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // Same palette, the visitor's mode: dark resolves to the author's dark value.
+      await expect
+        .poll(async () => (await paint(visitor)).token.toLowerCase())
+        .toBe(DARK_SURFACE.toLowerCase());
+      const visitorPaint = await paint(visitor);
+      expect(visitorPaint.dark).toBe(true);
+      expect(visitorPaint.card).toBe(rgbOf(DARK_SURFACE));
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 /**

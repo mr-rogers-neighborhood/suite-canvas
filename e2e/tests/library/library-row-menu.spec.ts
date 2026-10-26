@@ -29,8 +29,11 @@ test("a row's actions live behind one button so the title has room", async ({ pa
   const id = await row.getAttribute("data-row-id");
   if (!id) throw new Error("row has no id");
 
-  // Exactly one button per row, and it is the menu.
-  await expect(row.getByRole("button")).toHaveCount(1);
+  // One *action* button per row, and it is the menu. The title is the row's own
+  // open affordance (a button, so the list is keyboard-reachable), not a verb
+  // beside the title — which is what this pins: no wall of actions.
+  await expect(row.getByRole("button", { name: /^Actions for / })).toHaveCount(1);
+  await expect(row.getByTestId(`library-row-menu-${id}`)).toHaveCount(1);
   await expect(row.getByRole("button", { name: "Locate" })).toHaveCount(0);
 
   await row.getByTestId(`library-row-menu-${id}`).click();

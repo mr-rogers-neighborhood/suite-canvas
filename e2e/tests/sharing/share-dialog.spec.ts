@@ -50,8 +50,10 @@ test("creates and revokes links from the Share dialog", { tag: "@smoke" }, async
   const resolved = await request.get(`${shareApi}/api/shares/${token}`);
   expect(resolved.status()).toBe(200);
 
-  page.once("dialog", (dialog) => void dialog.accept());
+  // Revoking every link is confirmed inside the dialog now that no `window.confirm`
+  // is left in the canvas, so the confirmation is a press of its own.
   await page.getByTestId("share-revoke-all").click();
+  await page.getByTestId("share-revoke-all-yes").click();
   await expect(page.getByTestId("share-empty")).toBeVisible();
   await expect
     .poll(async () => (await request.get(`${shareApi}/api/shares/${token}`)).status())

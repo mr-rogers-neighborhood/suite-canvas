@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { settleViewport } from "../fixtures/marquee";
 
 /**
@@ -6,10 +7,20 @@ import { settleViewport } from "../fixtures/marquee";
  * shapes, with ordinary links for the three whose shape is a relationship. A run
  * is gesture state, so these tests assert what landed in the document — placements
  * and links — and that the run itself ends.
+ *
+ * This file runs on the hosted origin with the run's account, like the rest of the
+ * gesture suite. On the plain dev origin the relay refuses the join
+ * (`Join failed: 2 - Authentication failed`), so the page reports "Not syncing" and
+ * carries the storage prompt — chrome that sits over the pane the gestures use.
+ * (Moving here removes that chrome; it does not by itself make a held card land —
+ * see the note on `placeHeld`.)
  */
 
+test.use({ storageState: ACCOUNT_STATE });
+
 let sequence = 0;
-const workspaceUrl = (name: string) => `/?workspace=e2e-run-${name}-${Date.now()}-${++sequence}`;
+const workspaceUrl = (name: string) =>
+  hostedUrl(`/?workspace=e2e-run-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");
@@ -69,6 +80,11 @@ async function unplaceEverything(page: Page, count: number): Promise<void> {
 
 /** Puts the held card down at a point on the empty board, away from the drawer. */
 async function placeHeld(page: Page, offset: { dx: number; dy: number }): Promise<void> {
+  // A plain press, which is what the canvas listens for: the held stack places on
+  // `pointerdown`. This is deliberately not "move, then down/up" — that spelling
+  // lands the card even when the product drops a click, and the drop is a defect
+  // worth keeping visible (the app re-registers its window listener on every
+  // render, and a press that arrives during that churn is lost).
   const board = await page.getByTestId("canvas-board").boundingBox();
   if (!board) throw new Error("board not visible");
   await page.mouse.click(

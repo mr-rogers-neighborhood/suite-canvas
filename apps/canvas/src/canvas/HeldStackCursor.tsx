@@ -45,6 +45,21 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
 
   const held = run?.queue[0]?.ids[0] ?? null;
   const waiting = run !== null && run.queue.length === 0;
+  /**
+   * The engine is rebuilt on every render of the board, so it cannot be a
+   * dependency of the press listener: re-registering during a gesture is how a
+   * click between two renders lands on nothing. A ref keeps the handler stable
+   * and always calling the current engine.
+   */
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
+  /**
+   * React Flow's converter is not identity-stable either, so it travels the same
+   * way. The press listener then depends on `held` alone: the one thing that
+   * decides whether a press places a card at all.
+   */
+  const toFlow = useRef(screenToFlowPosition);
+  toFlow.current = screenToFlowPosition;
   /** Where the cursor last was; seeded once per run so the stack is never invisible. */
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   /** Whether the run in hand has been put somewhere yet. */
@@ -74,7 +89,7 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
       const seed = armScreenPoint(lastPointer.current);
       lastPointer.current = seed;
       setPointer(seed);
-      setProposal(engine.proposeAt(screenToFlowPosition(seed)));
+      setProposal(engineRef.current.proposeAt(toFlow.current(seed)));
     }
     const move = (event: PointerEvent) => {
       lastPointer.current = { x: event.clientX, y: event.clientY };
@@ -84,8 +99,8 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
       if (frame.current !== null) return;
       frame.current = window.requestAnimationFrame(() => {
         frame.current = null;
-        const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        setProposal(engine.proposeAt(at));
+        const at = toFlow.current({ x: event.clientX, y: event.clientY });
+        setProposal(engineRef.current.proposeAt(at));
       });
     };
     window.addEventListener("pointermove", move);
@@ -96,7 +111,8 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
       // claim the next drop goes somewhere it does not.
       setProposal(null);
     };
-  }, [engine, held, screenToFlowPosition, setProposal]);
+    // `engine` and `toFlow` are deliberately absent: see `engineRef` above.
+  }, [held, setProposal]);
 
   // The click that puts a card down is the canvas's own press, so it is caught in
   // the capture phase before React Flow claims it for panning or selection.
@@ -121,11 +137,12 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
       }
       event.preventDefault();
       event.stopPropagation();
-      engine.placeAt(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+      engineRef.current.placeAt(toFlow.current({ x: event.clientX, y: event.clientY }));
     };
     window.addEventListener("pointerdown", down, true);
     return () => window.removeEventListener("pointerdown", down, true);
-  }, [engine, held, screenToFlowPosition]);
+    // `engine` and `toFlow` are deliberately absent: see `engineRef` above.
+  }, [held]);
 
   if (!run) return null;
 

@@ -153,3 +153,34 @@ CSS.
 4. **Does density belong to style at all?** It changes layout rather than paint, and layout is the
    document's business (positions are stored). Density would have to be a *render* preference, which puts
    it on the reader rung rather than the document ladder.
+
+## Amendment — what the page-builder frameworks teach, and what they do not
+
+The references the author named (Automatic.css, Advanced Themer, Core Framework, GeneratePress) were read
+against this ADR; the comparison lives in
+[design-inspirations.md § Style systems](../design-inspirations.md#style-systems-what-transfers-from-page-builder-frameworks).
+Three conclusions belong in the decision itself, because they change requirements rather than taste:
+
+1. **A utility is a named role with a declared owner and a declared fallback.** The strongest idea in
+   Advanced Themer is not its 176 tweaks but its **"safe to disable"** marker. Translated: removing a
+   utility must fall back to the next rung *by name* (`card override → type → workspace → built-in`), never
+   to an undefined value or a broken paint. A utility index that states both — owner and fallback — is
+   therefore part of the deliverable, not documentation added later.
+2. **Preview is in place, not beside.** ACSS and Core both ship a live preview because the thing they style
+   is elsewhere (a page in a builder). Ours is on the canvas, under the reader's eyes, so a hover on a
+   utility previews the actual card and a commit is one undoable mutation. A separate preview pane would be
+   copying a compromise we do not have.
+3. **Few knobs at the top, and say so.** GeneratePress is the closest to the posture chosen here: a small
+   set of global controls and targeted overrides, rather than a full token editor. The failure mode of a
+   page-builder customizer is an infinite settings tree; the equivalent failure here would be exposing the
+   eight mode values, so §6 stands: semantic hues are never editable, and the top rung stays short enough
+   to read in one screen.
+
+Two things from those frameworks are refused on the record, so they are not re-proposed later: **authoring
+CSS** (custom classes, auto-BEM, component HTML/CSS editors) and **per-breakpoint style matrices** (our
+"breakpoints" are zoom levels, and the canvas already degrades by LOD rather than by media query).
+
+Also noted from the same pass, and belonging to this ADR's scope rather than to a separate one: **colour is
+a Control in the Style tab**, and the property inspector, the library row menu and the context menus must
+present the *same* controls from one abstraction. Three surfaces grown separately is exactly the drift that
+made the two mode families need one palette.

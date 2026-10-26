@@ -69,6 +69,27 @@ A card can appear on five boards, in two views and on one website without knowin
 | **walkthrough.js / Driver.js / Shepherd.js** | The missing-target vocabulary: `skipMissingElement`, `waitForElement`, `advanceOnClick`; completion stored by the app, never in the library | jQuery + absolute pixel positioning; localStorage-only completion | Tour rot is the real failure mode, so a step stores target *and* viewport, and our own tours ship an anchor test |
 | **Diátaxis** | Four reader needs — tutorial, how-to, reference, explanation — as a *tag* taxonomy | A document tree, routing, or a CMS | The author asked for the method's discipline without its site structure; tags give that and nothing else |
 
+### Style systems: what transfers from page-builder frameworks
+
+Read 2026-10-25 against [ADR-0071](./decisions/0071-style-is-derived-not-configured.md). These are CSS
+frameworks for WordPress page builders — tools that style pages whose *content* they do not own. Suite owns
+the object graph, so a style here is a value on a record: collaborative, undoable, per-card, and derivable
+downward into the shell. That difference is why the table below borrows **mechanics** and refuses almost
+every **surface**.
+
+| Source | Borrow | Reject | Why |
+| --- | --- | --- | --- |
+| **Automatic.css (ACSS)** | The **two-modes-of-one-source** idea: the same framework ships as an ultra-minimal variable layer *or* a full utility layer, or any combination; automatic shade generation per colour; contextual colour relationships (a colour that means "one step darker than that one"); a **UI dashboard with live preview** for the framework's own tokens; right-click contextual menus **with live class preview** | Authoring CSS at all: custom classes, auto-BEM naming, component HTML editors, breakpoint matrices | A utility must be a *named role* written through `@graph`, never a stylesheet ([ADR-0071](./decisions/0071-style-is-derived-not-configured.md) §3). Their breakpoints are our zoom levels — the canvas already degrades by LOD, so a per-breakpoint style matrix would be a second, spatial system. What we keep is the shape of the offer: few variables, many named utilities, one preview |
+| **Core Framework** | **Project-scoped style kits**: variables and classes organised into reusable sets you carry between projects, edited in a visual GUI; a **component editor with instant feedback** on the thing being styled; shade generation from one base colour | A hosted app for managing stylesheets; exporting CSS files; a class list as the unit of meaning | A "kit" maps exactly onto a workspace style applied to new workspaces ([ADR-0068](./decisions/0068-a-system-workspace-authors-what-workspaces-start-with.md)): it is document data, not a file we generate. The instant-feedback idea is stronger for us than for them — the card being styled is already on screen, so the Style tab should render *it*, not a form preview |
+| **Advanced Themer** | The **catalogue discipline**: 176 discrete, individually switchable features behind one searchable index with categories, tags and a **"safe to disable"** marker; a dedicated CSS-variables category; per-control-group copy/paste/reset | Builder tweaks as a product surface; per-feature switches for their own sake | Two transfers: (1) a style-utility index that says which rung owns each utility and what removal falls back to — "safe to disable" becomes a *semantic* requirement ("removing a utility falls back to the next rung, never to an undefined value"), and (2) copy/paste/reset of a style group is cheap and expected once styles are records |
+| **GeneratePress** | The **balance**: a deliberately small set of global controls (colours, typography, layout) and then targeted per-element overrides — closer to "configure once, override rarely" than ACSS's framework-first posture | A theme customizer as the primary styling surface; PHP-level filters | This is the posture ADR-0071 chose: few knobs at the top rung (density, radius, canvas background, the type scale), and the rest as overrides where the reader already is. It also validates refusing a full token editor: the failure mode of a page-builder customizer is an infinite settings tree nobody can read |
+
+**The synthesis we take.** A small, opinionated top rung (GeneratePress's restraint), a variable layer plus
+named utilities from one source (ACSS's two modes), kits that travel between workspaces (Core's projects),
+and a searchable index that states each utility's owner and fallback (Advanced Themer's catalogue). The one
+thing none of them has, and we must not lose: **the thing being styled is the thing you are looking at.**
+Every one of these tools renders a preview because its subject is elsewhere. Ours is on the canvas.
+
 ### Where sections surface (Heptabase evidence)
 
 Sections are navigation, not retrieval. Heptabase's own surfaces draw the line, and their guidance

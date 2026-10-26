@@ -330,14 +330,36 @@ async function main() {
       return index.predicate;
     });
 
-    await check("invite_keys cannot spend more uses than its ceiling", async () => {
-      const { rows } = await client.query(CHECK_CONSTRAINTS_SQL, ["public.invite_keys"]);
+    // `invite_keys` and its redemption function are gone: `better-enrollment` owns
+    // invitations now (ADR-0067 §10), so the invariants moved with them. Assert the
+    // new ones, because a ceiling that stops being enforced is exactly the kind of
+    // regression a schema test exists to catch.
+    await check("invite goals: a cap is positive, uses cannot go negative", async () => {
+      const { rows } = await client.query(CHECK_CONSTRAINTS_SQL, ["public.invite"]);
       const definitions = rows.map((row) => String(row.definition));
-      const ceiling = definitions.find((def) => /used_count\s*<=\s*max_uses/.test(def));
-      assert.ok(ceiling, `no used_count <= max_uses check; found ${definitions.join(" | ")}`);
-      const positive = definitions.find((def) => /max_uses\s*>\s*0/.test(def));
-      assert.ok(positive, `no max_uses > 0 check; found ${definitions.join(" | ")}`);
-      return `${ceiling} and ${positive}`;
+      const cap = definitions.find(
+        (def) => /maxUses/i.test(def) && /IS\s+NULL/i.test(def) && />\s*0/.test(def),
+      );
+      assert.ok(cap, `no maxUses > 0 check; found ${definitions.join(" | ")}`);
+      const uses = definitions.find((def) => /useCount/i.test(def) && />=\s*0/.test(def));
+      assert.ok(uses, `no useCount >= 0 check; found ${definitions.join(" | ")}`);
+      return `${cap} and ${uses}`;
+    });
+
+    await check("invite: the token hash is unique and its type is constrained", async () => {
+      const { rows } = await client.query(
+        `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'invite'`,
+      );
+      const unique = rows.find(
+        (row) => /UNIQUE/i.test(String(row.indexdef)) && /tokenHash/.test(String(row.indexdef)),
+      );
+      assert.ok(unique, `no unique token hash index; saw ${JSON.stringify(rows)}`);
+      const { rows: types } = await client.query(CHECK_CONSTRAINTS_SQL, ["public.invite"]);
+      const typeCheck = types
+        .map((row) => String(row.definition))
+        .find((def) => /type\s*=\s*ANY/.test(def) && /private/.test(def));
+      assert.ok(typeCheck, "no type IN ('private','public') check");
+      return String(unique.indexname);
     });
 
     await check("billing_event.event_id is the primary key", async () => {

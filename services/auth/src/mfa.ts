@@ -12,6 +12,10 @@
  * - a **magic link** is one factor and **the mailbox is the entire account**. There is no
  *   password to reset, so the link *is* the reset path: an attacker with the mailbox
  *   takes the account unless something stands in front of sign-in;
+ * - a **password** is one factor and the only *guessable* one. It is reachable only by
+ *   redeeming an invitation (§11 amendment), but once an account has one it is a secret
+ *   a person can repeat elsewhere, phish or brute-force — so it earns the same advice a
+ *   magic link does, and the rate limiter stands in front of the route as well;
  * - **Google** brings its own MFA, so ours would be a second lock on a door we did not fit.
  *
  * Requirement is scoped to the one capability that can do damage *inside* the product —
@@ -19,7 +23,7 @@
  * careful we think a person is.
  */
 
-export type SignInMethod = "passkey" | "magic-link" | "google";
+export type SignInMethod = "passkey" | "magic-link" | "google" | "password";
 
 export type MfaAdvice = "required" | "recommended" | "optional";
 
@@ -37,8 +41,10 @@ export function mfaAdvice(input: MfaInput): MfaAdvice {
 
   switch (input.method) {
     case "magic-link":
-      // The only method where the second factor protects against the realistic
-      // attack: someone else reading the inbox.
+      // The methods where the second factor protects against the realistic attack:
+      // someone else reading the inbox, or guessing and replaying a password.
+      return "recommended";
+    case "password":
       return "recommended";
     case "passkey":
     case "google":
@@ -49,8 +55,8 @@ export function mfaAdvice(input: MfaInput): MfaAdvice {
 /** The one sentence the Security panel shows for each answer. */
 export const MFA_COPY: Record<MfaAdvice, string> = {
   required:
-    "Add a second factor. This account can manage people and billing, so a password alone is not enough.",
+    "Add a second factor. This account can manage people and billing, so one secret is not enough.",
   recommended:
-    "You sign in by email, so anyone who can read that inbox can open your account. Add a second factor.",
+    "You sign in with an email link or a password, so one secret opens this account. Add a second factor.",
   optional: "You can add a second factor to this account.",
 };

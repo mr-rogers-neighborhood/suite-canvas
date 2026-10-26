@@ -90,6 +90,22 @@ export function checkWorkspaceAllowance(input: WorkspaceAllowanceInput): SeatDec
     : { ok: false, reason: "workspace-allowance-exhausted" };
 }
 
+/**
+ * The numeric seat ceiling a licence grants, or `0` when there is nothing to grant.
+ *
+ * One number, one meaning, because two writers ask the question: `checkSeatAllowance`
+ * below (the relay and the organization hooks) and `resolveSeatLimit` in
+ * `enrollment.ts` (the invitation plugin, which writes `member` rows through the
+ * adapter and therefore never passes through a hook). A refused licence yields `0`
+ * rather than a separate "no licence" answer, which is the fail-closed direction: a
+ * missing row admits nobody but the people already counted.
+ */
+export function seatCeiling(input: LicenceInput): number {
+  if (input.licence.kind !== "licensed") return 0;
+  if (input.licence.licence.claims.expiresAt <= input.now) return 0;
+  return input.licence.licence.seats;
+}
+
 export interface SeatAllowanceInput extends LicenceInput {
   /** Present when the caller knows it; the refusal itself never depends on it. */
   organizationId?: string;
@@ -112,7 +128,7 @@ export function checkSeatAllowance(input: SeatAllowanceInput): SeatDecision {
   const refusal = licenceRefusal(input);
   if (refusal !== null) return { ok: false, reason: refusal };
   if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-missing" };
-  const seats = input.licence.licence.seats;
+  const seats = seatCeiling(input);
   if (!Number.isFinite(seats)) return { ok: true, seat: "licensed-member" };
   return input.memberCount <= seats
     ? { ok: true, seat: "licensed-member" }

@@ -1,4 +1,5 @@
 import { type AuthDatabase, type AuthServiceDeps, createAuthService } from "./betterAuth.js";
+import { type EnrollmentRedemption, enrollmentRedemption } from "./enrollment.js";
 import { authEnabled } from "./env.js";
 import { databaseUrlProblem, postgresDatabase, type Queryable } from "./postgres.js";
 import { postgresRepositories } from "./postgresRepositories.js";
@@ -20,7 +21,10 @@ import type { AuthEnvironment } from "./types.js";
  */
 
 export interface AuthEntryDeps
-  extends Pick<AuthServiceDeps, "licences" | "memberships" | "sendMagicLink"> {
+  extends Pick<
+    AuthServiceDeps,
+    "licences" | "memberships" | "sendMagicLink" | "sendInvitation" | "onPublicInvitation"
+  > {
   /**
    * An adapter to use instead of building a pool: the memory adapter in tests, a
    * caller-owned pool in a deployment that wants to share one.
@@ -36,6 +40,12 @@ export interface AuthEntryDeps
 export interface AuthEntry {
   /** Hand this straight to the HTTP layer: Better Auth's own `Request` handler. */
   handler: (request: Request) => Promise<Response>;
+  /**
+   * The redemption port `createAuthHandler` takes. It is built here because this is
+   * the one place that holds both the instance and the origin its cookies are scoped
+   * to; a deployment should pass this in rather than reaching into the plugin.
+   */
+  redeem: EnrollmentRedemption;
   close: () => Promise<void>;
 }
 
@@ -58,12 +68,20 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
     throw new Error("no database adapter was built");
   }
 
+  // Validated here, not on first use: an invitation link is built from this origin, and
+  // a wrong one would hand out links that do not resolve.
+  const baseURL = new URL(env.SUITE_AUTH_URL?.trim() ?? "").origin;
+
   const instance = createAuthService({
     env,
     database,
     licences: deps.licences,
     memberships: deps.memberships,
     sendMagicLink: deps.sendMagicLink,
+    ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
+    ...(deps.onPublicInvitation === undefined
+      ? {}
+      : { onPublicInvitation: deps.onPublicInvitation }),
     ...(deps.transferAnonymousWorkspaces === undefined
       ? {}
       : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
@@ -72,6 +90,7 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
 
   return {
     handler: (request) => instance.handler(request),
+    redeem: enrollmentRedemption({ baseURL, handler: instance.handler }),
     close: async () => {
       await deps.close?.();
       // Only close a pool this function opened.
@@ -95,7 +114,7 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
  * `SUITE_AUTH_DATABASE_URL` and closed by this function on shutdown.
  */
 export interface PostgresAuthEntryDeps
-  extends Pick<AuthServiceDeps, "sendMagicLink">,
+  extends Pick<AuthServiceDeps, "sendMagicLink" | "sendInvitation" | "onPublicInvitation">,
     Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now"> {
   /** An adapter/pool to share instead of building one. */
   queryable?: Queryable;
@@ -110,6 +129,10 @@ export function createPostgresAuthEntry(
     return createAuthEntry(env, {
       ...repositories,
       sendMagicLink: deps.sendMagicLink,
+      ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
+      ...(deps.onPublicInvitation === undefined
+        ? {}
+        : { onPublicInvitation: deps.onPublicInvitation }),
       database: deps.queryable as unknown as AuthDatabase,
       ...(deps.transferAnonymousWorkspaces === undefined
         ? {}
@@ -129,6 +152,10 @@ export function createPostgresAuthEntry(
   return createAuthEntry(env, {
     ...repositories,
     sendMagicLink: deps.sendMagicLink,
+    ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
+    ...(deps.onPublicInvitation === undefined
+      ? {}
+      : { onPublicInvitation: deps.onPublicInvitation }),
     database: opened.database,
     close: opened.close,
     ...(deps.transferAnonymousWorkspaces === undefined

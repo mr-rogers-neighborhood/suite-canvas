@@ -23,18 +23,6 @@ export function isOrganizationRole(value: unknown): value is OrganizationRole {
   return typeof value === "string" && (organizationRoles as readonly string[]).includes(value);
 }
 
-/**
- * Roles an invite *key* may grant. `owner` is excluded on purpose: a link that
- * transfers ownership is the "whoever opens it first owns the workspace"
- * failure ADR-0065 exists to close, and ownership is claimed, never handed out.
- */
-export const inviteKeyRoles = ["admin", "member"] as const;
-export type InviteKeyRole = (typeof inviteKeyRoles)[number];
-
-export function isInviteKeyRole(value: unknown): value is InviteKeyRole {
-  return typeof value === "string" && (inviteKeyRoles as readonly string[]).includes(value);
-}
-
 /** One `member` row of an organization: the seat, and the role it carries. */
 export interface MemberRecord {
   id: string;
@@ -59,26 +47,6 @@ export interface WorkspaceRecord {
   name: string;
   createdAt: number;
   members: readonly MemberRecord[];
-}
-
-/** An `invite_keys` row. The key itself is never stored, only its hash. */
-export interface InviteKeyRecord {
-  id: string;
-  workspaceId: string;
-  role: InviteKeyRole;
-  createdByUserId: string;
-  /** Epoch milliseconds, or null for a key that does not expire. */
-  expiresAt: number | null;
-  maxUses: number;
-  usedCount: number;
-  revokedAt: number | null;
-  createdAt: number;
-}
-
-/** The presented key plus the row it resolved to, so a caller can log the id, not the secret. */
-export interface InviteKeyMaterial {
-  key: string;
-  record: InviteKeyRecord;
 }
 
 /**

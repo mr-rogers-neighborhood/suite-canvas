@@ -1,16 +1,14 @@
 import { capabilitiesForRole } from "./capabilities.js";
+import type { EnrollmentRedemption } from "./enrollment.js";
 import { authEnabled } from "./env.js";
 import { AuthError, isAuthError } from "./errors.js";
-import { createInviteKey, type InviteKeyRepository, redeemInviteKey } from "./invites.js";
-import { hashInviteKey } from "./keys.js";
 import { type LicenceStore, licenceStateFor, type MembershipReader } from "./licences.js";
-import { canAddWorkspace, checkSeatAllowance, seatProblemMessage } from "./seats.js";
+import { canAddWorkspace, seatProblemMessage } from "./seats.js";
 import type { AccountSession, AuthEnvironment, OrganizationRole } from "./types.js";
-import { isInviteKeyRole } from "./types.js";
-import { claimWorkspace, memberOf, roleIn, type WorkspaceRepository } from "./workspaces.js";
+import { claimWorkspace, roleIn, type WorkspaceRepository } from "./workspaces.js";
 
 /**
- * The four routes of the control plane.
+ * The routes of the control plane.
  *
  * Shape follows `services/billing/handler.ts` on purpose: one function in, one
  * JSON response out, named error codes in the body, and status codes that are
@@ -30,13 +28,21 @@ export interface AuthSessionReader {
 export interface AuthHandlerDeps {
   env: AuthEnvironment;
   workspaces: WorkspaceRepository;
-  invites: InviteKeyRepository;
   licences: LicenceStore;
   memberships: MembershipReader;
+  /**
+   * Redemption, and the *only* way this service spends an invitation (ADR-0067 §10).
+   *
+   * It is a port rather than a repository because the write belongs to
+   * `better-enrollment`: the plugin creates the account, sets the password, spends the
+   * use and inserts the `member` row. Our route owns the contract in front of it — the
+   * request shape, our error codes, and the refusal to be configured without it. Null
+   * means "cannot redeem at all", which fails closed with `auth-not-configured`.
+   */
+  enrollment: { redeem: EnrollmentRedemption } | null;
   /** Null when the account service is off: every route then refuses as unconfigured. */
   sessions: AuthSessionReader | null;
   now?: () => number;
-  newId?: () => string;
   log?: AuthLogger;
 }
 
@@ -82,6 +88,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   "invite-exhausted": 409,
   "auth-not-configured": 503,
   "seat-refused": 403,
+  "rate-limited": 429,
   "method-not-allowed": 405,
   "not-found": 404,
 };
@@ -135,34 +142,6 @@ function textField(
   return value;
 }
 
-function integerField(body: Record<string, unknown>, name: string, fallback: number): number {
-  const value = body[name];
-  if (value === undefined || value === null) return fallback;
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new AuthError("invalid-request", `${name} must be a whole number`);
-  }
-  return value;
-}
-
-/** Invite keys grant admin or member; `owner` is claimed, never handed out. */
-function inviteRoleField(body: Record<string, unknown>): "admin" | "member" {
-  const value = textField(body, "role", true);
-  if (!isInviteKeyRole(value)) {
-    throw new AuthError("invalid-request", "role must be admin or member");
-  }
-  return value;
-}
-
-/** `expiresAt` is epoch milliseconds; the browser sends a timestamp, never a duration. */
-function expiryField(body: Record<string, unknown>): number | null {
-  const value = body.expiresAt;
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new AuthError("invalid-request", "expiresAt must be a timestamp or null");
-  }
-  return value;
-}
-
 /** Resolves the session for a request, or refuses. Never falls back to a body field. */
 async function requireSession(
   deps: AuthHandlerDeps,
@@ -202,39 +181,8 @@ async function requireWorkspaceRole(
   return { organizationId: workspace.organizationId, role };
 }
 
-/**
- * The licence refusal for a redemption, raised before any write.
- *
- * A key that does not resolve is left to `redeemInviteKey`, which owns the named
- * "not found / revoked / expired / exhausted" answers: this function only answers
- * the seat question, and staying silent about everything else keeps one owner per
- * refusal.
- */
-async function requireSeatForInvite(
-  deps: AuthHandlerDeps,
-  key: string,
-  userId: string,
-  now: number,
-): Promise<void> {
-  const stored = await deps.invites.findByHash(hashInviteKey(key));
-  if (stored === null) return;
-  const workspace = await deps.workspaces.find(stored.workspaceId);
-  if (workspace === null || workspace.organizationId === null) return;
-  if (memberOf(workspace, userId) !== null) return;
-  const licence = await deps.licences.forOrganization(workspace.organizationId);
-  const memberCount = await deps.memberships.countForOrganization(workspace.organizationId);
-  const seat = checkSeatAllowance({
-    organizationId: workspace.organizationId,
-    licence: licenceStateFor(true, licence),
-    memberCount: memberCount + 1,
-    now,
-  });
-  if (!seat.ok) throw new AuthError("seat-refused", seatProblemMessage(seat.reason));
-}
-
 export function createAuthHandler(deps: AuthHandlerDeps): AuthHandler {
   const now = deps.now ?? Date.now;
-  const newId = deps.newId ?? (() => crypto.randomUUID());
   const log: AuthLogger = deps.log ?? (() => {});
 
   return async function authHandler(event) {
@@ -249,80 +197,61 @@ export function createAuthHandler(deps: AuthHandlerDeps): AuthHandler {
         return json(503, { ok: false, error: "auth-not-configured" });
       }
 
-      if (path === "/api/auth/invites") {
-        if (method !== "POST") return methodNotAllowed("POST");
-        const session = await requireSession(deps, event);
-        const body = bodyOf(event);
-
-        const workspaceId = textField(body, "workspaceId", true).trim();
-        const role = inviteRoleField(body);
-        const context = await requireWorkspaceRole(deps, workspaceId, session);
-        if (!capabilitiesForRole(context.role).canManageLinks) {
-          throw new AuthError("forbidden", "only an owner or admin may create invite keys");
-        }
-
-        const created = await createInviteKey(
-          {
-            workspaceId,
-            role,
-            createdByUserId: session.userId,
-            actorRole: context.role,
-            expiresAt: expiryField(body),
-            maxUses: integerField(body, "maxUses", 1),
-            now: now(),
-          },
-          { workspaces: deps.workspaces, invites: deps.invites, newId },
-        );
-        log("info", "invite key created", {
-          workspaceId,
-          inviteKeyId: created.record.id,
-          role: created.record.role,
-          maxUses: created.record.maxUses,
-        });
-        // The plaintext key is returned exactly once, to its creator.
-        return json(201, { ok: true, key: created.key, invite: created.record });
-      }
-
+      /**
+       * Redeem an invitation.
+       *
+       * The only route that changes membership without a member session, and that is
+       * structural rather than an exception: a private invitation exists to create the
+       * account that accepts it, so there is nobody to authenticate as yet. The
+       * invitation token *is* the credential, and the plugin verifies it — hashed at
+       * rest, single use, expiring, revocable — while the seat question is answered
+       * inside the plugin from our licence (`resolveSeatLimit`).
+       *
+       * Two things this route adds on top of the plugin, both guardrails:
+       *
+       * - **Our error vocabulary.** A plugin rename cannot turn "expired" into a 200;
+       *   `redemptionResult` in `enrollment.ts` maps what it knows and refuses what it
+       *   does not recognise.
+       * - **Nothing but the token and the password crosses the boundary.** No role, no
+       *   organization id and no user id come from the body: those are decided by the
+       *   invitation row, which an owner wrote.
+       */
       if (path === "/api/invites/redeem") {
         if (method !== "POST") return methodNotAllowed("POST");
-        const session = await requireSession(deps, event);
+        if (deps.enrollment === null) {
+          throw new AuthError("auth-not-configured", "the invitation engine is not wired");
+        }
         const body = bodyOf(event);
-        const key = textField(body, "key", true);
+        const password = textField(body, "password", false);
+        const name = textField(body, "name", false);
+        const email = textField(body, "email", false);
+        const outcome = await deps.enrollment.redeem({
+          token: textField(body, "token", true).trim(),
+          ...(password === undefined ? {} : { password }),
+          ...(name === undefined ? {} : { name }),
+          ...(email === undefined ? {} : { email }),
+          headers: event.headers ?? {},
+        });
 
-        // The seat check runs *before* the redemption, against the organization
-        // the key names, so a full organization never spends the key's last use.
-        // A caller who is already a member is not a new seat and is skipped.
-        await requireSeatForInvite(deps, key, session.userId, now());
-
-        const outcome = await redeemInviteKey(
-          { key, userId: session.userId, now: now() },
-          { workspaces: deps.workspaces, invites: deps.invites },
-        );
-        if (outcome.status === "already-member") {
-          log("info", "invite redemption skipped", {
-            workspaceId: outcome.workspaceId,
-            organizationId: outcome.organizationId,
-            status: outcome.status,
-          });
-          return json(200, {
-            ok: true,
-            status: "already-member",
-            organizationId: outcome.organizationId,
-            workspaceId: outcome.workspaceId,
-            role: outcome.role,
-          });
+        if (outcome.status === "sign-in-required") {
+          // Not a failure and not a redemption: the link is intact, but the person
+          // has an account and has not proved it yet. Nothing was written.
+          log("info", "invite redemption deferred", { status: outcome.status });
+          throw new AuthError(
+            "unauthorized",
+            "sign in first, then open the invitation again to join",
+          );
         }
 
-        log("info", "invite key redeemed", {
-          workspaceId: outcome.workspaceId,
+        log("info", "invite redeemed", {
           organizationId: outcome.organizationId,
           role: outcome.role,
+          signedIn: outcome.signedIn,
         });
         return json(200, {
           ok: true,
-          status: "redeemed",
+          status: outcome.status,
           organizationId: outcome.organizationId,
-          workspaceId: outcome.workspaceId,
           role: outcome.role,
         });
       }

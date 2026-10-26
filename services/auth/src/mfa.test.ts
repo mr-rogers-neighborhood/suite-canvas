@@ -10,12 +10,15 @@ import { MFA_COPY, mfaAdvice, type SignInMethod } from "./mfa.js";
  * "optional".
  */
 
-const methods: SignInMethod[] = ["passkey", "magic-link", "google"];
+const methods: SignInMethod[] = ["passkey", "magic-link", "google", "password"];
 
 describe("second-factor advice", () => {
-  it("recommends a factor for the method whose only key is an inbox", () => {
+  it("recommends a factor for the methods whose only key is one secret", () => {
     expect(mfaAdvice({ method: "magic-link", canImpersonateOrSpend: false })).toBe("recommended");
-    expect(MFA_COPY.recommended).toContain("inbox");
+    // A password is the one credential here that can be guessed as well as stolen,
+    // and it exists only because an invitation created it (ADR-0067 §11 amendment).
+    expect(mfaAdvice({ method: "password", canImpersonateOrSpend: false })).toBe("recommended");
+    expect(MFA_COPY.recommended).toMatch(/password/u);
   });
 
   it("does not nag a passkey or Google account, because they already have one", () => {

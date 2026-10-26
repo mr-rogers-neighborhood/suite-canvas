@@ -175,7 +175,7 @@ describe("claimWorkspace", () => {
     }
   });
 
-  it("never writes an invite key or a member row", async () => {
+  it("never writes a member row", async () => {
     const plane = setup();
     plane.addWorkspace({ id: WORKSPACE, createdAt: 1 });
     const before = plane.memberRows().length;
@@ -185,7 +185,6 @@ describe("claimWorkspace", () => {
       { workspaces: plane.workspaces },
     );
 
-    expect(plane.inviteRows()).toHaveLength(0);
     expect(plane.memberRows()).toHaveLength(before);
   });
 });

@@ -1,4 +1,3 @@
-import type { InviteKeyRepository, StoredInviteKey } from "./invites.js";
 import type { LicenceStore, MembershipReader } from "./licences.js";
 import type { MemberRecord, OrganizationRole, SeatLicence, WorkspaceRecord } from "./types.js";
 import type { WorkspaceRepository } from "./workspaces.js";
@@ -37,7 +36,6 @@ interface WorkspaceRow {
 
 export interface MemoryControlPlane {
   workspaces: WorkspaceRepository;
-  invites: InviteKeyRepository;
   licences: LicenceStore;
   memberships: MembershipReader;
   /** Seeds an organization with its members (owner included); returns its id. */
@@ -56,8 +54,6 @@ export interface MemoryControlPlane {
     createdAt?: number;
   }) => void;
   recordLicence: (organizationId: string, licence: SeatLicence) => void;
-  /** Raw `invite_keys` rows, for assertions about what was or was not written. */
-  inviteRows: () => readonly StoredInviteKey[];
   /** Raw `member` rows, for assertions about writes a route must not make. */
   memberRows: () => readonly MemberRecord[];
   workspaceRow: (workspaceId: string) => WorkspaceRow | null;
@@ -79,7 +75,6 @@ function toWorkspace(
 export function memoryControlPlane(): MemoryControlPlane {
   const organizations = new Map<string, OrganizationRow>();
   const workspaces = new Map<string, WorkspaceRow>();
-  const invites = new Map<string, StoredInviteKey>();
   const licences = new Map<string, SeatLicence>();
   let sequence = 0;
 
@@ -138,7 +133,6 @@ export function memoryControlPlane(): MemoryControlPlane {
       licences.set(organizationId, licence);
     },
 
-    inviteRows: () => [...invites.values()],
     memberRows: () => [...organizations.values()].flatMap((organization) => organization.members),
     workspaceRow: (workspaceId) => workspaces.get(workspaceId) ?? null,
 
@@ -173,63 +167,6 @@ export function memoryControlPlane(): MemoryControlPlane {
         [...workspaces.values()].filter(
           (row) => row.organizationId === organizationId && row.archivedAt === null,
         ).length,
-    },
-
-    invites: {
-      create: async (input) => {
-        const record: StoredInviteKey = {
-          id: input.id,
-          workspaceId: input.workspaceId,
-          organizationId: input.organizationId,
-          keyHash: input.keyHash,
-          role: input.role,
-          createdByUserId: input.createdByUserId,
-          expiresAt: input.expiresAt,
-          maxUses: input.maxUses,
-          usedCount: 0,
-          revokedAt: null,
-          createdAt: input.createdAt,
-        };
-        invites.set(record.id, record);
-        return record;
-      },
-
-      findByHash: async (keyHash) =>
-        [...invites.values()].find((record) => record.keyHash === keyHash) ?? null,
-
-      // Mirrors `redeem_invite_key`: conditional increment *and* member insert,
-      // no await between them, so the pair is all-or-nothing.
-      claimAndAddMember: async ({ keyId, workspaceId, userId, role, now }) => {
-        const record = invites.get(keyId);
-        if (record === undefined) return null;
-        if (record.revokedAt !== null) return null;
-        if (record.usedCount >= record.maxUses) return null;
-        const row = workspaces.get(workspaceId);
-        if (row === undefined || row.organizationId === null) return null;
-        const organization = organizations.get(row.organizationId);
-        if (organization === undefined) return null;
-        if (organization.members.some((member) => member.userId === userId)) {
-          // The Postgres statement adds `ON CONFLICT (organization_id, user_id)
-          // DO NOTHING`; reaching this branch means the caller raced another
-          // redemption, which must not spend a use.
-          return null;
-        }
-
-        record.usedCount += 1;
-        const member = memberRow(organization.id, userId, role as OrganizationRole, now);
-        organization.members.push(member);
-        return { key: record, member };
-      },
-
-      revoke: async ({ keyId, now }) => {
-        const record = invites.get(keyId);
-        if (record === undefined) return null;
-        record.revokedAt ??= now;
-        return record;
-      },
-
-      listForWorkspace: async (workspaceId) =>
-        [...invites.values()].filter((record) => record.workspaceId === workspaceId),
     },
 
     licences: {

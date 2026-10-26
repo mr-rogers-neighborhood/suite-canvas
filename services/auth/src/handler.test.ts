@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { EnrollmentOutcome, EnrollmentRedeemInput } from "./enrollment.js";
 import { authEnvironment } from "./env.js";
+import { AuthError } from "./errors.js";
 import { type AuthHandlerDeps, type AuthHttpEvent, createAuthHandler } from "./handler.js";
 import { memoryControlPlane } from "./memory.js";
 import { seatLicence } from "./seats.js";
@@ -37,6 +39,10 @@ interface Harness {
   deps: AuthHandlerDeps;
   sessions: Map<string, AccountSession>;
   plane: ReturnType<typeof memoryControlPlane>;
+  /** Every redemption the route forwarded, so a test can see what crossed the seam. */
+  redemptions: EnrollmentRedeemInput[];
+  /** Answer the next redemption instead of the default success. */
+  redeeming: (outcome: EnrollmentOutcome | Error) => void;
 }
 
 function harness(
@@ -66,7 +72,14 @@ function harness(
     [TESTER, { userId: TESTER, organizationId: null, role: null, admittedAt: 1 }],
   ]);
 
-  let sequence = 0;
+  const redemptions: EnrollmentRedeemInput[] = [];
+  let next: EnrollmentOutcome | Error = {
+    status: "redeemed",
+    organizationId: ORG,
+    role: "member",
+    signedIn: false,
+  };
+
   const deps: AuthHandlerDeps = {
     env: authEnvironment({
       SUITE_AUTH_ENABLED: options.enabled === false ? "0" : "1",
@@ -74,9 +87,18 @@ function harness(
       SUITE_AUTH_URL: "https://suite.example",
     }),
     workspaces: plane.workspaces,
-    invites: plane.invites,
     licences: plane.licences,
     memberships: plane.memberships,
+    enrollment: {
+      // The port is the seam: redemption itself belongs to the plugin and is tested
+      // against a real instance in `betterAuth.test.ts`. What this fake proves is the
+      // *contract* — what crosses the seam, and what a refusal becomes.
+      redeem: async (input) => {
+        redemptions.push(input);
+        if (next instanceof Error) throw next;
+        return next;
+      },
+    },
     sessions: {
       sessionFor: async (headers) => {
         const user = headers["x-test-user"];
@@ -84,9 +106,16 @@ function harness(
       },
     },
     now: () => NOW,
-    newId: () => `invite-${++sequence}`,
   };
-  return { deps, sessions, plane };
+  return {
+    deps,
+    sessions,
+    plane,
+    redemptions,
+    redeeming: (outcome) => {
+      next = outcome;
+    },
+  };
 }
 
 function post(path: string, body: unknown, user?: string): AuthHttpEvent {
@@ -187,141 +216,98 @@ describe("POST /api/workspaces/claim", () => {
   });
 });
 
-describe("POST /api/auth/invites", () => {
-  it("mints a key for an owner and returns it exactly once", async () => {
-    const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post(
-        "/api/auth/invites",
-        { workspaceId: WORKSPACE, role: "member", maxUses: 2, expiresAt: NOW + DAY },
-        OWNER,
-      ),
-    );
-
-    expect(response.statusCode).toBe(201);
-    const body = bodyOf(response);
-    expect(typeof body.key).toBe("string");
-    expect(body.invite).toMatchObject({
-      workspaceId: WORKSPACE,
-      role: "member",
-      maxUses: 2,
-      usedCount: 0,
-    });
-    expect(JSON.stringify(body.invite)).not.toContain("keyHash");
-  });
-
-  it("refuses a member, because a member cannot manage links", async () => {
-    const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post("/api/auth/invites", { workspaceId: WORKSPACE, role: "member" }, EDITOR),
-    );
-    expect(response.statusCode).toBe(403);
-    expect(bodyOf(response)).toMatchObject({ error: "forbidden" });
-  });
-
-  it("refuses an owner grant", async () => {
-    const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post("/api/auth/invites", { workspaceId: WORKSPACE, role: "owner" }, OWNER),
-    );
-    expect(response.statusCode).toBe(400);
-    expect(bodyOf(response)).toMatchObject({ error: "invalid-request" });
-  });
-
-  it("refuses an expiry in the past", async () => {
-    const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post(
-        "/api/auth/invites",
-        { workspaceId: WORKSPACE, role: "member", expiresAt: NOW - 1 },
-        OWNER,
-      ),
-    );
-    expect(response.statusCode).toBe(400);
-  });
-
-  it("refuses a workspace nobody owns", async () => {
-    const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post("/api/auth/invites", { workspaceId: "ws-anon", role: "member" }, OWNER),
-    );
-    expect(response.statusCode).toBe(404);
-    expect(bodyOf(response)).toMatchObject({ error: "workspace-not-found" });
-  });
-});
-
 describe("POST /api/invites/redeem", () => {
-  async function mintKey(deps: AuthHandlerDeps, maxUses = 1): Promise<string> {
+  it("redeems without a session, because a private invite creates the account", async () => {
+    const { deps, redemptions } = harness();
+
     const response = await createAuthHandler(deps)(
-      post("/api/auth/invites", { workspaceId: WORKSPACE, role: "member", maxUses }, OWNER),
+      post("/api/invites/redeem", {
+        token: "t0ken",
+        password: "correct horse battery",
+        name: "Ada",
+      }),
     );
-    return String(bodyOf(response).key);
-  }
-
-  it("redeems into a member row once", async () => {
-    const { deps, plane } = harness();
-    const key = await mintKey(deps, 2);
-
-    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { key }, TESTER));
 
     expect(response.statusCode).toBe(200);
     expect(bodyOf(response)).toMatchObject({
+      ok: true,
       status: "redeemed",
       organizationId: ORG,
       role: "member",
     });
-    expect(plane.memberRows().some((member) => member.userId === TESTER)).toBe(true);
+    expect(redemptions).toEqual([
+      { token: "t0ken", password: "correct horse battery", name: "Ada", headers: {} },
+    ]);
   });
 
-  it("answers 'already-member' without spending a use", async () => {
-    const { deps, plane } = harness();
-    const key = await mintKey(deps, 3);
-
-    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { key }, EDITOR));
-
-    expect(response.statusCode).toBe(200);
-    expect(bodyOf(response)).toMatchObject({ status: "already-member", role: "member" });
-    expect(plane.inviteRows()[0]?.usedCount).toBe(0);
+  it("forwards the cookie and nothing else, so a shareable link knows who is signed in", async () => {
+    const { deps, redemptions } = harness();
+    await createAuthHandler(deps)({
+      httpMethod: "POST",
+      path: "/api/invites/redeem",
+      body: JSON.stringify({ token: "t0ken" }),
+      headers: { cookie: "better-auth.session_token=abc", "x-test-user": OWNER },
+    });
+    expect(redemptions[0]?.headers).toEqual({
+      cookie: "better-auth.session_token=abc",
+      "x-test-user": OWNER,
+    });
   });
 
-  it("refuses when the organization has no seat left", async () => {
-    const { deps, plane } = harness({ seats: 2 });
-    const key = await mintKey(deps);
+  it("answers 'sign in first' with 401 when the invitation needs an account", async () => {
+    const { deps, redeeming } = harness();
+    redeeming({ status: "sign-in-required" });
 
-    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { key }, TESTER));
+    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { token: "t0ken" }));
+
+    expect(response.statusCode).toBe(401);
+    expect(bodyOf(response)).toMatchObject({ error: "unauthorized" });
+  });
+
+  it("turns a refusal from the engine into our code and our status", async () => {
+    const { deps, redeeming } = harness();
+    redeeming(new AuthError("seat-refused", "no seat"));
+
+    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { token: "t0ken" }));
 
     expect(response.statusCode).toBe(403);
     expect(bodyOf(response)).toMatchObject({ error: "seat-refused" });
-    // The refusal happens before the write, so the key still has its use and the
-    // tester is not a member.
-    expect(plane.inviteRows()[0]?.usedCount).toBe(0);
-    expect(plane.memberRows().some((member) => member.userId === TESTER)).toBe(false);
   });
 
-  it("refuses a revoked key with 409", async () => {
-    const { deps, plane } = harness();
-    const key = await mintKey(deps);
-    const [row] = plane.inviteRows();
-    if (row !== undefined) await plane.invites.revoke({ keyId: row.id, now: NOW });
+  it("answers a 429 with 429, so a caller can back off", async () => {
+    const { deps, redeeming } = harness();
+    redeeming(new AuthError("rate-limited", "slow down"));
 
-    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { key }, TESTER));
-    expect(response.statusCode).toBe(409);
-    expect(bodyOf(response)).toMatchObject({ error: "invite-revoked" });
+    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { token: "t0ken" }));
+
+    expect(response.statusCode).toBe(429);
+    expect(bodyOf(response)).toMatchObject({ error: "rate-limited" });
   });
 
-  it("refuses an unknown key with 404", async () => {
+  it("rejects a body without a token, and one that is not JSON", async () => {
     const { deps } = harness();
-    const response = await createAuthHandler(deps)(
-      post("/api/invites/redeem", { key: "a".repeat(43) }, TESTER),
-    );
-    expect(response.statusCode).toBe(404);
-    expect(bodyOf(response)).toMatchObject({ error: "invite-not-found" });
+    const handler = createAuthHandler(deps);
+
+    expect(
+      (await handler(post("/api/invites/redeem", { password: "aaaaaaaaaa" }))).statusCode,
+    ).toBe(400);
+    const notJson = await handler({
+      httpMethod: "POST",
+      path: "/api/invites/redeem",
+      body: "nope",
+    });
+    expect(notJson.statusCode).toBe(400);
+    expect(bodyOf(notJson)).toMatchObject({ error: "invalid-request" });
   });
 
-  it("refuses without a session", async () => {
+  it("refuses to redeem at all when the engine is not wired", async () => {
     const { deps } = harness();
-    const response = await createAuthHandler(deps)(post("/api/invites/redeem", { key: "abc" }));
-    expect(response.statusCode).toBe(401);
+    const handler = createAuthHandler({ ...deps, enrollment: null });
+
+    const response = await handler(post("/api/invites/redeem", { token: "t0ken" }));
+
+    expect(response.statusCode).toBe(503);
+    expect(bodyOf(response)).toMatchObject({ error: "auth-not-configured" });
   });
 });
 
@@ -367,7 +353,7 @@ describe("the surface itself", () => {
 
   it("refuses a wrong method with an Allow header", async () => {
     const { deps } = harness();
-    const response = await createAuthHandler(deps)(get("/api/auth/invites", OWNER));
+    const response = await createAuthHandler(deps)(get("/api/invites/redeem", OWNER));
     expect(response.statusCode).toBe(405);
     expect(response.headers.allow).toBe("POST");
   });

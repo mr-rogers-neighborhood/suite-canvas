@@ -18,6 +18,7 @@ import {
   admitted,
   isAdmissionGatedPath,
 } from "./admission.js";
+import { enrollmentPlugin, type InvitationEmail } from "./enrollment.js";
 import {
   authConfigProblems,
   authEnabled,
@@ -30,9 +31,11 @@ import { checkSeatAllowance } from "./seats.js";
 import type { AccountSession, AuthEnvironment } from "./types.js";
 
 /**
- * Better Auth, configured for the three ways in the ADR names: passkeys, a magic
- * link, and Google. No passwords — a password is a secret people reuse, and this
- * product already has one thing people lose.
+ * Better Auth, configured for the ways in the ADR names: passkeys, a magic link,
+ * Google, and — since the §11 amendment — a password, but **only for an account an
+ * invitation created**. Self-serve sign-up is closed (`emailAndPassword.disableSignUp`),
+ * so the password door is a door an operator opened by inviting somebody, not a form
+ * on the front page. Every other way in stays open to everyone.
  *
  * The instance is constructed from an injected `database` adapter rather than
  * from a connection string, for one reason that matters more than convenience:
@@ -66,6 +69,14 @@ export interface AuthServiceDeps {
   memberships: MembershipReader;
   /** Deliver a magic link. Required by the plugin; the route only runs when configured. */
   sendMagicLink: (input: { email: string; url: string; token: string }) => Promise<void>;
+  /**
+   * Deliver a private invitation. Optional because a deployment may never invite
+   * anyone; when it is absent, creating a private invite throws and the plugin rolls
+   * the row back, so an invitation nobody can receive is never a quiet success.
+   */
+  sendInvitation?: (invitation: InvitationEmail) => Promise<void>;
+  /** Called for shareable invites, whose creator receives the link instead. */
+  onPublicInvitation?: (invitation: Omit<InvitationEmail, "email" | "name">) => void;
   /**
    * Hand everything an anonymous account owned to the account that just signed up.
    *
@@ -165,7 +176,20 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
     baseURL: env.SUITE_AUTH_URL?.trim(),
     secret: env.SUITE_AUTH_SECRET?.trim(),
     database: deps.database,
-    emailAndPassword: { enabled: false },
+    // Enabled, and sign-up closed: a password can only be *set* by redeeming an
+    // invitation (`invite/redeem`), never by visiting a sign-up form. The pair is what
+    // makes "self-serve sign-up stays closed" true for the one route that can be
+    // brute-forced (ADR-0067 §11 amendment).
+    emailAndPassword: { enabled: true, disableSignUp: true },
+    /**
+     * A password is the only credential here that can be guessed, so the route that
+     * accepts one is named explicitly rather than left to a framework default: Better
+     * Auth's limiter (on by default in production) throttles `/sign-in/*` to 3 per
+     * 10 s, and pinning the rule means a future default cannot quietly widen it.
+     * Storage is memory by default, which is per instance — a deployment running more
+     * than one instance must point `rateLimit.storage` at a shared store.
+     */
+    rateLimit: { customRules: { "/sign-in/email": { window: 10, max: 3 } } },
     user: {
       additionalFields: {
         /**
@@ -222,6 +246,16 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
           beforeAddMember: async ({ organization: target, member }) => {
             // Adding the creator as owner is the organization's first member and
             // is bounded by the licence's seat count like any other join.
+            //
+            // This hook is the **only** seat gate for member rows the organization
+            // plugin writes (`addMember`, accepting one of *its* invitations). It is
+            // deliberately not duplicated anywhere else in our code: an invitation
+            // redeemed through `better-enrollment` creates its `member` row with the
+            // adapter directly, so no organization hook can see it. That claim is
+            // answered by the same licence decision through
+            // `organization.resolveSeatLimit` (`seatCeiling` in `seats.ts`), which is
+            // a second *call site* for one policy, not a second policy. See ADR-0067
+            // §10 and the note in `enrollment.ts`.
             const denied = await seatRefusal(deps, member.organizationId ?? target.id, now());
             if (denied !== null) throw denied;
           },
@@ -262,8 +296,21 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
       // factors while a magic link is one, and the mailbox is the whole account.
       twoFactor({ issuer: env.SUITE_AUTH_RP_NAME?.trim() || "Suite" }),
       // `admin` supplies the user role field and the management endpoints the admin
-      // panel's people/ops half is built on (ADR-0068 §7).
+      // panel's people/ops half is built on (ADR-0068 §7). It is registered before
+      // `better-enrollment` because the plugin's management gate reads that role.
       admin(),
+      // The invitation engine: email-bound private invites that set a password,
+      // shareable capped revocable public invites, and the seat limit it reads from
+      // our licence (ADR-0067 §10). Configuration and the redemption wrapper live in
+      // `enrollment.ts`; nothing here trusts a request body.
+      enrollmentPlugin({
+        licences: deps.licences,
+        now,
+        ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
+        ...(deps.onPublicInvitation === undefined
+          ? {}
+          : { onPublicInvitation: deps.onPublicInvitation }),
+      }),
       // Normalization before anything else touches an address: `foo+temp@gmail.com`
       // and `foo@gmail.com` are one person, and per-seat billing makes a duplicate
       // account a duplicate seat. It also blocks 55k disposable domains, which keeps

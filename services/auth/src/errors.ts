@@ -18,18 +18,20 @@ export const authErrorCodes = [
   "workspace-already-claimed",
   /** No organization mirrors this workspace id. */
   "workspace-not-found",
-  /** No invite key matches the presented key (it is compared by hash). */
+  /** No invitation matches the presented token (it is compared by hash). */
   "invite-not-found",
-  /** The key existed and was revoked by an owner or admin. */
+  /** The invitation existed and was revoked by an owner or admin. */
   "invite-revoked",
-  /** The key's expiry has passed. */
+  /** The invitation's expiry has passed. */
   "invite-expired",
-  /** Every use of the key is spent, including the atomic claim losing a race. */
+  /** Every use is spent, including a single-use invitation that was already accepted. */
   "invite-exhausted",
   /** The account service is off or its secrets are missing. */
   "auth-not-configured",
   /** The licence refuses this principal a seat. `reason` carries the seat refusal. */
   "seat-refused",
+  /** Too many attempts on a guessable route (a password, an invitation token). */
+  "rate-limited",
   /** A malformed or ambiguous route (unknown path, unsupported method). */
   "not-found",
   "method-not-allowed",

@@ -14,8 +14,9 @@ import type { LicenceClaims } from "./types.js";
  * configured instance produces, so a plugin that silently stops contributing (a
  * version bump, a renamed option) fails here instead of in production.
  *
- * It also protects the migration: `sql/0002_plugins.sql` is written by hand, so the
- * columns it declares are asserted against this output rather than against memory.
+ * It also protects the migration: `sql/0002_plugins.sql` and `sql/0005_enrollment.sql`
+ * are written by hand, so the columns they declare are asserted against this output
+ * rather than against memory.
  */
 
 const NOW = 1_760_000_000_000;
@@ -34,32 +35,34 @@ function claims(): LicenceClaims {
 }
 
 function tables(): ReturnType<typeof getAuthTables> {
-  return getAuthTables(
-    authOptions({
-      env: authEnvironment({
-        SUITE_AUTH_ENABLED: "1",
-        SUITE_AUTH_SECRET: "t".repeat(40),
-        SUITE_AUTH_URL: "https://suite.example",
-        SUITE_AUTH_DATABASE_URL: "postgres://u@h/db",
-      }),
-      // The hooks read these; table introspection never calls them.
-      database: () => {
-        throw new Error("introspection must not touch the database");
-      },
-      licences: { forOrganization: async () => seatLicence(claims(), 5) },
-      memberships: {
-        countForOrganization: async () => 0,
-        countForUser: async () => 0,
-        roleFor: async () => null,
-        listForOrganization: async () => [],
-      },
-      sendMagicLink: async () => {},
-      now: () => NOW,
-    }),
-  );
+  return getAuthTables(options());
 }
 
 /** The `user` table's field names, or a failure that names the missing table. */
+function options() {
+  return authOptions({
+    env: authEnvironment({
+      SUITE_AUTH_ENABLED: "1",
+      SUITE_AUTH_SECRET: "t".repeat(40),
+      SUITE_AUTH_URL: "https://suite.example",
+      SUITE_AUTH_DATABASE_URL: "postgres://u@h/db",
+    }),
+    // The hooks read these; table introspection never calls them.
+    database: () => {
+      throw new Error("introspection must not touch the database");
+    },
+    licences: { forOrganization: async () => seatLicence(claims(), 5) },
+    memberships: {
+      countForOrganization: async () => 0,
+      countForUser: async () => 0,
+      roleFor: async () => null,
+      listForOrganization: async () => [],
+    },
+    sendMagicLink: async () => {},
+    now: () => NOW,
+  });
+}
+
 function userFields(): string[] {
   const user = tables().user;
   if (user === undefined) throw new Error("the schema has no user table");
@@ -106,6 +109,40 @@ describe("the schema the plugins produce", () => {
     expect(names).toContain("invitation");
     expect(names).toContain("member");
     expect(names).toContain("passkey");
+  });
+
+  it("carries the invitation engine's own tables, by the names the migration creates", () => {
+    const names = Object.keys(tables());
+    // `sql/0005_enrollment.sql` creates exactly these two. A plugin release that
+    // renamed a model would otherwise fail at runtime, in production, on the first
+    // invitation.
+    expect(names).toContain("invite");
+    expect(names).toContain("inviteUse");
+    const invite = tables().invite;
+    if (invite === undefined) throw new Error("the invite table is missing");
+    expect(Object.keys(invite.fields)).toEqual(
+      expect.arrayContaining(["tokenHash", "status", "organizationId", "useCount", "expiresAt"]),
+    );
+    const use = tables().inviteUse;
+    if (use === undefined) throw new Error("the inviteUse table is missing");
+    expect(Object.keys(use.fields)).toEqual(
+      expect.arrayContaining(["inviteId", "usedByUserId", "inviteeEmail", "usedAt"]),
+    );
+    // The seat limit the plugin reads back is a column on `organization`, so the
+    // migration has to add it.
+    const organization = tables().organization;
+    if (organization === undefined) throw new Error("the organization table is missing");
+    expect(Object.keys(organization.fields)).toEqual(
+      expect.arrayContaining(["seatLimit", "disabledAt"]),
+    );
+  });
+
+  it("keeps self-serve password sign-up closed, and throttles the route that is not", () => {
+    const configured = options();
+    // The pair is the security property, not a preference: enabled turns the door on
+    // for invited accounts, disableSignUp keeps the sign-up form shut (ADR-0067 §11).
+    expect(configured.emailAndPassword).toMatchObject({ enabled: true, disableSignUp: true });
+    expect(configured.rateLimit?.customRules).toHaveProperty("/sign-in/email");
   });
 
   it("records impersonation on the session, so an operator's action is attributable", () => {

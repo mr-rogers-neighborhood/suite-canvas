@@ -5,7 +5,8 @@
  * callers exist and each should reach for a different one:
  *
  * - the relay (`apps/collab-server`) uses `checkSeat` and `resolvePrincipal`;
- * - the HTTP routes use the domain functions in `workspaces.ts` /`invites.ts`;
+ * - the HTTP routes use the domain functions in `workspaces.ts` and the redemption
+ *   port in `enrollment.ts`;
  * - tests and local development use `memoryControlPlane`.
  *
  * `betterAuth.ts` is the only module that knows Better Auth exists.
@@ -29,6 +30,16 @@ export {
   capabilitiesForRole,
   type WorkspaceCapabilities,
 } from "./capabilities.js";
+export {
+  type EnrollmentOutcome,
+  type EnrollmentRedeemInput,
+  type EnrollmentRedemption,
+  enrollmentOptions,
+  enrollmentPlugin,
+  enrollmentRedemption,
+  type InvitationEmail,
+  redemptionResult,
+} from "./enrollment.js";
 export { type AuthEntry, type AuthEntryDeps, createAuthEntry } from "./entry.js";
 export { authConfigProblems, authEnabled, authEnvironment, googleConfigured } from "./env.js";
 export { AuthError, type AuthErrorCode, authErrorCodes, isAuthError } from "./errors.js";
@@ -38,8 +49,6 @@ export {
   type AuthHttpResponse,
   createAuthHandler,
 } from "./handler.js";
-export { createInviteKey, redeemInviteKey, revokeInviteKey } from "./invites.js";
-export { generateInviteKey, hashInviteKey, looksLikeInviteKey } from "./keys.js";
 export { type LicenceStore, licenceStateFor, type MembershipReader } from "./licences.js";
 export { memoryControlPlane } from "./memory.js";
 export { MFA_COPY, type MfaAdvice, mfaAdvice, type SignInMethod } from "./mfa.js";
@@ -56,13 +65,13 @@ export {
   checkSeat,
   checkSeatAllowance,
   checkWorkspaceAllowance,
+  seatCeiling,
   seatLicence,
   seatProblemMessage,
 } from "./seats.js";
 export type {
   AccountSession,
   AuthEnvironment,
-  InviteKeyRecord,
   LicenceClaims,
   MemberRecord,
   OrganizationRole,

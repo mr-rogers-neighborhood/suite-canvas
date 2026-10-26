@@ -1,7 +1,7 @@
 # `@suite/auth` — the control plane for owned workspaces
 
 The account service from [ADR-0065](../../docs/decisions/0065-accounts-own-workspaces.md). It owns
-identity, tenants, members, invite keys and licence bookkeeping. **It never touches a document** —
+identity, tenants, members, invitations and licence bookkeeping. **It never touches a document** —
 there is no Loro dependency, no graph dependency and no document store in this package, which is the
 structural version of "an invitation never touches the document".
 
@@ -16,7 +16,9 @@ Blunt, because a half-wired identity service is the kind of thing that looks fin
 | Magic-link sign-in | **Real and tested end to end** (no network): the plugin asks for a link, the test opens it, and the returned `set-cookie` session resolves through `sessionReader`. |
 | Postgres adapter | **Not wired.** No `pg`/Kysely driver is installed, so `createAuthService` takes a `database` adapter and production has nothing to pass yet. The SQL that adapter must satisfy is `sql/0001_control_plane.sql`. |
 | Sessions at the relay | **Not wired.** A websocket join carries an owner key or a share token, not a cookie, so `apps/collab-server/src/seatGate.ts` refuses an *account* principal with `account-check-unavailable` instead of guessing a seat count. |
-| Membership writes | Two writers, one table: Better Auth writes `member` for organization invitations and `addMember`; the invite-key path writes it inside `redeem_invite_key` (see below), because a redeemer is not yet a member and cannot pass the plugin's own permission check. Both obey the same unique constraint. |
+| Membership writes | Two writers, one table: Better Auth writes `member` for the organization plugin's invitations and `addMember`, and `better-enrollment` writes it during a redemption (a redeemer is not yet a member, so it cannot pass the organization plugin's own permission check). Both obey the same unique constraint. |
+| Invitations | **Installed and exercised end to end.** `@octopi-ai/better-enrollment` (pinned `0.7.0`) owns private and public invites; `src/enrollment.ts` holds its configuration and wraps redemption in our error codes. See below. |
+| Password sign-in | **Real and tested**, for invited accounts only: `emailAndPassword: { enabled: true, disableSignUp: true }`, so a password is reachable only by redeeming an invite ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md) §11 amendment). |
 
 If you need the Postgres adapter installed, add `pg` and `kysely` here and pass
 `new Kysely({ dialect: new PostgresDialect({ pool }) })` as `database`; nothing else in this package
@@ -29,8 +31,8 @@ shipping a driver nobody has run is how a login breaks in production only.
 organization (Better Auth)  ── the tenant: people, roles, seats, subscription
    │  slug = the tenant's name, never a document id
    ├── member (role: owner | admin | member)  ── a seat; roles are organization-wide
-   ├── invitation (email-bound, expiring, revocable)  ── the plugin's own flow
-   ├── invite_keys (our row)  ── shareable, role + expiry + max_uses + revoked_at
+   ├── invitation (email-bound, expiring, revocable)  ── the organization plugin's own flow
+   ├── invite / inviteUse (better-enrollment)  ── private + shareable links, use log
    └── workspaces (our row)   ── id IS the document id; organization_id may be NULL (anonymous)
 ```
 
@@ -46,34 +48,45 @@ organization (Better Auth)  ── the tenant: people, roles, seats, subscriptio
   so the finest access we can enforce is per workspace; a team would have to be a set of workspace
   grants, which is a later ADR.
 
-## Invite keys: the interesting function
+## Invitations: the plugin, and one thin wrapper
 
-`redeemInviteKey` answers four refusals by name (not found, revoked, expired, exhausted) and one
-non-answer: **already a member**, which spends no use and is not an error. Safety is not one of those
-checks — it is the conditional counter update:
+`@octopi-ai/better-enrollment` is the invitation engine
+([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §10). Two kinds exist and they
+answer different questions:
 
-```sql
-UPDATE invite_keys SET used_count = used_count + 1
- WHERE id = $1 AND revoked_at IS NULL AND used_count < max_uses
-   AND (expires_at IS NULL OR expires_at > now())
-RETURNING *;
-```
+- **private** — bound to one email, single use, delivered by mail. Redeeming it **sets a password**,
+  which is the one way an account gets one (§11 amendment). The plugin pre-creates the account row
+  when the invite is minted and refuses to let that shell sign in by magic link until it is redeemed.
+- **public** — a shareable link with `maxUses`, expiry and revocation, for the tester you cannot
+  email. It grants membership to whoever presents it *and is already signed in*; the plugin answers
+  `SIGN_IN_REQUIRED` otherwise, and nothing is written.
 
-Zero rows means the key is spent, wherever the race landed. The same transaction inserts the `member`
-row, so the two cannot disagree. `invites.test.ts` fires two redemptions at one single-use key and
-asserts exactly one wins.
+`src/enrollment.ts` does two jobs, and the second is the guardrail:
+
+1. `enrollmentOptions` — `mode: "invite-only"` with `allowOpenSignup: true` (the per-email guarantee
+   the plugin can keep, without the app-wide sign-up closure §7 forbids), `passwordless: false`, and
+   `resolveSeatLimit`, which answers from `organization_licences` through `seatCeiling`.
+2. `enrollmentRedemption` — our route's only way in. It posts to Better Auth's own
+   `/api/auth/invite/redeem` through the real handler, then maps the plugin's codes onto ours
+   (`INVITE_EXPIRED` → `invite-expired`, `SEAT_LIMIT_REACHED` → `seat-refused`, `429` →
+   `rate-limited`) and **fails closed** on anything it does not recognise, including a 2xx. A minor
+   release of community code cannot widen access by renaming a code from inside this wrapper.
+
+Seats are the one policy with two call sites. The plugin creates its `member` row through the
+adapter, so `beforeAddMember` never fires for a redemption; the same licence decision reaches it as
+`resolveSeatLimit`, which reads `seatCeiling` — the function `checkSeatAllowance` also uses.
+`beforeAddMember` remains the only seat gate for member rows the *organization* plugin writes.
 
 ## Routes
 
 All four are `createAuthHandler(deps)` — one event in, one JSON response out, named codes only
 (`unauthorized`, `forbidden`, `invalid-request`, `workspace-already-claimed`, `invite-*`,
-`seat-refused`, `auth-not-configured`).
+`seat-refused`, `rate-limited`, `auth-not-configured`).
 
 | Route | Who | Does |
 | --- | --- | --- |
 | `POST /api/workspaces/claim` | owner/admin of the organization | Assigns an anonymous workspace; refuses another organization's, and refuses past the licence ceiling |
-| `POST /api/auth/invites` | owner/admin | Mints a key; returns the plaintext once, stores only its SHA-256 |
-| `POST /api/invites/redeem` | any signed-in account | Checks seats **before** the write, then redeems into `member` |
+| `POST /api/invites/redeem` | anyone holding a token | Wraps the plugin's redemption: a private invite sets a password and creates the account; a public invite needs a session. Returns our codes only |
 | `GET /api/workspaces/:id/members` | any member | Lists members (ids and roles, never emails) |
 
 ## Environment
@@ -92,11 +105,13 @@ reason ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md)):
 | Plugin | Why |
 | --- | --- |
 | `organization` | the tenant: members, roles, invitations. Teams disabled, because our sync unit is one document |
-| `passkey`, `magicLink`, Google | the three ways in; no passwords |
+| `passkey`, `magicLink`, Google | the three passwordless ways in, open to everyone |
+| `better-enrollment` | private and public invitations, seat limits with pending-invite reservation, and an append-only use log. Registered after `admin()` because its management gate reads that role |
 | `anonymous` | a real session with no PII, and `onLinkAccount` — the hook that moves an anonymous account's workspaces to a real one on sign-up |
 | `lastLoginMethod` | so the sign-in screen can offer the method that worked last |
 | `twoFactor` | available to operators and org owners |
 | `admin` | the user-management half of the admin panel: role field, ban, impersonation |
+| `emailAndPassword` | **enabled with sign-up disabled**: a password exists only where an invitation created it |
 | `captcha` | invisible Turnstile, only where `SUITE_TURNSTILE_SECRET` is set |
 | `emailHarmony` | normalizes addresses (`foo+temp@gmail.com` = `foo@gmail.com`) and blocks 55k disposable domains — under per-seat billing a duplicate account is a duplicate seat |
 

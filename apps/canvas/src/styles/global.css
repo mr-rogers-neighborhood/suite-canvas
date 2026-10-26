@@ -436,7 +436,9 @@ body {
   border-right: var(--paint-border-right, 1px solid var(--hairline));
   border-bottom: var(--paint-border-bottom, 1px solid var(--hairline));
   border-left: var(--paint-border-left, 1px solid var(--hairline));
-  border-radius: var(--paint-radius, 6px);
+  /* A painted card's underlay is the silhouette, so it defaults to whatever the card
+     resolved rather than to a radius of its own. */
+  border-radius: var(--paint-radius, var(--card-radius, 12px));
   clip-path: var(--paint-clip, none);
   animation:
     var(--paint-animation-top, none), var(--paint-animation-right, none),
@@ -996,6 +998,18 @@ body {
 
 .card-header {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
+  /* The tint fills the card's own corner. `--card-radius` is published by the card
+     from the silhouette it resolved, so this follows a painted radius, a reader
+     preference and the 12px default without a second decision. */
+  border-top-left-radius: calc(var(--card-radius, 12px) - 1px);
+  border-top-right-radius: calc(var(--card-radius, 12px) - 1px);
+}
+
+/* A painted card draws its border on the underlay and leaves its own box borderless, so
+   its chrome meets the corner with nothing to subtract. */
+.node-card.is-painted .card-header {
+  border-top-left-radius: var(--card-radius, 12px);
+  border-top-right-radius: var(--card-radius, 12px);
 }
 
 .card-title-editor {
@@ -2909,9 +2923,26 @@ body {
  * because a component re-rendered. A card's own radius still wins — this only supplies
  * the default the document left unset.
  */
+/*
+ * Every node kind publishes the silhouette it resolved, so nothing inside a card has to
+ * guess it. A sketch has no paint, so it takes the reader's default alone.
+ */
+.whiteboard-node {
+  --card-radius: var(--reader-card-radius, 12px);
+}
+
 .node-card,
 .portal-node {
-  border-radius: var(--reader-card-radius, 12px);
+  /*
+   * One silhouette, published rather than re-stated. A card's painted radius wins over
+   * the reader's default, and the border radius is *derived* from that same value, so
+   * the box, its painted underlay and the chrome inside it cannot disagree. Every
+   * element that has to hug the corner reads `--card-radius` and subtracts its own
+   * 1px border; a fixed radius in any one of them is what left a notch inside the
+   * curve once the reader could round a card past 6px.
+   */
+  --card-radius: var(--paint-radius, var(--reader-card-radius, 12px));
+  border-radius: var(--card-radius);
 }
 
 /* Compact trims the air a card spends on padding; it never changes type size, so a

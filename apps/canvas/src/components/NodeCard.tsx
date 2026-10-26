@@ -334,7 +334,9 @@ export function NodeCard({
         event.stopPropagation();
       }}
     >
-      <div className="card-header flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-2">
+      {/* The header takes its top corners from the card, not from a fixed radius:
+          see the `.card-header` rule, which is why no `rounded-*` utility is here. */}
+      <div className="card-header flex shrink-0 items-center gap-1.5 px-2 py-2">
         {hasMeta ? (
           <button
             type="button"

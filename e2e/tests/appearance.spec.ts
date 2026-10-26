@@ -41,6 +41,17 @@ test("the theme switcher opens Appearance, and a change sticks", async ({ page }
   const card = page.locator('[data-testid="node-card"]').first();
   await expect(card).toHaveCSS("border-radius", "4px");
 
+  // And so does the chrome inside it. A fixed corner on the header is what left a
+  // notch inside the card's own curve once the radius could pass 6px, so the one
+  // silhouette is published to the card's children rather than restated by them.
+  await page.getByTestId("appearance-radius").fill("28");
+  await expect(card).toHaveCSS("border-radius", "28px");
+  const header = card.locator(".card-header");
+  await expect(header).toHaveCSS("border-top-left-radius", "27px");
+  await expect(header).toHaveCSS("border-top-right-radius", "27px");
+  // Published, not restated: anything else that has to hug the corner reads this.
+  await expect(card).toHaveCSS("--card-radius", "28px");
+
   await page.getByTestId("appearance-close").click();
   await expect(page.getByTestId("appearance-dialog")).toHaveCount(0);
 

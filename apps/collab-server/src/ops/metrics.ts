@@ -15,7 +15,12 @@ export const STATUS_CLASSES = ["1xx", "2xx", "3xx", "4xx", "5xx"] as const;
 export type StatusClass = (typeof STATUS_CLASSES)[number];
 
 /** Outcomes of a workspace claim, mirroring `ClaimResult`. */
-export const CLAIM_OUTCOMES = ["owner", "mismatch"] as const;
+/**
+ * Outcomes of recording an organization for a workspace: the first verified
+ * session claims it, a later one is the same organization, or it is another one
+ * and is refused.
+ */
+export const CLAIM_OUTCOMES = ["claimed", "owned", "conflict"] as const;
 export type ClaimOutcome = (typeof CLAIM_OUTCOMES)[number];
 
 /**
@@ -88,7 +93,7 @@ function zeroCounters(): MetricsSnapshot["counters"] {
     shareCreates: 0,
     publishAttempts: 0,
     publishConflicts: 0,
-    claimAttempts: { owner: 0, mismatch: 0 },
+    claimAttempts: { claimed: 0, owned: 0, conflict: 0 },
     rateLimitRejections: 0,
     projectionRebuilds: 0,
     projectionFailures: 0,

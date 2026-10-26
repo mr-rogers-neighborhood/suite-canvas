@@ -18,8 +18,14 @@ import {
  * while it is open, which is the point of "offline means the open tab".
  */
 
+/**
+ * The published offline boundary (ADR-0024 amendment, `docs/reference/runtime.md`
+ * §"Offline scope"). There is no service worker, so the app shell is not cached
+ * and a reload needs the network; the document in this tab is the part that
+ * keeps working. This string and the runtime page must stay word-for-word equal.
+ */
 export const OFFLINE_SCOPE =
-  "Offline means the open tab keeps working. A reload while offline is not supported in Alpha.";
+  "Offline means the open tab keeps working: edits save to this device and sync when the connection returns. Reloading while offline needs the network, because Suite ships no service worker.";
 
 export interface StoragePanelProps {
   workspaceId: string;
@@ -83,10 +89,13 @@ export function StoragePanel({
     setCrashConsent(granted);
     setCrash(granted);
     if (!granted) return;
+    // The live token is handed over only so the scrubber can prove it is absent;
+    // a share or standalone session has none to hand over.
+    const { cachedCredential } = await import("../auth/credential");
     await startCrashReporting({
       workspaceId: getSession().workspaceId,
       route: safeRoute(window.location.href),
-      ownerKey: getSession().ownerKey,
+      credential: getSession().credential === "account" ? cachedCredential() : null,
     });
   }, []);
 
@@ -217,7 +226,7 @@ export function StoragePanel({
           <span>
             Send crash reports to this deployment's GlitchTip. Reports carry the build, route,
             browser/OS, stack trace and a hashed workspace id — never card text, attachments,
-            document bytes, share tokens or your owner key.
+            document bytes, share tokens or your session credential.
           </span>
         </label>
       ) : null}

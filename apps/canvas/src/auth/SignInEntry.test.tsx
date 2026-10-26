@@ -21,12 +21,13 @@ describe("the header's account slot", () => {
   it("shows the account after signing in, with a way back out", () => {
     useAccountStore.getState().applySession({
       availability: "available",
-      account: { userId: "u1", email: "reader@example.com", admittedAt: 1 },
+      account: { userId: "u1", email: "reader@example.com", name: null, admittedAt: 1 },
     });
     const onSignOut = vi.fn();
     render(<SignInEntry onSignOut={onSignOut} />);
 
     expect(screen.getByTestId("account-chip")).toHaveTextContent("reader@example.com");
+    fireEvent.click(screen.getByTestId("account-chip"));
     fireEvent.click(screen.getByTestId("account-sign-out"));
     expect(onSignOut).toHaveBeenCalledTimes(1);
   });
@@ -34,19 +35,29 @@ describe("the header's account slot", () => {
   it("keeps a waiting account reachable after the panel is dismissed", () => {
     useAccountStore.getState().applySession({
       availability: "available",
-      account: { userId: "u1", email: null, admittedAt: null },
+      account: { userId: "u1", email: null, name: null, admittedAt: null },
     });
-    useAccountStore.getState().finishClaim({
-      claimed: [],
-      unchanged: [],
-      refused: [{ workspaceId: "ws-1", code: "admission-pending" }],
-      attempted: 1,
-      stopped: "admission",
-    });
+    // The server said so by refusing a gated call, which is what opens it.
+    useAccountStore.getState().openAdmission();
+    useAccountStore.getState().closeAdmission();
+    useAccountStore.getState().openAdmission();
 
     render(<SignInEntry onSignOut={() => {}} />);
     fireEvent.click(screen.getByTestId("account-waiting"));
     expect(useAccountStore.getState().admissionOpen).toBe(true);
+  });
+
+  it("opens each account surface from the menu", () => {
+    useAccountStore.getState().applySession({
+      availability: "available",
+      account: { userId: "u1", email: "reader@example.com", name: null, admittedAt: 1 },
+    });
+    render(<SignInEntry onSignOut={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("account-chip"));
+    fireEvent.click(screen.getByTestId("account-menu-plan"));
+    expect(useAccountStore.getState().panelOpen).toBe(true);
+    expect(useAccountStore.getState().panelTab).toBe("plan");
   });
 
   it("is a plain 'Sign in' on a deployment with no accounts, rather than nothing", () => {

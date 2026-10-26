@@ -1,146 +1,64 @@
 # Billing and licences
 
-Hosted billing is closed for the alpha. There is no button, no price and no deployed route, and
-`SUITE_BILLING_ENABLED` defaults to `0`, which refuses every request before a signature is read, an event
-claimed or a licence minted.
+Billing is `@better-auth/stripe` registered on the auth instance (ADR-0078). The plugin
+owns the Stripe customer, Checkout, the billing portal, the webhook, the subscription row,
+trials and seat sync. This repository supplies the plan list, the organization rule and the
+entitlement read.
 
-A licence is a signed token you paste into a workspace when you run a hosted relay. Local editing never
-consults it, and self-hosting needs no key at all.
+A licence is a signed token you paste into a workspace that runs a hosted relay. Local
+editing never consults it, and self-hosting needs no key at all. Since ADR-0075 the hosted
+proof is the session JWT the auth instance signs, so the Ed25519 licence file is the
+self-host path only.
 
-`services/billing` is the service that will take money. Stripe collects it, the webhook turns a paid event
-into the same Ed25519 token `apps/collab-server/src/licence.ts` already verifies, and SES delivers it.
-Payment work is V1.
+## What the plugin owns
 
-## Switched off
+The plugin is registered inside the auth instance, so its routes sit under `/api/auth/*`
+and the auth module answers them. The control plane mounts that module for the prefix and
+mounts the billing module for `/api/billing/*`; neither duplicate the other.
 
-Unset, `0`, `false`, empty or any other spelling of `SUITE_BILLING_ENABLED` answers
-`503 {"ok":false,"error":"billing-disabled"}`: no signature check, no claim, no licence, no email, no
-checkout session, and `STRIPE_SECRET_KEY` is never read. Only `1` or `true` opens the flows below.
-
-`503` rather than `200` is deliberate, because a disabled deployment then reports the delivery as unhandled
-and a mistaken deploy shows up in the Stripe dashboard. The guard runs before the email transport loads, and
-the front door has its own copy so a checkout is refused for the same spellings.
-
-## The licence token
-
-The format lives in `apps/collab-server/src/licence.ts`: `signLicence` and a payload of `v`, `id`, `tier`,
-`workspaces`, `documentBytes`, `attachmentBytes`, `issuedAt`, `expiresAt` and `email`. This service fills
-that payload in. There is no second format, no second verifier and no Stripe SDK: the webhook signature and
-the two Checkout calls are hand-rolled over `node:crypto` and `fetch` with form-encoded bodies.
-
-The licence id is `lic-` plus 16 hex characters of SHA-256 over the Stripe customer id, so a retry or a
-lost store entry re-issues under the same id and the relay, which records claims per licence id, cannot
-grant one subscription two workspace quotas.
-
-Hosted sync is what is sold. The app is free and open source, and a licence gates the relay on workspace
-count and per-workspace byte caps. It never gates a feature.
-
-## Front door
-
-The webhook is the only thing that mints a licence. Two routes let a surface start the flow.
-
-| Route | Body | `200` |
+| Route | Method | Job |
 | --- | --- | --- |
-| `POST /api/billing/checkout` | `{"organizationId":"org_1","workspaceId":"ws_1","tier":"solo"}` | `{"ok":true,"url":"https://checkout.stripe.com/…","mode":"test"}` |
-| `POST /api/billing/portal` | `{"customerId":"cus_…"}` | `{"ok":true,"url":"https://billing.stripe.com/…","mode":"test"}` |
+| `/api/auth/subscription/upgrade` | `POST` | Checkout for a plan |
+| `/api/auth/subscription/billing-portal` | `POST` | Stripe's own portal |
+| `/api/auth/subscription/cancel`, `/restore` | `POST` | End or resume a subscription |
+| `/api/auth/subscription/list` | `GET` | The live subscription for a reference |
+| `/api/auth/stripe/webhook` | `POST` | Every Stripe event, signature verified by the plugin |
+| `/api/billing/entitlement` | `POST` | `{ tier, limits }` for an organization |
+| `/api/billing/plans` | `POST` | The plan catalogue with its limits |
 
-`tier` is the `tier` label from `STRIPE_PRICE_TIERS` and not a price id, which answers `unknown-tier`. When
-two prices name one tier, as a monthly and an annual do, the first in the table is sold.
+`services/billing` contains `createBillingPlugin` (the plugin options), the tier table and
+the entitlement read. The hand-written webhook handler, checkout call, signature check,
+event claim, Postgres store, licence issuer and SES mailer that used to do this work are
+deleted rather than kept beside the plugin. Two paths writing subscription state is the
+failure this decision removes.
 
-`organizationId` is the payer: the tenant holding the members, the seats and the licence, which may hold
-many workspaces. It becomes `client_reference_id` and `metadata.organizationId`, so the payment page, the
-dashboard and support name the same organization. Both ids are free text this service never checks, and
-`workspaceId` is only a return address.
+## The organization is the customer
 
-The session uses `mode=subscription`, one line item and `metadata.price_id`, because a Checkout Session does
-not expand its line items unless the endpoint asks. `success_url` and `cancel_url` are `SUITE_APP_ORIGIN`
-with `?billing=success` or `?billing=cancelled` and `&organization=<id>`.
+A subscription belongs to an organization, because a workspace is owned by one and seats
+come from its member rows. Checkout therefore sends `customerType: "organization"` and a
+`referenceId` holding the organization id, and the plugin stores that id on the
+`subscription` row.
 
-One checkout makes one customer, and the stateless route creates a second customer and licence id on a
-second checkout by the same person; the identity service answering which organization a session owns is what
-closes that, and until then the front door is a test-mode tool.
+The plugin defaults `customerType` to `user`, which would bill an individual and put
+subscription state outside the tenant. Two callbacks close that:
 
-| Status | Body | When |
-| --- | --- | --- |
-| `503` | `billing-disabled` | `SUITE_BILLING_ENABLED` is not `1` |
-| `400` | `invalid-request` or `unknown-tier` | the body is not JSON, a required id is missing or longer than 128 characters, or `tier` is not in `STRIPE_PRICE_TIERS` |
-| `500` | `checkout-failed` with `missing-secret-key`, `stripe-error` or `invalid-config` | `STRIPE_SECRET_KEY` is unset, Stripe refused, or `STRIPE_PRICE_TIERS` and `SUITE_APP_ORIGIN` do not parse; the portal answers `portal-failed` |
-| `404` | `not-found` | any other path; no path at all is still the webhook |
+- `authorizeReference` asks the deployment whether the signed-in account administers the
+  referenced organization, on checkout, the portal, cancel and restore.
+- `getCheckoutSessionParams` refuses a checkout whose reference the account does not
+  administer, and writes the organization id onto the Checkout Session as
+  `client_reference_id` and `metadata.organizationId` so the Stripe dashboard names the
+  same tenant support does.
 
-`mode` comes from the key prefix: `sk_test_…` and `rk_test_…` report `test`, `…_live_…` reports `live`, and
-anything unrecognised reports `test`. When `SUITE_BILLING_STORE` is not `postgres`, a successful checkout
-also carries `"warning":"billing store is not durable"`, so a surface can refuse to present a live
-checkout. Test mode is not blocked, and the portal mints nothing so it carries no warning.
+`organization: { enabled: true }` is what gives an organization its own Stripe customer.
+The plugin also hooks the organization plugin: a rename updates the customer, a member
+change syncs the seat quantity when the plan carries `seatPriceId`, and deleting an
+organization with a live subscription is refused.
 
-## Event flow
+## Plans and limits
 
-| Stripe event | Read from `data.object` | What happens |
-| --- | --- | --- |
-| `checkout.session.completed` | customer, email, price (`metadata.price_id`, else line items), subscription, `payment_status` | mints the first licence for 30 days and emails it; an unpaid session is ignored because the invoice follows |
-| `invoice.paid` | invoice id, customer, email, price, subscription, `period_start`, `period_end` | a renewal: re-signs with `expiresAt` at the end of the paid period, never earlier than what the customer holds |
-| anything else | none | `200`, no claim, no write, no email |
-
-The first invoice of a subscription describes the same month as the checkout event, so it is compared
-against the stored licence and dropped as unchanged. When it describes a longer period, as an annual plan
-does, it extends the licence.
-
-The lifecycle is verify, parse, claim, map, sign, email, record. Verification is HMAC-SHA256 over
-`"{t}.{raw body}"` with a constant-time compare and plus or minus five minutes on `t`. Email precedes the
-record on purpose: if SES fails there is no record, so Stripe's retry sends the mail. A `400` is untrusted
-and Stripe stops; `500` is fixable and retried for up to three days; `503` means billing is off.
-
-## Idempotency
-
-`claimEvent(eventId)` runs before any work and is released only if the work throws, so a repeated delivery
-returns `200 {"status":"duplicate"}` and touches nothing. A different event id can describe the same money,
-so `invoice.paid` is deduped by `lastInvoiceId`, and any payment whose plan, contact and expiry match the
-stored licence within a day reports unchanged. The in-process store is not atomic across concurrent
-invocations, which is why the Postgres adapter makes the claim a conditional insert and the customer write
-conditional on `updatedAt`; the ordered retries Stripe performs are covered by the in-process store, which
-stays the default.
-
-## Durable store
-
-`services/billing/src/store/postgres.ts` implements `BillingStore` on the control-plane Postgres. DynamoDB
-was the durable adapter until that decision changed: subscriptions already live in this database, and a
-second store made entitlement exist twice.
-
-| Variable | Meaning |
-| --- | --- |
-| `SUITE_BILLING_STORE` | `postgres` selects the database; unset, empty, `memory` or any other spelling, including the retired `dynamodb`, keeps the in-process store |
-| `SUITE_BILLING_DATABASE_URL` | the connection string; `SUITE_AUTH_DATABASE_URL` is a fallback because it is the same database. Missing is a `500`, never a silent fall back to memory |
-
-| Table | Key | Holds |
-| --- | --- | --- |
-| `billing_event` | `event_id` | one row per processed event with `claimed_at` and `expires_at` (30 days); the row existing is the claim |
-| `billing_customer` | `customer_id` | the `LicenceRecord` from `store.ts`, one column per field |
-
-Correctness comes from the write. `claimEvent` is one `INSERT … ON CONFLICT (event_id) DO NOTHING RETURNING
-event_id`, where a returned row means this statement inserted it, and `releaseEvent` deletes the row so a
-retry after a `500` is not mistaken for a duplicate. `putCustomer` is one `INSERT … ON CONFLICT
-(customer_id) DO UPDATE`, because the record is the latest answer for that customer. The conflict clause
-carries correctness, not the expiry deletion, so a stale row can never mint twice.
-
-The pool is `max: 4` and module-scoped for the life of the container, because a pool per request would be a
-connection storm. `pg` loads lazily, so an in-memory deployment never imports it, and the adapter is tested
-against a recording fake client with no live database test. None of this is deployed for the alpha: no table
-exists, and `SUITE_BILLING_ENABLED=0` closes the endpoint before the store is touched.
-
-## Environment
-
-| Variable | When | Meaning |
-| --- | --- | --- |
-| `SUITE_BILLING_ENABLED` | always | `1` or `true` opens the routes; unset is `0` |
-| `STRIPE_WEBHOOK_SECRET` | webhook | endpoint secret (`whsec_…`), never logged |
-| `STRIPE_SECRET_KEY` | checkout and portal | secret or restricted key, read only by the front door and never logged |
-| `SUITE_APP_ORIGIN` | checkout and portal | where the browser returns, as `scheme://host[:port]` with no path; defaults to `http://localhost:5173` |
-| `SUITE_LICENCE_PRIVATE_KEY` | webhook and manual issue | Ed25519 private key, PEM (PKCS#8) or one line with `\n` escapes |
-| `STRIPE_PRICE_TIERS` | webhook and checkout | JSON map of price id to plan |
-| `SUITE_SELF_HOST_URL` | webhook | link in the email for the self-hosted path |
-| `SES_FROM_ADDRESS`, `SUITE_SES_REGION` | webhook | verified SES identity and region, defaulting to the Lambda's; unset means the console transport logs "email sent" without sending or printing the token |
-| `SUITE_BILLING_STORE`, `SUITE_BILLING_DATABASE_URL` | durable store | see above |
-
-`STRIPE_PRICE_TIERS` turns a tier into configuration:
+`STRIPE_PRICE_TIERS` maps price ids onto tiers, and the plugin receives it as its static
+plan list. Nothing else holds a limit: the plugin's `plans[].limits`, the entitlement read
+and the deployment's configuration all come from this one table.
 
 ```json
 {
@@ -149,71 +67,115 @@ exists, and `SUITE_BILLING_ENABLED=0` closes the endpoint before the store is to
 }
 ```
 
-`tier` is a label the relay echoes, and the three caps are what it enforces per licence. A price missing
-from the table is a `500` and not a free licence, because the customer paid and the event is retried until
-someone fixes the map.
+The plugin sells one plan per tier name. Two prices naming one tier, as a monthly and an
+annual do, collapse to the first price in the table. A price missing from the table is a
+configuration failure: the customer paid, so the deployment has to be fixed rather than
+granting a free plan.
 
-## Keys, rotation and manual issue
+## The entitlement read
 
-Generate the keypair once, offline:
+`POST /api/billing/entitlement` takes `{"organizationId":"org_1"}` and answers
+`{"tier":"solo","limits":{"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
+It reads the plugin's `subscription` row and the tier table, and calls Stripe for nothing:
+a payment provider outage must not stop hosted sync for customers who already paid.
+
+| Subscription status | Answer |
+| --- | --- |
+| `active` | the plan's tier and limits |
+| `trialing` | the plan's tier and limits |
+| `past_due` | the plan while `periodEnd` is in the future, then `free` |
+| `canceled`, `unpaid`, `incomplete`, `incomplete_expired`, `paused` | `free` |
+| no row for the organization | `free` |
+| a status a later Stripe version adds | `free` |
+
+A cancelled subscription answers `free` on the next read. The row is the evidence, and a
+session token lives five minutes, so a wrong answer there is free service for as long as
+the customer keeps minting.
+
+`active` with `cancelAtPeriodEnd` set stays on the plan: the period is already paid, and
+the row turns `canceled` when it ends. `past_due` keeps the plan only until `periodEnd`,
+which bounds the grace window to the period Stripe last collected for.
+
+The read answers `free` with empty limits when the plan name is not in the table. Limits
+come from configuration, so a table edited under a live subscription loses caps rather
+than failing every token mint.
+
+## Environment
+
+| Variable | When | Meaning |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | always | Secret or restricted key. Absent, the deployment mounts no billing plugin |
+| `STRIPE_WEBHOOK_SECRET` | always | Endpoint secret (`whsec_…`) printed by `stripe listen`; never logged |
+| `STRIPE_PRICE_TIERS` | always | The tier table above, as JSON keyed by price id |
+| `SUITE_CONTROL_PLANE_DATABASE_URL` | entitlement read | The one Postgres holding `subscription` (ADR-0070) |
+| `SUITE_CONTROL_PLANE_PORT` | local runs | Listener port, `1236` by default |
+| `SUITE_LICENCE_PUBLIC_KEY` | self-host relay | The key that verifies a signed licence file |
+
+`/api/billing/*` answers `503` with `not-configured` when the tier table or the database
+URL is missing, and logs which one once.
+
+## Local Stripe
+
+[The local Stripe page](../../deploy/stripe/README.md) has the full sequence. The short
+form, all in test mode:
+
+```sh
+stripe login
+pnpm stripe                     # creates the fixture prices, prints the environment
+pnpm --filter @suite/control-plane dev
+pnpm stripe --listen            # forwards to localhost:1236/api/auth/stripe/webhook
+```
+
+`pnpm stripe` reads the test key `stripe login` stored and creates each fixture price once.
+The forwarder prints the webhook secret the control plane needs. A checkout with test card
+`4242 4242 4242 4242`, then a read of `/api/billing/entitlement`, is the whole loop.
+`pnpm stripe --clock` creates a Stripe test clock for a renewal or a cancellation without
+waiting a month.
+
+## Keys and rotation
+
+The hosted proof is the session JWT. Its signing key lives in the auth database and is
+published as a key set at `/api/auth/jwks`, so the relay verifies a token against whatever
+keys the plugin currently signs with and rotation there is the plugin's own.
+
+The Ed25519 licence key covers the self-host path. Generate and sign with the relay's
+operator CLI:
 
 ```sh
 pnpm --filter @suite/collab-server licence generate-keypair --out ./licence-private.pem
+pnpm --filter @suite/collab-server licence sign --key ./licence-private.pem \
+  --tier hosted --workspaces 25 --document-bytes 5242880 --attachment-bytes 26214400 --days 365
 ```
 
-The public key goes on every relay as `SUITE_LICENCE_PUBLIC_KEY`. The private key goes into the Lambda's
-environment or an SSM SecureString and nowhere else.
-
-The relay verifies with one public key, so rotation is a cut-over: generate a keypair and keep the old
-private key, deploy the new private key, flip the public key on the relays, then re-issue to every active
-customer by hand, because renewals would otherwise wait for the next period boundary. Between the last two
-steps a customer's token stops verifying, which pauses sync and loses no work. Rotate immediately on a
-compromise, or batch it with a period boundary. A two-key grace period would remove the window and would be
-a change to `licence.ts`.
-
-For the customer who emails support:
-
-```sh
-cd services/billing
-SUITE_LICENCE_PRIVATE_KEY="$(cat ../../licence-private.pem)" \
-  node src/ops/dev.ts --dry-run --email customer@example.com --tier hosted --workspaces 10 --days 30
-```
-
-The token goes to stdout and the email it would have sent goes to stderr. `--price` uses the configured plan
-instead of naming the tier and quotas, and `--days` defaults to 30. `--dry-run` is required: the script never
-calls Stripe and never sends mail. The licence id is derived from the address, so the same customer keeps
-the same id. Do not paste a token into a ticket, a chat or a shared shell history; write it into the email,
-and record the customer, tier and `expiresAt` next to the payment.
+Rotation of that key is a hard cut. `SUITE_LICENCE_PUBLIC_KEY` holds one key and
+`verifyLicence` takes one key, so there is no overlap window: from the moment a relay is
+given a new public key, every token signed with the old private key fails with
+`bad-signature`. The consequence is that hosted sync refuses those licences until each one
+is re-signed, and no document is lost, because local editing never consults a licence.
+Rotate on a compromise, accept that window, or wait for a period boundary and re-sign every
+active licence in one pass. A two-key grace period would change `packages/licence` to take
+a key set, and that is not implemented.
 
 ## Cancellation
 
-Keep the licence to expiry, and never stop local editing. Cancelling in Stripe stops the next invoice, and
-the current period is already paid, so the licence runs to `expiresAt`. Nothing watches subscription status
-and there is no revocation channel: a token is honoured until its signed expiry, because the relay cannot
-phone home.
+Cancelling through the portal sets `cancelAtPeriodEnd` and leaves the row `active`. The
+period is paid, so the tier holds until `periodEnd`, and the entitlement read keeps granting
+it until the row turns `canceled`. Cancelling immediately turns the row `canceled` and the
+next read answers `free`.
 
-At expiry the relay refuses that account's hosted sync and answers `402` with "Local editing still works".
-Share links keep resolving as read-only projections, nothing is deleted, and every device keeps editing its
-local copy. Refunds inside a period do not claw the licence back, and resubscribing issues a fresh token for
-the same licence id, so the workspace claims already recorded against it are picked up again.
+Nothing pushes a revocation to the relay. A session token is valid for five minutes, so a
+cancellation takes effect at the next mint, at most that long after the webhook lands.
+Share links keep resolving as read-only projections, no document is deleted, and every
+device keeps editing its local copy.
 
-## Deployment shape
-
-None of this exists on any account.
+## Deployment
 
 | Piece | Configuration |
 | --- | --- |
-| API Gateway, HTTP API | `POST /stripe/webhook` with no auth beyond the signature, plus the two front-door routes; payload limit of at least 1 MiB and a 30 s integration timeout |
-| Lambda, Node 24+ and ESM | handler `handler.handler`, 256 MB, 10 s timeout; the two Stripe secrets and the private key from SSM SecureString |
-| SES | a verified identity matching `SES_FROM_ADDRESS`, with production access before selling |
-| Postgres | `billing_event` and `billing_customer` in the control-plane database |
+| Control plane | The auth module with `createBillingPlugin`, plus the billing module; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_TIERS` |
+| Postgres | The control-plane database: the plugin's `subscription` row is the record of what is paid |
+| Stripe webhook | `https://<control-plane>/api/auth/stripe/webhook`, subscribed to the subscription and invoice events |
 
-Deploy the SES identity first, then the Lambda with its env and `SUITE_BILLING_ENABLED=1`, then the three API
-Gateway routes, then a Stripe webhook pointed at
-`https://<api-id>.execute-api.<region>.amazonaws.com/stripe/webhook` for `checkout.session.completed` and
-`invoice.paid`. Set `SUITE_APP_ORIGIN` to the deployed canvas origin and `SUITE_BILLING_STORE=postgres`
-before the key is anything but a test key.
-
-`@aws-sdk/client-ses` is an optional dependency imported by name at runtime, so the main install stays
-AWS-free and the Lambda package must carry it. The bundle also needs `apps/collab-server/src/licence.ts`,
-which this service imports to sign the token the relay verifies.
+The plugin creates its own tables. Migration `0003_billing.sql` in `services/auth/sql` still
+declares `billing_event` and `billing_customer`; nothing writes or reads them now, and they
+should be dropped with the migration that named them.

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { licenceRequired } from "../store/licence.js";
+import { licenceRequired } from "@suite/licence";
 import {
   type CreateShareInput,
   type Share,
@@ -8,7 +8,7 @@ import {
   type ShareStore,
   validateShareInput,
 } from "../store/shares.js";
-import type { WorkspaceRegistry } from "../store/workspaces.js";
+import type { WorkspaceAccess } from "./access.js";
 import { HttpError } from "./errors.js";
 import {
   assertWithinLimit,
@@ -16,7 +16,6 @@ import {
   shareCreateLimiter,
   shareResolveLimiter,
 } from "./rateLimit.js";
-import { ownerKeyFrom } from "./request.js";
 import { sendJson } from "./respond.js";
 import { clearSessionCookie } from "./shareDraft.js";
 import type { ShareRequestHooks } from "./shareHooks.js";
@@ -24,15 +23,16 @@ import { flushWorkspace, notify, notifyOpened, notifyRemoved } from "./shareHook
 
 /**
  * The link CRUD routes: create, list, resolve and revoke. A link token is a
- * capability for one room; minting and revoking one takes the workspace owner
- * key.
+ * capability for one room; minting and revoking one takes a session that is
+ * entitled to the workspace. Resolving a link stays public, because the token is
+ * the credential the recipient holds.
  */
 
 /**
  * Default lifetime of a new link on the hosted relay. A hosted workspace has a
  * quota and a projection room per link, so a link nobody remembers to revoke
  * should not live forever; 30 days is long enough for a review cycle and short
- * enough that an abandoned link stops being a credential. The owner may still
+ * enough that an abandoned link stops being a credential. The account may still
  * pick **Never** (`expiresAt: null` or `0`), and a self-host keeps today's
  * default of no expiry.
  */
@@ -44,23 +44,6 @@ const MAX_ACTIVE_SHARES = (() => {
   const parsed = Number(process.env.SUITE_MAX_SHARES_PER_WORKSPACE ?? 100);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 100;
 })();
-
-function requireOwner(
-  request: IncomingMessage,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
-  workspaceId: string,
-): void {
-  const ownerKey = ownerKeyFrom(request);
-  if (!ownerKey) throw HttpError.unauthorized("An owner key is required to manage links.");
-
-  let owns = false;
-  try {
-    owns = workspaces.verify(workspaceId, ownerKey);
-  } catch {
-    owns = false;
-  }
-  if (!owns) throw HttpError.forbidden("This workspace is protected by a different owner key.");
-}
 
 function parseCreateInput(body: unknown): CreateShareInput {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -101,13 +84,13 @@ export function defaultShareExpiry(now: number = Date.now()): number | null {
 export async function createShare(
   request: IncomingMessage,
   store: ShareStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   response: ServerResponse,
   body: unknown,
   hooks: ShareRequestHooks | undefined,
 ): Promise<void> {
   const input = parseCreateInput(body);
-  requireOwner(request, workspaces, input.workspaceId);
+  await access.forWorkspace(request, input.workspaceId);
   assertWithinLimit(
     shareCreateLimiter,
     input.workspaceId,
@@ -120,7 +103,7 @@ export async function createShare(
   }
 
   // The projection that follows a create reads the saved workspace, so make the
-  // owner's latest edits part of that save before the share exists.
+  // account's latest edits part of that save before the share exists.
   await flushWorkspace(hooks, input.workspaceId);
   if (input.expiresAt === undefined) input.expiresAt = defaultShareExpiry();
 
@@ -129,18 +112,18 @@ export async function createShare(
   notify(hooks, share.workspaceId);
 }
 
-export function listShares(
+export async function listShares(
   request: IncomingMessage,
   store: ShareStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   response: ServerResponse,
   url: URL,
-): void {
+): Promise<void> {
   const workspaceId = url.searchParams.get("workspaceId")?.trim() ?? "";
   if (workspaceId.length === 0) {
     throw HttpError.badRequest("A workspace id is required.");
   }
-  requireOwner(request, workspaces, workspaceId);
+  await access.forWorkspace(request, workspaceId);
   sendJson(response, 200, { shares: store.list(workspaceId) });
 }
 
@@ -162,19 +145,19 @@ export function resolveShare(
   notifyOpened(hooks, share);
 }
 
-export function revokeShare(
+export async function revokeShare(
   request: IncomingMessage,
   store: ShareStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   response: ServerResponse,
   id: string,
   hooks: ShareRequestHooks | undefined,
-): void {
-  // The id alone does not authenticate: only the owner of the share's workspace
-  // may revoke it, and the record is read before it is touched.
+): Promise<void> {
+  // The id alone does not authenticate: only an account entitled to the share's
+  // workspace may revoke it, and the record is read before it is touched.
   const existing = store.get(id);
   if (!existing) throw HttpError.notFound("Share not found.");
-  requireOwner(request, workspaces, existing.workspaceId);
+  await access.forWorkspace(request, existing.workspaceId);
 
   const share = store.revoke(id);
   if (!share) throw HttpError.notFound("Share not found.");
@@ -203,19 +186,19 @@ export function publicShare(share: Share): Share {
   return { ...share, workspaceId: share.roomId ?? "", cardIds: [] };
 }
 /** Revokes every active link in a workspace, for incident response. */
-export function revokeAllShares(
+export async function revokeAllShares(
   request: IncomingMessage,
   store: ShareStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   response: ServerResponse,
   url: URL,
   hooks: ShareRequestHooks | undefined,
-): void {
+): Promise<void> {
   const workspaceId = url.searchParams.get("workspaceId")?.trim() ?? "";
   if (workspaceId.length === 0) {
     throw HttpError.badRequest("A workspace id is required.");
   }
-  requireOwner(request, workspaces, workspaceId);
+  await access.forWorkspace(request, workspaceId);
   const shares = store.revokeAll(workspaceId);
   clearSessionCookie(response);
   sendJson(response, 200, { shares: shares.map(publicShare) });

@@ -1,6 +1,6 @@
 import type { SimpleServer } from "loro-websocket/server";
+import { looksLikeSessionToken } from "../http/sessionToken.js";
 import type { ShareStore } from "../store/shares.js";
-import type { WorkspaceRegistry } from "../store/workspaces.js";
 
 /**
  * The slice of `SimpleServer` these helpers need. It is provided by the pinned
@@ -28,14 +28,13 @@ export function disconnectProjectionViewers(
 export interface WorkspaceShareKickDeps {
   /** Token the publish worker joins workspace rooms with; it stays connected. */
   sourceToken: string;
-  workspaces: Pick<WorkspaceRegistry, "verify">;
   shares: Pick<ShareStore, "resolve" | "resolveSession" | "isShareToken">;
 }
 
 /**
- * Closes the share viewers of a workspace room. The owner key and the source
- * worker stay connected, and so does a viewer of another link that is still
- * active: only credentials that no longer authenticate are kicked.
+ * Closes the share viewers of a workspace room. The source worker and an
+ * account's own session stay connected, and so does a viewer of another link
+ * that is still active: only credentials that no longer authenticate are kicked.
  *
  * A browser presents either the raw share token (legacy links, and the first
  * join before the exchange) or, normally, the short-lived session id it traded
@@ -49,25 +48,15 @@ export function disconnectWorkspaceShares(
 ): number {
   return server.disconnectRoomWhere(workspaceId, (auth) => {
     if (auth.length === 0 || auth === deps.sourceToken) return false;
-    try {
-      if (deps.workspaces.verify(workspaceId, auth)) return false;
-    } catch {
-      // A malformed credential never owns a workspace.
-    }
+    // A session JWT is an account's own connection, not a share viewer, so
+    // revoking a link leaves it alone. Its lifetime is the token's own TTL.
+    if (looksLikeSessionToken(auth)) return false;
     if (deps.shares.isShareToken(auth)) return deps.shares.resolve(auth) === null;
     // `resolveSession` touches a live session's expiry and deletes a dead row,
     // so asking twice is safe and self-cleaning.
     const session = deps.shares.resolveSession(auth);
     return session === null || session.workspaceId !== workspaceId || session.revokedAt !== null;
   });
-}
-
-/**
- * Closes every session authenticated with a credential that is no longer valid,
- * such as the previous owner key after a rotation.
- */
-export function disconnectAuthSessions(server: KickServer, auth: string): number {
-  return server.disconnectAuth(auth);
 }
 
 /**

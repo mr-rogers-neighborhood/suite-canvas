@@ -34,7 +34,7 @@ afterEach(() => {
     share: null,
     role: "editor",
     readOnly: false,
-    ownerKey: null,
+    credential: "account",
   });
   vi.unstubAllGlobals();
   forgetShareSession();
@@ -50,7 +50,7 @@ describe("session config", () => {
       share: null,
       role: "editor",
       readOnly: false,
-      ownerKey: null,
+      credential: "account",
     });
     expect(resolveShareToken()).toBeNull();
   });
@@ -65,7 +65,7 @@ describe("session config", () => {
       share: null,
       role: "editor",
       readOnly: false,
-      ownerKey: null,
+      credential: "account",
     });
 
     window.history.pushState({}, "", "/?doc=legacy-url");
@@ -83,10 +83,10 @@ describe("session config", () => {
       share: null,
       role: "editor",
       readOnly: false,
-      ownerKey: "owner-key",
+      credential: "account",
     });
     expect(getSession().workspaceId).toBe("ws");
-    expect(getSession().ownerKey).toBe("owner-key");
+    expect(getSession().credential).toBe("account");
   });
 
   it("resumes a token-free share URL from the session marker", () => {
@@ -134,7 +134,7 @@ describe("session config", () => {
       roomId: "workspace-1",
       role: "viewer",
       readOnly: true,
-      ownerKey: null,
+      credential: "share",
     });
     expect(viewer.share).toMatchObject({
       token: "token",
@@ -177,7 +177,7 @@ describe("session config", () => {
       roomId: "share-tok",
       role: "viewer",
       readOnly: true,
-      ownerKey: null,
+      credential: "share",
     });
     expect(config.share).toMatchObject({
       token: "tok",
@@ -222,7 +222,7 @@ describe("session capabilities", () => {
     share: null,
     role: "editor",
     readOnly: false,
-    ownerKey: "owner-key",
+    credential: "account",
   };
 
   const NONE = {

@@ -56,8 +56,8 @@ export type RelayRequest = (url: string, init: RequestInit) => Promise<Response>
  * The transport, taken from `globalThis` so it stays injectable (a test passes
  * its own) and so this module holds no call of its own. `relayUploader` is the
  * profile gate: a standalone build, an offline tab and a share session (which
- * holds a link token, never an owner key) all return null before a request is
- * built, so nothing here is reached without a relay to reach.
+ * holds a link token, never an account session) all return null before a request
+ * is built, so nothing here is reached without a relay to reach.
  */
 function platformRequest(): RelayRequest | null {
   const implementation = (globalThis as { fetch?: unknown }).fetch;
@@ -69,9 +69,9 @@ function platformRequest(): RelayRequest | null {
 /**
  * Uploads one pasted image to the relay, or returns null when this page cannot
  * upload: a standalone build has no relay at all, an offline browser has none
- * reachable, and a share session only ever holds a link token — never an owner
- * key — so it must not try. Returning a function here is the "relay configured"
- * test the paste path relies on.
+ * reachable, and a share session only ever holds a link token — never the
+ * account's session — so it must not try. Returning a function here is the
+ * "relay configured" test the paste path relies on.
  */
 export function relayUploader(
   request: RelayRequest | null = platformRequest(),
@@ -82,17 +82,20 @@ export function relayUploader(
   if (typeof navigator !== "undefined" && navigator.onLine === false) return null;
 
   const session = getSession();
-  if (session.workspaceId === null || session.ownerKey === null) return null;
+  if (session.workspaceId === null || session.credential !== "account") return null;
   const workspaceId = session.workspaceId;
-  const ownerKey = session.ownerKey;
 
   return async ({ id, bytes, mime }) => {
+    // Minted per upload: the token the tab booted with has a five-minute life,
+    // and a paste can land long after boot. Imported on demand so a build that
+    // never uploads never carries the token client.
+    const { credentialAuthorization } = await import("../auth/credential");
     const response = await request(
       `${collabHttpBase(pageLocation())}/api/attachments/${encodeURIComponent(workspaceId)}`,
       {
         method: "POST",
         headers: {
-          authorization: `Bearer ${ownerKey}`,
+          ...(await credentialAuthorization()),
           "content-type": mime,
           // The node already carries this id; the relay stores under it, so an
           // offline copy and its later upload are the same attachment.
@@ -102,6 +105,15 @@ export function relayUploader(
       },
     );
     if (!response.ok) {
+      // A full plan is a real answer, not a broken upload: say which one it is
+      // and raise the one prompt that can sell more storage.
+      if (response.status === 402 || response.status === 413) {
+        const { noteRefusal } = await import("../auth/refusal");
+        noteRefusal(
+          response.status === 413 ? "attachment-limit" : "storage-limit",
+          response.status,
+        );
+      }
       throw new Error(`The relay refused the image (${response.status}).`);
     }
   };

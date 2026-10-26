@@ -16,10 +16,11 @@ process.on("unhandledRejection", (reason) => {
 });
 
 import { authorize } from "../http/auth.js";
+import { createSessionFixture, type SessionFixture } from "../http/sessionFixture.js";
+import { looksLikeSessionToken } from "../http/sessionToken.js";
 import { createShareStore, type Share, type ShareStore } from "../store/shares.js";
-import { createWorkspaceRegistry, type WorkspaceRegistry } from "../store/workspaces.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import {
-  disconnectAuthSessions,
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
   flushDirtyDocuments,
@@ -28,7 +29,8 @@ import {
 
 const PROJECTION_TOKEN = "projection-token";
 const SOURCE_TOKEN = "source-token";
-const OWNER_KEY = "owner-key";
+/** A compact JWS by shape: three segments, so it is an account's own session. */
+const SESSION_TOKEN = "header.payload.signature";
 const WORKSPACE_ID = "ws-1";
 const BOARD_ID = "board-1";
 
@@ -76,15 +78,9 @@ describe("disconnectWorkspaceShares", () => {
   const deadSession = "dead-session";
   const otherWorkspaceSession = "other-workspace-session";
 
-  function deps(overrides: { verifyThrows?: boolean } = {}) {
+  function deps() {
     return {
       sourceToken: SOURCE_TOKEN,
-      workspaces: {
-        verify: (_workspaceId: string, auth: string) => {
-          if (overrides.verifyThrows && auth === "malformed") throw new Error("bad key");
-          return auth === OWNER_KEY;
-        },
-      },
       shares: {
         isShareToken: (token: string) => token === revoked || token === active,
         resolve: (token: string) => (token === active ? ({ id: "share-1" } as Share) : null),
@@ -109,11 +105,13 @@ describe("disconnectWorkspaceShares", () => {
     expect(call?.predicate(revoked, WORKSPACE_ID)).toBe(true);
   });
 
-  it("keeps the owner key, the source worker and active links", () => {
+  it("keeps an account session, the source worker and active links", () => {
     const { server, roomCalls } = recordingServer();
     disconnectWorkspaceShares(server, WORKSPACE_ID, deps());
     const predicate = roomCalls[0]?.predicate ?? (() => true);
-    expect(predicate(OWNER_KEY, WORKSPACE_ID)).toBe(false);
+    // Revoking a link must not close the account that is editing the workspace.
+    expect(predicate(SESSION_TOKEN, WORKSPACE_ID)).toBe(false);
+    expect(looksLikeSessionToken(SESSION_TOKEN)).toBe(true);
     expect(predicate(SOURCE_TOKEN, WORKSPACE_ID)).toBe(false);
     expect(predicate(active, WORKSPACE_ID)).toBe(false);
     expect(predicate("", WORKSPACE_ID)).toBe(false);
@@ -137,20 +135,12 @@ describe("disconnectWorkspaceShares", () => {
     expect(predicate(otherWorkspaceSession, WORKSPACE_ID)).toBe(true);
   });
 
-  // A credential that throws inside owner verification is not an owner, and it
-  // resolves to no share and no session: it authenticates nothing, so it closes.
-  it("closes a malformed credential that authenticates nothing", () => {
+  // A credential that is neither a share nor a session id resolves to nothing,
+  // so it authenticates nothing and its socket closes.
+  it("closes a credential that authenticates nothing", () => {
     const { server, roomCalls } = recordingServer();
-    disconnectWorkspaceShares(server, WORKSPACE_ID, deps({ verifyThrows: true }));
+    disconnectWorkspaceShares(server, WORKSPACE_ID, deps());
     expect(roomCalls[0]?.predicate("malformed", WORKSPACE_ID)).toBe(true);
-  });
-});
-
-describe("disconnectAuthSessions", () => {
-  it("closes sessions authenticated with the given credential", () => {
-    const { server, authCalls } = recordingServer();
-    expect(disconnectAuthSessions(server, "old-owner-key")).toBe(4);
-    expect(authCalls).toEqual(["old-owner-key"]);
   });
 });
 
@@ -158,7 +148,9 @@ describe("disconnectAuthSessions", () => {
 // which records the auth credential per joined room.
 let directory = "";
 let shares: ShareStore;
-let workspaces: WorkspaceRegistry;
+let orgs: WorkspaceOrgStore;
+let sessions: SessionFixture;
+let account: string;
 let server: SimpleServer;
 let url = "";
 const clients: LoroWebsocketClient[] = [];
@@ -196,8 +188,10 @@ async function expectDisconnected(client: LoroWebsocketClient): Promise<void> {
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "suite-room-sockets-"));
   shares = createShareStore(join(directory, "shares.sqlite"));
-  workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
-  workspaces.claimOrVerify(WORKSPACE_ID, OWNER_KEY);
+  orgs = createWorkspaceOrgStore(join(directory, "workspaces.sqlite"));
+  orgs.claim(WORKSPACE_ID, "org-a");
+  sessions = await createSessionFixture();
+  account = await sessions.sign();
 
   const port = await freePort();
   server = new SimpleServer({
@@ -205,7 +199,8 @@ beforeEach(async () => {
     authenticate: (roomId, _crdtType, auth) =>
       authorize(roomId, auth, {
         shares,
-        workspaces,
+        sessions: sessions.verifier,
+        workspaces: { orgs },
         projectionToken: PROJECTION_TOKEN,
         sourceToken: SOURCE_TOKEN,
       }),
@@ -218,7 +213,7 @@ afterEach(async () => {
   for (const client of clients.splice(0)) client.destroy();
   await server.stop();
   shares.close();
-  workspaces.close();
+  orgs.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -250,7 +245,7 @@ describe("live kick against a real server", () => {
     expect(otherLink.getStatus()).toBe("connected");
   });
 
-  it("closes a revoked workspace link but keeps the owner and the publish worker", async () => {
+  it("closes a revoked workspace link but keeps the account and the publish worker", async () => {
     // The source token only joins a workspace room that has an editor share.
     shares.create({ workspaceId: WORKSPACE_ID, scope: "board", role: "editor", boardId: BOARD_ID });
     const revoked = shares.create({
@@ -260,7 +255,7 @@ describe("live kick against a real server", () => {
     });
     const active = shares.create({ workspaceId: WORKSPACE_ID, scope: "workspace", role: "viewer" });
 
-    const owner = await connect(OWNER_KEY, WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
+    const owner = await connect(account, WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
     const worker = await connect(SOURCE_TOKEN, WORKSPACE_ID);
     const viewer = await connect(revoked.token, WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
     const otherViewer = await connect(active.token, WORKSPACE_ID);
@@ -272,7 +267,6 @@ describe("live kick against a real server", () => {
     expect(
       disconnectWorkspaceShares(server, WORKSPACE_ID, {
         sourceToken: SOURCE_TOKEN,
-        workspaces,
         shares,
       }),
     ).toBe(1);
@@ -283,15 +277,20 @@ describe("live kick against a real server", () => {
     expect(otherViewer.getStatus()).toBe("connected");
   });
 
-  it("closes the previous owner's sessions after a rotation", async () => {
-    const previous = await connect(OWNER_KEY, WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
-    workspaces.rotate(WORKSPACE_ID, OWNER_KEY, "owner-key-2");
-    const current = await connect("owner-key-2", WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
+  it("keeps an account's own socket when every link of the workspace is revoked", async () => {
+    // There is no credential rotation on this side any more: the token expires
+    // and the control plane mints another, and nothing here needs to kick it.
+    const owner = await connect(account, WORKSPACE_ID, `${WORKSPACE_ID}:presence`);
+    const viewer = await connect(
+      shares.create({ workspaceId: WORKSPACE_ID, scope: "workspace", role: "viewer" }).token,
+      WORKSPACE_ID,
+    );
 
-    expect(disconnectAuthSessions(server, OWNER_KEY)).toBe(1);
+    shares.revokeAll(WORKSPACE_ID);
+    disconnectWorkspaceShares(server, WORKSPACE_ID, { sourceToken: SOURCE_TOKEN, shares });
 
-    await expectDisconnected(previous);
-    expect(current.getStatus()).toBe("connected");
+    await expectDisconnected(viewer);
+    expect(owner.getStatus()).toBe("connected");
   });
 });
 

@@ -1,0 +1,31 @@
+---
+import { CardGrid } from "@astrojs/starlight/components";
+import { countBySection, type DashboardPage } from "../lib/pages";
+import { SECTIONS } from "../lib/sections";
+
+interface Props {
+  pages: readonly DashboardPage[];
+}
+
+const { pages } = Astro.props;
+const counts = countBySection(pages);
+---
+
+<CardGrid>
+  {
+    SECTIONS.map((section) => {
+      const count = counts.get(section.id) ?? 0;
+      return (
+        <a class="dashboard-card" href={`/${section.id}/`}>
+          <span class="dashboard-card-head">
+            <span class="dashboard-card-title">{section.label}</span>
+            <span class="dashboard-card-count">
+              {count} {count === 1 ? "page" : "pages"}
+            </span>
+          </span>
+          <span class="dashboard-card-blurb">{section.blurb}</span>
+        </a>
+      );
+    })
+  }
+</CardGrid>

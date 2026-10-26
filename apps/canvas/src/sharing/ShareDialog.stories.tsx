@@ -63,7 +63,7 @@ const links: Share[] = [
 
 function demoClient(shares: Share[]): ShareClient {
   return {
-    createShare: async (input, _ownerKey) => ({
+    createShare: async (input, _credential) => ({
       token: "demo-token",
       share: {
         id: "demo-share",
@@ -86,10 +86,10 @@ function demoClient(shares: Share[]): ShareClient {
               : 0,
       },
     }),
-    listShares: async (_workspaceId, _ownerKey) => shares,
+    listShares: async (_workspaceId, _credential) => shares,
     defaults: async () => ({ hosted: false, defaultExpiryDays: 0 }),
     revokeAllShares: async () => shares.map((entry) => ({ ...entry, revokedAt: created })),
-    revokeShare: async (id, _ownerKey) => {
+    revokeShare: async (id, _credential) => {
       const base: Share = shares.find((entry) => entry.id === id) ?? {
         id,
         scope: "workspace",

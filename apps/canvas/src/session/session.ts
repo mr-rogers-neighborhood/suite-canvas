@@ -30,17 +30,25 @@ export interface ShareSession {
   roomId: string;
 }
 
+/**
+ * What a session presents to the relay.
+ *
+ * - `account` — the session JWT minted at `/api/auth/token` (ADR-0074). It is not
+ *   held here: a token lives five minutes, so `auth/credential.ts` mints one per
+ *   join rather than the session carrying a copy that goes stale.
+ * - `share` — the capability token the link holder exchanged for a session.
+ * - `none` — a standalone build, which has no relay to present anything to.
+ */
+export type SessionCredential = "account" | "share" | "none";
+
 export interface SessionConfig {
   workspaceId: string | null;
   roomId: string | null;
   share: ShareSession | null;
   role: ShareRole;
   readOnly: boolean;
-  /**
-   * Owner credential of a normal editor session. Share sessions never carry it;
-   * they authenticate with their token instead.
-   */
-  ownerKey: string | null;
+  /** Which credential this session presents; the token itself is minted on demand. */
+  credential: SessionCredential;
 }
 
 /**
@@ -66,7 +74,7 @@ export interface SessionCapabilities {
   canManageSchema: boolean;
   /** Trash, restore, purge and empty the trash. */
   canManageTrash: boolean;
-  /** Share links, owner-key rotation and workspace deletion — owner only. */
+  /** Share links and workspace deletion — an account session only. */
   canManageLinks: boolean;
 }
 
@@ -212,7 +220,7 @@ function defaultSession(): SessionConfig {
     share: null,
     role: "editor",
     readOnly: false,
-    ownerKey: null,
+    credential: "account",
   };
 }
 
@@ -253,7 +261,7 @@ export function sessionForShare(token: string, share: Share): SessionConfig {
     },
     role: share.role,
     readOnly,
-    ownerKey: null,
+    credential: "share",
   };
 }
 
@@ -275,9 +283,9 @@ export function isShareSession(): boolean {
 
 /**
  * The session a standalone build boots: the local document the URL names, with
- * no relay identity at all — there is no owner key to claim and no share to
- * read, so both stay null whatever the URL says.
+ * no relay identity at all — there is no account to present and no share to
+ * read, so both stay inert whatever the URL says.
  */
 export function standaloneSession(base: SessionConfig = current): SessionConfig {
-  return { ...base, share: null, ownerKey: null };
+  return { ...base, share: null, credential: "none" };
 }

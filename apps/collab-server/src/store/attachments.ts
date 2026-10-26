@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { formatBytes, resolveLimits } from "../config/limits.js";
+import { configureConnection } from "./persistence.js";
 
 /**
  * Attachment bytes beside the document.
@@ -34,6 +35,9 @@ export type AttachmentMime = (typeof ATTACHMENT_MIME_TYPES)[number];
  * is the memory bound one request may reach before the body is even stored.
  */
 export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
+
+/** Schema version stamped into `PRAGMA user_version`; bump only with a migration. */
+export const ATTACHMENT_STORE_SCHEMA = 1;
 
 /** A 128-bit id, lowercase hex. */
 export const ATTACHMENT_ID_PATTERN = /^[0-9a-f]{32}$/u;
@@ -195,7 +199,7 @@ export interface SqliteAttachmentOptions {
 
 /**
  * Opens the table once and migrates nothing: attachments are new, so there is no
- * older shape to read. WAL keeps a GET reading while a PUT commits.
+ * older shape to read.
  */
 export function createSqliteAttachmentStore(
   path: string,
@@ -203,7 +207,9 @@ export function createSqliteAttachmentStore(
 ): AttachmentStore {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec("PRAGMA journal_mode = WAL");
+  // WAL, the busy timeout and the schema stamp in one place; a GET then waits
+  // for a PUT instead of failing with SQLITE_BUSY.
+  configureConnection(db, ATTACHMENT_STORE_SCHEMA);
   db.exec(
     `CREATE TABLE IF NOT EXISTS attachments (
        id TEXT PRIMARY KEY,

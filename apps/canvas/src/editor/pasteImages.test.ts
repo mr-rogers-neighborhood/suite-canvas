@@ -261,25 +261,25 @@ describe("pasting an image", () => {
 });
 
 describe("relay uploader", () => {
-  it("is absent without an owner key, and present on an owner session", () => {
+  it("is absent without an account session, and present on one", () => {
     configureSession({
       workspaceId: "ws-1",
       roomId: "ws-1",
       share: null,
       role: "editor",
       readOnly: false,
-      ownerKey: "owner-key-1",
+      credential: "account",
     });
     expect(relayUploader()).not.toBeNull();
 
-    // A share session never holds an owner key, so it never uploads.
+    // A share session presents a link token, so it never uploads.
     configureSession({
       workspaceId: "ws-1",
       roomId: "ws-1",
       share: null,
       role: "editor",
       readOnly: false,
-      ownerKey: null,
+      credential: "share",
     });
     expect(relayUploader()).toBeNull();
   });

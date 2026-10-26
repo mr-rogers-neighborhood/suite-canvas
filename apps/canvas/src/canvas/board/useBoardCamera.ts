@@ -3,6 +3,7 @@ import { getViewportForBounds } from "@xyflow/react";
 import { useCallback, useEffect, useRef } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
+import { prefersReducedMotion } from "../localEasing";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
 
@@ -13,6 +14,8 @@ const FOCUS_FALLBACK_SIZE = { width: 224, height: 160 };
 const FOCUS_DURATION_MS = 300;
 /** A focused card or section should not fill the screen. */
 const FOCUS_MAX_ZOOM = 1.2;
+/** Breathing room around a selection when the camera frames it, as a share of the pane. */
+const SELECTION_PADDING = 0.2;
 /**
  * The most a fit may magnify. Fitting frames what is on the board; it does not
  * zoom in to fill the screen with two cards, which reads as the board having
@@ -73,7 +76,11 @@ export function useBoardCamera(
       const { width, height, minZoom } = store.getState();
       // `fitBounds` cannot cap the zoom, and a single card should not fill the screen.
       const viewport = getViewportForBounds(rect, width, height, minZoom, FOCUS_MAX_ZOOM, padding);
-      void setViewport(viewport, { duration: FOCUS_DURATION_MS });
+      // A reader who asked for reduced motion gets the destination, not the
+      // flight: the reveal is still the same viewport, arrived at instantly.
+      void setViewport(viewport, {
+        duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+      });
     };
 
     if (focusTarget.kind === "section") {
@@ -272,5 +279,21 @@ export function useBoardCamera(
     [store, cardsById, nodeScreenRect, enterPortal, goBackBoard],
   );
 
-  return { enterPortal, nodeScreenRect, readCameraGesture, gestureStartZoom };
+  /**
+   * Frame exactly the selected cards. The selection is read at call time, so a
+   * control that asked once never frames a set the reader has since changed.
+   * A reader who asked for reduced motion arrives instead of flying.
+   */
+  const zoomToSelection = useCallback(() => {
+    const ids = useUiStore.getState().selectedNodeIds;
+    if (ids.length === 0) return;
+    void fitView({
+      nodes: ids.map((id) => ({ id })),
+      padding: SELECTION_PADDING,
+      duration: prefersReducedMotion() ? 0 : FOCUS_DURATION_MS,
+      maxZoom: FIT_MAX_ZOOM,
+    });
+  }, [fitView]);
+
+  return { enterPortal, nodeScreenRect, readCameraGesture, gestureStartZoom, zoomToSelection };
 }

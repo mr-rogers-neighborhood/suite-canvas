@@ -51,6 +51,13 @@ services:
       SUITE_PROJECTION_TOKEN: ${SUITE_PROJECTION_TOKEN:-}
       SUITE_SOURCE_TOKEN: ${SUITE_SOURCE_TOKEN:-}
       SUITE_ADMIN_TOKEN: ${SUITE_ADMIN_TOKEN:-}
+      # The narrower operator token: `/metrics` and the inventories, never a
+      # mutation. Unset means the full token above is the only way in.
+      SUITE_ADMIN_READ_TOKEN: ${SUITE_ADMIN_READ_TOKEN:-}
+      # The control plane's origin: the relay verifies a session JWT against the
+      # key set published there (ADR-0074). Unset means no account can sync, and
+      # anonymous and share-link use are unaffected.
+      SUITE_AUTH_URL: ${SUITE_AUTH_URL:-}
       SUITE_ALLOWED_ORIGINS: ${SUITE_ALLOWED_ORIGINS:-}
       SUITE_PUBLIC_URL: ${SUITE_PUBLIC_URL:-}
       SUITE_HOSTED: ${SUITE_HOSTED:-0}
@@ -93,6 +100,91 @@ services:
       start_period: 20s
       retries: 3
 
+  postgres:
+    # The control plane's database: accounts, organizations, subscriptions and
+    # licence records all live here (ADR-0069). One pinned major, because a dump
+    # from one major restores into the next only through `pg_upgrade`, which
+    # makes the tag a decision rather than a convenience.
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-suite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-suite}
+      POSTGRES_DB: ${POSTGRES_DB:-suite}
+    volumes:
+      - suite-postgres:/var/lib/postgresql/data
+    healthcheck:
+      # `$$` is compose's escape: the shell inside the container expands these,
+      # so the probe keeps working when the user or database name is changed.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  control-plane:
+    # The second process: accounts, billing and the Postgres above. It mounts
+    # the route modules in `apps/control-plane/src/modules` and owns no
+    # documents, so the relay keeps syncing when this service is down.
+    image: ${SUITE_CONTROL_PLANE_IMAGE:-ghcr.io/mr-rogers-neighborhood/suite-control-plane:latest}
+    build:
+      context: .
+      target: control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "1236"
+      SUITE_LOG_LEVEL: ${SUITE_LOG_LEVEL:-info}
+      # The one connection string. Accounts, organizations, subscriptions and
+      # licence records share it (ADR-0069 amendment); the billing service reads
+      # it as a fallback for `SUITE_BILLING_DATABASE_URL`. If you change
+      # POSTGRES_PASSWORD above, change this too -- the literal default is what
+      # keeps the file free of nested expansion.
+      SUITE_CONTROL_PLANE_DATABASE_URL: ${SUITE_CONTROL_PLANE_DATABASE_URL:-postgres://suite:suite@postgres:5432/suite}
+      # Accounts, as `services/auth/src/http/env.ts` reads them.
+      SUITE_AUTH_ENABLED: ${SUITE_AUTH_ENABLED:-0}
+      SUITE_AUTH_SECRET: ${SUITE_AUTH_SECRET:-}
+      SUITE_AUTH_URL: ${SUITE_AUTH_URL:-}
+      # Same database as the control plane. Unset here would leave the auth
+      # module with no pool at all, which it treats as a boot failure.
+      SUITE_AUTH_DATABASE_URL: ${SUITE_AUTH_DATABASE_URL:-postgres://suite:suite@postgres:5432/suite}
+      SUITE_GOOGLE_CLIENT_ID: ${SUITE_GOOGLE_CLIENT_ID:-}
+      SUITE_GOOGLE_CLIENT_SECRET: ${SUITE_GOOGLE_CLIENT_SECRET:-}
+      SUITE_AUTH_RP_ID: ${SUITE_AUTH_RP_ID:-}
+      SUITE_AUTH_RP_NAME: ${SUITE_AUTH_RP_NAME:-}
+      SUITE_AUTH_MAX_ORGS_PER_USER: ${SUITE_AUTH_MAX_ORGS_PER_USER:-}
+      SUITE_TURNSTILE_SECRET: ${SUITE_TURNSTILE_SECRET:-}
+      SUITE_ADMISSION_REQUIRED: ${SUITE_ADMISSION_REQUIRED:-}
+      # Billing, as `services/billing/src/handler/env.ts` reads it.
+      SUITE_BILLING_ENABLED: ${SUITE_BILLING_ENABLED:-0}
+      SUITE_BILLING_STORE: ${SUITE_BILLING_STORE:-}
+      SUITE_BILLING_DATABASE_URL: ${SUITE_BILLING_DATABASE_URL:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_TIERS: ${STRIPE_PRICE_TIERS:-}
+      SUITE_LICENCE_PRIVATE_KEY: ${SUITE_LICENCE_PRIVATE_KEY:-}
+      SUITE_APP_ORIGIN: ${SUITE_APP_ORIGIN:-}
+      SUITE_SELF_HOST_URL: ${SUITE_SELF_HOST_URL:-}
+      SES_FROM_ADDRESS: ${SES_FROM_ADDRESS:-}
+      SUITE_SES_REGION: ${SUITE_SES_REGION:-}
+    expose:
+      - "1236"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||1236)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
   docs:
     # Reader-facing docs site. Off by default: `docker compose --profile docs up`.
     # It reads only the built site and needs no volume or database.
@@ -124,6 +216,17 @@ services:
     environment:
       SUITE_DOMAIN: ${SUITE_DOMAIN:-localhost}
       SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}
+      # The three production hosts and the two static roots they serve. The
+      # defaults are `*.localhost` so a bare `docker compose up` uses Caddy's
+      # internal CA instead of asking Let's Encrypt for a domain it does not own;
+      # `.env.example` sets the real hostnames for a deployment.
+      SUITE_APP_HOST: ${SUITE_APP_HOST:-app.localhost}
+      SUITE_DOCS_HOST: ${SUITE_DOCS_HOST:-docs.localhost}
+      SUITE_MARKETING_HOST: ${SUITE_MARKETING_HOST:-suite.localhost}
+      SUITE_DOCS_ROOT: ${SUITE_DOCS_ROOT:-/srv/docs}
+      SUITE_MARKETING_ROOT: ${SUITE_MARKETING_ROOT:-/srv/marketing}
+      # Where `/api/auth/*`, `/api/billing/*` and `/stripe/*` are proxied.
+      SUITE_CONTROL_PLANE_UPSTREAM: ${SUITE_CONTROL_PLANE_UPSTREAM:-control-plane:1236}
     ports:
       - "80:80"
       - "443:443"
@@ -138,5 +241,9 @@ services:
 
 volumes:
   suite-data:
+  # Accounts, organizations, subscriptions and licence records. Separate from
+  # `suite-data` on purpose: a document backup and an identity backup are
+  # restored on different schedules, and losing one must not mean losing both.
+  suite-postgres:
   # Uncomment with the mount above to persist certificates across recreates.
   # caddy-data:

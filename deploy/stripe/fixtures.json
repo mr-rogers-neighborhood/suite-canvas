@@ -1,0 +1,23 @@
+{
+  "currency": "usd",
+  "plans": [
+    {
+      "tier": "solo",
+      "name": "Suite Solo",
+      "lookupKey": "suite_solo_monthly",
+      "unitAmount": 1200,
+      "workspaces": 3,
+      "documentBytes": 268435456,
+      "attachmentBytes": 1073741824
+    },
+    {
+      "tier": "studio",
+      "name": "Suite Studio",
+      "lookupKey": "suite_studio_monthly",
+      "unitAmount": 4900,
+      "workspaces": 25,
+      "documentBytes": 2147483648,
+      "attachmentBytes": 8589934592
+    }
+  ]
+}

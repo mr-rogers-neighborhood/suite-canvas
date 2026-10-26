@@ -182,7 +182,6 @@ export interface FixtureShare {
 export interface FixtureResult {
   ok: boolean;
   workspaceId: string;
-  ownerKey: string | null;
   boards: string[];
   cards: string[];
   sections: string[];

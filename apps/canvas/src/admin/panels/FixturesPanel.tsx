@@ -160,24 +160,10 @@ export function FixturesPanel({ token }: { token: string }) {
             </div>
           </dl>
 
-          <h3>Owner key</h3>
-          {result.ownerKey === null ? (
-            <Muted>
-              The workspace was already claimed, so no key was issued. The existing owner keeps
-              access.
-            </Muted>
-          ) : (
-            <>
-              <div className="admin-key">
-                <code className="admin-mono">{result.ownerKey}</code>
-                <CopyButton value={result.ownerKey} />
-              </div>
-              <p className="admin-muted">
-                This key opens the workspace as its owner. Treat it as a credential, not a fixture
-                name.
-              </p>
-            </>
-          )}
+          <p className="admin-muted">
+            A fixture workspace belongs to no organization, so it opens with no credential: the
+            relay issues no key for it (ADR-0076). Attach it to an organization to sync it.
+          </p>
 
           <IdList title="Board ids" ids={result.boards} />
           <IdList title="Card ids" ids={result.cards} />

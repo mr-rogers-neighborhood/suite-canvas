@@ -49,10 +49,10 @@ export interface RelayAttachmentOptions {
 /**
  * The relay's copy, read with `GET /api/attachments/<id>`.
  *
- * That route needs no owner key: the id *is* the read capability, by design, so
- * a share viewer can draw the node too. No `Authorization` header is sent —
- * the route never reads one on GET, and adding it would turn a simple request
- * into a CORS preflight the route does not answer.
+ * That route needs no credential: the id *is* the read capability, by design, so
+ * a share viewer can draw the node too. No `Authorization` header is sent — the
+ * route never reads one on GET, and adding it would turn a simple request into a
+ * CORS preflight the route does not answer.
  */
 export function relayAttachmentSource(
   options: RelayAttachmentOptions = {},

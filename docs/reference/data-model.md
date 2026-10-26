@@ -159,6 +159,32 @@ cover. A reference to a card that stayed behind is reported with `private: true`
 a board share replaces the title with `PRIVATE_REFERENCE_TITLE`. The relay keeps one such document per open
 share room, and `apps/collab-server/src/projection/` rebuilds it when the owner's copy changes.
 
+## History is the oplog
+
+A saved point is a Loro change, not a record of our own. `WorkspaceDocument.listHistoryPoints` reads
+`doc.getAllChanges()` and reports each change as a point with its origin, its timestamp and the frontier that
+ends it (`packages/graph/src/history.ts`). Nothing new is persisted, so a workspace that never opens the panel
+pays nothing for it.
+
+Every commit carries its origin as the change's message, which is what the panel shows. `DocContext` also sets
+`setChangeMergeInterval(-1)`, so one commit is one change: Loro otherwise folds same-message commits from the
+same second into one change and hides a point the panel could restore.
+
+`previewRestore` answers what a restore would do without writing: it forks the document, checks the fork out at
+the point, and compares record ids and card titles. `restoreToPoint` calls `doc.revertTo(frontier)` and then
+commits, so the revert is a new change that peers receive and that `undo()` reverses. A restore cannot reach a
+point older than the document's shallow history, and it reverts every peer's changes after the point, not only
+the reader's.
+
+## Templates are data
+
+`packages/graph/src/workspaceTemplate.ts` holds the shapes a workspace can start from as validated data:
+boards, regions and cards with authored geometry, plus tags, colours and card types by name.
+`applyWorkspaceTemplate` copies one into a document through the same typed methods a person would use, in one
+batch, so the whole template is one undo step and nothing is written at boot. A starter is a copy of authored
+records, which is what [ADR-0068](../../internal/decisions/open/0068-a-system-workspace-authors-what-workspaces-start-with.md)
+settled, rather than a code path that builds cards by hand.
+
 ## Files, backups and merge
 
 `packages/graph/src/workspaceFile.ts` wraps a document in the `.suite` envelope (`suite.workspace`, version

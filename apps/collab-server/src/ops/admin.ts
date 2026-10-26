@@ -11,6 +11,7 @@ const EXIT_NEEDS_FORCE = 3;
 export interface AdminPaths {
   documents: string;
   shares: string;
+  /** The workspace-to-organization store; the file name predates the rename. */
   workspaces: string;
 }
 
@@ -41,34 +42,25 @@ type Log = (line: string) => void;
 
 function usage(log: Log): void {
   log("Usage:");
-  log(
-    "  pnpm --filter @suite/collab-server admin reset-owner <workspaceId> [--revoke-shares] [--force]",
-  );
   log("  pnpm --filter @suite/collab-server admin delete <workspaceId> [--force]");
   log("");
   log(
-    "Both commands edit the relay's SQLite files, so stop the server first and repeat with --force.",
+    "The command edits the relay's SQLite files, so stop the server first and repeat with --force.",
   );
   log("");
   log("Environment:");
   log("  SUITE_DB             documents database (default: suite.documents.sqlite)");
   log("  SUITE_SHARES_DB      shares database (default: suite.shares.sqlite)");
-  log("  SUITE_WORKSPACES_DB  owner registry (default: suite.workspaces.sqlite)");
+  log("  SUITE_WORKSPACES_DB  workspace organizations (default: suite.workspaces.sqlite)");
   log("Paths are relative to the current working directory.");
 }
 
-function needsForce(
-  command: "reset-owner" | "delete",
-  workspaceId: string,
-  revoke: boolean,
-  log: Log,
-): number {
+function needsForce(command: "delete", workspaceId: string, log: Log): number {
   log("Refusing to change the relay database while the collab server may be running.");
   log(
     "Stop the collab server first (Ctrl-C the `pnpm dev` or `pnpm start` process, or `docker compose stop`).",
   );
-  const flags = revoke ? "--revoke-shares --force" : "--force";
-  log(`Then re-run: pnpm --filter @suite/collab-server admin ${command} ${workspaceId} ${flags}`);
+  log(`Then re-run: pnpm --filter @suite/collab-server admin ${command} ${workspaceId} --force`);
   return EXIT_NEEDS_FORCE;
 }
 
@@ -154,108 +146,16 @@ function deleteDocuments(
 }
 
 /**
- * Deletes the owner row so the next open claims the workspace with whatever key
- * that browser presents. Share links keep working unless `revokeShares` is set.
+ * Deletes everything the relay stores for a workspace: documents, projected
+ * share rooms, share rows, draft baselines and the recorded organization.
  */
-export function resetOwner(
-  paths: AdminPaths,
-  workspaceId: string,
-  options: { revokeShares: boolean; log?: Log },
-): { ownerRows: number; revoked: number; baselines: number; projected: number } {
-  const log = options.log ?? (() => {});
-  const result = { ownerRows: 0, revoked: 0, baselines: 0, projected: 0 };
-
-  const sharesResult = withDatabase(paths.shares, (db) => {
-    const rows = shareRows(db, workspaceId);
-    let revoked = 0;
-    let baselines = 0;
-    if (options.revokeShares) {
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        revoked = changes(
-          db
-            .prepare(
-              "UPDATE shares SET revoked_at = ? WHERE workspace_id = ? AND revoked_at IS NULL",
-            )
-            .run(Date.now(), workspaceId),
-        );
-        if (hasTable(db, "share_baselines")) {
-          baselines = changes(
-            db
-              .prepare(
-                "DELETE FROM share_baselines WHERE share_id IN (SELECT id FROM shares WHERE workspace_id = ?)",
-              )
-              .run(workspaceId),
-          );
-        }
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
-    }
-    return { rows, revoked, baselines };
-  });
-
-  const projectionRooms = sharesResult ? projectedRoomIds(sharesResult.rows, workspaceId) : [];
-  if (sharesResult) {
-    result.revoked = sharesResult.revoked;
-    result.baselines = sharesResult.baselines;
-  }
-
-  if (options.revokeShares && projectionRooms.length > 0) {
-    withDatabase(paths.documents, (db) => {
-      if (!hasTable(db, "documents")) return;
-      const remove = db.prepare("DELETE FROM documents WHERE name = ?");
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        for (const roomId of projectionRooms) {
-          for (const key of roomDocumentKeys(roomId)) {
-            result.projected += changes(remove.run(key));
-          }
-        }
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
-    });
-  }
-
-  withDatabase(paths.workspaces, (db) => {
-    if (!hasTable(db, "workspaces")) return;
-    result.ownerRows = changes(
-      db.prepare("DELETE FROM workspaces WHERE workspace_id = ?").run(workspaceId),
-    );
-  });
-
-  if (options.revokeShares && sharesResult) warnLegacy(log, legacyRows(sharesResult.rows));
-
-  log(
-    result.ownerRows > 0
-      ? `Deleted the owner key row for workspace ${workspaceId}.`
-      : `No owner key row existed for workspace ${workspaceId}.`,
-  );
-  if (options.revokeShares) {
-    log(`Revoked ${result.revoked} active share link(s).`);
-    log(
-      `Removed ${result.baselines} share draft baseline(s) and ${result.projected} projected document row(s).`,
-    );
-  } else {
-    log("Active share links were left unchanged.");
-  }
-  log(`The next owner open of ${workspaceId} claims it with the key that browser presents.`);
-  return result;
-}
-
-/** Deletes everything the relay stores for a workspace: documents, shares and owner row. */
 export function deleteWorkspace(
   paths: AdminPaths,
   workspaceId: string,
   options: { log?: Log } = {},
-): { documents: number; projected: number; shares: number; baselines: number; ownerRows: number } {
+): { documents: number; projected: number; shares: number; baselines: number; orgRows: number } {
   const log = options.log ?? (() => {});
-  const result = { documents: 0, projected: 0, shares: 0, baselines: 0, ownerRows: 0 };
+  const result = { documents: 0, projected: 0, shares: 0, baselines: 0, orgRows: 0 };
 
   const rows = withDatabase(paths.shares, (db) => shareRows(db, workspaceId)) ?? [];
   const projectionRooms = projectedRoomIds(rows, workspaceId);
@@ -296,9 +196,9 @@ export function deleteWorkspace(
   });
 
   withDatabase(paths.workspaces, (db) => {
-    if (!hasTable(db, "workspaces")) return;
-    result.ownerRows = changes(
-      db.prepare("DELETE FROM workspaces WHERE workspace_id = ?").run(workspaceId),
+    if (!hasTable(db, "workspace_orgs")) return;
+    result.orgRows = changes(
+      db.prepare("DELETE FROM workspace_orgs WHERE workspace_id = ?").run(workspaceId),
     );
   });
 
@@ -308,9 +208,9 @@ export function deleteWorkspace(
   );
   log(`Deleted ${result.shares} share row(s) and ${result.baselines} share draft baseline(s).`);
   log(
-    result.ownerRows > 0
-      ? `Deleted the owner key row for workspace ${workspaceId}.`
-      : `No owner key row existed for workspace ${workspaceId}.`,
+    result.orgRows > 0
+      ? `Deleted the organization row for workspace ${workspaceId}.`
+      : `No organization row existed for workspace ${workspaceId}.`,
   );
   log(`Workspace ${workspaceId} is no longer stored on this relay.`);
   return result;
@@ -337,7 +237,7 @@ export function runAdmin(
     return command ? EXIT_OK : EXIT_USAGE;
   }
 
-  if (command !== "reset-owner" && command !== "delete") {
+  if (command !== "delete") {
     log(`Unknown command: ${command}`);
     usage(log);
     return EXIT_USAGE;
@@ -349,8 +249,7 @@ export function runAdmin(
     return EXIT_USAGE;
   }
 
-  const allowed =
-    command === "reset-owner" ? new Set(["--force", "--revoke-shares"]) : new Set(["--force"]);
+  const allowed = new Set(["--force"]);
   const unknown = rest.find((flag) => !allowed.has(flag));
   if (unknown) {
     log(`Unknown option: ${unknown}`);
@@ -359,18 +258,13 @@ export function runAdmin(
   }
 
   const force = rest.includes("--force");
-  const revokeShares = command === "reset-owner" && rest.includes("--revoke-shares");
 
-  if (!force) return needsForce(command, workspaceId, revokeShares, log);
+  if (!force) return needsForce(command, workspaceId, log);
 
   const paths = adminPaths(env);
   log(`Using ${paths.documents}, ${paths.shares} and ${paths.workspaces}.`);
 
-  if (command === "reset-owner") {
-    resetOwner(paths, workspaceId, { revokeShares, log });
-  } else {
-    deleteWorkspace(paths, workspaceId, { log });
-  }
+  deleteWorkspace(paths, workspaceId, { log });
   return EXIT_OK;
 }
 

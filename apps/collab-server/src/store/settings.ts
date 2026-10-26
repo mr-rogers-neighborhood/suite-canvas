@@ -1,8 +1,12 @@
 import { DatabaseSync } from "node:sqlite";
 import type { KeyValueStore } from "../config/limits.js";
+import { configureConnection } from "./persistence.js";
 
 /** Where the settings file lives; unset keeps the store in memory. */
 export const SETTINGS_DB_ENV = "SUITE_SETTINGS_DB";
+
+/** Schema version stamped into `PRAGMA user_version`; bump only with a migration. */
+export const SETTINGS_SCHEMA = 1;
 
 export interface SettingRow {
   key: string;
@@ -47,6 +51,9 @@ function migrateSettingsColumns(db: DatabaseSync): void {
 
 export function createSettingsStore(path: string = settingsPath()): SettingsStore {
   const db = new DatabaseSync(path);
+  // WAL, the busy timeout and the schema stamp; a settings write no longer
+  // collides with a backup or an admin command reading the same file.
+  configureConnection(db, SETTINGS_SCHEMA);
   db.exec(
     `CREATE TABLE IF NOT EXISTS settings (
        key TEXT PRIMARY KEY,

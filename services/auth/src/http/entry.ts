@@ -2,12 +2,17 @@ import {
   type AuthDatabase,
   type AuthServiceDeps,
   createAuthService,
+  sessionReader,
 } from "../identity/betterAuth.js";
 import { type EnrollmentRedemption, enrollmentRedemption } from "../invitations/enrollment.js";
+import type { LicenceStore, MembershipReader } from "../licensing/licences.js";
+import type { WorkspaceRepository } from "../organizations/workspaces.js";
+import { migrateAtBoot } from "../store/migrate.js";
 import { databaseUrlProblem, postgresDatabase, type Queryable } from "../store/postgres.js";
 import { postgresRepositories } from "../store/postgresRepositories.js";
 import type { AuthEnvironment } from "../types.js";
 import { authEnabled } from "./env.js";
+import type { AuthSessionReader } from "./handler.js";
 
 /**
  * The one function a deployment calls
@@ -24,14 +29,25 @@ import { authEnabled } from "./env.js";
  * service that could not be tested with a memory store.
  */
 
+/** What the deployment contributes: mail, repositories, and the two seams still landing. */
 export interface AuthEntryDeps
   extends Pick<
     AuthServiceDeps,
-    "licences" | "memberships" | "sendMagicLink" | "sendInvitation" | "onPublicInvitation"
+    | "licences"
+    | "memberships"
+    | "sendMagicLink"
+    | "sendVerificationEmail"
+    | "sendInvitation"
+    | "sendOrganizationInvitation"
+    | "onPublicInvitation"
+    | "entitlements"
+    | "billingPlugin"
   > {
+  /** The workspace rows the claim and members routes read. */
+  workspaces: WorkspaceRepository;
   /**
    * An adapter to use instead of building a pool: the memory adapter in tests, a
-   * caller-owned pool in a deployment that wants to share one.
+   * caller-owned Kysely adapter in a deployment that shares one.
    */
   database?: AuthDatabase;
   /** Promise resolved on shutdown; absent when the caller owns the pool. */
@@ -50,7 +66,41 @@ export interface AuthEntry {
    * to; a deployment should pass this in rather than reaching into the plugin.
    */
   redeem: EnrollmentRedemption;
+  /** Session lookup over the same instance, for the routes that are not Better Auth's. */
+  sessions: AuthSessionReader;
+  /** The repositories the account routes read, from the same pool Better Auth writes. */
+  repositories: {
+    licences: LicenceStore;
+    memberships: MembershipReader;
+    workspaces: WorkspaceRepository;
+  };
   close: () => Promise<void>;
+}
+
+/** Optional dependencies are passed on only when the caller set them. */
+function optionalDeps(
+  deps: Pick<
+    AuthEntryDeps,
+    | "sendInvitation"
+    | "onPublicInvitation"
+    | "transferAnonymousWorkspaces"
+    | "entitlements"
+    | "billingPlugin"
+    | "now"
+  >,
+): Partial<AuthServiceDeps> {
+  return {
+    ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
+    ...(deps.onPublicInvitation === undefined
+      ? {}
+      : { onPublicInvitation: deps.onPublicInvitation }),
+    ...(deps.transferAnonymousWorkspaces === undefined
+      ? {}
+      : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
+    ...(deps.entitlements === undefined ? {} : { entitlements: deps.entitlements }),
+    ...(deps.billingPlugin === undefined ? {} : { billingPlugin: deps.billingPlugin }),
+    ...(deps.now === undefined ? {} : { now: deps.now }),
+  };
 }
 
 export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): AuthEntry {
@@ -82,19 +132,20 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
     licences: deps.licences,
     memberships: deps.memberships,
     sendMagicLink: deps.sendMagicLink,
-    ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
-    ...(deps.onPublicInvitation === undefined
-      ? {}
-      : { onPublicInvitation: deps.onPublicInvitation }),
-    ...(deps.transferAnonymousWorkspaces === undefined
-      ? {}
-      : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
-    ...(deps.now === undefined ? {} : { now: deps.now }),
+    sendVerificationEmail: deps.sendVerificationEmail,
+    sendOrganizationInvitation: deps.sendOrganizationInvitation,
+    ...optionalDeps(deps),
   });
 
   return {
     handler: (request) => instance.handler(request),
     redeem: enrollmentRedemption({ baseURL, handler: instance.handler }),
+    sessions: sessionReader(instance, deps.memberships),
+    repositories: {
+      licences: deps.licences,
+      memberships: deps.memberships,
+      workspaces: deps.workspaces,
+    },
     close: async () => {
       await deps.close?.();
       // Only close a pool this function opened.
@@ -113,35 +164,61 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
  * (ADR-0070): a licence
  * check and a session lookup are the same database, so they cannot disagree.
  *
- * `queryable` exists for tests and for a deployment that already owns a pool — the
- * memory adapter satisfies it. Without it, the pool is built from
- * `SUITE_AUTH_DATABASE_URL` and closed by this function on shutdown.
+ * `queryable` and `database` are for tests and for a deployment that already owns a
+ * pool — the memory adapter satisfies the first and the second together. Without
+ * them, the pool is built from `SUITE_AUTH_DATABASE_URL` and closed on shutdown.
  */
 export interface PostgresAuthEntryDeps
-  extends Pick<AuthServiceDeps, "sendMagicLink" | "sendInvitation" | "onPublicInvitation">,
+  extends Pick<
+      AuthServiceDeps,
+      | "sendMagicLink"
+      | "sendVerificationEmail"
+      | "sendInvitation"
+      | "sendOrganizationInvitation"
+      | "onPublicInvitation"
+      | "entitlements"
+      | "billingPlugin"
+    >,
     Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now"> {
-  /** An adapter/pool to share instead of building one. */
+  /** Raw SQL over a pool or client the caller owns. */
   queryable?: Queryable;
+  /** Better Auth's adapter over that same pool. Required with `queryable`. */
+  database?: AuthDatabase;
+}
+
+/**
+ * The pair, or a refusal.
+ *
+ * They are one connection and must arrive together: a generated adapter over a
+ * different pool is a licence check that reads rows nobody wrote, and that failure
+ * looks like "the licence is missing", not like a wiring mistake.
+ */
+function injectedPair(deps: PostgresAuthEntryDeps): {
+  queryable: Queryable;
+  database: AuthDatabase;
+} | null {
+  if (deps.queryable === undefined && deps.database === undefined) return null;
+  if (deps.queryable === undefined || deps.database === undefined) {
+    throw new Error(
+      "queryable and database must be injected together: they are one connection, and a split pair reads rows nobody wrote",
+    );
+  }
+  return { queryable: deps.queryable, database: deps.database };
 }
 
 export function createPostgresAuthEntry(
   env: AuthEnvironment,
   deps: PostgresAuthEntryDeps,
 ): AuthEntry {
-  if (deps.queryable !== undefined) {
-    const repositories = postgresRepositories(deps.queryable);
+  const pair = injectedPair(deps);
+  if (pair !== null) {
     return createAuthEntry(env, {
-      ...repositories,
+      ...postgresRepositories(pair.queryable),
+      database: pair.database,
       sendMagicLink: deps.sendMagicLink,
-      ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
-      ...(deps.onPublicInvitation === undefined
-        ? {}
-        : { onPublicInvitation: deps.onPublicInvitation }),
-      database: deps.queryable as unknown as AuthDatabase,
-      ...(deps.transferAnonymousWorkspaces === undefined
-        ? {}
-        : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
-      ...(deps.now === undefined ? {} : { now: deps.now }),
+      sendVerificationEmail: deps.sendVerificationEmail,
+      sendOrganizationInvitation: deps.sendOrganizationInvitation,
+      ...optionalDeps(deps),
     });
   }
 
@@ -152,19 +229,71 @@ export function createPostgresAuthEntry(
   const opened = postgresDatabase({
     connectionString: env.SUITE_AUTH_DATABASE_URL?.trim() ?? "",
   });
-  const repositories = postgresRepositories(opened.database as unknown as Queryable);
   return createAuthEntry(env, {
-    ...repositories,
-    sendMagicLink: deps.sendMagicLink,
-    ...(deps.sendInvitation === undefined ? {} : { sendInvitation: deps.sendInvitation }),
-    ...(deps.onPublicInvitation === undefined
-      ? {}
-      : { onPublicInvitation: deps.onPublicInvitation }),
+    ...postgresRepositories(opened.queryable),
     database: opened.database,
+    sendMagicLink: deps.sendMagicLink,
+    sendVerificationEmail: deps.sendVerificationEmail,
+    sendOrganizationInvitation: deps.sendOrganizationInvitation,
     close: opened.close,
-    ...(deps.transferAnonymousWorkspaces === undefined
-      ? {}
-      : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
-    ...(deps.now === undefined ? {} : { now: deps.now }),
+    ...optionalDeps(deps),
   });
+}
+
+/**
+ * The boot path: migrate, then serve.
+ *
+ * `createPostgresAuthEntry` composes the service; this wraps it with the one thing
+ * a deployment must do *before* it accepts a request — apply `sql/` — because a
+ * handler that answers against a schema one file behind fails inside a sign-in,
+ * where the symptom is a session that silently does not exist.
+ *
+ * Order matches `createAuthEntry`: switch, then URL, then pool, then migration, then
+ * the service. A failed migration closes the pool it opened and rethrows, so a
+ * half-started deployment exits instead of serving a partial schema.
+ *
+ * `SUITE_AUTH_MIGRATE=0` skips the migration step and leaves the pool to the
+ * service; nothing else changes, so an operator whose migration is run out of band
+ * is not forced to migrate twice.
+ */
+export async function createMigratedAuthEntry(
+  env: AuthEnvironment,
+  deps: PostgresAuthEntryDeps,
+): Promise<AuthEntry> {
+  if (!authEnabled(env)) {
+    throw new Error("SUITE_AUTH_ENABLED is not 1");
+  }
+  const pair = injectedPair(deps);
+  if (pair !== null) {
+    await migrateAtBoot(pair.queryable);
+    return createPostgresAuthEntry(env, deps);
+  }
+
+  const problem = databaseUrlProblem(env.SUITE_AUTH_DATABASE_URL);
+  if (problem !== null) {
+    throw new Error(`SUITE_AUTH_DATABASE_URL ${problem}`);
+  }
+  const opened = postgresDatabase({
+    connectionString: env.SUITE_AUTH_DATABASE_URL?.trim() ?? "",
+  });
+  try {
+    await migrateAtBoot(opened.queryable);
+  } catch (error) {
+    await opened.close();
+    throw error;
+  }
+
+  // The same pool that was migrated, so the schema and the queries cannot disagree.
+  const entry = createPostgresAuthEntry(env, {
+    ...deps,
+    queryable: opened.queryable,
+    database: opened.database,
+  });
+  return {
+    ...entry,
+    close: async () => {
+      await entry.close();
+      await opened.close();
+    },
+  };
 }

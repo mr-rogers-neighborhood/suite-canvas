@@ -3,27 +3,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createShareStore, type ShareStore } from "../store/shares.js";
-import { createWorkspaceRegistry, type WorkspaceRegistry } from "../store/workspaces.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import { createRelaySeatGate } from "../sync/seatGate.js";
 import { type AuthorizeDeps, authorize, resolveWorkerTokens } from "./auth.js";
+import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
 
 const encoder = new TextEncoder();
 const PROJECTION_TOKEN = "projection-test-token";
 const SOURCE_TOKEN = "source-test-token";
-const OWNER_KEY = "owner-key-1";
 
 let directory: string;
 let store: ShareStore;
-let workspaces: WorkspaceRegistry;
+let orgs: WorkspaceOrgStore;
+let sessions: SessionFixture;
 let deps: AuthorizeDeps;
 
-beforeEach(() => {
+beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "suite-auth-"));
   store = createShareStore(join(directory, "shares.sqlite"));
-  workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
+  orgs = createWorkspaceOrgStore(join(directory, "workspaces.sqlite"));
+  sessions = await createSessionFixture();
   deps = {
     shares: store,
-    workspaces,
+    sessions: sessions.verifier,
+    workspaces: { orgs },
     projectionToken: PROJECTION_TOKEN,
     sourceToken: SOURCE_TOKEN,
   };
@@ -31,7 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   store.close();
-  workspaces.close();
+  orgs.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -47,44 +50,75 @@ describe("authorize", () => {
     await expect(authorize("share-abc", new Uint8Array(), deps)).resolves.toBeNull();
   });
 
-  it("gives an owner key the workspace and its ephemeral rooms", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+  it("gives a session the workspace its organization owns, and its ephemeral rooms", async () => {
+    orgs.claim("ws-1", "org-a");
+    const token = await sessions.sign();
 
-    await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBe("write");
-    await expect(authorize("ws-1:presence", encode(OWNER_KEY), deps)).resolves.toBe("write");
-    await expect(authorize("ws-1:cursors", encode(OWNER_KEY), deps)).resolves.toBe("write");
+    await expect(authorize("ws-1", encode(token), deps)).resolves.toBe("write");
+    await expect(authorize("ws-1:presence", encode(token), deps)).resolves.toBe("write");
+    await expect(authorize("ws-1:cursors", encode(token), deps)).resolves.toBe("write");
   });
 
-  it("never claims an unclaimed workspace on a join", async () => {
-    expect(workspaces.has("ws-1")).toBe(false);
+  it("records the organization on the first verified join", async () => {
+    expect(orgs.has("ws-1")).toBe(false);
 
-    await expect(authorize("ws-1", encode(OWNER_KEY), deps)).resolves.toBeNull();
+    await expect(authorize("ws-1", encode(await sessions.sign()), deps)).resolves.toBe("write");
 
-    expect(workspaces.has("ws-1")).toBe(false);
+    expect(orgs.get("ws-1")?.organizationId).toBe("org-a");
   });
 
-  it("rejects a different key for an owned workspace", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+  it("never records anything for a credential that does not verify", async () => {
+    // The property that survives the owner key: an unknown credential cannot
+    // create a row, so a forged token cannot seed an ownership claim.
+    expect(orgs.has("ws-1")).toBe(false);
 
-    await expect(authorize("ws-1", encode("other-key"), deps)).resolves.toBeNull();
-    await expect(authorize("ws-1:presence", encode("other-key"), deps)).resolves.toBeNull();
+    await expect(
+      authorize("ws-1", encode(await sessions.sign({ foreignKey: true })), deps),
+    ).resolves.toBeNull();
+    await expect(authorize("ws-1", encode("not-a-token"), deps)).resolves.toBeNull();
+
+    expect(orgs.has("ws-1")).toBe(false);
   });
 
-  it("keeps an owner key out of other workspaces and projection rooms", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
-    workspaces.claimOrVerify("ws-2", "someone-else");
+  it("refuses a session from another organization", async () => {
+    orgs.claim("ws-1", "org-a");
+    const token = await sessions.sign({ organizationId: "org-b" });
 
-    await expect(authorize("ws-2", encode(OWNER_KEY), deps)).resolves.toBeNull();
-    await expect(authorize("share-abc", encode(OWNER_KEY), deps)).resolves.toBeNull();
+    await expect(authorize("ws-1", encode(token), deps)).resolves.toBeNull();
+    await expect(authorize("ws-1:presence", encode(token), deps)).resolves.toBeNull();
+    expect(orgs.get("ws-1")?.organizationId).toBe("org-a");
   });
 
-  it("does not let an owner key claim a projection room", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+  it("refuses a session that names no organization", async () => {
+    const token = await sessions.sign({ organizationId: null, role: null });
 
-    await expect(authorize("share-abc", encode(OWNER_KEY), deps)).resolves.toBeNull();
-    await expect(authorize("share-abc:presence", encode(OWNER_KEY), deps)).resolves.toBeNull();
+    await expect(authorize("ws-1", encode(token), deps)).resolves.toBeNull();
+    expect(orgs.has("ws-1")).toBe(false);
+  });
 
-    expect(workspaces.has("share-abc")).toBe(false);
+  it("refuses an expired or forged token without falling back to any other credential", async () => {
+    const expired = await sessions.sign({ expiresInSeconds: -60 });
+    await expect(authorize("ws-1", encode(expired), deps)).resolves.toBeNull();
+    await expect(
+      authorize("ws-1", encode(await sessions.sign({ foreignKey: true })), deps),
+    ).resolves.toBeNull();
+    expect(orgs.has("ws-1")).toBe(false);
+  });
+
+  it("does not let a session open a projection room", async () => {
+    const token = await sessions.sign();
+
+    await expect(authorize("share-abc", encode(token), deps)).resolves.toBeNull();
+    await expect(authorize("share-abc:presence", encode(token), deps)).resolves.toBeNull();
+
+    expect(orgs.has("share-abc")).toBe(false);
+  });
+
+  it("refuses a session when the deployment verifies none", async () => {
+    const { sessions: _unused, ...withoutSessions } = deps;
+    await expect(
+      authorize("ws-1", encode(await sessions.sign()), withoutSessions),
+    ).resolves.toBeNull();
   });
 
   it("lets a workspace viewer read the workspace and write its ephemeral rooms", async () => {
@@ -107,7 +141,7 @@ describe("authorize", () => {
 
     await expect(authorize("ws-1", encode(token), deps)).resolves.toBe("read");
 
-    expect(workspaces.has("ws-1")).toBe(false);
+    expect(orgs.has("ws-1")).toBe(false);
   });
 
   it("keeps a workspace share out of other rooms", async () => {
@@ -146,7 +180,6 @@ describe("authorize", () => {
   });
 
   it("rejects unknown and revoked tokens", async () => {
-    await workspaces.claimOrVerify("ws-1", OWNER_KEY);
     const { token, share } = store.create({
       workspaceId: "ws-1",
       scope: "workspace",
@@ -178,7 +211,8 @@ describe("authorize", () => {
   it("does not treat empty worker tokens as a match", async () => {
     const empty: AuthorizeDeps = {
       shares: store,
-      workspaces,
+      sessions: sessions.verifier,
+      workspaces: { orgs },
       projectionToken: "",
       sourceToken: "",
     };
@@ -189,12 +223,12 @@ describe("authorize", () => {
   });
 
   it("ignores non-UTF8 bytes instead of throwing", async () => {
-    await workspaces.claimOrVerify("ws-1", OWNER_KEY);
+    orgs.claim("ws-1", "org-a");
 
     await expect(authorize("ws-1", new Uint8Array([0xff, 0xfe]), deps)).resolves.toBeNull();
   });
 
-  it("rejects malformed owner keys without throwing", async () => {
+  it("rejects a malformed credential without throwing", async () => {
     await expect(authorize("ws-1", encode("x".repeat(600)), deps)).resolves.toBeNull();
   });
 });
@@ -284,8 +318,8 @@ describe("authorize with an exchanged share session", () => {
     ]);
   });
 
-  it("never lets a session claim an owner's workspace implicitly", () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+  it("never lets an exchanged share session open the workspace it projects", () => {
+    orgs.claim("ws-1", "org-a");
     const { share } = store.create({
       workspaceId: "ws-1",
       scope: "board",
@@ -294,7 +328,7 @@ describe("authorize with an exchanged share session", () => {
     });
     const { session } = store.createSession(share);
 
-    // The session is scoped to the projection room, not the owner's workspace.
+    // The session is scoped to the projection room, not the workspace itself.
     return expect(authorize("ws-1", encode(session), deps)).resolves.toBeNull();
   });
 });
@@ -329,41 +363,40 @@ describe("resolveWorkerTokens", () => {
 });
 
 describe("authorize with the seat gate wired in", () => {
-  const NOW = 1_760_000_000_000;
-  const lapsedGate = () =>
-    createRelaySeatGate({ enforced: true, licenceFor: () => null, now: () => NOW });
+  const enforced = () => createRelaySeatGate({ enforced: true });
+  const inert = () => createRelaySeatGate({ enforced: false });
 
   it("is unchanged when no gate is configured, which is every self-host", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
-    const gate = createRelaySeatGate({
-      enforced: false,
-      licenceFor: () => null,
-      now: () => NOW,
-    });
-    await expect(authorize("ws-1", encode(OWNER_KEY), { ...deps, seats: gate })).resolves.toBe(
-      "write",
-    );
+    orgs.claim("ws-1", "org-a");
+    await expect(
+      authorize("ws-1", encode(await sessions.sign()), { ...deps, seats: inert() }),
+    ).resolves.toBe("write");
   });
 
-  it("drops a credential that the licence no longer covers", async () => {
-    workspaces.claimOrVerify("ws-1", OWNER_KEY);
-    // No licence row for the workspace: the hosted relay refuses the join even
-    // though the owner key is correct, and it opens no socket to explain why.
+  it("admits an account whose token carries a tier", async () => {
+    orgs.claim("ws-1", "org-a");
     await expect(
-      authorize("ws-1", encode(OWNER_KEY), { ...deps, seats: lapsedGate() }),
+      authorize("ws-1", encode(await sessions.sign()), { ...deps, seats: enforced() }),
+    ).resolves.toBe("write");
+  });
+
+  it("drops a session the entitlement gate refuses", async () => {
+    // The credential is fine; the entitlement is not. The room stays shut, and
+    // the answer is a refusal rather than a downgraded anonymous join.
+    orgs.claim("ws-1", "org-a");
+    const token = await sessions.sign({ tier: " " });
+    // A token without a tier never verifies, so this is the same refusal one
+    // layer up; the point is that nothing opens.
+    await expect(
+      authorize("ws-1", encode(token), { ...deps, seats: enforced() }),
     ).resolves.toBeNull();
   });
 
   it("leaves the internal worker tokens ungated", async () => {
-    const gate = createRelaySeatGate({
-      enforced: true,
-      licenceFor: () => null,
-      now: () => NOW,
-    });
     // The projection worker is not a seat: it writes only projection rooms and
-    // holding it back on a lapsed licence would leave drafts unpublished.
+    // holding it back on a lapsed entitlement would leave drafts unpublished.
     await expect(
-      authorize("share-abc", encode(PROJECTION_TOKEN), { ...deps, seats: gate }),
+      authorize("share-abc", encode(PROJECTION_TOKEN), { ...deps, seats: enforced() }),
     ).resolves.toBe("write");
   });
 });

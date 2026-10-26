@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { MFA_COPY, mfaAdvice, type SignInMethod } from "./mfa.js";
+import {
+  MFA_COPY,
+  MFA_ENROLL_PATH,
+  MFA_ENROLLMENT_CODE,
+  mfaAdvice,
+  mfaEnrollment,
+  mfaGate,
+  rolesOf,
+  type SignInMethod,
+  secondFactorRequired,
+} from "./mfa.js";
 
 /**
  * The second-factor policy (ADR-0067 §11).
@@ -36,5 +46,55 @@ describe("second-factor advice", () => {
     for (const advice of ["required", "recommended", "optional"] as const) {
       expect(MFA_COPY[advice].length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe("second-factor enforcement", () => {
+  it("treats the admin role as the one that must have a factor", () => {
+    expect(secondFactorRequired("admin")).toBe(true);
+    // The admin plugin stores roles as one comma-separated string.
+    expect(secondFactorRequired("user,admin")).toBe(true);
+    expect(secondFactorRequired("owner")).toBe(false);
+    expect(secondFactorRequired(null)).toBe(false);
+    expect(rolesOf(" user , admin ")).toEqual(["user", "admin"]);
+  });
+
+  it("refuses an admin who has not enrolled, and names where to enrol", () => {
+    const gate = mfaGate({ role: "admin", twoFactorEnabled: false }, "/organization/create");
+    if (gate.isOk()) throw new Error("an unenrolled admin was allowed through");
+
+    expect(gate.error.code).toBe(MFA_ENROLLMENT_CODE);
+    expect(gate.error.enrollAt).toBe(MFA_ENROLL_PATH);
+  });
+
+  it("lets the same admin enrol, read the session and sign out", () => {
+    for (const path of [
+      "/two-factor/enable",
+      "/two-factor/verify-totp",
+      "/get-session",
+      "/list-sessions",
+      "/sign-out",
+    ]) {
+      expect(mfaGate({ role: "admin", twoFactorEnabled: false }, path).isOk()).toBe(true);
+    }
+  });
+
+  it("asks nothing more of an admin who has enrolled, or of anyone else", () => {
+    expect(mfaGate({ role: "admin", twoFactorEnabled: true }, "/organization/create").isOk()).toBe(
+      true,
+    );
+    expect(mfaGate({ role: "user" }, "/organization/create").isOk()).toBe(true);
+    // No session is a sign-in, not an admin skipping enrolment.
+    expect(mfaGate(null, "/organization/create").isOk()).toBe(true);
+  });
+
+  it("reports the requirement as data, so the client can open the right screen", () => {
+    expect(mfaEnrollment({ role: "admin", twoFactorEnabled: false })).toEqual({
+      required: true,
+      enrolled: false,
+      enrollAt: MFA_ENROLL_PATH,
+    });
+    expect(mfaEnrollment({ role: "admin", twoFactorEnabled: true }).enrolled).toBe(true);
+    expect(mfaEnrollment({ role: "user" }).required).toBe(false);
   });
 });

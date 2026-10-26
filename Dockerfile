@@ -17,7 +17,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY patches ./patches
 COPY apps/canvas/package.json apps/canvas/package.json
 COPY apps/collab-server/package.json apps/collab-server/package.json
+COPY apps/control-plane/package.json apps/control-plane/package.json
 COPY packages/graph/package.json packages/graph/package.json
+COPY packages/licence/package.json packages/licence/package.json
 COPY e2e/package.json e2e/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 
@@ -55,6 +57,32 @@ EXPOSE 1234 1235
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.HEALTH_PORT||1235)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["pnpm", "--filter", "@suite/collab-server", "start"]
+
+# The control plane: accounts, billing and the Postgres they share. Same
+# checkout and same install as the relay, a different entry point -- the two
+# processes stay separate because the relay must keep syncing when the account
+# service is down, and because a document server has no business holding
+# Stripe's signing secrets.
+#
+# It mounts route modules it does not import, so this image carries no
+# `services/*` source: `apps/control-plane/src/modules/*.ts` are copied as they
+# are, and a module that is absent is a health line, not a build failure.
+FROM base AS control-plane
+ARG SUITE_VERSION=0.0.0
+ENV NODE_ENV=production \
+    PORT=1236 \
+    SUITE_VERSION=${SUITE_VERSION}
+WORKDIR /app
+COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
+RUN printf '\nverifyDepsBeforeRun: false\n' >> pnpm-workspace.yaml
+COPY --from=build /app/apps/control-plane/package.json ./apps/control-plane/package.json
+COPY --from=build /app/apps/control-plane/src ./apps/control-plane/src
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/apps/control-plane/node_modules ./apps/control-plane/node_modules
+EXPOSE 1236
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||1236)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["pnpm", "--filter", "@suite/control-plane", "start"]
 
 # TLS terminator and static host. The canvas build is baked in at /srv.
 FROM caddy:2-alpine AS web

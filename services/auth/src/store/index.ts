@@ -11,11 +11,28 @@ export type { LicenceStore, MembershipReader } from "../licensing/licences.js";
 export type { WorkspaceRepository } from "../organizations/workspaces.js";
 export { type MemoryControlPlane, memoryControlPlane } from "./memory.js";
 export {
+  checksumOf,
+  MIGRATIONS_DIRECTORY,
+  MigrationChecksumError,
+  type MigrationConnection,
+  type MigrationFile,
+  type MigrationStatus,
+  type MigrationTarget,
+  migrate,
+  migrateAtBoot,
+  migrationsEnabled,
+  planMigrations,
+  status as migrationStatus,
+} from "./migrate.js";
+export {
   databaseUrlProblem,
+  kyselyDatabase,
   type PostgresDatabase,
   type PostgresOptions,
+  poolQueryable,
   postgresDatabase,
   type Queryable,
+  type QueryConnection,
 } from "./postgres.js";
 export {
   postgresLicences,

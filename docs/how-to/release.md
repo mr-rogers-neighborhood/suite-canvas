@@ -26,13 +26,13 @@ The lead creates the tag after integration. A workstream does not push one.
 
 1. `package.json` and the newest `CHANGELOG.md` heading both say `0.2.0-beta.1`.
 2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
-3. The gate is green on the commit being tagged: `pnpm verify` and `pnpm e2e`, in that order, with
-   nothing already listening on `:5173` or `:1235`. The tiers are in
-   [test-and-verify.md](test-and-verify.md).
+3. `pnpm verify` is green on the commit being tagged, and a full `pnpm e2e` passed on that same commit,
+   in that order, with nothing already listening on `:5173` or `:1235`. A tag is the milestone where
+   the full suite runs; the commands are in [test-and-verify.md](test-and-verify.md).
 4. `git tag -a v0.2.0-beta.1 -m "Suite 0.2.0-beta.1"`.
 5. `git push origin v0.2.0-beta.1`.
 
-`.github/workflows/release.yml` then runs three jobs:
+If workflows can start, `.github/workflows/release.yml` runs three jobs:
 
 | Job | Does | Fails when |
 | --- | --- | --- |

@@ -7,7 +7,8 @@
     // live next to this tsconfig; keep the hoisted root as a fallback.
     "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
     // Node runs these files with type stripping, which requires the real `.ts`
-    // extension when importing the shared licence module.
+    // extension when importing a sibling. Workspace packages such as
+    // `@suite/licence` are built first, so they resolve to plain JavaScript.
     "allowImportingTsExtensions": true
   },
   "include": ["src"]

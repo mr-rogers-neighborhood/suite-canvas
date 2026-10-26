@@ -1,5 +1,6 @@
 import { LoroDoc, type LoroMap, type Value } from "loro-crdt";
 import type { Drawing, DrawingElement } from "../drawings.js";
+import type { HistoryPoint, HistoryRestorePreview } from "../history.js";
 import type { ApplyLayoutPlanOptions, LayoutPlan, LayoutPlanSummary } from "../layoutPlan.js";
 import type {
   Board,
@@ -145,6 +146,7 @@ export class WorkspaceDocument extends CardsFacade {
   private readonly sectionsApi: DocApi["sections"];
   private readonly placementsApi: DocApi["placements"];
   private readonly edgesApi: DocApi["edges"];
+  private readonly historyApi: DocApi["history"];
   private readonly drawingsApi: DocApi["drawings"];
   private readonly snapshotApi: DocApi["snapshot"];
 
@@ -162,6 +164,7 @@ export class WorkspaceDocument extends CardsFacade {
     this.sectionsApi = api.sections;
     this.placementsApi = api.placements;
     this.edgesApi = api.edges;
+    this.historyApi = api.history;
     this.drawingsApi = api.drawings;
     this.snapshotApi = api.snapshot;
     this.ctx.attach();
@@ -198,6 +201,25 @@ export class WorkspaceDocument extends CardsFacade {
 
   canRedo(): boolean {
     return this.undoApi.canRedo();
+  }
+
+  /** Saved points, newest first; the first one is the document as it stands. */
+  listHistoryPoints(limit?: number): HistoryPoint[] {
+    return this.historyApi.listHistoryPoints(limit);
+  }
+
+  getHistoryPoint(pointId: string): HistoryPoint | null {
+    return this.historyApi.getHistoryPoint(pointId);
+  }
+
+  /** What restoring one point would add, remove and rewrite. Writes nothing. */
+  previewRestore(pointId: string): HistoryRestorePreview | null {
+    return this.historyApi.previewRestore(pointId);
+  }
+
+  /** Restores a point as one undoable change every peer receives. */
+  restoreToPoint(pointId: string): HistoryRestorePreview | null {
+    return this.historyApi.restoreToPoint(pointId);
   }
 
   stopCapturing(): void {

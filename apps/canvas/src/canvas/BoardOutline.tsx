@@ -5,6 +5,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import "../styles/outline.css";
+import "./boardAffordances.css";
 import { outlinePeerIds, outlineRows } from "./outlineTree";
 
 export interface OutlineTreeProps {
@@ -17,6 +18,8 @@ export interface OutlineTreeProps {
   onToggle: () => void;
   onSelect: (sectionId: string) => void;
   onContextMenu: (event: ReactMouseEvent, sectionId: string) => void;
+  /** Whether this session may make a section, which the empty rail offers. */
+  canCreate?: boolean;
 }
 
 /** The rail itself: plain props so Storybook can render it without the store. */
@@ -29,6 +32,7 @@ export function OutlineTree({
   onToggle,
   onSelect,
   onContextMenu,
+  canCreate = false,
 }: OutlineTreeProps) {
   const rows = useMemo(() => outlineRows(sections, membership), [sections, membership]);
   const peersBySection = useMemo(() => outlinePeerIds(peers), [peers]);
@@ -58,6 +62,14 @@ export function OutlineTree({
             </button>
           </header>
           <div className="board-outline__rows">
+            {/* A board with no sections still gets the rail: an outline that
+                vanishes is indistinguishable from one that has nothing to say. */}
+            {rows.length === 0 ? (
+              <div className="board-outline__empty" data-testid="outline-empty">
+                <p>No sections on this board.</p>
+                <p>{canCreate ? "Cmd/Ctrl+G makes one." : "Sections appear here."}</p>
+              </div>
+            ) : null}
             {rows.map((row) => {
               const { section, depth, count } = row;
               const active = selectedSectionId === section.id;
@@ -136,6 +148,7 @@ export function BoardOutlineHost() {
   const toggleOutline = useUiStore((state) => state.toggleOutline);
   const selectedSectionId = useUiStore((state) => state.selectedSectionId);
   const selectSection = useUiStore((state) => state.selectSection);
+  const canCreateContent = useUiStore((state) => state.canCreateContent);
   const focusSection = useUiStore((state) => state.focusSection);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const peers = useBoardPeers(activeBoardId);
@@ -194,8 +207,9 @@ export function BoardOutlineHost() {
     [openContextMenu],
   );
 
-  // A board with no sections gets no rail at all, not an empty one.
-  if (!activeBoardId || sections.length === 0) return null;
+  // An empty board keeps the rail so the outline has a place to say it is
+  // empty, and so the toggle exists before the first section does.
+  if (!activeBoardId) return null;
 
   return (
     <OutlineTree
@@ -207,6 +221,7 @@ export function BoardOutlineHost() {
       onToggle={toggleOutline}
       onSelect={handleSelect}
       onContextMenu={handleContextMenu}
+      canCreate={canCreateContent}
     />
   );
 }

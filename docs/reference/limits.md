@@ -33,6 +33,23 @@ one. `unlimited` is also accepted as a value for every quota.
 | Cards per workspace | none | no cap | Bounded by document bytes |
 | Cards in one selection on the canvas | none | no cap | Bounded by what the browser can hold |
 
+## What this build does not cap
+
+Four limits that a reader expects on this page have no enforced value, so the
+tables above report them as unlimited or as no cap:
+
+- Document bytes per workspace: unlimited on an instance, and the hosted licence
+  carries the cap that applies to a hosted workspace.
+- Attachment bytes per workspace: unlimited on an instance, and the hosted
+  licence carries that cap too.
+- Cards per workspace, and cards in one selection on the canvas: no cap. The
+  document byte quota is what bounds a workspace.
+- Peers in one room, and rooms open at once: no cap beyond the projection room
+  ceiling in the next table. Memory is the real limit.
+
+The Beta plan proposes a number for each of them. A proposal is not a limit, so
+none is published here until the code enforces one.
+
 ## Publish caps
 
 A draft is written by a browser that any client can run, so the publisher

@@ -1,0 +1,29 @@
+{
+  "name": "@suite/licence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The hosted-sync licence token: format, Ed25519 verification, claims and the caps the relay enforces. Shared by the relay and the billing service so one file defines the format.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

@@ -40,8 +40,6 @@ export function isStandalone(): boolean {
 export interface BootPlan {
   /** Trade `?share=` (or the resume marker) for a share session. */
   resolveShare: boolean;
-  /** Claim this browser as the workspace owner through the relay. */
-  claimOwner: boolean;
   /** Open the sync provider's socket. */
   connectProvider: boolean;
   /** Render sharing controls: the Share menu, the publish button. */
@@ -51,7 +49,6 @@ export interface BootPlan {
 /** A standalone build has none of the relay machinery. */
 const LOCAL_ONLY_PLAN: BootPlan = {
   resolveShare: false,
-  claimOwner: false,
   connectProvider: false,
   showSharing: false,
 };
@@ -85,12 +82,11 @@ export function bootPlan(mode: SuiteMode, url: string): BootPlan {
   // resolve or claim against, so nothing runs and `main.tsx` says the build is
   // local-only instead of turning a capability link into a network error.
   if (mode === "standalone") return LOCAL_ONLY_PLAN;
-  const resolveShare = hasShareLink(url);
+  // There is no claim step left at boot: an account session is minted from the
+  // cookie on the first room join, and an anonymous workspace is linked to an
+  // account by `onLinkAccount` at sign-up (ADR-0076).
   return {
-    resolveShare,
-    // A share link is not this browser's workspace to claim; an ordinary
-    // `?workspace=` link is.
-    claimOwner: !resolveShare && workspaceIdFromUrl(url) !== null,
+    resolveShare: hasShareLink(url),
     connectProvider: true,
     showSharing: true,
   };

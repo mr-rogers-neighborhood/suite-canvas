@@ -116,6 +116,32 @@ export function useBoardCommands(
     [activeBoardId, boardSections, workspace, canEditLayout],
   );
 
+  /**
+   * Arrow-key movement for the selection: one write per press, and the same
+   * section growth a drop gets, so nudging a card past its section's edge grows
+   * the section instead of quietly leaving the card outside it.
+   */
+  const nudgeSelected = useCallback(
+    (delta: { dx: number; dy: number }) => {
+      if (!canEditLayout || !activeBoardId) return;
+      const state = useUiStore.getState();
+      const nodes = state.selectedNodeIds.flatMap((id) => {
+        const node = store.getState().nodeLookup.get(id);
+        return node
+          ? [
+              {
+                ...node,
+                position: { x: node.position.x + delta.dx, y: node.position.y + delta.dy },
+              },
+            ]
+          : [];
+      });
+      if (nodes.length === 0) return;
+      commitDrop(nodes);
+    },
+    [activeBoardId, canEditLayout, commitDrop, store],
+  );
+
   const createNoteAt = useCallback(
     (position: { x: number; y: number }) => {
       if (!canCreateContent || !activeBoardId) return;
@@ -242,6 +268,7 @@ export function useBoardCommands(
     changeLayer,
     changeLayerBulk,
     commitDrop,
+    nudgeSelected,
     createNoteAt,
     createWhiteboardAt,
     createPortalAt,

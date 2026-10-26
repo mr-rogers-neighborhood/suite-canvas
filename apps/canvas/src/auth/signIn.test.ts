@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   emailProblem,
   LAST_LOGIN_METHOD_COOKIE,
+  MIN_PASSWORD_LENGTH,
+  passwordProblem,
   readLastLoginMethod,
   signInOffers,
 } from "./signIn";
@@ -13,6 +15,7 @@ describe("last login method", () => {
       "magic-link",
     );
     expect(readLastLoginMethod(`${LAST_LOGIN_METHOD_COOKIE}=google`)).toBe("google");
+    expect(readLastLoginMethod(`${LAST_LOGIN_METHOD_COOKIE}=password`)).toBe("password");
   });
 
   it("is null rather than wrong for a missing, empty or unknown cookie", () => {
@@ -29,12 +32,14 @@ describe("sign-in offers", () => {
   it("leads with the method that worked last", () => {
     expect(signInOffers("passkey").map((offer) => offer.method)).toEqual([
       "passkey",
+      "password",
       "magic-link",
       "google",
     ]);
     expect(signInOffers("google").map((offer) => offer.method)).toEqual([
       "google",
       "passkey",
+      "password",
       "magic-link",
     ]);
   });
@@ -47,13 +52,19 @@ describe("sign-in offers", () => {
     expect(offers.map((offer) => offer.label)).toEqual([
       "Continue with a magic link",
       "Use a passkey",
+      "Use a password",
       "Continue with Google",
     ]);
   });
 
-  it("offers the same three methods, in a stable order, on a first visit", () => {
+  it("offers the same four methods, in a stable order, on a first visit", () => {
     const offers = signInOffers(null);
-    expect(offers.map((offer) => offer.method)).toEqual(["passkey", "magic-link", "google"]);
+    expect(offers.map((offer) => offer.method)).toEqual([
+      "passkey",
+      "password",
+      "magic-link",
+      "google",
+    ]);
     expect(offers.some((offer) => offer.recent)).toBe(false);
   });
 });
@@ -66,5 +77,13 @@ describe("email problem", () => {
     expect(emailProblem("reader")).toContain("does not look like");
     expect(emailProblem("@example.com")).toContain("does not look like");
     expect(emailProblem("reader@")).toContain("does not look like");
+  });
+});
+
+describe("password problem", () => {
+  it("holds the line at length, and says so in a way that helps", () => {
+    expect(passwordProblem("")).toContain("Enter your password");
+    expect(passwordProblem("short")).toContain(`at least ${MIN_PASSWORD_LENGTH} characters`);
+    expect(passwordProblem("a long enough phrase")).toBeNull();
   });
 });

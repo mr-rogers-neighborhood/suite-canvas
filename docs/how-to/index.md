@@ -6,12 +6,13 @@ One task at a time: the steps for a job you already know you need to do.
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Change the editor](change-the-editor.md) | Add a node, a mark, a field renderer, a slash command or a mention action to the card editor, with the files each one touches and the tests that fail… | 2026-10-26 |
-| [Change the data model](change-the-data-model.md) | A record change travels one path: schema, reader, writer, facade, then the tests that prove two clients still converge. Skipping the reader step is ho… | 2026-10-26 |
-| [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-10-26 |
-| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the verification tiers in test-… | 2026-10-26 |
-| [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for @suite/graph, the collab server, the auth service and the canvas; Playwright for end-to-end journeys; node -… | 2026-10-26 |
+| [Import an Obsidian vault](import-an-obsidian-vault.md) | Dropping a vault folder into Suite reads every note, tag, link and canvas into one workspace. The import runs once, as a single change, so undo takes… | 2026-10-26 |
+| [Test and verify a change](test-and-verify.md) | Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys, and node --test for @suite/billing, which sits o… | 2026-10-26 |
 | [Add a feature](add-a-feature.md) | The data flow fixes the order: the document package owns the shape, the workspace document owns the write, the snapshot store owns the read, and the c… | 2026-10-26 |
+| [Change the canvas](change-the-canvas.md) | Adding to the canvas means answering three questions before writing code: which layer owns the input, what the document records, and what peers see wh… | 2026-10-26 |
+| [Change the data model](change-the-data-model.md) | A record change travels one path: schema, reader, writer, facade, then the tests that prove two clients still converge. Skipping the reader step is ho… | 2026-10-26 |
+| [Change the editor](change-the-editor.md) | Add a node, a mark, a field renderer, a slash command or a mention action to the card editor, with the files each one touches and the tests that fail… | 2026-10-26 |
 | [Deploy a server](deploy.md) | One small instance, one Docker host, one app container, six SQLite stores on one volume, Caddy in front, Cloudflare in front of Caddy. | 2026-10-26 |
+| [Contribute a change](contribute.md) | One change, from branch to merge. The coding standards are in reference/conventions.md, the repo map in AGENTS.md, and the local gate in test-and-veri… | 2026-10-26 |
 | [Operate a deployment](operate.md) | Suite runs as a single Node process with six SQLite stores on one directory; there is no external database and no multi-replica mode. | 2026-10-26 |
 | [Release and roll back](release.md) | A release is a tag, an image built from it, the digest that identifies that image, a smoke test against a host, and a rollback path. This page is writ… | 2026-10-26 |

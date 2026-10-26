@@ -1,30 +1,34 @@
-import { magicLinkClient, organizationClient } from "better-auth/client/plugins";
+import { anonymousClient, magicLinkClient, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { authClientBase, claimWorkspaceUrl } from "./endpoints";
+import { forgetCredential } from "./credential";
+import { authClientBase } from "./endpoints";
+import { codeOf } from "./organization";
 import { type PasskeyRequestOptions, signInWithPasskey } from "./passkey";
 import {
   readLastLoginMethod,
   type SignInActions,
   type SignInMethod,
   type SignInResult,
+  type SignUpInput,
 } from "./signIn";
 
 /**
- * The Better Auth client, and the only module that talks to it.
+ * The Better Auth client, and the only module that talks to it over its own API.
  *
  * Everything that renders takes actions as props, so a component test needs no
  * network and no server: this file is where the real transport lives, and it is
  * deliberately small.
  *
- * Plugins are the two this surface actually uses — `magicLinkClient` for
- * `signIn.magicLink` and `organizationClient` to find (or create) the tenant a
- * claim lands in. `anonymousClient` is *not* wired here: minting an anonymous
- * session on every local device would change the anonymous path this lane must
- * leave exactly as it is (ADR-0067 §8),
- * and the claim route already carries the work an anonymous account would.
- * `lastLoginMethod` needs no client plugin either: the server plugin records the
- * method in a readable cookie, and `readLastLoginMethod` parses that cookie
- * directly instead of pulling in a client plugin that only reads it.
+ * The plugins are the ones this surface uses: `magicLinkClient` for
+ * `signIn.magicLink`, `organizationClient` for members and invitations, and
+ * `anonymousClient` because an account-less device now gets a real (anonymous)
+ * session — the server's `onLinkAccount` is what later hands its workspaces to the
+ * account somebody signs up for (ADR-0076). `lastLoginMethod` needs no client
+ * plugin: the server records the method in a readable cookie, and
+ * `readLastLoginMethod` parses that cookie directly.
+ *
+ * Billing is *not* a plugin here: `@better-auth/stripe`'s client half would be a
+ * second dependency for three `fetch` calls, and `billing.ts` already owns them.
  */
 
 function clientBase(): string {
@@ -39,7 +43,7 @@ function clientBase(): string {
 
 export const authClient = createAuthClient({
   baseURL: clientBase(),
-  plugins: [magicLinkClient(), organizationClient()],
+  plugins: [magicLinkClient(), organizationClient(), anonymousClient()],
   // A self-hosted auth service is another origin; the session cookie has to travel.
   fetchOptions: { credentials: "include" },
 });
@@ -53,6 +57,8 @@ function messageOf(error: unknown, fallback: string): string {
   if (error && typeof error === "object") {
     const message = (error as { message?: unknown }).message;
     if (typeof message === "string" && message.length > 0) return message;
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && code.length > 0) return code;
   }
   return fallback;
 }
@@ -79,7 +85,7 @@ async function passkeyRequestOptions(): Promise<PasskeyRequestOptions | null> {
   }
 }
 
-/** Magic link, Google, and the passkey ceremony — the three ways in (ADR §11). */
+/** Password, magic link, Google and the passkey ceremony — the four ways in. */
 export const signInActions: SignInActions = {
   passkey: () =>
     signInWithPasskey({
@@ -100,6 +106,28 @@ export const signInActions: SignInActions = {
         }
       },
     }),
+
+  password: async ({ email, password }): Promise<SignInResult> => {
+    try {
+      const { error } = await authClient.signIn.email({ email: email.trim(), password });
+      if (error) {
+        // An unverified address is a state, not a failure: say what to do next.
+        if (codeOf(error) === "EMAIL_NOT_VERIFIED") {
+          return {
+            ok: false,
+            message: `Check ${email.trim()} for the verification link, then sign in again.`,
+          };
+        }
+        return {
+          ok: false,
+          message: messageOf(error, "That email and password were not accepted."),
+        };
+      }
+      return { ok: true, message: "Signed in." };
+    } catch {
+      return { ok: false, message: "The account service did not answer." };
+    }
+  },
 
   magicLink: async (email): Promise<SignInResult> => {
     try {
@@ -125,6 +153,29 @@ export const signInActions: SignInActions = {
       return { ok: false, message: "The account service did not answer." };
     }
   },
+
+  signUp: async (input: SignUpInput): Promise<SignInResult> => {
+    try {
+      const { error } = await authClient.signUp.email({
+        name: input.name.trim(),
+        email: input.email.trim(),
+        password: input.password,
+        callbackURL: returnUrl(),
+        ...(input.captchaToken
+          ? { fetchOptions: { headers: { "x-captcha-response": input.captchaToken } } }
+          : {}),
+      });
+      if (error) {
+        return { ok: false, message: messageOf(error, "That account could not be created.") };
+      }
+      return {
+        ok: true,
+        message: `Check ${input.email.trim()} to verify the address. Your workspaces come with you once you do.`,
+      };
+    } catch {
+      return { ok: false, message: "The account service did not answer." };
+    }
+  },
 };
 
 /** Ends the session. The workspace on this device is untouched. */
@@ -134,68 +185,27 @@ export async function signOut(): Promise<void> {
   } catch {
     // A dead server must not trap someone in a session: forgetting it here is
     // still the honest thing, because the cookie will expire on its own.
+  } finally {
+    // The minted JWT is dead the moment the cookie is: drop it either way.
+    forgetCredential();
   }
 }
+
+export type AnonymousSignIn = { ok: true } | { ok: false; code: string };
 
 /**
- * The organization a claim lands in, creating the account's first one if it has
- * none. `POST /organization/create` is one of the three admission-gated paths, so
- * a held account is refused here — which is how the client learns it is waiting.
+ * Gives this browser an anonymous session, which is what lets a workspace made
+ * without an account be linked to one later (ADR-0076).
+ *
+ * It is not a sign-in the reader sees: no email, no name, no prompt. A deployment
+ * that has the plugin off answers `ANONYMOUS_USERS_NOT_FOUND` or a 404, and that
+ * is "unavailable" rather than an error — local use never depends on it.
  */
-export async function ensureOrganization(
-  displayName: string,
-): Promise<{ ok: true; organizationId: string } | { ok: false; code: string }> {
+export async function signInAnonymously(): Promise<AnonymousSignIn> {
   try {
-    const listed = await authClient.organization.list();
-    if (!listed.error && Array.isArray(listed.data)) {
-      const existing = listed.data[0];
-      if (existing?.id) return { ok: true, organizationId: existing.id };
-    }
-    const slug = `personal-${crypto.randomUUID().slice(0, 12)}`;
-    const created = await authClient.organization.create({ name: displayName, slug });
-    if (created.error || !created.data?.id) {
-      return { ok: false, code: codeOf(created.error) };
-    }
-    return { ok: true, organizationId: created.data.id };
-  } catch {
-    return { ok: false, code: "unreachable" };
-  }
-}
-
-function codeOf(error: unknown): string {
-  if (error && typeof error === "object") {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" && code.length > 0) return code;
-    const status = (error as { status?: unknown }).status;
-    if (status === 401) return "unauthorized";
-    if (status === 403) return "forbidden";
-    if (status === 503) return "auth-not-configured";
-  }
-  return "unreachable";
-}
-
-/** `POST /api/workspaces/claim`: the one write that gives an anonymous workspace an owner. */
-export async function claimWorkspace(input: {
-  workspaceId: string;
-  organizationId: string;
-}): Promise<{ ok: true; status: "claimed" | "unchanged" } | { ok: false; code: string }> {
-  try {
-    const response = await fetch(claimWorkspaceUrl(), {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        workspaceId: input.workspaceId,
-        organizationId: input.organizationId,
-      }),
-    });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const code = body && typeof body === "object" ? (body as { error?: unknown }).error : null;
-      return { ok: false, code: typeof code === "string" ? code : `http-${response.status}` };
-    }
-    const status = body && typeof body === "object" ? (body as { status?: unknown }).status : null;
-    return { ok: true, status: status === "claimed" ? "claimed" : "unchanged" };
+    const { error } = await authClient.signIn.anonymous();
+    if (error) return { ok: false, code: codeOf(error) };
+    return { ok: true };
   } catch {
     return { ok: false, code: "unreachable" };
   }

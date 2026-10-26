@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pick } from "remeda";
 import type { QuotaService, ResolvedLimits } from "../../config/limits.js";
@@ -17,7 +16,7 @@ import type { DocumentInventory, DocumentStore } from "../../store/persistence.j
 import type { SettingsStore } from "../../store/settings.js";
 import type { Share, ShareStore } from "../../store/shares.js";
 import { SHARE_ROOM_PREFIX } from "../../store/shares.js";
-import type { WorkspaceRegistry } from "../../store/workspaces.js";
+import type { WorkspaceOrgStore } from "../../store/workspaceOrgs.js";
 import { HttpError } from "../errors.js";
 import { methodNotAllowed } from "../respond.js";
 import { claimedOf, storedWorkspaces } from "./workspaces.js";
@@ -44,7 +43,7 @@ export interface AdminDatabasePaths {
 
 /** Auth kinds of a room's sessions; counts only, never a credential. */
 export interface AdminAuthKinds {
-  owner: number;
+  account: number;
   share: number;
   internal: number;
   anonymous: number;
@@ -67,10 +66,11 @@ export interface AdminRequestDeps {
   shares: Pick<ShareStore, "list" | "countActive" | "get" | "revoke" | "revokeAll"> &
     Partial<Pick<ShareStore, "create">>;
   /**
-   * Owner registry. `claimOrVerify` lets a fixture mint a workspace plus a key
-   * that can actually open it; without it the fixture endpoint answers 501.
+   * Which organization the relay recorded for each workspace. Read-only here: an
+   * operator may inspect and delete, and ownership itself is the control plane's
+   * row (ADR-0065), never an admin mutation.
    */
-  workspaces: Pick<WorkspaceRegistry, "has"> & Partial<Pick<WorkspaceRegistry, "claimOrVerify">>;
+  orgs: Pick<WorkspaceOrgStore, "has">;
   /** Database files, reported by `status` when known. */
   paths?: AdminDatabasePaths;
   /** Process start, epoch milliseconds; defaults to this module's load time. */
@@ -118,6 +118,19 @@ export interface AdminRequestDeps {
   diskBytes?: () => number;
   /** Collector rendered by `GET /metrics`; defaults to the process-wide one. */
   metrics?: MetricsCollector;
+  /**
+   * The credential that made this request, as a label. The router sets it on a
+   * per-request copy of these deps; nothing else may, so an audit line cannot
+   * name an actor that did not present a token.
+   */
+  actor?: string;
+  /**
+   * The single audit row this request will write. The router creates it for a
+   * mutating call, handlers fill it in through `audit()`, and the router writes
+   * it once the answer is known — so one mutation is one row, whatever happens
+   * inside.
+   */
+  audit?: AdminAuditRow;
   /**
    * Resident set size reader for `status`; defaults to
    * `process.memoryUsage().rss` through the metrics module, so the JSON and the
@@ -182,17 +195,6 @@ export function envLimit(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
-/** The configured operator token, or "" when the admin API is switched off. */
-export function adminToken(): string {
-  return process.env.SUITE_ADMIN_TOKEN?.trim() ?? "";
-}
-
-export function constantTimeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left, "utf8");
-  const b = Buffer.from(right, "utf8");
-  return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
-}
-
 export function decodeSegment(segment: string): string {
   try {
     return decodeURIComponent(segment);
@@ -239,9 +241,54 @@ export async function readBody(request: IncomingMessage): Promise<Record<string,
   return parsed as Record<string, unknown>;
 }
 
+/** The one row a mutating admin request writes: who, what, where, and how it ended. */
+export interface AdminAuditRow {
+  /** The credential's label, never the credential. */
+  actor: string;
+  /** The verb, e.g. `delete-workspace`. */
+  action: string;
+  /** The id the verb applied to. */
+  target: string;
+  /** `ok`, `refused` or `failed`, plus any handler-specific word. */
+  result: string;
+  /** Free-form detail a handler added; never a credential or a document body. */
+  details: Record<string, unknown>;
+}
+
+/** A fresh row for one request, before the router knows how it ended. */
+export function beginAudit(actor: string): AdminAuditRow {
+  return { actor, action: "", target: "", result: "ok", details: {} };
+}
+
 /**
- * One line per mutation: the admin path, what it targeted and how it ended.
- * The bearer token is not a parameter here, so it cannot reach the line.
+ * Writes the row. Called once per mutating request by the router, after the
+ * answer is known; `deps.audit` is the same object the handlers filled in.
+ *
+ * The entry `path` is logged alongside, so an operator can find the route, but
+ * the four fields an audit depends on are actor, action, target and result.
+ */
+export function writeAudit(deps: AdminRequestDeps, row: AdminAuditRow, path: string): void {
+  const logger = deps.logger ?? auditLogger;
+  try {
+    logger.info("admin.mutation", {
+      actor: row.actor,
+      action: row.action,
+      target: row.target,
+      result: row.result,
+      path,
+      ...row.details,
+    });
+  } catch {
+    // An audit row must never fail the request it describes.
+  }
+}
+
+/**
+ * Notes what a handler did, into the row the router will write.
+ *
+ * A handler calls this with the same fields it always used; without a draft (a
+ * handler invoked directly by a test, say) the row is written immediately so a
+ * mutation never goes unrecorded.
  */
 export function audit(
   deps: AdminRequestDeps,
@@ -253,18 +300,25 @@ export function audit(
     details?: Record<string, unknown>;
   },
 ): void {
-  const logger = deps.logger ?? auditLogger;
-  try {
-    logger.info("admin.mutation", {
-      path: entry.path,
-      target: entry.target,
-      action: entry.action,
-      outcome: entry.outcome,
-      ...entry.details,
-    });
-  } catch {
-    // An audit line must never fail the request it describes.
+  const row = deps.audit;
+  if (row !== undefined) {
+    row.action = entry.action;
+    if (entry.target.length > 0) row.target = entry.target;
+    row.result = entry.outcome;
+    Object.assign(row.details, entry.details ?? {});
+    return;
   }
+  writeAudit(
+    deps,
+    {
+      actor: deps.actor ?? "operator",
+      action: entry.action,
+      target: entry.target,
+      result: entry.outcome,
+      details: { ...entry.details },
+    },
+    entry.path,
+  );
 }
 
 export function requireMethod(

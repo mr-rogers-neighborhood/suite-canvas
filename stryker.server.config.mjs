@@ -27,17 +27,27 @@ export default {
     related: false,
   },
   testFiles: [
-    "apps/collab-server/src/licence.test.ts",
-    "apps/collab-server/src/licence.property.test.ts",
-    "apps/collab-server/src/limits.test.ts",
-    "apps/collab-server/src/limits.property.test.ts",
-    "apps/collab-server/src/config.test.ts",
+    "packages/licence/src/token.test.ts",
+    "packages/licence/src/property.test.ts",
+    "apps/collab-server/src/config/limits.test.ts",
+    "apps/collab-server/src/config/limits.property.test.ts",
+    "apps/collab-server/src/config/config.test.ts",
   ],
 
   mutate: [
-    "apps/collab-server/src/licence.ts",
-    "apps/collab-server/src/limits.ts",
-    "apps/collab-server/src/config.ts",
+    // The licence token is a package now (`@suite/licence`), shared with the
+    // billing service; it stays in this run because this is the config whose
+    // tests already cover it.
+    "packages/licence/src/base64Url.ts",
+    "packages/licence/src/claims.ts",
+    "packages/licence/src/environment.ts",
+    "packages/licence/src/keys.ts",
+    "packages/licence/src/messages.ts",
+    "packages/licence/src/quota.ts",
+    "packages/licence/src/sign.ts",
+    "packages/licence/src/verify.ts",
+    "apps/collab-server/src/config/limits.ts",
+    "apps/collab-server/src/config/config.ts",
   ],
 
   // Never copied into the sandbox: build output, coverage and Playwright

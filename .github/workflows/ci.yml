@@ -1,13 +1,8 @@
 name: CI
 
-# `quality` and `e2e` are the two checks intended to gate `main`. They do not
-# gate anything yet: every workflow on this repository currently ends in
-# `startup_failure` with zero jobs, which is account state rather than YAML, so
-# the real gate is `pnpm verify` + `pnpm e2e` locally. See docs/how-to/test-and-verify.md.
-#
-# Tags still run the quality gate, so a release commit is verified. The image
-# and the GitHub release belong to .github/workflows/release.yml — one workflow
-# per tag, not two racing to push the same image.
+# Present and unrun: every workflow on this account ends in `startup_failure` with zero jobs, so
+# nothing here gates `main`. The local gate in docs/how-to/test-and-verify.md is authoritative.
+# Re-enabling needs a self-hosted runner or an entitlement change; the job logic below needs no edit.
 on:
   push:
     branches: [main]
@@ -178,8 +173,8 @@ jobs:
 
   e2e:
     name: End-to-end (full)
-    # The full suite runs before a merge to main, on a tag, or on demand. A pull
-    # request gets the smoke tier; the unit and story suites cover the rest.
+    # Runs on a push to main, a tag, the schedule, or a manual dispatch, and is unrun like every job
+    # here. A pull request would get the smoke tier; the unit and story suites cover the rest.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25

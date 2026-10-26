@@ -6,6 +6,7 @@ import { useCanvasStore } from "../../store/useCanvasStore";
 import { useUiStore } from "../../store/useUiStore";
 import { useWorkspaceSnapshot } from "../../store/workspaceStore";
 import { useAppearanceStore } from "../../theme/useAppearanceStore";
+import { useCameraPrefs } from "../cameraPrefs";
 import { useSurfaceRules } from "../rules";
 import { useCanvasLens, useLensReferenceRepair } from "../useCanvasLens";
 
@@ -58,6 +59,11 @@ export function useBoardUi() {
   // card face paints with.
   const readerRadius = useAppearanceStore((state) => state.appearance.radius);
   const surfaceRules = useSurfaceRules();
+  // A reader preference, not document data: two people on one board may want
+  // different grids, and the outline rail opens independently per client.
+  const gridVisible = useCameraPrefs((state) => state.gridVisible);
+  const outlineOpen = useUiStore((state) => state.outlineOpen);
+  const toggleOutline = useUiStore((state) => state.toggleOutline);
 
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
@@ -122,6 +128,9 @@ export function useBoardUi() {
     contextMenu,
     readerRadius,
     surfaceRules,
+    gridVisible,
+    outlineOpen,
+    toggleOutline,
     canEditContent,
     canEditLayout,
     canCreateContent,

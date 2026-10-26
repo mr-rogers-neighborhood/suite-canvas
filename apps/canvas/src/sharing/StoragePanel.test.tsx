@@ -54,8 +54,9 @@ describe("storage panel", () => {
       "Offline means the open tab keeps working",
     );
     expect(screen.getByTestId("offline-scope")).toHaveTextContent(
-      "reload while offline is not supported",
+      "Reloading while offline needs the network",
     );
+    expect(screen.getByTestId("offline-scope")).toHaveTextContent("ships no service worker");
   });
 
   it("raises a visible state and keeps the document when a write is refused for quota", async () => {

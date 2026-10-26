@@ -12,8 +12,12 @@ import { WorkspaceDocument } from "@suite/graph";
 import { EphemeralStore, LoroDoc, LoroMap, LoroText } from "loro-crdt";
 import { SimpleServer } from "loro-websocket/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { rejoinOnClaim } from "../session/ownerKey";
-import { type LoroConnectionStatus, LoroProvider, nextConnectionStatus } from "./loroProvider";
+import {
+  type LoroConnectionStatus,
+  LoroProvider,
+  nextConnectionStatus,
+  type ProviderAuth,
+} from "./loroProvider";
 
 // loro-websocket 0.6.2 rejects its internal connection promise from close()/
 // destroy() without attaching a handler. These are teardown-only rejections.
@@ -143,7 +147,12 @@ afterEach(async () => {
  * Starts a relay that refuses `TOKEN` until `claimed` is true, and records the
  * bytes it persists. `holdNextAuth` lets one test keep a join request in flight.
  */
-async function harness(options: { claimed: boolean; seed?: () => Uint8Array | null }): Promise<
+async function harness(options: {
+  claimed: boolean;
+  seed?: () => Uint8Array | null;
+  /** Overrides the credential: a function stands in for a per-join mint. */
+  auth?: ProviderAuth;
+}): Promise<
   Harness & {
     setClaimed: (value: boolean) => void;
     holdNextAuth: () => void;
@@ -188,7 +197,7 @@ async function harness(options: { claimed: boolean; seed?: () => Uint8Array | nu
     doc,
     presence: new EphemeralStore(30_000),
     cursors: new EphemeralStore(30_000),
-    auth: new TextEncoder().encode(TOKEN),
+    auth: options.auth ?? new TextEncoder().encode(TOKEN),
     onStatus: (status) => statuses.push(status),
   });
   providers.push(provider);
@@ -228,13 +237,21 @@ describe("nextConnectionStatus", () => {
       nextConnectionStatus("disconnected", { type: "transport-connected", everJoined: true }),
     ).toBe("rejoining");
     expect(nextConnectionStatus("rejoining", { type: "room-joined" })).toBe("connected");
-    // A refusal is "offline" in effect: the document stays local.
-    expect(nextConnectionStatus("rejoining", { type: "room-refused" })).toBe("disconnected");
+    // A refusal is not a lost connection: the relay answered, and the reader
+    // needs to know access is the problem, not the network.
+    expect(nextConnectionStatus("rejoining", { type: "room-refused" })).toBe("unauthorized");
+    expect(nextConnectionStatus("connecting", { type: "room-refused" })).toBe("unauthorized");
     // A drop, then the reconnect timer starting does not flap back to Syncing.
     expect(nextConnectionStatus("connected", { type: "transport-lost" })).toBe("disconnected");
     expect(nextConnectionStatus("disconnected", { type: "transport-connecting" })).toBe(
       "disconnected",
     );
+    // A refusal survives the reconnect attempt that follows it, and a claim
+    // that may reopen the room moves it back to "rejoining".
+    expect(nextConnectionStatus("unauthorized", { type: "transport-connecting" })).toBe(
+      "unauthorized",
+    );
+    expect(nextConnectionStatus("unauthorized", { type: "rejoin-requested" })).toBe("rejoining");
     // A rejoin asked for while offline stays "rejoining" across the retry.
     expect(nextConnectionStatus("disconnected", { type: "rejoin-requested" })).toBe("rejoining");
     expect(nextConnectionStatus("rejoining", { type: "transport-connecting" })).toBe("rejoining");
@@ -246,7 +263,7 @@ describe("nextConnectionStatus", () => {
 describe("offline re-join", () => {
   it("rejoins when the connection comes back and the relay receives the offline edit", async () => {
     const h = await harness({ claimed: false });
-    await waitFor(() => h.provider.status === "disconnected", "the refused boot join");
+    await waitFor(() => h.provider.status === "unauthorized", "the refused boot join");
 
     // The user keeps working: this is a local-only edit, the room is not joined.
     appendToTitle(h.doc, OFFLINE_TEXT);
@@ -261,41 +278,45 @@ describe("offline re-join", () => {
     await waitFor(() => h.provider.status === "connected", "the rejoin after the reconnect");
     await waitFor(() => h.serverTitle() === OFFLINE_TEXT, "the relay to persist the offline edit");
 
-    expect(h.statuses).toContain("disconnected");
+    expect(h.statuses).toContain("unauthorized");
     expect(h.statuses.at(-1)).toBe("connected");
     expect(titleOf(h.doc)).toBe(OFFLINE_TEXT);
   });
 
-  it("rejoins after a claim succeeds where the boot claim failed", async () => {
-    const h = await harness({ claimed: false });
-    await waitFor(() => h.provider.status === "disconnected", "the refused boot join");
+  it("rejoins after a credential appears where the boot join had none", async () => {
+    // The boot join presents whatever `auth` resolves to; a refused first join is
+    // how a tab that opened before a session existed looks. Signing in re-mints
+    // and `rejoin()` is the production trigger (`auth/account.ts`).
+    let token: Uint8Array | null = null;
+    const h = await harness({ claimed: false, auth: async () => token });
+    await waitFor(() => h.provider.status === "unauthorized", "the refused boot join");
 
     appendToTitle(h.doc, OFFLINE_TEXT);
 
-    // The retry loop's `claimed` outcome is the production trigger.
+    token = new TextEncoder().encode(TOKEN);
     h.setClaimed(true);
-    expect(rejoinOnClaim("claimed", h.provider)).toBe(true);
+    await h.provider.rejoin();
 
     await waitFor(() => h.serverTitle() === OFFLINE_TEXT, "the relay to receive the edit");
     expect(h.provider.status).toBe("connected");
-    // The claim is what reopened the room, so the slot named the reconnect.
+    // The rejoin is what reopened the room, so the slot named the reconnect.
     expect(h.statuses).toContain("rejoining");
     // The local document was the source of truth: it was pushed, not replaced.
     expect(titleOf(h.doc)).toBe(OFFLINE_TEXT);
     expect(h.serverVersion()).toBe(versionOf(h.doc));
   });
 
-  it("does not rejoin or write when the claim answers 409", async () => {
-    const h = await harness({ claimed: false });
-    await waitFor(() => h.provider.status === "disconnected", "the refused boot join");
+  it("neither joins nor writes while the credential is still absent", async () => {
+    const h = await harness({ claimed: false, auth: async () => null });
+    await waitFor(() => h.provider.status === "unauthorized", "the refused boot join");
 
     appendToTitle(h.doc, OFFLINE_TEXT);
     const statusBefore = h.provider.status;
 
-    // `conflict` is the 409: another key owns the workspace.
-    expect(rejoinOnClaim("conflict", h.provider)).toBe(false);
-    expect(rejoinOnClaim("pending", h.provider)).toBe(false);
-    expect(rejoinOnClaim("offline", h.provider)).toBe(false);
+    // Three rejoins with no credential: each is refused, and none may write.
+    await h.provider.rejoin();
+    await h.provider.rejoin();
+    await h.provider.rejoin();
 
     await delay(250);
     expect(h.provider.status).toBe(statusBefore);
@@ -307,7 +328,7 @@ describe("offline re-join", () => {
   it("merges a relay copy that is newer than the local one, keeping both sides' work", async () => {
     let relayCopy: Uint8Array | null = null;
     const h = await harness({ claimed: false, seed: () => relayCopy });
-    await waitFor(() => h.provider.status === "disconnected", "the refused boot join");
+    await waitFor(() => h.provider.status === "unauthorized", "the refused boot join");
 
     // The local document changes while the room is away.
     appendToTitle(h.doc, OFFLINE_TEXT);
@@ -316,7 +337,7 @@ describe("offline re-join", () => {
     // the two. The rejoin must merge both ways rather than pick a side.
     relayCopy = relayCopyWithServerCard();
     h.setClaimed(true);
-    expect(rejoinOnClaim("claimed", h.provider)).toBe(true);
+    await h.provider.rejoin();
 
     await waitFor(() => h.provider.status === "connected", "the rejoin");
     await waitFor(
@@ -332,7 +353,7 @@ describe("offline re-join", () => {
 
   it("survives a second disconnect during a rejoin without losing or duplicating edits", async () => {
     const h = await harness({ claimed: false });
-    await waitFor(() => h.provider.status === "disconnected", "the refused boot join");
+    await waitFor(() => h.provider.status === "unauthorized", "the refused boot join");
     appendToTitle(h.doc, OFFLINE_TEXT);
 
     // Hold the rejoin's join request inside the server, so the socket can be

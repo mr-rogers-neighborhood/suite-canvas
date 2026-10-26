@@ -59,8 +59,8 @@ describe("MetricsCollector", () => {
     collector.shareCreated();
     collector.publishAttempted();
     collector.publishConflict();
-    collector.claimAttempted("owner");
-    collector.claimAttempted("mismatch");
+    collector.claimAttempted("claimed");
+    collector.claimAttempted("conflict");
     collector.projectionRebuilt();
     collector.projectionFailed();
 
@@ -69,7 +69,7 @@ describe("MetricsCollector", () => {
     expect(counters.shareCreates).toBe(1);
     expect(counters.publishAttempts).toBe(1);
     expect(counters.publishConflicts).toBe(1);
-    expect(counters.claimAttempts).toEqual({ owner: 1, mismatch: 1 });
+    expect(counters.claimAttempts).toEqual({ claimed: 1, owned: 0, conflict: 1 });
     expect(counters.rateLimitRejections).toBe(1);
     expect(counters.projectionRebuilds).toBe(1);
     expect(counters.projectionFailures).toBe(1);
@@ -124,7 +124,7 @@ describe("MetricsCollector", () => {
     }
 
     expect(text).toContain('suite_http_requests_total{class="2xx"} 1');
-    expect(text).toContain('suite_claim_attempts_total{outcome="owner"} 0');
+    expect(text).toContain('suite_claim_attempts_total{outcome="claimed"} 0');
     expect(text).toContain('suite_build_info{version="1.4.0"} 1');
     expect(text).toContain("suite_rss_bytes 1024");
     expect(text).toContain("suite_uptime_seconds 12.5");
@@ -174,7 +174,7 @@ describe("MetricsCollector", () => {
     collector.shareCreated();
     collector.publishAttempted();
     collector.publishConflict();
-    collector.claimAttempted("mismatch");
+    collector.claimAttempted("conflict");
     collector.rateLimitRejected();
     collector.projectionRebuilt();
     collector.projectionFailed();

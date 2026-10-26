@@ -10,7 +10,11 @@ import { hashWorkspaceId, scrubEvent } from "./scrub";
 export interface CrashOptions {
   workspaceId: string | null;
   route: string;
-  ownerKey?: string | null;
+  /**
+   * The live session credential, so the scrubber can prove it is absent. Never
+   * attached: it is only compared against the allowlisted payload.
+   */
+  credential?: string | null;
   mode?: string;
   version?: string;
 }
@@ -48,7 +52,7 @@ export async function startCrashReporting(options: CrashOptions): Promise<boolea
         mode: options.mode ?? "production",
         route: options.route,
         workspaceHash,
-        ownerKey: options.ownerKey ?? null,
+        credential: options.credential ?? null,
       }) as never,
   });
   started = true;

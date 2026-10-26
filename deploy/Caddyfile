@@ -1,10 +1,26 @@
-# Serves the built canvas from /srv and proxies the collab API and socket on
-# the same origin. Set SUITE_DOMAIN to the public hostname (e.g. via .env);
-# Caddy obtains a certificate for it automatically. A real domain needs ports
-# 80/443 reachable and a DNS A/AAAA record. `localhost` uses Caddy's local CA.
+# The reverse proxy and static host for every origin this project serves.
+#
+# Four sites, and only one of them is required:
+#
+# 1. `{$SUITE_DOMAIN:localhost}` — the single-host site. Self-hosting with one
+#    domain, and local development: `localhost` uses Caddy's internal CA, so
+#    `docker compose up` needs no DNS record and no certificate authority.
+# 2. `{$SUITE_APP_HOST:app.suite.run}` — the hosted app: the canvas from /srv,
+#    the relay's API and socket, and the control plane's accounts and billing.
+# 3. `{$SUITE_DOCS_HOST:docs.suite.run}` — the documentation site, a static
+#    root that is empty today; a missing root answers 404 instead of stopping
+#    Caddy, so this block can ship before the site does.
+# 4. `{$SUITE_MARKETING_HOST:suite.run}` — the marketing site, same shape.
+#
+# Every host, root and upstream is an environment variable with a default, so a
+# deployment changes hostnames without editing this file. A local stack that
+# does not own the production domains should point 2-4 at `*.localhost`
+# (`compose.yaml` does) — Caddy keeps serving the sites it can, and only logs
+# the certificate failures for the ones it cannot.
 #
 # One host, one instance, one `app` replica: rooms, presence and rate limits
-# live in that process and the databases are local files. See docs/how-to/deploy.md.
+# live in that process and the documents are local files. See
+# docs/how-to/deploy.md.
 {
 	# Uncomment to register the ACME account with an email from the environment.
 	# email {$SUITE_ACME_EMAIL}
@@ -13,32 +29,43 @@
 	}
 }
 
-{$SUITE_DOMAIN:localhost} {
-	encode zstd gzip
-
+# One definition of the headers every site sends. A site adds its own
+# Content-Security-Policy, because `connect-src` names the origin whose
+# WebSocket the page may open and that origin differs per site.
+#
+# Every CSP below allows `img-src ... https:` because an image can be a link the
+# document carries instead of bytes the relay stores. The viewer's browser then
+# fetches a third party's image, with `referrerpolicy="no-referrer"` on every
+# such node; that relaxation is the cost of link images.
+(suite_security_headers) {
 	header {
 		Referrer-Policy "no-referrer"
 		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Strict-Transport-Security "max-age=31536000"
-		# img-src allows https: because an image can be a link the document
-		# carries instead of bytes the relay stores. That relaxation is the
-		# cost of link images: the viewer's browser fetches a third party's
-		# image, with `referrerpolicy="no-referrer"` on every such node.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
 		-Server
 	}
+}
 
-	# Caching, in one place. Vite content-hashes the bundles under /assets/*, so
-	# those never change and may be cached for a year. Everything else is JSON
-	# on /api/*, a token-gated scrape, a WebSocket upgrade, one of the two HTML
-	# entry points, or the SPA fallback -- all of it must be revalidated, so a
-	# deploy or a revoked link is visible on the next request.
+# Caching for the canvas, in one place. Vite content-hashes the bundles under
+# /assets/*, so those never change and may be cached for a year. Everything
+# else is JSON on /api/*, a token-gated scrape, a WebSocket upgrade, one of the
+# two HTML entry points, or the SPA fallback -- all of it must be revalidated,
+# so a deploy or a revoked link is visible on the next request.
+(suite_caching) {
 	@hashed path /assets/*
 	@uncached not path /assets/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
 	header @uncached Cache-Control "no-store"
+}
+
+# Local development and single-host self-hosting: `SUITE_DOMAIN` or `localhost`.
+{$SUITE_DOMAIN:localhost} {
+	encode zstd gzip
+	import suite_security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN:localhost}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+	import suite_caching
 
 	# Loro sync. No special directive is needed: reverse_proxy forwards the
 	# Upgrade/Connection handshake and switches to a raw tunnel on 101 by
@@ -91,6 +118,97 @@
 	handle {
 		root * /srv
 		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The hosted app: the same surface as above, plus the control plane. Accounts
+# (`/api/auth/*`), billing (`/api/billing/*`) and the Stripe webhook
+# (`/stripe/*`) are answered by the second process, which owns Postgres; every
+# other path stays on the relay. The specific matchers are declared first and
+# are also the longer paths, so either ordering rule Caddy applies picks them.
+{$SUITE_APP_HOST:app.suite.run} {
+	encode zstd gzip
+	import suite_security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_APP_HOST:app.suite.run}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+	import suite_caching
+
+	handle /api/auth/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	handle /api/billing/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	# Stripe posts here. The signature is verified by the service, not here.
+	handle /stripe/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	handle /ws* {
+		reverse_proxy app:1234
+	}
+
+	handle /api/* {
+		reverse_proxy app:1235
+	}
+
+	handle /health {
+		reverse_proxy app:1235
+	}
+
+	handle /metrics {
+		reverse_proxy app:1235
+	}
+
+	handle /assets/* {
+		root * /srv
+		file_server
+	}
+
+	handle /admin* {
+		rewrite * /admin.html
+		root * /srv
+		file_server
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The documentation site. `SUITE_DOCS_ROOT` names a directory that does not
+# exist yet; a request for anything under a missing root is a 404, not a Caddy
+# startup failure, which is what lets this route ship before the site does.
+#
+# Two relaxations the other hosts do not need. Starlight emits inline
+# `<script type="module">` for the theme toggle, the sidebar and the search
+# index, so `script-src` needs `'unsafe-inline'`; there is no user content on
+# this origin, which is what makes that acceptable here and nowhere else.
+# `connect-src` stays `'self'` because Pagefind fetches its index from this
+# origin, so the docs host may not call the API.
+{$SUITE_DOCS_HOST:docs.suite.run} {
+	encode zstd gzip
+	import suite_security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+
+	handle {
+		root * {$SUITE_DOCS_ROOT:/srv/docs}
+		file_server
+	}
+}
+
+# The marketing site, with the same missing-root behaviour and no API of its own.
+{$SUITE_MARKETING_HOST:suite.run} {
+	encode zstd gzip
+	import suite_security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+
+	handle {
+		root * {$SUITE_MARKETING_ROOT:/srv/marketing}
 		file_server
 	}
 }

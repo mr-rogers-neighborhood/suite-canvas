@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authClientBase, authServiceBase, claimWorkspaceUrl } from "./endpoints";
+import { authClientBase, authServiceBase } from "./endpoints";
 
 const PAGE = { origin: "https://suite.example.com" };
 
@@ -13,13 +13,11 @@ describe("auth service base", () => {
     // never enters the picture and there is no host to guess.
     expect(authServiceBase(PAGE)).toBe("https://suite.example.com");
     expect(authClientBase(PAGE)).toBe("https://suite.example.com/api/auth");
-    expect(claimWorkspaceUrl(PAGE)).toBe("https://suite.example.com/api/workspaces/claim");
   });
 
   it("follows a self-hosted control plane, trimming trailing slashes", () => {
     vi.stubEnv("VITE_SUITE_AUTH_URL", "https://accounts.example/");
     expect(authClientBase(PAGE)).toBe("https://accounts.example/api/auth");
-    expect(claimWorkspaceUrl(PAGE)).toBe("https://accounts.example/api/workspaces/claim");
   });
 
   it("ignores a blank configured URL rather than producing a hostless one", () => {

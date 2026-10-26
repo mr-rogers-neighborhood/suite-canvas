@@ -11,5 +11,27 @@ export {
   capabilitiesForRole,
   type WorkspaceCapabilities,
 } from "./capabilities.js";
-export { MFA_COPY, type MfaAdvice, mfaAdvice, type SignInMethod } from "./mfa.js";
+export {
+  MFA_ALLOWED_PATHS,
+  MFA_COPY,
+  MFA_ENROLL_PATH,
+  MFA_ENROLLMENT_CODE,
+  type MfaAdvice,
+  type MfaEnrollment,
+  type MfaRefusal,
+  mfaAdvice,
+  mfaEnrollment,
+  mfaExemptPath,
+  mfaGate,
+  rolesOf,
+  type SignInMethod,
+  secondFactorRequired,
+} from "./mfa.js";
 export { principalPrecedence, resolvePrincipal } from "./principal.js";
+export {
+  RELAY_TOKEN_TTL,
+  RELAY_TOKEN_TTL_SECONDS,
+  type RelayClaimInput,
+  type RelayClaims,
+  relayClaims,
+} from "./relayToken.js";

@@ -84,6 +84,7 @@ const meta = {
     onToggle: () => {},
     onSelect: () => {},
     onContextMenu: () => {},
+    canCreate: true,
   },
   decorators: [
     (Story) => (
@@ -101,3 +102,5 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 
 export const Collapsed: Story = { args: { open: false } };
+
+export const Empty: Story = { args: { sections: [], membership: new Map(), peers: [] } };

@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
+import { parseLicencePublicKey } from "@suite/licence";
 import { type LogLevel, logLevels } from "../logging.js";
-import { parseLicencePublicKey } from "../store/licence.js";
 import { LIMIT_ENV, LIMIT_KEYS, type Limits, limitsProblem, resolveLimits } from "./limits.js";
 
 /**
@@ -46,8 +46,20 @@ export interface ServerConfig {
     attachments: string | null;
   };
   /** Configured credentials; `null` means the feature is off or generated. */
-  tokens: { admin: string | null; projection: string | null; source: string | null };
+  tokens: {
+    admin: string | null;
+    /** Read-only operator token: `/metrics` and the inventories, never a mutation. */
+    adminRead: string | null;
+    projection: string | null;
+    source: string | null;
+  };
   licencePublicKey: string | null;
+  /**
+   * The control plane's origin (`SUITE_AUTH_URL`). Null means no session token
+   * can be verified here, so no account reaches a room; the relay still serves
+   * anonymous and share-link use.
+   */
+  authUrl: string | null;
   allowedOrigins: readonly string[];
   trustProxy: boolean;
   logLevel: LogLevel;
@@ -415,6 +427,35 @@ function urlProblem(env: ConfigEnv): ConfigProblem | null {
 }
 
 /**
+ * The control plane's origin. It is both the `iss`/`aud` the session JWT carries
+ * and the base of the JWKS URL, so a typo has to be a startup error: otherwise
+ * every join is refused with no clue which side is wrong.
+ */
+function authUrlValue(env: ConfigEnv): {
+  value: string | null;
+  problem: ConfigProblem | null;
+} {
+  const raw = text(env, "SUITE_AUTH_URL");
+  if (raw === null || raw.length === 0) return { value: null, problem: null };
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return { value: parsed.origin, problem: null };
+    }
+  } catch {
+    // Reported below.
+  }
+  return {
+    value: null,
+    problem: {
+      variable: "SUITE_AUTH_URL",
+      message:
+        "SUITE_AUTH_URL must be an http or https origin such as https://accounts.example.com.",
+    },
+  };
+}
+
+/**
  * A hosted relay signs licences, so it cannot validate them without a key. The
  * check parses the value exactly as `licence.ts` will, so a typo is a startup
  * error rather than a claim refused later with "no public key".
@@ -538,10 +579,11 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
   if (requireDurable.value) problems.push(...durableStoreProblems(env, readPaths));
 
   const admin = token(env, "SUITE_ADMIN_TOKEN");
+  const adminRead = token(env, "SUITE_ADMIN_READ_TOKEN");
   const projection = token(env, "SUITE_PROJECTION_TOKEN");
   const source = token(env, "SUITE_SOURCE_TOKEN");
   const legacyInternal = token(env, "SUITE_INTERNAL_TOKEN");
-  for (const read of [admin, projection, source, legacyInternal]) fail(read.problem);
+  for (const read of [admin, adminRead, projection, source, legacyInternal]) fail(read.problem);
 
   const hosted = switchValue(env, "SUITE_HOSTED");
   fail(hosted.problem);
@@ -552,6 +594,8 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
   const licence = licenceKey(env, hosted.value);
   fail(licence.problem);
   fail(urlProblem(env));
+  const auth = authUrlValue(env);
+  fail(auth.problem);
 
   const origins = allowedOrigins(env);
   problems.push(...origins.problems);
@@ -599,10 +643,12 @@ export function validateConfig(env: ConfigEnv = process.env): ConfigResult {
       },
       tokens: {
         admin: admin.value,
+        adminRead: adminRead.value,
         projection: projection.value ?? legacyInternal.value,
         source: source.value,
       },
       licencePublicKey: licence.value,
+      authUrl: auth.value,
       allowedOrigins: origins.value,
       trustProxy: trustProxy.value,
       logLevel: level.value,

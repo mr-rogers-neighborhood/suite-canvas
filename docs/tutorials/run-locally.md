@@ -25,8 +25,9 @@ URL in your browser.
 
 ## 3. Create a workspace
 
-The app opens on the workspace launcher. Choose **New workspace**. The launcher writes an owner key for
-the new workspace in this browser and opens it.
+The app opens on the workspace launcher. Choose **New workspace**. The workspace is written in this
+browser and opens straight away, with no account and no credential to keep: you can sign in later and
+the workspace comes with you.
 
 A new workspace starts blank: one board, no cards. Workspaces created before the blank default keep the
 two starter cards they were seeded with.

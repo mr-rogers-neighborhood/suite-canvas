@@ -1,0 +1,181 @@
+/**
+ * Chrome the board adds to itself: the nudge hint, the alignment guides, the
+ * camera readout and the bulk style bar.
+ *
+ * Every surface here floats over the canvas without taking pointer events,
+ * except its own controls, so a press still reaches React Flow.
+ */
+
+.board-hint {
+  position: absolute;
+  z-index: 15;
+  bottom: 84px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: var(--card-shadow);
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 18px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(12px);
+}
+
+.board-hint--lifted {
+  bottom: 132px;
+}
+
+.board-hint kbd {
+  min-width: 16px;
+  padding: 0 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+}
+
+/* Alignment guides, drawn in flow units inside a viewport portal. */
+.board-snap-guide {
+  position: absolute;
+  z-index: 12;
+  background: var(--accent);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.board-snap-guide--x {
+  width: 1px;
+}
+
+.board-snap-guide--y {
+  height: 1px;
+}
+
+/* Camera controls: their own stack, because the built-in pill is a row of
+   uniform 26px cells and a percentage does not fit one (ADR-0071). */
+.board-camera-controls {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  width: 42px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+}
+
+.board-camera-controls .react-flow__controls-button {
+  width: 100%;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+}
+
+.board-camera-controls .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.board-camera-controls .react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.board-zoom-readout {
+  height: 22px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulk-style-bar {
+  position: absolute;
+  z-index: 16;
+  bottom: 84px;
+  left: 50%;
+  display: flex;
+  max-width: min(620px, calc(100vw - 32px));
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--card-shadow);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px) saturate(1.1);
+}
+
+.bulk-style-bar__label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bulk-style-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bulk-style-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.bulk-style-chip:hover,
+.bulk-style-chip:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.bulk-style-chip[data-checked="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.bulk-style-chip[data-mixed="true"] {
+  border-style: dashed;
+}
+
+.bulk-style-chip:disabled {
+  opacity: 0.5;
+}
+
+.bulk-style-bar__select {
+  padding: 2px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.board-outline__empty {
+  padding: 10px 10px 12px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.board-outline__empty p {
+  margin: 0;
+}

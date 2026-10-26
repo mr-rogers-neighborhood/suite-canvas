@@ -1,0 +1,164 @@
+---
+import "../styles/site.css";
+
+/** What the product does, in the same terms the reference pages use. */
+const capabilities = [
+  {
+    title: "One document per workspace",
+    body: "The workspace is a Loro CRDT. Edits merge without a server in the loop, and a relay syncs peers when one is reachable.",
+  },
+  {
+    title: "Typed cards on a canvas",
+    body: "Cards, boards, sections, types, tags and edges live in one object graph, and Zod validates every write before it reaches the document.",
+  },
+  {
+    title: "Every card is an editor",
+    body: "Text, checklists, fields and templates are edited in place with Tiptap, so a card holds the work and not a link to it.",
+  },
+  {
+    title: "Sharing without an account",
+    body: "A share link serves a read-only projection of a board or a card. A link with edit rights works on a draft and publishes the diff back.",
+  },
+];
+
+/**
+ * The hosted plans, from the tier table the licence is minted from
+ * (`services/billing/src/stripe/tiers.ts`, published in
+ * `docs/reference/billing.md`). A licence carries these three caps; nothing on
+ * this page is a price.
+ */
+const plans = [
+  { name: "Solo", workspaces: "3", documentBytes: "256 MiB", attachmentBytes: "1 GiB" },
+  { name: "Studio", workspaces: "25", documentBytes: "2 GiB", attachmentBytes: "8 GiB" },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Suite: a local-first canvas for connected notes</title>
+    <meta
+      name="description"
+      content="Suite is a local-first canvas. A workspace is one Loro document of typed cards, edited offline in the browser and synced by a relay when one is reachable."
+    />
+    <link rel="canonical" href="https://suite.run/" />
+    <meta property="og:title" content="Suite" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://suite.run/" />
+    <meta
+      property="og:description"
+      content="A local-first canvas of typed cards, edited offline and synced when a relay is reachable."
+    />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href="/">
+        <span class="wordmark-mark" aria-hidden="true"></span>
+        Suite
+      </a>
+      <nav class="site-nav" aria-label="Suite">
+        <a href="https://docs.suite.run">Docs</a>
+        <a href="https://app.suite.run">Open the app</a>
+        <a href="https://github.com/mr-rogers-neighborhood/suite-canvas">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Beta</p>
+        <h1>A canvas that keeps the connections you drew.</h1>
+        <p class="hero-lede">
+          A workspace is one document of typed cards. Write in it, place it on a board, link it to
+          another card, and everything you did not write yourself is recomputed on read.
+        </p>
+        <div class="actions">
+          <a class="button button-primary" href="https://app.suite.run">Open Suite</a>
+          <a class="button" href="https://docs.suite.run">Read the docs</a>
+        </div>
+        <p class="hero-note">
+          No account for local use. The app runs in the browser, saves to IndexedDB, and needs a relay
+          only to sync with someone else.
+        </p>
+      </section>
+
+      <section class="capabilities" aria-labelledby="what-it-does">
+        <h2 id="what-it-does">What it does</h2>
+        <div class="capability-grid">
+          {
+            capabilities.map((capability) => (
+              <article class="capability">
+                <h3>{capability.title}</h3>
+                <p>{capability.body}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="offline" aria-labelledby="offline">
+        <h2 id="offline">Offline is the default, not a mode</h2>
+        <p>
+          Edits go to the open tab first and reach the network afterwards. A workspace opens from the
+          local snapshot, so a dropped connection pauses sync and nothing else. Reloading while
+          offline needs the network, because the app ships no service worker, and that limit is stated
+          in the interface rather than discovered.
+        </p>
+      </section>
+
+      <section class="pricing" aria-labelledby="pricing">
+        <h2 id="pricing">Pricing</h2>
+        <p class="pricing-lede">
+          Two hosted plans are configured. Each licence carries a workspace count and two storage caps,
+          and the relay enforces the tighter of the licence and the instance.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Plan</th>
+              <th scope="col">Workspaces</th>
+              <th scope="col">Document bytes per workspace</th>
+              <th scope="col">Attachment bytes per workspace</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              plans.map((plan) => (
+                <tr>
+                  <th scope="row">{plan.name}</th>
+                  <td>{plan.workspaces}</td>
+                  <td>{plan.documentBytes}</td>
+                  <td>{plan.attachmentBytes}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+        <p class="pricing-note">
+          Hosted subscriptions are not on sale yet. Self-hosting needs no licence: the same quotas are
+          environment variables, and unset means unlimited.
+        </p>
+      </section>
+
+      <section class="selfhost" aria-labelledby="self-host">
+        <h2 id="self-host">Self-host it</h2>
+        <p>
+          One Compose file brings up the static app, the relay that syncs workspaces, and Caddy in front
+          of them. The relay keeps its documents in SQLite on a named volume, so a backup is that volume
+          and nothing else.
+        </p>
+        <a class="text-link" href="https://docs.suite.run/how-to/deploy/">Deployment guide</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Suite is a local-first canvas, MIT licensed.</p>
+      <nav aria-label="Elsewhere">
+        <a href="https://app.suite.run">app.suite.run</a>
+        <a href="https://docs.suite.run">docs.suite.run</a>
+        <a href="https://github.com/mr-rogers-neighborhood/suite-canvas">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

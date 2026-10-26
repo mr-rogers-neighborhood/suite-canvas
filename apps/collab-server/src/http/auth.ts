@@ -1,25 +1,32 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Permission } from "loro-protocol";
 import { SHARE_ROOM_PREFIX, type ShareStore } from "../store/shares.js";
-import type { WorkspaceRegistry } from "../store/workspaces.js";
 import type { ConnectionPrincipal, RelaySeatGate } from "../sync/seatGate.js";
+import { claimWorkspaceForSession, type WorkspaceClaimDeps } from "./access.js";
+import type { SessionVerifier } from "./sessionToken.js";
 
 export interface AuthorizeDeps {
   shares: Pick<ShareStore, "resolve" | "resolveSession" | "hasEditorShare">;
   /**
-   * Owner key registry. Joins verify only: claiming is an explicit HTTP call
-   * before the app boots, so an unknown credential cannot create registry rows.
+   * The session verifier (ADR-0074). Absent only on a deployment with no control
+   * plane to verify against — and absent means a session join is refused, never
+   * downgraded to another credential.
    */
-  workspaces: Pick<WorkspaceRegistry, "verify">;
+  sessions?: SessionVerifier;
+  /**
+   * Where a verified session's organization is recorded for the workspace it
+   * opens. The join is one of two places the relay learns which organization owns
+   * a workspace, because it holds no control-plane database (ADR-0073).
+   */
+  workspaces?: WorkspaceClaimDeps;
   /** Worker token that may write projection rooms only. */
   projectionToken: string;
   /** Worker token that may write a workspace room only when an editor share exists. */
   sourceToken: string;
   /**
-   * The hosted licence seat gate. Absent on a self-host — and absent means
-   * "nothing to enforce", which is the same posture as `licence.ts` being inert
-   * without `SUITE_HOSTED=1`. See `seatGate.ts` for what this process can and
-   * cannot answer.
+   * The hosted seat gate. Absent on a self-host — and absent means "nothing to
+   * enforce", which is the same posture as `licence.ts` being inert without
+   * `SUITE_HOSTED=1`. See `seatGate.ts` for what this process can answer.
    */
   seats?: RelaySeatGate;
 }
@@ -80,8 +87,10 @@ function baseRoomOf(roomId: string): string {
  *   The browser presents it instead of the link token, so the permanent
  *   capability never leaves the boot request. Both credentials resolve to the
  *   same `Share`, so a session can never reach a room its share cannot.
- * - An owner key verifies against the workspace it owns and that workspace's
- *   derived rooms. An unknown key never claims a room implicitly.
+ * - A session JWT opens a workspace room and its ephemeral siblings when the
+ *   organization it names is the one the relay recorded for that workspace. A
+ *   token that fails verification is refused; it is never retried as a share
+ *   token or as an anonymous join.
  * - Empty auth is a mismatched credential: a room id alone is not a secret.
  */
 export async function authorize(
@@ -95,7 +104,7 @@ export async function authorize(
   /**
    * The credential check decides *what* this connection may do; the seat gate
    * decides *whether it may do it at all* today. They are kept separate so a
-   * lapsed licence cannot quietly widen a permission, and so the gate is
+   * lapsed entitlement cannot quietly widen a permission, and so the gate is
    * skipped entirely for the internal worker tokens, which are not seats.
    */
   const gated = (
@@ -136,16 +145,30 @@ export async function authorize(
   }
 
   const baseRoom = baseRoomOf(roomId);
-  // Projection rooms belong to a share, not to an owner key: claiming one would
-  // let any key write into a workspace it does not own.
+  // Projection rooms belong to a share, never to a session: opening one with an
+  // account would let any session write a projection it holds no link for.
   if (baseRoom.startsWith(SHARE_ROOM_PREFIX)) return null;
 
-  try {
-    return deps.workspaces.verify(baseRoom, token)
-      ? gated("write", { kind: "owner", workspaceId: baseRoom })
-      : null;
-  } catch {
-    // The registry rejects malformed ids and keys; a rejected join is not a match.
-    return null;
-  }
+  if (deps.sessions === undefined || deps.workspaces === undefined) return null;
+
+  // Verification failure is a refusal. There is no fallback credential here and
+  // no "anonymous" answer, so a forged or expired token reaches no room.
+  const verified = await deps.sessions.verify(token);
+  if (!verified.ok) return null;
+
+  const claims = verified.claims;
+  if (claims.organizationId === null) return null;
+
+  const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);
+  if (outcome === "conflict" || outcome === "organization-required") return null;
+
+  return gated("write", {
+    kind: "account",
+    workspaceId: baseRoom,
+    organizationId: claims.organizationId,
+    userId: claims.userId,
+    role: claims.role,
+    tier: claims.tier,
+    limits: claims.limits,
+  });
 }

@@ -3,13 +3,7 @@ import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { crashReportingWanted } from "./crash/consent";
 import { startCrashReporting } from "./crash/report";
-import {
-  type BootPlan,
-  bootPlan,
-  hasShareLink,
-  suiteMode,
-  workspaceIdFromUrl,
-} from "./session/mode";
+import { type BootPlan, bootPlan, hasShareLink, suiteMode } from "./session/mode";
 import {
   configureSession,
   getSession,
@@ -52,9 +46,19 @@ if (!container) {
 const root = createRoot(container);
 
 /**
- * Every page the entry point renders is behind the boundary: a share link, a
- * protected workspace and the local-only notice can throw too, and a blank page
- * is exactly what gate A6 exists to remove.
+ * The live token, for the crash scrubber's absence check only. Resolved lazily so
+ * a build with no consent, and a standalone build, never mints one.
+ */
+async function currentRelayCredential(): Promise<string | null> {
+  if (getSession().credential !== "account") return null;
+  const { cachedCredential } = await import("./auth/credential");
+  return cachedCredential();
+}
+
+/**
+ * Every page the entry point renders is behind the boundary: a share link and
+ * the local-only notice can throw too, and a blank page is exactly what gate A6
+ * exists to remove.
  */
 function render(element: ReactNode) {
   root.render(
@@ -101,57 +105,30 @@ function LocalOnlyNotice() {
 }
 
 /**
- * The relay boot: trade a share token for a session, or claim this browser as a
- * workspace owner. Returns false when a stand-in page was rendered instead of
- * the app.
+ * The relay boot: trade a share token for a session. Returns false when a
+ * stand-in page was rendered instead of the app.
  *
- * The relay modules are imported on demand, so a standalone build never loads
- * them — see the build-time check in `boot`.
+ * A normal workspace needs nothing here. The relay credential is a session JWT
+ * minted from the Better Auth cookie on the first room join, so there is no
+ * owner key to create, claim, rotate or keep in the URL (ADR-0076).
+ *
+ * The share client is imported on demand, so a standalone build never loads it —
+ * see the build-time check in `boot`.
  */
 async function bootRelay(plan: BootPlan): Promise<boolean> {
-  if (plan.resolveShare) {
-    const token = resolveShareToken();
-    if (token === null) return true;
-    // `shares` carries the `/api/shares` client, so it is loaded only here.
-    const { closeShareSession, resolveShare, shareErrorMessage } = await import("./session/shares");
-    try {
-      configureSession(sessionForShare(token, await resolveShare(token)));
-    } catch (error) {
-      // A dead cookie (revoked, expired) must not be retried on the next boot.
-      await closeShareSession();
-      render(<ShareUnavailable message={shareErrorMessage(error)} />);
-      return false;
-    }
-    return true;
-  }
-
-  if (!plan.claimOwner) return true;
-  const workspaceId = workspaceIdFromUrl(window.location.href);
-  if (workspaceId === null) return true;
-
-  const { prepareOwnerSession, rejoinOnClaim, withOwnerFragment } = await import(
-    "./session/ownerKey"
-  );
-  const { ownerKey, claim } = await prepareOwnerSession(workspaceId, {
-    // A claim that settles while the page is open is the only event that makes
-    // a room refused at boot joinable. `bootRelay` runs before the store module
-    // exists, so the store is resolved on demand; only `claimed` rejoins — a
-    // 409 must not write, and a retryable outcome leaves it to the next attempt.
-    onOutcome: (outcome) => {
-      void (async () => {
-        const { useCanvasStore } = await import("./store/useCanvasStore");
-        rejoinOnClaim(outcome, useCanvasStore.getState().provider);
-      })();
-    },
-  });
-  if (claim === "conflict") {
-    const { WorkspaceProtected } = await import("./sharing/WorkspaceProtected");
-    render(<WorkspaceProtected workspaceId={workspaceId} />);
+  if (!plan.resolveShare) return true;
+  const token = resolveShareToken();
+  if (token === null) return true;
+  // `shares` carries the `/api/shares` client, so it is loaded only here.
+  const { closeShareSession, resolveShare, shareErrorMessage } = await import("./session/shares");
+  try {
+    configureSession(sessionForShare(token, await resolveShare(token)));
+  } catch (error) {
+    // A dead cookie (revoked, expired) must not be retried on the next boot.
+    await closeShareSession();
+    render(<ShareUnavailable message={shareErrorMessage(error)} />);
     return false;
   }
-  configureSession({ ...getSession(), ownerKey });
-  // Keep the key in the fragment so this link stays the recovery path.
-  window.history.replaceState(null, "", withOwnerFragment(window.location.href, ownerKey));
   return true;
 }
 
@@ -177,9 +154,9 @@ async function boot() {
   // This literal, rather than `isStandalone()`, keeps the relay out of a
   // standalone bundle: Vite inlines `import.meta.env.VITE_SUITE_MODE` as a
   // string, so the standalone build folds this to `if (false)` and drops
-  // `bootRelay` with it — no claim call, no share client, no relay URL compiled
-  // in. A function call would be opaque to the bundler; this is the same
-  // comparison `isStandalone()` makes.
+  // `bootRelay` with it — no share client, no account client, no relay URL
+  // compiled in. A function call would be opaque to the bundler; this is the
+  // same comparison `isStandalone()` makes.
   if (import.meta.env.VITE_SUITE_MODE !== "standalone") {
     if (!(await bootRelay(plan))) return;
   } else if (!bootLocal()) {
@@ -196,7 +173,7 @@ async function boot() {
     void startCrashReporting({
       workspaceId: getSession().workspaceId,
       route: safeRoute(window.location.href),
-      ownerKey: getSession().ownerKey,
+      credential: await currentRelayCredential(),
       mode: import.meta.env.MODE,
       version: import.meta.env.VITE_SUITE_VERSION ?? "dev",
     });

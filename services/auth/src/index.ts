@@ -31,18 +31,36 @@ export {
   authErrorCodes,
   createAuthEntry,
   createAuthHandler,
+  createMigratedAuthEntry,
+  createPostgresAuthEntry,
   googleConfigured,
   isAuthError,
+  type PostgresAuthEntryDeps,
 } from "./http/index.js";
 export {
   capabilitiesForPrincipal,
   capabilitiesForRole,
+  MFA_ALLOWED_PATHS,
   MFA_COPY,
+  MFA_ENROLL_PATH,
+  MFA_ENROLLMENT_CODE,
   type MfaAdvice,
+  type MfaEnrollment,
+  type MfaRefusal,
   mfaAdvice,
+  mfaEnrollment,
+  mfaExemptPath,
+  mfaGate,
   principalPrecedence,
+  RELAY_TOKEN_TTL,
+  RELAY_TOKEN_TTL_SECONDS,
+  type RelayClaimInput,
+  type RelayClaims,
+  relayClaims,
   resolvePrincipal,
+  rolesOf,
   type SignInMethod,
+  secondFactorRequired,
   type WorkspaceCapabilities,
 } from "./identity/index.js";
 export {
@@ -63,7 +81,25 @@ export {
   type RedemptionRefusal,
   redemptionResult,
 } from "./invitations/index.js";
-export { type LicenceStore, licenceStateFor, type MembershipReader } from "./licensing/index.js";
+export {
+  type Entitlement,
+  type EntitlementReader,
+  FREE_TIER,
+  freeEntitlement,
+  type LicenceStore,
+  licenceStateFor,
+  type MembershipReader,
+  noEntitlements,
+} from "./licensing/index.js";
+export {
+  type ConsoleTransportOptions,
+  consoleTransport,
+  type MailLink,
+  type MailMessage,
+  type MailSenders,
+  type MailTransport,
+  mailSenders,
+} from "./mail/index.js";
 export {
   type AdoptionInput,
   type AdoptionOutcome,
@@ -81,14 +117,25 @@ export {
   validateWorkspaceIdentity,
 } from "./organizations/index.js";
 export {
+  checksumOf,
   databaseUrlProblem,
+  kyselyDatabase,
+  MIGRATIONS_DIRECTORY,
+  MigrationChecksumError,
   memoryControlPlane,
+  migrate,
+  migrateAtBoot,
+  migrationStatus,
+  migrationsEnabled,
+  planMigrations,
+  poolQueryable,
   postgresDatabase,
   postgresLicences,
   postgresMemberships,
   postgresRepositories,
   postgresWorkspaces,
   type Queryable,
+  type QueryConnection,
 } from "./store/index.js";
 export type {
   AccountSession,

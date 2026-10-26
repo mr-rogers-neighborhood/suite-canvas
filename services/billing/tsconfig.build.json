@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // The sources import siblings with the `.ts` extension so `node --test` can run them
+    // with type stripping. Emitted JavaScript and declarations name the `.js` file.
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+}

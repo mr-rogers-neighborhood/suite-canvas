@@ -3,7 +3,7 @@ import { EphemeralStore, LoroDoc } from "loro-crdt";
 import { CursorEphemeralStore } from "loro-prosemirror";
 import { create } from "zustand";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
-import { type LoroConnectionStatus, LoroProvider } from "../collab/loroProvider";
+import { type LoroConnectionStatus, LoroProvider, type ProviderAuth } from "../collab/loroProvider";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { collabWsUrl } from "../session/endpoints";
@@ -47,13 +47,20 @@ const persistence =
 markBoot("store:created");
 
 /**
- * A share token is the only credential a share room accepts; a normal editor
- * session uses its owner key. Both are sent to the document and ephemeral rooms.
+ * A share token is the only credential a share room accepts, and it is constant.
+ * A normal editor session presents the account's session JWT (ADR-0074), which
+ * lives five minutes — so the provider is handed a mint rather than the token,
+ * and asks for a fresh one at every room join.
  */
-const auth = SESSION.share
+const auth: ProviderAuth | undefined = SESSION.share
   ? new TextEncoder().encode(SESSION.share.token)
-  : SESSION.ownerKey
-    ? new TextEncoder().encode(SESSION.ownerKey)
+  : SESSION.credential === "account" && import.meta.env.VITE_SUITE_MODE !== "standalone"
+    ? async () => {
+        // On demand, so the token client is not in the boot chunk of a build
+        // that never joins a room. The literal lets a standalone bundle drop it.
+        const { relayCredentialBytes } = await import("../auth/credential");
+        return relayCredentialBytes();
+      }
     : undefined;
 
 /** How long to wait for the first server sync before treating the doc as local. */

@@ -227,19 +227,27 @@ or it re-issues certificates until Let's Encrypt's five-per-week limit stops you
 
 ## Docs site
 
-The reader-facing docs are a separate Next app in `apps/docs`, built from `docs/`. It needs no
-database, no volume and no relay.
+The reader-facing docs are a static Astro site in `apps/docs`, built from `docs/`. It needs no
+database, no volume and no relay: the image is the built tree at `/srv/docs`, which is the default of
+`SUITE_DOCS_ROOT` in `deploy/Caddyfile` and the root the `docs.suite.run` site block serves.
 
 ```sh
 docker compose --profile docs up -d --build docs
-curl -fsS http://127.0.0.1:3001/docs > /dev/null
+curl -fsS http://127.0.0.1:3001/ > /dev/null
 curl -fsS http://127.0.0.1:3001/llms.txt > /dev/null
 ```
 
-The image reads the Markdown at build time, so a docs edit needs a rebuild. The container runs as
-`nextjs` (uid 1001) on port 3001. It is not routed through Caddy: put it behind whatever proxy serves
-`docs.example.com`, or keep it private on the host. The same build runs locally with
-`pnpm docs:site:build` and `pnpm docs:site:start`.
+The image reads the Markdown at build time, so a docs edit needs a rebuild. The container serves that
+tree with Caddy's file server on port 3001. The same build runs locally with `pnpm docs:site:build` and
+`pnpm docs:site:start`.
+
+The marketing page is the same shape in `apps/site`: `/srv/marketing`, `SUITE_MARKETING_ROOT`, and
+`pnpm site:build`.
+
+Starlight ships inline scripts for the theme, the search dialog and the sidebar, and the dashboard adds
+one for its tabs and filter. The docs host therefore carries `script-src 'self' 'unsafe-inline'`, and
+it is the only host that does: there is no user content on that origin, which is what makes the
+relaxation safe there and nowhere else. The marketing page has no scripts and keeps `'self'`.
 
 ## What not to do
 

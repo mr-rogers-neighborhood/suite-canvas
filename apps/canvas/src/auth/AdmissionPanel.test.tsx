@@ -13,8 +13,8 @@ describe("admission panel", () => {
     render(<AdmissionPanel onDismiss={() => {}} onSignOut={() => {}} />);
     const panel = screen.getByTestId("admission-panel");
     expect(panel).toHaveTextContent("syncing this workspace");
+    expect(panel).toHaveTextContent("inviting someone");
     expect(panel).toHaveTextContent("sharing");
-    expect(panel).toHaveTextContent("claimed by your account");
   });
 
   it("states that local work is untouched instead of behaving like a wall", () => {

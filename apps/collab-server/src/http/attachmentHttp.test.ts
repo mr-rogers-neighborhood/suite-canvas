@@ -1,29 +1,42 @@
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSqliteAttachmentStore, newAttachmentId } from "../store/attachments.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
+import { createWorkspaceAccess, type WorkspaceAccess } from "./access.js";
 import {
   ATTACHMENT_API_PATH,
   ATTACHMENT_ID_HEADER,
   ATTACHMENT_SECURITY_HEADERS,
   handleAttachmentRequest,
 } from "./attachmentHttp.js";
+import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 7, 7, 7]);
 
+let directory: string;
 let server: Server;
 let baseUrl: string;
 let store: ReturnType<typeof createSqliteAttachmentStore>;
-
-/** The owner rule the claim path uses: the registry knows who owns the workspace. */
-const workspaces = {
-  verify: (workspaceId: string, ownerKey: string) =>
-    workspaceId === "ws-1" && ownerKey === "owner-key-1",
-};
+let orgs: WorkspaceOrgStore;
+let sessions: SessionFixture;
+let access: WorkspaceAccess;
+let token: string;
 
 beforeEach(async () => {
+  directory = mkdtempSync(join(tmpdir(), "suite-attachments-http-"));
   store = createSqliteAttachmentStore(":memory:", { cap: () => 64 });
+  orgs = createWorkspaceOrgStore(join(directory, "workspaces.sqlite"));
+  sessions = await createSessionFixture();
+  access = createWorkspaceAccess({ sessions: sessions.verifier, orgs });
+  // `ws-1` belongs to the fixture's organization; nothing else does.
+  orgs.claim("ws-1", "org-a");
+  token = await sessions.sign();
+
   server = createServer((request, response) => {
-    void handleAttachmentRequest(request, response, workspaces, { store }).then((handled) => {
+    void handleAttachmentRequest(request, response, access, { store }).then((handled) => {
       if (handled) return;
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("not found");
@@ -38,16 +51,19 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   store.close();
+  orgs.close();
+  rmSync(directory, { recursive: true, force: true });
 });
 
 function upload(
   body: Uint8Array,
   mime: string,
-  options: { ownerKey?: string | null; id?: string; workspaceId?: string } = {},
+  options: { authorization?: string | null; id?: string; workspaceId?: string } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { "content-type": mime };
-  const key = options.ownerKey === undefined ? "owner-key-1" : options.ownerKey;
-  if (key !== null) headers.authorization = `Bearer ${key}`;
+  const authorization =
+    options.authorization === undefined ? `Bearer ${token}` : options.authorization;
+  if (authorization !== null) headers.authorization = authorization;
   if (options.id) headers[ATTACHMENT_ID_HEADER] = options.id;
   return fetch(`${baseUrl}${ATTACHMENT_API_PATH}/${options.workspaceId ?? "ws-1"}`, {
     method: "POST",
@@ -57,19 +73,31 @@ function upload(
 }
 
 describe("attachment upload", () => {
-  it("requires the workspace owner key", async () => {
-    const anonymous = await upload(PNG, "image/png", { ownerKey: null });
+  it("requires a session that is entitled to the workspace", async () => {
+    const anonymous = await upload(PNG, "image/png", { authorization: null });
     expect(anonymous.status).toBe(401);
 
-    const foreign = await upload(PNG, "image/png", { ownerKey: "someone-else" });
+    const foreign = await upload(PNG, "image/png", {
+      authorization: `Bearer ${await sessions.sign({ organizationId: "org-b" })}`,
+    });
     expect(foreign.status).toBe(403);
     expect(await foreign.json()).toEqual({
-      error: "The owner key does not match this workspace.",
+      error: "This workspace belongs to a different organization.",
     });
 
     // A share token is not a credential this route reads at all.
-    const token = await upload(PNG, "image/png", { ownerKey: "share-token-value" });
-    expect(token.status).toBe(403);
+    const shareToken = await upload(PNG, "image/png", {
+      authorization: "Bearer share-token-value",
+    });
+    expect(shareToken.status).toBe(401);
+    expect(store.usage("ws-1")).toBe(0);
+  });
+
+  it("refuses an expired session", async () => {
+    const expired = await upload(PNG, "image/png", {
+      authorization: `Bearer ${await sessions.sign({ expiresInSeconds: -60 })}`,
+    });
+    expect(expired.status).toBe(401);
     expect(store.usage("ws-1")).toBe(0);
   });
 
@@ -115,7 +143,7 @@ describe("attachment upload", () => {
 });
 
 describe("attachment read", () => {
-  it("serves identical bytes with the security headers", async () => {
+  it("serves identical bytes with the security headers, with no credential at all", async () => {
     const id = newAttachmentId();
     await upload(PNG, "image/png", { id });
 
@@ -139,7 +167,7 @@ describe("attachment read", () => {
 });
 
 describe("attachment delete", () => {
-  it("needs the owner key of the workspace that owns the bytes", async () => {
+  it("needs a session for the organization that owns the bytes", async () => {
     const id = newAttachmentId();
     await upload(PNG, "image/png", { id });
 
@@ -148,14 +176,14 @@ describe("attachment delete", () => {
 
     const foreign = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/${id}`, {
       method: "DELETE",
-      headers: { authorization: "Bearer someone-else" },
+      headers: { authorization: `Bearer ${await sessions.sign({ organizationId: "org-b" })}` },
     });
     expect(foreign.status).toBe(403);
     expect(store.get(id)).not.toBeNull();
 
     const owner = await fetch(`${baseUrl}${ATTACHMENT_API_PATH}/${id}`, {
       method: "DELETE",
-      headers: { authorization: "Bearer owner-key-1" },
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(owner.status).toBe(200);
     expect(store.get(id)).toBeNull();

@@ -1,10 +1,28 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureSession, getSession } from "../session/session";
+import { forgetCredential } from "../auth/credential";
 import type { CreateShareInput, Share } from "../session/shares";
 import { lastUsedLabel, type ShareClient, ShareDialog } from "./ShareDialog";
 
-const OWNER_KEY = "owner-key-1";
+/** A JWT-shaped token with the claims the relay reads (ADR-0074). */
+function credentialToken(expiresInSeconds = 300): string {
+  const part = (value: unknown) =>
+    btoa(JSON.stringify(value)).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
+  return [
+    part({ alg: "EdDSA" }),
+    part({
+      sub: "user-1",
+      org: "org-1",
+      role: "owner",
+      tier: "free",
+      limits: {},
+      exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
+    }),
+    "signature",
+  ].join(".");
+}
+
+const CREDENTIAL = credentialToken();
 
 function shareAt(overrides: Partial<Share> = {}): Share {
   return {
@@ -27,7 +45,7 @@ function shareAt(overrides: Partial<Share> = {}): Share {
 
 function fakeClient(shares: Share[] = []) {
   return {
-    createShare: vi.fn(async (_input: CreateShareInput, _ownerKey: string | null) => ({
+    createShare: vi.fn(async (_input: CreateShareInput, _credential: string | null) => ({
       token: "tok-9",
       share: shareAt({ id: "share-9" }),
     })),
@@ -57,20 +75,24 @@ function renderDialog(
 }
 
 beforeEach(() => {
-  // The dialog reads the owner key from the booted session.
-  configureSession({
-    workspaceId: "ws-1",
-    roomId: "ws-1",
-    share: null,
-    role: "editor",
-    readOnly: false,
-    ownerKey: OWNER_KEY,
-  });
+  // The dialog mints the credential per call; a test answers with a fixed one.
+  forgetCredential();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ token: CREDENTIAL }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ),
+  );
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  configureSession({ ...getSession(), ownerKey: null });
+  vi.unstubAllGlobals();
+  forgetCredential();
 });
 
 describe("ShareDialog", () => {
@@ -83,7 +105,7 @@ describe("ShareDialog", () => {
     expect(screen.getByTestId("share-role-editor")).toHaveAttribute("aria-pressed", "true");
 
     expect(await screen.findByTestId("share-row-share-1")).toBeInTheDocument();
-    expect(client.listShares).toHaveBeenCalledWith("ws-1", OWNER_KEY);
+    expect(client.listShares).toHaveBeenCalledWith("ws-1", CREDENTIAL);
   });
 
   it("disables the card tab when no card is selected", async () => {
@@ -95,23 +117,25 @@ describe("ShareDialog", () => {
     await screen.findByTestId("share-empty");
   });
 
-  it("mints a workspace editor token instead of copying the owner link", async () => {
+  it("mints a workspace editor token instead of handing out the editor URL", async () => {
     const client = fakeClient();
     renderDialog(client);
 
     fireEvent.click(screen.getByTestId("share-role-editor"));
     fireEvent.click(screen.getByTestId("share-create"));
 
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "workspace",
-        role: "editor",
-        boardId: null,
-        cardId: null,
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "workspace",
+          role: "editor",
+          boardId: null,
+          cardId: null,
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
     const input = await screen.findByLabelText("Share link");
     const url = new URL((input as HTMLInputElement).value);
@@ -128,16 +152,18 @@ describe("ShareDialog", () => {
 
     const input = await screen.findByLabelText("Share link");
     expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "board",
-        role: "viewer",
-        boardId: "board-1",
-        cardId: null,
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "board",
+          role: "viewer",
+          boardId: "board-1",
+          cardId: null,
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
 
     // The dialog reloads the list so the new link shows up without reopening.
@@ -152,16 +178,18 @@ describe("ShareDialog", () => {
     fireEvent.click(screen.getByTestId("share-create"));
 
     await screen.findByLabelText("Share link");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "card",
-        role: "viewer",
-        boardId: null,
-        cardId: "card-1",
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "card",
+          role: "viewer",
+          boardId: null,
+          cardId: "card-1",
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
   });
 
@@ -179,16 +207,18 @@ describe("ShareDialog", () => {
 
     const input = await screen.findByLabelText("Share link");
     expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "workspace",
-        role: "viewer",
-        boardId: null,
-        cardId: null,
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "workspace",
+          role: "viewer",
+          boardId: null,
+          cardId: null,
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
   });
 
@@ -210,16 +240,18 @@ describe("ShareDialog", () => {
 
     const input = await screen.findByLabelText("Share link");
     expect(new URL((input as HTMLInputElement).value).searchParams.get("share")).toBe("tok-9");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "board",
-        role: "editor",
-        boardId: "board-1",
-        cardId: null,
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "board",
+          role: "editor",
+          boardId: "board-1",
+          cardId: null,
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
   });
 
@@ -236,16 +268,18 @@ describe("ShareDialog", () => {
     fireEvent.click(screen.getByTestId("share-create"));
 
     await screen.findByLabelText("Share link");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "card",
-        role: "editor",
-        boardId: null,
-        cardId: "card-1",
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "card",
+          role: "editor",
+          boardId: null,
+          cardId: "card-1",
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
   });
 
@@ -255,7 +289,7 @@ describe("ShareDialog", () => {
 
     fireEvent.click(await screen.findByTestId("share-revoke-share-1"));
 
-    await waitFor(() => expect(client.revokeShare).toHaveBeenCalledWith("share-1", OWNER_KEY));
+    await waitFor(() => expect(client.revokeShare).toHaveBeenCalledWith("share-1", CREDENTIAL));
     await waitFor(() => expect(client.listShares).toHaveBeenCalledTimes(2));
   });
 
@@ -336,17 +370,19 @@ describe("ShareDialog selection scope", () => {
     fireEvent.click(screen.getByTestId("share-create"));
 
     await screen.findByLabelText("Share link");
-    expect(client.createShare).toHaveBeenCalledWith(
-      {
-        workspaceId: "ws-1",
-        scope: "selection",
-        role: "viewer",
-        boardId: "board-1",
-        cardId: null,
-        cardIds: ["card-1", "card-2", "card-3"],
-        expiresAt: null,
-      },
-      OWNER_KEY,
+    await waitFor(() =>
+      expect(client.createShare).toHaveBeenCalledWith(
+        {
+          workspaceId: "ws-1",
+          scope: "selection",
+          role: "viewer",
+          boardId: "board-1",
+          cardId: null,
+          cardIds: ["card-1", "card-2", "card-3"],
+          expiresAt: null,
+        },
+        CREDENTIAL,
+      ),
     );
   });
 
@@ -405,7 +441,7 @@ describe("ShareDialog limits", () => {
     renderDialog(client);
 
     fireEvent.click(await screen.findByTestId("share-revoke-all"));
-    await waitFor(() => expect(client.revokeAllShares).toHaveBeenCalledWith("ws-1", OWNER_KEY));
+    await waitFor(() => expect(client.revokeAllShares).toHaveBeenCalledWith("ws-1", CREDENTIAL));
   });
 });
 

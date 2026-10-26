@@ -2,9 +2,11 @@ import type { CardType, CreateFieldInput, FieldDefinition, SubField } from "@sui
 import { displayTemplate, fieldKinds, subFieldKinds, typePluralName } from "@suite/graph";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Dialog } from "../dialogs/Dialog";
 import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { useCards } from "../store/workspaceStore";
 
 export interface TypeSettingsDialogProps {
   types: CardType[];
@@ -136,6 +138,11 @@ export function TypeSettingsDialog({
   const [ratingScale, setRatingScale] = useState(5);
   const [ratingHalf, setRatingHalf] = useState(false);
   const [displayFieldId, setDisplayFieldId] = useState<string | null>(null);
+  /** A type whose deletion is waiting for confirmation. */
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // Deleting a type re-homes every card that has it; the confirmation says how
+  // many, so it reads from the same document the deletion will write.
+  const cards = useCards();
 
   const selected = useMemo(
     () => types.find((type) => type.id === selectedId) ?? types[0],
@@ -186,6 +193,21 @@ export function TypeSettingsDialog({
 
   const displayField = selected?.fields.find((field) => field.id === displayFieldId);
   const templateCard = selected ? templateFor(selected.id) : undefined;
+  /** The type a deleted type's cards move to: note, or the first other type. */
+  const fallbackFor = (typeId: string) =>
+    types.find((type) => type.id === "note" && type.id !== typeId) ??
+    types.find((type) => type.id !== typeId);
+  const pendingDelete = types.find((type) => type.id === pendingDeleteId);
+  const pendingMoveCount = pendingDeleteId
+    ? cards.filter((card) => card.typeIds.includes(pendingDeleteId)).length
+    : 0;
+  /** What deleting the pending type does to its cards, in one sentence. */
+  const pendingMoveCopy =
+    pendingMoveCount === 0
+      ? "No cards use it."
+      : `${pendingMoveCount} ${pendingMoveCount === 1 ? "card uses" : "cards use"} it, and ${
+          pendingMoveCount === 1 ? "moves" : "move"
+        } to ${(pendingDelete && fallbackFor(pendingDelete.id)?.name) ?? "Note"}.`;
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -640,12 +662,7 @@ export function TypeSettingsDialog({
                 type="button"
                 data-testid="delete-type"
                 className="text-[11px] text-red-600 hover:underline"
-                onClick={() => {
-                  const fallback =
-                    types.find((type) => type.id === "note" && type.id !== selected.id) ??
-                    types.find((type) => type.id !== selected.id);
-                  if (fallback) onDeleteType(selected.id, fallback.id);
-                }}
+                onClick={() => setPendingDeleteId(selected.id)}
               >
                 Delete type (cards move to{" "}
                 {types.find((type) => type.id !== selected.id)?.name ?? "Note"})
@@ -653,6 +670,27 @@ export function TypeSettingsDialog({
             </footer>
           ) : null}
         </div>
+
+        {/* Deleting a type is not just the type: every card that has it is
+            re-homed in the same write, so the count is part of the question. */}
+        {pendingDelete ? (
+          <Dialog
+            title={`Delete the ${pendingDelete.name} type?`}
+            description={`${pendingMoveCopy} The type and its fields are deleted. This cannot be undone.`}
+            onClose={() => setPendingDeleteId(null)}
+            actions={[
+              { label: "Cancel", onSelect: () => {} },
+              {
+                label: "Delete type",
+                danger: true,
+                onSelect: () => {
+                  const fallback = fallbackFor(pendingDelete.id);
+                  if (fallback) onDeleteType(pendingDelete.id, fallback.id);
+                },
+              },
+            ]}
+          />
+        ) : null}
 
         {displayField ? (
           <DisplayStyleDialog

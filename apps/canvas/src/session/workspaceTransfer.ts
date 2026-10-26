@@ -1,5 +1,6 @@
 import {
   createWorkspaceFile,
+  damagedAttachmentWarning,
   documentAttachments,
   exportPortable,
   readWorkspaceFile,
@@ -16,7 +17,6 @@ import {
   defaultAttachmentSources,
   resolveAttachmentBytes,
 } from "./attachmentBytes";
-import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "./ownerKey";
 
 const RECENT_KEY = "suite.recentWorkspaces.v1";
 const RECENT_LIMIT = 12;
@@ -100,18 +100,18 @@ export function forgetWorkspace(id: string): void {
   }
 }
 
-export function workspaceUrl(
-  workspaceId: string,
-  boardId?: string | null,
-  ownerKey?: string | null,
-): string {
+/**
+ * The editor URL for a workspace. It carries ids and nothing else: the
+ * credential is the session cookie plus the token minted from it, so no secret
+ * has to survive a copy-paste, a bookmark or a referrer.
+ */
+export function workspaceUrl(workspaceId: string, boardId?: string | null): string {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("workspace", workspaceId);
   if (boardId) url.searchParams.set("board", boardId);
-  // The owner key is a fragment, never a query parameter: it must not reach the
-  // server or a referrer, and an unrelated fragment must not leak into a link.
-  url.hash = ownerKey ? `owner=${encodeURIComponent(ownerKey)}` : "";
+  // A fragment left over from the page that made the link must not travel.
+  url.hash = "";
   return url.toString();
 }
 
@@ -126,7 +126,7 @@ export function navigateTo(url: string): void {
 
 export function openWorkspace(id: string, boardId?: string | null): void {
   rememberWorkspace({ id, ...(boardId ? { boardId } : {}) });
-  navigateTo(workspaceUrl(id, boardId, readOwnerKey(id)));
+  navigateTo(workspaceUrl(id, boardId));
 }
 
 /** Downloads text as a file; the browser's download UI is the confirmation. */
@@ -343,6 +343,12 @@ export interface ImportedWorkspace {
   id: string;
   boardId?: string;
   title: string;
+  /**
+   * What the file could not carry — currently the damaged-image sentence, which
+   * names the cards rather than dropping the news. The import still succeeded;
+   * these are lines the caller must show.
+   */
+  warnings: string[];
 }
 
 /** Writes one image into this browser's store, under the node's own id. */
@@ -374,10 +380,8 @@ export async function importWorkspaceFile(
   options: ImportWorkspaceOptions = {},
 ): Promise<ImportedWorkspace> {
   const text = await file.text();
-  const { workspace, attachments } = readWorkspaceFile(text);
+  const { workspace, attachments, damaged } = readWorkspaceFile(text);
   const id = newWorkspaceId();
-  // An import is a new workspace, so it gets a new owner key of its own.
-  writeOwnerKey(id, generateOwnerKey());
 
   // Restore every embedded image under the id its node already carries, so the
   // card renders the moment it opens. These copies are LOCAL-ONLY — the same
@@ -399,5 +403,10 @@ export async function importWorkspaceFile(
   const board = restored.listBoards().sort((left, right) => left.createdAt - right.createdAt)[0];
   const title = board?.name?.trim() || "Imported workspace";
   rememberWorkspace({ id, title, boardId: board?.id ?? null });
-  return { id, title, ...(board ? { boardId: board.id } : {}) };
+  // An image the file cannot supply is named by the cards that show it, because
+  // a backup that quietly imports a hole is the loss the format exists to stop.
+  const warnings = [damagedAttachmentWarning(damaged)].filter(
+    (warning): warning is string => warning !== null,
+  );
+  return { id, title, warnings, ...(board ? { boardId: board.id } : {}) };
 }

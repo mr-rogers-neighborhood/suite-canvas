@@ -1,4 +1,5 @@
 import type { ContainerID, LoroMap } from "loro-crdt";
+import type { PortableNode } from "../../portable.js";
 import type { Card, Placement, PropertyValue } from "../../schema.js";
 import type { SurfaceStyle } from "../../style.js";
 import type { DocApi } from "../api.js";
@@ -139,6 +140,22 @@ export class CardsFacade {
 
   removePropertyBlock(cardId: string, fieldId: string): boolean {
     return this.cardsApi.removePropertyBlock(cardId, fieldId);
+  }
+
+  setTitleNodes(cardId: string, nodes: readonly PortableNode[]): boolean {
+    return this.cardsApi.setTitleNodes(cardId, nodes);
+  }
+
+  setBodyNodes(cardId: string, nodes: readonly PortableNode[]): boolean {
+    return this.cardsApi.setBodyNodes(cardId, nodes);
+  }
+
+  setTitleText(cardId: string, title: string): boolean {
+    return this.cardsApi.setTitleText(cardId, title);
+  }
+
+  setBodyText(cardId: string, body: string): boolean {
+    return this.cardsApi.setBodyText(cardId, body);
   }
 
   ensureReferences(): number {

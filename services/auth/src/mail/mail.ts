@@ -1,0 +1,135 @@
+import type { InvitationEmail } from "../invitations/enrollment.js";
+
+/**
+ * Outbound mail, as one transport behind three named senders.
+ *
+ * The service never formats or delivers a message itself: it asks for a link to be
+ * delivered and this module turns that into a subject, a body, and a call to the
+ * transport the deployment supplied. `consoleTransport` is the development
+ * transport — it writes the line, link included, so a contributor can click through
+ * sign-up without a mail provider. A deployment passes its own `MailTransport`.
+ *
+ * Email delivery is part of the sign-up path now that sign-up is open (ADR-0077), so
+ * the sender is a required dependency rather than a stub that silently accepts a
+ * message nobody receives.
+ */
+
+export interface MailMessage {
+  to: string;
+  subject: string;
+  text: string;
+}
+
+export interface MailTransport {
+  send: (message: MailMessage) => Promise<void>;
+}
+
+export interface ConsoleTransportOptions {
+  /** Where a line goes. Defaults to `console.info`; a test passes a collector. */
+  write?: (line: string) => void;
+}
+
+/**
+ * The development transport: one line per message on stdout, link included.
+ *
+ * It is deliberately not the default in a deployment. A link is a credential, and
+ * stdout is read by every log shipper the host happens to run.
+ */
+export function consoleTransport(options: ConsoleTransportOptions = {}): MailTransport {
+  const write = options.write ?? ((line: string) => console.info(line));
+  return {
+    send: async (message) => {
+      write(`mail to ${message.to}: ${message.subject}\n${message.text}`);
+    },
+  };
+}
+
+/**
+ * An organization invitation: the plugin's own flow, which is what "invite a colleague"
+ * means now that sign-up is open (ADR-0077).
+ *
+ * There is no token in the link. The organization plugin identifies an invitation by its
+ * id and checks the signed-in account's address against it, so the link is worthless to
+ * anyone holding somebody else's mailbox.
+ */
+export interface OrganizationInvitation {
+  id: string;
+  email: string;
+  role: string;
+  organizationName: string;
+  inviterName: string;
+  url: string;
+}
+
+/** A link the mailer carries, plus the token it contains so a caller can log or test it. */
+export interface MailLink {
+  email: string;
+  url: string;
+  token: string;
+}
+
+export interface MailSenders {
+  sendMagicLink: (link: MailLink) => Promise<void>;
+  sendVerificationEmail: (link: MailLink) => Promise<void>;
+  sendInvitation: (invitation: InvitationEmail) => Promise<void>;
+  sendOrganizationInvitation: (invitation: OrganizationInvitation) => Promise<void>;
+}
+
+export function mailSenders(transport: MailTransport): MailSenders {
+  return {
+    sendMagicLink: async ({ email, url }) => {
+      await transport.send({
+        to: email,
+        subject: "Your Suite sign-in link",
+        text: [
+          "Open this link to sign in to Suite.",
+          "",
+          url,
+          "",
+          "The link works once and expires in 10 minutes.",
+          "If you did not ask for it, ignore this message.",
+        ].join("\n"),
+      });
+    },
+    sendVerificationEmail: async ({ email, url }) => {
+      await transport.send({
+        to: email,
+        subject: "Confirm your Suite email",
+        text: [
+          "Open this link to confirm this address and finish creating your account.",
+          "",
+          url,
+          "",
+          "If you did not create an account, ignore this message and nothing happens.",
+        ].join("\n"),
+      });
+    },
+    sendOrganizationInvitation: async (invitation) => {
+      await transport.send({
+        to: invitation.email,
+        subject: `${invitation.inviterName} invited you to ${invitation.organizationName}`,
+        text: [
+          `${invitation.inviterName} invited you to join ${invitation.organizationName} as ${invitation.role}.`,
+          "",
+          invitation.url,
+          "",
+          "Sign in with this address, then open the link to accept.",
+        ].join("\n"),
+      });
+    },
+    sendInvitation: async (invitation) => {
+      const organization = invitation.organizationName ?? "Suite";
+      await transport.send({
+        to: invitation.email,
+        subject: `${invitation.inviterName} invited you to ${organization}`,
+        text: [
+          `${invitation.inviterName} (${invitation.inviterEmail}) invited you to join ${organization}.`,
+          "",
+          invitation.url,
+          "",
+          "Opening the link asks you to choose a password, which becomes your way back in.",
+        ].join("\n"),
+      });
+    },
+  };
+}

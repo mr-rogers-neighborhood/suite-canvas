@@ -19,7 +19,9 @@ This page is the map. Each subsystem has its own reference page, and the reasoni
 | `packages/graph` | Schema, records, typed CRDT layer, pure planning and projection |
 | `services/auth` | Identity, organizations, invitations, seats, licence checks |
 | `services/billing` | Stripe webhook, hosted licence issue |
-| `apps/docs` | Fumadocs site built from `docs/` |
+| `apps/control-plane` | Accounts, billing and the Postgres they share, in one process of its own |
+| `apps/docs` | Starlight site built from `docs/` |
+| `apps/site` | Marketing page for `suite.run` |
 | `e2e` | Playwright journeys, grouped by area |
 | `scripts` | Docs, limits, shape and docs-symbol checks |
 
@@ -69,6 +71,10 @@ Commands and tiers are in [../how-to/test-and-verify.md](../how-to/test-and-veri
 
 ## Status
 
-The current release is Beta. Anonymous workspaces, local persistence, live collaboration, share links and publishing work. The account layer in `services/auth` and `services/billing` is built and tested, and no running relay mounts it yet: a socket join carries an owner key or a share token. [security-model.md](security-model.md) states what that means for a deployment.
+The current release is Beta. Anonymous workspaces, local persistence, live collaboration, share links and publishing work.
+
+Two processes are the target shape, behind one Caddy. The relay (`apps/collab-server`) keeps the socket, its SQLite stores and the projection. A control plane (`apps/control-plane`) hosts Postgres, identity and billing, and is the only process that depends on `pg`: it mounts `services/auth` at `/api/auth/*`, `services/billing` at `/api/billing/*` and `/stripe/*`, and the relay imports neither. The canvas is a static bundle, so a deployment serves three hosts from that pair (`deploy/Caddyfile`).
+
+The credential is a session JWT. The relay verifies it against the key set the control plane publishes at `<SUITE_AUTH_URL>/api/auth/jwks`, keeps that set in a five-minute cache, and answers a join from the token's claims: `apps/collab-server/src/sync/seatGate.ts` needs no database read. The owner key is gone ([ADR-0076](../../internal/decisions/open/0076-the-owner-key-is-deleted.md)), and a share link stays a separate capability for a visitor with no account. [security-model.md](security-model.md) states what that means for a deployment.
 
 The product direction and the decisions that are settled are in [../explanation/design.md](../explanation/design.md).

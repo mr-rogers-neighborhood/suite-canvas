@@ -25,6 +25,7 @@
     "@octopi-ai/better-enrollment": "0.7.0",
     "better-auth": "^1.7.12",
     "better-auth-harmony": "^1.3.2",
+    "kysely": "0.29.7",
     "neverthrow": "^8.2.0",
     "pg": "^8.23.1",
     "remeda": "^2.54.1"

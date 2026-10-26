@@ -57,25 +57,22 @@ export interface EnrollmentDeps {
 /**
  * The plugin options, built from our repositories and nothing from a request body.
  *
- * Two choices here contradict the plugin's own opinions on purpose, and both are
- * recorded in ADR-0067 §10–11:
+ * Two choices here are worth stating, and both follow ADR-0077:
  *
- * - `mode: "invite-only"` with `allowOpenSignup: true`. The plugin's "invite-only"
- *   is an **app-wide** guarantee: nobody without an invitation gets an account. That
- *   is not this product — registration is open and admission is reviewed (§7) — so
- *   the open flag is set, which downgrades the guarantee to per-email. The half we
- *   do keep is the half that matters for passwords: `emailAndPassword.disableSignUp`
- *   means the *password* door only opens for an invitee, while passkeys, magic links
- *   and Google stay open to everyone.
+ * - `mode: "open"`. The plugin's "invite-only" mode is an **app-wide** guarantee:
+ *   nobody without an invitation gets an account. That is not this product — a
+ *   stranger signs up, verifies an address and pays — so the mode is open and an
+ *   invitation is what it is everywhere else: adding a colleague to an organization.
+ *   The invitation's own guarantees (one address, one use, an expiry, a revocation,
+ *   the licence's seat ceiling) still apply to the invitation.
  * - `passwordless: false`. The plugin would default to passwordless redemption
  *   because magic link is registered; a password is exactly what an invited account
- *   is allowed to set (§11 amendment).
+ *   is allowed to set.
  */
 export function enrollmentOptions(deps: EnrollmentDeps): BetterEnrollmentOptions {
   const now = deps.now;
   return {
-    mode: "invite-only",
-    allowOpenSignup: true,
+    mode: "open",
     passwordless: false,
     // App-level roles (`user.role`), which the admin plugin owns. An organization
     // role travels separately, in `organizationRole`, so an invitation can never

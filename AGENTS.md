@@ -13,7 +13,8 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
   (`@xyflow/react`), Tiptap 3 for every card.
 - Document: Loro CRDT, IndexedDB snapshot and update log, `loro-websocket` for sync.
 - Graph: `@suite/graph` with Zod schemas over a typed `WorkspaceDocument`.
-- Docs site: Next.js and Fumadocs in `apps/docs`.
+- Docs and marketing: Astro in `apps/docs` (Starlight) and `apps/site`. The app is a Vite SPA
+  served at `app.suite.run`; neither Astro project hosts it.
 - Quality: Biome, Vitest and React Testing Library, Playwright, Storybook, commitlint.
 
 ## Repo map
@@ -36,8 +37,16 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
 ```sh
 pnpm install          # also installs the git hooks
 pnpm dev              # canvas on :5173, relay on :1234
-pnpm check            # biome + tsc + the Vitest files your change reaches
-pnpm verify           # the commit gate: lint, typecheck, tests, stories, build
+pnpm check            # the edit loop: biome, tsc, changed Vitest files, docs symbols, shape
+pnpm lint             # biome check
+pnpm typecheck        # tsc across the workspace
+pnpm test             # every Vitest project
+pnpm docs:check       # links, fences, prose, generated indexes, limits
+pnpm docs:symbols     # backticked paths, root scripts, ADR references
+pnpm shape            # file length, observe sites, raw Loro writes
+pnpm verify           # the local gate plus billing, stories and the build
+pnpm build            # graph dist, then the canvas bundle
+pnpm storybook        # component workshop on :6006
 pnpm e2e:smoke        # the @smoke Playwright specs
 pnpm e2e:canvas       # boot, boards, cards, links, selection, input, library, appearance
 pnpm e2e:collab       # collab, sharing, account
@@ -46,19 +55,26 @@ pnpm e2e              # every Playwright spec
 pnpm e2e:doctor       # report processes holding the e2e ports
 pnpm e2e:stop         # stop only those processes
 pnpm e2e:logs         # tail the captured Vite and relay logs
-pnpm build            # graph dist, then the canvas bundle
-pnpm storybook        # component workshop on :6006
 ```
 
-## Speed tiers
+## Verify
 
-Run the least that proves the change. `pnpm check` after each edit batch, `pnpm verify` before every
-commit, `pnpm e2e:smoke` when the change is user-visible but not big, and the full `pnpm e2e` only for
-a big commit, a merge or a tag.
+The gate is local and it runs on every change:
 
-A big commit touches the graph schema or the CRDT layer, sharing or auth, canvas gestures or links,
-persistence or stored formats, release or deploy configuration, or more than three user-visible
-changes. Everything else gets a smoke run.
+```sh
+pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols && pnpm shape
+```
+
+`pnpm check` runs Biome, `tsc`, `vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, so it is
+the one to repeat after each edit batch; it leaves out `pnpm docs:check` and the full test run.
+`pnpm verify` adds the story suite, the billing tests and the build.
+
+Playwright is not part of the gate. When the owner asks for a run, the area scripts (`pnpm e2e:smoke`,
+`pnpm e2e:canvas`, `pnpm e2e:collab`, `pnpm e2e:views`) are narrower than `pnpm e2e`; [the how-to
+page](docs/how-to/test-and-verify.md) has each one.
+
+GitHub Actions gates nothing. `.github/workflows/ci.yml` stays in the tree and needs a runner to run,
+so every gate claim in this repo names a local command.
 
 ## Rules
 
@@ -74,6 +90,11 @@ changes. Everything else gets a smoke run.
    live drag positions ride `EphemeralStore`.
 7. Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 8. No new dependency without a stated job and the right package.
+9. E2E runs on request, never by default. No contributor or agent starts Playwright unless the owner
+   asks for a run or names a commit milestone, and no change waits on one. The per-change gate is the
+   local set under [Verify](#verify).
+10. GitHub Actions gates nothing. A workflow file in the tree is not a check on `main`, and every gate
+    claim names a local command.
 
 ## Code shape
 
@@ -99,13 +120,13 @@ a todo or a plan phase, then strike it through.
 2. Expose typed accessors and mutations on `WorkspaceDocument`.
 3. Consume it in `apps/canvas` through `useWorkspaceSnapshot` and the Zustand store.
 4. Add a Storybook story and component tests.
-5. Run `pnpm verify`, then the e2e tier the change earns.
+5. Run the local gate under [Verify](#verify). E2E only when the owner asks for it.
 
 ## Definition of done
 
 Schema and types in `@suite/graph` with unit tests, UI with a story where it is visual, a test where
-behaviour is non-trivial, docs updated in the same change, and `pnpm verify` green. A big commit also
-passes `pnpm e2e`.
+behaviour is non-trivial, docs updated in the same change, and the local gate under [Verify](#verify)
+green. E2E is not part of it unless the owner asked for a run.
 
 Recorded decisions live in `internal/decisions/`, which is gitignored and local-only; ask the
 maintainer for the current copy before re-litigating one.

@@ -7,7 +7,14 @@
  * this one except for the error codes, which live here because every code in them is
  * part of the HTTP contract.
  */
-export { type AuthEntry, type AuthEntryDeps, createAuthEntry } from "./entry.js";
+export {
+  type AuthEntry,
+  type AuthEntryDeps,
+  createAuthEntry,
+  createMigratedAuthEntry,
+  createPostgresAuthEntry,
+  type PostgresAuthEntryDeps,
+} from "./entry.js";
 export { authConfigProblems, authEnabled, authEnvironment, googleConfigured } from "./env.js";
 export { AuthError, type AuthErrorCode, authErrorCodes, isAuthError } from "./errors.js";
 export {

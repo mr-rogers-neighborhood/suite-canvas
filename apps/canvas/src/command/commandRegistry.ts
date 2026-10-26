@@ -115,6 +115,12 @@ export interface CommandActions {
   createCardInInbox(): void;
   createSketch(): void;
   createSection(): void;
+  /**
+   * A portal on the active board that opens `targetBoardId`. Optional until the
+   * shell supplies it: without a handler the portal rows are not offered, so the
+   * palette never lists a command that cannot run.
+   */
+  createPortalOnBoard?: ((targetBoardId: string) => void) | undefined;
   createBoard(): void;
   editCard(cardId: string): void;
   setCardType(cardId: string, typeId: string): void;
@@ -487,6 +493,14 @@ export const commands: readonly CommandDefinition[] = [
     owner: "canvas",
     capabilities: ["canCreateContent"],
     available: onBoard,
+    // The canvas and the dock already own this action; the palette lists the
+    // same command rather than growing a create menu of its own.
+    palette: {
+      group: "Create",
+      weight: 52,
+      subtitle: "On this board",
+      keywords: ["sketch", "whiteboard", "draw", "new", "create"],
+    },
     run: (context) => context.actions.createSketch(),
   }),
   define({
@@ -496,7 +510,40 @@ export const commands: readonly CommandDefinition[] = [
     owner: "canvas",
     capabilities: ["canCreateContent"],
     available: onBoard,
+    palette: {
+      group: "Create",
+      weight: 54,
+      subtitle: "On this board",
+      keywords: ["section", "region", "frame", "new", "create"],
+    },
     run: (context) => context.actions.createSection(),
+  }),
+  define({
+    id: "portal.create",
+    label: "New portal",
+    group: "create",
+    owner: "canvas",
+    capabilities: ["canCreateContent"],
+    // A portal is a card that opens a board, so the target is part of the
+    // command: the palette names one row per board instead of asking a question
+    // it has no control for.
+    available: (context) => onBoard(context) && context.actions.createPortalOnBoard !== undefined,
+    palette: {
+      group: "Create",
+      weight: 56,
+      keywords: ["portal", "board", "open", "new", "create"],
+    },
+    expand: (context) =>
+      context.state.boards
+        .filter((board) => board.id !== context.state.activeBoardId)
+        .map((board) => ({
+          key: board.id,
+          label: `New portal to ${board.name || "Untitled board"}`,
+          subtitle: "Card on this board",
+          keywords: ["portal", "board", "open", "new", "create", board.id],
+          weight: 56,
+          run: (live) => live.actions.createPortalOnBoard?.(board.id),
+        })),
   }),
   define({
     id: "card.edit",
@@ -645,9 +692,12 @@ export function commandsFor(owner: CommandOwner, context: CommandContext): Comma
 /** The palette's rows: every palette command, one row per named object. */
 export function paletteInvocations(context: CommandContext): CommandInvocation[] {
   const rows: CommandInvocation[] = [];
-  for (const command of commandsFor("palette", context)) {
+  // A palette row is a property of the command, not of its owner: "New sketch"
+  // belongs to the canvas and the dock and is also reachable from the palette.
+  for (const command of commands) {
     const meta = command.palette;
     if (!meta) continue;
+    if (!granted(context, command.capabilities) || !command.available(context)) continue;
     const run = command.run;
     const targets = command.expand?.(context);
     if (!targets) {

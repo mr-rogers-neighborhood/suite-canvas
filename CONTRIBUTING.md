@@ -10,21 +10,27 @@ pnpm install          # also installs husky, lint-staged and commitlint
 pnpm dev              # canvas on :5173, relay on :1234
 ```
 
-Node 22 or newer and pnpm 12, the versions CI pins. Use pnpm; npm and yarn write a lockfile this
-repository does not read.
+Node 22 or newer and pnpm 12. Use pnpm; npm and yarn write a lockfile this repository does not read.
 
 ## Verify
 
 ```sh
 pnpm check            # after each edit batch: biome, tsc, changed Vitest files
-pnpm verify           # before every commit: lint, typecheck, tests, stories, build
-pnpm e2e:smoke        # a user-visible change
-pnpm e2e              # a big commit, a merge or a tag
+pnpm verify           # the per-change gate: lint, typecheck, tests, stories, build, docs, shape
 ```
 
-A big commit touches the graph schema or CRDT, sharing or auth, canvas gestures or links, persistence,
-release configuration, or more than three user-visible changes. The tier table is in
-[docs/how-to/test-and-verify.md](docs/how-to/test-and-verify.md).
+E2E runs on request. Start it when the maintainer asks for a run or names a commit milestone, and
+pick the narrowest area script that covers the change:
+
+```sh
+pnpm e2e:smoke        # boot, launcher, one board
+pnpm e2e:canvas       # board, cards, editor
+pnpm e2e:collab       # sync, presence, attachments
+pnpm e2e:views        # library, saved views, trash
+pnpm e2e              # the full suite; a milestone action, not a per-change one
+```
+
+The tier table is in [docs/how-to/test-and-verify.md](docs/how-to/test-and-verify.md).
 
 A user-visible change needs a test that fails without it. A bug fix gets a regression test committed
 with the fix. A change that spans two clients needs a two-document test.
@@ -47,15 +53,14 @@ Conventional commits, one logical change each: `feat:`, `fix:`, `docs:`, `refact
 ## Pull request checklist
 
 - One logical change, with the test that proves it.
-- `pnpm verify` green, plus the e2e tier the change earns.
+- `pnpm verify` green. Add an e2e run only if the maintainer asked for one.
 - Docs updated in the same commit.
 - No unrelated reformatting.
 - No secrets, licence keys, webhook secrets or customer data.
 
 ## Dependencies
 
-Add a dependency only with a stated reason, in the package that uses it. Dependabot proposes grouped
-weekly updates for `npm` and `github-actions`.
+Add a dependency only with a stated reason, in the package that uses it.
 
 ## Security and conduct
 

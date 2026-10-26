@@ -106,7 +106,20 @@ export function useLibraryRowActions({
       if (!canManageTrash) return [];
       return [
         { label: "Restore", onSelect: () => onRestore(card.id) },
-        { label: "Delete forever", danger: true, onSelect: () => onDeleteForever(card.id) },
+        {
+          label: "Delete forever",
+          danger: true,
+          // One click here is irreversible, and the row menu is data: there is
+          // no component in this file to host the app's Dialog. The platform
+          // confirm is the one that can still ask first (as the share dialog's
+          // "Revoke every active link?" does).
+          onSelect: () => {
+            const confirmed = window.confirm(
+              `Delete \u201c${card.title}\u201d forever? This cannot be undone.`,
+            );
+            if (confirmed) onDeleteForever(card.id);
+          },
+        },
       ];
     }
     return [

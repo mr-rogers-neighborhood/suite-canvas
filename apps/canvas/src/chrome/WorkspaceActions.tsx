@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
 import { menuKeyDown } from "../dialogs/menuKeys";
 import { useCardTitle } from "../hooks/useCardContainers";
-import { hasSavedRecoveryKey, readSavedRecoveryKey } from "../session/ownerKit";
-import { getSession, isShareSession } from "../session/session";
+import { isShareSession } from "../session/session";
 import type { ShareScope } from "../session/shares";
 import {
   downloadWorkspaceBackup,
@@ -11,14 +11,13 @@ import {
   downloadWorkspaceMarkdown,
   navigateTo,
 } from "../session/workspaceTransfer";
-import { RecoveryKeyDialog } from "../sharing/RecoveryKeyDialog";
 import { ShareDialog } from "../sharing/ShareDialog";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
 /**
- * Share management and the owner file need the relay. Every branch below tests
+ * Share management needs the relay. Every branch below tests
  * `import.meta.env.VITE_SUITE_MODE` literally — Vite inlines it at build time, so
  * a standalone build drops the branch and the `/api/shares` and `/api/workspaces`
  * clients behind it, while the File menu with export stays. A constant or an
@@ -66,20 +65,15 @@ export function WorkspaceActions({
   useEscapeLayer(() => setMenuOpen(false), menuOpen);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareScope, setShareScope] = useState<ShareScope>("workspace");
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [backupPrompt, setBackupPrompt] = useState(false);
-  const [savedOnDevice, setSavedOnDevice] = useState(() => readSavedRecoveryKey(workspaceId));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
-  const ownerKey = getSession().ownerKey ?? "";
-  // One delete entry per profile: the owner key can delete the relay copy, and
-  // a standalone build can delete the only copy there is. A share session
+  // One delete entry per profile: an account session can delete the relay copy,
+  // and a standalone build can delete the only copy there is. A share session
   // returns null above, so neither ever renders for a link holder.
-  const canDeleteWorkspace =
-    import.meta.env.VITE_SUITE_MODE === "standalone" || (canManageLinks && ownerKey.length > 0);
+  const canDeleteWorkspace = import.meta.env.VITE_SUITE_MODE === "standalone" || canManageLinks;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -129,9 +123,6 @@ export function WorkspaceActions({
         await downloadWorkspaceBackup(workspaceId, workspace, title, {
           onWarning: (message) => setNotice(message),
         });
-        // A backup is exactly the moment someone should also save the key, so
-        // this single prompt is the only export-time follow-up.
-        if (!hasSavedRecoveryKey(workspaceId)) setBackupPrompt(true);
       } else if (kind === "json") downloadWorkspaceJson(workspace, title);
       else downloadWorkspaceMarkdown(workspace, title);
     } catch (cause) {
@@ -155,10 +146,7 @@ export function WorkspaceActions({
           data-testid="workspace-menu"
           className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
           title="What you can do with this workspace."
-          onClick={() => {
-            setSavedOnDevice(readSavedRecoveryKey(workspaceId));
-            setMenuOpen((open) => !open);
-          }}
+          onClick={() => setMenuOpen((open) => !open)}
         >
           Workspace
         </button>
@@ -236,28 +224,6 @@ export function WorkspaceActions({
                 }}
               >
                 Styles…
-              </button>
-            ) : null}
-            {ownerKey && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-              <button
-                type="button"
-                role="menuitem"
-                data-testid="workspace-recovery-key"
-                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setRecoveryOpen(true);
-                }}
-              >
-                Owner file…
-                {savedOnDevice ? (
-                  <span
-                    className="ml-auto pl-2 text-[10px] text-[var(--ink-muted)]"
-                    data-testid="workspace-recovery-saved"
-                  >
-                    Saved on this device
-                  </span>
-                ) : null}
               </button>
             ) : null}
             <hr className="my-1 border-[var(--hairline)]" />
@@ -347,7 +313,7 @@ export function WorkspaceActions({
           workspaceId={workspaceId}
           title={title}
           mode={import.meta.env.VITE_SUITE_MODE === "standalone" ? "standalone" : "relay"}
-          ownerKey={ownerKey}
+          authorization={credentialAuthorization}
           onClose={() => setDeleteOpen(false)}
           onDeleted={() => {
             setDeleteOpen(false);
@@ -357,50 +323,22 @@ export function WorkspaceActions({
           }}
         />
       ) : null}
-      {/* Share and recovery are relay surfaces: one build-time gate keeps both
-          dialogs — and the relay clients they import — out of a standalone build. */}
-      {import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-        <>
-          {canManageLinks && shareOpen ? (
-            <ShareDialog
-              workspaceId={workspaceId}
-              boardId={boardId}
-              boardName={boardId ? title : null}
-              cardId={selectedCardId}
-              cardTitle={selectedCardId ? selectedCardTitle : null}
-              selectedCardIds={selectedCardIds}
-              initialScope={shareScope}
-              onClose={() => {
-                setShareOpen(false);
-                setShareScope("workspace");
-              }}
-            />
-          ) : null}
-          {ownerKey && recoveryOpen ? (
-            <RecoveryKeyDialog
-              workspaceId={workspaceId}
-              ownerKey={ownerKey}
-              boardId={boardId}
-              title={title}
-              onClose={() => {
-                setRecoveryOpen(false);
-                setSavedOnDevice(readSavedRecoveryKey(workspaceId));
-              }}
-            />
-          ) : null}
-          {ownerKey && backupPrompt ? (
-            <RecoveryKeyDialog
-              mode="backup-prompt"
-              workspaceId={workspaceId}
-              ownerKey={ownerKey}
-              title={title}
-              onClose={() => {
-                setBackupPrompt(false);
-                setSavedOnDevice(readSavedRecoveryKey(workspaceId));
-              }}
-            />
-          ) : null}
-        </>
+      {/* Sharing is a relay surface: one build-time gate keeps the dialog — and
+          the relay client it imports — out of a standalone build. */}
+      {import.meta.env.VITE_SUITE_MODE !== "standalone" && canManageLinks && shareOpen ? (
+        <ShareDialog
+          workspaceId={workspaceId}
+          boardId={boardId}
+          boardName={boardId ? title : null}
+          cardId={selectedCardId}
+          cardTitle={selectedCardId ? selectedCardTitle : null}
+          selectedCardIds={selectedCardIds}
+          initialScope={shareScope}
+          onClose={() => {
+            setShareOpen(false);
+            setShareScope("workspace");
+          }}
+        />
       ) : null}
     </div>
   );

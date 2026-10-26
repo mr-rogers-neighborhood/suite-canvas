@@ -1,0 +1,69 @@
+---
+import type { DashboardPage } from "../lib/pages";
+import { SECTIONS } from "../lib/sections";
+
+interface Props {
+  pages: readonly DashboardPage[];
+}
+
+const { pages } = Astro.props;
+const first = SECTIONS[0].id;
+---
+
+<section class="dashboard-tabs" data-dashboard-tabs>
+  <div class="dashboard-tabs-bar">
+    <div class="dashboard-tablist" role="tablist" aria-label="Documentation sections">
+      {
+        SECTIONS.map((section) => (
+          <button
+            type="button"
+            role="tab"
+            class="dashboard-tab"
+            data-dashboard-tab={section.id}
+            aria-selected={section.id === first ? "true" : "false"}
+          >
+            {section.label}
+          </button>
+        ))
+      }
+    </div>
+    <label class="dashboard-filter">
+      <span class="sr-only">Filter pages</span>
+      <input type="search" placeholder="Filter this section" data-dashboard-filter />
+    </label>
+  </div>
+
+  <ul class="dashboard-list">
+    {
+      pages.map((page) => (
+        <li
+          class="dashboard-row"
+          data-dashboard-row
+          data-section={page.section}
+          data-search={`${page.title} ${page.description}`.toLowerCase()}
+          hidden={page.section !== first}
+        >
+          <span class="dashboard-row-head">
+            <a class="dashboard-row-title" href={page.url}>
+              {page.title}
+            </a>
+            {page.lastModified ? (
+              <time class="dashboard-row-date" datetime={page.lastModified.slice(0, 10)}>
+                {page.lastModified.slice(0, 10)}
+              </time>
+            ) : null}
+          </span>
+          {page.description ? <span class="dashboard-row-blurb">{page.description}</span> : null}
+        </li>
+      ))
+    }
+  </ul>
+
+  <p class="dashboard-empty" data-dashboard-empty hidden>
+    No pages match.
+  </p>
+</section>
+
+<script>
+  import "../scripts/dashboard-tabs";
+</script>

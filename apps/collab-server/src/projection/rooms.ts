@@ -1,5 +1,5 @@
+import { licenceRequired } from "@suite/licence";
 import { CrdtType } from "loro-protocol";
-import { licenceRequired } from "../store/licence.js";
 import type { DocumentStore } from "../store/persistence.js";
 import type { ShareRole } from "../store/shares.js";
 import type { RoomState } from "./model.js";

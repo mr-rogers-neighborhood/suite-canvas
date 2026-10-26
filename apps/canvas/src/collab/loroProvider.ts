@@ -14,10 +14,19 @@ import {
  * - `rejoining`: the relay is back, or a claim just landed, and the open
  *   document is rejoining its room to push the edits made while it was away.
  * - `connected`: the workspace room is joined and merged; edits stream live.
- * - `disconnected`: no usable relay — offline, or the relay refused the room
- *   (an unclaimed workspace). Edits stay in the local document.
+ * - `disconnected`: no usable relay — the socket is down or the browser is
+ *   offline. Edits stay in the local document.
+ * - `unauthorized`: the relay answered and refused this tab's credential (a
+ *   revoked share, no account session, a seat the plan does not cover). The
+ *   network is fine; access is the problem, and saying "offline" here sent people
+ *   to check their connection.
  */
-export type LoroConnectionStatus = "connecting" | "rejoining" | "connected" | "disconnected";
+export type LoroConnectionStatus =
+  | "connecting"
+  | "rejoining"
+  | "connected"
+  | "disconnected"
+  | "unauthorized";
 
 /** Every event that can move the sync status. */
 export type SyncEvent =
@@ -38,10 +47,13 @@ export type SyncEvent =
  * - `transport-connected` — the socket is open. A join or rejoin starts now, so
  *   this is never reported as `connected` before the room is. A tab that has
  *   never been live is still "Syncing"; one that was live is "Reconnecting".
- * - `transport-lost` — the socket closed, or the browser went offline.
+ * - `transport-lost` — the socket closed, or the browser went offline, even
+ *   after a refusal: that is an ordinary disconnect, so "the network went away"
+ *   and "the relay said no" stay separate states.
  * - `room-joined` — the workspace room handshake completed; the CRDT merge ran.
- * - `room-refused` — the relay answered and refused the credential, e.g. an
- *   unclaimed workspace. The document keeps accepting local edits.
+ * - `room-refused` — the relay answered and refused the credential, e.g. no
+ *   session token or a revoked share token. The document keeps accepting local
+ *   edits either way.
  * - `rejoin-requested` — a claim settled as `claimed`, or a reconnect returned.
  *   A live room stays live; anything else moves to `rejoining`.
  */
@@ -51,8 +63,9 @@ export function nextConnectionStatus(
 ): LoroConnectionStatus {
   switch (event.type) {
     case "transport-lost":
-    case "room-refused":
       return "disconnected";
+    case "room-refused":
+      return "unauthorized";
     case "room-joined":
       return "connected";
     case "rejoin-requested":
@@ -60,9 +73,25 @@ export function nextConnectionStatus(
     case "transport-connected":
       return event.everJoined ? "rejoining" : "connecting";
     case "transport-connecting":
-      return status === "disconnected" || status === "rejoining" ? status : "connecting";
+      // A refusal is an answer from a reachable relay, so a reconnect attempt
+      // does not turn it back into "Connecting"; the next refusal or a join
+      // says which it is.
+      return status === "disconnected" || status === "rejoining" || status === "unauthorized"
+        ? status
+        : "connecting";
   }
 }
+
+/**
+ * The credential a join presents.
+ *
+ * A share token is a constant, so it can be bytes. An account session is a
+ * five-minute JWT (ADR-0074): a provider that captured one at construction would
+ * present a dead token after the first expiry, so it takes a function and asks
+ * again on every join. Resolving `null` means "present nothing", which the relay
+ * answers with a refusal rather than a silent downgrade.
+ */
+export type ProviderAuth = Uint8Array | (() => Promise<Uint8Array | null>);
 
 export interface LoroProviderOptions {
   url: string;
@@ -72,11 +101,11 @@ export interface LoroProviderOptions {
   presence: EphemeralStore;
   cursors: EphemeralStore;
   /**
-   * Capability token: the owner key or a share token. The server scopes the
+   * Capability token: the session JWT or a share token. The server scopes the
    * derived presence and cursor rooms to the same credential, so it is sent to
    * both joins. Optional only so tests can build a provider without one.
    */
-  auth?: Uint8Array;
+  auth?: ProviderAuth;
   onStatus?: (status: LoroConnectionStatus) => void;
   onSynced?: () => void;
 }
@@ -219,18 +248,33 @@ export class LoroProvider {
     });
   }
 
+  /** The credential as it stands when a join is sent, not as it stood at boot. */
+  private async resolveAuth(): Promise<Uint8Array | null> {
+    const source = this.options.auth;
+    if (source === undefined) return null;
+    if (!(source instanceof Function)) return source;
+    try {
+      return await source();
+    } catch {
+      // A refused or unreachable mint is "no credential": the room join is then
+      // refused, which the status slot already reports as "No access".
+      return null;
+    }
+  }
+
   private async join(): Promise<void> {
     if (this.joining) return this.joining;
     this.joining = (async () => {
       await this.client.waitConnected();
       if (this.disposed) return;
 
+      const credential = await this.resolveAuth();
       this.workspaceRoom = await this.untilTransportLoses(
         this.client.join({
           roomId: this.options.workspaceId,
           crdtAdaptor: new LoroAdaptor(this.options.doc),
           onStatusChange: this.onWorkspaceRoomStatus,
-          ...(this.options.auth ? { auth: this.options.auth } : {}),
+          ...(credential ? { auth: credential } : {}),
         }),
       );
 
@@ -243,8 +287,9 @@ export class LoroProvider {
       }
 
       // A viewer token also writes the derived ephemeral rooms, so presence and
-      // cursors work for every role.
-      const auth = this.options.auth ? { auth: this.options.auth } : {};
+      // cursors work for every role. The credential is the same one the document
+      // room just accepted.
+      const auth = credential ? { auth: credential } : {};
       try {
         this.presenceRoom = await this.client.join({
           roomId: `${this.options.workspaceId}:presence`,

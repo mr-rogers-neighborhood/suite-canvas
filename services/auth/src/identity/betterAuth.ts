@@ -1,10 +1,11 @@
 import { passkey } from "@better-auth/passkey";
-import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "better-auth";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import {
   admin,
   anonymous,
   captcha,
+  jwt,
   lastLoginMethod,
   magicLink,
   organization,
@@ -24,20 +25,28 @@ import {
   isAdmissionGatedPath,
 } from "../invitations/admission.js";
 import { enrollmentPlugin, type InvitationEmail } from "../invitations/enrollment.js";
+import { type EntitlementReader, noEntitlements } from "../licensing/entitlements.js";
 import {
   type LicenceStore,
   licenceStateFor,
   type MembershipReader,
 } from "../licensing/licences.js";
+import type { OrganizationInvitation } from "../mail/mail.js";
 import { checkSeatAllowance } from "../organizations/seats.js";
 import type { AccountSession, AuthEnvironment } from "../types.js";
+import { mfaEnrollment, mfaExemptPath, mfaGate } from "./mfa.js";
+import { RELAY_TOKEN_TTL, relayClaims } from "./relayToken.js";
 
 /**
- * Better Auth, configured for the ways in the ADR names: passkeys, a magic link,
- * Google, and — since the §11 amendment — a password, but **only for an account an
- * invitation created**. Self-serve sign-up is closed (`emailAndPassword.disableSignUp`),
- * so the password door is a door an operator opened by inviting somebody, not a form
- * on the front page. Every other way in stays open to everyone.
+ * Better Auth, configured for the doors ADR-0077 opens: a password on an open sign-up
+ * form, a magic link, passkeys at the deployment's own `rpID`, and Google when both
+ * halves of the pair are set.
+ *
+ * Sign-up is open because the product's first paying customer arrives from a browser
+ * with no invitation and no account. What replaces the invitation as abuse control is
+ * a verified email address, a rate limit on the two guessable routes, and Turnstile
+ * wherever `SUITE_TURNSTILE_SECRET` is set. An invitation is now what it means in the
+ * rest of the product: a way to add a colleague to an organization.
  *
  * The instance is constructed from an injected `database` adapter rather than
  * from a connection string, for one reason that matters more than convenience:
@@ -72,6 +81,14 @@ export interface AuthServiceDeps {
   /** Deliver a magic link. Required by the plugin; the route only runs when configured. */
   sendMagicLink: (input: { email: string; url: string; token: string }) => Promise<void>;
   /**
+   * Deliver the address-verification link that open sign-up depends on.
+   *
+   * Required, not optional: with `requireEmailVerification` on, an account that never
+   * receives this message can never sign in, so a deployment without a sender is a
+   * deployment where registration does not work. `mail/mail.ts` has the transport.
+   */
+  sendVerificationEmail: (input: { email: string; url: string; token: string }) => Promise<void>;
+  /**
    * Deliver a private invitation. Optional because a deployment may never invite
    * anyone; when it is absent, creating a private invite throws and the plugin rolls
    * the row back, so an invitation nobody can receive is never a quiet success.
@@ -79,6 +96,14 @@ export interface AuthServiceDeps {
   sendInvitation?: (invitation: InvitationEmail) => Promise<void>;
   /** Called for shareable invites, whose creator receives the link instead. */
   onPublicInvitation?: (invitation: Omit<InvitationEmail, "email" | "name">) => void;
+  /**
+   * Deliver the organization plugin's invitation.
+   *
+   * Required for the same reason `sendVerificationEmail` is: `/organization/invite-member`
+   * writes the row and then calls this, so without it an owner can create an invitation
+   * nobody ever receives and have no way to tell.
+   */
+  sendOrganizationInvitation: (invitation: OrganizationInvitation) => Promise<void>;
   /**
    * Hand everything an anonymous account owned to the account that just signed up.
    *
@@ -89,6 +114,22 @@ export interface AuthServiceDeps {
    * without a database.
    */
   transferAnonymousWorkspaces?: (input: { fromUserId: string; toUserId: string }) => Promise<void>;
+  /**
+   * What the subscription buys, for the `tier` and `limits` claims (ADR-0075).
+   *
+   * Injected so this package compiles and runs before billing lands: the default reads
+   * no organization and answers tier `free` with no paid limits.
+   */
+  entitlements?: EntitlementReader;
+  /**
+   * The billing plugin, when another lane supplies it.
+   *
+   * A plugin is the whole seam: `@better-auth/stripe` registers its own checkout,
+   * portal and webhook endpoints under `/api/auth/*`, which this module already
+   * delegates. Nothing here imports `@suite/billing`, and nothing here implements a
+   * checkout, a portal or a webhook.
+   */
+  billingPlugin?: BetterAuthPlugin;
   now?: () => number;
 }
 
@@ -101,16 +142,32 @@ export interface AuthInstance {
 }
 
 interface AuthSessionPayload {
-  user: { id: string; email?: string | null; admittedAt?: number | null };
+  user: {
+    id: string;
+    email?: string | null;
+    role?: string | null;
+    admittedAt?: number | null;
+    twoFactorEnabled?: boolean | null;
+  };
   session: { activeOrganizationId?: string | null };
 }
 
-/** The refusal the plugin will surface as a 403 with our code in the body. */
-function refusal(code: string, message: string): HookRefusal {
+/**
+ * The refusal the plugin will surface as a 403 with our code in the body.
+ *
+ * `details` carries what the client needs to act on the refusal — the enrolment
+ * endpoint, in the MFA case — so the client does not have to hardcode a path the
+ * server chose.
+ */
+function refusal(
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {},
+): HookRefusal {
   const error = new Error(message) as HookRefusal;
   error.name = "APIError";
   error.status = "FORBIDDEN";
-  error.body = { code, message };
+  error.body = { code, message, ...details };
   return error;
 }
 
@@ -170,6 +227,13 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
   }
   const now = deps.now ?? Date.now;
   const maxOrganizations = maxOrganizationsPerUser(env);
+  const baseURL = env.SUITE_AUTH_URL?.trim() ?? "";
+  // A relying-party id is a registrable domain, never a port or a scheme. `localhost`
+  // is the only value that works without configuration, so a deployment that does not
+  // name one gets the host it actually serves from.
+  const rpID = env.SUITE_AUTH_RP_ID?.trim() || new URL(baseURL).hostname;
+  const entitlements = deps.entitlements;
+  const billingPlugin = deps.billingPlugin;
 
   const needsAdmission = admissionRequired(env);
   const turnstile = env.SUITE_TURNSTILE_SECRET?.trim();
@@ -178,20 +242,44 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
     baseURL: env.SUITE_AUTH_URL?.trim(),
     secret: env.SUITE_AUTH_SECRET?.trim(),
     database: deps.database,
-    // Enabled, and sign-up closed: a password can only be *set* by redeeming an
-    // invitation (`invite/redeem`), never by visiting a sign-up form. The pair is what
-    // makes "self-serve sign-up stays closed" true for the one route that can be
-    // brute-forced (ADR-0067 §11 amendment).
-    emailAndPassword: { enabled: true, disableSignUp: true },
     /**
-     * A password is the only credential here that can be guessed, so the route that
-     * accepts one is named explicitly rather than left to a framework default: Better
-     * Auth's limiter (on by default in production) throttles `/sign-in/*` to 3 per
-     * 10 s, and pinning the rule means a future default cannot quietly widen it.
+     * Open sign-up, with the address checked before the account can sign in
+     * (ADR-0077).
+     *
+     * `requireEmailVerification` is what keeps an open form from being a free account
+     * farm: the row exists, but no session is issued until the mailbox answers. It
+     * does not replace the seat check — a verified account still cannot join an
+     * organization with no seat for it.
+     */
+    emailAndPassword: {
+      enabled: true,
+      disableSignUp: false,
+      requireEmailVerification: true,
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url, token }) => {
+        await deps.sendVerificationEmail({ email: user.email, url, token });
+      },
+    },
+    /**
+     * The two routes that accept a guessable secret are named explicitly rather than
+     * left to a framework default: Better Auth's limiter (on by default in production)
+     * throttles `/sign-in/*` and `/sign-up/*` to 3 per 10 s, and pinning the rule means
+     * a future default cannot quietly widen it. Sign-up is limited for the same reason
+     * a sign-in is: the route creates an account and sends mail, so an unlimited form
+     * is a mail relay and an account farm.
+     *
      * Storage is memory by default, which is per instance — a deployment running more
      * than one instance must point `rateLimit.storage` at a shared store.
      */
-    rateLimit: { customRules: { "/sign-in/email": { window: 10, max: 3 } } },
+    rateLimit: {
+      customRules: {
+        "/sign-in/email": { window: 10, max: 3 },
+        "/sign-up/email": { window: 10, max: 3 },
+      },
+    },
     user: {
       additionalFields: {
         /**
@@ -204,19 +292,38 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        // Admission is a licensing gate, not an authentication one: it never
-        // decides who may read a document, only who may spend our storage or
-        // join a tenant (ADR-0067 §7).
-        if (!needsAdmission) return;
-        if (!isAdmissionGatedPath(ctx.path)) return;
-        // Resolved here rather than read from `ctx.context.session`: a global `before`
-        // hook runs before the endpoint's own session middleware, so the context is
-        // still empty at this point and a gate that trusted it would never fire.
-        const session = await getSessionFromCtx(ctx);
-        // No session is a *sign-up*, which is exactly what admission allows, and the
-        // gate says so itself so this hook never re-derives the rule.
-        const gate = admissionGate(session?.user as { admittedAt?: number | null } | undefined);
-        if (gate.isErr()) throw refusal(gate.error.code, gate.error.message);
+        const admissionApplies = needsAdmission && isAdmissionGatedPath(ctx.path);
+        const mfaApplies = !mfaExemptPath(ctx.path);
+        // A global `before` hook runs before the endpoint's own session middleware, so
+        // the session is resolved here rather than read from `ctx.context.session`: a
+        // gate that trusted an empty context would never fire. Skipped when neither
+        // gate can act, so the enrolment and session-read paths cost no extra lookup.
+        const session = admissionApplies || mfaApplies ? await getSessionFromCtx(ctx) : null;
+
+        // Admission is a licensing gate, not an authentication one: it never decides
+        // who may read a document, only who may spend our storage or join a tenant
+        // (ADR-0067 §7). Off by default, and it only runs where an operator turned it
+        // on and only on the paths it names.
+        if (admissionApplies) {
+          // No session is a *sign-up*, which is exactly what admission allows, and the
+          // gate says so itself so this hook never re-derives the rule.
+          const gate = admissionGate(session?.user as { admittedAt?: number | null } | undefined);
+          if (gate.isErr()) throw refusal(gate.error.code, gate.error.message);
+        }
+
+        // The second factor is required of the one role that can act on other people.
+        // `mfaGate` allows the enrolment endpoints through, so the requirement is
+        // satisfiable by the account it applies to.
+        const role = (session?.user as { role?: string | null } | undefined)?.role;
+        const twoFactorEnabled = (
+          session?.user as { twoFactorEnabled?: boolean | null } | undefined
+        )?.twoFactorEnabled;
+        if (mfaApplies) {
+          const mfa = mfaGate({ role, twoFactorEnabled }, ctx.path);
+          if (mfa.isErr()) {
+            throw refusal(mfa.error.code, mfa.error.message, { enrollAt: mfa.error.enrollAt });
+          }
+        }
       }),
     },
     ...(googleConfigured(env)
@@ -234,6 +341,19 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
         // Teams stay off until an ADR defines them as workspace grants; see the
         // module comment above for why a finer grain cannot be enforced.
         teams: { enabled: false },
+        // The plugin's own invitation, which is what "add a colleague" is now that
+        // sign-up is open. The link names the invitation, and the plugin checks the
+        // signed-in address against it, so it is useless to anyone else holding it.
+        sendInvitationEmail: async (data) => {
+          await deps.sendOrganizationInvitation({
+            id: data.id,
+            email: data.email,
+            role: data.role,
+            organizationName: data.organization.name,
+            inviterName: data.inviter.user.name || data.inviter.user.email,
+            url: `${new URL(baseURL).origin}/accept-invitation?id=${encodeURIComponent(data.id)}`,
+          });
+        },
         organizationHooks: {
           beforeCreateOrganization: async ({ user }) => {
             const owned = await deps.memberships.countForUser(user.id);
@@ -274,10 +394,7 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
           await deps.sendMagicLink({ email, url, token });
         },
       }),
-      passkey({
-        rpID: env.SUITE_AUTH_RP_ID?.trim() || "localhost",
-        rpName: env.SUITE_AUTH_RP_NAME?.trim() || "Suite",
-      }),
+      passkey({ rpID, rpName: env.SUITE_AUTH_RP_NAME?.trim() || "Suite" }),
       // A session with no PII, so a first launch can be a real user from minute one.
       // `onLinkAccount` is the whole point: it fires on the first real sign-in, and
       // it runs before Better Auth deletes the anonymous user.
@@ -312,10 +429,33 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
           ? {}
           : { onPublicInvitation: deps.onPublicInvitation }),
       }),
+      /**
+       * The relay's credential (ADR-0074).
+       *
+       * The key set is published at `/api/auth/jwks` by this plugin, so the relay holds
+       * a public key and no database. The TTL is the revocation window: a seat removed
+       * or a role lowered takes effect at the next mint, which is at most
+       * `RELAY_TOKEN_TTL_SECONDS` away.
+       */
+      jwt({
+        jwks: { keyPairConfig: { alg: "EdDSA", crv: "Ed25519" } },
+        jwt: {
+          issuer: baseURL,
+          audience: baseURL,
+          expirationTime: RELAY_TOKEN_TTL,
+          definePayload: async ({ user, session }) =>
+            relayClaims({
+              userId: user.id,
+              activeOrganizationId: session.activeOrganizationId ?? null,
+              roleIn: (organizationId, userId) => deps.memberships.roleFor(organizationId, userId),
+              entitlements: entitlements ?? noEntitlements,
+            }),
+        },
+      }),
       // Normalization before anything else touches an address: `foo+temp@gmail.com`
       // and `foo@gmail.com` are one person, and per-seat billing makes a duplicate
-      // account a duplicate seat. It also blocks 55k disposable domains, which keeps
-      // the admission queue short (ADR-0067 §9).
+      // account a duplicate seat. It also blocks 55k disposable domains, which is one
+      // of the two things standing in front of an open sign-up (ADR-0077).
       emailHarmony(),
       // Invisible challenge in front of sign-up, only where a deployment opted in.
       ...(turnstile === "" || turnstile === undefined
@@ -326,6 +466,10 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
               secretKey: turnstile,
             }),
           ]),
+      // The billing seam. `@better-auth/stripe` registers checkout, the portal and the
+      // webhook on this instance, under `/api/auth/*`; absent, the deployment simply
+      // has no way to pay. Nothing in this package imports `@suite/billing`.
+      ...(billingPlugin === undefined ? [] : [billingPlugin]),
     ],
   };
 }
@@ -370,12 +514,27 @@ export function sessionReader(
       // then takes effect without asking them to sign in again.
       const admittedAt =
         typeof payload.user.admittedAt === "number" ? payload.user.admittedAt : null;
+      // The enrolment requirement, so the client can open the right screen instead of
+      // discovering it from a 403 on the first organization call.
+      const mfaRequired = (() => {
+        const enrollment = mfaEnrollment({
+          role: payload.user.role,
+          twoFactorEnabled: payload.user.twoFactorEnabled,
+        });
+        return enrollment.required && !enrollment.enrolled;
+      })();
       const organizationId = payload.session.activeOrganizationId ?? null;
       if (organizationId === null) {
-        return { userId: payload.user.id, organizationId: null, role: null, admittedAt };
+        return {
+          userId: payload.user.id,
+          organizationId: null,
+          role: null,
+          admittedAt,
+          mfaRequired,
+        };
       }
       const role = await memberships.roleFor(organizationId, payload.user.id);
-      return { userId: payload.user.id, organizationId, role, admittedAt };
+      return { userId: payload.user.id, organizationId, role, admittedAt, mfaRequired };
     },
   };
 }

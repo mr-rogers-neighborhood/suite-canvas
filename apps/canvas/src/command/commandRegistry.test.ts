@@ -55,6 +55,7 @@ function actions(overrides: Partial<CommandActions> = {}): CommandActions {
     createCardInInbox: vi.fn(),
     createSketch: vi.fn(),
     createSection: vi.fn(),
+    createPortalOnBoard: vi.fn(),
     createBoard: vi.fn(),
     editCard: vi.fn(),
     setCardType: vi.fn(),
@@ -116,6 +117,7 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   "card.focus": { unavailable: { state: { cards: [] } } },
   "card.createSketch": { unavailable: { capabilities: [] } },
   "section.create": { unavailable: { capabilities: [] } },
+  "portal.create": { unavailable: { state: { activeBoardId: null } } },
   "card.edit": { unavailable: { capabilities: [] } },
   "card.setType": { unavailable: { capabilities: [] } },
   "card.trash": { unavailable: { state: { cardId: null } } },
@@ -165,10 +167,18 @@ describe("commands", () => {
     }
   });
 
-  it("should mark exactly the palette-owned commands with a palette row", () => {
+  it("should give every palette-owned command a palette row", () => {
     for (const command of commands) {
       if (command.owner === "palette") expect(command.palette, command.id).toBeDefined();
-      else expect(command.palette, command.id).toBeUndefined();
+    }
+  });
+
+  it("should let a canvas-owned create command reach the palette too", () => {
+    // The dock and the canvas are not the only place a create action belongs:
+    // the palette lists the same command, so one table answers "where can I do
+    // this?" for every surface.
+    for (const id of ["card.createSketch", "section.create", "portal.create"]) {
+      expect(commands.find((command) => command.id === id)?.palette, id).toBeDefined();
     }
   });
 
@@ -237,7 +247,7 @@ describe("commandsFor", () => {
 
 describe("paletteInvocations", () => {
   it("should render at least one row for every palette command", () => {
-    for (const command of commands.filter((entry) => entry.owner === "palette")) {
+    for (const command of commands.filter((entry) => entry.palette !== undefined)) {
       const context = commandContext(fixtures[command.id]?.available ?? {});
       expect(
         paletteInvocations(context).some((row) => row.commandId === command.id),
@@ -253,8 +263,11 @@ describe("paletteInvocations", () => {
     expect(rows.map((row) => row.label)).toEqual(
       expect.arrayContaining(["Research", "Drafts", "Act one", "Alpha", "New note", "New board"]),
     );
-    // A portal needs a target board, so the palette never offers one.
-    expect(rows.some((row) => row.label === "New portal")).toBe(false);
+    // A portal names its target in the row, so the palette can offer one without
+    // a second control: every portal row is "New portal to <board>".
+    const portals = rows.filter((row) => row.commandId === "portal.create");
+    expect(portals.map((row) => row.label)).toEqual(["New portal to Research"]);
+    expect(portals[0]?.id).toBe("portal.create:board-2");
   });
 
   it("should not list a command twice for the same object", () => {

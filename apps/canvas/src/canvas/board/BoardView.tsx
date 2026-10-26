@@ -93,6 +93,7 @@ export function BoardView() {
     projection,
     refs,
     createNoteAt: commands.createNoteAt,
+    nudgeSelected: commands.nudgeSelected,
     trashSelected: commands.trashSelected,
     unplaceSelected: commands.unplaceSelected,
     createSectionAt,

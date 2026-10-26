@@ -21,8 +21,8 @@ pnpm dev
 Open <http://localhost:5173>. The canvas runs on 5173 and the Loro relay on 1234. A second window at
 the same URL shows live edits, titles and presence.
 
-Node 22 or newer and pnpm 12, the versions CI pins. [Run Suite locally](docs/tutorials/run-locally.md)
-covers the standalone bundle and custom ports.
+Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. [Run Suite
+locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.
 
 ## Documentation
 
@@ -37,29 +37,38 @@ covers the standalone bundle and custom ports.
 
 | Command | What it runs |
 | --- | --- |
-| `pnpm check` | Biome, `tsc` across the workspace, and the Vitest files your change reaches |
-| `pnpm verify` | The commit gate: lint, typecheck, unit tests, billing tests, story tests, build |
-| `pnpm e2e:smoke` | The `@smoke` Playwright specs, for a medium change |
-| `pnpm e2e:canvas` / `e2e:collab` / `e2e:views` | One e2e area, for a change inside it |
-| `pnpm e2e` | Every Playwright spec, for a big commit, a merge or a tag |
-| `pnpm e2e:doctor` | Report processes holding the e2e ports before a run |
+| `pnpm check` | Biome, `tsc` across the workspace, the Vitest files your change reaches, docs symbols, shape |
+| `pnpm lint`, `pnpm typecheck`, `pnpm test` | Biome, `tsc` across the workspace, and every Vitest project |
+| `pnpm docs:check` | Links, fences, banned prose, generated indexes, limits |
+| `pnpm docs:symbols` | Backticked paths, root scripts, ADR references |
+| `pnpm shape` | File length, observe sites, raw Loro writes |
+| `pnpm verify` | The local gate plus the billing tests, the story tests and the build |
 | `pnpm build` | `@suite/graph` dist, then the canvas bundle |
 | `pnpm storybook` | Component workshop on :6006 |
 | `pnpm docs:site` | The docs site on :3001 |
-| `pnpm docs:check` | Links, fences, retired terms and version agreement |
+| `pnpm e2e:smoke` | The `@smoke` Playwright specs, the narrowest e2e run |
+| `pnpm e2e:canvas` / `e2e:collab` / `e2e:views` | One e2e area |
+| `pnpm e2e` | Every Playwright spec, a milestone action |
+| `pnpm e2e:doctor` | Report processes holding the e2e ports before a run |
 | `pnpm limits:check` | `docs/reference/limits.md` still matches the code |
 
-[Test and verify a change](docs/how-to/test-and-verify.md) explains which tier a change needs.
+The gate is local: `pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols &&
+pnpm shape`. Playwright runs when the owner asks for it, not on every change, and no workflow gates
+`main`. [Test and verify a change](docs/how-to/test-and-verify.md) has the tiers and the e2e area
+scripts.
 
 ## Repository layout
 
 ```
 apps/canvas          React 19 canvas: React Flow surface, Tiptap editors, Zustand UI store
 apps/collab-server   Loro WebSocket relay, six SQLite stores, attachment serving
-apps/docs            The documentation site (Next.js, Fumadocs)
+apps/docs            The documentation site (Astro, Starlight)
+apps/site            The marketing site (Astro)
+apps/control-plane   Accounts, organizations and billing on Postgres, beside the relay
 packages/graph       @suite/graph: Zod schema and the typed WorkspaceDocument layer
-services/auth        Accounts, organizations, invitations, licensing (built, not mounted)
-services/billing     Licence and Stripe webhook verification (node --test, outside the workspace)
+packages/licence     The licence token format and its Ed25519 verifier
+services/auth        Better Auth: sign-up, sessions, passkeys, organizations, invitations
+services/billing     Stripe through @better-auth/stripe, plus the entitlement read
 e2e                  Playwright specs, tagged for the smoke tier
 docs                 Tutorials, how-to, reference, explanation
 deploy               Caddyfile, backup and restore scripts, drill records
@@ -100,8 +109,9 @@ to the single app container, whose six SQLite stores sit on one volume.
 - [Security model](docs/reference/security-model.md): every credential, what the relay can read, and
   what the account layer will add.
 
-`.github/workflows/release.yml` turns a `v*` tag into an image, a recorded digest and release notes;
-rollback re-pins the previous digest. [Release and roll back](docs/how-to/release.md) is the procedure.
+`.github/workflows/release.yml` defines the tag release and sits unrun on this account;
+[Release and roll back](docs/how-to/release.md) has the manual build path and the rollback that
+re-pins the previous digest.
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { licenceRequired } from "@suite/licence";
 import type { SharePublishResult } from "../projection/index.js";
-import { licenceRequired } from "../store/licence.js";
 import { SHARE_SESSION_TTL_MS, type Share, type ShareStore } from "../store/shares.js";
 import { HttpError } from "./errors.js";
 import {

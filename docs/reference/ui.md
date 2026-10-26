@@ -8,7 +8,7 @@ How the shell, the library, the panels, the styling surfaces and the command pal
 
 | Surface | Component | What it owns |
 | --- | --- | --- |
-| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the share action, the theme toggle |
+| Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the workspace menu, the account slot, the theme toggle |
 | Board tabs | `apps/canvas/src/chrome/BoardTabs.tsx` | Open boards, the home board, per-board peer counts, board close and rename |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
@@ -17,6 +17,8 @@ How the shell, the library, the panels, the styling surfaces and the command pal
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search and facets |
 | Command palette | `apps/canvas/src/command/CommandPalette.tsx` | Navigation and actions from one query |
 | Presence | `apps/canvas/src/presence/` and `apps/canvas/src/cursor/` | Peer cursors, name tags, avatars and the status cursor |
+| Account | `apps/canvas/src/auth/SignInEntry.tsx` and `AccountPanel.tsx` | Sign in or the account menu, and one dialog for the account, members, devices and the plan |
+| Launcher | `apps/canvas/src/launcher/WorkspaceLauncher.tsx` | Recents with rename, export and delete, import, and the same account entry the title bar has |
 
 The shell holds no document data. Selection, the active board, open tabs, filters, the open surface and the palette query live in `apps/canvas/src/store/useUiStore.ts`; the document arrives through `useWorkspaceSnapshot`.
 

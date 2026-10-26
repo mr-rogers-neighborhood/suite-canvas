@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { configureConnection } from "./persistence.js";
 
 export const shareScopes = ["workspace", "board", "card", "selection"] as const;
 export type ShareScope = (typeof shareScopes)[number];
@@ -9,6 +10,9 @@ export type ShareRole = (typeof shareRoles)[number];
 
 /** Room prefix for shares that do not open a whole workspace room. */
 export const SHARE_ROOM_PREFIX = "share-";
+
+/** Schema version stamped into `PRAGMA user_version`; bump only with a migration. */
+export const SHARE_STORE_SCHEMA = 1;
 
 /** Upper bound on the cards of one selection share, so a link stays a subset. */
 export const MAX_SELECTION_CARDS = 200;
@@ -350,6 +354,9 @@ function migrateShareColumns(db: DatabaseSync): void {
 
 export function createShareStore(path: string): ShareStore {
   const db = new DatabaseSync(path);
+  // WAL, the busy timeout and the schema stamp, so the store no longer depends on
+  // a boot-time pass in `server.ts` having configured the file first.
+  configureConnection(db, SHARE_STORE_SCHEMA);
   db.exec(
     `CREATE TABLE IF NOT EXISTS shares (
        id TEXT PRIMARY KEY,

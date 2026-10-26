@@ -7,7 +7,6 @@ import {
   type AdminPaths,
   adminPaths,
   deleteWorkspace,
-  resetOwner,
   roomDocumentKeys,
   runAdmin,
 } from "./admin.js";
@@ -55,22 +54,30 @@ function createDocuments(): void {
   }
 }
 
-function createWorkspaces(): void {
+function createWorkspaceOrgs(): void {
   const db = open(paths.workspaces);
   try {
+    // The owner-hash table an older build wrote stays in the file untouched;
+    // ADR-0076 ships no migration for issued keys, and the delete must not need
+    // one to find what it removes.
     db.exec(
       `CREATE TABLE workspaces (
          workspace_id TEXT PRIMARY KEY,
          owner_hash TEXT NOT NULL,
          created_at INTEGER NOT NULL,
          claimed_at INTEGER NOT NULL
+       );
+       CREATE TABLE workspace_orgs (
+         workspace_id TEXT PRIMARY KEY,
+         organization_id TEXT NOT NULL,
+         opened_at INTEGER NOT NULL
        )`,
     );
     const insert = db.prepare(
-      "INSERT INTO workspaces (workspace_id, owner_hash, created_at, claimed_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO workspace_orgs (workspace_id, organization_id, opened_at) VALUES (?, ?, ?)",
     );
-    insert.run("ws-1", hash("owner-key-1"), Date.now(), Date.now());
-    insert.run("ws-2", hash("owner-key-2"), Date.now(), Date.now());
+    insert.run("ws-1", "org-a", Date.now());
+    insert.run("ws-2", "org-b", Date.now());
   } finally {
     db.close();
   }
@@ -84,7 +91,7 @@ interface Fixture {
 /** One board share with a baseline plus a projected document, all owned by ws-1. */
 function seed(): Fixture {
   createDocuments();
-  createWorkspaces();
+  createWorkspaceOrgs();
 
   const token = "share-token-1";
   const shareId = "share-1";
@@ -140,8 +147,8 @@ function capture(): { lines: string[]; log: (line: string) => void } {
 }
 
 function inspect(): {
-  hasOwner: (workspaceId: string) => boolean;
-  ownsWorkspace: (workspaceId: string, key: string) => boolean;
+  hasOrg: (workspaceId: string) => boolean;
+  organizationOf: (workspaceId: string) => string | null;
   document: (name: string) => string | null;
   shareRevoked: (id: string) => boolean;
   shareExists: (id: string) => boolean;
@@ -154,14 +161,14 @@ function inspect(): {
   const shares = open(paths.shares);
 
   return {
-    hasOwner: (workspaceId) =>
-      workspaces.prepare("SELECT 1 FROM workspaces WHERE workspace_id = ?").get(workspaceId) !==
+    hasOrg: (workspaceId) =>
+      workspaces.prepare("SELECT 1 FROM workspace_orgs WHERE workspace_id = ?").get(workspaceId) !==
       undefined,
-    ownsWorkspace: (workspaceId, key) => {
+    organizationOf: (workspaceId) => {
       const row = workspaces
-        .prepare("SELECT owner_hash FROM workspaces WHERE workspace_id = ?")
-        .get(workspaceId) as { owner_hash: string } | undefined;
-      return row?.owner_hash === hash(key);
+        .prepare("SELECT organization_id FROM workspace_orgs WHERE workspace_id = ?")
+        .get(workspaceId) as { organization_id: string } | undefined;
+      return row?.organization_id ?? null;
     },
     document: (name) => {
       const row = documents.prepare("SELECT state FROM documents WHERE name = ?").get(name) as
@@ -224,60 +231,15 @@ describe("admin paths", () => {
   });
 });
 
-describe("admin reset-owner", () => {
-  it("deletes only the owner row and leaves documents and shares alone", () => {
-    const fixture = seed();
-    const { lines, log } = capture();
-
-    expect(runAdmin(["reset-owner", "ws-1", "--force"], envFor(paths), log)).toBe(0);
-
-    const state = inspect();
-    try {
-      expect(state.hasOwner("ws-1")).toBe(false);
-      expect(state.ownsWorkspace("ws-2", "owner-key-2")).toBe(true);
-      expect(state.document("%LOR:ws-1")).toBe("workspace one");
-      expect(state.shareExists(fixture.shareId)).toBe(true);
-      expect(state.shareRevoked(fixture.shareId)).toBe(false);
-      expect(state.baselineExists(fixture.shareId)).toBe(true);
-      expect(state.document(`%LOR:share-${fixture.token}`)).toBe("projected board");
-    } finally {
-      state.close();
-    }
-    expect(lines.join("\n")).toContain("Active share links were left unchanged.");
-  });
-
-  it("revokes active shares and removes their baselines and projections on request", () => {
-    const fixture = seed();
-    const { log } = capture();
-
-    resetOwner(paths, "ws-1", { revokeShares: true, log });
-
-    const state = inspect();
-    try {
-      expect(state.hasOwner("ws-1")).toBe(false);
-      expect(state.shareCount("ws-1")).toBe(1);
-      expect(state.shareRevoked(fixture.shareId)).toBe(true);
-      expect(state.baselineExists(fixture.shareId)).toBe(false);
-      expect(state.document(`%LOR:share-${fixture.token}`)).toBeNull();
-      expect(state.document(`loro:share-${fixture.token}`)).toBeNull();
-      expect(state.document(`NaN:share-${fixture.token}`)).toBeNull();
-      // The workspace document is not a share projection and stays.
-      expect(state.document("%LOR:ws-1")).toBe("workspace one");
-    } finally {
-      state.close();
-    }
-  });
-});
-
 describe("admin delete", () => {
-  it("removes the workspace document, shares, baselines, projections and owner row", () => {
+  it("removes the workspace document, shares, baselines, projections and organization row", () => {
     const fixture = seed();
 
     deleteWorkspace(paths, "ws-1");
 
     const state = inspect();
     try {
-      expect(state.hasOwner("ws-1")).toBe(false);
+      expect(state.hasOrg("ws-1")).toBe(false);
       expect(state.document("%LOR:ws-1")).toBeNull();
       expect(state.document("loro:ws-1")).toBeNull();
       expect(state.document("NaN:ws-1")).toBeNull();
@@ -287,7 +249,7 @@ describe("admin delete", () => {
       expect(state.baselineExists(fixture.shareId)).toBe(false);
 
       // Another workspace is untouched.
-      expect(state.ownsWorkspace("ws-2", "owner-key-2")).toBe(true);
+      expect(state.organizationOf("ws-2")).toBe("org-b");
       expect(state.document("%LOR:ws-2")).toBe("workspace two");
     } finally {
       state.close();
@@ -302,7 +264,7 @@ describe("admin delete", () => {
 
     const state = inspect();
     try {
-      expect(state.hasOwner("ws-1")).toBe(false);
+      expect(state.hasOrg("ws-1")).toBe(false);
       expect(state.document("%LOR:ws-1")).toBeNull();
     } finally {
       state.close();
@@ -316,12 +278,11 @@ describe("admin safety", () => {
     const fixture = seed();
     const { lines, log } = capture();
 
-    expect(runAdmin(["reset-owner", "ws-1"], envFor(paths), log)).not.toBe(0);
     expect(runAdmin(["delete", "ws-1"], envFor(paths), log)).not.toBe(0);
 
     const state = inspect();
     try {
-      expect(state.hasOwner("ws-1")).toBe(true);
+      expect(state.hasOrg("ws-1")).toBe(true);
       expect(state.shareRevoked(fixture.shareId)).toBe(false);
       expect(state.baselineExists(fixture.shareId)).toBe(true);
       expect(state.document("%LOR:ws-1")).toBe("workspace one");
@@ -335,9 +296,11 @@ describe("admin safety", () => {
   it("rejects unknown options and missing ids", () => {
     const { lines, log } = capture();
 
-    expect(
-      runAdmin(["reset-owner", "ws-1", "--force", "--drop-everything"], envFor(paths), log),
-    ).toBe(2);
+    expect(runAdmin(["delete", "ws-1", "--force", "--drop-everything"], envFor(paths), log)).toBe(
+      2,
+    );
+    // The owner-key command is gone, so it is an unknown command, not a flag error.
+    expect(runAdmin(["reset-owner", "ws-1", "--force"], envFor(paths), log)).toBe(2);
     expect(runAdmin(["delete", "--force"], envFor(paths), log)).toBe(2);
     expect(runAdmin(["nuke"], envFor(paths), log)).toBe(2);
     expect(lines.join("\n")).toContain("Unknown option: --drop-everything");

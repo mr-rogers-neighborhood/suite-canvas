@@ -1,6 +1,5 @@
-import type { LicenceClaims, SeatLicence } from "@suite/auth";
-import { checkSeat, type SeatDecision, type SeatRefusal, seatLicence } from "@suite/auth/seats";
-import type { LicenceClaimRecord } from "../http/workspaceHttp.js";
+import type { OrganizationRole } from "@suite/auth";
+import type { SeatDecision, SeatRefusal } from "@suite/auth/seats";
 
 /**
  * The relay-side seat gate (ADR-0065 §5: "the seat check is server-side or it is
@@ -8,132 +7,98 @@ import type { LicenceClaimRecord } from "../http/workspaceHttp.js";
  *
  * What the relay can and cannot answer is the whole design of this module:
  *
- * - It **can** answer "is the licence behind this workspace still valid?" — it
- *   records that claim in its own store, and `verifyLicence` already refused an
- *   expired token when the claim was made. That is the "a lapsed licence loses
- *   sync and never loses local data" rule, enforced at the only moment the relay
- *   sees a credential.
- * - It **cannot** answer "does this person hold a seat", because a sync
- *   connection carries an owner key or a share token, not a session. Member
- *   counts live in the control plane, which is the only place that knows them.
+ * - It **can** answer "may this session sync this workspace?" from the verified
+ *   token alone. `org`, `tier` and `limits` are minted server-side from the
+ *   organization's subscription (ADR-0074, ADR-0075), so the answer costs no
+ *   database read and no control-plane call.
+ * - It **cannot** answer "does this person hold a seat", because member counts
+ *   live in the control plane and this process holds no Postgres credential. It
+ *   does not need to: the token's TTL is the revocation window, so a seat
+ *   removed, a role lowered or a subscription cancelled takes effect at the next
+ *   mint, at most `RELAY_TOKEN_TTL_SECONDS` later.
  * - It deliberately does **not** re-check the workspace ceiling. That is a
- *   creation gate (`canAddWorkspace`), and enforcing it on connect would take
- *   documents away from someone who already holds them because a licence shrank.
- *   "Lapsed" ends sync; "narrowed" ends new work.
+ *   creation gate (`canAddWorkspace`) in the control plane, and enforcing it on
+ *   connect would take documents away from someone who already holds them
+ *   because a licence shrank. "Lapsed" ends sync; "narrowed" ends new work.
  *
- * So this gate decides for *capability* principals, and refuses an account
- * principal with `account-check-unavailable` rather than guessing. That refusal
- * is not a gap in the policy: it is the honest boundary until the browser sends a
- * session to the relay (a separate lane). Guessing here would be worse than
- * refusing, because a wrong "allow" is invisible and a wrong "deny" is a support
- * ticket.
+ * A share visitor is not a seat and is never asked about one: the link is a
+ * capability minted by an account, bounded by its own expiry and revocation.
  */
 
 /**
  * Why the relay refused a connection that its credential check allowed: one of
  * the shared licence refusals, or the one refusal only the relay can produce
- * because it holds no member counts.
+ * because it never sees an organization-less session as a tenant.
  */
-export type RelaySeatRefusal = SeatRefusal | "account-check-unavailable";
+export type RelaySeatRefusal = SeatRefusal | "organization-required";
 
 export type RelaySeatDecision = SeatDecision | { ok: false; reason: RelaySeatRefusal };
 
 export interface RelaySeatDeps {
   /**
    * True only on the hosted relay (`SUITE_HOSTED=1`). When false the gate is
-   * inert: self-hosting has no licence, so it has nothing to enforce.
+   * inert: self-hosting has no subscription, so it has nothing to enforce.
    */
   enforced: boolean;
-  /** The verified licence recorded for a workspace, or null when none is. */
-  licenceFor: (workspaceId: string) => SeatLicence | null;
-  now?: () => number;
 }
 
 /** What a joined room's credential proved. Deliberately narrower than `Principal`. */
 export type ConnectionPrincipal =
-  | { kind: "owner"; workspaceId: string }
+  /** A share link or an exchanged share session: a capability, not a seat. */
   | { kind: "share"; workspaceId: string }
-  | { kind: "account"; workspaceId: string };
+  /** A verified session JWT acting in an organization. */
+  | {
+      kind: "account";
+      workspaceId: string;
+      organizationId: string;
+      userId: string;
+      role: OrganizationRole | null;
+      tier: string;
+      limits: Readonly<Record<string, number>>;
+    };
 
 export interface RelaySeatGate {
   allow: (principal: ConnectionPrincipal) => RelaySeatDecision;
 }
 
-/**
- * The relay's licence projection, in the shape `@suite/auth` checks.
- *
- * `LicenceClaimRecord` was written from freshly verified claims, so rebuilding
- * `LicenceClaims` from it is not a guess — except for `issuedAt`, which the
- * record stores as `claimedAt`. That field is informational (the check reads
- * `expiresAt` and the caps), and saying so here is cheaper than storing it twice.
- *
- * Seats are not in this projection: the relay never checks them, and a zero would
- * be a lie about a licence that has them.
- */
-export function claimsFromClaimRecord(record: LicenceClaimRecord): LicenceClaims {
-  return {
-    v: 1,
-    id: record.licenceId,
-    tier: record.tier,
-    workspaces: record.quota.workspaces,
-    documentBytes: record.quota.documentBytes,
-    attachmentBytes: record.quota.attachmentBytes,
-    issuedAt: record.claimedAt,
-    expiresAt: record.expiresAt,
-    ...(record.email === null ? {} : { email: record.email }),
-  };
+/** True when the token actually carries an entitlement rather than an empty claim. */
+function entitled(tier: string): boolean {
+  return tier.trim().length > 0;
 }
 
 export function createRelaySeatGate(deps: RelaySeatDeps): RelaySeatGate {
-  const now = deps.now ?? Date.now;
-
   return {
     allow: (principal) => {
       if (!deps.enforced) return { ok: true, seat: "anonymous" };
 
-      if (principal.kind === "account") {
-        // See the module comment: no member counts on this process.
-        return { ok: false, reason: "account-check-unavailable" };
+      if (principal.kind === "share") {
+        // The link is the grant. Its role was settled when it was minted and its
+        // lifetime is the share's own expiry, so there is no seat to consult.
+        return { ok: true, seat: "share" };
       }
 
-      const licence = deps.licenceFor(principal.workspaceId);
-      if (licence === null) return { ok: false, reason: "licence-missing" };
+      if (principal.organizationId.trim().length === 0) {
+        // A personal session names no tenant, so there is no subscription behind
+        // it and no workspace it could already own.
+        return { ok: false, reason: "organization-required" };
+      }
 
-      return checkSeat({
-        workspaceId: principal.workspaceId,
-        principal: { kind: principal.kind, workspaceId: principal.workspaceId },
-        licence: { kind: "licensed", licence },
-        // Both counts are unused for a capability principal: `checkSeat` reads
-        // them only for an account, and an account is refused above. Passing the
-        // fields keeps the shape honest — they are zero because the relay knows
-        // zero, not because zero was measured.
-        workspaceCount: 0,
-        memberCount: 0,
-        now: now(),
-      });
+      if (!entitled(principal.tier)) {
+        // A token without a tier is not an entitlement; refusing is the only
+        // answer that cannot be read as "free forever".
+        return { ok: false, reason: "licence-missing" };
+      }
+
+      return { ok: true, seat: principal.role === "owner" ? "owner" : "licensed-member" };
     },
   };
 }
 
 /**
- * Builds the gate from the relay's own licence claim store.
- *
- * Kept here rather than in `server.ts` so the mapping from the relay's rows to the
- * shared check is testable without booting the server.
+ * Builds the gate the server wires in. Kept as a named function so the wiring
+ * reads as one decision — "hosted means enforced" — rather than a boolean
+ * literal at the call site.
  */
-export function relaySeatGateFromClaims(
-  claims: { get: (workspaceId: string) => LicenceClaimRecord | null } | null,
-  enforced: boolean,
-  now: () => number = Date.now,
-): RelaySeatGate {
-  return createRelaySeatGate({
-    enforced,
-    licenceFor: (workspaceId) => {
-      const record = claims?.get(workspaceId) ?? null;
-      // `seats: 0` is deliberate: the relay never consults it (see above), and
-      // inventing a count would be the kind of number that ends up enforced.
-      return record === null ? null : seatLicence(claimsFromClaimRecord(record), 0);
-    },
-    now,
-  });
+export function relaySeatGate(enforced: boolean): RelaySeatGate {
+  return createRelaySeatGate({ enforced });
 }

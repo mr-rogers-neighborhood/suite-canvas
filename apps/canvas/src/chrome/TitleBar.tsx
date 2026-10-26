@@ -44,12 +44,18 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
   // because it is the same "catching up" state, and the panel says which one it is.
   rejoining: "Syncing",
   disconnected: "Offline",
+  // Not "Offline": the relay answered. Telling someone whose access was refused
+  // to check their connection sends them after the one thing that is working.
+  unauthorized: "No access",
 };
 
 /** The room, in one sentence: how many people, and whether it is going anywhere. */
 function roomSentence(status: ConnectionStatus, peerCount: number, role?: TitleBarRole): string {
   if (status === "disconnected") {
     return "Working offline. This tab keeps working; a reload will not.";
+  }
+  if (status === "unauthorized") {
+    return "This workspace refused this browser's access, so it cannot sync. Your edits stay on this device; sign in again, or ask the workspace's owner for a seat.";
   }
   if (status === "connecting") return "Connecting to the relay.";
   if (status === "rejoining") return "Back online, catching up with the room.";
@@ -66,6 +72,7 @@ const STATUS_DOT: Record<ConnectionStatus, string> = {
   connecting: "bg-amber-400",
   rejoining: "bg-amber-400",
   disconnected: "bg-gray-400 dark:bg-gray-500",
+  unauthorized: "bg-red-500",
 };
 
 export function TitleBar({

@@ -4,9 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { SCHEMA_VERSION, WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
 import { afterEach, describe, expect, it } from "vitest";
-import { createLicenceClaimStore } from "../http/workspaceHttp.js";
 import { loadLoroDocument } from "../projection/index.js";
 import { createSqliteAttachmentStore } from "./attachments.js";
+import { createLicenceClaimStore } from "./licenceClaims.js";
 import {
   createDocumentStore,
   DOCUMENT_STORE_SCHEMA,
@@ -17,7 +17,7 @@ import {
 } from "./persistence.js";
 import { createSettingsStore } from "./settings.js";
 import { createShareStore } from "./shares.js";
-import { createWorkspaceRegistry } from "./workspaces.js";
+import { createWorkspaceOrgStore } from "./workspaceOrgs.js";
 
 /**
  * A7: an old store opens in this build.
@@ -193,14 +193,29 @@ describe("the current boot path opens an N−1 store for every other store", () 
     }
   });
 
-  it("workspaces: keeps the owner row", () => {
+  it("workspaces: opens the old file beside a new organization table", () => {
+    // The footer an owner hash lived in keeps its shape and its file name, and
+    // the store this build reads is a new table beside it (ADR-0076: no
+    // migration for issued keys). An old row is therefore neither read as an
+    // organization nor thrown away.
     const path = fixture("workspaces.sqlite");
-    const registry = createWorkspaceRegistry(path);
+    const store = createWorkspaceOrgStore(path);
     try {
-      expect(registry.has("legacy-workspace")).toBe(true);
-      expect(registry.verify("legacy-workspace", "not-the-owner")).toBe(false);
+      expect(store.has("legacy-workspace")).toBe(false);
+      expect(store.claim("legacy-workspace", "org-a")).toBe("claimed");
+      expect(store.get("legacy-workspace")?.organizationId).toBe("org-a");
     } finally {
-      registry.close();
+      store.close();
+    }
+
+    const db = new DatabaseSync(path);
+    try {
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .all() as { name?: string }[];
+      expect(tables.map((table) => table.name)).toEqual(["workspace_orgs", "workspaces"]);
+    } finally {
+      db.close();
     }
   });
 

@@ -3,22 +3,35 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda; a workspace package so `turbo run typecheck` and `turbo run test` gate the payment path. Its SES dependency is optional, so the main install stays AWS-free; the durable store is the control-plane Postgres.",
+  "description": "Billing on @better-auth/stripe: the plugin the auth instance mounts, the tier table behind it, and the entitlement read the control plane serves. No webhook handler, checkout call or subscription store of our own.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "node --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dry-run": "node src/ops/dev.ts --dry-run"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "typescript": "~5.9.3"
   },
-  "optionalDependencies": {
-    "@aws-sdk/client-ses": "^3.0.0"
-  },
   "dependencies": {
+    "@better-auth/stripe": "1.7.12",
+    "better-auth": "^1.7.12",
     "neverthrow": "^8.2.0",
     "pg": "^8.23.1",
-    "remeda": "^2.54.1"
-  }
+    "stripe": "^22.6.2"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ]
 }

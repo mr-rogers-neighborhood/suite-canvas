@@ -156,21 +156,34 @@ interface PragmaRow {
 }
 
 /**
- * Opens `path` once, switches it to WAL and refreshes the query planner, then
- * closes. `journal_mode` lives in the file header, so every later connection
- * — including the ones the share and workspace stores open themselves —
- * inherits it. Returns the mode the file actually ended up in.
+ * The connection contract every store in the relay shares.
+ *
+ * - `busy_timeout` is a property of a *connection*, so each module that opens
+ *   one sets it: a second connection (an admin command, a backup script) then
+ *   waits for the writer instead of failing with `SQLITE_BUSY`.
+ * - `journal_mode = WAL` is a property of the *file*, so the first opener holds
+ *   it for every later connection; setting it here means no store depends on a
+ *   boot-time pass in `server.ts` having run first.
+ * - `user_version` is the store's own schema claim. A file stamped by a newer
+ *   build is refused, and an older or unstamped one is stamped with the version
+ *   this build just opened, exactly as the document store always did.
+ *
+ * Throws `UnsupportedStoreVersionError` (after closing the connection, since the
+ * caller cannot use it) when the file is too new.
  */
-export function configureSqlite(path: string): string {
-  const db = new DatabaseSync(path);
-  try {
-    db.exec("PRAGMA busy_timeout = 5000");
-    const row = db.prepare("PRAGMA journal_mode = WAL").get() as PragmaRow | undefined;
-    db.exec("PRAGMA optimize");
-    return row?.journal_mode ?? "unknown";
-  } finally {
+export function configureConnection(db: DatabaseSync, schemaVersion: number): string {
+  db.exec("PRAGMA busy_timeout = 5000");
+  const journal = db.prepare("PRAGMA journal_mode = WAL").get() as PragmaRow | undefined;
+  const found = Number(
+    (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+      ?.user_version ?? 0,
+  );
+  if (found > schemaVersion) {
     db.close();
+    throw new UnsupportedStoreVersionError(found, schemaVersion);
   }
+  if (found < schemaVersion) db.exec(`PRAGMA user_version = ${schemaVersion}`);
+  return String(journal?.journal_mode ?? "unknown");
 }
 
 /**
@@ -182,20 +195,9 @@ export function createDocumentStore(
   path: string,
 ): DocumentStore & DocumentInventory & DocumentMaintenance {
   const db = new DatabaseSync(path);
-  // A second connection (an admin command, a backup script) waits for the
-  // writer instead of failing with SQLITE_BUSY.
-  db.exec("PRAGMA busy_timeout = 5000");
-  // One writer at a time with readers: WAL lets the HTTP side read while a room
-  // save is in flight, and survives a crash without losing committed saves.
-  const journal = db.prepare("PRAGMA journal_mode = WAL").get() as PragmaRow | undefined;
-  const storeVersion = Number(
-    (db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
-      ?.user_version ?? 0,
-  );
-  if (storeVersion > DOCUMENT_STORE_SCHEMA) {
-    db.close();
-    throw new UnsupportedStoreVersionError(storeVersion, DOCUMENT_STORE_SCHEMA);
-  }
+  // WAL, the busy timeout and the schema stamp in one place; see
+  // `configureConnection`. A store from a newer build is refused there.
+  const journal = configureConnection(db, DOCUMENT_STORE_SCHEMA);
   db.exec(
     `CREATE TABLE IF NOT EXISTS documents (
        name TEXT PRIMARY KEY,
@@ -203,11 +205,6 @@ export function createDocumentStore(
        updated_at INTEGER NOT NULL
      )`,
   );
-  // Stamping the version records what this build just opened. It rewrites no
-  // row and backfills no column: an older database is read exactly as it is.
-  if (storeVersion < DOCUMENT_STORE_SCHEMA) {
-    db.exec(`PRAGMA user_version = ${DOCUMENT_STORE_SCHEMA}`);
-  }
   // Collected statistics are refreshed on open and hourly; see `maintenance`.
   db.exec("PRAGMA optimize");
 
@@ -231,7 +228,7 @@ export function createDocumentStore(
   const pageCount = db.prepare("PRAGMA page_count");
   const pageSize = db.prepare("PRAGMA page_size");
 
-  const journalMode = (): string => String(journal?.journal_mode ?? "unknown");
+  const journalMode = (): string => journal;
   const size = (): number => {
     const pages = pageCount.get() as PragmaRow | undefined;
     const bytesPerPage = pageSize.get() as PragmaRow | undefined;

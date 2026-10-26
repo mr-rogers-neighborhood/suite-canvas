@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getSession } from "../session/session";
+import { relayCredential } from "../auth/credential";
+import { noteRefusal } from "../auth/refusal";
 import type {
   CreatedShare,
   CreateShareInput,
@@ -10,15 +11,15 @@ import type {
   ShareScope,
 } from "../session/shares";
 import * as sharesApi from "../session/shares";
-import { shareErrorMessage } from "../session/shares";
+import { ShareApiError, shareErrorMessage } from "../session/shares";
 import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** The slice of the share API the dialog needs; stories and tests may replace it. */
 export interface ShareClient {
-  createShare: (input: CreateShareInput, ownerKey: string | null) => Promise<CreatedShare>;
-  listShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
-  revokeShare: (id: string, ownerKey: string | null) => Promise<Share>;
-  revokeAllShares: (workspaceId: string, ownerKey: string | null) => Promise<Share[]>;
+  createShare: (input: CreateShareInput, credential: string | null) => Promise<CreatedShare>;
+  listShares: (workspaceId: string, credential: string | null) => Promise<Share[]>;
+  revokeShare: (id: string, credential: string | null) => Promise<Share>;
+  revokeAllShares: (workspaceId: string, credential: string | null) => Promise<Share[]>;
   /** Hosted relays expire a new link by default; the dialog preselects that. */
   defaults: () => Promise<ShareDefaults>;
 }
@@ -116,10 +117,10 @@ export function lastUsedLabel(lastUsedAt: number | null, now: number = Date.now(
 }
 
 /**
- * One dialog for every kind of share. Token links are capability links and
- * management calls carry the owner key. Board and card editors change a
- * projection and publish it back; a workspace editor link is the plain editor
- * URL with the owner key in the fragment.
+ * One dialog for every kind of share. Token links are capability links, and the
+ * management calls carry the account's session credential. Board and card editors
+ * change a projection and publish it back; a workspace editor link is the plain
+ * editor URL, and whoever opens it signs in.
  */
 export function ShareDialog({
   workspaceId,
@@ -133,7 +134,6 @@ export function ShareDialog({
   client,
 }: ShareDialogProps) {
   const api = useMemo(() => client ?? defaultClient, [client]);
-  const ownerKey = getSession().ownerKey;
   const [scope, setScope] = useState<ShareScope>(initialScope);
   const [role, setRole] = useState<ShareRole>(initialScope === "workspace" ? "editor" : "viewer");
   const [expiryDays, setExpiryDays] = useState<ExpiryDays>(0);
@@ -170,11 +170,14 @@ export function ShareDialog({
     [],
   );
 
+  /** A token minted for one call: the dialog can stay open past one expiry. */
+  const credential = useCallback(() => relayCredential(), []);
+
   const load = useCallback(async () => {
     const id = ++loadId.current;
     setLoading(true);
     try {
-      const next = await api.listShares(workspaceId, ownerKey);
+      const next = await api.listShares(workspaceId, await credential());
       if (id === loadId.current) setShares(next);
     } catch (cause) {
       if (id === loadId.current) {
@@ -184,7 +187,7 @@ export function ShareDialog({
     } finally {
       if (id === loadId.current) setLoading(false);
     }
-  }, [api, ownerKey, workspaceId]);
+  }, [api, credential, workspaceId]);
 
   useEffect(() => {
     void load();
@@ -256,6 +259,15 @@ export function ShareDialog({
     }
   };
 
+  /**
+   * A refusal the plan can fix is shown where it happened *and* raised on the
+   * account surfaces, so "upgrade" is one press away from the dialog that met the
+   * wall.
+   */
+  const report = (cause: unknown): void => {
+    if (cause instanceof ShareApiError) noteRefusal(cause.code, cause.status ?? undefined);
+  };
+
   const create = async () => {
     setError(null);
     setCopied(null);
@@ -271,12 +283,13 @@ export function ShareDialog({
           ...(scope === "selection" ? { cardIds: selectionCardIds } : {}),
           expiresAt: expiryDays === 0 ? null : Date.now() + expiryDays * 24 * 60 * 60 * 1000,
         },
-        ownerKey,
+        await credential(),
       );
       tokens.current.set(created.share.id, created.token);
       setLink({ url: sharesApi.shareLink(created.token), shareId: created.share.id });
       void load();
     } catch (cause) {
+      report(cause);
       setError(shareErrorMessage(cause));
     } finally {
       setBusy(false);
@@ -287,10 +300,11 @@ export function ShareDialog({
     setError(null);
     setBusy(true);
     try {
-      await api.revokeShare(share.id, ownerKey);
+      await api.revokeShare(share.id, await credential());
       setLink((current) => (current?.shareId === share.id ? null : current));
       void load();
     } catch (cause) {
+      report(cause);
       setError(shareErrorMessage(cause));
     } finally {
       setBusy(false);
@@ -302,10 +316,11 @@ export function ShareDialog({
     setError(null);
     setBusy(true);
     try {
-      await api.revokeAllShares(workspaceId, ownerKey);
+      await api.revokeAllShares(workspaceId, await credential());
       setLink(null);
       void load();
     } catch (cause) {
+      report(cause);
       setError(shareErrorMessage(cause));
     } finally {
       setBusy(false);

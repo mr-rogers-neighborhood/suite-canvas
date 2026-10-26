@@ -63,6 +63,9 @@ handles in a `ViewportPortal`, counter-scaled with zoom, and runs its own pointe
 Cmd/Ctrl+G creates a section, wrapping the selection when there is one, at `NEW_SECTION_SIZE`
 (360 × 260) otherwise.
 
+The outline rail keeps its panel on a board with no sections and says the board has none, instead of
+disappearing; `canCreateContent` decides whether it also names Cmd/Ctrl+G.
+
 ## Links and routing
 
 A link is one `GraphEdge`. Both ends name a node and optionally a connector:
@@ -101,6 +104,7 @@ registered so that a press reaches the most specific surface first.
 | Gesture | Owner | Where |
 | --- | --- | --- |
 | Node drag, click, marquee, pan, zoom | React Flow | `board/BoardSurface.tsx` |
+| New card on empty canvas | `usePaneDoubleClick` | `board/usePaneDoubleClick.ts` |
 | Section drag, resize, rename | `useBoardSections` | `sections/SectionLayer.tsx` |
 | Connector drag and reposition | `useBoardLinks`, `NodeConnectors` | `canvas/NodeConnectors.tsx` |
 | Link create, re-attach, label slide | `useBoardLinks` | `board/useBoardLinks.ts` |
@@ -116,7 +120,13 @@ the press landed in, which is what scopes a box to that section.
 React Flow's `deleteKeyCode` is `null`, so it cannot remove a card behind the document's back. Every key
 is read in one place, `useBoardKeyboard`, which runs five named actions in a fixed order: quick capture,
 the Escape ladder, modifier chords, Delete/Backspace, Enter. `Enter` opens a portal for a viewer,
-because navigating is not an edit, and every other card needs `canEditContent`.
+because navigating is not an edit, and every other card needs `canEditContent`. A second listener on the
+capture phase answers only the four arrow keys, so the five named actions keep their order.
+
+Empty canvas creates. React Flow has no pane double-click prop, so `usePaneDoubleClick` binds the pane
+element it builds and ignores a press that lands on a card, an edge, a section or a control, since those
+keep their own double-click meaning. `zoomOnDoubleClick` is off: one gesture cannot both make a card and
+move the camera. Creating is gated by `canCreateContent`, so a viewer's double-click does nothing.
 
 Escape walks a stack. `useEscapeLayer` from `shell/escapeLayers.ts` pushes a dismiss function when a
 surface opens and pops it when it closes; the most recently pushed layer takes the key and the board's
@@ -143,6 +153,35 @@ itself to decide how much detail to draw.
 
 Focus requests move the camera over `FOCUS_DURATION_MS` (300 ms), never past `FOCUS_MAX_ZOOM` (1.2), and
 wait up to `FOCUS_POLL_TIMEOUT_MS` (1500 ms) for React Flow to register a card that has just been placed.
+
+Camera controls render in their own stack beside React Flow's built-in `<Controls>`, not inside it: that
+pill is a row of uniform 26px cells and a percentage does not fit one. `canvas/BoardCameraControls.tsx`
+adds a zoom readout that resets the camera to 100% when pressed, zoom to the selection (`fitView` over
+the selected ids at `SELECTION_PADDING` 0.2), the outline toggle and the dot-grid toggle. The grid is a
+reader preference in `canvas/cameraPrefs.ts`, kept per browser and never written to the document. Zoom to
+selection follows `prefersReducedMotion()`: a reader who asked for less motion arrives instead of flying.
+
+## Selection affordances
+
+Arrow keys move the selection by `NUDGE_STEP` (8 flow units), or `NUDGE_LARGE_STEP` (40) with Shift.
+`useBoardKeyboard` reads them on the capture phase, before React Flow's focused-node handler, so one
+press is one step size and one call to `nudgeSelected` in `useBoardCommands`. That command runs the same
+`commitDrop` a pointer release does, which is why a card nudged past its section's edge grows the section
+instead of leaving it. The step needs `canEditLayout`. `NudgeHint` (`canvas/BoardHints.tsx`) prints both
+steps whenever the selection is not empty, lifted above the bulk style bar when that bar is showing,
+which is what makes the gesture discoverable.
+
+A multi-selection edits style in bulk. `canvas/BulkStyleBar.tsx` patches each selected card's own
+`SurfaceStyle` (shape and fill) through the same `setCardStyle` the single-card Style tab uses, with
+`bulkStyleWrites` in `canvas/styleTargets.ts` merging each card's existing record. A key set back to
+`undefined` is cleared, so "Default" and "never set" stay the same state. `@suite/graph` has no batched
+style write, so a bulk edit is one surface write and one undo step per card.
+
+The canvas's create verbs are registry commands: `card.createSketch`, `section.create` and
+`portal.create`. Each has `owner: "canvas"`, so the dock lists it through `commandsFor`, and a palette
+row, so the command palette lists the same three. A portal row names its target board (`New portal to
+<board>`) because a portal needs one; its action is the optional `CommandActions.createPortalOnBoard`,
+so those rows stay hidden until the shell supplies that handler.
 
 ## Presence and cursors
 
@@ -190,6 +229,14 @@ Sections, connectors and labels follow the same split. A section drag sets `loca
 final fraction. A label slide publishes `labelDrag` with a path fraction and writes `labelOffset` when
 the pointer is released.
 
+Snapping is local and transient. `canvas/snapping.ts` compares the dragged card's left, centre and right
+(and top, middle and bottom) with the same lines of every other card on the board. A match inside
+`SNAP_THRESHOLD` (6 flow units) moves the rendered target and the drop position by that difference, and
+`SnapGuideLayer` draws the line through a `ViewportPortal`. The snap runs before the local easing, so the
+ease converges on the snapped position instead of fighting it, and the drop commits the position the
+guides showed. A multi-card drag does not snap: pulling the group onto one member's edge would move the
+other members out of formation.
+
 ## Board module map
 
 | Path | Responsibility |
@@ -208,6 +255,12 @@ the pointer is released.
 | `board/useBoardKeyboard.ts` | the only keydown reader on the board |
 | `board/useBoardRefs.ts` | mutable gesture flags shared between the hooks |
 | `board/boardSupport.ts` | throttle, pointer sample, section-exit tolerance, edge conversion |
+| `board/usePaneDoubleClick.ts` | empty-canvas double-click creates a card |
+| `canvas/snapping.ts` | edge and centre snapping, pure geometry, guide extents |
+| `canvas/SnapGuideLayer.tsx` | alignment guides in a viewport portal |
+| `canvas/BoardCameraControls.tsx` | zoom readout, zoom to selection, outline and grid toggles |
+| `canvas/BoardHints.tsx` | the arrow-key nudge hint |
+| `canvas/BulkStyleBar.tsx` | style patch for a multi-selection |
 | `sections/SectionLayer.tsx` | section paint, header chrome, resize handles, pointer gestures |
 | `links/linkGeometry.ts` | anchors, rects and path fractions without React |
 | `links/edgeRoute.ts` | route modes and bend handling; pure geometry |

@@ -5,17 +5,23 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SharePublishResult } from "../projection/index.js";
 import { createShareStore, type Share, type ShareStore } from "../store/shares.js";
-import { createWorkspaceRegistry, type WorkspaceRegistry } from "../store/workspaces.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
+import { createWorkspaceAccess } from "./access.js";
 import { resetRateLimits } from "./rateLimit.js";
+import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
 import { handleShareRequest } from "./shareHttp.js";
 
-const OWNER_KEY = "owner-key-1";
-const OTHER_KEY = "owner-key-2";
 const MANAGED_WORKSPACES = ["ws-1", "ws-owner", "ws-secret"];
 
 let directory: string;
 let store: ShareStore;
-let workspaces: WorkspaceRegistry;
+let orgs: WorkspaceOrgStore;
+let sessions: SessionFixture;
+let access: ReturnType<typeof createWorkspaceAccess>;
+/** The credential an account of the owning organization presents. */
+let ownerHeader: Record<string, string>;
+/** The credential an account of a *different* organization presents. */
+let foreignHeader: Record<string, string>;
 let server: Server;
 let baseUrl: string;
 let changes: string[];
@@ -39,8 +45,14 @@ beforeEach(async () => {
   resetRateLimits();
   directory = mkdtempSync(join(tmpdir(), "suite-share-api-"));
   store = createShareStore(join(directory, "shares.sqlite"));
-  workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
-  for (const workspaceId of MANAGED_WORKSPACES) workspaces.claimOrVerify(workspaceId, OWNER_KEY);
+  orgs = createWorkspaceOrgStore(join(directory, "workspaces.sqlite"));
+  sessions = await createSessionFixture();
+  access = createWorkspaceAccess({ sessions: sessions.verifier, orgs });
+  for (const workspaceId of MANAGED_WORKSPACES) orgs.claim(workspaceId, "org-a");
+  ownerHeader = { authorization: `Bearer ${await sessions.sign()}` };
+  foreignHeader = {
+    authorization: `Bearer ${await sessions.sign({ subject: "user-2", organizationId: "org-b" })}`,
+  };
   changes = [];
   removed = [];
   hookError = false;
@@ -58,7 +70,7 @@ beforeEach(async () => {
   order = [];
 
   server = createServer((request, response) => {
-    void handleShareRequest(request, response, store, workspaces, {
+    void handleShareRequest(request, response, store, access, {
       flush: async (workspaceId) => {
         flushes.push(workspaceId);
         order.push(`flush:${workspaceId}`);
@@ -104,13 +116,14 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   store.close();
-  workspaces.close();
+  orgs.close();
   rmSync(directory, { recursive: true, force: true });
 });
 
-const owner = { authorization: `Bearer ${OWNER_KEY}` };
+/** Every management helper defaults to the owning account's session. */
+const owner = (): Record<string, string> => ownerHeader;
 
-function post(body: unknown, headers: Record<string, string> = owner): Promise<Response> {
+function post(body: unknown, headers: Record<string, string> = owner()): Promise<Response> {
   return fetch(`${baseUrl}/api/shares`, {
     method: "POST",
     headers: { ...headers, "content-type": "application/json" },
@@ -118,11 +131,11 @@ function post(body: unknown, headers: Record<string, string> = owner): Promise<R
   });
 }
 
-function list(workspaceId: string, headers: Record<string, string> = owner): Promise<Response> {
+function list(workspaceId: string, headers: Record<string, string> = owner()): Promise<Response> {
   return fetch(`${baseUrl}/api/shares?workspaceId=${encodeURIComponent(workspaceId)}`, { headers });
 }
 
-function revoke(id: string, headers: Record<string, string> = owner): Promise<Response> {
+function revoke(id: string, headers: Record<string, string> = owner()): Promise<Response> {
   return fetch(`${baseUrl}/api/shares/${id}`, { method: "DELETE", headers });
 }
 
@@ -160,38 +173,28 @@ describe("share API", () => {
     expect(empty.shares).toHaveLength(0);
   });
 
-  it("requires the owner key for management", async () => {
+  it("requires an account session, acting in the owning organization", async () => {
     const body = { workspaceId: "ws-1", scope: "workspace", role: "viewer" };
 
     const missing = await post(body, {});
     expect(missing.status).toBe(401);
-    expect(((await missing.json()) as { error: string }).error).toContain("owner key");
 
-    const wrong = await post(body, { authorization: `Bearer ${OTHER_KEY}` });
+    const wrong = await post(body, foreignHeader);
     expect(wrong.status).toBe(403);
-    expect(((await wrong.json()) as { error: string }).error).toContain("different owner key");
+    expect(((await wrong.json()) as { error: string }).error).toContain("different organization");
 
     const created = await post(body);
     expect(created.status).toBe(201);
 
     expect((await list("ws-1", {})).status).toBe(401);
-    expect((await list("ws-1", { authorization: `Bearer ${OTHER_KEY}` })).status).toBe(403);
+    expect((await list("ws-1", foreignHeader)).status).toBe(403);
     expect((await list("ws-1")).status).toBe(200);
 
     const { share } = (await created.json()) as { share: { id: string } };
-    expect((await revoke(share.id, {})).status).toBe(401);
-    expect((await revoke(share.id, { authorization: `Bearer ${OTHER_KEY}` })).status).toBe(403);
+    const revoked = await revoke(share.id, {});
+    expect(revoked.status).toBe(401);
+    expect((await revoke(share.id, foreignHeader)).status).toBe(403);
     expect((await revoke(share.id)).status).toBe(200);
-  });
-
-  it("accepts x-suite-owner as an owner key fallback", async () => {
-    const created = await post(
-      { workspaceId: "ws-1", scope: "workspace", role: "viewer" },
-      { "x-suite-owner": OWNER_KEY },
-    );
-
-    expect(created.status).toBe(201);
-    expect((await list("ws-1", { "x-suite-owner": OWNER_KEY })).status).toBe(200);
   });
 
   it("never accepts a share token as a management credential", async () => {
@@ -202,14 +205,16 @@ describe("share API", () => {
     };
     const asShareToken = { authorization: `Bearer ${token}` };
 
+    // A link is a credential for one room, not for the API: it does not verify
+    // as a session, so it never reaches an authorization decision.
     const minted = await post(
       { workspaceId: "ws-1", scope: "workspace", role: "viewer" },
       asShareToken,
     );
-    expect(minted.status).toBe(403);
+    expect(minted.status).toBe(401);
 
-    expect((await list("ws-1", asShareToken)).status).toBe(403);
-    expect((await revoke(share.id, asShareToken)).status).toBe(403);
+    expect((await list("ws-1", asShareToken)).status).toBe(401);
+    expect((await revoke(share.id, asShareToken)).status).toBe(401);
   });
 
   it("returns the projection room for board and card viewers", async () => {
@@ -351,7 +356,7 @@ describe("share API", () => {
           },
         )
       ).status,
-    ).toBe(403);
+    ).toBe(401);
   });
 
   it("keeps the workspace id for a workspace share and redacts a revoked card share", async () => {
@@ -899,7 +904,7 @@ describe("bulk revoke", () => {
 
     const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
       method: "DELETE",
-      headers: owner,
+      headers: owner(),
     });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { shares: { revokedAt: number | null }[] };
@@ -910,10 +915,10 @@ describe("bulk revoke", () => {
     await expect(listed.json()).resolves.toEqual({ shares: [] });
   });
 
-  it("requires the owner key for a bulk revoke", async () => {
+  it("requires an account of the owning organization for a bulk revoke", async () => {
     const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${OTHER_KEY}` },
+      headers: foreignHeader,
     });
     expect(response.status).toBe(403);
   });
@@ -1226,7 +1231,7 @@ describe("share session exchange", () => {
 
     const response = await fetch(`${baseUrl}/api/shares?workspaceId=ws-1`, {
       method: "DELETE",
-      headers: owner,
+      headers: owner(),
     });
 
     expect(response.status).toBe(200);

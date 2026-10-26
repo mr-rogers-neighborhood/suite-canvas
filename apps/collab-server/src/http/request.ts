@@ -47,7 +47,14 @@ export async function readOptionalJsonBody(request: IncomingMessage): Promise<un
 
 const BEARER = /^bearer\s+(.+)$/iu;
 
-/** The bearer credential a request presents, without the legacy header fallback. */
+/**
+ * The bearer credential a request presents.
+ *
+ * Every workspace-scoped route reads its credential here: a session JWT for an
+ * account, a worker token for the projection process. There is no second header
+ * and no query parameter, so a credential cannot arrive by two paths and be
+ * validated by only one of them.
+ */
 export function bearerToken(request: IncomingMessage): string | null {
   const header = request.headers.authorization;
   const value = Array.isArray(header) ? header[0] : header;
@@ -56,22 +63,3 @@ export function bearerToken(request: IncomingMessage): string | null {
   const token = match?.[1]?.trim();
   return token && token.length > 0 ? token : null;
 }
-
-/**
- * The owner key a management request presents. `Authorization: Bearer` is the
- * documented form; `x-suite-owner` stays accepted for older editors.
- */
-export function ownerKeyFrom(request: IncomingMessage): string | null {
-  const key = bearerToken(request);
-  if (key) return key;
-  const fallback = request.headers["x-suite-owner"];
-  const alternate = Array.isArray(fallback) ? fallback[0] : fallback;
-  const value = alternate?.trim();
-  return value && value.length > 0 ? value : null;
-}
-
-/**
- * Share management is owner-only. A share token is a capability for one room;
- * it must never mint or revoke links, because the workspace id alone used to be
- * enough to manage them.
- */

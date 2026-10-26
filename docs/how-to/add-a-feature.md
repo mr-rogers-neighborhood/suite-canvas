@@ -118,17 +118,19 @@ A new quota is a constant in `config/limits.ts` plus a regenerated
 [reference/limits.md](../reference/limits.md), never a hand-edited number. A new stored format needs an
 N−1 fixture under `apps/collab-server/src/fixtures/n-1/` and a test that opens it.
 
-## 7. Verify in tiers
+## 7. Verify
 
 ```sh
-pnpm check                    # while editing: lint, types, changed tests, docs symbols, shape
+pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols && pnpm shape
+pnpm check                    # biome, tsc, vitest run --changed, docs symbols, shape
 pnpm exec vitest run apps/canvas/src/cards   # one area, while iterating
-pnpm verify                   # before the commit: lint, types, unit, stories, build, docs
-pnpm e2e:smoke                # the feature is user-visible
-pnpm e2e                      # schema/CRDT, sharing, gestures, persistence or >3 surfaces changed
 ```
+
+That is the whole per-change gate. `pnpm verify` runs it plus the billing tests, the story suite and
+the build. Playwright runs when the owner asks for a run, and [test-and-verify.md](test-and-verify.md)
+has the area scripts.
 
 Then update the docs that describe the new fact. A user-visible capability is worth a line in
 the internal roadmap when it closes a gate, and a decision that changes
-ownership gets an ADR. The tier rules are in [test-and-verify.md](test-and-verify.md); the standards
+ownership gets an ADR. The command list is in [test-and-verify.md](test-and-verify.md); the standards
 are in [reference/conventions.md](../reference/conventions.md).

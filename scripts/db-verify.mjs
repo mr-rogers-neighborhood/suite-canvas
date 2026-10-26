@@ -177,6 +177,9 @@ const TABLES_SQL = `
   WHERE table_schema = 'public'
 `;
 
+/** `null` when the relation does not exist, which is how a dropped table reads. */
+const TO_REGCLASS_SQL = `SELECT to_regclass($1)::text AS name`;
+
 /**
  * The columns `services/auth/src/pluginSchema.test.ts` asserts, which is the
  * authority on what the plugins contribute: the test asks Better Auth for the
@@ -362,21 +365,23 @@ async function main() {
       return String(unique.indexname);
     });
 
-    await check("billing_event.event_id is the primary key", async () => {
-      const { rows } = await client.query(PRIMARY_KEY_SQL, ["billing_event"]);
+    await check("subscription.id is the primary key", async () => {
+      const { rows } = await client.query(PRIMARY_KEY_SQL, ["subscription"]);
       assert.deepEqual(
         rows.map((row) => row.column_name),
-        ["event_id"],
+        ["id"],
       );
     });
 
-    await check("billing_customer.customer_id is the primary key", async () => {
-      const { rows } = await client.query(PRIMARY_KEY_SQL, ["billing_customer"]);
-      assert.deepEqual(
-        rows.map((row) => row.column_name),
-        ["customer_id"],
-      );
-    });
+    // 0008 dropped both tables the hand-written billing function owned. A
+    // deployment that still has them is running the retired design, and the
+    // entitlement read would be answering from two places.
+    for (const retired of ["billing_event", "billing_customer"]) {
+      await check(`table "${retired}" is gone`, async () => {
+        const { rows } = await client.query(TO_REGCLASS_SQL, [retired]);
+        assert.equal(rows[0]?.name, null, `${retired} still exists; ADR-0078 retired it`);
+      });
+    }
 
     // --- the plugin columns ---------------------------------------------------
 
@@ -410,15 +415,12 @@ async function main() {
     // --- the repositories, on the schema they now share ------------------------
 
     const { postgresRepositories } = await import(
-      pathToFileURL(join(root, "services/auth/src/postgresRepositories.ts")).href
-    );
-    const { postgresStore } = await import(
-      pathToFileURL(join(root, "services/billing/store-postgres.ts")).href
+      pathToFileURL(join(root, "services/auth/src/store/postgresRepositories.ts")).href
     );
 
-    // Seed the rows Better Auth and the billing webhook would have written. These
-    // are plain inserts on purpose: the repositories below read them, and no
-    // repository writes a member or a customer.
+    // Seed the rows Better Auth would have written. These are plain inserts on
+    // purpose: the repositories below read them, and no repository writes a
+    // member or an organization.
     await query(`INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)`, [
       "user-1",
       "Ada",
@@ -522,46 +524,65 @@ async function main() {
       assert.ok(Math.abs(Date.now() - createdAt) < DAY, `createdAt ${createdAt} is not recent`);
     });
 
-    await check("postgresStore.getCustomer returns bigint columns as numbers", async () => {
+    await check("the entitlement read sees an active subscription", async () => {
       await query(
-        `INSERT INTO billing_customer (
-           customer_id, email, tier, price_id, licence, licence_id,
-           issued_at, expires_at, subscription_id, last_invoice_id, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          "cus-1",
-          "ada@example.com",
-          "team",
-          "price_1",
-          "token",
-          "lic-1",
-          NOW,
-          NOW + DAY,
-          null,
-          "in_1",
-          NOW,
-        ],
+        `INSERT INTO subscription (
+           id, plan, "referenceId", "stripeCustomerId", "stripeSubscriptionId",
+           status, "periodEnd", "cancelAtPeriodEnd"
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        ["sub-1", "team", "org-1", "cus-1", "sub_stripe_1", "active", new Date(NOW + DAY), false],
       );
-      const record = await postgresStore(client).getCustomer("cus-1");
-      assert.ok(record !== null);
-      assert.equal(record.issuedAt, NOW);
-      assert.equal(typeof record.issuedAt, "number");
-      assert.equal(record.expiresAt, NOW + DAY);
-      assert.equal(record.updatedAt, NOW);
-      assert.equal(record.lastInvoiceId, "in_1");
-      assert.equal("subscriptionId" in record, false);
-      return `${record.issuedAt} is a number, not a string`;
+      const { parseTierTable, createEntitlementReader, postgresSubscriptions } = await import(
+        pathToFileURL(join(root, "services/billing/src/index.ts")).href
+      );
+      const tiers = parseTierTable(
+        JSON.stringify({
+          price_team: {
+            tier: "team",
+            workspaces: 3,
+            documentBytes: 268435456,
+            attachmentBytes: 1073741824,
+          },
+        }),
+      );
+      if (tiers.isErr()) throw new Error(tiers.error.message);
+      const reader = createEntitlementReader({
+        subscriptions: postgresSubscriptions({
+          query: (text, values) => client.query(text, values),
+        }),
+        tiers: tiers.value,
+      });
+      const active = await reader.forOrganization("org-1");
+      assert.equal(active.tier, "team");
+      assert.equal(active.limits.workspaces, 3);
+      return "an active row projects its plan limits";
     });
 
-    await check("postgresStore.claimEvent claims a delivery once", async () => {
-      // The idempotency claim is the whole of the billing store's correctness, and
-      // it is one INSERT whose interval arithmetic only a real server can check.
-      const store = postgresStore(client);
-      assert.equal(await store.claimEvent("evt-1"), true);
-      assert.equal(await store.claimEvent("evt-1"), false);
-      const counted = await query(`SELECT count(*)::int AS count FROM billing_event`);
-      assert.equal(counted[0]?.count, 1);
-      return "the second delivery inserts nothing";
+    await check("a cancelled subscription falls back to free", async () => {
+      await query(`UPDATE subscription SET status = 'canceled' WHERE id = $1`, ["sub-1"]);
+      const { parseTierTable, createEntitlementReader, postgresSubscriptions } = await import(
+        pathToFileURL(join(root, "services/billing/src/index.ts")).href
+      );
+      const tiers = parseTierTable(
+        JSON.stringify({
+          price_team: {
+            tier: "team",
+            workspaces: 3,
+            documentBytes: 268435456,
+            attachmentBytes: 1073741824,
+          },
+        }),
+      );
+      if (tiers.isErr()) throw new Error(tiers.error.message);
+      const reader = createEntitlementReader({
+        subscriptions: postgresSubscriptions({
+          query: (text, values) => client.query(text, values),
+        }),
+        tiers: tiers.value,
+      });
+      const cancelled = await reader.forOrganization("org-1");
+      assert.equal(cancelled.tier, "free");
+      return "a cancelled plan reads as free, not team";
     });
 
     const [{ server_version: version }] = await query("SHOW server_version");

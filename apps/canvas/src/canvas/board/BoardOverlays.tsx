@@ -2,6 +2,8 @@ import "@xyflow/react/dist/style.css";
 import { StatusCursorLayer } from "../../cursor/StatusCursorLayer";
 import { ContextMenu, type ContextMenuItem } from "../../dialogs/ContextMenu";
 import { ExplainPanel } from "../../panels/ExplainPanel";
+import { NudgeHint } from "../BoardHints";
+import { BulkStyleBar } from "../BulkStyleBar";
 import { EdgeDescriptionInput } from "../EdgeDescription";
 import { HeldStackCursor } from "../HeldStackCursor";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
@@ -33,8 +35,25 @@ export function BoardOverlays({
   menuItems,
   placementEngine,
 }: BoardOverlaysProps) {
-  const { activeBoardId, closeContextMenu, contextMenu } = ui;
-  const { linkScene } = projection;
+  const {
+    activeBoardId,
+    closeContextMenu,
+    contextMenu,
+    selectedNodeIds,
+    canEditLayout,
+    workspace,
+  } = ui;
+  const { linkScene, cardsById } = projection;
+  // The two selection affordances share the strip above the dock: the nudge
+  // hint owns a lone card, and the bulk bar owns a multi-selection.
+  const styleTargets =
+    selectedNodeIds.length > 1
+      ? selectedNodeIds.flatMap((id) => {
+          const card = cardsById.get(id);
+          if (!card) return [];
+          return [{ id, ...(card.style ? { style: card.style } : {}) }];
+        })
+      : [];
   const {
     armedThread,
     threadCursor,
@@ -56,6 +75,12 @@ export function BoardOverlays({
         />
       ) : null}
       <PlacementRunBar engine={placementEngine} />
+      {canEditLayout && selectedNodeIds.length > 0 ? (
+        <NudgeHint count={selectedNodeIds.length} lifted={styleTargets.length > 1} />
+      ) : null}
+      {canEditLayout && styleTargets.length > 1 ? (
+        <BulkStyleBar targets={styleTargets} canEdit={canEditLayout} workspace={workspace} />
+      ) : null}
       <ExplainPanel />
       <StatusCursorLayer />
       <HeldStackCursor engine={placementEngine} />

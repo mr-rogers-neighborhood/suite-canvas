@@ -11,12 +11,6 @@ vi.mock("../collab/loroPersistence", async (importOriginal) => {
 const RECENTS = "suite.recentWorkspaces.v1";
 
 function seed(workspaceId = "ws-1"): void {
-  window.localStorage.setItem(`suite.owner.${workspaceId}`, "owner-key-1");
-  window.localStorage.setItem(`suite.owner-claim.${workspaceId}`, "claimed");
-  window.localStorage.setItem(
-    `suite.recoverySaved.${workspaceId}`,
-    JSON.stringify({ savedAt: 1_700_000_000_000 }),
-  );
   window.localStorage.setItem(`suite.licence.${workspaceId}`, "licence-token");
   window.localStorage.setItem(
     RECENTS,
@@ -32,12 +26,7 @@ function recents(): { id: string }[] {
 }
 
 function localKeys(workspaceId = "ws-1"): (string | null)[] {
-  return [
-    window.localStorage.getItem(`suite.owner.${workspaceId}`),
-    window.localStorage.getItem(`suite.owner-claim.${workspaceId}`),
-    window.localStorage.getItem(`suite.recoverySaved.${workspaceId}`),
-    window.localStorage.getItem(`suite.licence.${workspaceId}`),
-  ];
+  return [window.localStorage.getItem(`suite.licence.${workspaceId}`)];
 }
 
 beforeEach(() => {
@@ -52,12 +41,12 @@ afterEach(() => {
 });
 
 describe("purgeWorkspaceLocally", () => {
-  it("clears all five stores this browser holds for the workspace", async () => {
+  it("clears every store this browser holds for the workspace", async () => {
     seed();
 
     await purgeWorkspaceLocally("ws-1");
 
-    expect(localKeys()).toEqual([null, null, null, null]);
+    expect(localKeys()).toEqual([null]);
     expect(recents().map((entry) => entry.id)).toEqual(["ws-2"]);
     expect(deleteDocument).toHaveBeenCalledTimes(1);
     expect(deleteDocument).toHaveBeenCalledWith("ws-1");
@@ -72,7 +61,7 @@ describe("purgeWorkspaceLocally", () => {
     await expect(purgeWorkspaceLocally("ws-unknown")).resolves.toBeUndefined();
     await expect(purgeWorkspaceLocally("   ")).resolves.toBeUndefined();
 
-    expect(localKeys()).toEqual([null, null, null, null]);
+    expect(localKeys()).toEqual([null]);
     expect(recents().map((entry) => entry.id)).toEqual(["ws-2"]);
   });
 
@@ -82,7 +71,7 @@ describe("purgeWorkspaceLocally", () => {
 
     await expect(purgeWorkspaceLocally("ws-1")).resolves.toBeUndefined();
 
-    expect(localKeys()).toEqual([null, null, null, null]);
+    expect(localKeys()).toEqual([null]);
   });
 });
 
@@ -93,45 +82,46 @@ describe("deleteWorkspaceEverywhere", () => {
     return fetchMock;
   }
 
-  it("deletes on the relay with the owner key, then purges this browser", async () => {
+  const CREDENTIAL = { authorization: "Bearer session-jwt-1" };
+
+  it("deletes on the relay with the session credential, then purges this browser", async () => {
     seed();
     const fetchMock = stubFetch(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
 
     await deleteWorkspaceEverywhere({
       workspaceId: "ws-1",
       profile: "relay",
-      ownerKey: "owner-key-1",
+      authorization: async () => CREDENTIAL,
     });
 
     const call = fetchMock.mock.calls.at(0);
     expect(call?.[0]).toBe("http://localhost:1235/api/workspaces/ws-1");
     expect(call?.[1]?.method).toBe("DELETE");
     const headers = (call?.[1]?.headers ?? {}) as Record<string, string>;
-    expect(headers.authorization).toBe("Bearer owner-key-1");
+    expect(headers.authorization).toBe(CREDENTIAL.authorization);
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ confirm: "ws-1" });
 
-    expect(localKeys()).toEqual([null, null, null, null]);
+    expect(localKeys()).toEqual([null]);
     expect(deleteDocument).toHaveBeenCalledWith("ws-1");
   });
 
   it("leaves the local copy intact when the relay refuses", async () => {
     seed();
     stubFetch(
-      new Response(JSON.stringify({ error: "The owner key does not match this workspace." }), {
+      new Response(JSON.stringify({ error: "You are not a member of this workspace." }), {
         status: 403,
       }),
     );
 
     await expect(
-      deleteWorkspaceEverywhere({ workspaceId: "ws-1", profile: "relay", ownerKey: "wrong-key" }),
-    ).rejects.toThrow("does not match this workspace");
+      deleteWorkspaceEverywhere({
+        workspaceId: "ws-1",
+        profile: "relay",
+        authorization: async () => CREDENTIAL,
+      }),
+    ).rejects.toThrow("may not delete this workspace");
 
-    expect(localKeys()).toEqual([
-      "owner-key-1",
-      "claimed",
-      JSON.stringify({ savedAt: 1_700_000_000_000 }),
-      "licence-token",
-    ]);
+    expect(localKeys()).toEqual(["licence-token"]);
     expect(recents()).toHaveLength(2);
     expect(deleteDocument).not.toHaveBeenCalled();
   });
@@ -144,10 +134,14 @@ describe("deleteWorkspaceEverywhere", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      deleteWorkspaceEverywhere({ workspaceId: "ws-1", profile: "relay", ownerKey: "owner-key-1" }),
+      deleteWorkspaceEverywhere({
+        workspaceId: "ws-1",
+        profile: "relay",
+        authorization: async () => CREDENTIAL,
+      }),
     ).rejects.toThrow("Could not reach the workspace server");
 
-    expect(localKeys()[0]).toBe("owner-key-1");
+    expect(localKeys()).toEqual(["licence-token"]);
     expect(deleteDocument).not.toHaveBeenCalled();
   });
 
@@ -158,19 +152,25 @@ describe("deleteWorkspaceEverywhere", () => {
     await deleteWorkspaceEverywhere({ workspaceId: "ws-1", profile: "standalone" });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(localKeys()).toEqual([null, null, null, null]);
+    expect(localKeys()).toEqual([null]);
     expect(deleteDocument).toHaveBeenCalledWith("ws-1");
   });
 
-  it("refuses a relay delete without an owner key", async () => {
+  it("refuses a relay delete with no session credential, sending nothing", async () => {
     seed();
     const fetchMock = stubFetch(new Response(null, { status: 200 }));
 
     await expect(
-      deleteWorkspaceEverywhere({ workspaceId: "ws-1", profile: "relay", ownerKey: null }),
-    ).rejects.toThrow("no owner key");
+      deleteWorkspaceEverywhere({
+        workspaceId: "ws-1",
+        profile: "relay",
+        authorization: async () => {
+          throw new Error("This browser has no account session");
+        },
+      }),
+    ).rejects.toThrow("no account session");
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(localKeys()[0]).toBe("owner-key-1");
+    expect(localKeys()).toEqual(["licence-token"]);
   });
 });

@@ -18,7 +18,7 @@ import {
   type Share,
   type ShareStore,
 } from "../../store/shares.js";
-import { createWorkspaceRegistry, type WorkspaceRegistry } from "../../store/workspaces.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../../store/workspaceOrgs.js";
 import {
   ADMIN_API_PATH,
   type AdminRequestDeps,
@@ -30,6 +30,7 @@ import {
 } from "./index.js";
 
 const ADMIN_TOKEN = "admin-token-for-tests";
+const READ_TOKEN = "admin-read-token-for-tests";
 const OWNER_KEY = "owner-key-for-tests";
 
 const ADMIN_PATHS = [
@@ -46,7 +47,7 @@ const ADMIN_PATHS = [
 let directory: string;
 let documents: ReturnType<typeof createDocumentStore>;
 let shares: ShareStore;
-let workspaces: WorkspaceRegistry;
+let orgs: WorkspaceOrgStore;
 let server: Server;
 let baseUrl: string;
 let rooms: AdminRoomRow[];
@@ -58,7 +59,7 @@ beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "suite-admin-api-"));
   documents = createDocumentStore(join(directory, "documents.sqlite"));
   shares = createShareStore(join(directory, "shares.sqlite"));
-  workspaces = createWorkspaceRegistry(join(directory, "workspaces.sqlite"));
+  orgs = createWorkspaceOrgStore(join(directory, "workspaces.sqlite"));
   rooms = [];
 });
 
@@ -66,7 +67,7 @@ afterEach(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   documents.close();
   shares.close();
-  workspaces.close();
+  orgs.close();
   if (previousToken === undefined) delete process.env.SUITE_ADMIN_TOKEN;
   else process.env.SUITE_ADMIN_TOKEN = previousToken;
   rmSync(directory, { recursive: true, force: true });
@@ -76,7 +77,7 @@ function deps(overrides: Partial<AdminRequestDeps> = {}): AdminRequestDeps {
   return {
     documents,
     shares,
-    workspaces,
+    orgs,
     paths: {
       documents: join(directory, "documents.sqlite"),
       shares: join(directory, "shares.sqlite"),
@@ -273,7 +274,7 @@ describe("admin API", () => {
     seedWorkspace("ws-a", 2);
     seedWorkspace("ws-b", 1);
     seedWorkspace("ws-c", 0);
-    workspaces.claimOrVerify("ws-a", OWNER_KEY);
+    orgs.claim("ws-a", "org-a");
     shares.create({ workspaceId: "ws-a", scope: "workspace", role: "viewer" });
     await startServer();
 
@@ -384,7 +385,7 @@ describe("admin API", () => {
       {
         roomId: "ws-a",
         clients: 3,
-        authKinds: { owner: 1, share: 1, internal: 1, anonymous: 0 },
+        authKinds: { account: 1, share: 1, internal: 1, anonymous: 0 },
       },
     ];
     await startServer();
@@ -396,7 +397,7 @@ describe("admin API", () => {
       {
         roomId: "ws-a",
         clients: 3,
-        authKinds: { owner: 1, share: 1, internal: 1, anonymous: 0 },
+        authKinds: { account: 1, share: 1, internal: 1, anonymous: 0 },
       },
     ]);
 
@@ -500,7 +501,6 @@ describe("admin mutations", () => {
   const MUTATIONS: readonly ["POST" | "DELETE", string][] = [
     ["POST", `${ADMIN_API_PATH}/shares/any-share/revoke`],
     ["DELETE", `${ADMIN_API_PATH}/shares?workspaceId=ws-a`],
-    ["POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`],
     ["POST", `${ADMIN_API_PATH}/rooms/ws-a/disconnect`],
     ["POST", `${ADMIN_API_PATH}/rooms/sweep`],
     ["DELETE", `${ADMIN_API_PATH}/workspaces/ws-a`],
@@ -533,7 +533,6 @@ describe("admin mutations", () => {
     await startServer();
 
     expect((await get(`${ADMIN_API_PATH}/shares/any-share/revoke`)).status).toBe(405);
-    expect((await get(`${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`)).status).toBe(405);
     expect((await get(`${ADMIN_API_PATH}/rooms/ws-a/disconnect`)).status).toBe(405);
     expect((await get(`${ADMIN_API_PATH}/rooms/sweep`)).status).toBe(405);
     expect((await mutation("POST", `${ADMIN_API_PATH}/status`)).status).toBe(405);
@@ -619,92 +618,9 @@ describe("admin mutations", () => {
     ).toBe(404);
   });
 
-  it("resets the owner key so the workspace can be claimed again", async () => {
-    seedWorkspace("ws-a", 1);
-    expect(workspaces.claimOrVerify("ws-a", OWNER_KEY)).toBe("owner");
-    const created = shares.create({
-      workspaceId: "ws-a",
-      scope: "card",
-      role: "viewer",
-      cardId: "ws-a-card-0",
-    });
-    await startServer();
-
-    const response = await mutation("POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`, {});
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      ok: boolean;
-      revokeShares: boolean;
-      ownerRows: number;
-      revoked: number;
-    };
-    expect(body.ok).toBe(true);
-    expect(body.revokeShares).toBe(false);
-    expect(body.ownerRows).toBe(1);
-    expect(body.revoked).toBe(0);
-
-    expect(workspaces.has("ws-a")).toBe(false);
-    expect(workspaces.claimOrVerify("ws-a", "a-brand-new-key")).toBe("owner");
-    expect(workspaces.verify("ws-a", "a-brand-new-key")).toBe(true);
-    // Without revokeShares the document and the link keep working.
-    expect(documents.load(loroDocumentKey("ws-a"))).not.toBeNull();
-    expect(shares.get(created.share.id)?.revokedAt).toBeNull();
-
-    expect(
-      (await mutation("POST", `${ADMIN_API_PATH}/workspaces/ws-missing/reset-owner`, {})).status,
-    ).toBe(404);
-    expect(
-      (
-        await mutation("POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`, {
-          revokeShares: "yes",
-        })
-      ).status,
-    ).toBe(400);
-  });
-
-  it("resets the owner key and revokes links when asked", async () => {
-    seedWorkspace("ws-a", 1);
-    workspaces.claimOrVerify("ws-a", OWNER_KEY);
-    const created = shares.create({
-      workspaceId: "ws-a",
-      scope: "card",
-      role: "viewer",
-      cardId: "ws-a-card-0",
-    });
-    const roomId = created.share.roomId;
-    if (!roomId) throw new Error("expected the share to have a projection room");
-    shares.setBaseline(created.share.id, new LoroDoc().export({ mode: "snapshot" }));
-    documents.save(loroDocumentKey(roomId), new LoroDoc().export({ mode: "snapshot" }));
-    const removed: Share[] = [];
-    await startServer({ onShareRemoved: (share) => removed.push(share) });
-
-    const response = await mutation("POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`, {
-      revokeShares: true,
-    });
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      revokeShares: boolean;
-      revoked: number;
-      baselines: number;
-      projected: number;
-      ownerRows: number;
-    };
-    expect(body.revokeShares).toBe(true);
-    expect(body.revoked).toBe(1);
-    expect(body.baselines).toBe(1);
-    expect(body.projected).toBe(1);
-    expect(body.ownerRows).toBe(1);
-
-    expect(workspaces.has("ws-a")).toBe(false);
-    expect(shares.list("ws-a")).toHaveLength(0);
-    expect(shares.getBaseline(created.share.id)).toBeNull();
-    expect(documents.load(loroDocumentKey(roomId))).toBeNull();
-    expect(removed.map((share) => share.id)).toEqual([created.share.id]);
-  });
-
   it("closes every session in a room and changes nothing else", async () => {
     seedWorkspace("ws-a", 1);
-    workspaces.claimOrVerify("ws-a", OWNER_KEY);
+    orgs.claim("ws-a", "org-a");
     const created = shares.create({ workspaceId: "ws-a", scope: "workspace", role: "viewer" });
     const asked: string[] = [];
     await startServer({
@@ -719,7 +635,7 @@ describe("admin mutations", () => {
     expect(await response.json()).toEqual({ ok: true, roomId: "ws-a", closed: 3 });
     expect(asked).toEqual(["ws-a"]);
 
-    expect(workspaces.has("ws-a")).toBe(true);
+    expect(orgs.has("ws-a")).toBe(true);
     expect(shares.get(created.share.id)?.revokedAt).toBeNull();
     expect(documents.load(loroDocumentKey("ws-a"))).not.toBeNull();
   });
@@ -760,10 +676,11 @@ describe("admin mutations", () => {
     expect(auditLines).toHaveLength(1);
     const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
     expect(record).toMatchObject({
+      actor: "admin",
       path: `${ADMIN_API_PATH}/rooms/sweep`,
       target: "projection-rooms",
       action: "sweep-rooms",
-      outcome: "swept",
+      result: "swept",
       idleHours: 24,
       checked: 3,
       unknown: 1,
@@ -816,7 +733,7 @@ describe("admin mutations", () => {
 
   it("deletes the document, links, baselines and projections of a workspace", async () => {
     seedWorkspace("ws-a", 1);
-    workspaces.claimOrVerify("ws-a", OWNER_KEY);
+    orgs.claim("ws-a", "org-a");
     const created = shares.create({
       workspaceId: "ws-a",
       scope: "card",
@@ -840,21 +757,21 @@ describe("admin mutations", () => {
       projected: number;
       shares: number;
       baselines: number;
-      ownerRows: number;
+      orgRows: number;
     };
     expect(body.ok).toBe(true);
     expect(body.documents).toBe(1);
     expect(body.projected).toBe(1);
     expect(body.shares).toBe(1);
     expect(body.baselines).toBe(1);
-    expect(body.ownerRows).toBe(1);
+    expect(body.orgRows).toBe(1);
 
     expect(documents.load(loroDocumentKey("ws-a"))).toBeNull();
     expect(documents.load(loroDocumentKey(roomId))).toBeNull();
     expect(shares.list("ws-a")).toHaveLength(0);
     expect(shares.get(created.share.id)).toBeNull();
     expect(shares.getBaseline(created.share.id)).toBeNull();
-    expect(workspaces.has("ws-a")).toBe(false);
+    expect(orgs.has("ws-a")).toBe(false);
     expect(removed.map((share) => share.id)).toEqual([created.share.id]);
 
     expect(
@@ -871,31 +788,66 @@ describe("admin mutations", () => {
       404,
     );
     expect(
-      (await mutation("POST", `${ADMIN_API_PATH}/workspaces/nope/reset-owner`, {})).status,
-    ).toBe(404);
-    expect(
       (await mutation("DELETE", `${ADMIN_API_PATH}/workspaces/nope`, { confirm: "nope" })).status,
     ).toBe(404);
   });
 
-  it("writes one audit line per mutation without the token", async () => {
+  it("writes one audit row per mutation, naming actor, action, target and result", async () => {
     seedWorkspace("ws-a", 1);
     const lines: string[] = [];
     const logger = createLogger({ level: "debug", write: (line) => lines.push(line) });
     await startServer({ logger });
 
-    const response = await mutation("POST", `${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`, {});
+    const response = await mutation("DELETE", `${ADMIN_API_PATH}/workspaces/ws-a`, {
+      confirm: "ws-a",
+    });
     expect(response.status).toBe(200);
     expect(await response.text()).not.toContain(ADMIN_TOKEN);
 
     const auditLines = lines.filter((line) => line.includes("admin.mutation"));
     expect(auditLines).toHaveLength(1);
     const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
-    expect(record.path).toBe(`${ADMIN_API_PATH}/workspaces/ws-a/reset-owner`);
-    expect(record.target).toBe("ws-a");
-    expect(record.action).toBe("reset-owner");
-    expect(record.outcome).toBe("owner-key-removed");
+    expect(record).toMatchObject({
+      actor: "admin",
+      action: "delete-workspace",
+      target: "ws-a",
+      result: "deleted",
+      path: `${ADMIN_API_PATH}/workspaces/ws-a`,
+    });
     for (const line of lines) expect(line).not.toContain(ADMIN_TOKEN);
+  });
+
+  it("refuses a read-scoped token a mutation, and records the attempt", async () => {
+    vi.stubEnv("SUITE_ADMIN_READ_TOKEN", READ_TOKEN);
+    seedWorkspace("ws-a", 1);
+    const lines: string[] = [];
+    const logger = createLogger({ level: "debug", write: (line) => lines.push(line) });
+    await startServer({ logger });
+
+    const refused = await mutation(
+      "DELETE",
+      `${ADMIN_API_PATH}/workspaces/ws-a`,
+      { confirm: "ws-a" },
+      READ_TOKEN,
+    );
+    expect(refused.status).toBe(403);
+    // The read scope still reads: the operator can watch without the power to act.
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, READ_TOKEN)).status).toBe(200);
+    expect((await get(METRICS_PATH, READ_TOKEN)).status).toBe(200);
+    expect((await get(`${ADMIN_API_PATH}/workspaces`, "not-a-token")).status).toBe(401);
+    expect(documents.load(loroDocumentKey("ws-a"))).not.toBeNull();
+
+    const auditLines = lines.filter((line) => line.includes("admin.mutation"));
+    expect(auditLines).toHaveLength(1);
+    const record = JSON.parse(auditLines[0] ?? "{}") as Record<string, unknown>;
+    expect(record).toMatchObject({
+      actor: "admin-read",
+      action: "delete-workspace",
+      target: "ws-a",
+      result: "refused-scope",
+    });
+    for (const line of lines) expect(line).not.toContain(READ_TOKEN);
+    vi.unstubAllEnvs();
   });
 
   it("reports the projection rooms the worker holds", async () => {
@@ -936,7 +888,6 @@ describe("admin mutations", () => {
     const body = (await response.json()) as {
       ok: boolean;
       workspaceId: string;
-      ownerKey: string | null;
       boards: string[];
       cards: string[];
       sections: string[];
@@ -945,7 +896,9 @@ describe("admin mutations", () => {
 
     expect(body.ok).toBe(true);
     expect(body.workspaceId.length).toBeGreaterThan(0);
-    expect(body.ownerKey).toBeTypeOf("string");
+    // A fixture hands out no credential: the account that opens it claims it.
+    expect(body).not.toHaveProperty("ownerKey");
+    expect(orgs.has(body.workspaceId)).toBe(false);
     expect(body.boards).toHaveLength(3);
     expect(body.cards).toHaveLength(7);
     expect(body.sections).toHaveLength(2);
@@ -955,10 +908,6 @@ describe("admin mutations", () => {
     const ids = [...body.boards, ...body.cards, ...body.sections];
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.every((id) => id.startsWith("fx-"))).toBe(true);
-
-    const ownerKey = body.ownerKey;
-    if (ownerKey === null) throw new Error("expected a fixture owner key");
-    expect(workspaces.verify(body.workspaceId, ownerKey)).toBe(true);
 
     const detail = (await (
       await get(`${ADMIN_API_PATH}/workspaces/${body.workspaceId}`)
@@ -973,7 +922,7 @@ describe("admin mutations", () => {
     };
     expect(detail).toMatchObject({
       id: body.workspaceId,
-      claimed: true,
+      claimed: false,
       boards: 3,
       cards: 7,
       sections: 2,
@@ -995,13 +944,12 @@ describe("admin mutations", () => {
       })
     ).json()) as {
       workspaceId: string;
-      ownerKey: string | null;
       boards: string[];
       cards: string[];
     };
-    // An existing owner key is never replaced, so seeding cannot hand out access.
+    // Seeding an existing workspace appends to it and hands out no credential.
     expect(second.workspaceId).toBe(body.workspaceId);
-    expect(second.ownerKey).toBeNull();
+    expect(second).not.toHaveProperty("ownerKey");
     expect(second.boards).toHaveLength(1);
     expect(second.cards).toHaveLength(2);
 
@@ -1138,7 +1086,7 @@ describe("document store inventory", () => {
 describe("limit tuning", () => {
   let docs: ReturnType<typeof createDocumentStore>;
   let shareStore: ShareStore;
-  let otherRegistry: WorkspaceRegistry;
+  let otherOrgs: WorkspaceOrgStore;
   let settings: ReturnType<typeof createSettingsStore>;
   let lines: string[];
   let local: Server | null = null;
@@ -1146,7 +1094,7 @@ describe("limit tuning", () => {
   beforeEach(() => {
     docs = createDocumentStore(":memory:");
     shareStore = createShareStore(":memory:");
-    otherRegistry = createWorkspaceRegistry(":memory:");
+    otherOrgs = createWorkspaceOrgStore(":memory:");
     settings = createSettingsStore();
     lines = [];
     local = null;
@@ -1156,7 +1104,7 @@ describe("limit tuning", () => {
     if (local) await new Promise<void>((resolve) => local?.close(() => resolve()));
     docs.close();
     shareStore.close();
-    otherRegistry.close();
+    otherOrgs.close();
     settings.close();
     vi.unstubAllEnvs();
   });
@@ -1166,7 +1114,7 @@ describe("limit tuning", () => {
     const deps: AdminRequestDeps = {
       documents: docs,
       shares: shareStore,
-      workspaces: otherRegistry,
+      orgs: otherOrgs,
       limits: () => resolveLimits(process.env, readLimitOverrides(settings)),
       diskBytes: () => 4096,
       logger,
@@ -1197,7 +1145,14 @@ describe("limit tuning", () => {
     });
   }
 
-  function auditLines(): { msg: string; action?: string; outcome?: string; details?: unknown }[] {
+  function auditLines(): {
+    msg: string;
+    actor?: string;
+    action?: string;
+    result?: string;
+    target?: string;
+    details?: unknown;
+  }[] {
     return lines
       .map((line) => {
         try {
@@ -1268,7 +1223,8 @@ describe("limit tuning", () => {
       (entry) => entry.msg === "admin.mutation" && entry.action === "limits.update",
     );
     expect(line).toBeDefined();
-    expect(line?.outcome).toBe("updated");
+    expect(line?.result).toBe("updated");
+    expect(line?.actor).toBe("admin");
   });
 
   it("accepts null to clear an override and the word unlimited", async () => {
@@ -1296,7 +1252,7 @@ describe("limit tuning", () => {
     expect(((await contradictory.json()) as { error: string }).error).toContain("soft watermark");
 
     const rejected = auditLines().filter(
-      (entry) => entry.action === "limits.update" && entry.outcome === "rejected",
+      (entry) => entry.action === "limits.update" && entry.result === "rejected",
     );
     expect(rejected).toHaveLength(2);
     expect(readLimitOverrides(settings)).toEqual({});

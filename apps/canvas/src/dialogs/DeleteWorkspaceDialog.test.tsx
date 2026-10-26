@@ -11,7 +11,7 @@ function setup(overrides: Partial<Parameters<typeof DeleteWorkspaceDialog>[0]> =
       workspaceId="ws-1"
       title="Research"
       mode="relay"
-      ownerKey="owner-key-1"
+      authorization={async () => ({ authorization: "Bearer session-jwt-1" })}
       onClose={onClose}
       onDeleted={onDeleted}
       remove={remove as never}
@@ -52,7 +52,7 @@ describe("DeleteWorkspaceDialog", () => {
       expect.objectContaining({
         workspaceId: "ws-1",
         profile: "relay",
-        ownerKey: "owner-key-1",
+        authorization: expect.any(Function),
       }),
     );
   });
@@ -73,7 +73,7 @@ describe("DeleteWorkspaceDialog", () => {
 
   /** The two profiles delete different halves, so they must not share copy. */
   it("says what a local-only delete does", () => {
-    setup({ mode: "standalone", ownerKey: null });
+    setup({ mode: "standalone" });
     const copy = screen.getByTestId("delete-workspace-copy");
     expect(copy).toHaveTextContent("this browser is the only place");
     expect(copy).not.toHaveTextContent("share links");

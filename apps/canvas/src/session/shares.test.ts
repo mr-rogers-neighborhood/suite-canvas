@@ -18,8 +18,8 @@ import {
 } from "./shares";
 
 const API = "http://localhost:1235/api/shares";
-const OWNER_KEY = "owner-key-1";
-const OWNER_HEADER = { authorization: `Bearer ${OWNER_KEY}` };
+const CREDENTIAL = "session-jwt-1";
+const CREDENTIAL_HEADER = { authorization: `Bearer ${CREDENTIAL}` };
 
 const share = {
   id: "share-1",
@@ -59,14 +59,17 @@ describe("createShare", () => {
     const fetchMock = stubFetch(() => reply({ token: "tok-1", share }, 201));
 
     await expect(
-      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, OWNER_KEY),
+      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, CREDENTIAL),
     ).resolves.toEqual({ token: "tok-1", share });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const call = fetchMock.mock.calls[0];
     expect(call?.[0]).toBe(API);
     expect(call?.[1]?.method).toBe("POST");
-    expect(call?.[1]?.headers).toEqual({ ...OWNER_HEADER, "content-type": "application/json" });
+    expect(call?.[1]?.headers).toEqual({
+      ...CREDENTIAL_HEADER,
+      "content-type": "application/json",
+    });
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       workspaceId: "ws-1",
       scope: "workspace",
@@ -75,7 +78,7 @@ describe("createShare", () => {
   });
 
   it("turns the server's error body into a readable error", async () => {
-    stubFetch(() => reply({ error: "This workspace is protected by a different owner key." }, 403));
+    stubFetch(() => reply({ error: "This workspace belongs to another organization." }, 403));
 
     const failure = createShare(
       {
@@ -84,13 +87,13 @@ describe("createShare", () => {
         role: "editor",
         boardId: "b-1",
       },
-      OWNER_KEY,
+      CREDENTIAL,
     ).catch((error: unknown) => error);
 
     const error = await failure;
     expect(error).toBeInstanceOf(ShareApiError);
     expect(error).toMatchObject({
-      message: "This workspace is protected by a different owner key.",
+      message: "This workspace belongs to another organization.",
       status: 403,
     });
   });
@@ -104,7 +107,7 @@ describe("createShare", () => {
     );
 
     await expect(
-      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, OWNER_KEY),
+      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, CREDENTIAL),
     ).rejects.toThrow("Could not reach the share server.");
   });
 
@@ -112,7 +115,7 @@ describe("createShare", () => {
     stubFetch(() => reply({ token: 42 }));
 
     await expect(
-      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, OWNER_KEY),
+      createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, CREDENTIAL),
     ).rejects.toThrow("The share server sent an unexpected response.");
   });
 });
@@ -121,10 +124,10 @@ describe("listShares", () => {
   it("asks for one workspace's shares", async () => {
     const fetchMock = stubFetch(() => reply({ shares: [share] }));
 
-    await expect(listShares("ws 1/2", OWNER_KEY)).resolves.toEqual([share]);
+    await expect(listShares("ws 1/2", CREDENTIAL)).resolves.toEqual([share]);
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${API}?workspaceId=ws+1%2F2`);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(OWNER_HEADER);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual(CREDENTIAL_HEADER);
   });
 
   it("falls back to a status message when the body is not JSON", async () => {
@@ -139,7 +142,7 @@ describe("listShares", () => {
         }) as unknown as Response,
     );
 
-    await expect(listShares("ws-1", OWNER_KEY)).rejects.toThrow("The share request failed (502).");
+    await expect(listShares("ws-1", CREDENTIAL)).rejects.toThrow("The share request failed (502).");
   });
 });
 
@@ -246,11 +249,11 @@ describe("revokeShare", () => {
   it("deletes by id", async () => {
     const fetchMock = stubFetch(() => reply({ share: { ...share, revokedAt: 5 } }));
 
-    await expect(revokeShare("share-1", OWNER_KEY)).resolves.toMatchObject({ revokedAt: 5 });
+    await expect(revokeShare("share-1", CREDENTIAL)).resolves.toMatchObject({ revokedAt: 5 });
     const call = fetchMock.mock.calls[0];
     expect(call?.[0]).toBe(`${API}/share-1`);
     expect(call?.[1]?.method).toBe("DELETE");
-    expect(call?.[1]?.headers).toEqual(OWNER_HEADER);
+    expect(call?.[1]?.headers).toEqual(CREDENTIAL_HEADER);
   });
 });
 
@@ -273,27 +276,27 @@ describe("shareLink", () => {
   });
 });
 
-describe("owner key", () => {
-  it("refuses a management call without a key instead of sending none", async () => {
+describe("the session credential", () => {
+  it("refuses a management call without a session instead of sending none", async () => {
     const fetchMock = stubFetch(() => reply({ shares: [] }));
 
     await expect(listShares("ws-1", null)).rejects.toThrow(
-      "An owner key is required to manage links.",
+      "Sign in on this device to manage this workspace's links.",
     );
     await expect(
       createShare({ workspaceId: "ws-1", scope: "workspace", role: "viewer" }, ""),
-    ).rejects.toThrow("An owner key is required to manage links.");
+    ).rejects.toThrow("Sign in on this device to manage this workspace's links.");
     await expect(revokeShare("share-1", "   ")).rejects.toThrow(
-      "An owner key is required to manage links.",
+      "Sign in on this device to manage this workspace's links.",
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces a rejected key as a readable error", async () => {
-    stubFetch(() => reply({ error: "This workspace is protected by a different owner key." }, 403));
+  it("surfaces a rejected session as a readable error", async () => {
+    stubFetch(() => reply({ error: "This workspace belongs to another organization." }, 403));
 
     await expect(listShares("ws-1", "wrong")).rejects.toMatchObject({
-      message: "This workspace is protected by a different owner key.",
+      message: "This workspace belongs to another organization.",
       status: 403,
     });
   });

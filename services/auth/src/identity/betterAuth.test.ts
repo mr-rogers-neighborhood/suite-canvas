@@ -2,10 +2,19 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { describe, expect, it } from "vitest";
 import { authEnvironment } from "../http/env.js";
 import type { InvitationEmail } from "../invitations/enrollment.js";
+import type { EntitlementReader } from "../licensing/entitlements.js";
 import type { MembershipReader } from "../licensing/licences.js";
+import type { OrganizationInvitation } from "../mail/mail.js";
 import { seatLicence } from "../organizations/seats.js";
 import type { LicenceClaims, SeatLicence } from "../types.js";
-import { type AuthInstance, createAuthService, sessionReader } from "./betterAuth.js";
+import {
+  type AuthInstance,
+  type AuthServiceDeps,
+  authOptions,
+  createAuthService,
+  sessionReader,
+} from "./betterAuth.js";
+import { RELAY_TOKEN_TTL_SECONDS } from "./relayToken.js";
 
 /**
  * Better Auth is really installed, really constructed, and really exercised
@@ -36,6 +45,8 @@ const modelNames = [
   // `better-enrollment`: the invitation row and its append-only use log.
   "invite",
   "inviteUse",
+  // `jwt`: the signing key pair the relay verifies against.
+  "jwks",
 ] as const;
 
 type Store = Record<string, unknown[]>;
@@ -145,36 +156,84 @@ interface Harness {
   invitations: InvitationEmail[];
   /** The magic link the plugin asked us to deliver, if any. */
   lastLink: () => string | null;
+  /** The verification link the plugin asked us to deliver, if any. */
+  lastVerification: () => string | null;
+  /** Addresses a verification message was addressed to, in order. */
+  verified: string[];
+  /** Organization invitations handed to the sender, in order. */
+  organizationInvitations: OrganizationInvitation[];
+}
+
+/** The environment every harness in this file shares, with a knob per test. */
+function environment(
+  options: { maxOrganizations?: number; admission?: boolean } = {},
+): ReturnType<typeof authEnvironment> {
+  return authEnvironment({
+    SUITE_AUTH_ENABLED: "1",
+    SUITE_AUTH_SECRET: "t".repeat(40),
+    SUITE_AUTH_URL: BASE_URL,
+    SUITE_AUTH_DATABASE_URL: "postgres://unused/test",
+    SUITE_GOOGLE_CLIENT_ID: "google-id",
+    SUITE_GOOGLE_CLIENT_SECRET: "google-secret",
+    SUITE_AUTH_RP_ID: "suite.example",
+    SUITE_AUTH_RP_NAME: "Suite",
+    SUITE_AUTH_MAX_ORGS_PER_USER: String(options.maxOrganizations ?? 1),
+    ...(options.admission === true ? { SUITE_ADMISSION_REQUIRED: "1" } : {}),
+  });
+}
+
+/** Dependencies for the tests that inspect the options rather than drive the API. */
+function serviceDeps(): AuthServiceDeps {
+  return {
+    env: environment(),
+    database: memoryAdapter(Object.fromEntries(modelNames.map((name) => [name, []]))),
+    licences: { forOrganization: async () => null },
+    memberships: {
+      countForOrganization: async () => 0,
+      countForUser: async () => 0,
+      roleFor: async () => null,
+      listForOrganization: async () => [],
+    },
+    sendMagicLink: async () => {},
+    sendVerificationEmail: async () => {},
+    sendOrganizationInvitation: async () => {},
+    now: () => NOW,
+  };
 }
 
 function harness(
-  options: { seats?: number; maxOrganizations?: number; admission?: boolean } = {},
+  options: {
+    seats?: number;
+    maxOrganizations?: number;
+    admission?: boolean;
+    entitlements?: EntitlementReader;
+  } = {},
 ): Harness {
   const store: Store = Object.fromEntries(modelNames.map((name) => [name, []]));
   const memberships = storeMemberships(store);
   let licence: SeatLicence | null = seatLicence(claims(), options.seats ?? 5);
   let link: string | null = null;
+  let verification: string | null = null;
+  const verified: string[] = [];
   const transfers: Array<{ fromUserId: string; toUserId: string }> = [];
   const invitations: InvitationEmail[] = [];
+  const organizationInvitations: OrganizationInvitation[] = [];
 
   const auth = createAuthService({
-    env: authEnvironment({
-      SUITE_AUTH_ENABLED: "1",
-      SUITE_AUTH_SECRET: "t".repeat(40),
-      SUITE_AUTH_URL: BASE_URL,
-      SUITE_AUTH_DATABASE_URL: "postgres://unused/test",
-      SUITE_GOOGLE_CLIENT_ID: "google-id",
-      SUITE_GOOGLE_CLIENT_SECRET: "google-secret",
-      SUITE_AUTH_RP_ID: "suite.example",
-      SUITE_AUTH_RP_NAME: "Suite",
-      SUITE_AUTH_MAX_ORGS_PER_USER: String(options.maxOrganizations ?? 1),
-      ...(options.admission === true ? { SUITE_ADMISSION_REQUIRED: "1" } : {}),
-    }),
+    env: environment(options),
     database: memoryAdapter(store),
     licences: { forOrganization: async () => licence },
     memberships,
+    ...(options.entitlements === undefined ? {} : { entitlements: options.entitlements }),
     sendMagicLink: async ({ url }) => {
       link = url;
+    },
+    sendVerificationEmail: async ({ email, url }) => {
+      verification = url;
+      verified.push(email);
+    },
+    sendOrganizationInvitation: async (invitation) => {
+      organizationInvitations.push(invitation);
     },
     transferAnonymousWorkspaces: async (input) => {
       transfers.push(input);
@@ -238,6 +297,9 @@ function harness(
     transfers,
     invitations,
     lastLink: () => link,
+    lastVerification: () => verification,
+    verified,
+    organizationInvitations,
     addUser,
   };
 }
@@ -257,7 +319,13 @@ describe("the Better Auth surface", () => {
     const session = await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie });
     // Signed in, unadmitted: the session says so rather than hiding it, so a route
     // can answer "you are on the list" instead of "forbidden".
-    expect(session).toEqual({ userId, organizationId: null, role: null, admittedAt: null });
+    expect(session).toEqual({
+      userId,
+      organizationId: null,
+      role: null,
+      admittedAt: null,
+      mfaRequired: false,
+    });
   });
 
   it("returns no session for a cookie it did not issue", async () => {
@@ -265,6 +333,99 @@ describe("the Better Auth surface", () => {
     const reader = sessionReader(auth, storeMemberships(store));
     expect(await reader.sessionFor({ cookie: "better-auth.session_token=forged" })).toBeNull();
     expect(await reader.sessionFor({})).toBeNull();
+  });
+});
+
+describe("the relay token", () => {
+  /** A JWT payload, decoded without verifying: the signature is the key set's job. */
+  function payloadOf(token: string): Record<string, unknown> {
+    const segment = token.split(".")[1];
+    if (segment === undefined) throw new Error("the token has no payload segment");
+    return JSON.parse(Buffer.from(segment, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("mints a token carrying sub, org, role, tier and limits", async () => {
+    const { auth, signIn } = harness();
+    const { cookie, userId } = await signIn("member@example.com");
+    const organization = await auth.api.createOrganization({
+      body: { name: "Agency", slug: "agency" },
+      headers: new Headers({ cookie }),
+    });
+
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/token`, { headers: { cookie } }),
+    );
+    expect(response.status).toBe(200);
+    const { token } = (await response.json()) as { token: string };
+    const claims = payloadOf(token);
+
+    expect(claims).toMatchObject({
+      sub: userId,
+      org: organization?.id,
+      // The creator of the organization is its owner, read from the member row.
+      role: "owner",
+      // Nothing has been bought, so the injected default answers for everyone.
+      tier: "free",
+      limits: {},
+    });
+    // The TTL is the revocation window, and it is five minutes.
+    expect(Number(claims.exp) - Number(claims.iat)).toBe(RELAY_TOKEN_TTL_SECONDS);
+  });
+
+  it("takes tier and limits from the injected entitlement reader", async () => {
+    const { auth, signIn } = harness({
+      entitlements: {
+        forOrganization: async () => ({ tier: "team", limits: { workspaces: 10 } }),
+      },
+    });
+    const { cookie } = await signIn("member@example.com");
+    await auth.api.createOrganization({
+      body: { name: "Agency", slug: "agency" },
+      headers: new Headers({ cookie }),
+    });
+
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/token`, { headers: { cookie } }),
+    );
+    const { token } = (await response.json()) as { token: string };
+    // The billing lane's reader is org-keyed, so wiring it needs no adapter: the same
+    // `forOrganization` shape arrives here and its numbers land in the claim.
+    expect(payloadOf(token)).toMatchObject({
+      tier: "team",
+      limits: { workspaces: 10 },
+    });
+  });
+
+  it("publishes the key set the relay verifies against", async () => {
+    const { auth, signIn } = harness();
+    const { cookie } = await signIn("member@example.com");
+    // Minting is what materialises the key pair; the endpoint answers from the table.
+    await auth.handler(new Request(`${BASE_URL}/api/auth/token`, { headers: { cookie } }));
+
+    const response = await auth.handler(new Request(`${BASE_URL}/api/auth/jwks`));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { keys?: Array<Record<string, unknown>> };
+    expect(body.keys?.length).toBeGreaterThan(0);
+    expect(body.keys?.[0]).toMatchObject({ kty: "OKP", alg: "EdDSA" });
+    // A public key set: the private half never leaves the control plane.
+    expect(body.keys?.[0]).not.toHaveProperty("d");
+  });
+
+  it("adds the billing plugin when one is supplied, and nothing when it is not", async () => {
+    const plugin = { id: "test-billing", version: "0.0.0", endpoints: {} } as never;
+    const withBilling = authOptions({
+      ...serviceDeps(),
+      billingPlugin: plugin,
+    });
+    const without = authOptions(serviceDeps());
+
+    const ids = (options: ReturnType<typeof authOptions>): unknown[] =>
+      (options.plugins ?? []).map((entry) => (entry as { id?: unknown }).id);
+    expect(ids(withBilling)).toContain("test-billing");
+    expect(ids(without)).not.toContain("test-billing");
   });
 });
 
@@ -336,6 +497,57 @@ describe("organization policy through the plugin's hooks", () => {
   });
 });
 
+describe("a second factor for the admin role", () => {
+  /** Promote a stored user, the way the admin plugin's `setRole` does. */
+  function promote(store: Store, userId: string, fields: { twoFactorEnabled?: boolean }): void {
+    const row = (store.user ?? []).find((entry) => (entry as { id?: string }).id === userId) as
+      | { role?: string; twoFactorEnabled?: boolean }
+      | undefined;
+    if (row === undefined) throw new Error(`${userId} is not a stored user`);
+    row.role = "admin";
+    if (fields.twoFactorEnabled !== undefined) row.twoFactorEnabled = fields.twoFactorEnabled;
+  }
+
+  it("refuses an operator who has not enrolled, and says where to enrol", async () => {
+    const { auth, signIn, store } = harness();
+    const { cookie, userId } = await signIn("operator@example.com");
+    promote(store, userId, {});
+
+    // 403 with a code, not a generic "forbidden": the client has to open enrolment.
+    await expect(
+      auth.api.createOrganization({
+        body: { name: "Ops", slug: "ops" },
+        headers: new Headers({ cookie }),
+      }),
+    ).rejects.toMatchObject({
+      body: { code: "mfa-enrollment-required", enrollAt: "/two-factor/enable" },
+    });
+    expect(store.organization).toHaveLength(0);
+  });
+
+  it("lets the same operator act once a factor is enrolled", async () => {
+    const { auth, signIn, store } = harness();
+    const { cookie, userId } = await signIn("operator@example.com");
+    promote(store, userId, { twoFactorEnabled: true });
+
+    const organization = await auth.api.createOrganization({
+      body: { name: "Ops", slug: "ops" },
+      headers: new Headers({ cookie }),
+    });
+    expect(organization?.slug).toBe("ops");
+  });
+
+  it("reports the requirement on the session, so the client can offer enrolment", async () => {
+    const { auth, signIn, store } = harness();
+    const { cookie, userId } = await signIn("operator@example.com");
+    const reader = sessionReader(auth, storeMemberships(store));
+
+    expect((await reader.sessionFor({ cookie }))?.mfaRequired).toBe(false);
+    promote(store, userId, {});
+    expect((await reader.sessionFor({ cookie }))?.mfaRequired).toBe(true);
+  });
+});
+
 describe("invitations, and the password §11 now allows", () => {
   /** The plugin's own redemption endpoint, called the way our route calls it. */
   async function redeem(
@@ -362,27 +574,67 @@ describe("invitations, and the password §11 now allows", () => {
     return created;
   }
 
-  it("refuses a self-serve password sign-up, so a password is reachable only by invitation", async () => {
-    const { auth, store } = harness();
+  it("creates an account for a stranger, and withholds the session until the address answers", async () => {
+    const { auth, store, verified, lastVerification } = harness();
 
+    await auth.api.signUpEmail({
+      body: {
+        email: "stranger@example.com",
+        password: "correct horse battery",
+        name: "Stranger",
+      },
+    });
+
+    // Open sign-up (ADR-0077): the row exists and a verification message went out.
+    expect(store.user ?? []).toHaveLength(1);
+    expect(verified).toEqual(["stranger@example.com"]);
+    expect(lastVerification()).toContain("token=");
+
+    // The password works, but no session is issued before the address is confirmed.
     await expect(
-      auth.api.signUpEmail({
-        body: {
-          email: "stranger@example.com",
-          password: "correct horse battery",
-          name: "Stranger",
-        },
+      auth.api.signInEmail({
+        body: { email: "stranger@example.com", password: "correct horse battery" },
+        headers: new Headers({ origin: BASE_URL }),
       }),
-    ).rejects.toMatchObject({ body: { code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" } });
-
-    // Refused, not merely unanswered: no account was created on the way out.
-    expect(store.user ?? []).toHaveLength(0);
+    ).rejects.toMatchObject({ body: { code: "EMAIL_NOT_VERIFIED" } });
   });
 
-  it("lets an invited account set a password, and signs it in with that password", async () => {
+  it("signs the stranger in once the verification link is opened", async () => {
+    const { auth, signIn, verified, lastVerification } = harness();
+
+    await auth.api.signUpEmail({
+      body: {
+        email: "stranger@example.com",
+        password: "correct horse battery",
+        name: "Stranger",
+      },
+    });
+    const url = lastVerification();
+    if (url === null) throw new Error("no verification link was sent");
+    await auth.handler(new Request(url));
+
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE_URL },
+        body: JSON.stringify({
+          email: "stranger@example.com",
+          password: "correct horse battery",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toBeTruthy();
+    expect(verified).toEqual(["stranger@example.com"]);
+    // Signing in through the magic link still works for the same account, which is
+    // what makes the mailbox the recovery path.
+    expect((await signIn("stranger@example.com")).userId).toBeTruthy();
+  });
+
+  it("adds an invited colleague who already has an account, with the role the invitation named", async () => {
     const { auth, signIn, invitations, store } = harness({ seats: 3 });
-    const { cookie } = await signIn("owner@example.com");
-    const organization = await organizationOf(auth, cookie);
+    const owner = await signIn("owner@example.com");
+    const organization = await organizationOf(auth, owner.cookie);
 
     await auth.api.createInvite({
       body: {
@@ -392,46 +644,26 @@ describe("invitations, and the password §11 now allows", () => {
         organizationId: organization.id,
         organizationRole: "member",
       },
-      headers: new Headers({ cookie }),
+      headers: new Headers({ cookie: owner.cookie }),
     });
     const invitation = invitations[0];
     if (invitation === undefined)
       throw new Error("the plugin never asked us to send an invitation");
 
-    const redeemed = await redeem(auth, {
-      token: invitation.token,
-      password: "correct horse battery",
-      name: "Colleague",
-    });
+    // Open sign-up (ADR-0077) means the colleague arrives with their own account and
+    // the invitation is what puts them in the organization. There is no account
+    // creation left in the redemption path, which is the point of the change.
+    const colleague = await signIn("colleague@example.com");
+    const redeemed = await redeem(auth, { token: invitation.token }, { cookie: colleague.cookie });
     expect(redeemed.status).toBe(200);
-    // `signedIn: false` because this path sets a password instead of a session: the
-    // person signs in with what they just chose.
-    expect(redeemed.body).toMatchObject({ action: "ACCEPTED", signedIn: false });
+    expect(redeemed.body).toMatchObject({ action: "ACCEPTED" });
 
-    const response = await auth.handler(
-      new Request(`${BASE_URL}/api/auth/sign-in/email`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: BASE_URL },
-        body: JSON.stringify({
-          email: "colleague@example.com",
-          password: "correct horse battery",
-        }),
-      }),
-    );
-    expect(response.status).toBe(200);
-    const sessionCookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
-    expect(sessionCookie).not.toBe("");
-
-    const session = await sessionReader(auth, storeMemberships(store)).sessionFor({
-      cookie: sessionCookie,
-    });
-    expect(session?.userId).toBeDefined();
-    // The owner is the first member; the invited colleague is the second, with the
+    // The owner is the first member; the colleague is the second, with the
     // organization role the invitation named (never `owner`).
     expect(store.member).toContainEqual(
       expect.objectContaining({
         organizationId: organization.id,
-        userId: session?.userId,
+        userId: colleague.userId,
         role: "member",
       }),
     );
@@ -457,11 +689,8 @@ describe("invitations, and the password §11 now allows", () => {
 
     const invitation = invitations[0];
     if (invitation === undefined) throw new Error("no invitation was sent");
-    const redeemed = await redeem(auth, {
-      token: invitation.token,
-      password: "correct horse battery",
-      name: "Late",
-    });
+    const late = await signIn("late@example.com");
+    const redeemed = await redeem(auth, { token: invitation.token }, { cookie: late.cookie });
 
     expect(redeemed.status).toBe(422);
     expect(redeemed.body).toMatchObject({ code: "SEAT_LIMIT_REACHED" });
@@ -480,15 +709,12 @@ describe("invitations, and the password §11 now allows", () => {
     if (token === undefined) throw new Error("a public invite must return its token");
 
     // A shareable link is not an account: without a session there is nobody to add,
-    // and the plugin says so without spending a use.
+    // and the plugin says so without spending a use. Our route turns that deferred
+    // answer into 401 through `enrollmentRedemption`; here the plugin's own body is
+    // what is asserted.
     const anonymous = await redeem(auth, { token });
-    // Be precise about what a public invite *is* once invited accounts may have
-    // passwords: someone holding the link is offered an account, and the plugin asks
-    // them to set one. That is the approved trade (ADR-0067 §11 amendment) and it is
-    // why the cap, the expiry, the revocation and the seat check all matter here —
-    // the link, not a mailbox, is what proves eligibility.
-    expect(anonymous.status).toBe(400);
-    expect(anonymous.body).toMatchObject({ code: "PASSWORD_REQUIRED" });
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.body).toMatchObject({ action: "SIGN_IN_REQUIRED" });
     // Crucially, a rejected attempt spends nothing: no use, no member row.
     expect(store.member?.length ?? 0).toBe(1);
 
@@ -506,6 +732,145 @@ describe("invitations, and the password §11 now allows", () => {
     const exhausted = await redeem(auth, { token }, { cookie: second.cookie });
     expect(exhausted.status).toBe(400);
     expect(exhausted.body).toMatchObject({ code: "INVITE_ALREADY_USED" });
+  });
+});
+
+describe("invitations through the organization plugin", () => {
+  /** One JSON request through the real handler. */
+  async function post(
+    auth: TestAuth,
+    path: string,
+    body: Record<string, unknown>,
+    cookie?: string,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: BASE_URL,
+          ...(cookie === undefined ? {} : { cookie }),
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  it("emails an invitation, and adds the colleague when they accept it", async () => {
+    const { auth, signIn, organizationInvitations, store } = harness({ seats: 3 });
+    const owner = await signIn("owner@example.com");
+    const organization = await auth.api.createOrganization({
+      body: { name: "Agency", slug: "agency" },
+      headers: new Headers({ cookie: owner.cookie }),
+    });
+
+    const invited = await post(
+      auth,
+      "/organization/invite-member",
+      { email: "colleague@example.com", role: "admin", organizationId: organization?.id },
+      owner.cookie,
+    );
+    expect(invited.status).toBe(200);
+
+    // The plugin wrote the row and asked us to deliver it; the link names the
+    // invitation and nothing else, so it is worthless in another mailbox.
+    const sent = organizationInvitations[0];
+    if (sent === undefined) throw new Error("no invitation was sent");
+    expect(sent).toMatchObject({
+      email: "colleague@example.com",
+      role: "admin",
+      organizationName: "Agency",
+      inviterName: expect.any(String),
+    });
+    expect(sent.url).toBe(`${BASE_URL}/accept-invitation?id=${encodeURIComponent(sent.id)}`);
+
+    const colleague = await signIn("colleague@example.com");
+    const accepted = await post(
+      auth,
+      "/organization/accept-invitation",
+      { invitationId: sent.id },
+      colleague.cookie,
+    );
+    expect(accepted.status).toBe(200);
+
+    // The role travelled with the invitation: member, admin and owner are all
+    // organization-wide, and this one was granted as admin.
+    expect(store.member).toContainEqual(
+      expect.objectContaining({
+        organizationId: organization?.id,
+        userId: colleague.userId,
+        role: "admin",
+      }),
+    );
+  });
+
+  it("lists members and roles through the plugin, without addresses", async () => {
+    const { auth, signIn } = harness();
+    const owner = await signIn("owner@example.com");
+    await auth.api.createOrganization({
+      body: { name: "Agency", slug: "agency" },
+      headers: new Headers({ cookie: owner.cookie }),
+    });
+
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/organization/list-members`, {
+        headers: { cookie: owner.cookie },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const members = (await response.json()) as { members?: Array<Record<string, unknown>> };
+    expect(members.members?.[0]).toMatchObject({ userId: owner.userId, role: "owner" });
+  });
+});
+
+describe("sessions and devices", () => {
+  it("lists the caller's sessions and revokes one", async () => {
+    const { auth, signIn, store } = harness();
+    const { cookie } = await signIn("reader@example.com");
+
+    const listed = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/list-sessions`, { headers: { cookie } }),
+    );
+    expect(listed.status).toBe(200);
+    const sessions = (await listed.json()) as Array<Record<string, unknown>>;
+    const token = sessions[0]?.token;
+    expect(typeof token).toBe("string");
+
+    const revoked = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/revoke-session`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      }),
+    );
+    expect(revoked.status).toBe(200);
+    // The cookie still exists in the browser; it no longer names a session.
+    expect(await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie })).toBeNull();
+  });
+});
+
+describe("the passkey relying party", () => {
+  it("binds to the configured rpID, or to the host the service is served from", () => {
+    const pluginOf = (options: ReturnType<typeof authOptions>): Record<string, unknown> => {
+      const found = (options.plugins ?? []).find(
+        (entry) => (entry as { id?: string }).id === "passkey",
+      );
+      return (found as { options?: Record<string, unknown> } | undefined)?.options ?? {};
+    };
+
+    expect(pluginOf(authOptions(serviceDeps())).rpID).toBe("suite.example");
+
+    const named = authOptions({
+      ...serviceDeps(),
+      env: authEnvironment({
+        SUITE_AUTH_ENABLED: "1",
+        SUITE_AUTH_SECRET: "t".repeat(40),
+        SUITE_AUTH_URL: "https://accounts.suite.example",
+        SUITE_AUTH_RP_ID: "suite.example",
+      }),
+    });
+    expect(pluginOf(named).rpID).toBe("suite.example");
   });
 });
 

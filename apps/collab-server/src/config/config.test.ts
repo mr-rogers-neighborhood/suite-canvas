@@ -41,7 +41,12 @@ describe("validateConfig", () => {
       licences: null,
       attachments: null,
     });
-    expect(result.config.tokens).toEqual({ admin: null, projection: null, source: null });
+    expect(result.config.tokens).toEqual({
+      admin: null,
+      adminRead: null,
+      projection: null,
+      source: null,
+    });
     expect(result.config.hosted).toBe(false);
     expect(result.config.allowedOrigins).toEqual(["*"]);
     expect(result.config.logLevel).toBe("info");
@@ -154,6 +159,13 @@ describe("validateConfig", () => {
     ],
     ["a non-numeric workspace quota", { SUITE_MAX_WORKSPACES: "lots" }, "SUITE_MAX_WORKSPACES"],
     ["a malformed public URL", { SUITE_PUBLIC_URL: "not a url" }, "SUITE_PUBLIC_URL"],
+    [
+      "a short read-only admin token",
+      { SUITE_ADMIN_READ_TOKEN: "short" },
+      "SUITE_ADMIN_READ_TOKEN",
+    ],
+    ["a malformed auth URL", { SUITE_AUTH_URL: "not a url" }, "SUITE_AUTH_URL"],
+    ["an auth URL without a scheme", { SUITE_AUTH_URL: "accounts.example.com" }, "SUITE_AUTH_URL"],
     ["a version with a space", { SUITE_VERSION: "one two" }, "SUITE_VERSION"],
   ];
 
@@ -203,6 +215,28 @@ describe("validateConfig", () => {
     expect(result.ok).toBe(true);
     expect(result.config.tokens.admin).toBeNull();
     expect(result.config.allowedOrigins).toEqual(["*"]);
+  });
+
+  it("reads a read-only operator token beside the full one", () => {
+    const token = "read-token-for-the-parser";
+    const result = validateConfig({ SUITE_ADMIN_READ_TOKEN: token });
+    expect(result.ok).toBe(true);
+    expect(result.config.tokens.adminRead).toBe(token);
+    expect(result.config.tokens.admin).toBeNull();
+  });
+
+  it("normalises the auth URL to the origin the token carries", () => {
+    const result = validateConfig({ SUITE_AUTH_URL: " https://accounts.example.com/ " });
+    expect(result.ok).toBe(true);
+    // The relay compares `iss`/`aud` and builds the JWKS URL from this, so a
+    // path or a trailing slash must not survive.
+    expect(result.config.authUrl).toBe("https://accounts.example.com");
+  });
+
+  it("leaves session verification off when no auth URL is set", () => {
+    const result = validateConfig({});
+    expect(result.ok).toBe(true);
+    expect(result.config.authUrl).toBeNull();
   });
 });
 

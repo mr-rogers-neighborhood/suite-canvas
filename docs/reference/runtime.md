@@ -26,6 +26,14 @@ The workspace id is both the IndexedDB key and the sync room. The active board r
 
 A backup is a versioned JSON envelope around `doc.export({ mode: "snapshot" })`. Import validates the file, refuses a newer version, writes the snapshot under a new workspace id and navigates. It never merges into the open document. JSON and Markdown exports are projections and cannot be imported.
 
+## Offline scope
+
+Offline means the open tab keeps working: edits save to this device and sync when the connection returns. Reloading while offline needs the network, because Suite ships no service worker.
+
+That is a decision, not an omission. There is no service worker, no web manifest and no app-shell cache, so a reload while offline has nothing to load and the reader sees the browser's own network error. Nothing is lost by it: the snapshot and the update log live in IndexedDB and load on the next open that can fetch the app. What is *not* promised is a cold start without the network, and no surface says otherwise.
+
+`StoragePanel` publishes the same sentence (`OFFLINE_SCOPE` in `apps/canvas/src/sharing/StoragePanel.tsx`). Changing one without the other is a bug: a promise in the UI that the runtime cannot keep is worse than the limitation itself.
+
 ## Launcher and workspace names
 
 The app starts at `/` on a workspace launcher: recent workspaces from `localStorage`, a blank workspace (`?fresh=1`), and `.suite` import. `localStorage` holds recents, never document truth.
@@ -34,21 +42,32 @@ The workspace name lives in `meta.name`, so it syncs and travels in an export. `
 
 An inline rename writes the document, or the `suite.workspaceNames.v1` mirror when the workspace is only a recent entry.
 
-## Owner key and recovery
+## Credentials
 
-A workspace has a 32-byte base64url owner key. The browser generates it, keeps it in local storage and the URL fragment (`#owner=<key>`), and the server stores only its SHA-256 hash in `SUITE_WORKSPACES_DB`.
+A workspace syncs with two credentials: a session JWT for an account and a share token for a link. There
+is no owner key. [ADR-0076](../../internal/decisions/open/0076-the-owner-key-is-deleted.md) deleted it
+outright, with no migration for keys already issued, so a `.suitekey` file from an earlier release is not
+read.
 
-`POST /api/workspaces/:id/claim` registers the first key and reports a conflict for a different one. An offline open keeps working locally and claims on the next online open. An empty credential never writes a workspace room.
+The client asks `GET /api/auth/token` on the control plane for a session JWT and presents it as
+`Authorization: Bearer <jwt>` on `/api/workspaces/<id>`, `/api/shares`, `/api/attachments` (upload and
+delete) and the sync join. The relay verifies it against the key set at `<SUITE_AUTH_URL>/api/auth/jwks`;
+`apps/collab-server/src/http/sessionToken.ts` holds the cache and the refusal rules, which
+[security-model.md](security-model.md) states.
 
-Recovery is a separate `.suitekey` file (`kind: "suite.owner"`, `version: 1`, `workspaceId`, `ownerKey`, `exportedAt`). It is never embedded in a `.suite` backup because that file gets copied and shared. The protected screen accepts the file or its pasted contents, refuses another workspace's key, and reloads with `#owner=`.
+The first verified session that opens a workspace records its organization in the `workspace_orgs` table
+of `SUITE_WORKSPACES_DB`, and every later join, upload and link operation is authorized against that row.
+An empty credential never writes a workspace room, and a token that does not verify is a refused join
+rather than an anonymous one.
 
-`POST /api/workspaces/:id/rotate` replaces the hash atomically. Old owner links and `.suitekey` files stop working, and the response offers to revoke every share link.
+A share link is unchanged: the token is exchanged on first open for a short-lived `HttpOnly` session
+cookie, and a visitor with no account keeps exactly the access the link grants.
 
 ## Accounts
 
 `services/auth` holds identity, organizations, invitations, seats and licence checks. Its HTTP entry, memory and Postgres repositories, and capability mapping have tests.
 
-No process mounts that entry yet, and no relay opens a Postgres pool. A socket join carries an owner key or a share token, so `apps/collab-server/src/sync/seatGate.ts` refuses an account principal with `account-check-unavailable` instead of guessing a seat count. Anonymous workspaces are what ships. [security-model.md](security-model.md) describes what accounts add.
+The shape is two processes behind one Caddy. `apps/control-plane` hosts that service and billing, and owns the only Postgres; the relay keeps the socket and its SQLite stores and imports neither. The relay verifies a short-lived session JWT against the control plane's published key set, so it holds no identity table and makes no call per message. `apps/collab-server/src/sync/seatGate.ts` answers from the token's claims: `org`, `tier` and `limits` are enough to decide a join, so the seat check reads no database.
 
 ## Connection lifecycle
 
@@ -89,12 +108,12 @@ Every sync join carries an `auth` payload. `authorize(roomId, auth, deps)` maps 
 1. The projection worker token writes only `share-` projection rooms.
 2. The source worker token writes only a workspace room that currently has an active editor share.
 3. A share token opens exactly its share room, `read` for a viewer and `write` for an editor, plus the derived `<room>:presence` and `<room>:cursors` rooms.
-4. An owner key verifies its workspace and the derived presence and cursor rooms. A join never claims an unclaimed workspace; the explicit HTTP claim does that. A different key is refused.
-5. An empty or mismatched credential is rejected. A workspace id is not a secret, and an owner key can never claim a `share-` room.
+4. A session JWT opens the workspace room and its derived presence and cursor rooms when the organization it names is the one recorded for that workspace. The first verified session to open an unrecorded workspace records its organization. A token from another organization, an expired token and a token that does not verify are all refused.
+5. An empty or mismatched credential is rejected. A workspace id is not a secret, and a session can never open a `share-` room.
 
 Live revocation closes sessions that already hold a link. `loro-websocket@0.6.2` keeps its socket and room maps private, so `patches/loro-websocket@0.6.2.patch` records each room's credential and adds `disconnectRoomWhere` and `disconnectAuth`, covering the derived presence and cursor keys.
 
-`apps/collab-server/src/sync/roomSockets.ts` wraps it. Revoking a board or card link closes every session in `share-<token>` except the projection worker. Revoking a workspace link closes only credentials that no longer resolve. Rotating the owner key closes sessions holding the previous key.
+`apps/collab-server/src/sync/roomSockets.ts` wraps it. Revoking a board or card link closes every session in `share-<token>` except the projection worker. Revoking a workspace link closes only credentials that no longer resolve, and leaves the account's own session alone. Nothing rotates a credential from this side any more: a session token expires and the control plane mints another.
 
 ## Standalone and relay
 
@@ -128,9 +147,9 @@ Images are nodes that name bytes stored beside the document. An `attachment` inl
 
 `apps/collab-server/src/http/attachmentHttp.ts` serves `/api/attachments`.
 
-- `POST /api/attachments/<workspaceId>` takes the owner key and never a share token.
+- `POST /api/attachments/<workspaceId>` takes a session JWT for the organization that owns the workspace, and never a share token.
 - `GET /api/attachments/<id>` treats the id as the read capability, so a projected node resolves without exposing the workspace.
-- `DELETE /api/attachments/<id>` takes the owning workspace's owner key.
+- `DELETE /api/attachments/<id>` takes a session JWT for the owning workspace's organization.
 
 A GET serves only allowlisted types with `nosniff`, `content-disposition: inline`, immutable caching and `content-security-policy: default-src 'none'; sandbox`. SVG and HTML are refused at upload and at read because markup can carry script.
 
@@ -142,11 +161,34 @@ A paste uploads under the node id when a relay is configured. Offline, standalon
 
 `workspaceFile.ts` version 2 adds an `attachments` section of `{ mime, name, width, height, data }` per id, base64 of the exact bytes. Import restores each image locally and does not upload it.
 
+An image the file cannot supply is named, not dropped. Export gathers the bytes it can and reports every miss by card title; import decodes what it can, then walks the imported document and reports each referenced id that is missing from the envelope or whose base64 does not decode, again by the card title that draws it (`ParsedWorkspaceFile.damaged`, `damagedAttachmentWarning`). The document always imports whole: losing one image must not cost the text that came with it.
+
+## Stored formats and the N−1 policy
+
+Six SQLite stores hold the server's data. A store written by the previous build has to open here, and a store written by a newer one must not be guessed at. The policy:
+
+- **What is guaranteed.** A store from the previous build opens: additive migrations (`ALTER TABLE … ADD COLUMN`) run, a backfill fills only what it can derive, every row is readable, and a document blob is never rewritten by a read. Each older shape has a committed fixture under `apps/collab-server/src/fixtures/n-1/`, and `apps/collab-server/src/store/storeUpgrade.test.ts` runs the current boot path against each one.
+- **For how long.** One schema bump. The commit that adds a migration also adds its fixture and keeps the previous fixture for at least the following release; a fixture is deleted only in the release that deletes its migration.
+- **Unknown data.** Refused, never guessed. `PRAGMA user_version` above `DOCUMENT_STORE_SCHEMA` throws `UnsupportedStoreVersionError` naming both versions, and a document blob whose tag is not `loro-snapshot-v1` throws the same error naming both. A column this build does not know stays in the row untouched, because migrations only add columns. There is no best-effort read and no downgrade path; rolling back a schema change means restoring a backup taken on that build.
+
+Every store sets the same three pragmas on the connection it opens, through `configureConnection(db, schemaVersion)` in `store/persistence.ts`. `WAL` is a property of the file, so the first opener holds it for every later connection; `busy_timeout` is a property of a connection, so each module sets its own; `user_version` records the schema the store claims, and a file stamped by a newer build is refused with `UnsupportedStoreVersionError` instead of read.
+
+| Store | Journal mode | `busy_timeout` | `user_version` |
+| --- | --- | --- | --- |
+| Documents (`persistence.ts`) | WAL | 5000 ms | `DOCUMENT_STORE_SCHEMA` |
+| Attachments (`attachments.ts`) | WAL | 5000 ms | `ATTACHMENT_STORE_SCHEMA` |
+| Shares (`shares.ts`) | WAL | 5000 ms | `SHARE_STORE_SCHEMA` |
+| Workspaces (`workspaceOrgs.ts`) | WAL | 5000 ms | `WORKSPACE_ORG_SCHEMA` |
+| Settings (`settings.ts`) | WAL | 5000 ms | `SETTINGS_SCHEMA` |
+| Licence claims (`licence.ts`) | WAL | 5000 ms | `LICENCE_STORE_SCHEMA` |
+
+The workspaces store keeps its file name and its `SUITE_WORKSPACES_DB` variable, because `deploy/backup.sh` discovers the file by name. What it holds changed: a `workspace_orgs` table of workspace ids and the organization each belongs to, instead of owner-key hashes. A file written by an earlier build keeps its old `workspaces` table untouched and unread, because ADR-0076 ships no migration for issued keys.
+
 ## Diagnostics
 
 The relay logs one JSON line per request with a request id. Capability paths are redacted. The logger is `apps/collab-server/src/logging.ts`; server code does not call `console`.
 
-`GET /health` answers on `HEALTH_PORT` and is unauthenticated. `GET /metrics` is token-gated: 404 when `SUITE_ADMIN_TOKEN` is unset, 401 without the bearer token, 429 above the admin rate limit.
+`GET /health` answers on `HEALTH_PORT` and is unauthenticated. `GET /metrics` is token-gated: 404 when no operator token is configured, 401 without the bearer token, 429 above the admin rate limit. Either token reads it; only `SUITE_ADMIN_TOKEN` mutates.
 
 The admin API can read every workspace and delete any of them. Its panel is a separate Vite entry point, never linked from the app. A token is the access control; not linking it is not.
 

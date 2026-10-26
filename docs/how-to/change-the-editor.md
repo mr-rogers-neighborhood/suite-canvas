@@ -67,8 +67,10 @@ A mention row is not a slash row. Rows come from `apps/canvas/src/editor/Suggest
 pnpm exec vitest run apps/canvas/src/editor apps/canvas/src/cards apps/canvas/src/field
 pnpm --filter @suite/canvas typecheck
 pnpm exec vitest run packages/graph/src
-pnpm e2e:smoke
 ```
+
+Then run the local gate from [test-and-verify.md](test-and-verify.md) before you call it done. E2E runs
+on request; `pnpm e2e:smoke` is the narrowest run that covers the editor.
 
 Storybook is worth a look when the change is visible: `pnpm storybook`, then the `Components/` group. A new node that renders an image, a chip or a block belongs there.
 

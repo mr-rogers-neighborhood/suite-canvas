@@ -191,11 +191,31 @@ is set and the CLI is missing, the script fails rather than leaving you with onl
 
 Retention belongs to the bucket, not the script: 7 daily and 4 weekly copies.
 
+Schedule it off-host. One cron entry is enough; the script fails loudly (non-zero, and with `SUITE_BACKUP_BUCKET` set it refuses to finish without an upload) so the same entry can back a dead-man's switch:
+
+```cron
+15 3 * * * root mkdir -p /srv/backups && cd /srv/suite && \
+  SUITE_BACKUP_BUCKET=s3://suite-backups SUITE_BACKUP_PREFIX=suite \
+  SUITE_BACKUP_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com \
+  deploy/backup.sh /srv/backups >> /var/log/suite-backup.log 2>&1
+```
+
+Every run verifies itself before it is trusted: `PRAGMA integrity_check` per store, a SHA-256 per file, a row count per table, and a SHA-256 over the sorted attachment ids. A snapshot that fails any of those never reaches the bucket.
+
 ```sh
 aws s3api put-bucket-lifecycle-configuration --bucket suite-backups --lifecycle-configuration \
   '{"Rules":[{"ID":"daily-7","Status":"Enabled","Filter":{"Prefix":"suite/daily/"},"Expiration":{"Days":7}},
              {"ID":"weekly-35","Status":"Enabled","Filter":{"Prefix":"suite/weekly/"},"Expiration":{"Days":35}}]}'
 ```
+
+### RPO and RTO
+
+| | Value | Basis |
+| --- | --- | --- |
+| RPO | 24 h | The daily run above; the off-host copy is written in the same run, so both copies share the bound. A more frequent schedule lowers it proportionally; nothing else in the pipeline adds delay. |
+| RTO | 2.2 s (measured) | `deploy/restore.sh` over a live `app`: verify, stop, replace six stores, start, `/health` answered, in 2 192 ms on 2026-10-26. Snapshot: six stores, 132 KB, one workspace document, two attachments (31 KiB of bytes), warm host with the image already pulled. See `deploy/drills/attachments-record.md`. |
+
+Both numbers are replayed, not estimated. RTO is dominated by things this fixture does not have: pulling an image, provisioning a host, and the copy itself at production data size: a 10 GiB attachments store is a `cp` of 10 GiB. Treat the measured 2.2 s as the floor of the procedure and `deploy/restore.sh --verify-only` on the monthly schedule as the part that is actually rehearsed. Restoring at production size is **unmeasured**; it has no published number yet.
 
 Honest caveats:
 
@@ -229,8 +249,7 @@ so.
 By hand the order is the same: stop, delete `*.sqlite`, `*.sqlite-wal` and `*.sqlite-shm`, copy all six
 in, start, then ask the container for `/health` and `/api/admin/status`, since `1235` is not published.
 
-The drill is replayable: `deploy/drills/attachments.sh --record …` uploads an image, recreates the
-container, reads the same sha256, backs up, restores into a second volume and reads it again.
+The drill is replayable: `deploy/drills/attachments.sh --record deploy/drills/attachments-record.md` uploads two attachments with different byte lengths, opens a seeded workspace, recreates the container, checks the ids, lengths and bytes are identical, backs up, restores into a second volume, and checks them again, including the workspace loading through the restored app. The last run, with its manifest excerpt and timings, is [the attachments drill record](../../deploy/drills/attachments-record.md).
 
 ## Upgrade and stored formats
 

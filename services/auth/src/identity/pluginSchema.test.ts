@@ -59,6 +59,8 @@ function options() {
       listForOrganization: async () => [],
     },
     sendMagicLink: async () => {},
+    sendVerificationEmail: async () => {},
+    sendOrganizationInvitation: async () => {},
     now: () => NOW,
   });
 }
@@ -137,12 +139,28 @@ describe("the schema the plugins produce", () => {
     );
   });
 
-  it("keeps self-serve password sign-up closed, and throttles the route that is not", () => {
+  it("opens sign-up, and puts verification and a rate limit in front of it", () => {
     const configured = options();
-    // The pair is the security property, not a preference: enabled turns the door on
-    // for invited accounts, disableSignUp keeps the sign-up form shut (ADR-0067 §11).
-    expect(configured.emailAndPassword).toMatchObject({ enabled: true, disableSignUp: true });
+    // ADR-0077: the form is open, the address has to answer, and both routes that take
+    // a guessable secret are throttled. Each of the three is load-bearing.
+    expect(configured.emailAndPassword).toMatchObject({
+      enabled: true,
+      disableSignUp: false,
+      requireEmailVerification: true,
+    });
+    expect(configured.emailVerification?.sendOnSignUp).toBe(true);
     expect(configured.rateLimit?.customRules).toHaveProperty("/sign-in/email");
+    expect(configured.rateLimit?.customRules).toHaveProperty("/sign-up/email");
+  });
+
+  it("carries the relay's signing keys, so a token can be minted at all", () => {
+    // The `jwt` plugin keeps its key pair in this table and mints the first one on the
+    // first token request; `sql/0006_jwks.sql` creates exactly these columns.
+    const jwks = tables().jwks;
+    if (jwks === undefined) throw new Error("the jwks table is missing");
+    expect(Object.keys(jwks.fields)).toEqual(
+      expect.arrayContaining(["publicKey", "privateKey", "createdAt", "expiresAt", "alg", "crv"]),
+    );
   });
 
   it("records impersonation on the session, so an operator's action is attributable", () => {

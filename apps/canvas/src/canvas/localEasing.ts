@@ -52,8 +52,16 @@ export function easeToward(
   return { position: { x, y }, settled: false };
 }
 
-/** True when the viewer asked the OS for reduced motion. */
+/**
+ * True when the viewer asked for reduced motion, by the OS setting or by this
+ * app's own Appearance preference. Appearance writes `data-motion` on the
+ * document root, and the stylesheet already honours it; a script that only
+ * asked `matchMedia` ignored the in-app choice and kept animating.
+ */
 export function prefersReducedMotion(): boolean {
+  if (typeof document !== "undefined" && document.documentElement.dataset.motion === "reduced") {
+    return true;
+  }
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

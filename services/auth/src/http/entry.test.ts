@@ -1,9 +1,9 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { seatLicence } from "../organizations/seats.js";
 import { databaseUrlProblem } from "../store/postgres.js";
 import type { LicenceClaims } from "../types.js";
-import { createAuthEntry, createPostgresAuthEntry } from "./entry.js";
+import { createAuthEntry, createMigratedAuthEntry, createPostgresAuthEntry } from "./entry.js";
 import { authEnvironment } from "./env.js";
 
 /**
@@ -42,8 +42,23 @@ function deps() {
       listForOrganization: async () => [],
     },
     sendMagicLink: async () => {},
+    sendVerificationEmail: async () => {},
+    sendOrganizationInvitation: async () => {},
+    workspaces: {
+      find: async () => null,
+      claim: async () => null,
+      countForOrganization: async () => 0,
+    },
   };
 }
+
+/**
+ * A raw-SQL seam that answers nothing.
+ *
+ * The repositories are built over the same connection Better Auth writes to, so an
+ * injected pair still needs this half; nothing in these tests reads through it.
+ */
+const quietQueryable = { query: async () => ({ rows: [] }) };
 
 const configured = (overrides: Record<string, string | undefined> = {}) =>
   authEnvironment({
@@ -122,19 +137,19 @@ describe("the auth entry", () => {
   });
 });
 
-describe("the one-call Postgres entry", () => {
-  const memoryTables = () => ({
-    user: [],
-    session: [],
-    account: [],
-    verification: [],
-    organization: [],
-    member: [],
-    invitation: [],
-    passkey: [],
-    twoFactor: [],
-  });
+const memoryTables = () => ({
+  user: [],
+  session: [],
+  account: [],
+  verification: [],
+  organization: [],
+  member: [],
+  invitation: [],
+  passkey: [],
+  twoFactor: [],
+});
 
+describe("the one-call Postgres entry", () => {
   it("refuses a broken URL before building anything", () => {
     expect(() =>
       createPostgresAuthEntry(configured({ SUITE_AUTH_DATABASE_URL: "mysql://u@h/db" }), deps()),
@@ -147,9 +162,53 @@ describe("the one-call Postgres entry", () => {
       ...deps(),
       // The memory adapter satisfies the same shape the pool does; the repositories
       // read `member` and `workspaces` from the same object Better Auth writes to.
-      queryable: adapter as never,
+      database: adapter,
+      queryable: quietQueryable,
     });
 
+    const response = await entry.handler(
+      new Request(`${BASE_URL}/api/auth/get-session`, { headers: { origin: BASE_URL } }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses half an injected pair, because they are one connection", () => {
+    // A generated adapter over a different pool is a licence check that reads rows
+    // nobody wrote, and it surfaces as "the licence is missing" rather than as a
+    // wiring mistake.
+    expect(() =>
+      createPostgresAuthEntry(configured(), { ...deps(), queryable: quietQueryable }),
+    ).toThrowError(/injected together/);
+    expect(() =>
+      createPostgresAuthEntry(configured(), {
+        ...deps(),
+        database: memoryAdapter(memoryTables()),
+      }),
+    ).toThrowError(/injected together/);
+  });
+});
+
+describe("the boot path", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses an unusable URL before it opens a pool or migrates", async () => {
+    await expect(
+      createMigratedAuthEntry(configured({ SUITE_AUTH_DATABASE_URL: "mysql://u@h/db" }), deps()),
+    ).rejects.toThrowError(/SUITE_AUTH_DATABASE_URL must be a postgres/);
+  });
+
+  it("skips the migration when an operator switches it off, and still serves", async () => {
+    vi.stubEnv("SUITE_AUTH_MIGRATE", "0");
+    const adapter = memoryAdapter(memoryTables());
+    const entry = await createMigratedAuthEntry(configured(), {
+      ...deps(),
+      database: adapter,
+      queryable: quietQueryable,
+    });
+
+    // No migration SQL reached the adapter: the switch is read before anything queries.
     const response = await entry.handler(
       new Request(`${BASE_URL}/api/auth/get-session`, { headers: { origin: BASE_URL } }),
     );

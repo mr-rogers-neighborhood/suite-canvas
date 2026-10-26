@@ -19,6 +19,8 @@ import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
 import { LeavingDialog } from "../dialogs/LeavingDialog";
+import { FeedbackHost } from "../feedback/FeedbackHost";
+import { FeedbackRail } from "../feedback/FeedbackRail";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
@@ -27,6 +29,7 @@ import type { ShareSession } from "../session/session";
 import { rememberWorkspaceName } from "../session/workspaceName";
 import { SharePublishButton } from "../sharing/SharePublishButton";
 import { StoragePanel } from "../sharing/StoragePanel";
+import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
@@ -312,7 +315,11 @@ export function WorkspaceShellView({
               <SharePublishButton />
             ) : (
               <>
-                <Suspense fallback={null}>
+                <Suspense
+                  fallback={
+                    <LoadingPlaceholder variant="inline" label="Loading workspace actions" />
+                  }
+                >
                   <WorkspaceActions
                     workspaceId={workspaceId}
                     boardId={activeBoardId}
@@ -439,6 +446,8 @@ export function WorkspaceShellView({
           <CardInspectorHost />
           <CardFocusHost />
           <TourOverlayHost />
+          {/* The relay, this device's storage and the saved state, above the board. */}
+          <FeedbackRail workspaceId={workspaceId} signedIn={signedIn} synced={inRoom} />
         </main>
 
         {workspaceSurface && !readOnly && !cardFocusId ? (
@@ -468,7 +477,7 @@ export function WorkspaceShellView({
           Escape, like the type settings it sits beside.
         */}
         {workspaceSurface && canManageSchema && stylesOpen ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<LoadingPlaceholder label="Loading the rule editor" />}>
             <StylesDialog open canEdit onClose={() => setStylesOpen(false)} />
           </Suspense>
         ) : null}
@@ -546,7 +555,7 @@ export function WorkspaceShellView({
 
         {/* The account surfaces: sign-in, and the admission panel while an account waits. */}
         {standalone ? null : (
-          <Suspense fallback={null}>
+          <Suspense fallback={<LoadingPlaceholder label="Loading sign-in" />}>
             <SignInSurface />
           </Suspense>
         )}
@@ -562,6 +571,8 @@ export function WorkspaceShellView({
           />
         ) : null}
 
+        {/* Toasts, the live regions and the failure routing, once for the shell. */}
+        <FeedbackHost />
         <PerfOverlay />
       </div>
     </SurfaceRulesContext.Provider>

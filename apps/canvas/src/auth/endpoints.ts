@@ -1,11 +1,11 @@
 /**
  * Where the account service lives.
  *
- * A hosted deployment serves Better Auth at `/api/auth` and the control-plane
- * routes (`/api/workspaces/claim`) beside it, on the page's own origin — so a
- * build with nothing configured is same-origin and CORS never enters the
- * picture. `VITE_SUITE_AUTH_URL` names a separate auth host (a self-hosted
- * control plane); when it is set, every route hangs off it instead.
+ * A hosted deployment serves Better Auth — and every route this client uses,
+ * including billing and the relay's token mint — at `/api/auth` on the page's
+ * own origin, so a build with nothing configured is same-origin and CORS never
+ * enters the picture. `VITE_SUITE_AUTH_URL` names a separate auth host (a
+ * self-hosted control plane); when it is set, every route hangs off it instead.
  *
  * There is no invented default host. A build with no auth server and no
  * configuration resolves to the page origin, which answers `unavailable` in
@@ -29,12 +29,7 @@ export function authServiceBase(location: PageLocation | null = pageLocation()):
   return location?.origin ?? "";
 }
 
-/** Better Auth's own mount: sign-in, passkeys, magic link, Google, sessions. */
+/** Better Auth's own mount: sign-in, sign-up, passkeys, magic link, Google, sessions, billing. */
 export function authClientBase(location: PageLocation | null = pageLocation()): string {
   return `${authServiceBase(location)}/api/auth`;
-}
-
-/** The claim route (ADR-0067 §2): one `UPDATE`, no id, no URL, no share link changes. */
-export function claimWorkspaceUrl(location: PageLocation | null = pageLocation()): string {
-  return `${authServiceBase(location)}/api/workspaces/claim`;
 }

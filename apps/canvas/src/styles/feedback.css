@@ -1,0 +1,445 @@
+/*
+ * Feedback surfaces: toasts, the connection banner, the save indicator and the
+ * placeholder a lazy dialog shows while its chunk loads. Every colour comes from
+ * a theme token, so light and dark are the same rules.
+ *
+ * Reserved ground, so nothing here lands on a control that already lives there:
+ *   - bottom centre is the dock (`.dock`, 16px up),
+ *   - the bottom-right corner is the inspector's column and a card's own
+ *     resize grip,
+ *   - the top-left corner is the board outline.
+ * The toast stack sits above the dock, and the status rail sits at the top
+ * centre. Both step left when the inspector is open, because the inspector owns
+ * the right 332px of the board.
+ */
+
+.toast-layer {
+  position: fixed;
+  bottom: 70px;
+  left: 50%;
+  z-index: 55;
+  width: min(380px, calc(100vw - 2 * (var(--canvas-gutter) + 16px)));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast-layer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 8px 9px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 18px;
+  pointer-events: auto;
+  animation: toast-enter 160ms cubic-bezier(0.32, 0.72, 0, 1);
+  backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.toast[data-tone="failure"] {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--hairline));
+}
+
+.toast[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--hairline));
+}
+
+/* A shape as well as a colour: the tone is legible to a reader who cannot see it. */
+.toast__marker {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 9999px;
+  background: var(--ink-muted);
+}
+
+.toast[data-tone="failure"] .toast__marker {
+  border-radius: 1px;
+  background: var(--danger);
+}
+
+.toast[data-tone="success"] .toast__marker {
+  background: var(--success);
+}
+
+.toast__body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.toast__message {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.toast__detail {
+  margin-top: 2px;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.toast__action {
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.toast__action:hover {
+  background: var(--segmented-bg);
+}
+
+.toast__dismiss {
+  flex: none;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  margin-top: -2px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.toast__dismiss:hover {
+  background: var(--segmented-bg);
+  color: var(--ink);
+}
+
+.toast__action:focus-visible,
+.toast__dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The status rail: connection first, then how this device is doing. */
+.feedback-rail {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 35;
+  display: flex;
+  max-width: min(560px, calc(100vw - 2 * (var(--canvas-gutter) + 16px)));
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.feedback-rail > * {
+  pointer-events: auto;
+}
+
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 18px;
+  backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.connection-banner[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
+}
+
+.connection-banner[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--hairline));
+}
+
+.connection-banner__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--ink-muted);
+}
+
+.connection-banner[data-tone="warning"] .connection-banner__dot {
+  background: var(--warning);
+}
+
+.connection-banner[data-tone="success"] .connection-banner__dot {
+  background: var(--success);
+}
+
+.connection-banner[data-kind="reconnecting"] .connection-banner__dot {
+  animation: connection-breathe 1.4s ease-in-out infinite;
+}
+
+.connection-banner__count {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.connection-banner__action {
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.connection-banner__action:hover {
+  background: var(--segmented-bg);
+}
+
+.connection-banner__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@keyframes connection-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Local persistence, read without the relay: saved, saving, or not durable. */
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.save-indicator[data-state="saving"],
+.save-indicator[data-state="not-durable"] {
+  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.save-indicator[data-state="not-durable"] {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
+  color: var(--ink);
+}
+
+.save-indicator__dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--ink-muted);
+}
+
+.save-indicator[data-state="not-durable"] .save-indicator__dot {
+  background: var(--warning);
+}
+
+.save-indicator[data-state="saving"] .save-indicator__dot {
+  animation: save-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes save-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A lazy dialog's chunk: the boot skeleton's bar, sized to what replaces it. */
+.loading-placeholder {
+  pointer-events: none;
+}
+
+.loading-placeholder[data-variant="inline"] {
+  display: flex;
+  width: 132px;
+  height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--segmented-bg);
+}
+
+.loading-placeholder[data-variant="dialog"] {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: min(240px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--card-shadow);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.loading-placeholder__track {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--segmented-bg);
+}
+
+.loading-placeholder__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--ink);
+  animation: loading-sweep 1.25s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+
+@keyframes loading-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.loading-placeholder__label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Both reduced-motion switches: the OS setting and Appearance's own. */
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .connection-banner__dot,
+  .save-indicator__dot {
+    animation: none;
+  }
+
+  .loading-placeholder__fill {
+    width: 100%;
+    opacity: 0.35;
+    animation: none;
+  }
+}
+
+html[data-motion="reduced"] .toast,
+html[data-motion="reduced"] .connection-banner .connection-banner__dot,
+html[data-motion="reduced"] .save-indicator .save-indicator__dot,
+html[data-motion="reduced"] .loading-placeholder__fill {
+  animation: none;
+}
+
+html[data-motion="reduced"] .loading-placeholder__fill {
+  width: 100%;
+  opacity: 0.35;
+}
+
+.toast-layer[data-reduced="true"] .toast {
+  animation: none;
+}
+
+/* Local storage durability. A card with a warning edge, not a pill with a dot:
+   the relay's state and this device's state are different claims, and they are
+   allowed to be on screen at the same time. */
+.storage-warning {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--hairline));
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 17px;
+  backdrop-filter: blur(14px) saturate(1.15);
+}
+
+/* The banner ships its own amber utilities; inside the shell its controls are
+   painted from the same warning role the border uses. */
+.storage-warning button {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.storage-warning button:hover {
+  background: var(--segmented-bg);
+}
+
+.storage-warning button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Mirrors the inspector's own breakpoint: below it the drawer is a bottom sheet,
+   so the only overlap to avoid is the toast stack's. */
+@media (max-width: 640px) {
+  .toast-layer {
+    top: 60px;
+    bottom: auto;
+  }
+
+  .toast-layer[data-inspector="open"] {
+    top: 96px;
+  }
+
+  /* The panel one press away still reports the saved state; the rail keeps the
+     two surfaces a person has to act on. */
+  .save-indicator {
+    display: none;
+  }
+}
+
+@media (min-width: 641px) {
+  .toast-layer[data-inspector="open"],
+  .feedback-rail[data-inspector="open"] {
+    left: calc(50% - 166px);
+  }
+}

@@ -1,6 +1,7 @@
 import type { CardType } from "@suite/graph";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { TypeSettingsDialog } from "./TypeSettingsDialog";
 
 const type: CardType = {
@@ -95,5 +96,95 @@ describe("the type editor's composite fields", () => {
       subFields: [],
       itemKind: "scalar",
     });
+  });
+});
+
+/** The real workspace document, so the card count is the count the write sees. */
+function recipeWithCards(cards: number) {
+  const workspace = useCanvasStore.getState().workspace;
+  workspace.ensureDefaultTypes();
+  const recipe = workspace.createType({ name: "Recipe", glyph: "\u25c6" });
+  for (let index = 0; index < cards; index += 1) workspace.createCard({ typeId: recipe.id });
+  const note = workspace.listTypes().find((entry) => entry.id === "note");
+  return {
+    recipe,
+    note,
+    types: [recipe, ...workspace.listTypes().filter((t) => t.id !== recipe.id)],
+  };
+}
+
+function renderDeleteType(types: CardType[], onDeleteType = vi.fn()) {
+  render(
+    <TypeSettingsDialog
+      types={types}
+      onClose={() => {}}
+      onCreateType={() => "type-2"}
+      onUpdateType={() => {}}
+      onDeleteType={onDeleteType}
+      onAddField={() => {}}
+      onUpdateField={() => {}}
+      onRemoveField={() => {}}
+      onMoveField={() => {}}
+      onAddOption={() => {}}
+      onUpdateOption={() => {}}
+      onRemoveOption={() => {}}
+      templateFor={() => undefined}
+      onCreateTemplate={() => {}}
+      onOpenTemplate={() => {}}
+      onClearTemplate={() => {}}
+    />,
+  );
+  return onDeleteType;
+}
+
+/**
+ * Deleting a type silently re-homed every card that used it. The confirmation
+ * says how many cards move, because that is the part of the write the reader
+ * cannot see in the type list.
+ */
+describe("the type editor's delete", () => {
+  it("asks first, and says how many cards get re-homed", () => {
+    const { recipe, note, types } = recipeWithCards(2);
+    const onDeleteType = renderDeleteType(types);
+
+    fireEvent.click(screen.getByTestId("delete-type"));
+
+    expect(onDeleteType).not.toHaveBeenCalled();
+    expect(screen.getByTestId("dialog")).toHaveTextContent("2 cards use it, and move to Note.");
+
+    fireEvent.click(
+      within(screen.getByTestId("dialog")).getByRole("button", { name: "Delete type" }),
+    );
+
+    expect(onDeleteType).toHaveBeenCalledWith(recipe.id, note?.id);
+  });
+
+  it("counts one card as one card", () => {
+    const { types } = recipeWithCards(1);
+    renderDeleteType(types);
+
+    fireEvent.click(screen.getByTestId("delete-type"));
+
+    expect(screen.getByTestId("dialog")).toHaveTextContent("1 card uses it, and moves to Note.");
+  });
+
+  it("says so when no card uses the type", () => {
+    const { types } = recipeWithCards(0);
+    renderDeleteType(types);
+
+    fireEvent.click(screen.getByTestId("delete-type"));
+
+    expect(screen.getByTestId("dialog")).toHaveTextContent("No cards use it.");
+  });
+
+  it("deletes nothing when the reader cancels", () => {
+    const { types } = recipeWithCards(1);
+    const onDeleteType = renderDeleteType(types);
+
+    fireEvent.click(screen.getByTestId("delete-type"));
+    fireEvent.click(within(screen.getByTestId("dialog")).getByRole("button", { name: "Cancel" }));
+
+    expect(onDeleteType).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog")).toBeNull();
   });
 });

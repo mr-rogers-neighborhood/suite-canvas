@@ -48,9 +48,9 @@ describe("suiteMode", () => {
 });
 
 describe("bootPlan", () => {
-  it("never resolves a share or claims in a standalone build, whatever the URL", () => {
-    // A capability link opened in a local-only build: no fetch may be attempted
-    // and no owner key may be claimed, because neither relay exists here.
+  it("never resolves a share in a standalone build, whatever the URL", () => {
+    // A capability link opened in a local-only build: no fetch may be attempted,
+    // because the relay that link belongs to is not part of this build.
     for (const url of [
       "/?share=abc",
       "/?share=abc&workspace=ws-1",
@@ -60,33 +60,29 @@ describe("bootPlan", () => {
     ]) {
       expect(bootPlan("standalone", url)).toEqual({
         resolveShare: false,
-        claimOwner: false,
         connectProvider: false,
         showSharing: false,
       });
     }
   });
 
-  it("still resolves a share link and claims a workspace on a relay", () => {
+  it("resolves a share link on a relay and opens the provider for anything else", () => {
     expect(bootPlan("relay", "/?share=abc")).toEqual({
       resolveShare: true,
-      // A share link is not this browser's workspace to claim.
-      claimOwner: false,
       connectProvider: true,
       showSharing: true,
     });
 
+    // A workspace URL has no boot-time identity step: the session credential is
+    // minted from the cookie on the first room join.
     expect(bootPlan("relay", "/?workspace=ws-1")).toEqual({
       resolveShare: false,
-      claimOwner: true,
       connectProvider: true,
       showSharing: true,
     });
 
-    // The launcher: nothing to claim and no share, but the provider still runs.
     expect(bootPlan("relay", "/")).toEqual({
       resolveShare: false,
-      claimOwner: false,
       connectProvider: true,
       showSharing: true,
     });
@@ -146,7 +142,7 @@ describe("standalone session", () => {
     expect(projected.canPublish).toBe(false);
   });
 
-  it("boots a workspace with no owner key and no share", () => {
+  it("boots a workspace with no credential and no share", () => {
     vi.stubEnv("VITE_SUITE_MODE", "standalone");
     configureSession(
       standaloneSession({
@@ -155,20 +151,20 @@ describe("standalone session", () => {
         share: sessionForShare("tok", share).share,
         role: "editor",
         readOnly: false,
-        ownerKey: "owner-key",
+        credential: "account",
       }),
     );
     expect(getSession()).toMatchObject({
       workspaceId: "ws-1",
       roomId: "ws-1",
       share: null,
-      ownerKey: null,
+      credential: "none",
     });
   });
 });
 
 describe("standalone workspace actions", () => {
-  it("keeps export reachable while Share and the recovery key are gone", () => {
+  it("keeps export reachable while Share and the account surfaces are gone", () => {
     vi.stubEnv("VITE_SUITE_MODE", "standalone");
     // What `useUiStore` derives from STANDALONE_CAPABILITIES at boot.
     useUiStore.setState({ canManageLinks: false });
@@ -179,7 +175,7 @@ describe("standalone workspace actions", () => {
         share: null,
         role: "editor",
         readOnly: false,
-        ownerKey: null,
+        credential: "none",
       }),
     );
 
@@ -187,11 +183,13 @@ describe("standalone workspace actions", () => {
 
     // Export is local, so the workspace menu survives the standalone profile.
     fireEvent.click(screen.getByTestId("workspace-menu"));
-    // No link management, so the share row and the owner key are both absent.
+    // No link management, so the share row and the delete row are both absent.
     expect(screen.queryByTestId("workspace-menu-share")).toBeNull();
     expect(screen.getByTestId("workspace-export-backup")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-json")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-markdown")).toBeTruthy();
+    // No recovery file and no account row: both were credentials, not files.
+    expect(screen.getByTestId("workspace-menu-list")).not.toHaveTextContent("Owner file");
     expect(screen.queryByTestId("workspace-recovery-key")).toBeNull();
   });
 });
@@ -220,7 +218,7 @@ describe("standalone guard rails", () => {
    * test below instead of shipping a request to a URL that is not there.
    */
   const RELAY_MODULES: Readonly<Record<string, readonly string[]>> = {
-    "session/ownerKey.ts": ["main.tsx"],
+    "auth/credential.ts": ["main.tsx", "store/useCanvasStore.ts"],
     "session/shares.ts": ["main.tsx", "App.tsx", "chrome/WorkspaceActions.tsx"],
     // The Better Auth client. `App.tsx` reaches it only through a lazy chunk that
     // the standalone branch never renders, so a standalone build has no auth code.
@@ -303,10 +301,10 @@ describe("standalone guard rails", () => {
 
   it("keeps the relay client out of the boot chunk", () => {
     const main = readFileSync(path.join(SRC, "main.tsx"), "utf8");
-    // `main.tsx` must load the share client and the owner-key claim on demand:
-    // a static import would put them in every build's boot chunk, standalone
-    // included, no matter what the runtime check does.
-    expect(main).not.toMatch(/from\s+"\.\/session\/(?:ownerKey|shares)"/u);
+    // `main.tsx` must load the share client on demand: a static import would put
+    // it in every build's boot chunk, standalone included, no matter what the
+    // runtime check does.
+    expect(main).not.toMatch(/from\s+"\.\/session\/shares"/u);
     expect(main).toMatch(/import\("\.\/session\/shares"\)/u);
     // The literal, not a helper call, is what lets the bundler drop the branch.
     expect(main).toMatch(/VITE_SUITE_MODE !== "standalone"/u);

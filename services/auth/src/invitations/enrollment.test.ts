@@ -226,15 +226,13 @@ describe("the redemption port", () => {
 });
 
 describe("the plugin's options", () => {
-  it("keeps self-serve sign-up closed while the passwordless doors stay open", () => {
+  it("runs open, so an invitation adds a colleague instead of creating an account", () => {
     const options = enrollmentOptions({ licences: licences(null), now: () => NOW });
-    // "invite-only" is what makes a private invite set a password; the open-signup
-    // flag is what stops that guarantee becoming an app-wide closure, which would
-    // contradict §7 (registration is open, admission is reviewed).
-    expect(options.mode).toBe("invite-only");
-    expect(options.allowOpenSignup).toBe(true);
+    // ADR-0077: sign-up is open, so the invite mode is "open" and the plugin routes
+    // every redemption through its activate path — the redeemer is already signed in.
+    expect(options.mode).toBe("open");
     // Passwordless redemption is the *other* flow: a private invite that sets no
-    // password. It is off, because a password is what an invited account may set.
+    // password. It is off, because an invited account keeps the password it chose.
     expect(options.passwordless).toBe(false);
     expect(options.hashTokens).toBe(true);
     expect(options.autoVerifyPublicInviteEmail).toBe(false);

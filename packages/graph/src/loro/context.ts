@@ -98,6 +98,11 @@ export class DocContext {
       maxUndoSteps: 100,
       excludeOriginPrefixes: [TEXT_ORIGIN_PREFIX, INIT_ORIGIN, "text:", INDEX_ORIGIN],
     });
+    // A negative interval means never: one gesture is one change, so the oplog's
+    // granularity matches the undo stack's. Loro otherwise folds continuous
+    // same-message commits from the same second into one change, which would hide
+    // a point the history panel could otherwise restore.
+    doc.setChangeMergeInterval(-1);
   }
 
   /** Starts the doc subscription once the domain api exists. */
@@ -112,13 +117,18 @@ export class DocContext {
       return fn();
     } finally {
       this.batchOrigin = null;
-      this.doc.commit({ origin });
+      this.commit(origin);
     }
   }
 
+  /**
+   * One commit per gesture. The origin is also stored as the change's message:
+   * Loro keeps the merge into one change only when the message matches, and the
+   * history panel reads that message to say what a point changed.
+   */
   commit(origin = `${STRUCT_ORIGIN}write`): void {
     if (this.batchOrigin !== null) return;
-    this.doc.commit({ origin });
+    this.doc.commit({ origin, message: origin, timestamp: Math.floor(Date.now() / 1000) });
   }
 
   invalidate(section: WorkspaceSection, key: string): void {

@@ -61,6 +61,21 @@
   },
   "overrides": [
     {
+      // Biome has no Astro template parser: it reads an `.astro` frontmatter
+      // block as a module of its own, so every name the template uses looks
+      // unused and `lint:fix` would delete the imports. `astro check` covers
+      // these files instead.
+      "includes": ["**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
       // One logging path: request handlers log through `logging.ts`, which
       // writes JSON lines with a request id and redacted capability paths.
       // Only the logger itself, and the licence CLI whose stdout/stderr *is*

@@ -1,6 +1,4 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { generateOwnerKey, readOwnerKey, writeOwnerKey } from "../session/ownerKey";
-import { hasSavedRecoveryKey, readOwnerKitFile } from "../session/ownerKit";
 import {
   forgetWorkspaceName,
   friendlyWorkspaceName,
@@ -29,13 +27,6 @@ interface RecentEntry extends RecentWorkspace {
   name: string;
 }
 
-/** The prompt only ever names one workspace at a time. */
-interface RecoveryPrompt {
-  workspaceId: string;
-  ownerKey: string;
-  title: string;
-}
-
 function openedAt(timestamp: number): string {
   const date = new Date(timestamp);
   const today = new Date();
@@ -55,15 +46,34 @@ function labelRecent(
 }
 
 /**
+ * The account surfaces pull in the Better Auth client, so they are loaded on
+ * demand for the same reason as the editor's: a standalone build has no server
+ * and must not ship a byte of `/api/auth`.
+ */
+const AccountSurface = lazy(async () => {
+  const module = await import("../auth/AccountSurface");
+  return { default: module.AccountSurface };
+});
+
+/**
+ * The screen an invitation email lands on. Loaded on demand for the same reason
+ * as the account surface: it reaches `/api/auth`, and a standalone build has no
+ * server to reach.
+ */
+const AcceptInvitation = lazy(async () => {
+  const module = await import("../auth/AcceptInvitation");
+  return { default: module.AcceptInvitation };
+});
+
+/**
  * The starting screen: a workspace picker rather than a document. Recent
  * workspaces are local metadata; opening one navigates to that workspace's
  * ordinary canvas route.
+ *
+ * Identity belongs here, not only in the title bar: this is the first screen a
+ * person sees, and "sign in to keep this anywhere" is one of the two things this
+ * screen is for.
  */
-const RecoveryKeyDialog = lazy(async () => {
-  const module = await import("../sharing/RecoveryKeyDialog");
-  return { default: module.RecoveryKeyDialog };
-});
-
 const DeleteWorkspaceDialog = lazy(async () => {
   const module = await import("../dialogs/DeleteWorkspaceDialog");
   return { default: module.DeleteWorkspaceDialog };
@@ -74,14 +84,22 @@ export function WorkspaceLauncher() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [prompt, setPrompt] = useState<RecoveryPrompt | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RecentEntry | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const recoveryInput = useRef<HTMLInputElement | null>(null);
   const renameCancelled = useRef(false);
+  // A mail link names one invitation, and this page is where it lands.
+  const [invitationId, setInvitationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      if (import.meta.env.VITE_SUITE_MODE === "standalone") return;
+      const { invitationIdFromUrl } = await import("../auth/AcceptInvitation");
+      setInvitationId(invitationIdFromUrl(window.location.href));
+    })();
+  }, []);
 
   useEffect(() => {
     const entries = readRecentWorkspaces();
@@ -100,23 +118,29 @@ export function WorkspaceLauncher() {
     };
   }, []);
 
-  /** A new workspace is written here and nowhere else. */
-  const openCreated = (workspaceId: string, ownerKey: string) => {
-    writeOwnerKey(workspaceId, ownerKey);
+  /**
+   * A new workspace is written here and nowhere else. There is no credential to
+   * create: the document id is the workspace's identity, and the session decides
+   * who may open it.
+   */
+  const startNew = () => {
+    const workspaceId = newWorkspaceId();
     rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
-    const url = new URL(workspaceUrl(workspaceId, null, ownerKey));
+    const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
     navigateTo(url.toString());
   };
-
-  const startNew = () => openCreated(newWorkspaceId(), generateOwnerKey());
 
   const importFile = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const imported = await importWorkspaceFile(file);
+      // An image the file could not carry is named by its cards, and the import
+      // still opens: the warning is a line on the way in, not a refusal.
+      if (imported.warnings.length > 0) setNotice(imported.warnings.join(" "));
       openWorkspace(imported.id, imported.boardId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not import that workspace.");
@@ -132,12 +156,6 @@ export function WorkspaceLauncher() {
       // An export is the only copy a launcher user has, so a size or
       // missing-image warning is shown here exactly as the editor shows it.
       await downloadWorkspaceById(entry.id, entry.name, setNotice);
-      // Same offer as the workspace's own backup export: only when this browser
-      // still holds an owner key it has never saved.
-      const ownerKey = readOwnerKey(entry.id);
-      if (ownerKey && !hasSavedRecoveryKey(entry.id)) {
-        setPrompt({ workspaceId: entry.id, ownerKey, title: entry.name });
-      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not export that workspace.");
     } finally {
@@ -176,27 +194,6 @@ export function WorkspaceLauncher() {
       await renameCachedWorkspace(entry.id, name);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not rename that workspace.");
-    }
-  };
-
-  /**
-   * A recovery file names its own workspace, so it opens that workspace instead
-   * of importing a document. Nothing is written unless the file validates, and
-   * nothing is added to recents: the file is the way in.
-   */
-  const openRecoveryKey = async (file: File | undefined) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const kit = await readOwnerKitFile(file);
-      // The key file is the authority for this browser from now on; the
-      // workspace itself is only created when the editor loads it.
-      writeOwnerKey(kit.workspaceId, kit.ownerKey);
-      navigateTo(workspaceUrl(kit.workspaceId, null, kit.ownerKey));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not read that recovery key file.");
-      setBusy(false);
     }
   };
 
@@ -253,27 +250,17 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
-            <button
-              type="button"
-              data-testid="launcher-open-recovery"
-              className="rounded-lg border border-[var(--hairline)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-              onClick={() => recoveryInput.current?.click()}
-              disabled={busy}
-              title="Open a .suitekey recovery file for a workspace you already own."
-            >
-              Open recovery key…
-            </button>
-            <input
-              ref={recoveryInput}
-              type="file"
-              accept=".suitekey,.json,application/json"
-              className="hidden"
-              data-testid="launcher-recovery-file"
-              onChange={(event) => {
-                void openRecoveryKey(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-            />
+            {/* Identity lives here as well as in the title bar: this is the first
+                screen someone sees, and an account is what keeps a workspace
+                across devices. The literal keeps every byte of `/api/auth` out of
+                a standalone build. */}
+            {import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
+              <span className="ml-auto">
+                <Suspense fallback={null}>
+                  <AccountSurface showSignUp />
+                </Suspense>
+              </span>
+            ) : null}
           </div>
           {error ? (
             <p
@@ -293,6 +280,14 @@ export function WorkspaceLauncher() {
             </p>
           ) : null}
         </header>
+
+        {invitationId === null ? null : (
+          <div className="px-8 pt-6">
+            <Suspense fallback={null}>
+              <AcceptInvitation invitationId={invitationId} />
+            </Suspense>
+          </div>
+        )}
 
         <section className="px-8 py-6" aria-labelledby="recent-title">
           <div className="flex items-center justify-between">
@@ -445,17 +440,6 @@ export function WorkspaceLauncher() {
           Fully open-source and MIT Licensed (c) {new Date().getFullYear()} Suite
         </footer>
       </div>
-      {prompt ? (
-        <Suspense fallback={null}>
-          <RecoveryKeyDialog
-            mode="backup-prompt"
-            workspaceId={prompt.workspaceId}
-            ownerKey={prompt.ownerKey}
-            title={prompt.title}
-            onClose={() => setPrompt(null)}
-          />
-        </Suspense>
-      ) : null}
       {deleteTarget ? (
         <Suspense fallback={null}>
           <DeleteWorkspaceDialog

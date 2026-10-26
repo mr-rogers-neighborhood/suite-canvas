@@ -1,0 +1,25 @@
+{
+  "name": "@suite/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The second server process: Postgres, accounts and billing behind one node:http listener. It owns no documents and mounts route modules it does not know by name, so the relay stays a sync server.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5",
+    "@types/pg": "^8.23.1"
+  },
+  "dependencies": {
+    "@suite/auth": "workspace:*",
+    "@suite/billing": "workspace:*",
+    "pg": "^8.23.1"
+  }
+}

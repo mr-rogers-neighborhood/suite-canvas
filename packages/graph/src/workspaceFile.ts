@@ -1,6 +1,7 @@
 import { LoroDoc } from "loro-crdt";
 import { err, ok, Result } from "neverthrow";
 import { z } from "zod";
+import { documentAttachments } from "./cardAttachments.js";
 import { SCHEMA_VERSION, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 
 /**
@@ -135,6 +136,49 @@ export interface ParsedWorkspaceFile {
   file: WorkspaceFile;
   workspace: WorkspaceDocument;
   attachments: WorkspaceFileAttachmentBytes[];
+  /**
+   * Images the document references that this file cannot supply, with every
+   * card that shows them. Import must report these: an image that quietly
+   * vanishes from the only backup is the loss the format exists to prevent.
+   */
+  damaged: DamagedWorkspaceAttachment[];
+}
+
+/** Why an image's bytes are not in the file. */
+export type DamagedAttachmentReason =
+  /** The envelope has an entry for the id, but its base64 does not decode. */
+  | "corrupt"
+  /** The envelope has no entry at all — the bytes were never written or were removed. */
+  | "absent";
+
+/** A referenced image this backup cannot restore, named the way a reader knows it. */
+export interface DamagedWorkspaceAttachment {
+  id: string;
+  /** Alt text from the node, when it had one. */
+  name: string | null;
+  reason: DamagedAttachmentReason;
+  /** Every card whose body or title draws the image; the titles are for humans. */
+  cards: Array<{ id: string; title: string }>;
+}
+
+function quoteTitle(title: string): string {
+  return `“${title}”`;
+}
+
+/**
+ * The one sentence import shows for damaged images: which cards, not which ids.
+ * `null` when the file is complete, so a caller can show nothing at all.
+ */
+export function damagedAttachmentWarning(
+  damaged: readonly DamagedWorkspaceAttachment[],
+): string | null {
+  if (damaged.length === 0) return null;
+  const titles = [...new Set(damaged.flatMap((entry) => entry.cards.map((card) => card.title)))];
+  const images = damaged.length === 1 ? "1 image" : `${damaged.length} images`;
+  const were = damaged.length === 1 ? "was" : "were";
+  const noun = titles.length === 1 ? "card" : "cards";
+  const named = titles.length === 0 ? "" : ` in ${noun} ${titles.map(quoteTitle).join(", ")}`;
+  return `${images} could not be restored${named}: ${were} missing or unreadable in this backup. Everything else imported; ${damaged.length === 1 ? "that image" : "those images"} will show a placeholder.`;
 }
 
 /**
@@ -196,9 +240,15 @@ export function tryParseWorkspaceFile(
   if (imported.isErr()) return err(imported.error);
 
   const attachments: WorkspaceFileAttachmentBytes[] = [];
+  const unreadable = new Set<string>();
   for (const [id, entry] of Object.entries(parsed.data.attachments)) {
     const bytes = Result.fromThrowable(() => base64ToBytes(entry.data))();
-    if (bytes.isErr()) continue;
+    if (bytes.isErr()) {
+      // Recorded, not dropped: the caller can name the card that will show a
+      // placeholder, while the document itself still imports.
+      unreadable.add(id);
+      continue;
+    }
     attachments.push({
       id,
       mime: entry.mime,
@@ -208,7 +258,24 @@ export function tryParseWorkspaceFile(
       bytes: bytes.value,
     });
   }
-  return ok({ file: parsed.data, workspace: new WorkspaceDocument(doc), attachments });
+
+  // Every id the document references but the file cannot supply. Recomputed
+  // from the imported document rather than from the envelope, so an entry for
+  // an id no card uses is not a problem and a missing one that a card does use
+  // always is.
+  const restoredWorkspace = new WorkspaceDocument(doc);
+  const damaged: DamagedWorkspaceAttachment[] = [];
+  for (const referenced of documentAttachments(restoredWorkspace)) {
+    if (attachments.some((entry) => entry.id === referenced.id)) continue;
+    damaged.push({
+      id: referenced.id,
+      name: referenced.name,
+      reason: unreadable.has(referenced.id) ? "corrupt" : "absent",
+      cards: referenced.cards.map((card) => ({ id: card.id, title: card.title })),
+    });
+  }
+
+  return ok({ file: parsed.data, workspace: restoredWorkspace, attachments, damaged });
 }
 
 /** Reads the JSON a backup file holds, or why it is not JSON. */

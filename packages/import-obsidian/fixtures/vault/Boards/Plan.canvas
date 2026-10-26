@@ -1,0 +1,58 @@
+{
+  "nodes": [
+    {
+      "id": "g1",
+      "type": "group",
+      "x": 0,
+      "y": 0,
+      "width": 760,
+      "height": 460,
+      "label": "Research",
+      "color": "4"
+    },
+    {
+      "id": "t1",
+      "type": "text",
+      "x": 40,
+      "y": 60,
+      "width": 300,
+      "height": 140,
+      "text": "# Idea\nA text node about [[Alpha]].",
+      "color": "1"
+    },
+    {
+      "id": "f1",
+      "type": "file",
+      "x": 40,
+      "y": 260,
+      "width": 300,
+      "height": 140,
+      "file": "Projects/Alpha.md"
+    },
+    {
+      "id": "l1",
+      "type": "link",
+      "x": 400,
+      "y": 60,
+      "width": 300,
+      "height": 140,
+      "url": "https://obsidian.md"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "fromNode": "t1",
+      "fromSide": "bottom",
+      "toNode": "f1",
+      "toSide": "top",
+      "label": "supports"
+    },
+    {
+      "id": "e2",
+      "fromNode": "f1",
+      "toNode": "l1",
+      "color": "3"
+    }
+  ]
+}

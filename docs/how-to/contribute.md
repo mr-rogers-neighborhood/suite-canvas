@@ -2,12 +2,12 @@
 
 One change, from branch to merge. The coding standards are in
 [reference/conventions.md](../reference/conventions.md), the repo map in [AGENTS.md](../../AGENTS.md),
-and the verification tiers in [test-and-verify.md](test-and-verify.md).
+and the local gate in [test-and-verify.md](test-and-verify.md).
 
 ## Set up
 
-Node 22 or newer and pnpm 12, the versions CI pins. Use pnpm; npm and yarn write a lockfile this repo
-does not read.
+Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. Use pnpm; npm and yarn write a
+lockfile this repo does not read.
 
 ```sh
 pnpm install          # also installs the git hooks (husky, lint-staged, commitlint)
@@ -30,8 +30,17 @@ the intent readable in `git branch` and in the pull request list.
 
 ## Prove it
 
-`pnpm check` while you edit, `pnpm verify` before you commit. A user-visible change needs a test that
-fails without it:
+Run the local gate on every change:
+
+```sh
+pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols && pnpm shape
+```
+
+`pnpm check` runs Biome, `tsc`, `vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, so it is
+the one to repeat while editing. Playwright is not in the gate; [test-and-verify.md](test-and-verify.md)
+has the e2e scripts for a run the owner asks for.
+
+A user-visible change needs a test that fails without it:
 
 - Bug fix: a regression test that reproduces the bug, committed with the fix.
 - Behaviour: a unit test in the package that owns the logic, or an e2e spec in `e2e/tests/` when the
@@ -39,9 +48,6 @@ fails without it:
 - Multi-client behaviour: a two-document test. Drive both `WorkspaceDocument`s through conflicting
   edits, sync both ways with `doc.export({ mode: "update" })`, then assert the merge.
 - Non-trivial UI: a React Testing Library test, and a Storybook story when the surface is visual.
-
-E2E tier: `pnpm e2e:smoke` for a medium change, `pnpm e2e` for a big one. Schema, CRDT, sharing, auth,
-gestures, persistence and release config all count as big.
 
 ## Document it in the same change
 
@@ -68,7 +74,7 @@ Conventional commits, enforced by commitlint on `commit-msg`:
 ```text
 feat: add tag editing to the card inspector
 fix: keep section membership after a multi-card drop
-docs: rewrite the test tiers
+docs: rewrite the test gate
 ```
 
 The subject is imperative and at most 72 characters; the body explains why and names the trade-off. One
@@ -79,20 +85,21 @@ logical change per commit, because a formatting sweep in the same commit hides t
 Fill in `.github/PULL_REQUEST_TEMPLATE.md`: summary (what and why), approach (the choice a reviewer
 would otherwise question), test plan (the commands you ran and their result), and the checklist:
 
-- [ ] `pnpm verify` passes
-- [ ] The e2e tier the change earns passes
+- [ ] The local gate from [test-and-verify.md](test-and-verify.md) passes
+- [ ] An e2e run passed if the owner asked for one
 - [ ] Docs and conventions updated if needed
 
 A reviewer will ask which test fails without this change, what happens on a second client and on a
 reload, and whether the docs describing the touched command or number are in the same commit. Paste
-the command output rather than asserting a green run: GitHub Actions ends in `startup_failure` on this
-account, so a local transcript is the evidence.
+the command output rather than asserting a green run: no workflow runs on this account, so a local
+transcript is the evidence.
 
 ## Dependencies
 
 Add one with a stated reason, to the package that uses it, and prefer a primitive the repo already
-depends on. A major bump is a decision and lands on its own; Dependabot groups minor and patch updates
-weekly for `npm` and `github-actions`, and that is the only dependency automation here.
+depends on. A major bump is a decision and lands on its own. `.github/dependabot.yml` groups minor and
+patch updates weekly for `npm` and `github-actions`, though whether it runs depends on the same
+account state that stops every workflow here, so assume you are the automation.
 
 ## Security and conduct
 

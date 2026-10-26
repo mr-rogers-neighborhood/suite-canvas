@@ -78,3 +78,14 @@ body[data-isolate-edge] .above-link-group.is-dimmed .above-link {
     stroke-dashoffset: calc(-1 * var(--link-dash-cycle, 12));
   }
 }
+
+/* The march of a dashed or dotted link is motion, not a colour change: a reader
+   who asked for reduced motion sees the pattern hold still. The painter sets
+   `animation` inline on the stroke, so this has to outrank an inline style. */
+@media (prefers-reduced-motion: reduce) {
+  .route-edge .react-flow__edge-path,
+  .above-link {
+    /* biome-ignore lint/complexity/noImportantStyles: the painter sets `animation` inline, so only `!important` outranks it */
+    animation: none !important;
+  }
+}

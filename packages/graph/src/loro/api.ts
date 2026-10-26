@@ -4,6 +4,7 @@ import { cardTypesMethods } from "./cardTypes.js";
 import type { DocContext } from "./context.js";
 import { drawingsMethods } from "./drawings.js";
 import { edgesMethods } from "./edges.js";
+import { historyMethods } from "./history.js";
 import { placementsMethods } from "./placements.js";
 import { sectionsMethods } from "./sections.js";
 import { snapshotMethods } from "./snapshot.js";
@@ -28,6 +29,7 @@ export interface DocApi {
   cards: ReturnType<typeof cardsMethods>;
   placements: ReturnType<typeof placementsMethods>;
   edges: ReturnType<typeof edgesMethods>;
+  history: ReturnType<typeof historyMethods>;
   drawings: ReturnType<typeof drawingsMethods>;
   snapshot: ReturnType<typeof snapshotMethods>;
 }
@@ -44,6 +46,7 @@ export function createDocApi(ctx: DocContext): DocApi {
     cards: cardsMethods(ctx),
     placements: placementsMethods(ctx),
     edges: edgesMethods(ctx),
+    history: historyMethods(ctx),
     drawings: drawingsMethods(ctx),
     snapshot: snapshotMethods(ctx),
   };

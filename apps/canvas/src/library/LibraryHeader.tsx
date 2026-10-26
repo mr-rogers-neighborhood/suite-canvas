@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Dialog } from "../dialogs/Dialog";
 import type { LibraryTab } from "../store/useUiStore";
 
 const TABS: Array<{ id: LibraryTab; label: string }> = [
@@ -56,6 +58,9 @@ export function LibraryHeader({
   onEmptyTrash: () => void;
   onClose: () => void;
 }) {
+  const [confirmingEmptyTrash, setConfirmingEmptyTrash] = useState(false);
+  const trashNoun = trashCount === 1 ? "card" : "cards";
+
   return (
     <div className="library-header flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5">
       <div role="tablist" aria-label="Library sections" className="flex items-center gap-1">
@@ -172,7 +177,7 @@ export function LibraryHeader({
             type="button"
             data-testid="library-empty-trash"
             className="library-action text-red-600"
-            onClick={onEmptyTrash}
+            onClick={() => setConfirmingEmptyTrash(true)}
           >
             Empty trash
           </button>
@@ -187,6 +192,19 @@ export function LibraryHeader({
           {"\u00d7"}
         </button>
       </div>
+      {/* Emptying the trash is permanent: one press used to delete every card
+          in it with nothing to undo. The dialog says the number it will take. */}
+      {confirmingEmptyTrash ? (
+        <Dialog
+          title="Empty trash?"
+          description={`${trashCount} ${trashNoun} will be deleted for good, with everything written on them. This cannot be undone.`}
+          onClose={() => setConfirmingEmptyTrash(false)}
+          actions={[
+            { label: "Cancel", onSelect: () => {} },
+            { label: "Empty trash", danger: true, onSelect: onEmptyTrash },
+          ]}
+        />
+      ) : null}
     </div>
   );
 }

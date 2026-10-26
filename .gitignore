@@ -45,11 +45,12 @@ stryker.log
 .scratchpad.md
 .scratchpad-seen
 
-# The Fumadocs site is generated from `docs/` by `scripts/sync-docs.mjs`:
-# pages, frontmatter, meta.json and the copied assets are build input, not
-# source. Edit `docs/` instead.
-apps/docs/content/docs/
-apps/docs/public/docs/
-apps/docs/.source/
-apps/docs/.next/
+# The Starlight content is generated from `docs/` by `scripts/sync-docs.mjs`:
+# pages, frontmatter and the copied assets are build input, not source. Edit
+# `docs/` instead.
+apps/docs/src/content/docs/
+apps/docs/dist/
+apps/docs/.astro/
+apps/site/dist/
+apps/site/.astro/
 internal/

@@ -24,8 +24,8 @@ pnpm docs:site        # http://localhost:3001
 pnpm docs:site:build  # production build
 ```
 
-`/llms.txt` is the page index, `/llms-full.txt` is every page, and any page is available as Markdown
-by appending `.md` to its URL.
+`/llms.txt` is the summary an agent reads first, `/llms-full.txt` is every page, and any page is
+available as Markdown by dropping the trailing slash from its URL and appending `.md`.
 
 ## Outside this tree
 

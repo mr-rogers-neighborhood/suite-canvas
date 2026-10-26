@@ -8,8 +8,7 @@ import { HttpError, type HttpProblem, httpStatus } from "./errors.js";
 
 export const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-  "access-control-allow-headers":
-    "content-type, authorization, x-suite-owner, x-suite-attachment-id",
+  "access-control-allow-headers": "content-type, authorization, x-suite-attachment-id",
   // Adding a custom header in the app means adding it here too;
   // corsAllowlist.test.ts fails if the two lists drift apart.
   "access-control-max-age": "86400",

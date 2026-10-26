@@ -1,7 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readOwnerKey, writeOwnerKey } from "../session/ownerKey";
-import { createOwnerKit, downloadOwnerKit } from "../session/ownerKit";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
   readWorkspaceNames,
@@ -29,14 +27,8 @@ vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   };
 });
 
-vi.mock("../session/ownerKit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../session/ownerKit")>();
-  return { ...actual, downloadOwnerKit: vi.fn(() => "research-recovery.suitekey") };
-});
-
 const exportWorkspace = vi.mocked(downloadWorkspaceById);
 const navigate = vi.mocked(navigateTo);
-const download = vi.mocked(downloadOwnerKit);
 const renameCached = vi.mocked(renameCachedWorkspace);
 
 const WORKSPACE = "ws-recent";
@@ -49,7 +41,7 @@ function ownerSession(): SessionConfig {
     share: null,
     role: "editor",
     readOnly: false,
-    ownerKey: null,
+    credential: "account",
   };
 }
 
@@ -68,7 +60,7 @@ function shareSession(role: "editor" | "viewer"): SessionConfig {
     },
     role,
     readOnly: role === "viewer",
-    ownerKey: null,
+    credential: "share",
   };
 }
 
@@ -106,7 +98,6 @@ beforeEach(() => {
   configureSession(ownerSession());
   exportWorkspace.mockClear();
   navigate.mockClear();
-  download.mockClear();
   renameCached.mockClear();
 });
 
@@ -115,35 +106,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("WorkspaceLauncher recovery flow", () => {
-  it("offers a recovery key after exporting a recent workspace", async () => {
-    seedRecent();
-    writeOwnerKey(WORKSPACE, "owner-key");
+describe("WorkspaceLauncher export", () => {
+  it("starts a new workspace with no credential in the URL", () => {
     render(<WorkspaceLauncher />);
 
-    fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
+    fireEvent.click(screen.getByTestId("launcher-new"));
 
-    await waitFor(() => expect(screen.getByTestId("recovery-prompt")).toBeVisible());
-    expect(screen.getByTestId("recovery-prompt")).toHaveTextContent(
-      "Backup saved. Save a separate owner file too?",
-    );
-
-    fireEvent.click(screen.getByTestId("recovery-prompt-save"));
-    expect(download).toHaveBeenCalledWith(WORKSPACE, "owner-key", TITLE);
-  });
-
-  it("stays quiet when this browser already saved the key", async () => {
-    seedRecent();
-    writeOwnerKey(WORKSPACE, "owner-key");
-    window.localStorage.setItem("suite.recoverySaved.ws-recent", JSON.stringify({ savedAt: 1 }));
-    render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
-
-    await waitFor(() =>
-      expect(exportWorkspace).toHaveBeenCalledWith(WORKSPACE, TITLE, expect.any(Function)),
-    );
-    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
+    expect(url.searchParams.get("workspace")).toBeTruthy();
+    // Nothing secret travels in a link any more: the session is the credential.
+    expect(url.hash).toBe("");
+    expect(url.searchParams.get("fresh")).toBe("1");
+    expect(readRecentWorkspaces()).toHaveLength(1);
   });
 
   it("shows the export's own warnings, so a partial backup is never silent", async () => {
@@ -164,45 +139,10 @@ describe("WorkspaceLauncher recovery flow", () => {
     expect(screen.queryByTestId("launcher-error")).not.toBeInTheDocument();
   });
 
-  it("stays quiet when this browser holds no owner key", async () => {
-    seedRecent();
+  it("has no recovery-key entry at all", () => {
     render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId(`launcher-export-${WORKSPACE}`));
-
-    await waitFor(() => expect(exportWorkspace).toHaveBeenCalled());
-    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
-  });
-
-  it("opens the workspace a recovery key names, without adding a recent", async () => {
-    render(<WorkspaceLauncher />);
-
-    await chooseFile(
-      "launcher-recovery-file",
-      createOwnerKit("ws-restored", "key-restored"),
-      "restored-recovery.suitekey",
-    );
-
-    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
-    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    expect(url.searchParams.get("workspace")).toBe("ws-restored");
-    expect(url.hash).toBe("#owner=key-restored");
-    expect(readOwnerKey("ws-restored")).toBe("key-restored");
-    expect(readRecentWorkspaces().map((entry) => entry.id)).toEqual([]);
-    expect(screen.queryByTestId("launcher-error")).not.toBeInTheDocument();
-  });
-
-  it("shows one inline error for a file that is not a recovery key", async () => {
-    render(<WorkspaceLauncher />);
-
-    await chooseFile("launcher-recovery-file", '{"kind":"suite.workspace"}', "notes.suitekey");
-
-    await waitFor(() =>
-      expect(screen.getByTestId("launcher-error")).toHaveTextContent("workspace backup"),
-    );
-    expect(navigate).not.toHaveBeenCalled();
-    expect(readOwnerKey("ws-restored")).toBeNull();
-    expect(readRecentWorkspaces()).toEqual([]);
+    expect(screen.queryByTestId("launcher-open-recovery")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("launcher-recovery-file")).not.toBeInTheDocument();
   });
 
   it("names the row control as a list removal, not a deletion", () => {
@@ -222,63 +162,41 @@ describe("WorkspaceLauncher recovery flow", () => {
   });
 });
 
-describe("WorkspaceLauncher new workspace", () => {
-  it("opens a new workspace straight away, with one key and a fresh flag", () => {
+describe("WorkspaceLauncher identity", () => {
+  it("offers sign-in and sign-up from the launcher itself", async () => {
     render(<WorkspaceLauncher />);
 
-    fireEvent.click(screen.getByTestId("launcher-new"));
+    // The surface loads on demand, so it arrives a tick after the launcher.
+    const signUp = await screen.findByTestId("create-account-entry");
+    expect(screen.getByTestId("sign-in-entry-standalone")).toBeInTheDocument();
 
-    expect(navigate).toHaveBeenCalledTimes(1);
-    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    const workspaceId = url.searchParams.get("workspace") ?? "";
-    const generated = readOwnerKey(workspaceId);
-
-    expect(generated).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(url.hash).toBe(`#owner=${generated}`);
-    expect(url.searchParams.get("fresh")).toBe("1");
-    expect(readRecentWorkspaces().map((entry) => entry.id)).toEqual([workspaceId]);
-    expect(window.localStorage.getItem(`suite.recoverySaved.${workspaceId}`)).toBeNull();
-    // No dialog stands between the button and the board.
-    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
+    fireEvent.click(signUp);
+    const dialog = await screen.findByTestId("sign-in-dialog");
+    expect(dialog).toHaveAttribute("data-mode", "sign-up");
   });
+});
 
-  it.each([
-    ["a share session", "editor"],
-    ["a viewer", "viewer"],
-  ] as const)("creates a local workspace for %s too, with no dialog", (_label, role) => {
-    configureSession(shareSession(role));
+describe("WorkspaceLauncher import", () => {
+  it("opens an imported workspace and lists the cards whose images it lost", async () => {
     render(<WorkspaceLauncher />);
 
-    fireEvent.click(screen.getByTestId("launcher-new"));
-
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId("recovery-prompt")).not.toBeInTheDocument();
-  });
-
-  it("offers the owner file after a launcher export of a key never saved", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const first = render(<WorkspaceLauncher />);
-
-    fireEvent.click(screen.getByTestId("launcher-new"));
-    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    const workspaceId = url.searchParams.get("workspace") ?? "";
-    const generated = readOwnerKey(workspaceId);
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    // The backup prompt is intact: this key has never been saved, so an export
-    // still offers the owner file for it.
-    first.unmount();
-    render(<WorkspaceLauncher />);
-    fireEvent.click(screen.getByTestId(`launcher-export-${workspaceId}`));
-
-    await waitFor(() => expect(screen.getByTestId("recovery-prompt")).toBeVisible());
-    fireEvent.click(screen.getByTestId("recovery-prompt-save"));
-    expect(download).toHaveBeenCalledWith(
-      workspaceId,
-      generated,
-      expect.stringMatching(/^[A-Z][a-z]+ [A-Z][a-z]+$/),
+    // A file that is not a backup at all: the import refuses, and says why.
+    await chooseFile("launcher-file", '{"kind":"other"}', "notes.suite");
+    await waitFor(() =>
+      expect(screen.getByTestId("launcher-error")).toHaveTextContent(
+        "not a Suite workspace backup",
+      ),
     );
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("creates a local workspace for a share session too, with no dialog", () => {
+    configureSession(shareSession("editor"));
+    render(<WorkspaceLauncher />);
+
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    expect(navigate).toHaveBeenCalledTimes(1);
   });
 });
 

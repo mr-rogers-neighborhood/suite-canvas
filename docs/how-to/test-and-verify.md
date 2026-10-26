@@ -1,61 +1,89 @@
 # Test and verify a change
 
-Suite runs three test runners: Vitest for `@suite/graph`, the collab server, the auth service and the
-canvas; Playwright for end-to-end journeys; `node --test` for `@suite/billing`, which sits outside the
-pnpm workspace. Commands run from the repository root unless stated.
+Suite runs three test runners: Vitest for the workspace projects, Playwright for end-to-end journeys,
+and `node --test` for `@suite/billing`, which sits outside the pnpm workspace. Commands run from the
+repository root unless stated.
 
-Spend the least time that still proves the change: run the smallest tier that covers what you
-touched, and escalate only when the change deserves it.
+## The gate
 
-## Pick a tier
-
-| Tier | Command | Run it when | Covers |
-| --- | --- | --- | --- |
-| After each edit batch | `pnpm check` | Always. This is the edit loop. | `biome check`, `tsc` across the workspace, and the Vitest tests that reach the files you changed (`vitest run --changed`). |
-| Before every commit | `pnpm verify` | Always, on the commit you intend to keep. No e2e. | lint, typecheck, unit and property tests (graph, server, auth, canvas), billing tests, story tests, and a full build. |
-| A story or visual surface changed | `pnpm test:stories` | A `.stories.tsx` changed, or you touched a component a story renders. | The Storybook suite under jsdom plus axe in both themes. |
-| A medium change | `pnpm e2e:smoke` | The change is user-visible but not in the categories below. | The specs tagged `@smoke`: boot, boards and sections, cards, links, selection, library, views, sharing, sign-in, collab. |
-| One subsystem | `pnpm e2e:canvas`, `pnpm e2e:collab`, or `pnpm e2e:views` | You changed canvas input, collaboration, or views and want the whole area, not every spec. | The matching folder set. Each command starts its own servers. |
-| A big commit, a merge, or a tag | `pnpm e2e` | See the rule below. | Every spec, headless and parallel. |
-| You edited specs | `pnpm e2e:changed` | You changed several e2e specs and want all of them. | Playwright's `--only-changed origin/main`, which selects the specs touched since that ref. |
-| While iterating | `pnpm e2e <spec>` / `pnpm exec vitest run <file>` | You want one failing test's output. | One file, or one test with `-t`/`-g`. |
-
-A big commit touches the graph schema or the CRDT layer, sharing or auth, canvas gestures or links,
-persistence and stored formats, release or deploy configuration, or more than three user-visible
-changes. Those are the places where a green unit suite has missed the thing that broke, so they get
-the full run. Anything else is a smoke run.
-
-`pnpm check` between edits and `pnpm verify` before the commit is the whole contract; the two e2e
-tiers are about how much confidence a change needs.
-
-Two cheap checks run beside the tests and belong in every tier above the first:
+Every change runs this, locally:
 
 ```sh
-pnpm docs:check                              # links, fences, prose, generated indexes, limits
-pnpm docs:symbols                            # backticked paths, root scripts, ADR references
-pnpm shape                                   # file length, observe call sites, raw Loro writes
+pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols && pnpm shape
 ```
 
-`pnpm check` and `pnpm verify` run all three. `pnpm docs:check` alone is the fast pass while editing
-prose.
+None of those commands needs a runner or an account. `pnpm check` runs Biome, `tsc`,
+`vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, which is why it belongs after each edit
+batch; it leaves out `pnpm docs:check` and the full test run. `pnpm verify` adds the billing tests, the
+story suite and the build.
+
+Playwright stays outside the gate. No contributor or agent starts it by default, and no change waits
+on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
+`pnpm e2e` is a milestone action; when a run is asked for, an area script is the cheaper evidence.
+
+`ci.yml` in `.github/workflows` has valid YAML, and every run on this account ends in
+`startup_failure` with zero jobs, so no workflow is a check on `main`. A self-hosted runner or an
+entitlement change would make the workflow usable again.
+
+## What each command runs
+
+| Command | Covers | Run it |
+| --- | --- | --- |
+| `pnpm check` | Biome, `tsc` across the workspace, `vitest run --changed`, docs symbols, shape | After each edit batch |
+| `pnpm lint` | Biome over the whole tree | The gate, and after a formatting sweep |
+| `pnpm typecheck` | `tsc` across every workspace package | The gate, and after a type-only change |
+| `pnpm test` | Every Vitest project | The gate, and before you report a result |
+| `pnpm docs:check` | Relative links and anchors, code fences, banned prose, generated indexes, limits | A prose change, or a change to a limit |
+| `pnpm docs:symbols` | Backticked paths, root scripts and ADR references that resolve | A page that names a command or a file |
+| `pnpm shape` | File length, observe call sites, raw Loro writes | A change under `apps/` or `packages/` |
+| `pnpm verify` | The gate plus the billing tests, the story suite and the build | Before a commit you want fully checked, and on a tag |
+| `pnpm test:stories` | The Storybook suite under jsdom plus axe, in both themes | A `.stories.tsx` changed, or you touched a component a story renders |
+
+## E2E on request
+
+An e2e run starts its own canvas dev server on `:5173` and a relay on `:1235`, with rate limits raised
+and a database per run. Every run passes through `e2e/scripts/preflight.mjs` first: if a port is already
+in use, the run stops before a browser opens and names the process holding it.
+
+| Command | Covers |
+| --- | --- |
+| `pnpm e2e:smoke` | The specs tagged `@smoke`: boot, boards and sections, cards, links, selection, library, views, sharing, sign-in, collab |
+| `pnpm e2e:canvas` | Boot, boards, cards, links, selection, input, library, appearance |
+| `pnpm e2e:collab` | Collab, sharing, account |
+| `pnpm e2e:views` | Views |
+| `pnpm e2e:changed` | Playwright's `--only-changed origin/main`: the specs touched since that ref |
+| `pnpm e2e` | Every spec, the milestone run |
+| `pnpm e2e:doctor` | Reports the processes holding the e2e ports, and stops nothing |
+| `pnpm e2e:stop` | Stops only those listeners |
+| `pnpm e2e:logs` | The tail of the captured Vite and relay logs under `e2e/.artifacts/` |
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CI` | unset | Selects the `github` reporter and retries a failed test once. Servers are always fresh outside UI mode. |
+| `SUITE_WORKERS` | `3` | Playwright browser workers. Lower it to isolate a timing failure; raise it only on a machine with headroom. |
+| `SUITE_TRACE` | unset | `on` records a trace for every test; anything else keeps `retain-on-failure`. |
+
+Three workers keep the two-browser specs from starving the other browsers on one relay. Artifacts land
+under `e2e/test-results/<test-slug>/`: `trace.zip` on failure, `test-failed-1.png` at the moment of
+failure, and `video.webm` only when a retry happens. The reporter is `list` or `github`, so there is no
+HTML report unless you pass `--reporter=html`.
 
 ## Projects
 
 | Project | Runner | Scope | Command |
 | --- | --- | --- | --- |
 | `graph` | Vitest, node | `packages/graph/src/**/*.test.ts` | `pnpm exec vitest --project graph` |
+| `licence` | Vitest, node | `packages/licence/src/**/*.test.ts` | `pnpm exec vitest --project licence` |
 | `server` | Vitest, node | `apps/collab-server/src/**/*.test.ts` (`http/`, `store/`, `projection/`, `config/`, `sync/`, `ops/`) | `pnpm exec vitest --project server` |
+| `control-plane` | Vitest, node | `apps/control-plane/src/**/*.test.ts` | `pnpm exec vitest --project control-plane` |
 | `auth` | Vitest, node | `services/auth/src/**/*.test.ts` (`http/`, `identity/`, `invitations/`, `licensing/`, `organizations/`, `store/`) | `pnpm exec vitest --project auth` |
 | `canvas` | Vitest, jsdom | `apps/canvas/src/**/*.test.{ts,tsx}` | `pnpm exec vitest --project canvas` |
 | `e2e` | Playwright, chromium | `e2e/tests/**/*.spec.ts`, grouped by area (`boot/`, `boards/`, `cards/`, `links/`, `collab/`, `sharing/`, …) | `pnpm e2e` |
 | billing | `node --test` | `services/billing/src/**/*.test.ts` | `pnpm --filter @suite/billing test` |
 
-`pnpm test` is `vitest run` and covers all four Vitest projects. The e2e config starts its own canvas
-dev server on `:5173` and a relay on `:1235`, with rate limits raised and a database per run. Every e2e
-command runs `scripts/preflight.mjs` first. If a port is already in use, the run stops before a browser
-opens and names the process holding it. `pnpm e2e:stop` stops only the listeners on those ports.
-
-UI mode is the exception: it reuses a running server so the window can stay open between runs.
+`pnpm test` is `vitest run` and covers every Vitest project in `vitest.config.ts`; `pnpm --filter
+@suite/billing test` runs the billing suite outside it. UI mode is the one e2e command that reuses a
+running server, so the window can stay open between runs.
 
 ## One test at a time
 
@@ -90,16 +118,6 @@ default; `SUITE_TRACE=on pnpm e2e` records one for every test.
 when a run stops producing test results or a browser loses its server. The relay log names the request
 that failed; the Vite log names the file that triggered a reload.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `CI` | unset | Selects the `github` reporter and retries a failed test once. Servers are always fresh outside UI mode. |
-| `SUITE_WORKERS` | `3` | Playwright browser workers. Lower it to isolate a timing failure; raise it only on a machine with headroom. |
-| `SUITE_TRACE` | unset | `on` records a trace for every test; anything else keeps `retain-on-failure`. |
-
-Artifacts land under `e2e/test-results/<test-slug>/`: `trace.zip` on failure, `test-failed-1.png` at
-the moment of failure, and `video.webm` only when a retry happens. The reporter is `list` or `github`,
-so there is no HTML report unless you pass `--reporter=html`.
-
 ## Reading a failure
 
 An e2e spec that passes alone and fails in the suite usually depends on order or timing, not on a
@@ -112,17 +130,16 @@ A jsdom test that fails on a measurement is the wrong tool: layout, scrolling an
 A graph test that fails only in the full run usually shares a seed or reuses a container across cases.
 A 15 s timeout means real work.
 
-A flaky test is a bug in the test. `--retries` exists for videos and traces on CI-shaped runs; do not
+A flaky test is a bug in the test. `--retries` exists for videos and traces when `CI` is set; do not
 use it to turn a red test green locally.
 
 ## Coverage
 
 `pnpm coverage` runs the whole Vitest suite with `@vitest/coverage-v8` and writes `coverage/`
-(`coverage/lcov-report/index.html` for the browsable view). All four projects are measured; only
+(`coverage/lcov-report/index.html` for the browsable view). Every project is measured; only
 `@suite/graph` is gated, through one glob key in `coverage.thresholds` at the root of
-`vitest.config.ts`. Server, auth and canvas are printed, not gated: their uncovered lines are socket,
-SQLite and entry-point wiring that e2e already drives, and a threshold would invite assertion-free
-tests.
+`vitest.config.ts`. The others are printed, not gated: their uncovered lines are socket, SQLite and
+entry-point wiring that e2e already drives, and a threshold would invite assertion-free tests.
 
 ## Mutation testing
 
@@ -142,15 +159,14 @@ noise. Missing behaviour: add a test through the public API. Equivalent mutant: 
 
 ## Property-based tests
 
-Six fast-check suites exist, and they are where "it must hold for every input" belongs:
+Five fast-check suites exist, and they are where "it must hold for every input" belongs:
 
 | Suite | Property |
 | --- | --- |
 | `packages/graph/src/sections.property.test.ts` | derived section membership under arbitrary placement moves |
 | `packages/graph/src/merge.property.test.ts` | concurrent edits converge regardless of order |
 | `packages/graph/src/search.property.test.ts` | query semantics hold across generated workspaces |
-| `apps/canvas/src/session/recoveryWords.property.test.ts` | recovery-word encoding round-trips |
-| `apps/collab-server/src/store/licence.property.test.ts` | licence parsing rejects every mutation |
+| `packages/licence/src/property.test.ts` | licence parsing rejects every mutation |
 | `apps/collab-server/src/config/limits.property.test.ts` | limit resolution order holds for any layer mix |
 
 They run inside `pnpm test`. Add a case to the matching suite rather than a table of examples when the
@@ -170,15 +186,3 @@ pnpm --filter @suite/e2e e2e:visual:update     # rewrite them
 `--update-snapshots` is the only supported way to change a baseline, and never the first thing to try.
 A failure means the pixels moved: read `-diff.png` and `-actual.png` in `test-results/` and decide
 whether the movement is the change you intended.
-
-## The gate is local
-
-GitHub Actions is enabled and the workflows pass `actionlint`, but every run, including a one-line
-smoke job on a throwaway branch, ends in `startup_failure` with zero jobs and zero check runs. That is
-account or repository state, not workflow content, and a token cannot fix it. Branch protection is
-unavailable for the same reason.
-
-So the evidence for a change is a green local run: `pnpm verify` on the commit, and `pnpm e2e` when the
-change is a big one or, as [release.md](release.md) requires, on the exact commit being tagged.
-`ci.yml` stays correct and ready (`quality` and `e2e` are the intended required checks), and nothing
-here should claim CI gated a commit while that is true.

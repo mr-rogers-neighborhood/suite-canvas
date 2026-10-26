@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { licenceRequired } from "@suite/licence";
 import { formatBytes } from "../config/limits.js";
 import { createLogger } from "../logging.js";
 import {
@@ -13,11 +14,10 @@ import {
   newAttachmentId,
   normalizeMime,
 } from "../store/attachments.js";
-import { licenceRequired } from "../store/licence.js";
-import type { WorkspaceRegistry } from "../store/workspaces.js";
+import { defaultLicenceClaimStore } from "../store/licenceClaims.js";
+import type { WorkspaceAccess } from "./access.js";
 import { HttpError, toProblem } from "./errors.js";
 import { applyCors, CORS_HEADERS, sendEmpty, sendJson, sendProblem } from "./respond.js";
-import { defaultLicenceClaimStore } from "./workspaceHttp.js";
 
 const logger = createLogger().child({ component: "attachments" });
 
@@ -55,8 +55,6 @@ export const ATTACHMENT_SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "cross-origin-resource-policy": "cross-origin",
 };
 
-const BEARER_PREFIX = /^bearer\s+/iu;
-
 const EXTENSIONS: Readonly<Record<string, string>> = {
   "image/png": ".png",
   "image/jpeg": ".jpg",
@@ -85,15 +83,6 @@ function licenceAttachmentBytes(workspaceId: string): number | null {
   if (!licenceRequired()) return null;
   const quota = defaultLicenceClaimStore().get(workspaceId)?.quota.attachmentBytes;
   return typeof quota === "number" && Number.isFinite(quota) && quota > 0 ? quota : null;
-}
-
-/** The owner key travels in the header, never in the URL and never in a share token. */
-function ownerKey(request: IncomingMessage): string {
-  const header = request.headers.authorization;
-  if (typeof header !== "string") throw HttpError.unauthorized("An owner key is required.");
-  const key = header.replace(BEARER_PREFIX, "").trim();
-  if (key.length === 0) throw HttpError.unauthorized("An owner key is required.");
-  return key;
 }
 
 function decodeSegment(segment: string): string {
@@ -126,21 +115,18 @@ interface UploadContext {
   request: IncomingMessage;
   response: ServerResponse;
   store: AttachmentStore;
-  workspaces: Pick<WorkspaceRegistry, "verify">;
+  access: WorkspaceAccess;
   workspaceId: string;
   options: AttachmentRequestOptions;
 }
 
 async function upload(context: UploadContext): Promise<void> {
-  const { request, response, store, workspaces, workspaceId, options } = context;
+  const { request, response, store, access, workspaceId, options } = context;
 
-  // Same rule as `/claim`: the owner key the registry already holds. A share
-  // token authenticates a room, never an upload, so it is not accepted here and
-  // there is no other credential this route reads.
-  if (!workspaces.verify(workspaceId, ownerKey(request))) {
-    sendJson(response, 403, { error: "The owner key does not match this workspace." });
-    return;
-  }
+  // Same credential a sync join carries: the session JWT, proven to belong to
+  // the organization the relay recorded for this workspace. A share token
+  // authenticates a room, never an upload, so it is not accepted here.
+  await access.forWorkspace(request, workspaceId);
 
   const mime = normalizeMime(request.headers["content-type"]);
   const problem = attachmentMimeProblem(mime);
@@ -218,21 +204,18 @@ async function download(
   response.end(Buffer.from(record.bytes));
 }
 
-function remove(
+async function remove(
   request: IncomingMessage,
   response: ServerResponse,
   store: AttachmentStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   id: string,
-): void {
+): Promise<void> {
   if (!ATTACHMENT_ID_PATTERN.test(id)) throw HttpError.notFound("Attachment not found.");
   const record = store.get(id);
   if (record === null) throw HttpError.notFound("Attachment not found.");
-  // Only the workspace that owns the bytes may delete them.
-  if (!workspaces.verify(record.workspaceId, ownerKey(request))) {
-    sendJson(response, 403, { error: "The owner key does not match this workspace." });
-    return;
-  }
+  // Only the organization that owns the bytes may delete them.
+  await access.forWorkspace(request, record.workspaceId);
   store.delete(id);
   sendJson(response, 200, { id, deleted: true });
 }
@@ -241,14 +224,15 @@ function remove(
  * Serves the attachment API and returns false for every other path, so the
  * caller can keep trying its own routes.
  *
- * Uploads and deletes need the workspace owner key. A read needs only the id:
- * the id is 128 random bits and is the capability a share viewer holds when the
- * projection hands it one, so requiring an owner key would break every share.
+ * Uploads and deletes need a session that is entitled to the workspace. A read
+ * needs only the id: the id is 128 random bits and is the capability a share
+ * viewer holds when the projection hands it one, so requiring a session would
+ * break every share.
  */
 export async function handleAttachmentRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   options: AttachmentRequestOptions = {},
 ): Promise<boolean> {
   applyCors(request, response);
@@ -273,7 +257,7 @@ export async function handleAttachmentRequest(
     const id = decodeSegment(parts[0] ?? "");
 
     if (method === "POST") {
-      await upload({ request, response, store, workspaces, workspaceId: id, options });
+      await upload({ request, response, store, access, workspaceId: id, options });
       return true;
     }
     if (method === "GET") {
@@ -281,7 +265,7 @@ export async function handleAttachmentRequest(
       return true;
     }
     if (method === "DELETE") {
-      remove(request, response, store, workspaces, id);
+      await remove(request, response, store, access, id);
       return true;
     }
     throw HttpError.methodNotAllowed();

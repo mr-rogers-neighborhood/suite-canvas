@@ -39,7 +39,12 @@ describe("server wiring", () => {
     const call = callSite("handleWorkspaceRequest");
     // Without `onDeleted` the live room saves the document back after a delete.
     expect(call, "workspace delete must reach the host").toContain("onDeleted:");
-    expect(call, "owner rotation must drop old sessions").toContain("onRotated:");
+    // Without `access` the route has no credential to check, and a delete would
+    // have to trust something else.
+    expect(call, "workspace delete needs the session credential").toContain("access,");
+    // The recorded organization is dropped with the data, or a re-created
+    // workspace would inherit an owner it never claimed.
+    expect(call, "workspace delete must forget its organization").toContain("forgetWorkspace:");
   });
 
   it("passes the deps the admin handler defines", () => {

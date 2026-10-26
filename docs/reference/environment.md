@@ -98,11 +98,28 @@ These are inlined by Vite at build time, so they are fixed in the bundle and not
 
 ## Accounts, billing and the compose front end
 
-The account service reads `SUITE_AUTH_ENABLED` (default `0`), `SUITE_AUTH_SECRET` (at least 32 characters),
-`SUITE_AUTH_URL`, `SUITE_AUTH_DATABASE_URL`, `SUITE_GOOGLE_CLIENT_ID` with `SUITE_GOOGLE_CLIENT_SECRET`,
-`SUITE_AUTH_EMAIL_FROM`, `SUITE_AUTH_RP_ID`, `SUITE_AUTH_RP_NAME`, `SUITE_AUTH_MAX_ORGS_PER_USER`,
-`SUITE_TURNSTILE_SECRET` and `SUITE_ADMISSION_REQUIRED`. No running relay mounts that service, so these are
-inert today; the meanings are in [security-model.md](security-model.md).
+The account service is mounted by `apps/control-plane/src/modules/auth.ts` at `/api/auth/*`, so these
+variables affect that process and not the relay. `SUITE_AUTH_ENABLED` (default `0`) turns it on; off,
+every account path answers `503 auth-not-configured`.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SUITE_AUTH_ENABLED` | `0` | `1` or `true` composes the service and mounts its routes |
+| `SUITE_AUTH_SECRET` | none | signing secret for cookies and the JWT key pair, at least 32 characters |
+| `SUITE_AUTH_URL` | none | public origin the session cookie is scoped to, and the JWT's `iss` and `aud` |
+| `SUITE_AUTH_DATABASE_URL` | none | Postgres for accounts, organizations and licences; required when the service is on |
+| `SUITE_AUTH_MIGRATE` | on | `0`, `false`, `no` or `off` skips the boot migration for an operator who applies `services/auth/sql` out of band |
+| `SUITE_AUTH_RP_ID` | `localhost` | WebAuthn relying-party id; the registrable domain passkeys are bound to |
+| `SUITE_AUTH_RP_NAME` | `Suite` | relying-party name shown by the authenticator, and the TOTP issuer |
+| `SUITE_AUTH_MAX_ORGS_PER_USER` | `1` | organizations one account may own |
+| `SUITE_GOOGLE_CLIENT_ID` | none | with the secret, registers the Google provider |
+| `SUITE_GOOGLE_CLIENT_SECRET` | none | one half of the pair without the other refuses to boot |
+| `SUITE_TURNSTILE_SECRET` | none | set it to require invisible Turnstile in front of sign-up; unset means no challenge |
+| `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create` |
+
+Sign-up is open, and an account cannot sign in until its address is verified. There is no mail-provider
+variable: the service takes a `MailTransport`, and the control plane passes the console transport, which
+writes the link to the process log. The meanings are in [security-model.md](security-model.md).
 
 Billing owns `SUITE_BILLING_ENABLED`, `SUITE_BILLING_STORE`, `SUITE_BILLING_DATABASE_URL`,
 `SUITE_APP_ORIGIN`, `SUITE_LICENCE_PRIVATE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,

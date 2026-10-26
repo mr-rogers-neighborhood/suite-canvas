@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { WorkspaceDocument } from "@suite/graph";
 import { LoroDoc } from "loro-crdt";
-import { deleteWorkspace, resetOwner } from "../../ops/admin.js";
+import { deleteWorkspace } from "../../ops/admin.js";
 import { loadLoroDocument } from "../../projection/index.js";
 import type { DocumentInventory } from "../../store/persistence.js";
 import { HttpError } from "../errors.js";
@@ -60,9 +60,10 @@ export function loadWorkspace(documents: AdminRequestDeps["documents"], id: stri
   return { bytes: state.byteLength, workspace: new WorkspaceDocument(doc), doc };
 }
 
+/** True when the relay recorded an organization for this workspace. */
 export function claimedOf(deps: AdminRequestDeps, id: string): boolean {
   try {
-    return deps.workspaces.has(id);
+    return deps.orgs.has(id);
   } catch {
     return false;
   }
@@ -139,52 +140,6 @@ export function workspaceDetail(
     shareList: deps.shares.list(workspaceId).map(publicShare),
     versions: versionsOf(loaded?.doc ?? null),
     schemaVersion: schemaVersionOf(loaded?.doc ?? null),
-  });
-}
-
-export async function resetWorkspaceOwner(
-  request: IncomingMessage,
-  response: ServerResponse,
-  deps: AdminRequestDeps,
-  workspaceId: string,
-  url: URL,
-): Promise<void> {
-  const body = await readBody(request);
-  const raw = body?.revokeShares;
-  if (raw !== undefined && typeof raw !== "boolean") {
-    throw HttpError.badRequest("revokeShares must be true or false.");
-  }
-  const revokeShares = raw === true;
-
-  if (!workspaceExists(deps, workspaceId)) throw HttpError.notFound("Workspace not found.");
-  // Captured before the CLI code rewrites the rows, so the hooks still know
-  // which live projection rooms belong to the shares that just went away.
-  const activeShares = revokeShares ? deps.shares.list(workspaceId) : [];
-
-  const messages: string[] = [];
-  const result = resetOwner(mutationPaths(deps), workspaceId, {
-    revokeShares,
-    log: (line) => messages.push(line),
-  });
-
-  if (revokeShares) {
-    for (const share of activeShares) notifyRemoved(deps, share);
-    notifyChanged(deps, workspaceId);
-  }
-
-  audit(deps, {
-    path: url.pathname,
-    target: workspaceId,
-    action: "reset-owner",
-    outcome: "owner-key-removed",
-    details: { revokeShares, ...result },
-  });
-  sendJson(response, 200, {
-    ok: true,
-    workspaceId,
-    revokeShares,
-    ...result,
-    messages,
   });
 }
 

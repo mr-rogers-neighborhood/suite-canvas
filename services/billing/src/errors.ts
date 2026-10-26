@@ -1,30 +1,18 @@
 /**
  * The one tagged error every boundary in this service answers with.
  *
- * It lives at the package root rather than inside `stripe/` because both halves raise
- * it: issuing a licence fails with `unknown-price` or `email-failed`, and opening the
- * store fails with `invalid-config`. One type, one place that maps it to a status —
- * `failureOf` in `handler/handler.ts` — so the webhook's retry contract cannot drift
- * between the two.
+ * It lives at the package root because both halves raise it: building the auth plugin
+ * fails on an unreadable Stripe configuration, and reading an entitlement fails on a
+ * request the caller can fix. One type, so an HTTP module maps it to one status.
  */
 export type BillingFailure =
   | "invalid-config"
-  | "unknown-price"
-  | "no-email"
-  | "malformed-event"
-  | "manual-request"
-  | "signing-failed"
-  | "email-failed"
-  /** A Stripe API call from the checkout front door failed; see `stripe/checkout.ts`. */
-  | "stripe-error"
-  /**
-   * A fault nobody modelled: a driver that threw, a store that vanished. It is a
-   * member here because the webhook already reports it as `unexpected` in the body,
-   * and a code the tests can see is better than a string built at the edge.
-   */
+  | "invalid-request"
+  | "not-configured"
+  /** A fault nobody modelled: a driver that threw, a pool that vanished. */
   | "unexpected";
 
-/** A failure the handler turns into a 500, with a token-free `code` for logs. */
+/** A failure a caller turns into a status code, with a token-free `code` for logs. */
 export class BillingError extends Error {
   readonly code: BillingFailure;
 

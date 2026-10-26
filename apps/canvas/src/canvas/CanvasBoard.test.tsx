@@ -5,6 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
+import { useCameraPrefs } from "./cameraPrefs";
+import { NUDGE_LARGE_STEP, NUDGE_STEP } from "./nudge";
 
 // React Flow measures its container; jsdom has no layout engine.
 class ResizeObserverStub {
@@ -471,5 +473,180 @@ describe("CanvasBoard selection during a press", () => {
     expect(container.querySelector(`.react-flow__node[data-id="${first.id}"]`)).not.toHaveClass(
       "selected",
     );
+  });
+});
+
+describe("CanvasBoard keyboard move", () => {
+  /**
+   * The board reads the arrows itself. React Flow would move a focused node by
+   * one flow unit per press, and its position change carried no drag stop to
+   * commit from — the move used to render and then vanish on reload.
+   */
+  it("persists an arrow-key move exactly once, with no drag stop", async () => {
+    const { container } = mount(false);
+    const node = await waitFor(() => {
+      const found = container.querySelector(`.react-flow__node[data-id="${cardId}"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const stored = workspace.getPlacement(boardId, cardId);
+    expect(stored).not.toBeUndefined();
+    const move = vi.spyOn(workspace, "movePlacements");
+
+    // Selecting the card is what gives the arrow keys a target: a card nobody
+    // focused has nothing to move.
+    fireEvent.click(node);
+    fireEvent.keyDown(node, { key: "ArrowRight" });
+
+    // One document write for one press — not one per frame, and not a second
+    // one when the snapshot echoes the write back.
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(move).toHaveBeenCalledWith(boardId, [
+      { cardId, x: (stored?.x ?? 0) + NUDGE_STEP, y: stored?.y ?? 0 },
+    ]);
+    // The position a reload reads is the moved one.
+    expect(workspace.getPlacement(boardId, cardId)).toMatchObject({
+      x: (stored?.x ?? 0) + NUDGE_STEP,
+      y: stored?.y,
+    });
+
+    move.mockRestore();
+  });
+
+  it("steps further with Shift, one write per press", async () => {
+    const { container } = mount(false);
+    const node = await waitFor(() => {
+      const found = container.querySelector(`.react-flow__node[data-id="${cardId}"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const stored = workspace.getPlacement(boardId, cardId);
+    const move = vi.spyOn(workspace, "movePlacements");
+
+    fireEvent.click(node);
+    fireEvent.keyDown(node, { key: "ArrowDown", shiftKey: true });
+
+    expect(move).toHaveBeenCalledWith(boardId, [
+      { cardId, x: stored?.x ?? 0, y: (stored?.y ?? 0) + NUDGE_LARGE_STEP },
+    ]);
+    move.mockRestore();
+  });
+
+  it("shows the nudge hint with a selection, and not to a viewer", async () => {
+    const editor = mount(false);
+    await waitFor(() => expect(editor.container.querySelector(".react-flow__node")).not.toBeNull());
+    expect(editor.getByTestId("nudge-hint")).toBeInTheDocument();
+    editor.unmount();
+
+    mount(true);
+    await waitFor(() => expect(screen.queryByTestId("nudge-hint")).toBeNull());
+  });
+
+  it("does not nudge a viewer's card", async () => {
+    const { container } = mount(true);
+    const node = await waitFor(() => {
+      const found = container.querySelector(`.react-flow__node[data-id="${cardId}"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const stored = workspace.getPlacement(boardId, cardId);
+    const move = vi.spyOn(workspace, "movePlacements");
+
+    fireEvent.keyDown(node, { key: "ArrowRight" });
+
+    expect(move).not.toHaveBeenCalled();
+    expect(workspace.getPlacement(boardId, cardId)).toMatchObject({ x: stored?.x, y: stored?.y });
+    move.mockRestore();
+  });
+
+  it("does not write while a card is only being selected", async () => {
+    const { container } = mount(false);
+    const node = await waitFor(() => {
+      const found = container.querySelector(`.react-flow__node[data-id="${cardId}"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const move = vi.spyOn(workspace, "movePlacements");
+
+    fireEvent.click(node);
+
+    expect(move).not.toHaveBeenCalled();
+
+    move.mockRestore();
+  });
+});
+
+describe("CanvasBoard pane double-click", () => {
+  async function pane(container: HTMLElement): Promise<HTMLElement> {
+    return waitFor(() => {
+      const found = container.querySelector(".react-flow__pane");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+  }
+
+  it("creates a card where the reader double-clicked", async () => {
+    const { container } = mount(false);
+    const target = await pane(container);
+    const before = workspace.listBoardCards(boardId).length;
+    const create = vi.spyOn(workspace, "createCard");
+
+    fireEvent.doubleClick(target, { clientX: 240, clientY: 180 });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ boardId });
+    expect(workspace.listBoardCards(boardId)).toHaveLength(before + 1);
+    create.mockRestore();
+  });
+
+  it("does nothing for a session that cannot create content", async () => {
+    const { container } = mount(true);
+    const target = await pane(container);
+    const before = workspace.listBoardCards(boardId).length;
+    const create = vi.spyOn(workspace, "createCard");
+
+    fireEvent.doubleClick(target, { clientX: 240, clientY: 180 });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(workspace.listBoardCards(boardId)).toHaveLength(before);
+    create.mockRestore();
+  });
+
+  it("leaves a double-click on a card to the card", async () => {
+    const { container } = mount(false);
+    const node = await waitFor(() => {
+      const found = container.querySelector(`.react-flow__node[data-id="${cardId}"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const create = vi.spyOn(workspace, "createCard");
+
+    fireEvent.doubleClick(node);
+
+    expect(create).not.toHaveBeenCalled();
+    create.mockRestore();
+  });
+});
+
+describe("CanvasBoard camera controls", () => {
+  it("shows a zoom readout, zoom to selection, the outline and the grid", async () => {
+    const { container, getByTestId } = mount(false);
+    await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
+
+    expect(getByTestId("zoom-readout")).toHaveTextContent("%");
+    expect(getByTestId("zoom-to-selection")).toBeEnabled();
+    expect(getByTestId("outline-control")).toBeInTheDocument();
+    expect(getByTestId("grid-control")).toBeInTheDocument();
+    expect(container.querySelector(".react-flow__background")).not.toBeNull();
+  });
+
+  it("removes the grid when the reader switches it off", async () => {
+    const { container, getByTestId } = mount(false);
+    await waitFor(() => expect(container.querySelector(".react-flow__background")).not.toBeNull());
+
+    fireEvent.click(getByTestId("grid-control"));
+
+    await waitFor(() => expect(container.querySelector(".react-flow__background")).toBeNull());
+    useCameraPrefs.setState({ gridVisible: true });
   });
 });

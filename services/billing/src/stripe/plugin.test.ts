@@ -1,0 +1,245 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { BillingError } from "../errors.ts";
+import { fixtureLimits, tierTableFixture } from "../testing/fixtures.ts";
+import {
+  type AuthorizeOrganizationInput,
+  billingPluginOptions,
+  createBillingPlugin,
+  planList,
+} from "./plugin.ts";
+
+const TIERS = tierTableFixture();
+const SECRET = "sk_test_51Nfixture";
+const WEBHOOK_SECRET = "whsec_fixture";
+
+function granting(): {
+  authorize: (input: AuthorizeOrganizationInput) => Promise<boolean>;
+  seen: AuthorizeOrganizationInput[];
+} {
+  const seen: AuthorizeOrganizationInput[] = [];
+  return {
+    seen,
+    authorize: async (input) => {
+      seen.push(input);
+      return input.organizationId === "org_1";
+    },
+  };
+}
+
+function optionsWith(authorize: (input: AuthorizeOrganizationInput) => Promise<boolean>) {
+  return billingPluginOptions({
+    secretKey: SECRET,
+    webhookSecret: WEBHOOK_SECRET,
+    tiers: TIERS,
+    authorizeOrganization: authorize,
+  });
+}
+
+function subscriptionOf(options: ReturnType<typeof optionsWith>) {
+  const subscription = options.subscription;
+  if (subscription === undefined || subscription.enabled !== true) {
+    throw new Error("expected enabled subscription options");
+  }
+  return subscription;
+}
+
+function plansOf(options: ReturnType<typeof optionsWith>) {
+  const plans = subscriptionOf(options).plans;
+  if (typeof plans === "function") throw new Error("expected a static plan list");
+  return plans;
+}
+
+describe("planList", () => {
+  it("should carry each fixture plan with its limits", () => {
+    const plans = planList(TIERS);
+    const solo = fixtureLimits("solo");
+
+    assert.equal(plans.length, 2);
+    assert.deepEqual(plans[0], {
+      name: "solo",
+      priceId: "price_solo",
+      limits: {
+        workspaces: solo.workspaces,
+        documentBytes: solo.documentBytes,
+        attachmentBytes: solo.attachmentBytes,
+      },
+    });
+  });
+
+  it("should sell the first price when two prices name one tier", () => {
+    const monthly = fixtureLimits("solo");
+    const tiers = new Map([
+      ["price_monthly", monthly],
+      ["price_annual", monthly],
+    ]);
+
+    assert.deepEqual(
+      planList(tiers).map((plan) => plan.priceId),
+      ["price_monthly"],
+    );
+  });
+});
+
+describe("billingPluginOptions", () => {
+  it("should configure the organization reference and the webhook secret", () => {
+    const options = optionsWith(granting().authorize);
+
+    assert.equal(options.stripeWebhookSecret, WEBHOOK_SECRET);
+    assert.equal(options.createCustomerOnSignUp, true);
+    assert.equal(options.organization?.enabled, true);
+    assert.deepEqual(
+      plansOf(options).map((plan) => plan.name),
+      ["solo", "studio"],
+    );
+  });
+
+  it("should let a caller turn customer creation off", () => {
+    const options = billingPluginOptions({
+      secretKey: SECRET,
+      webhookSecret: WEBHOOK_SECRET,
+      tiers: TIERS,
+      authorizeOrganization: granting().authorize,
+      createCustomerOnSignUp: false,
+    });
+
+    assert.equal(options.createCustomerOnSignUp, false);
+  });
+
+  it("should refuse an empty Stripe key or webhook secret", () => {
+    const deps = {
+      secretKey: "  ",
+      webhookSecret: WEBHOOK_SECRET,
+      tiers: TIERS,
+      authorizeOrganization: granting().authorize,
+    };
+
+    assert.throws(
+      () => billingPluginOptions(deps),
+      (error: unknown) => error instanceof BillingError && error.code === "not-configured",
+    );
+    assert.throws(
+      () => billingPluginOptions({ ...deps, secretKey: SECRET, webhookSecret: "" }),
+      (error: unknown) => error instanceof BillingError && error.code === "not-configured",
+    );
+  });
+
+  it("should refuse a table that names no plan", () => {
+    assert.throws(
+      () =>
+        billingPluginOptions({
+          secretKey: SECRET,
+          webhookSecret: WEBHOOK_SECRET,
+          tiers: new Map(),
+          authorizeOrganization: granting().authorize,
+        }),
+      (error: unknown) => error instanceof BillingError && error.code === "invalid-config",
+    );
+  });
+});
+
+describe("authorizeReference", () => {
+  it("should ask whether the user administers the referenced organization", async () => {
+    const granted = granting();
+    const subscription = subscriptionOf(optionsWith(granted.authorize));
+    const authorize = subscription.authorizeReference;
+    assert.ok(authorize !== undefined);
+    type Input = Parameters<typeof authorize>[0];
+
+    const allowed = await authorize(
+      {
+        user: { id: "user_1" },
+        referenceId: "org_1",
+        action: "billing-portal",
+      } as unknown as Input,
+      {} as unknown as Parameters<typeof authorize>[1],
+    );
+
+    assert.equal(allowed, true);
+    assert.deepEqual(granted.seen, [
+      { userId: "user_1", organizationId: "org_1", action: "billing-portal" },
+    ]);
+  });
+});
+
+describe("getCheckoutSessionParams", () => {
+  it("should write the organization onto the session", async () => {
+    const subscription = subscriptionOf(optionsWith(granting().authorize));
+    const params = subscription.getCheckoutSessionParams;
+    assert.ok(params !== undefined);
+    type Input = Parameters<typeof params>[0];
+
+    const result = await params(
+      {
+        user: { id: "user_1" },
+        subscription: { referenceId: "org_1", plan: "solo", status: "incomplete" },
+        plan: plansOf(optionsWith(granting().authorize))[0],
+      } as unknown as Input,
+      {} as unknown as Parameters<typeof params>[1],
+      {} as unknown as Parameters<typeof params>[2],
+    );
+
+    assert.equal(result?.params?.client_reference_id, "org_1");
+    assert.deepEqual(result?.params?.metadata, { organizationId: "org_1" });
+  });
+
+  it("should refuse a reference the user does not administer", async () => {
+    const subscription = subscriptionOf(optionsWith(granting().authorize));
+    const params = subscription.getCheckoutSessionParams;
+    assert.ok(params !== undefined);
+    type Input = Parameters<typeof params>[0];
+
+    const refuse = async (): Promise<unknown> =>
+      params(
+        {
+          user: { id: "user_1" },
+          subscription: { referenceId: "user_1", plan: "solo", status: "incomplete" },
+          plan: plansOf(optionsWith(granting().authorize))[0],
+        } as unknown as Input,
+        {} as unknown as Parameters<typeof params>[1],
+        {} as unknown as Parameters<typeof params>[2],
+      );
+
+    await assert.rejects(refuse, (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /belongs to an organization/u);
+      return true;
+    });
+  });
+});
+
+describe("createBillingPlugin", () => {
+  it("should register the plugin and its two owned endpoints", () => {
+    const plugin = createBillingPlugin({
+      secretKey: SECRET,
+      webhookSecret: WEBHOOK_SECRET,
+      tiers: TIERS,
+      authorizeOrganization: granting().authorize,
+    }) as { id: string; endpoints: Record<string, { path: string }> };
+
+    assert.equal(plugin.id, "stripe");
+    assert.deepEqual(Object.keys(plugin.endpoints).sort(), [
+      "cancelSubscription",
+      "createBillingPortal",
+      "listActiveSubscriptions",
+      "restoreSubscription",
+      "stripeWebhook",
+      "subscriptionSuccess",
+      "upgradeSubscription",
+    ]);
+    assert.equal(plugin.endpoints.stripeWebhook?.path, "/stripe/webhook");
+    assert.equal(plugin.endpoints.upgradeSubscription?.path, "/subscription/upgrade");
+  });
+
+  it("should construct without a network call", () => {
+    // A test-mode key is enough: no request leaves this process until a route runs.
+    assert.doesNotThrow(() =>
+      createBillingPlugin({
+        secretKey: SECRET,
+        webhookSecret: WEBHOOK_SECRET,
+        tiers: TIERS,
+        authorizeOrganization: async () => true,
+      }),
+    );
+  });
+});

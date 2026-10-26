@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WorkspaceFileAttachmentInput } from "@suite/graph";
 import { createWorkspaceFile, documentAttachments, WorkspaceDocument } from "@suite/graph";
@@ -10,7 +10,7 @@ import { HttpError } from "../errors.js";
 import { CORS_HEADERS, sendJson } from "../respond.js";
 import type { AdminRequestDeps } from "./deps.js";
 import { audit, notifyChanged, readBody } from "./deps.js";
-import { claimedOf, loadWorkspace } from "./workspaces.js";
+import { loadWorkspace } from "./workspaces.js";
 
 /**
  * Reproduction fixtures and the workspace export: the two routes that write
@@ -104,11 +104,6 @@ export async function createFixtures(
   const numberOfSections = fixtureCount(body, "sections", 0, 0);
   const numberOfShares = fixtureCount(body, "shares", 0, 0);
 
-  // Claim before seeding: a key that cannot be handed back must fail the call
-  // before it leaves half a fixture in the store.
-  const claimed = claimedOf(deps, workspaceId);
-  let ownerKey: string | null = null;
-
   const stored = loadLoroDocument(deps.documents, workspaceId);
   const doc = new LoroDoc();
   if (stored) {
@@ -117,16 +112,6 @@ export async function createFixtures(
     } catch {
       throw HttpError.conflict("The stored workspace state could not be read; choose another id.");
     }
-  }
-
-  if (!claimed) {
-    const claim = deps.workspaces.claimOrVerify;
-    if (!claim) throw HttpError.notImplemented("This server cannot claim workspaces.");
-    const candidate = randomBytes(32).toString("base64url");
-    if (claim(workspaceId, candidate) !== "owner") {
-      throw HttpError.conflict("The workspace is already claimed.");
-    }
-    ownerKey = candidate;
   }
 
   const workspace = new WorkspaceDocument(doc);
@@ -218,7 +203,6 @@ export async function createFixtures(
   sendJson(response, 200, {
     ok: true,
     workspaceId,
-    ownerKey,
     boards: boardIds,
     cards: cardIds,
     sections: sectionIds,

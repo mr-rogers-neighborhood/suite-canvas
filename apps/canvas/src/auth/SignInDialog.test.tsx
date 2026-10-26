@@ -6,8 +6,13 @@ import type { SignInActions } from "./signIn";
 function actions(overrides: Partial<SignInActions> = {}): SignInActions {
   return {
     passkey: async () => ({ ok: true }),
+    password: async () => ({ ok: true, message: "Signed in." }),
     magicLink: async (email) => ({ ok: true, message: `Check ${email.trim()} for the link.` }),
     google: async () => ({ ok: true, message: "Taking you to Google…" }),
+    signUp: async (input) => ({
+      ok: true,
+      message: `Check ${input.email.trim()} to verify the address.`,
+    }),
     ...overrides,
   };
 }
@@ -28,7 +33,7 @@ function order(): string[] {
 }
 
 describe("sign-in dialog", () => {
-  it("leads with the method that worked last, and offers all three", () => {
+  it("leads with the method that worked last, and offers all four", () => {
     render(
       <SignInDialog
         availability="available"
@@ -41,12 +46,13 @@ describe("sign-in dialog", () => {
 
     expect(order()[0]).toBe("Continue with your passkey");
     expect(screen.getByTestId("sign-in-passkey")).toHaveAttribute("data-recent", "true");
+    expect(screen.getByTestId("sign-in-password")).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-magic-link")).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-google")).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-google")).not.toHaveAttribute("data-recent");
   });
 
-  it("offers the same three ways in, without a favourite, on a first visit", () => {
+  it("offers the same four ways in, without a favourite, on a first visit", () => {
     render(
       <SignInDialog
         availability="available"
@@ -56,7 +62,11 @@ describe("sign-in dialog", () => {
         onSignedIn={noop}
       />,
     );
-    expect(order()).toEqual(["Use a passkey", "Email me a sign-in link", "Continue with Google"]);
+    expect(screen.getByTestId("sign-in-passkey")).toBeInTheDocument();
+    expect(screen.getByTestId("sign-in-password")).toBeInTheDocument();
+    expect(screen.getByTestId("sign-in-magic-link")).toBeInTheDocument();
+    expect(screen.getByTestId("sign-in-google")).toBeInTheDocument();
+    expect(order()[0]).toBe("Use a passkey");
   });
 
   it("says accounts are unavailable rather than showing buttons that do nothing", () => {
@@ -183,7 +193,7 @@ describe("sign-in dialog", () => {
     expect(await screen.findByTestId("sign-in-notice")).toHaveTextContent("Taking you to Google");
   });
 
-  it("states that claiming changes nothing about the workspace", () => {
+  it("states that signing in keeps the workspaces this device holds", () => {
     render(
       <SignInDialog
         availability="available"
@@ -194,8 +204,111 @@ describe("sign-in dialog", () => {
       />,
     );
     expect(screen.getByTestId("sign-in-dialog")).toHaveTextContent(
-      "Signing in claims the workspaces this device already holds",
+      "Signing in keeps the workspaces this device already holds",
     );
+  });
+
+  it("signs in with email and password, and hands control back", async () => {
+    const onSignedIn = vi.fn();
+    const onClose = vi.fn();
+    const password = vi.fn(async () => ({ ok: true as const, message: "Signed in." }));
+    render(
+      <SignInDialog
+        availability="available"
+        last={null}
+        actions={actions({ password })}
+        onClose={onClose}
+        onSignedIn={onSignedIn}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("sign-in-password-email"), {
+      target: { value: "reader@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("sign-in-password-value"), {
+      target: { value: "a long enough phrase" },
+    });
+    fireEvent.submit(screen.getByTestId("sign-in-password-submit").closest("form") as Element);
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(password).toHaveBeenCalledWith({
+      email: "reader@example.com",
+      password: "a long enough phrase",
+    });
+  });
+
+  it("refuses a short password before sending it", () => {
+    const password = vi.fn(async () => ({ ok: true as const, message: "Signed in." }));
+    render(
+      <SignInDialog
+        availability="available"
+        last={null}
+        actions={actions({ password })}
+        onClose={noop}
+        onSignedIn={noop}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("sign-in-password-email"), {
+      target: { value: "reader@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("sign-in-password-value"), { target: { value: "short" } });
+    fireEvent.submit(screen.getByTestId("sign-in-password-submit").closest("form") as Element);
+
+    expect(screen.getByTestId("sign-in-problem")).toHaveTextContent("at least 10 characters");
+    expect(password).not.toHaveBeenCalled();
+  });
+
+  it("creates an account from the sign-up form", async () => {
+    const signUp = vi.fn(async () => ({
+      ok: true as const,
+      message: "Check reader@example.com to verify the address.",
+    }));
+    render(
+      <SignInDialog
+        availability="available"
+        last={null}
+        actions={actions({ signUp })}
+        onClose={noop}
+        onSignedIn={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("sign-in-to-sign-up"));
+    expect(screen.getByTestId("sign-in-dialog")).toHaveAttribute("data-mode", "sign-up");
+
+    fireEvent.change(screen.getByTestId("sign-up-name"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByTestId("sign-up-email"), {
+      target: { value: "reader@example.com" },
+    });
+    fireEvent.change(screen.getByTestId("sign-up-password"), {
+      target: { value: "a long enough phrase" },
+    });
+    fireEvent.submit(screen.getByTestId("sign-up-submit").closest("form") as Element);
+
+    expect(await screen.findByTestId("sign-in-notice")).toHaveTextContent("verify the address");
+    expect(signUp).toHaveBeenCalledWith({
+      name: "Ada",
+      email: "reader@example.com",
+      password: "a long enough phrase",
+      captchaToken: null,
+    });
+  });
+
+  it("opens straight on sign-up when the launcher asks for one", () => {
+    render(
+      <SignInDialog
+        availability="available"
+        last={null}
+        actions={actions()}
+        initialMode="sign-up"
+        onClose={noop}
+        onSignedIn={noop}
+      />,
+    );
+    expect(screen.getByTestId("sign-in-dialog")).toHaveAttribute("data-mode", "sign-up");
+    expect(screen.getByTestId("sign-up-submit")).toBeInTheDocument();
   });
 
   it("closes without changing anything", () => {

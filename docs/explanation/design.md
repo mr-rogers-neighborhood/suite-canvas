@@ -22,7 +22,7 @@ A projection may be cached only if it can be thrown away and rebuilt from the do
 
 A projection that changes something is an explicit command with a name and a report of what it touched. Promoting a selection into a view, applying a section as tags, publishing a card: each is idempotent and reports its changes. Nothing runs a loop that rewrites cards because layout moved.
 
-Splitting the workspace into one index document plus a document per card would buy isolated loading and per-card access control, and it would cost cross-document atomicity. Loro has no multi-document transaction, so creation order, trash retention and purge tombstones become a convergent sequence, and undo splits by scope. The split waits for a benchmark that asks for it and stays behind the `WorkspaceDocument` seam until then (ADR-0065).
+Splitting the workspace into one index document plus a document per card would buy isolated loading and per-card access control, and it would cost cross-document atomicity. Loro has no multi-document transaction, so creation order, trash retention and purge tombstones become a convergent sequence, and undo splits by scope. The split waits for a benchmark that asks for it and stays behind the `WorkspaceDocument` seam until then (ADR-0021).
 
 ## What is settled
 
@@ -48,7 +48,7 @@ Splitting the workspace into one index document plus a document per card would b
 | External share semantics | Revocation, transitive visibility and whether a viewer sees the titles of unshared neighbours |
 | Search | An in-memory index over summaries first; body search would load card documents, because a central index conflicts with per-card access and offline use |
 | Card document retention | Trash retains content and purge tombstones first, while an offline client may still resurrect a purged record |
-| Publishing | Routes, slugs and navigation belong to a publication that reads a deterministic bundle; no such surface ships |
+| Publishing | A share draft publishes onto the workspace through a validated plan (`packages/graph/src/publish/`). Serving a workspace as a site, with routes, slugs and navigation, is not built |
 
 ## Judging a proposal
 

@@ -5,15 +5,6 @@ packages:
   - "e2e"
 allowBuilds:
   esbuild: true
-# `services/billing` declares the SES and DynamoDB SDKs as optional
-# dependencies for the Lambda bundle, but the repository install stays
-# AWS-free on purpose: SES loads by name only when SES_FROM_ADDRESS is set,
-# DynamoDB only when SUITE_BILLING_STORE=dynamodb, and their tests assert the
-# missing-SDK path. Install them for a deployment, not here.
-ignoredOptionalDependencies:
-  - "@aws-sdk/client-dynamodb"
-  - "@aws-sdk/client-ses"
-  - "@aws-sdk/lib-dynamodb"
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.11.10"
   - "@turbo/darwin-arm64@2.11.10"

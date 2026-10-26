@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { LoroDoc } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { configureSqlite, createDocumentStore, type DocumentStore } from "./persistence.js";
+import { configureConnection, createDocumentStore, type DocumentStore } from "./persistence.js";
 
 type Store = ReturnType<typeof createDocumentStore>;
 
@@ -58,7 +58,7 @@ describe("document store upkeep", () => {
     } finally {
       second.close();
     }
-    expect(configureSqlite(path).toLowerCase()).toBe("wal");
+    expect(store.journalMode().toLowerCase()).toBe("wal");
   });
 
   it("runs PRAGMA optimize without touching the data", () => {
@@ -79,17 +79,29 @@ describe("document store upkeep", () => {
     expect(store.startMaintenance(60_000)).toBe(timer);
   });
 
-  it("creates a missing database already in WAL mode", () => {
+  it("creates a missing database already in WAL mode, with the timeout and the stamp", () => {
     const missing = join(directory, "fresh.sqlite");
-    expect(configureSqlite(missing).toLowerCase()).toBe("wal");
-
     const fresh = new DatabaseSync(missing);
     try {
-      const row = fresh.prepare("PRAGMA journal_mode").get() as { journal_mode?: string };
-      expect(row.journal_mode?.toLowerCase()).toBe("wal");
+      expect(configureConnection(fresh, 7).toLowerCase()).toBe("wal");
+      const mode = fresh.prepare("PRAGMA journal_mode").get() as { journal_mode?: string };
+      expect(mode.journal_mode?.toLowerCase()).toBe("wal");
+      const timeout = fresh.prepare("PRAGMA busy_timeout").get() as { timeout?: number };
+      expect(Number(timeout.timeout)).toBe(5000);
+      const version = fresh.prepare("PRAGMA user_version").get() as { user_version?: number };
+      expect(Number(version.user_version)).toBe(7);
     } finally {
       fresh.close();
     }
+  });
+
+  it("refuses a file stamped by a newer build", () => {
+    const newer = join(directory, "newer.sqlite");
+    const db = new DatabaseSync(newer);
+    db.exec("PRAGMA user_version = 9");
+    expect(() => configureConnection(db, 1)).toThrow(/newer Suite build/u);
+    // The refused connection is closed, so the file is free for a backup.
+    expect(() => db.prepare("PRAGMA user_version").get()).toThrow();
   });
 });
 

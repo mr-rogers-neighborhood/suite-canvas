@@ -1,0 +1,52 @@
+---
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import DashboardCards from "../components/DashboardCards.astro";
+import DashboardTabs from "../components/DashboardTabs.astro";
+import { dashboardPages } from "../lib/pages";
+
+const pages = await dashboardPages();
+
+/**
+ * The version the release notes ship, read from the package that bumps it. The
+ * path is relative to this package, which is the working directory for every
+ * script that builds the site.
+ */
+function releaseVersion(): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "package.json"), "utf8"));
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed === "object" && parsed !== null && "version" in parsed) {
+    const { version } = parsed as { version?: unknown };
+    if (typeof version === "string") return version;
+  }
+  return undefined;
+}
+
+const version = releaseVersion();
+---
+
+<StarlightPage
+  frontmatter={{
+    title: "Suite documentation",
+    description:
+      "Documentation for Suite, a local-first collaborative canvas with a typed object graph.",
+    hero: {
+      title: "Suite documentation",
+      tagline:
+        "A local-first, collaborative canvas. A workspace owns its cards, boards are views of those cards, and every write is validated in @suite/graph.",
+      actions: [
+        { text: "Run Suite locally", link: "/tutorials/run-locally/", variant: "primary" },
+        { text: "Open the app", link: "https://app.suite.run", variant: "secondary" },
+      ],
+    },
+  }}
+>
+  {version === undefined ? null : <p class="dashboard-version">Version {version}</p>}
+  <DashboardCards pages={pages} />
+  <DashboardTabs pages={pages} />
+</StarlightPage>

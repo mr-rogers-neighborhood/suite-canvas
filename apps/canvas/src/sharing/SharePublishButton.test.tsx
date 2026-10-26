@@ -29,14 +29,14 @@ beforeEach(() => {
     },
     role: "editor",
     readOnly: false,
-    ownerKey: null,
+    credential: "share",
   });
   useUiStore.setState({ canPublish: true });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  configureSession({ ...getSession(), share: null, ownerKey: null });
+  configureSession({ ...getSession(), share: null, credential: "account" });
   useUiStore.setState({ canPublish: true });
 });
 

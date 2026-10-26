@@ -22,6 +22,26 @@ export {
   sameDrawingValue,
 } from "./drawings.js";
 export type {
+  HistoryChangeInput,
+  HistoryCounts,
+  HistoryPoint,
+  HistoryRecordKind,
+  HistoryRestorePreview,
+  HistoryState,
+} from "./history.js";
+export {
+  compareHistoryStates,
+  HISTORY_ORIGIN_LABELS,
+  HISTORY_POINT_LIMIT,
+  HISTORY_RECORD_KINDS,
+  HISTORY_VERB_RULES,
+  historyFrontier,
+  historyLabel,
+  historyPoint,
+  historyRestoreSummary,
+  RESTORE_ORIGIN,
+} from "./history.js";
+export type {
   ApplyLayoutPlanOptions,
   LayoutPlan,
   LayoutPlanPlacement,
@@ -52,6 +72,8 @@ export {
   linkKey,
   sameEndpoint,
 } from "./links.js";
+export type { TextRun } from "./loro/cards/richText.js";
+export { paragraphNode, RICH_TEXT_ORIGIN, textNodes } from "./loro/cards/richText.js";
 export type {
   CardContainers,
   CardFieldView,
@@ -408,6 +430,8 @@ export {
   viewSortKeys,
 } from "./views.js";
 export type {
+  DamagedAttachmentReason,
+  DamagedWorkspaceAttachment,
   ParsedWorkspaceFile,
   WorkspaceFile,
   WorkspaceFileAttachmentBytes,
@@ -419,6 +443,7 @@ export type {
 } from "./workspaceFile.js";
 export {
   createWorkspaceFile,
+  damagedAttachmentWarning,
   parseWorkspaceFile,
   readWorkspaceFile,
   tryParseWorkspaceFile,
@@ -428,3 +453,21 @@ export {
   workspaceFileManifestSchema,
   workspaceFileSchema,
 } from "./workspaceFile.js";
+export type {
+  ApplyTemplateOptions,
+  TemplateApplyResult,
+  TemplateBoard,
+  TemplateCard,
+  TemplateSection,
+  WorkspaceTemplate,
+} from "./workspaceTemplate.js";
+export {
+  applyWorkspaceTemplate,
+  findWorkspaceTemplate,
+  STARTER_TEMPLATES,
+  templateCopyName,
+  templateDetail,
+  templateSummary,
+  uniqueBoardName,
+  workspaceTemplateSchema,
+} from "./workspaceTemplate.js";

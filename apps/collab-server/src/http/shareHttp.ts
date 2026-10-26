@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createLogger } from "../logging.js";
 import type { ShareStore } from "../store/shares.js";
-import type { WorkspaceRegistry } from "../store/workspaces.js";
+import type { WorkspaceAccess } from "./access.js";
 import { HttpError, toProblem } from "./errors.js";
 import { readJsonBody } from "./request.js";
 import { applyCors, methodNotAllowed, sendEmpty, sendJson, sendProblem } from "./respond.js";
@@ -61,16 +61,17 @@ function decodeSegment(segment: string): string {
  * Handles the share management API. Returns false when the request is not an
  * API route so the caller can keep serving its own routes.
  *
- * Creating, listing and revoking require the workspace owner key. Resolving a
- * token stays public: the token is the credential the recipient holds. The
- * session route is the one place a token is accepted from a body rather than
- * the URL, because it exists to get the token out of the URL.
+ * Creating, listing and revoking need a session that is entitled to the
+ * workspace. Resolving a token stays public: the token is the credential the
+ * recipient holds, and a visitor needs no account to use a link. The session
+ * route is the one place a token is accepted from a body rather than the URL,
+ * because it exists to get the token out of the URL.
  */
 export async function handleShareRequest(
   request: IncomingMessage,
   response: ServerResponse,
   store: ShareStore,
-  workspaces: Pick<WorkspaceRegistry, "verify">,
+  access: WorkspaceAccess,
   hooks?: ShareRequestHooks,
 ): Promise<boolean> {
   applyCors(request, response);
@@ -116,11 +117,11 @@ export async function handleShareRequest(
 
     if (segment.length === 0) {
       if (method === "POST") {
-        await createShare(request, store, workspaces, response, await readJsonBody(request), hooks);
+        await createShare(request, store, access, response, await readJsonBody(request), hooks);
       } else if (method === "GET") {
-        listShares(request, store, workspaces, response, url);
+        await listShares(request, store, access, response, url);
       } else if (method === "DELETE") {
-        revokeAllShares(request, store, workspaces, response, url, hooks);
+        await revokeAllShares(request, store, access, response, url, hooks);
       } else {
         methodNotAllowed(response, "GET, POST, DELETE, OPTIONS");
       }
@@ -146,7 +147,7 @@ export async function handleShareRequest(
     if (method === "GET") {
       resolveShare(request, store, response, identifier, hooks);
     } else if (method === "DELETE") {
-      revokeShare(request, store, workspaces, response, identifier, hooks);
+      await revokeShare(request, store, access, response, identifier, hooks);
     } else {
       methodNotAllowed(response, "GET, DELETE, OPTIONS");
     }

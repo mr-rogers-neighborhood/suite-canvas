@@ -16,7 +16,12 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text-summary", "lcov"],
       reportsDirectory: "coverage",
-      include: ["packages/graph/src/**", "apps/collab-server/src/**", "apps/canvas/src/**"],
+      include: [
+        "packages/graph/src/**",
+        "packages/licence/src/**",
+        "apps/collab-server/src/**",
+        "apps/canvas/src/**",
+      ],
       exclude: [
         "**/*.test.*",
         "**/*.spec.*",
@@ -51,10 +56,38 @@ export default defineConfig({
         },
       },
       {
+        // The Obsidian importer reads a vault into a document, so its suite
+        // needs the graph's real CRDT and nothing else.
+        test: {
+          name: "importer",
+          environment: "node",
+          include: ["packages/import-obsidian/src/**/*.test.ts"],
+        },
+      },
+      {
+        // The licence token format is shared by the relay and the billing
+        // service, so its suite is its own project rather than either one's.
+        test: {
+          name: "licence",
+          environment: "node",
+          include: ["packages/licence/src/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "server",
           environment: "node",
           include: ["apps/collab-server/src/**/*.test.ts"],
+        },
+      },
+      {
+        // The control-plane host. Its own project because the tests bind real
+        // sockets and because the contract it publishes is what the auth and
+        // billing modules are written against.
+        test: {
+          name: "control-plane",
+          environment: "node",
+          include: ["apps/control-plane/src/**/*.test.ts"],
         },
       },
       {

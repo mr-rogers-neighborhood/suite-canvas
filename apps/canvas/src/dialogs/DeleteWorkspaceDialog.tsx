@@ -11,7 +11,8 @@ export interface DeleteWorkspaceDialogProps {
   title?: string;
   /** Which halves exist: the relay copy and the local copy, or local only. */
   mode: WorkspaceDeleteProfile;
-  ownerKey?: string | null;
+  /** `Authorization` for the relay half. Absent falls back to this page's session. */
+  authorization?: () => Promise<Record<string, string>>;
   onClose: () => void;
   /** Called after the delete committed and this browser was purged. */
   onDeleted: () => void;
@@ -20,13 +21,13 @@ export interface DeleteWorkspaceDialogProps {
 }
 
 const RELAY_COPY =
-  "This deletes the relay's copy and this browser's copy: the document, its share links and the owner key on this device. Share links stop working.";
+  "This deletes the relay's copy and this browser's copy: the document and its share links. Share links stop working.";
 const RELAY_LIMITS =
-  "Other devices that have already opened this workspace keep their offline copy until they next open it. The relay will have nothing to sync then, and they will be told this workspace no longer exists. Suite has no accounts, so it cannot reach into those devices to erase them.";
+  "Other devices that have already opened this workspace keep their offline copy until they next open it. The relay will have nothing to sync then, and they will be told this workspace no longer exists.";
 const LOCAL_COPY =
-  "This deletes this browser's copy: the cached document, its owner key, the recovery-key flag and the licence key. There is no server copy — this browser is the only place this workspace exists.";
+  "This deletes this browser's copy: the cached document and the licence key. There is no server copy — this browser is the only place this workspace exists.";
 const LOCAL_LIMITS =
-  "Export a backup first if you might want it again. Other browsers that received an owner link or a recovery file keep whatever they already have.";
+  "Export a backup first if you might want it again. Other browsers keep whatever they already have.";
 
 /**
  * The one confirmation for deleting a workspace. It always asks for the name or
@@ -37,7 +38,7 @@ export function DeleteWorkspaceDialog({
   workspaceId,
   title = "workspace",
   mode,
-  ownerKey = null,
+  authorization,
   onClose,
   onDeleted,
   remove = deleteWorkspaceEverywhere,
@@ -66,7 +67,7 @@ export function DeleteWorkspaceDialog({
       await remove({
         workspaceId,
         profile: mode,
-        ownerKey,
+        ...(authorization ? { authorization } : {}),
         // The open editor must stop writing first, or its pagehide flush would
         // recreate the document just deleted. It runs only after a relay delete
         // committed, so a failed request leaves the local copy alone.

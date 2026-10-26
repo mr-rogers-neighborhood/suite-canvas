@@ -152,6 +152,7 @@ describe("LocalDragEase", () => {
 describe("prefersReducedMotion", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete document.documentElement.dataset.motion;
   });
 
   it("reports the media query result", () => {
@@ -164,5 +165,30 @@ describe("prefersReducedMotion", () => {
   it("is false when the environment has no media queries", () => {
     vi.stubGlobal("matchMedia", undefined);
     expect(prefersReducedMotion()).toBe(false);
+  });
+
+  /**
+   * Appearance writes `data-motion` on the document root. CSS honours it, and a
+   * script that only asked the OS ignored the reader's own setting: an in-app
+   * "reduced" choice has to reach JavaScript too.
+   */
+  it("honours the app's own motion preference", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+
+    document.documentElement.dataset.motion = "full";
+    expect(prefersReducedMotion()).toBe(false);
+
+    document.documentElement.dataset.motion = "reduced";
+    expect(prefersReducedMotion()).toBe(true);
+  });
+
+  it("stays reduced when either source asks for it", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    document.documentElement.dataset.motion = "full";
+    expect(prefersReducedMotion()).toBe(true);
+
+    document.documentElement.dataset.motion = "reduced";
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    expect(prefersReducedMotion()).toBe(true);
   });
 });

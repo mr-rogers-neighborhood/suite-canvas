@@ -13,14 +13,21 @@ Read [AGENTS.md](../AGENTS.md) for the repo map, rules and feature path, and
 - Zustand holds UI state only; document data is CRDT-owned.
 - Keep TypeScript strict; no `any` without a justified `biome-ignore` comment.
 - Conventional commit messages; docs change with the code they describe.
+- Run the local gate on every change: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm docs:check`,
+  `pnpm docs:symbols`, `pnpm shape`. E2E runs on request only: never start Playwright unless the owner
+  asks for a run or names a commit milestone.
+- GitHub Actions gates nothing. Never claim a workflow gates `main`; name the local command instead.
 
-## Verification tiers
+## Verification
 
-`pnpm check` after each edit batch, `pnpm verify` before every commit, `pnpm e2e:smoke` when the change
-is user-visible but not big, and `pnpm e2e` only for a big commit, a merge or a tag. A change inside
-one area can use `pnpm e2e:canvas`, `pnpm e2e:collab`, or `pnpm e2e:views`. A big commit touches the
-graph schema or CRDT, sharing or auth, canvas gestures or links, persistence, release configuration,
-or more than three user-visible changes.
+`pnpm check` is the edit loop: biome, `tsc` across the workspace, and `vitest run --changed`, plus the
+docs symbol and shape checks. `pnpm verify` is the same set with the story suite, the billing tests and
+the build added, and it runs the scratchpad first.
+
+Playwright sits outside both. A full `pnpm e2e` is a milestone action the owner names, and a narrower
+`pnpm e2e:smoke`, `pnpm e2e:canvas`, `pnpm e2e:collab` or `pnpm e2e:views` is what you run when the
+owner asks for a run and one area covers the change. `.github/workflows/ci.yml` is present and unrun;
+it is not a check on `main`.
 
 ## Shape
 

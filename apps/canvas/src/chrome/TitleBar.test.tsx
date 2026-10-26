@@ -22,7 +22,7 @@ describe("TitleBar", () => {
     expect(screen.getByTestId("sync-room")).toHaveTextContent("editing this workspace");
   });
 
-  it("keeps the connection words to three: Synced, Syncing, Offline", () => {
+  it("names the connection in one word each: Synced, Syncing, Offline, No access", () => {
     bar({ status: "connecting", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing");
 
@@ -33,6 +33,37 @@ describe("TitleBar", () => {
     cleanup();
     bar({ status: "disconnected", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Offline");
+
+    cleanup();
+    bar({ status: "unauthorized", role: "viewer" });
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("No access");
+  });
+
+  /**
+   * A refused credential and a lost connection are not the same problem. The
+   * indicator said "Offline" for both, so a reader whose access was revoked was
+   * told to check a connection that was working.
+   */
+  it("says access is the problem when the relay refused this browser", () => {
+    bar({ status: "unauthorized" });
+
+    const status = screen.getByTestId("sync-status");
+    expect(status).toHaveAttribute("data-status", "unauthorized");
+    expect(status).not.toHaveTextContent("Offline");
+
+    fireEvent.click(status);
+
+    const sentence = screen.getByTestId("sync-room");
+    expect(sentence).toHaveTextContent("refused this browser's access");
+    expect(sentence).toHaveTextContent("sign in again");
+    expect(sentence).not.toHaveTextContent(/connection/i);
+  });
+
+  it("still says Offline for a lost connection", () => {
+    bar({ status: "disconnected" });
+    fireEvent.click(screen.getByTestId("sync-status"));
+
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("Working offline");
   });
 
   it("says Synced outside a share too", () => {

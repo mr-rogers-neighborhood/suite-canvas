@@ -9,10 +9,10 @@
  *    the ADR forbids. `capabilities.ts` is the single place that maps roles to
  *    the app's nine capability flags.
  * 2. `LicenceClaims` is declared structurally rather than imported from
- *    `apps/collab-server/src/licence.ts`. A service importing from an app
- *    inverts the dependency order; structural typing keeps the contract (the
- *    relay passes real `LicenceClaims` straight in, and its test proves the
- *    two are assignable) without that import.
+ *    `@suite/licence`. The control plane needs only the signed fields, and the
+ *    structural copy keeps the package free of the token runtime; the relay
+ *    passes its real `LicenceClaims` straight in, and the test proves the two
+ *    are assignable.
  */
 
 /** Better Auth organization roles. Custom roles (`ac`) are deliberately unused. */
@@ -121,6 +121,12 @@ export interface AccountSession {
    * someone takes effect without asking them to sign in again.
    */
   admittedAt: number | null;
+  /**
+   * True when this account must enrol a second factor before any route other than
+   * enrolment answers. Set for an `admin` without `twoFactorEnabled`; optional
+   * because a caller that resolves a principal from claims has no user row to read.
+   */
+  mfaRequired?: boolean;
 }
 
 /** Everything the control plane reads from the environment, once per invocation. */
@@ -135,8 +141,6 @@ export interface AuthEnvironment {
   SUITE_AUTH_DATABASE_URL: string | undefined;
   SUITE_GOOGLE_CLIENT_ID: string | undefined;
   SUITE_GOOGLE_CLIENT_SECRET: string | undefined;
-  /** From address for magic links. */
-  SUITE_AUTH_EMAIL_FROM: string | undefined;
   /** WebAuthn relying-party identity for passkeys. */
   SUITE_AUTH_RP_ID: string | undefined;
   SUITE_AUTH_RP_NAME: string | undefined;

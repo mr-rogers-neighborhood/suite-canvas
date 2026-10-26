@@ -2,12 +2,18 @@ import { err, ok, type Result } from "neverthrow";
 import { BillingError } from "../errors.ts";
 
 /**
- * The tier table: the one place configuration becomes a licence payload.
+ * The tier table: the one place a price becomes a set of limits.
  *
  * `STRIPE_PRICE_TIERS` maps Stripe price ids onto what a customer bought, and nothing
  * else in the service needs to know the JSON. Parsing answers with a `Result` because a
- * broken table is an operator's mistake the caller must report, not an exception; the
- * `BillingError` it carries is the same one the webhook logs and the front door answers.
+ * broken table is an operator's mistake the caller must report, not an exception.
+ *
+ * The table feeds both halves of billing:
+ *
+ * - `plansOf` turns it into the auth plugin's static plan list, so checkout offers one
+ *   plan per tier with its limits attached;
+ * - `tierTableByTier` answers the entitlement read, which looks a subscription's plan
+ *   name up here and finds no numbers anywhere else.
  */
 
 /** A tier is configuration: `STRIPE_PRICE_TIERS` maps price ids onto these. */
@@ -19,12 +25,6 @@ export interface TierPlan {
 }
 
 export type TierTable = ReadonlyMap<string, TierPlan>;
-
-/**
- * One paid period, used when Stripe does not say how long the period is
- * (a bare Checkout Session carries no period bounds).
- */
-export const DEFAULT_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
 const MAX_TIER_LENGTH = 64;
 
@@ -50,8 +50,8 @@ function isPlanEntry(value: unknown): value is TierPlan {
  *
  *   {"price_123":{"tier":"solo","workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}
  *
- * A price that is missing from the table is a 500, not a silent free licence:
- * the customer paid, so the operator has to fix the table and let Stripe retry.
+ * A price that is missing from the table is a configuration failure, not a silent free
+ * plan: the customer paid, so the operator has to fix the table.
  */
 export function parseTierTable(raw: string | null | undefined): Result<TierTable, BillingError> {
   const text = raw?.trim();
@@ -98,26 +98,25 @@ export function parseTierTable(raw: string | null | undefined): Result<TierTable
 }
 
 /**
- * Price id → plan, or the `unknown-price` failure that makes Stripe retry.
+ * Tier label → plan, keyed in lower case.
  *
- * This one throws where {@link parseTierTable} returns a `Result`, and the difference
- * is the caller: every caller of `planFor` is an issuing function that already fails by
- * throwing its own `BillingError`, so wrapping the lookup would only move the throw one
- * line up. The table is parsed at the shell, where a `Result` removes a `try`.
+ * The Stripe plugin stores `subscription.plan` as the plan name lower-cased, so the read
+ * side has to match it that way. Two prices naming one tier (a monthly and an annual)
+ * collapse to one entry; their limits are the same.
  */
-export function planFor(
-  tiers: TierTable,
-  priceId: string | null,
-): { plan: TierPlan; priceId: string } {
-  if (priceId === null) {
-    throw new BillingError(
-      "unknown-price",
-      "the event carries no price id; set metadata.price_id when the session is created",
-    );
+export function tierTableByTier(tiers: TierTable): ReadonlyMap<string, TierPlan> {
+  const byTier = new Map<string, TierPlan>();
+  for (const plan of tiers.values()) {
+    byTier.set(plan.tier.trim().toLowerCase(), plan);
   }
-  const plan = tiers.get(priceId);
-  if (plan === undefined) {
-    throw new BillingError("unknown-price", `no tier is configured for price ${priceId}`);
-  }
-  return { plan, priceId };
+  return byTier;
+}
+
+/** The caps a plan carries, as the `limits` record the plugin and the token both use. */
+export function limitsOf(plan: TierPlan): Readonly<Record<string, number>> {
+  return {
+    workspaces: plan.workspaces,
+    documentBytes: plan.documentBytes,
+    attachmentBytes: plan.attachmentBytes,
+  };
 }

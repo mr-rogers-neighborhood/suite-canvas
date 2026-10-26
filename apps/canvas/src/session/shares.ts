@@ -2,7 +2,8 @@
  * Client for the collab server's share API. A share is a capability link: the
  * token is the whole credential for reading, so it is only ever returned by
  * `createShare` and can never be read back from the listing. Creating, listing
- * and revoking are owner operations and present the workspace owner key.
+ * and revoking are account operations and present the session JWT
+ * (`auth/credential.ts`) as a bearer token.
  *
  * Opening a link trades the token for a short-lived session (`suite_share`
  * cookie) and removes the token from the URL; see `resolveShare`.
@@ -111,11 +112,14 @@ export interface OpenedShareSession {
 /** A share request the server rejected, with its message made readable. */
 export class ShareApiError extends Error {
   readonly status: number | null;
+  /** The server's own refusal code, when it sent one (`seat-refused`, …). */
+  readonly code: string | null;
 
-  constructor(message: string, status: number | null = null) {
+  constructor(message: string, status: number | null = null, code: string | null = null) {
     super(message);
     this.name = "ShareApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -138,14 +142,24 @@ function errorMessage(body: unknown, status: number): string {
   return `The share request failed (${status}).`;
 }
 
+/** The machine-readable half of a refusal, when the server sent one. */
+function errorCode(body: unknown): string | null {
+  if (!isRecord(body)) return null;
+  const code = body.code ?? body.reason;
+  return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
+}
+
 /**
- * Authorization for a management call. The owner key is a bearer capability the
- * relay only stores a hash of; it never travels in a URL.
+ * Authorization for a management call. The credential is the session JWT; it
+ * never travels in a URL, and an empty one is a caller error rather than an
+ * anonymous request the server would refuse with a worse message.
  */
-function ownerHeaders(ownerKey: string | null | undefined): Record<string, string> {
-  const key = ownerKey?.trim() ?? "";
-  if (key.length === 0) throw new ShareApiError("An owner key is required to manage links.");
-  return { authorization: `Bearer ${key}` };
+function managementHeaders(credential: string | null | undefined): Record<string, string> {
+  const token = credential?.trim() ?? "";
+  if (token.length === 0) {
+    throw new ShareApiError("Sign in on this device to manage this workspace's links.");
+  }
+  return { authorization: `Bearer ${token}` };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -157,7 +171,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const body = await readBody(response);
-  if (!response.ok) throw new ShareApiError(errorMessage(body, response.status), response.status);
+  if (!response.ok) {
+    throw new ShareApiError(errorMessage(body, response.status), response.status, errorCode(body));
+  }
   if (body === null) throw new ShareApiError("The share server sent an empty response.");
   return body as T;
 }
@@ -208,14 +224,17 @@ export function isShareSessionResume(value: string | null | undefined): boolean 
   return value === SHARE_SESSION_RESUME;
 }
 
-/** Creates a share and returns its one-time capability token. Owner only. */
+/** Creates a share and returns its one-time capability token. Account sessions only. */
 export async function createShare(
   input: CreateShareInput,
-  ownerKey: string | null | undefined,
+  credential: string | null | undefined,
 ): Promise<CreatedShare> {
   const body = await request<unknown>(SHARE_API_PATH, {
     method: "POST",
-    headers: { ...ownerHeaders(ownerKey), "content-type": "application/json" },
+    headers: {
+      ...managementHeaders(credential),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   return createdShare(body);
@@ -237,12 +256,12 @@ export async function shareDefaults(): Promise<ShareDefaults> {
   };
 }
 
-/** Active shares of a workspace, newest first. Tokens are not included. Owner only. */
+/** Active shares of a workspace, newest first. Tokens are not included. */
 export async function listShares(
   workspaceId: string,
-  ownerKey: string | null | undefined,
+  credential: string | null | undefined,
 ): Promise<Share[]> {
-  const headers = ownerHeaders(ownerKey);
+  const headers = managementHeaders(credential);
   const query = new URLSearchParams({ workspaceId });
   const body = await request<unknown>(`${SHARE_API_PATH}?${query.toString()}`, { headers });
   if (!isRecord(body) || !Array.isArray(body.shares)) {
@@ -340,24 +359,27 @@ export async function closeShareSession(): Promise<void> {
   }
 }
 
-/** Revokes a share by id and returns the updated record. Owner only. */
-export async function revokeShare(id: string, ownerKey: string | null | undefined): Promise<Share> {
+/** Revokes a share by id and returns the updated record. */
+export async function revokeShare(
+  id: string,
+  credential: string | null | undefined,
+): Promise<Share> {
   const body = await request<unknown>(`${SHARE_API_PATH}/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: ownerHeaders(ownerKey),
+    headers: managementHeaders(credential),
   });
   return shareRecord(body);
 }
 
-/** Revokes every active link in a workspace. Owner only. */
+/** Revokes every active link in a workspace. */
 export async function revokeAllShares(
   workspaceId: string,
-  ownerKey: string | null | undefined,
+  credential: string | null | undefined,
 ): Promise<Share[]> {
   const query = new URLSearchParams({ workspaceId });
   const body = await request<unknown>(`${SHARE_API_PATH}?${query.toString()}`, {
     method: "DELETE",
-    headers: ownerHeaders(ownerKey),
+    headers: managementHeaders(credential),
   });
   if (!isRecord(body) || !Array.isArray(body.shares)) {
     throw new ShareApiError("The share server sent an unexpected response.");
@@ -373,7 +395,8 @@ export function shareLink(token: string): string {
   const url = new URL(window.location.href);
   url.search = "";
   url.searchParams.set("share", token);
-  // A viewer link must never carry the owner key, even if the editor URL had it.
+  // A viewer link carries the token and nothing else: no workspace id, no
+  // fragment left over from the page that made it.
   url.hash = "";
   return url.toString();
 }

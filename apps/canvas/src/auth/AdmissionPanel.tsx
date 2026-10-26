@@ -44,7 +44,7 @@ export function AdmissionPanel({ onDismiss, onSignOut }: AdmissionPanelProps) {
 
         <p className="mt-2 text-[12px] leading-5 text-[var(--ink-muted)]">
           What is waiting is the part that involves other people or a bill: syncing this workspace,
-          inviting someone, sharing it, and having it claimed by your account.
+          inviting someone, and sharing it.
         </p>
 
         <p data-testid="admission-local" className="mt-2 text-[12px] leading-5 text-[var(--ink)]">

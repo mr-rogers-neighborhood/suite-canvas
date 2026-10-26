@@ -1,27 +1,23 @@
-import { getSession } from "../session/session";
-import { readRecentWorkspaces } from "../session/workspaceTransfer";
-import { probeAuth } from "./availability";
-import { claimLocalWorkspaces } from "./claimOnSignIn";
 import {
-  claimWorkspace,
-  ensureOrganization,
-  lastUsedMethod,
-  readSessionUser,
-  signOut,
-} from "./client";
+  forgetAnonymousSession,
+  hadAnonymousSession,
+  linkPrompt,
+  localWorkspaceIds,
+  rememberAnonymousSession,
+} from "./anonymous";
+import { probeAuth } from "./availability";
+import { lastUsedMethod, readSessionUser, signInAnonymously, signOut } from "./client";
+import { forgetCredential } from "./credential";
 import { type AccountSummary, useAccountStore } from "./useAccountStore";
 
 /**
- * The session, the claim, and the order they happen in.
+ * The session, and the one thing that happens after it appears.
  *
- * The sequence is the ADR's, not ours: **probe, read the session, claim, then let
- * the screen decide**. Claiming runs after a session exists and never before, so
- * a device with no account is not touched at all — no request is made, no local
- * metadata is rewritten, and the storage ladder stays on its anonymous rung.
+ * The order is: **probe, read the session, give an anonymous session if there is
+ * none, then let the screen decide**. No claim route runs here — a device that
+ * worked without an account is linked by the server's `onLinkAccount` on the
+ * first real sign-in (ADR-0076), and all this side does is say so once.
  */
-
-/** The tenant name for an account that is getting its first organization. */
-const ORGANIZATION_NAME = "My workspaces";
 
 /** The session user, narrowed from whatever the server returned. */
 export function accountFromUser(user: unknown): AccountSummary | null {
@@ -31,27 +27,20 @@ export function accountFromUser(user: unknown): AccountSummary | null {
   return {
     userId: record.id,
     email: typeof record.email === "string" && record.email.length > 0 ? record.email : null,
+    name: typeof record.name === "string" && record.name.length > 0 ? record.name : null,
     admittedAt: typeof record.admittedAt === "number" ? record.admittedAt : null,
   };
-}
-
-/**
- * The workspace ids this device already holds: the recents list the launcher
- * writes, plus the workspace in the URL. Nothing new is persisted to make the
- * claim possible.
- */
-export function localWorkspaceIds(): string[] {
-  const ids = readRecentWorkspaces().map((entry) => entry.id);
-  const open = getSession().workspaceId;
-  if (open) ids.unshift(open);
-  return [...new Set(ids)];
 }
 
 let bootstrapped: Promise<void> | null = null;
 
 /**
- * Probes the deployment and reads the session. Idempotent: `App` and the dialog
- * host both want the answer, and the answer costs one request.
+ * Reads the deployment and the session once per page. Idempotent: `App` and the
+ * dialog host both want the answer, and the answer costs one request.
+ *
+ * With no session and accounts available, this browser is given an anonymous one.
+ * That is what makes "sign up later and keep your work" real: the server has a
+ * user id to move the workspaces from.
  */
 export function bootstrapAccount(): Promise<void> {
   bootstrapped ??= (async () => {
@@ -60,14 +49,40 @@ export function bootstrapAccount(): Promise<void> {
       useAccountStore.getState().applySession({ availability, account: null });
       return;
     }
-    const account = accountFromUser(await readSessionUser());
-    useAccountStore.getState().applySession({ availability, account });
-    if (account !== null) await claimLocalWorkspacesInto(account);
+    const user = await readSessionUser();
+    const account = accountFromUser(user);
+    if (account !== null) {
+      useAccountStore.getState().applySession({ availability, account });
+      announceLink(account);
+      return;
+    }
+    // No session: mint an anonymous one, which is also the flag that says this
+    // device may have work to hand over at sign-up.
+    const anonymous = await signInAnonymously();
+    const created = accountFromUser(await readSessionUser());
+    if (anonymous.ok && created !== null) rememberAnonymousSession();
+    useAccountStore.getState().applySession({ availability, account: created });
   })().catch(() => {
     // A probe that failed for an unforeseen reason is "no accounts here", not a crash.
     useAccountStore.getState().applySession({ availability: "unavailable", account: null });
   });
   return bootstrapped;
+}
+
+/**
+ * The one prompt, once: this device worked anonymously and now belongs to an
+ * account. The server already moved the rows (`onLinkAccount`), so this is a
+ * sentence rather than a protocol — nothing here retries or reconciles.
+ */
+function announceLink(account: AccountSummary): void {
+  if (!hadAnonymousSession()) return;
+  const prompt = linkPrompt({
+    email: account.email,
+    workspaceIds: localWorkspaceIds(),
+    wasAnonymous: true,
+  });
+  forgetAnonymousSession();
+  useAccountStore.getState().noteLinked(prompt);
 }
 
 /** Re-reads the session after an action that may have created one (sign-in). */
@@ -79,38 +94,21 @@ export async function refreshAccount(): Promise<void> {
   }
   const account = accountFromUser(await readSessionUser());
   useAccountStore.getState().applySession({ availability, account });
-  if (account !== null) await claimLocalWorkspacesInto(account);
-}
-
-/** The account whose claim already ran in this page, so it runs once, not per render. */
-let claimedFor: string | null = null;
-
-/**
- * Claims every workspace this device holds. Runs once per page load per session:
- * the outcome is remembered once, and the claim is idempotent server-side anyway.
- *
- * `localWorkspaceIds` is reachable — the launcher's recents list plus the id in
- * the URL — so this claims the set on sign-in rather than lazily, one workspace at
- * a time. A workspace created later is claimed at the next load, because creating
- * one navigates: the list is written before the URL changes.
- */
-async function claimLocalWorkspacesInto(account: AccountSummary): Promise<void> {
-  if (claimedFor === account.userId) return;
-  claimedFor = account.userId;
-  const store = useAccountStore.getState();
-  store.beginClaim();
-  const report = await claimLocalWorkspaces({
-    workspaceIds: localWorkspaceIds,
-    organization: () => ensureOrganization(ORGANIZATION_NAME),
-    claim: claimWorkspace,
-  });
-  useAccountStore.getState().finishClaim(report);
+  // A fresh sign-in invalidates any token minted for the previous session.
+  forgetCredential();
+  if (account === null) return;
+  announceLink(account);
+  // A room refused at boot because there was no credential is joinable now, and
+  // the provider re-mints on join. Loaded on demand: the account module must not
+  // pull the document store in at import time.
+  const { useCanvasStore } = await import("../store/useCanvasStore");
+  useCanvasStore.getState().rejoin();
 }
 
 /** Ends the session locally and forgets the account, leaving the workspace alone. */
 export async function signOutAccount(): Promise<void> {
   await signOut();
-  claimedFor = null;
+  forgetAnonymousSession();
   bootstrapped = null;
   useAccountStore.getState().clear();
 }

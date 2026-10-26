@@ -16,7 +16,7 @@ export function roomRows(deps: AdminRequestDeps): AdminRoomRow[] {
     if (room.authKinds) {
       const kinds = room.authKinds;
       row.authKinds = {
-        owner: kinds.owner,
+        account: kinds.account,
         share: kinds.share,
         internal: kinds.internal,
         anonymous: kinds.anonymous,

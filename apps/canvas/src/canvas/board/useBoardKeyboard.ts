@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
+import { isNudgeKey, nudgeDelta } from "../nudge";
 import type { useBoardProjection } from "./useBoardProjection";
 import { NEW_SECTION_SIZE } from "./useBoardSections";
 import type { useBoardUi } from "./useBoardUi";
@@ -27,6 +28,7 @@ interface KeyCommands {
   canManageStructure: boolean;
   goBackBoard: () => void;
   createNoteAt: (position: FlowPoint) => void;
+  nudgeSelected: (delta: { dx: number; dy: number }) => void;
   createSectionAt: (position: FlowPoint, wrapSelection?: boolean) => void;
   enterPortal: (nodeId: string, targetBoardId: string) => void;
   trashSelected: () => void;
@@ -231,6 +233,7 @@ export function useBoardKeyboard(
     projection: ReturnType<typeof useBoardProjection>;
     refs: { boardCardIds: { current: string[] } };
     createNoteAt: (position: { x: number; y: number }) => void;
+    nudgeSelected: (delta: { dx: number; dy: number }) => void;
     createSectionAt: (position: { x: number; y: number }, wrapSelection?: boolean) => void;
     enterPortal: (nodeId: string, targetBoardId: string) => void;
     trashSelected: () => void;
@@ -252,7 +255,14 @@ export function useBoardKeyboard(
   const { projection, refs } = input;
   const { boardCardIds } = refs;
   const { cardsById } = projection;
-  const { createNoteAt, createSectionAt, enterPortal, trashSelected, unplaceSelected } = input;
+  const {
+    createNoteAt,
+    nudgeSelected,
+    createSectionAt,
+    enterPortal,
+    trashSelected,
+    unplaceSelected,
+  } = input;
 
   useEffect(() => {
     const commands: KeyCommands = {
@@ -267,6 +277,7 @@ export function useBoardKeyboard(
       canManageStructure,
       goBackBoard,
       createNoteAt,
+      nudgeSelected,
       createSectionAt,
       enterPortal,
       trashSelected,
@@ -291,8 +302,53 @@ export function useBoardKeyboard(
       openKey(ctx);
     };
 
+    /**
+     * Arrow keys nudge the selection.
+     *
+     * Read on the capture phase because React Flow also listens for them on a
+     * focused node and moves a card one flow unit per press. Claiming the key
+     * before the node sees it keeps one step size, one write per press and no
+     * divergence between what is painted and what is stored.
+     *
+     * This is not a rung of the chain below: it answers only the four arrow
+     * keys, so quick capture, the Escape ladder, the chords and the bare-key
+     * actions keep the order that comment describes.
+     */
+    const handleNudgeKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isNudgeKey(event.key)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!commands.canEditLayout || !commands.activeBoardId) return;
+      if (isTextEntry(event.target)) return;
+      const target = event.target instanceof Element ? event.target : null;
+      // Focus after a click on a card sits on the node; after a marquee it can
+      // sit on the document. Both mean the board owns the key. A press inside
+      // the library, the dock or a dialog does not.
+      const onBoard =
+        target === null ||
+        target === document.body ||
+        target === document.documentElement ||
+        target.closest('[data-testid="canvas-board"]') !== null;
+      if (!onBoard) return;
+      // A focused control keeps its own arrow-key meaning (a menu, a slider, a
+      // select). The board only nudges when the press is on the board itself.
+      if (target?.closest("button, a, input, select, textarea, [role='menu'], [role='dialog']")) {
+        return;
+      }
+      const state = useUiStore.getState();
+      if (state.selectedNodeIds.length === 0) return;
+      const delta = nudgeDelta(event.key, event.shiftKey);
+      if (!delta) return;
+      event.preventDefault();
+      event.stopPropagation();
+      commands.nudgeSelected(delta);
+    };
+
+    window.addEventListener("keydown", handleNudgeKeyDown, true);
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleNudgeKeyDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [
     workspace,
     store,
@@ -305,6 +361,7 @@ export function useBoardKeyboard(
     canManageStructure,
     goBackBoard,
     createNoteAt,
+    nudgeSelected,
     createSectionAt,
     enterPortal,
     trashSelected,

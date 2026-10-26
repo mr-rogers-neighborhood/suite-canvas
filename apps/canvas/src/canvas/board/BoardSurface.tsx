@@ -1,9 +1,13 @@
 import { sectionsAt } from "@suite/graph";
+import type { Node, NodeChange, NodePositionChange } from "@xyflow/react";
 import { Background, ConnectionMode, Controls, ReactFlow, SelectionMode } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useCallback, useRef, useState } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
+import { BoardCameraControls } from "../BoardCameraControls";
 import { edgeTypes } from "../EdgeDescription";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
 import { useLinkThreadStore } from "../links/linkThread";
 import { ModeControl } from "../links/ModeControl";
@@ -15,7 +19,9 @@ import { PortalNode } from "../PortalNode";
 import { PurposeControl } from "../PurposeControl";
 import { PeerReconnectLayer } from "../presence/PeerReconnectLayer";
 import { PresenceLayer } from "../presence/PresenceLayer";
+import { SnapGuideLayer } from "../SnapGuideLayer";
 import { SectionLayer } from "../sections/SectionLayer";
+import { type SnapGuide, type SnapRect, snapRect } from "../snapping";
 import type { usePlacementEngine } from "../usePlacementEngine";
 import { WhiteboardNode } from "../WhiteboardNode";
 import { ZOOM_MAX, ZOOM_MIN } from "../zoomRange";
@@ -29,9 +35,13 @@ import type { useBoardRefs } from "./useBoardRefs";
 import type { useBoardSections } from "./useBoardSections";
 import type { useBoardSelection } from "./useBoardSelection";
 import type { useBoardUi } from "./useBoardUi";
+import { usePaneDoubleClick } from "./usePaneDoubleClick";
 
 /** React Flow node types; a portal card paints its target instead of a note. */
 const canvasNodeTypes = { ...nodeTypes, portal: PortalNode, whiteboard: WhiteboardNode };
+
+/** A position change React Flow has already committed, with its new position. */
+type CommittedMove = NodePositionChange & { position: { x: number; y: number } };
 
 /**
  * The most a fit may magnify. Fitting frames what is on the board; it does not
@@ -90,6 +100,10 @@ export function BoardSurface({
     screenToFlowPosition,
     recordBoardViewport,
     openCardFocus,
+    selectedNodeIds,
+    gridVisible,
+    outlineOpen,
+    toggleOutline,
   } = ui;
   const {
     locallyDraggingIds,
@@ -141,14 +155,130 @@ export function BoardSurface({
     onReconnectStart,
     onReconnectStop,
   } = links;
-  const { enterPortal, readCameraGesture, gestureStartZoom } = camera;
-  const { commitDrop } = commands;
+  const { enterPortal, readCameraGesture, gestureStartZoom, zoomToSelection } = camera;
+  const { commitDrop, createNoteAt } = commands;
+
+  /**
+   * The boxes this drag may snap to, captured when it starts. Other cards do not
+   * move during a local drag, so one snapshot is enough and the guides cannot
+   * chase a card that is being dragged by a peer.
+   */
+  const snapOthers = useRef<SnapRect[]>([]);
+  /** The last position the snapper chose, so the drop commits exactly what was drawn. */
+  const lastSnapped = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  const snapGuideKey = useRef("");
+
+  const publishGuides = useCallback((guides: SnapGuide[]) => {
+    const key = guides
+      .map((guide) => `${guide.axis}:${guide.at}:${guide.start}:${guide.end}`)
+      .join("|");
+    if (key === snapGuideKey.current) return;
+    snapGuideKey.current = key;
+    setSnapGuides(guides);
+  }, []);
+
+  const boxes = useCallback(
+    (excluded: ReadonlySet<string>): SnapRect[] =>
+      [...ui.store.getState().nodeLookup.values()].flatMap((node) => {
+        const position = node.internals.positionAbsolute;
+        if (excluded.has(node.id)) return [];
+        if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return [];
+        return [
+          {
+            x: position.x,
+            y: position.y,
+            width: node.measured?.width ?? node.width ?? DEFAULT_CARD_WIDTH,
+            height: node.measured?.height ?? node.height ?? DEFAULT_CARD_HEIGHT,
+          },
+        ];
+      }),
+    [ui.store],
+  );
+
+  const sizeOf = useCallback(
+    (id: string) => {
+      const node = ui.store.getState().nodeLookup.get(id);
+      return {
+        width: node?.measured?.width ?? node?.width ?? DEFAULT_CARD_WIDTH,
+        height: node?.measured?.height ?? node?.height ?? DEFAULT_CARD_HEIGHT,
+      };
+    },
+    [ui.store],
+  );
+
+  const createCardOnPane = useCallback(
+    (client: { x: number; y: number }) => createNoteAt(screenToFlowPosition(client)),
+    [createNoteAt, screenToFlowPosition],
+  );
+
+  usePaneDoubleClick({
+    store: ui.store,
+    enabled: canCreateContent && activeBoardId !== null,
+    onDoubleClick: createCardOnPane,
+  });
+
+  /**
+   * One commit per position React Flow decides without a drag: the arrow keys
+   * move the focused selection and report it as a position change, and no drag
+   * stop ever follows, so a move that is only painted here is lost on reload.
+   * A pointer drag owns its own commit (`onNodeDragStop`) and is skipped by the
+   * open-session guard, which also covers the final `dragging: false` sample
+   * React Flow sends just before it calls that handler.
+   */
+  const changeNodes = useCallback(
+    (changes: NodeChange<Node>[]) => {
+      // A single-card drag snaps to the board's other edges and centres. A
+      // multi-card drag is deliberately left alone: snapping the group to one
+      // member's line would move the other members apart.
+      const dragAnchor =
+        draggedNodeIds.current.length === 1 ? draggedNodeIds.current[0] : undefined;
+      const applied = dragAnchor
+        ? changes.map((change) => {
+            if (change.type !== "position" || !change.position || change.id !== dragAnchor) {
+              return change;
+            }
+            const snap = snapRect({
+              position: change.position,
+              size: sizeOf(dragAnchor),
+              others: snapOthers.current,
+            });
+            lastSnapped.current = { id: dragAnchor, ...snap.position };
+            publishGuides(snap.guides);
+            return { ...change, position: snap.position };
+          })
+        : changes;
+      onNodesChange(applied);
+      if (draggedNodeIds.current.length > 0 || locallyDraggingIds.current.size > 0) return;
+      const moved = changes.filter(
+        (change): change is CommittedMove =>
+          change.type === "position" && change.position !== undefined && change.dragging !== true,
+      );
+      if (moved.length === 0) return;
+      // The internal node carries the measured box the drop's section check
+      // needs; the change carries the position React Flow just committed.
+      const dropped: Node[] = moved.flatMap((change) => {
+        const node = ui.store.getState().nodeLookup.get(change.id);
+        return node ? [{ ...node, position: change.position }] : [];
+      });
+      if (dropped.length > 0) commitDrop(dropped);
+    },
+    [
+      commitDrop,
+      draggedNodeIds,
+      locallyDraggingIds,
+      onNodesChange,
+      publishGuides,
+      sizeOf,
+      ui.store,
+    ],
+  );
 
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
-      onNodesChange={onNodesChange}
+      onNodesChange={changeNodes}
       onEdgesChange={onEdgesChange}
       nodeTypes={canvasNodeTypes}
       edgeTypes={edgeTypes}
@@ -165,6 +295,10 @@ export function BoardSurface({
       minZoom={presenting ? 0 : ZOOM_MIN}
       maxZoom={presenting ? Number.POSITIVE_INFINITY : ZOOM_MAX}
       deleteKeyCode={null}
+      // Double-clicking empty canvas creates a card (see `usePaneDoubleClick`),
+      // so the same gesture cannot also zoom. Wheel, pinch and the controls
+      // still own zoom.
+      zoomOnDoubleClick={false}
       // Selection, panning, zoom and the inspector stay for every role.
       // Layout writes follow the session capabilities: an editor share may
       // move and reconnect what exists, but never draw a new link.
@@ -247,6 +381,8 @@ export function BoardSurface({
         const ids = dragged.length > 0 ? dragged.map((entry) => entry.id) : [node.id];
         draggedNodeIds.current = ids;
         locallyDraggingIds.current = new Set(ids);
+        snapOthers.current = ids.length === 1 ? boxes(new Set(ids)) : [];
+        lastSnapped.current = null;
         // The rendered delta is eased from here to drop. Reduced motion keeps
         // the pre-A10 behaviour: paint the pointer sample directly.
         if (prefersReducedMotion()) stopLocalEase();
@@ -291,10 +427,38 @@ export function BoardSurface({
             }),
           );
         }
+        const anchorId = draggedNodeIds.current.length === 1 ? draggedNodeIds.current[0] : null;
+        const anchor = anchorId ? dropped.find((entry) => entry.id === anchorId) : undefined;
+        // The last snap the reader saw is the drop position. Falling back to a
+        // fresh snap covers a press that ended without one more move event.
+        const snapped =
+          anchorId && anchor
+            ? lastSnapped.current?.id === anchorId
+              ? lastSnapped.current
+              : snapRect({
+                  position: anchor.position,
+                  size: sizeOf(anchorId),
+                  others: snapOthers.current,
+                }).position
+            : null;
+        const delta =
+          anchor && snapped
+            ? { x: snapped.x - anchor.position.x, y: snapped.y - anchor.position.y }
+            : { x: 0, y: 0 };
+        const committed =
+          delta.x === 0 && delta.y === 0
+            ? dropped
+            : dropped.map((entry) => ({
+                ...entry,
+                position: { x: entry.position.x + delta.x, y: entry.position.y + delta.y },
+              }));
         draggedNodeIds.current = [];
         locallyDraggingIds.current = new Set();
+        snapOthers.current = [];
+        lastSnapped.current = null;
+        publishGuides([]);
         setDragging(null);
-        commitDrop(dropped);
+        commitDrop(committed);
       }}
       onPaneClick={() => {
         const thread = useLinkThreadStore.getState();
@@ -478,11 +642,18 @@ export function BoardSurface({
         }}
         toFlow={(client) => screenToFlowPosition(client)}
       />
-      <Background color="var(--rf-dot)" />
+      <SnapGuideLayer guides={snapGuides} />
+      {gridVisible ? <Background color="var(--rf-dot)" /> : null}
       <Controls showInteractive={false}>
         <ModeControl engine={placementEngine} />
         <PurposeControl />
       </Controls>
+      <BoardCameraControls
+        hasSelection={selectedNodeIds.length > 0}
+        onZoomToSelection={zoomToSelection}
+        outlineOpen={outlineOpen}
+        onToggleOutline={toggleOutline}
+      />
       <PresenceLayer />
       <PeerReconnectLayer />
       <PeerLibraryDragLayer />

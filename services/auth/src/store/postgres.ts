@@ -1,21 +1,81 @@
-import { Pool } from "pg";
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool, type PoolClient } from "pg";
 import type { AuthDatabase } from "../identity/betterAuth.js";
 
 /**
  * The Postgres seam for the control plane
  * (ADR-0065 §9).
  *
- * Better Auth's own adapter takes a `pg` pool directly, so there is no ORM here and
- * no query builder to learn: the schema is SQL in `sql/`, the driver is `pg`, and
- * this module's whole job is to build one pool and refuse clearly when it cannot.
+ * One `pg` pool, one Kysely instance over it, and two views of the same connection.
+ * Better Auth's adapter is the Kysely one: it is handed a query *builder*
+ * (`{ db, type: "postgres" }`), which is what it documents, rather than a pool it has
+ * to guess about. Our own repositories and the migration runner keep using raw SQL
+ * through `Queryable`, because that SQL is the schema in `sql/` and a builder over it
+ * would be a second description of the same tables.
  *
  * Document bytes never come near this pool. It holds people, organizations,
  * memberships, invitations, licences and workspace *rows* — never a `.loro` snapshot.
  */
 
-/** The one method the repositories use from a pool or client. */
+/** One pooled connection, returned to the pool with `release` when the caller is done. */
+export interface QueryConnection extends Queryable {
+  release?: () => void;
+}
+
+/** The one method the repositories and the migration runner use from a pool or client. */
 export interface Queryable {
   query: (text: string, values?: readonly unknown[]) => Promise<{ rows: unknown[] }>;
+  /**
+   * One connection, when this target is a pool.
+   *
+   * The migration runner opens a transaction per file, and `BEGIN` and `COMMIT` on a
+   * pool can land on two different connections. A target without `connect` is already
+   * one connection (a client, or a test fake), so it is migrated on itself.
+   */
+  connect?: () => Promise<QueryConnection>;
+}
+
+/**
+ * A `pg` pool, described as a `Queryable`.
+ *
+ * This is an adapter, not a cast: `pg`'s `query` is overloaded on the parameter it is
+ * given, so narrowing it to the one shape we call is a function with a body — and the
+ * one place a row type is decided.
+ */
+export function poolQueryable(pool: Pool): Queryable {
+  return {
+    query: async (text, values) => {
+      const result =
+        values === undefined ? await pool.query(text) : await pool.query(text, [...values]);
+      return { rows: result.rows };
+    },
+    connect: async () => clientQueryable(await pool.connect()),
+  };
+}
+
+/** The same adapter for a checked-out client, whose `release` returns it to the pool. */
+function clientQueryable(client: PoolClient): QueryConnection {
+  return {
+    query: async (text, values) => {
+      const result =
+        values === undefined ? await client.query(text) : await client.query(text, [...values]);
+      return { rows: result.rows };
+    },
+    release: () => {
+      client.release();
+    },
+  };
+}
+
+/**
+ * Better Auth's adapter, built around a Kysely instance.
+ *
+ * `type: "postgres"` selects the dialect's SQL generation and the capabilities the
+ * adapter may use (returning, json, uuid). The default casing (`camel`) is the one
+ * `sql/` is written in, so `userId` stays `"userId"`.
+ */
+export function kyselyDatabase(db: Kysely<unknown>): AuthDatabase {
+  return { db, type: "postgres" };
 }
 
 export interface PostgresOptions {
@@ -29,8 +89,12 @@ export interface PostgresOptions {
 }
 
 export interface PostgresDatabase {
-  /** The object Better Auth takes as `database`. */
+  /** The object Better Auth takes as `database`: a Kysely-backed query executor. */
   database: AuthDatabase;
+  /** The same pool as raw SQL, for our repositories and the migration runner. */
+  queryable: Queryable;
+  /** The Kysely handle, so a caller can see what the adapter was built on. */
+  kysely: Kysely<unknown>;
   /** Ends every pooled connection. Called on shutdown, never per request. */
   close: () => Promise<void>;
 }
@@ -58,7 +122,7 @@ export function databaseUrlProblem(value: string | undefined): string | null {
   return null;
 }
 
-/** Builds the pool Better Auth talks to. Throws before connecting when the URL is unusable. */
+/** Builds the pool and the adapter over it. Throws before connecting when the URL is unusable. */
 export function postgresDatabase(options: PostgresOptions): PostgresDatabase {
   const problem = databaseUrlProblem(options.connectionString);
   if (problem !== null) {
@@ -70,9 +134,13 @@ export function postgresDatabase(options: PostgresOptions): PostgresDatabase {
     idleTimeoutMillis: (options.idleTimeoutSeconds ?? 30) * 1000,
     connectionTimeoutMillis: (options.connectionTimeoutSeconds ?? 5) * 1000,
   });
+  const kysely = new Kysely<unknown>({ dialect: new PostgresDialect({ pool }) });
   return {
-    database: pool,
+    database: kyselyDatabase(kysely),
+    queryable: poolQueryable(pool),
+    kysely,
     close: async () => {
+      await kysely.destroy();
       await pool.end();
     },
   };

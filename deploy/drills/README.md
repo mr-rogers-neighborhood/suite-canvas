@@ -6,7 +6,7 @@ kept as a record.
 
 | Drill | Gate | What it proves |
 | --- | --- | --- |
-| [`attachments.sh`](./attachments.sh) | A1 | Attachment bytes survive a container recreate, a backup, and a restore into a scratch volume. |
+| [`attachments.sh`](./attachments.sh) | A1 | Two attachments (different lengths) and a workspace document survive a container recreate, a backup, and a restore into a scratch volume; the restored app opens the workspace and serves the same bytes. |
 
 ## Running one
 

@@ -21,28 +21,22 @@ afterEach(() => {
 });
 
 describe("workspaceUrl", () => {
-  it("builds a plain editor URL without an owner key", () => {
+  it("builds a plain editor URL with ids only", () => {
     const url = new URL(workspaceUrl("ws-1", "board-1"));
     expect(url.searchParams.get("workspace")).toBe("ws-1");
     expect(url.searchParams.get("board")).toBe("board-1");
     expect(url.hash).toBe("");
   });
 
-  it("adds the owner key as a fragment", () => {
-    const url = new URL(workspaceUrl("ws-1", "board-1", "owner-key"));
-    expect(url.searchParams.get("workspace")).toBe("ws-1");
-    expect(url.searchParams.get("board")).toBe("board-1");
-    expect(url.hash).toBe("#owner=owner-key");
-  });
-
-  it("does not inherit the current page's owner fragment", () => {
+  it("carries no credential: the fragment is always empty", () => {
     window.history.replaceState({}, "", "/?workspace=old#owner=old-key");
 
     const plain = new URL(workspaceUrl("ws-2"));
     expect(plain.hash).toBe("");
 
-    const owned = new URL(workspaceUrl("ws-2", null, "new-key"));
-    expect(owned.hash).toBe("#owner=new-key");
+    const withBoard = new URL(workspaceUrl("ws-2", "board-1"));
+    expect(withBoard.hash).toBe("");
+    expect(withBoard.searchParams.get("board")).toBe("board-1");
   });
 });
 
@@ -228,6 +222,43 @@ describe("workspace backup attachments", () => {
 
     expect(imported.title).toBe("Research");
     expect(restored).toEqual([]);
+  });
+
+  it("lists an image the backup could not carry, by card title, on the way in", async () => {
+    // The envelope has no entry for the image the document draws: the shape a
+    // hand-edited or truncated backup has, and the one that used to import a
+    // silent hole.
+    const workspace = workspaceWithImage();
+    const prepared = await prepareWorkspaceBackup("ws-1", workspace, {
+      sources: [emptySource("local")],
+    });
+    const envelope = JSON.parse(prepared.json) as Record<string, unknown>;
+    envelope.attachments = {};
+
+    const imported = await importWorkspaceFile(
+      new File([JSON.stringify(envelope)], "partial.suite", { type: "application/json" }),
+      { storeAttachment: async () => {}, persist: async () => {} },
+    );
+
+    expect(imported.warnings).toHaveLength(1);
+    // The card, not the id: a person knows "Trip plan", not a hex string.
+    expect(imported.warnings[0]).toContain("Trip plan");
+    expect(imported.warnings[0]).toContain("missing or unreadable in this backup");
+    expect(imported.warnings[0]).not.toContain(ATTACHMENT_ID);
+  });
+
+  it("has nothing to warn about when every image came back", async () => {
+    const workspace = workspaceWithImage();
+    const prepared = await prepareWorkspaceBackup("ws-1", workspace, {
+      sources: [localSource(PNG)],
+    });
+
+    const imported = await importWorkspaceFile(
+      new File([prepared.json], "complete.suite", { type: "application/json" }),
+      { storeAttachment: async () => {}, persist: async () => {} },
+    );
+
+    expect(imported.warnings).toEqual([]);
   });
 
   it("warns with the real size above the threshold and stays quiet below it", () => {

@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { licenceRequired } from "@suite/licence";
 import { SimpleServer } from "loro-websocket/server";
 import { validateConfig } from "../config/config.js";
 import {
@@ -9,15 +10,17 @@ import {
   readLimitOverrides,
   resolveLimits,
 } from "../config/limits.js";
+import { createWorkspaceAccess, type WorkspaceClaimDeps } from "../http/access.js";
 import { handleAdminRequest } from "../http/admin/index.js";
 import { handleAttachmentRequest } from "../http/attachmentHttp.js";
 import { authorize, resolveWorkerTokens } from "../http/auth.js";
-import { handleShareRequest } from "../http/shareHttp.js";
 import {
-  defaultLicenceClaimStore,
-  handleWorkspaceRequest,
-  type WorkspaceQuotaGate,
-} from "../http/workspaceHttp.js";
+  createSessionVerifier,
+  noSessionVerifier,
+  type SessionVerifier,
+} from "../http/sessionToken.js";
+import { handleShareRequest } from "../http/shareHttp.js";
+import { handleWorkspaceRequest } from "../http/workspaceHttp.js";
 import { createLogger, createRequestLogger } from "../logging.js";
 import { metrics as processMetrics, readProcessRss } from "../ops/metrics.js";
 import {
@@ -30,8 +33,8 @@ import {
   roomSessionCount,
 } from "../projection/index.js";
 import { defaultAttachmentStore } from "../store/attachments.js";
-import { licenceRequired } from "../store/licence.js";
-import { configureSqlite, createDocumentStore } from "../store/persistence.js";
+import { defaultLicenceClaimStore, type LicenceClaimStore } from "../store/licenceClaims.js";
+import { createDocumentStore } from "../store/persistence.js";
 import { createSettingsStore } from "../store/settings.js";
 import {
   createShareStore,
@@ -39,14 +42,13 @@ import {
   type Share,
   type ShareStore,
 } from "../store/shares.js";
-import { createWorkspaceRegistry, type WorkspaceRegistry } from "../store/workspaces.js";
+import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
 import {
-  disconnectAuthSessions,
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
   flushDirtyDocuments,
 } from "../sync/roomSockets.js";
-import { relaySeatGateFromClaims } from "../sync/seatGate.js";
+import { relaySeatGate } from "../sync/seatGate.js";
 
 const logger = createLogger().child({ component: "server" });
 
@@ -86,29 +88,18 @@ const paths = {
   shares: config.paths.shares,
   workspaces: config.paths.workspaces,
 };
-// The document store opens its own connection, but the share and workspace
-// stores do not set a journal mode. WAL is a property of the file, so setting
-// it here covers all three without touching those modules.
-for (const name of ["shares", "workspaces"] as const) {
-  try {
-    const mode = configureSqlite(paths[name]);
-    if (mode.toLowerCase() !== "wal") {
-      logger.warn("journal mode was not applied", { db: name, journalMode: mode });
-    }
-  } catch (error) {
-    logger.error("could not configure SQLite", {
-      db: name,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
+// Every store configures its own connection (`configureConnection` in
+// `store/persistence.ts`): WAL, the busy timeout and the schema stamp travel
+// with the module that opens the file, so none of them depends on a boot-time
+// pass having run first.
 const store = createDocumentStore(paths.documents);
 // Shares live in their own file so token writes never contend with the
 // document store's save interval.
 const shares = createShareStore(paths.shares);
-// Owner key hashes live beside the share hashes: both are credentials, neither
-// is document state, so they stay out of the document store's save loop.
-const workspaces = createWorkspaceRegistry(paths.workspaces);
+// The workspace-to-organization mapping lives beside the share rows: it is
+// authorization bookkeeping, not document state, so it stays out of the document
+// store's save loop.
+const orgs = createWorkspaceOrgStore(paths.workspaces);
 
 // Runtime limit overrides live in a tiny key/value store of their own, so
 // changing a quota never rewrites a document or a share row. Without
@@ -123,12 +114,29 @@ if (bootProblem !== null) {
   process.exit(1);
 }
 
-// The hosted relay records a licence per workspace; its quotas are the tighter
-// of the signed token and the instance limits. A self-host never opens it.
-const licenceClaims = licenceRequired() ? defaultLicenceClaimStore() : null;
-// The same rows answer "is this workspace still licensed?" at connection time.
-// A self-host has no licence, so the gate is inert and no join pays for it.
-const seatGate = relaySeatGateFromClaims(licenceClaims, licenceClaims !== null);
+// The hosted relay records the entitlement each workspace's organization bought;
+// its quotas are the tighter of that record and the instance limits. A self-host
+// never opens it, because it has no subscription to record.
+const licenceClaims: LicenceClaimStore | null = licenceRequired()
+  ? defaultLicenceClaimStore()
+  : null;
+// The seat gate answers from the verified token's claims, so it needs no store
+// and no control-plane call. A self-host has no entitlement, so it is inert.
+const seatGate = relaySeatGate(licenceRequired());
+
+// The control plane publishes a JWKS at `SUITE_AUTH_URL`. Without that variable
+// the relay runs anonymously: no session verifies, so no account reaches a room.
+// A self-host that wants accounts sets it to its control-plane origin.
+// `config.ts` has already parsed and normalised this to an origin, so the value
+// the relay compares against is the same shape the control plane signed.
+const authUrl = config.authUrl;
+const sessions: SessionVerifier | undefined =
+  authUrl === null ? undefined : createSessionVerifier({ authUrl });
+if (sessions === undefined) {
+  logger.info("session verification is off", {
+    hint: "set SUITE_AUTH_URL to the control-plane origin",
+  });
+}
 const quotaOptions: QuotaOptions = {
   documents: store,
   shares,
@@ -156,20 +164,29 @@ const countedShares: ShareStore = {
     return created;
   },
 };
-// Same idea for claims: one attempt is one answer from the registry, whatever
-// the caller does with it. The outcome, never the workspace id, is the label.
-const countedWorkspaces: WorkspaceRegistry = {
-  ...workspaces,
-  claimOrVerify: (workspaceId, ownerKey) => {
-    const result = workspaces.claimOrVerify(workspaceId, ownerKey);
+// Same idea for organization rows: one attempt is one answer from the store,
+// whatever the caller does with it. The outcome, never the workspace id, is the
+// label.
+const countedOrgs: WorkspaceOrgStore = {
+  ...orgs,
+  claim: (workspaceId, organizationId, now) => {
+    const result = orgs.claim(workspaceId, organizationId, now);
     processMetrics.claimAttempted(result);
     return result;
   },
 };
-const quotaGate: WorkspaceQuotaGate = { quotas };
-if (licenceClaims !== null) {
-  quotaGate.licenceWorkspaces = (licenceId) => licenceClaims.countForLicence(licenceId);
-}
+/**
+ * What a verified session may record: the organization behind the workspace, and
+ * the entitlement that organization bought. One object, so the join and the HTTP
+ * routes cannot record different things.
+ */
+const workspaceClaims: WorkspaceClaimDeps = { orgs: countedOrgs, licences: licenceClaims };
+// The same rule for a workspace-scoped HTTP route: it needs the session the join
+// needs, and it is authorized by the same recorded organization.
+const access = createWorkspaceAccess({
+  sessions: sessions ?? noSessionVerifier,
+  ...workspaceClaims,
+});
 const { projectionToken, sourceToken } = resolveWorkerTokens();
 
 // Board and card shares read a projection room kept up to date by this worker.
@@ -237,7 +254,8 @@ const server = new SimpleServer({
   authenticate(roomId, _crdtType, auth) {
     return authorize(roomId, auth, {
       shares: countedShares,
-      workspaces: countedWorkspaces,
+      ...(sessions === undefined ? {} : { sessions }),
+      workspaces: workspaceClaims,
       projectionToken,
       sourceToken,
       seats: seatGate,
@@ -259,7 +277,6 @@ function removeShare(share: Share): void {
     // that was just revoked and leave the owner and the publish worker alone.
     disconnectWorkspaceShares(server, share.workspaceId, {
       sourceToken,
-      workspaces: countedWorkspaces,
       shares: countedShares,
     });
   }
@@ -294,7 +311,7 @@ const health = createServer((request, response) => {
   // 429 counted again as a rate-limit rejection.
   response.on("finish", () => processMetrics.observeHttp(response.statusCode));
 
-  void handleShareRequest(request, response, countedShares, countedWorkspaces, {
+  void handleShareRequest(request, response, countedShares, access, {
     onSharesChanged: (workspaceId) => {
       scheduleProjection(workspaceId, { immediate: true });
     },
@@ -324,11 +341,16 @@ const health = createServer((request, response) => {
   })
     .then((handled) => {
       if (handled || response.writableEnded) return;
-      return handleWorkspaceRequest(request, response, countedWorkspaces, {
-        onRotated: (_workspaceId, previousOwnerKey) => {
-          // Rotation already replaced the hash, so the old key authenticates
-          // nothing; drop the sessions that still hold it.
-          disconnectAuthSessions(server, previousOwnerKey);
+      return handleWorkspaceRequest(request, response, {
+        access,
+        licences: licenceClaims,
+        exists: (workspaceId) =>
+          // The same evidence the admin inventory uses: a stored document under
+          // any key a room may have used, or a share row that points here.
+          loroDocumentKeys(workspaceId).some((key) => store.load(key) !== null) ||
+          shares.list(workspaceId).length > 0,
+        forgetWorkspace: (workspaceId) => {
+          countedOrgs.remove(workspaceId);
         },
         onDeleted: (workspaceId) => {
           // The rows are gone, but the live room still holds the document and
@@ -340,14 +362,13 @@ const health = createServer((request, response) => {
           forgetRoomDocument(server, workspaceId);
           void worker.schedule(workspaceId, { immediate: true });
         },
-        quota: quotaGate,
       });
     })
     // Attachments are bytes beside the document, referenced by id from a card
     // body; the cap is the live resolved one, so an override applies at once.
     .then((handled) => {
       if (handled || response.writableEnded) return;
-      return handleAttachmentRequest(request, response, countedWorkspaces, {
+      return handleAttachmentRequest(request, response, access, {
         cap: () => currentLimits().limits.attachmentBytesPerWorkspace,
       });
     })
@@ -356,7 +377,7 @@ const health = createServer((request, response) => {
       return handleAdminRequest(request, response, {
         documents: store,
         shares: countedShares,
-        workspaces: countedWorkspaces,
+        orgs: countedOrgs,
         paths,
         limits: currentLimits,
         settings,
@@ -443,7 +464,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         health.close();
         store.close();
         shares.close();
-        workspaces.close();
+        orgs.close();
         process.exit(0);
       });
   });

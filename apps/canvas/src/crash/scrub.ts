@@ -4,12 +4,14 @@
  * The reporter sends an allowlist, not a filtered copy of the SDK's event: build
  * version, route, browser/OS, stack frames and a hashed workspace id. Nothing
  * else on the event can reach the wire — not card titles, card bodies,
- * attachment names, document bytes, share tokens or the owner key.
+ * attachment names, document bytes, share tokens or the session credential.
  *
  * The hash exists so two crashes from one workspace can be counted together. It
- * is never sent beside the owner key: if the key appears anywhere in the
- * payload, the whole event is dropped rather than redacted, because an event
- * that crossed that line is not worth the risk of a partial removal.
+ * is never sent beside the credential: if the live token appears anywhere in the
+ * payload, the whole event is dropped rather than redacted, because an event that
+ * crossed that line is not worth the risk of a partial removal. A session JWT is
+ * the credential now (ADR-0074), and it is short-lived by design, so scrubbing
+ * the token the page currently holds is what keeps a report from carrying one.
  */
 
 export interface ScrubContext {
@@ -19,8 +21,8 @@ export interface ScrubContext {
   route: string;
   /** SHA-256 of the workspace id, or null when hashing is unavailable. */
   workspaceHash: string | null;
-  /** The live owner key, used only to prove it is absent. */
-  ownerKey?: string | null;
+  /** The live session credential, used only to prove it is absent. */
+  credential?: string | null;
 }
 
 interface LooseEvent {
@@ -110,7 +112,7 @@ function scrubException(exception: unknown): { values: unknown[] } {
 
 /**
  * The payload an opted-in crash report carries, or `null` when the event must be
- * dropped (it mentioned the owner key, or it carried nothing reportable).
+ * dropped (it mentioned the credential, or it carried nothing reportable).
  */
 export function scrubEvent(event: unknown, context: ScrubContext): Record<string, unknown> | null {
   if (!event || typeof event !== "object") return null;
@@ -133,14 +135,14 @@ export function scrubEvent(event: unknown, context: ScrubContext): Record<string
   if (typeof loose.level === "string") payload.level = loose.level;
 
   if (context.workspaceHash === null) delete payload.workspace;
-  return leaksCredential(payload, context.ownerKey) ? null : payload;
+  return leaksCredential(payload, context.credential) ? null : payload;
 }
 
-/** True when the payload mentions the owner key anywhere, at any depth. */
-export function leaksCredential(payload: unknown, ownerKey: string | null | undefined): boolean {
-  if (!ownerKey || ownerKey.length < 8) return false;
+/** True when the payload mentions the credential anywhere, at any depth. */
+export function leaksCredential(payload: unknown, credential: string | null | undefined): boolean {
+  if (!credential || credential.length < 8) return false;
   const serialized = safeSerialize(payload);
-  return serialized.includes(ownerKey);
+  return serialized.includes(credential);
 }
 
 function safeSerialize(value: unknown): string {

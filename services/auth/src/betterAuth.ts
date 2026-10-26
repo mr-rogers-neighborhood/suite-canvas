@@ -257,8 +257,9 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
       // Remembers the method that worked, so the sign-in screen can offer it first
       // instead of presenting four equal doors (ADR-0067 §11).
       lastLoginMethod(),
-      // Operators and org owners only; the plugin is available to everyone, the
-      // admin surface is what gates enrolment.
+      // Available to every account: the *nudge* follows the sign-in method and
+      // requirement follows capability (`mfa.ts`), because a passkey is already two
+      // factors while a magic link is one, and the mailbox is the whole account.
       twoFactor({ issuer: env.SUITE_AUTH_RP_NAME?.trim() || "Suite" }),
       // `admin` supplies the user role field and the management endpoints the admin
       // panel's people/ops half is built on (ADR-0068 §7).

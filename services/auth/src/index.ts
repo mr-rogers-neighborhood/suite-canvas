@@ -41,6 +41,7 @@ export { createInviteKey, redeemInviteKey, revokeInviteKey } from "./invites.js"
 export { generateInviteKey, hashInviteKey, looksLikeInviteKey } from "./keys.js";
 export { type LicenceStore, licenceStateFor, type MembershipReader } from "./licences.js";
 export { memoryControlPlane } from "./memory.js";
+export { MFA_COPY, type MfaAdvice, mfaAdvice, type SignInMethod } from "./mfa.js";
 export { principalPrecedence, resolvePrincipal } from "./principal.js";
 export {
   canAddWorkspace,

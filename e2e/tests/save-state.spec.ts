@@ -62,7 +62,7 @@ test("a local-only reader is warned before leaving for the launcher", async ({ p
   await page.goto(withOwnerKey(`/?workspace=${id("leaving")}`));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await page.getByTestId("workspace-home").click();
 
   // The one moment before the only copy is left behind, in plain words.
@@ -82,7 +82,7 @@ test("asks once, until the work changes", async ({ page }) => {
   await page.goto(withOwnerKey(`/?workspace=${id("once")}`));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await page.getByTestId("workspace-home").click();
   await expect(page.getByTestId("leaving-dialog")).toBeVisible();
 
@@ -90,7 +90,7 @@ test("asks once, until the work changes", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("leaving-dialog")).toHaveCount(0);
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await page.getByTestId("workspace-home").click();
   await expect(page).toHaveURL(/\/$/);
 });

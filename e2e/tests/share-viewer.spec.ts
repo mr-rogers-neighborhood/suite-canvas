@@ -66,7 +66,8 @@ async function createViewerLink(
   page: Page,
   scope: "workspace" | "board" | "card",
 ): Promise<string> {
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await page.getByTestId("share-role-viewer").click();
@@ -114,7 +115,7 @@ test("board viewer sees one board, read-only, with no editor chrome", async ({ p
 
   // No owner chrome: no share actions, no dock, no library, no board switching.
   await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);
-  await expect(viewer.getByTestId("workspace-share")).toHaveCount(0);
+  await expect(viewer.getByTestId("workspace-menu")).toHaveCount(0);
   await expect(viewer.getByTestId("dock-library")).toHaveCount(0);
   await expect(viewer.getByTestId("library-drawer")).toHaveCount(0);
   await expect(viewer.locator('[data-testid^="board-tab-"]')).toHaveCount(0);
@@ -244,7 +245,7 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
 
   // No management or editing chrome.
   await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);
-  await expect(viewer.getByTestId("workspace-share")).toHaveCount(0);
+  await expect(viewer.getByTestId("workspace-menu")).toHaveCount(0);
   await expect(viewer.getByTestId("board-create")).toHaveCount(0);
   await expect(viewer.getByTestId("card-menu")).toHaveCount(0);
   await expect(viewer.getByTestId("dock-library")).toHaveCount(0);
@@ -265,7 +266,8 @@ test.fixme("workspace viewer reads every board and cannot manage", async ({ page
   await viewer.context().close();
 
   // A workspace editor link is an edit-only token from the same dialog.
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
   const editorLink = new URL(await page.getByLabel("Share link").inputValue());
@@ -284,7 +286,8 @@ test("revoking a link makes the viewer unavailable", async ({ page, browser }) =
   });
 
   await page.getByTestId("share-close").click();
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByTestId("share-revoke-all").click();
   await expect(page.getByTestId("share-empty")).toBeVisible();

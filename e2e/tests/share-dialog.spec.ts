@@ -12,7 +12,8 @@ test("creates and revokes links from the Share dialog", async ({ page, request }
   const denied = await request.get(`${shareApi}/api/shares?workspaceId=${workspaceId}`);
   expect(denied.status()).toBe(401);
 
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
 
   // Nothing is selected, so a card link is not offered yet.

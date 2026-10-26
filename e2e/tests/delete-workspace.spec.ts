@@ -5,7 +5,7 @@ import { cardByTitle, cards, createNote, workspaceIdFactory } from "./support";
 const id = workspaceIdFactory("e2e-delete-workspace");
 
 async function openDeleteDialog(page: Page): Promise<void> {
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await expect(page.getByTestId("workspace-delete")).toBeVisible();
   await page.getByTestId("workspace-delete").click();
   await expect(page.getByTestId("delete-workspace-dialog")).toBeVisible();

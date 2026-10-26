@@ -124,7 +124,8 @@ async function createSelectionLinkFor(
   page: Page,
   scope: "selection" | "card" = "selection",
 ): Promise<string> {
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await expect(page.getByTestId("share-role-viewer")).toHaveAttribute("aria-pressed", "true");
@@ -180,7 +181,8 @@ test("the selection tab needs at least two cards", async ({ page }) => {
   await page.keyboard.up("Shift");
   await expect(selectedNodes(page)).toHaveCount(1);
 
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   const selectionTab = page.getByTestId("share-tab-selection");
   await expect(selectionTab).toBeDisabled();
   await expect(selectionTab).toHaveAttribute("title", /Select two or more cards/);
@@ -195,7 +197,8 @@ test("the selection tab needs at least two cards", async ({ page }) => {
   await page.keyboard.up("Shift");
   await expect(selectedNodes(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-tab-selection")).toBeEnabled();
   await page.getByTestId("share-tab-selection").click();
   await expect(page.getByTestId("share-tab-selection")).toHaveAttribute("aria-pressed", "true");
@@ -244,7 +247,7 @@ test("a selection link projects exactly the shared cards and stays a snapshot", 
   await expect(visible.filter({ hasText: "Shared B" })).toHaveCount(1);
   await expect(viewer.getByText("Selection share")).toBeVisible();
   await expect(viewer.getByTestId("workspace-actions")).toHaveCount(0);
-  await expect(viewer.getByTestId("workspace-share")).toHaveCount(0);
+  await expect(viewer.getByTestId("workspace-menu")).toHaveCount(0);
 
   // Live: an owner edit reaches the viewer.
   const sharedA = cards(page).filter({ hasText: "Shared A" });

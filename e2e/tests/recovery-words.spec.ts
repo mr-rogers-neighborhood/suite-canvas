@@ -9,7 +9,7 @@ import { cards, workspaceIdFactory } from "./support";
 const id = workspaceIdFactory("e2e-recovery");
 
 async function openRecoveryDialog(page: Page): Promise<void> {
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await expect(page.getByTestId("workspace-recovery-key")).toBeVisible();
   await page.getByTestId("workspace-recovery-key").click();
   await expect(page.getByTestId("recovery-dialog")).toBeVisible();

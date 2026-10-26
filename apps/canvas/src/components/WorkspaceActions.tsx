@@ -9,6 +9,7 @@ import {
   downloadWorkspaceMarkdown,
   navigateTo,
 } from "../session/workspaceTransfer";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { DeleteWorkspaceDialog } from "./DeleteWorkspaceDialog";
@@ -56,6 +57,7 @@ export function WorkspaceActions({
   const shareRequest = useUiStore((state) => state.shareRequest);
   const clearShareRequest = useUiStore((state) => state.clearShareRequest);
   const [menuOpen, setMenuOpen] = useState(false);
+  useEscapeLayer(() => setMenuOpen(false), menuOpen);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareScope, setShareScope] = useState<ShareScope>("workspace");
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -139,40 +141,45 @@ export function WorkspaceActions({
 
   return (
     <div className="flex items-center gap-1" data-testid="workspace-actions">
-      {canManageLinks && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-        <button
-          type="button"
-          data-testid="workspace-share"
-          className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-          onClick={() => {
-            setShareScope("workspace");
-            setShareOpen(true);
-          }}
-          title="Share this workspace, a board or a card."
-        >
-          Share
-        </button>
-      ) : null}
       <div className="relative flex h-6 items-center" ref={menu}>
         <button
           type="button"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          data-testid="workspace-file"
+          data-testid="workspace-menu"
           className="inline-flex h-6 items-center rounded-md px-2 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+          title="What you can do with this workspace."
           onClick={() => {
             setSavedOnDevice(readSavedRecoveryKey(workspaceId));
             setMenuOpen((open) => !open);
           }}
         >
-          File
+          Workspace
         </button>
         {menuOpen ? (
           <div
             role="menu"
-            data-testid="workspace-file-menu"
+            data-testid="workspace-menu-list"
             className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
           >
+            {canManageLinks && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="workspace-menu-share"
+                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShareScope("workspace");
+                    setShareOpen(true);
+                  }}
+                >
+                  Share this workspace…
+                </button>
+                <hr className="my-1 border-[var(--hairline)]" />
+              </>
+            ) : null}
             <button
               type="button"
               role="menuitem"
@@ -209,6 +216,7 @@ export function WorkspaceActions({
             >
               Export Markdown…
             </button>
+            <hr className="my-1 border-[var(--hairline)]" />
             {onOpenStyles ? (
               <button
                 type="button"
@@ -245,20 +253,7 @@ export function WorkspaceActions({
                 ) : null}
               </button>
             ) : null}
-            {canDeleteWorkspace ? (
-              <button
-                type="button"
-                role="menuitem"
-                data-testid="workspace-delete"
-                className="mt-1 flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/15"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setDeleteOpen(true);
-                }}
-              >
-                Delete this workspace…
-              </button>
-            ) : null}
+            <hr className="my-1 border-[var(--hairline)]" />
             <button
               type="button"
               role="menuitem"
@@ -268,6 +263,22 @@ export function WorkspaceActions({
             >
               Back to launcher
             </button>
+            {/* Destructive last: the row a reader should reach by leaving the
+                rest behind, at the bottom of the menu. */}
+            {canDeleteWorkspace ? (
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="workspace-delete"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/15"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDeleteOpen(true);
+                }}
+              >
+                Delete this workspace…
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -71,7 +71,7 @@ export async function libraryRowAction(row: Locator, action: string): Promise<vo
  * to the launcher just gives the reader's answer.
  */
 export async function leaveForLauncher(page: Page): Promise<void> {
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await page.getByTestId("workspace-home").click();
   const leaving = page.getByTestId("leaving-dialog");
   await leaving.waitFor({ state: "visible", timeout: 2_000 }).catch(() => {});

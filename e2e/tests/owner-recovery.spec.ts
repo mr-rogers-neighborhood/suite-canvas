@@ -21,7 +21,7 @@ async function createNote(page: Page, title: string): Promise<void> {
 }
 
 async function openRecoveryDialog(page: Page): Promise<void> {
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   await expect(page.getByTestId("workspace-recovery-key")).toHaveCount(1);
   await page.getByTestId("workspace-recovery-key").click();
   await expect(page.getByTestId("recovery-dialog")).toBeVisible();
@@ -97,7 +97,7 @@ test("offers a separate recovery key right after a backup export", async ({ page
   await page.goto(`/?workspace=${workspaceId("backup")}`);
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   const backup = await downloadText(page, () =>
     page.getByTestId("workspace-export-backup").click(),
   );

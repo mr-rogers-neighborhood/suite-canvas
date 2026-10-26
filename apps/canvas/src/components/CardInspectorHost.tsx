@@ -50,14 +50,14 @@ export function CardInspectorHost() {
 
   /**
    * Escape closes the panel before anything under it reacts, and leaves the card
-   * selected — its own × does the same, so the key and the button agree. While a
-   * field inside the panel is being edited the panel steps out of the layer stack,
-   * because a text entry clears before its container closes and the canvas chain
-   * already ends that edit.
+   * selected — its own × does the same, so the key and the button agree.
+   *
+   * While *any* card is being edited the panel steps out of the layer stack: an
+   * editor owns Escape, and it is the innermost thing on screen whichever surface
+   * it is on. That is the canvas card body as much as a field in the panel, which
+   * is why the test is `editingNodeId` and not "editing inside the panel".
    */
-  const editingInsidePanel =
-    inspectorNodeId !== null && editingSurface === "panel" && editingNodeId === inspectorNodeId;
-  useEscapeLayer(closeInspector, inspectorNodeId !== null && !editingInsidePanel);
+  useEscapeLayer(closeInspector, inspectorNodeId !== null && editingNodeId === null);
   // A container that vanished (deleted in another tab, trashed) closes the drawer
   // rather than leaving a panel describing something that is not there.
   /**

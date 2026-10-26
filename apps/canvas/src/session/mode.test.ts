@@ -185,11 +185,10 @@ describe("standalone workspace actions", () => {
 
     render(createElement(WorkspaceActions, { workspaceId: "ws-1", boardId: null, title: "Local" }));
 
-    // No link management, so no Share button and no key to manage.
-    expect(screen.queryByTestId("workspace-share")).toBeNull();
-
-    // Export is local, so the File menu survives for the standalone profile.
-    fireEvent.click(screen.getByTestId("workspace-file"));
+    // Export is local, so the workspace menu survives the standalone profile.
+    fireEvent.click(screen.getByTestId("workspace-menu"));
+    // No link management, so the share row and the owner key are both absent.
+    expect(screen.queryByTestId("workspace-menu-share")).toBeNull();
     expect(screen.getByTestId("workspace-export-backup")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-json")).toBeTruthy();
     expect(screen.getByTestId("workspace-export-markdown")).toBeTruthy();

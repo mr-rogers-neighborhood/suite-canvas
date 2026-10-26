@@ -47,7 +47,7 @@ test("exports a workspace and imports it as a new workspace", async ({ page }) =
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Export me");
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByTestId("workspace-export-backup").click();
   const download = await downloadPromise;
@@ -101,13 +101,13 @@ test("exports portable JSON and Markdown from the workspace", async ({ page }) =
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Portable note");
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   const jsonPromise = page.waitForEvent("download");
   await page.getByTestId("workspace-export-json").click();
   const json = await jsonPromise;
   expect(json.suggestedFilename()).toMatch(/\.json$/);
 
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   const markdownPromise = page.waitForEvent("download");
   await page.getByTestId("workspace-export-markdown").click();
   const markdown = await markdownPromise;

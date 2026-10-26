@@ -123,7 +123,7 @@ async function expectImageRendered(card: Locator): Promise<void> {
 
 /** File -> Export backup, and the file that landed on disk. */
 async function exportBackup(page: Page): Promise<Backup> {
-  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-menu").click();
   const pending = page.waitForEvent("download");
   await page.getByTestId("workspace-export-backup").click();
   const download = await pending;

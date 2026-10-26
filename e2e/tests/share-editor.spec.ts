@@ -132,7 +132,8 @@ async function typeBody(page: Page, card: Locator, text: string): Promise<void> 
 
 /** Creates an editor link for the active scope and returns its URL. */
 async function createEditorLink(page: Page, scope: "board" | "card"): Promise<string> {
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId(`share-tab-${scope}`).click();
   await page.getByTestId("share-role-editor").click();
@@ -443,7 +444,8 @@ test("workspace editor token edits the workspace without owner chrome", async ({
   await page.goto(workspaceUrl("workspace-token"));
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-share").click();
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-menu-share").click();
   await expect(page.getByTestId("share-dialog")).toBeVisible();
   await page.getByTestId("share-role-editor").click();
   await page.getByTestId("share-create").click();
@@ -460,8 +462,8 @@ test("workspace editor token edits the workspace without owner chrome", async ({
     await expect(editor.getByTestId("sync-status")).toHaveAttribute("data-role", "editor", {
       timeout: 15_000,
     });
-    await expect(editor.getByTestId("workspace-share")).toHaveCount(0);
-    await expect(editor.getByTestId("workspace-file")).toHaveCount(0);
+    // No owner chrome: the workspace menu is the app bar's only door to it.
+    await expect(editor.getByTestId("workspace-menu")).toHaveCount(0);
     // Full live workspace editing: dock, library, board creation, type settings.
     await expect(editor.getByTestId("dock-library")).toBeVisible();
     await expect(editor.getByTestId("board-create")).toBeVisible();

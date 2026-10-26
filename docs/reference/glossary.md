@@ -24,7 +24,6 @@ One definition per term, in the sense this repository uses it. The model behind 
 | lens | What a saved view does to the canvas: it dims everything the query did not select | `activeViewId`, `runViewQuery` |
 | portal | A card that opens another board and shows a live miniature of it | `PortalNode`, `board` field |
 | share projection | The read-only copy of a board, card or selection that a share link opens | `projectWorkspace`, `share-<token>` |
-| owner key | The 32-byte secret that proves ownership of a workspace. The relay stores only its hash | `#owner=`, `.suitekey` |
 | account | A person in the identity service, mapped to workspace capabilities through an organization role | `services/auth`, `account` |
 | licence | A signed Ed25519 token that sets a hosted relay's workspace and byte caps, and never gates a feature | `licence.ts`, `LicenceClaims` |
 | presence | Ephemeral signals about a peer: pointer, selection, gesture, caret | `EphemeralStore`, `presence.ts` |
@@ -36,7 +35,8 @@ One definition per term, in the sense this repository uses it. The model behind 
 | inbox | The cards with no placement on any board | `listInboxCards`, `Inbox` tab |
 | home board | The board a card returns to and the workspace lands on; the oldest placement wins | `homeBoardId`, `homeBoardId(cardId)` |
 | layer rank | The fractional `z` value ordering cards within one board | `placements.<id>.z`, `moveLayer` |
-| claim | Registering the first owner key for a workspace, or recording a licence against its id | `/api/workspaces/:id/claim`, `licence claim` |
+| claim | Recording the organization that owns a workspace, which happens on the first signed-in join | `workspace_orgs`, `claimWorkspaceForSession` |
+| fold | A card or a section reduced to its header. Reader state, never a document write | `collapsedCards`, `collapsedSections` |
 
 ## Words we do not use
 

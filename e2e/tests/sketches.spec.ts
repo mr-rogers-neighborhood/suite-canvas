@@ -83,7 +83,7 @@ test("the menus and the library say Sketch, never Whiteboard", async ({ page }) 
   // "author your own Sketch type", which the model forbids (ADR-0011 amendment).
   await expect(page.getByTestId("facet-type-whiteboard")).toHaveCount(0);
   // It is still a card, listed in Cards like any other.
-  await expect(page.getByTestId("library-tab-cards")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("library-tab-cards")).toHaveAttribute("aria-current", "page");
   await expect(page.locator("li[data-row-id]")).toHaveCount(3);
 });
 

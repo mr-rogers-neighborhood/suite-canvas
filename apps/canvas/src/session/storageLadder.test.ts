@@ -35,15 +35,28 @@ describe("the storage ladder", () => {
     expect(rung.action).toBe("none");
   });
 
-  it("asks an anonymous reader to sign in when the browser cannot promise durability", () => {
+  it("tells an anonymous reader where the work is, and names the act that keeps it", () => {
     for (const persist of ["denied", "unsupported", "unknown"] as const) {
       const rung = anonymous(persist);
 
       expect(rung.rung).toBe("banner");
-      expect(rung.alarm).toBe(true);
       expect(rung.action).toBe("sign-in");
-      expect(rung.headline).toBe("This browser may clear your work. Sign in to keep it.");
+      // The pill is a status even here: the work *is* saved on this device, and whether
+      // the browser will keep it is a different sentence, in the panel.
+      expect(rung.pill).toBe("Saved on this device");
+      expect(rung.pill).not.toBe("Saved temporarily");
+      expect(rung.alarm).toBe(false);
+      // The act, not the threat.
+      expect(rung.headline).toBe("Sign in to keep this workspace anywhere.");
+      expect(rung.headline).not.toContain("clear your work");
     }
+  });
+
+  it("says the same thing about where the work is, durable or not", () => {
+    // The pill answers "where", so the browser's answer cannot change it: only a failed
+    // write does, and that has its own pill.
+    expect(anonymous("persisted").pill).toBe(anonymous("denied").pill);
+    expect(anonymous("persisted").pill).toBe("Saved on this device");
   });
 
   it("does not nag a signed-in reader about a non-durable browser", () => {

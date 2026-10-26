@@ -7,7 +7,7 @@ const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-templates-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const tabs = (page: Page) => page.locator('[role="tab"][data-testid^="board-tab"]');
+const tabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 const sectionHeaders = (page: Page) => page.locator(".section-header");
 
 /**
@@ -24,7 +24,7 @@ async function openLibrary(page: Page, tab: "cards" | "boards"): Promise<void> {
 
 async function selectedBoardId(page: Page): Promise<string> {
   const testId = await page
-    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .locator('[data-testid^="board-tab"][aria-current="page"]')
     .getAttribute("data-testid");
   if (!testId) throw new Error("no board tab is selected");
   return testId.replace("board-tab-", "");
@@ -68,10 +68,11 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   await page.getByTestId(`library-template-use-${boardId}`).click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
   await expect(tabs(page)).toHaveCount(3);
-  await expect(page.getByRole("tab", { name: "Board 2 2" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Boards" })
+      .getByRole("button", { name: "Board 2 2", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(cards(page)).toHaveCount(1);
 
   // The card is a copy, not the same record.
@@ -91,7 +92,11 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
   // Duplication is one undoable batch, so the copy goes away in one step.
   await page.keyboard.press("Control+z");
   await expect(tabs(page)).toHaveCount(2);
-  await expect(page.getByRole("tab", { name: "Board 2 2" })).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Boards" })
+      .getByRole("button", { name: "Board 2 2", exact: true }),
+  ).toHaveCount(0);
 });
 
 /**
@@ -109,10 +114,11 @@ test("generates a built-in starter board with its sections", async ({ page }) =>
 
   await page.getByTestId("library-starter-use-research").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Research board" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Boards" })
+      .getByRole("button", { name: "Research board", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
 
   // Three regions, six titled cards, spread across the columns.
   await expect(sectionHeaders(page)).toHaveCount(3);

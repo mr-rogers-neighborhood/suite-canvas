@@ -4,7 +4,6 @@ import { StatusCursor } from "./StatusCursor";
 
 const ana = { name: "Ana", color: "#2563eb" };
 const bo = { name: "Bo", color: "#e11d48" };
-const cy = { name: "Cy", color: "#16a34a" };
 
 /** Slot names in document order: the cursor's fixed reading order (ADR-0064 §4). */
 function slots(container: HTMLElement): (string | null)[] {
@@ -15,7 +14,7 @@ function slots(container: HTMLElement): (string | null)[] {
 
 describe("StatusCursor", () => {
   it("carries the owner's initial in their presence colour", () => {
-    render(<StatusCursor user={ana} purpose="explore" gesture="place" isSelf />);
+    render(<StatusCursor user={ana} purpose="explore" gesture="place" isSelf={false} />);
 
     const bubble = screen.getByTestId("status-cursor-bubble");
     expect(bubble).toHaveTextContent("A");
@@ -49,30 +48,22 @@ describe("StatusCursor", () => {
     expect(presenting.className).not.toBe(restingClass);
   });
 
-  it("draws only the slots it has data for, always in the same order", () => {
+  it("carries the gesture slot only when the next click is not a plain placement", () => {
     const { container, rerender } = render(
-      <StatusCursor
-        user={ana}
-        purpose="run"
-        gesture="thread"
-        runProgress={{ placed: 3, total: 6 }}
-        unread={2}
-        peers={[bo, cy]}
-        isSelf
-      />,
+      <StatusCursor user={ana} purpose="run" gesture="thread" isSelf={false} />,
     );
 
-    expect(slots(container)).toEqual(["gesture", "run", "unread", "peers"]);
-    expect(screen.getByTestId("status-cursor-run")).toHaveTextContent("3/6");
+    // One slot is the whole vocabulary of a peer's cursor now: the run count, the unread
+    // count and the stack of off-screen people went with the local bubble.
+    expect(slots(container)).toEqual(["gesture"]);
 
-    rerender(<StatusCursor user={ana} purpose="run" gesture="place" isSelf unread={0} />);
+    rerender(<StatusCursor user={ana} purpose="run" gesture="place" isSelf={false} />);
 
-    // Nothing to say but the purpose: no gesture, no run, no unread, no peers.
     expect(slots(container)).toEqual([]);
   });
 
   it("stays quiet about the gesture while the next click is a plain placement", () => {
-    render(<StatusCursor user={ana} purpose="explore" gesture="place" isSelf />);
+    render(<StatusCursor user={ana} purpose="explore" gesture="place" isSelf={false} />);
 
     expect(screen.queryByTestId("status-cursor-gesture")).toBeNull();
     // ...and the label does not name a gesture it is not making.
@@ -95,42 +86,25 @@ describe("StatusCursor", () => {
       "Ana \u2014 recording a tour",
     );
 
-    rerender(
-      <StatusCursor
-        user={ana}
-        purpose="run"
-        gesture="thread"
-        runProgress={{ placed: 3, total: 6 }}
-        isSelf
-      />,
-    );
+    rerender(<StatusCursor user={ana} purpose="run" gesture="thread" isSelf={false} />);
 
-    // One sentence covers purpose, gesture and progress: a screenshot of the
-    // bubble is legible without the sidebar that says the same thing.
+    // Purpose and gesture, in one sentence: a screenshot of the bubble is legible
+    // without the widget the other reader is looking at.
     expect(screen.getByTestId("status-cursor-bubble")).toHaveAttribute(
       "title",
-      "Ana \u2014 running a sequence \u00b7 thread \u00b7 3 of 6 placed",
+      "Ana \u2014 running a sequence \u00b7 thread",
     );
   });
 
-  it("makes the peer stack a button that says how many are outside the view", () => {
-    render(<StatusCursor user={ana} purpose="explore" gesture="thread" peers={[bo, cy]} isSelf />);
-
-    const stack = screen.getByRole("button", { name: "2 cursors outside this view" });
-    expect(stack).toBe(screen.getByTestId("status-cursor-peers"));
-    expect(stack).toHaveClass("status-cursor__peers");
-  });
-
-  it("keeps everything but the bubble and the stack transparent to the pointer", () => {
+  it("keeps everything but the bubble transparent to the pointer", () => {
     const { container } = render(
-      <StatusCursor user={ana} purpose="run" gesture="fan" peers={[bo]} isSelf />,
+      <StatusCursor user={ana} purpose="run" gesture="fan" isSelf={false} />,
     );
 
-    // Expressed as classes because the discipline is the stylesheet's: the layer
-    // wraps a pointer-events-none root and opts the two buttons back in.
+    // Expressed as classes because the discipline is the stylesheet's: the layer wraps a
+    // pointer-events-none root and opts the one button back in.
     expect(container.firstElementChild).toHaveClass("status-cursor");
     expect(screen.getByTestId("status-cursor-bubble")).toHaveClass("status-cursor__bubble");
-    expect(screen.getByTestId("status-cursor-peers")).toHaveClass("status-cursor__peers");
     expect(screen.getByTestId("status-cursor-ring")).toHaveClass("status-cursor__ring");
   });
 

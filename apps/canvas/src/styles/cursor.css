@@ -193,3 +193,50 @@
   font-size: 9px;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * A peer who is off this view (ADR-0064 amendment). It used to be a row of initials
+ * inside the reader's own status bubble; with that bubble withdrawn, the edge of the
+ * glass is where "they went that way" belongs — the direction is the information.
+ *
+ * Fixed, like the status anchors, because it is a place on the glass rather than in the
+ * scene, and the coordinates are already screen space.
+ */
+.peer-edge-tick {
+  position: fixed;
+  z-index: 56;
+  display: flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+}
+
+.peer-edge-tick:hover {
+  background: var(--segmented-bg);
+}
+
+.peer-edge-tick:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.peer-edge-tick__initial {
+  display: flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}

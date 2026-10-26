@@ -111,10 +111,10 @@ test("focuses the section and marks its row when the row is clicked", async ({ p
   const before = await viewport.getAttribute("style");
 
   const row = rowFor(page, "Focus me");
-  await expect(row).not.toHaveAttribute("aria-current", "true");
+  await expect(row).not.toHaveAttribute("aria-current", "page");
   await row.click();
 
-  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row).toHaveAttribute("aria-current", "page");
   await expect.poll(async () => viewport.getAttribute("style")).not.toBe(before);
 });
 

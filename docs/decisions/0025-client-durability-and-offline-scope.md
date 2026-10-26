@@ -98,7 +98,7 @@ network has gone away.
 - **A modal dialog on quota exhaustion.** Rejected: it interrupts the one thing
   that still works — editing — and can be dismissed without reading it.
 
-## Open question — "Saved temporarily" is a hedge, and readers hear a threat
+## Resolved — the pill is a status, and the risk is the panel's sentence
 
 The author's note, verbatim: *"'Saved Temporarily' is still a bit confusing and instils uncertainty…
 it is not clear whether the changes are permanent or if they might be lost… Most people are not "Local
@@ -118,7 +118,7 @@ reload may be empty. Two separate things are being collapsed into one phrase: *w
 (here, in this browser) and *how firmly* the browser promises to keep it. The second is a footnote for
 most readers and a real risk for a few.
 
-**Options, to choose with the author:**
+**Options considered.**
 
 1. **Say where, not how firm.** Pill: "Saved on this device" always; the durability caveat becomes a
    detail in the panel, not a pill. The claim stays true in every case, and the difference between
@@ -132,5 +132,19 @@ most readers and a real risk for a few.
 4. **Do not mention it at all** for signed-in readers — already true: `signedIn` renders "Saved", and
    that is the state every hosted reader is in. The hedge is exclusive to anonymous, local-only use.
 
-The open question: **is the pill a status or a warning?** If status, option 1 plus option 2. If warning,
-it belongs in the panel where there is room to say what to do about it.
+**Decision (author, 2026-10-25): options 1 and 2 — say where, *and* retry on a real gesture.**
+
+**What that means in the code.** `storageLadder()` returns `"Saved on this device"` for every
+non-failing anonymous state — durable or not — because the pill answers *where*, and the browser's
+answer does not change that. `"Saved temporarily"` is gone. The banner's one sentence names the act
+rather than the risk: "Sign in to keep this workspace anywhere." The risk moved into the panel's
+`detail` row, in the reader's words, with an export beside it. The one case where the pill may still
+alarm is a *failed write*, where the risk is present tense and hiding it would be a lie.
+
+`requestPersistence()` is now offered from a genuine click — "Keep a copy on this device" — for
+`unknown` **and** `denied`. The automatic attempt on first edit stays (it costs nothing), but browsers
+weigh user intent, so the button is where durability is actually won; when it is granted the caveat
+disappears on its own because the state changed rather than because the copy did.
+
+Signed-in readers are untouched: "Saved", no caveat. That is the state every hosted reader is in, which
+is why the hedge was only ever visible to the anonymous, local-only case the author described.

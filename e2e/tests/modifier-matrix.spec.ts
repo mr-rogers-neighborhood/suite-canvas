@@ -91,6 +91,13 @@ async function walkTo(chip: Locator, attribute: string, value: string): Promise<
   throw new Error(`could not reach ${attribute}=${value}`);
 }
 
+/** Put the app in a theme, because the palette resolves per theme. */
+async function useTheme(page: Page, theme: "light" | "dark"): Promise<void> {
+  await page.getByTestId("theme-toggle").click();
+  await page.getByTestId(`theme-${theme}`).click();
+  await expect(page.getByTestId("theme-toggle")).toHaveAttribute("data-mode", theme);
+}
+
 /** What each mode paints like when it is the stored one: the reference for previews. */
 async function committedModes(page: Page): Promise<Map<string, Paint>> {
   const paints = new Map<string, Paint>();
@@ -121,79 +128,87 @@ async function committedPurposes(page: Page): Promise<Map<string, Paint>> {
   return paints;
 }
 
-test("the mode axis closes over all four modes from any stored mode", async ({ page }) => {
-  await page.goto(workspaceUrl("modes"));
-  await expect(cards(page)).toHaveCount(2);
-  const paint = await committedModes(page);
+for (const theme of ["light", "dark"] as const) {
+  test(`[${theme}] the mode axis closes over all four modes from any stored mode`, async ({
+    page,
+  }) => {
+    await page.goto(workspaceUrl(`modes-${theme}`));
+    await expect(cards(page)).toHaveCount(2);
+    await useTheme(page, theme);
+    const paint = await committedModes(page);
 
-  for (const stored of MODES) {
-    await walkTo(linkMode(page), "data-mode", stored);
-    await defocus(page);
+    for (const stored of MODES) {
+      await walkTo(linkMode(page), "data-mode", stored);
+      await defocus(page);
 
-    const shown: (string | null)[] = [stored];
-    for (const key of Object.values(KEY)) {
-      await hold(page, key.keys);
-      const previewed = await linkMode(page).getAttribute("data-preview");
-      // The preview is painted from the attribute, not by adding a class: previewing
-      // `place` from `thread` has to *remove* the stored look, not stack on it.
-      expect(previewed, `${stored} + ${key.name}`).not.toBeNull();
-      expect(previewed, `${stored} + ${key.name}`).not.toBe(stored);
-      shown.push(previewed);
+      const shown: (string | null)[] = [stored];
+      for (const key of Object.values(KEY)) {
+        await hold(page, key.keys);
+        const previewed = await linkMode(page).getAttribute("data-preview");
+        // The preview is painted from the attribute, not by adding a class: previewing
+        // `place` from `thread` has to *remove* the stored look, not stack on it.
+        expect(previewed, `${stored} + ${key.name}`).not.toBeNull();
+        expect(previewed, `${stored} + ${key.name}`).not.toBe(stored);
+        shown.push(previewed);
 
-      // The glyph and the fill are the proposed mode's, not the stored one's:
-      // `branch` + ctrl drawing fan's glyph in branch's green is what this catches.
-      const held = await paintOf(linkMode(page));
-      expect(held.glyph, `${stored} + ${key.name} glyph`).toBe(GLYPH[previewed ?? ""]);
-      expect(held.background, `${stored} + ${key.name} fill`).toBe(
-        paint.get(previewed ?? "")?.background,
-      );
-      expect(held.ink, `${stored} + ${key.name} ink`).toBe(paint.get(previewed ?? "")?.ink);
+        // The glyph and the fill are the proposed mode's, not the stored one's:
+        // `branch` + ctrl drawing fan's glyph in branch's green is what this catches.
+        const held = await paintOf(linkMode(page));
+        expect(held.glyph, `${stored} + ${key.name} glyph`).toBe(GLYPH[previewed ?? ""]);
+        expect(held.background, `${stored} + ${key.name} fill`).toBe(
+          paint.get(previewed ?? "")?.background,
+        );
+        expect(held.ink, `${stored} + ${key.name} ink`).toBe(paint.get(previewed ?? "")?.ink);
 
-      await release(page, key.keys);
-      await expect(linkMode(page)).not.toHaveAttribute("data-preview");
-      // Released, the chip is back to painting the stored mode exactly.
-      const after = await paintOf(linkMode(page));
-      expect(after.background, `${stored} after release`).toBe(paint.get(stored)?.background);
+        await release(page, key.keys);
+        await expect(linkMode(page)).not.toHaveAttribute("data-preview");
+        // Released, the chip is back to painting the stored mode exactly.
+        const after = await paintOf(linkMode(page));
+        expect(after.background, `${stored} after release`).toBe(paint.get(stored)?.background);
+      }
+
+      expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(MODES.length);
+      expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual([...MODES].sort());
     }
+  });
 
-    expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(MODES.length);
-    expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual([...MODES].sort());
-  }
-});
+  test(`[${theme}] the purpose axis closes over all four purposes, explain included`, async ({
+    page,
+  }) => {
+    await page.goto(workspaceUrl(`purpose-${theme}`));
+    await expect(cards(page)).toHaveCount(2);
+    await useTheme(page, theme);
+    const paint = await committedPurposes(page);
 
-test("the purpose axis closes over all four purposes, explain included", async ({ page }) => {
-  await page.goto(workspaceUrl("purpose"));
-  await expect(cards(page)).toHaveCount(2);
-  const paint = await committedPurposes(page);
+    for (const stored of PURPOSES) {
+      await walkTo(purpose(page), "data-purpose", stored);
+      await defocus(page);
 
-  for (const stored of PURPOSES) {
-    await walkTo(purpose(page), "data-purpose", stored);
-    await defocus(page);
+      const shown: (string | null)[] = [stored];
+      for (const key of Object.values(KEY)) {
+        await hold(page, key.keys);
+        const previewed = await purpose(page).getAttribute("data-preview");
+        expect(previewed, `${stored} + ${key.name}`).not.toBeNull();
+        expect(previewed, `${stored} + ${key.name}`).not.toBe(stored);
+        shown.push(previewed);
 
-    const shown: (string | null)[] = [stored];
-    for (const key of Object.values(KEY)) {
-      await hold(page, key.keys);
-      const previewed = await purpose(page).getAttribute("data-preview");
-      expect(previewed, `${stored} + ${key.name}`).not.toBeNull();
-      expect(previewed, `${stored} + ${key.name}`).not.toBe(stored);
-      shown.push(previewed);
+        const held = await paintOf(purpose(page));
+        expect(held.glyph, `${stored} + ${key.name} glyph`).toBe(GLYPH[previewed ?? ""]);
+        expect(held.background, `${stored} + ${key.name} fill`).toBe(
+          paint.get(previewed ?? "")?.background,
+        );
 
-      const held = await paintOf(purpose(page));
-      expect(held.glyph, `${stored} + ${key.name} glyph`).toBe(GLYPH[previewed ?? ""]);
-      expect(held.background, `${stored} + ${key.name} fill`).toBe(
-        paint.get(previewed ?? "")?.background,
-      );
+        await release(page, key.keys);
+        await expect(purpose(page)).not.toHaveAttribute("data-preview");
+        const after = await paintOf(purpose(page));
+        expect(after.background, `${stored} after release`).toBe(paint.get(stored)?.background);
+      }
 
-      await release(page, key.keys);
-      await expect(purpose(page)).not.toHaveAttribute("data-preview");
-      const after = await paintOf(purpose(page));
-      expect(after.background, `${stored} after release`).toBe(paint.get(stored)?.background);
+      expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(PURPOSES.length);
+      expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual([...PURPOSES].sort());
     }
-
-    expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(PURPOSES.length);
-    expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual([...PURPOSES].sort());
-  }
-});
+  });
+}
 
 /**
  * The case the author reported: the second value in both families, where a step-back

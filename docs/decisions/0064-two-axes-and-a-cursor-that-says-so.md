@@ -206,7 +206,7 @@ bottom segment and not the top. Mixing a value's own hue fixes the class of bug 
 `run`'s fill *is* its hue, so an engaged purpose looks untouched by the pointer, which is the state
 outranking it without a second rule to say so.
 
-## Open question — does the reader need their own cursor to say all this?
+## Resolved — the cursor speaks for peers only
 
 The author's note, verbatim: *"the presence cursor has all of the elements we want to indicate, but it is
 indeed cluttered/ugly. Lets consider ways to simplify its appearance… I'm also skeptical on giving the
@@ -218,7 +218,8 @@ while the axes were new and the widget was smaller. Now the pill states both axe
 same colours, at rest, so a ring that repeats them under the pointer is saying the same sentence twice.
 It is redundant for the reader who owns it and load-bearing only for **peers**, who cannot see the pill.
 
-Options, none chosen yet:
+**Decision (author, 2026-10-25): option 1, peers only.** What follows is the options as they stood
+when the question was asked, then what the decision changed.
 
 1. **Peers only.** The local reader keeps the pointer they already have; the ring is published, not
    drawn locally. Smallest change, and it removes the redundancy outright — at the cost of the local
@@ -229,7 +230,68 @@ Options, none chosen yet:
    colour — one glance, no reading.
 4. **Keep it as it is** and reduce the clutter by drawing it smaller and fading it after a gesture.
 
-The question to settle with the author: **is the local ring a redundancy or a reminder?** If the pill is
-always on screen (it is), the honest answer is redundancy, and option 1 or 2 follows. Both keep the
-published state intact, so a peer's cursor is unaffected — this is a decision about what we draw for
-ourselves, not about what we tell each other.
+**What the decision changed.**
+
+- `StatusCursorLayer` draws **only peers'** bubbles. The reader's own pointer stays a plain arrow in every
+  mode. Presence publishing is untouched, so what a peer sees is identical before and after: this changed
+  what we draw for ourselves, never what we tell each other.
+- The local bubble's three passengers went to surfaces that already answer them:
+  - *Run progress* → the placement bar (`3 / 7`), which was always drawn too and is where a run is
+    steered from.
+  - *Off-screen peers* → **edge ticks**: one button per peer who is off this view, clamped to the canvas
+    edge in their colour with their initial, because the *direction* is the information the bubble could
+    not give. Pressing a tick centres the camera on them, which is what the stack's button did.
+  - *Unread chat* → nowhere yet: the chat lane is not built (ADR-0064 §4), so the prop was removed rather
+    than left wired to nothing. When chat lands, the badge belongs on the dock, not on a cursor.
+- **What the reader loses**: the bubble was the one place that named the current mode in words. The pill
+  says it on hover and to a screen reader (`Thread mode: click connector after connector to chain links`),
+  so the words are one interaction away instead of permanently under the pointer. That is the trade.
+- `StatusCursor` keeps `isSelf` because it decides tab order, and a peer's bubble must stay out of the
+  reader's tab order; the layer now always passes `false`.
+
+## Amendment — the board strip is a navigation, not a tablist
+
+Found while making `pnpm test:stories` green, and unrelated to the axes: `BoardTabs` used
+`role="tablist"` and `role="tab"`, with a per-board close button and a rename field as siblings inside
+it. Axe reports `aria-required-children` — a tablist's children must be tabs — and had been failing two
+stories for some time, which is why the story suite could not be used as evidence.
+
+**The fix is the semantic, not the markup.** The planned approach was a strict tablist with closing moved
+out of the strip, but that trades away an affordance every reader expects in order to satisfy a role that
+was wrong in the first place. Switching a board **replaces the canvas**; it does not reveal a tab panel on
+the same page, which is what the Tabs pattern describes. So the strip is a `<nav aria-label="Boards">` of
+buttons, and the selected one carries `aria-current="page"` — literally "you are here" — which is both
+true and free of child constraints.
+
+- Closing stays where it is, a button beside its board's tab, and it is in the tab order: a board's close
+  control is reachable with the keyboard, which the strict-tablist version would not have guaranteed.
+- The rename field stays allowed, because a `nav` may hold one.
+- Tests moved from `[role="tab"]` / `aria-selected` to `[data-testid^="board-tab"]` / `aria-current`,
+  across eleven e2e files: the selector change is the record of the semantic change.
+- `BoardTabs.stories` passes `toHaveNoViolations` again, so `pnpm verify` can include the story suite as
+  evidence rather than a known red.
+
+**Measured, not eyeballed.** The palette shipped with a guard test but no acceptance evidence. The
+verification half is now `e2e/tests/palette-contrast.spec.ts`, which resolves every value's fill and ink
+through the browser in **both themes** — `color-mix`, `var()` chains and the per-theme block all sit
+between the token and the pixel, so a unit test reading hexes would test something nobody sees — and
+asserts a **4.5:1** floor for the glyph on its fill. A pair that cannot be parsed fails too, because a
+token resolving to something unpaintable is worse than a low ratio.
+
+It found three values under the floor in the light theme, all of them chip fills borrowed from stroke
+tokens that were never asked to carry a glyph:
+
+| value | as a chip | now | fill |
+| --- | --- | --- | --- |
+| `branch` | 2.54:1 | **5.48:1** | `#047857` |
+| `fan` | 3.68:1 | **5.17:1** | `#2563eb` |
+| `explain` | 4.23:1 | **5.70:1** | `#7c3aed` |
+| `record` | 4.57:1 | unchanged | `--danger` |
+
+Only the *fill* moved, and only in the light theme: `--value-*-hue` and `--section-*` keep the lighter
+colours they were chosen for, so a section's border and a chip's body are allowed to differ. The dark
+theme needed nothing — its section hues are brighter and its ink is the dark surface, so the same pairs
+measure 7.2, 9.5 and 6.7 against the floor.
+
+`e2e/tests/modifier-matrix.spec.ts` now runs its whole grid in both themes as well, so "the preview paints
+like the committed value" is asserted per theme rather than only in the one the runner happens to open.

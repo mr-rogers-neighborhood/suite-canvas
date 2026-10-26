@@ -458,6 +458,14 @@ neither is a special board kind.
 None of these is a new root map: the style is a value on records that already exist, the route is two
 fields on an edge, and a step is content in a card's own body.
 
+**The shell is derived from these, not configured beside them** ([ADR-0071](./decisions/0071-style-is-derived-not-configured.md)):
+the top bar, dock, panels and menus are painted from the same tokens the board is, and style flows one way
+— card override → type default → workspace default → interface tokens. The one preference that is not
+document data is the reader's theme *mode* (light · dark · system), stored per device. Semantic hues (the
+eight mode values of [ADR-0064](./decisions/0064-two-axes-and-a-cursor-that-says-so.md)) are role tokens
+fixed by the build and are deliberately not user-editable: a reader who retuned `fan` would make a peer's
+cursor lie.
+
 ### Where a tour's state lives
 
 A tour is one document on three surfaces ([ADR-0058](./decisions/0058-a-tour-is-one-document-on-three-surfaces.md)):

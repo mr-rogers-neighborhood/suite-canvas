@@ -121,7 +121,7 @@ test("navigates the menu with the arrow keys", async ({ page }) => {
   await expect(page.getByTestId("slash-option")).toHaveCount(11);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByTestId("slash-option").nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("slash-option").nth(2)).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("Enter");
 
   await expect(card.getByTestId("card-body").locator("ul li")).toHaveCount(1);

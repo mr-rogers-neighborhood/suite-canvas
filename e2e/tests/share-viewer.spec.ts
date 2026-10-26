@@ -6,7 +6,7 @@ const workspaceUrl = (name: string) =>
   `/?workspace=e2e-share-viewer-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const boardTabs = (page: Page) => page.locator('[role="tab"][data-testid^="board-tab"]');
+const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 /** A point on the pane that no card or panel covers. */
 async function emptyCanvasPoint(page: Page, variant = 0): Promise<{ x: number; y: number }> {

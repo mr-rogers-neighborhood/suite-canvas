@@ -101,14 +101,14 @@ test("splits the inspector into Details and Content tabs", async ({ page }) => {
   await expect(contentTab).toHaveText("Content");
 
   // A blank card starts where the writing happens, not under the metadata.
-  await expect(contentTab).toHaveAttribute("aria-selected", "true");
+  await expect(contentTab).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("card-panel-body")).toBeVisible();
   await expect(page.getByTestId("card-panel-details")).toHaveCount(0);
   // The body is a surface of its own, not bare text.
   await expect(page.getByTestId("card-panel-body")).toHaveCSS("border-top-width", "1px");
 
   await detailsTab.click();
-  await expect(detailsTab).toHaveAttribute("aria-selected", "true");
+  await expect(detailsTab).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("card-panel-details")).toBeVisible();
   await expect(page.getByTestId("type-picker")).toBeVisible();
   await expect(page.getByTestId("card-panel-body")).toHaveCount(0);

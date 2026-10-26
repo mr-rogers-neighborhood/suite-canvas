@@ -15,6 +15,13 @@ import type { PersistState } from "../storage/durability";
  * - `quiet`    — persisted without an account: one calm line, no nagging.
  * - `banner`   — no account and no promise of durability: the only rung that asks for something.
  *
+ * **The pill is a status, never a warning** (author's note, ADR-0025 amendment). "Saved
+ * temporarily" asked a reader to work out whether their work still existed, and answered
+ * nothing: the work *is* saved on every edit. So the pill says where — "Saved on this
+ * device" — and the one thing that is genuinely uncertain, how firmly the browser will keep
+ * it, is a sentence in the panel with room to explain it and an action to fix it. The single
+ * exception is `blocking`, where the risk is present tense and hiding it would be a lie.
+ *
  * `signedIn` is a parameter rather than a store read so the ladder is testable before the session
  * exists, and so exactly one place decides what an account changes about the copy.
  */
@@ -42,13 +49,18 @@ export interface StorageLadder {
   action: "sign-in" | "export" | "none";
 }
 
+/**
+ * The panel's body, where there is room to explain. Still plain words: "durable", "evict" and
+ * "quota" are our model, not the reader's, and this is the sentence they read when they are
+ * already worried about their work.
+ */
 const DETAIL: Record<PersistState, string> = {
-  unknown: "This browser is asked for durable storage after your first edit.",
-  persisted: "This browser has agreed not to evict this workspace on its own.",
+  unknown: "This browser is asked to keep the copy after your first edit.",
+  persisted: "This browser has agreed to keep the copy on its own.",
   denied:
-    "This browser declined durable storage, so it may clear the local copy when the device runs low on space. The workspace still saves here.",
+    "This browser has not promised to keep the copy, so it may clear it when the device runs low on space. Your work is still saved here, and an account or an exported copy keeps it safe.",
   unsupported:
-    "This browser cannot promise durable storage. The local copy works, but it may be cleared without warning.",
+    "This browser cannot promise to keep the copy. It saves here and keeps working offline, but the browser may clear it without warning.",
 };
 
 export function storageLadder(input: StorageLadderInput): StorageLadder {
@@ -95,10 +107,13 @@ export function storageLadder(input: StorageLadderInput): StorageLadder {
       }
     : {
         rung: "banner",
-        pill: "Saved temporarily",
-        alarm: true,
-        // The banner's one sentence: no "eviction", no "quota", no "persist".
-        headline: "This browser may clear your work. Sign in to keep it.",
+        // The same pill as the durable case: where the work is does not change because the
+        // browser has not promised to keep it, and a different pill here was the hedge.
+        pill: "Saved on this device",
+        alarm: false,
+        // The act, not the threat. What can go wrong is the panel's sentence, where there is
+        // room for it and a button beside it.
+        headline: "Sign in to keep this workspace anywhere.",
         detail,
         action: "sign-in",
       };

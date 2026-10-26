@@ -57,85 +57,40 @@ const PURPOSE_LABELS: Record<CanvasPurpose, string> = {
   present: "presenting",
 };
 
-export interface RunProgress {
-  placed: number;
-  total: number;
-}
-
 export interface StatusCursorProps {
   user: PresenceUser;
   purpose: CanvasPurpose;
   gesture: CanvasMode;
-  /** A live run's count; absent when no run is in flight. */
-  runProgress?: RunProgress | null;
-  /** Unread chat count; `0` (or absent) removes the slot. */
-  unread?: number;
-  /** Peers whose cursors are outside the viewport, for the collapsed stack. */
-  peers?: PresenceUser[];
-  /** True for the reader's own cursor, false for a peer's. */
+  /**
+   * True only if a cursor ever speaks for the reader again. The local bubble is
+   * withdrawn (ADR-0064 amendment), so the layer always passes `false`; the flag is
+   * kept because it decides whether the bubble is in the reader's tab order, which is
+   * the right answer for a cursor that is not theirs.
+   */
   isSelf: boolean;
-  /** Bring the off-screen peers into view. */
-  onPeersClick?: (() => void) | undefined;
 }
 
 function initialOf(user: PresenceUser): string {
   return user.name.charAt(0).toUpperCase();
 }
 
-function peerTitle(count: number): string {
-  return `${count} ${count === 1 ? "cursor" : "cursors"} outside this view`;
-}
-
 /**
- * Everything the cursor knows, in one sentence. A pointer that is only a colour
- * would be a state some readers cannot read, so the label is not decoration.
+ * Everything the cursor knows, in one sentence. A pointer that is only a colour would
+ * be a state some readers cannot read, so the label is not decoration.
+ *
+ * A peer cursor carries two things now: who they are, and what the next click will do.
+ * A run count, the unread count and the stack of off-screen people used to ride here
+ * too; all three spoke for the reader's own pointer, and the bar, the dock and the
+ * edge ticks answer them without a bubble.
  */
-interface CursorLabelInput {
-  user: PresenceUser;
-  purpose: CanvasPurpose;
-  gesture: CanvasMode;
-  runProgress: RunProgress | null;
-  unread: number;
-  peers: PresenceUser[];
-}
-
-function cursorLabel({
-  user,
-  purpose,
-  gesture,
-  runProgress,
-  unread,
-  peers,
-}: CursorLabelInput): string {
+function cursorLabel(user: PresenceUser, purpose: CanvasPurpose, gesture: CanvasMode): string {
   const parts = [`${user.name} \u2014 ${PURPOSE_LABELS[purpose]}`];
   if (gesture !== "place") parts.push(gesture);
-  if (runProgress) parts.push(`${runProgress.placed} of ${runProgress.total} placed`);
-  if (unread > 0) parts.push(`${unread} unread`);
-  if (peers.length > 0) parts.push(peerTitle(peers.length));
   return parts.join(" \u00b7 ");
 }
 
-/** One avatar per identity: two peers can share a generated name and colour. */
-function uniquePeers(peers: PresenceUser[]): PresenceUser[] {
-  return peers.filter(
-    (peer, index) =>
-      peers.findIndex((other) => other.name === peer.name && other.color === peer.color) === index,
-  );
-}
-
-export function StatusCursor({
-  user,
-  purpose,
-  gesture,
-  runProgress = null,
-  unread = 0,
-  peers = [],
-  isSelf,
-  onPeersClick,
-}: StatusCursorProps) {
-  const label = cursorLabel({ user, purpose, gesture, runProgress, unread, peers });
-  // Four slots is the ceiling (ADR-0064); the stack shows three dots and a count.
-  const stack = uniquePeers(peers).slice(0, 3);
+export function StatusCursor({ user, purpose, gesture, isSelf }: StatusCursorProps) {
+  const label = cursorLabel(user, purpose, gesture);
   const glyph = PURPOSE_GLYPHS[purpose];
 
   return (
@@ -186,6 +141,10 @@ export function StatusCursor({
           <span aria-hidden="true">{initialOf(user)}</span>
         </button>
       </div>
+      {/* A peer's next click is the one thing their bubble cannot imply from the ring
+          alone, so it keeps a slot. Run progress, unread and the stack of off-screen
+          people are gone with the local bubble: the bar, the dock and the edge ticks
+          say those without a bubble. */}
       <span className="status-cursor__slots">
         {gesture !== "place" ? (
           <span
@@ -196,51 +155,6 @@ export function StatusCursor({
           >
             {GESTURE_GLYPHS[gesture]}
           </span>
-        ) : null}
-        {runProgress ? (
-          <span
-            className="status-cursor__slot status-cursor__slot--run"
-            data-slot="run"
-            data-testid="status-cursor-run"
-            title={`${runProgress.placed} of ${runProgress.total} placed`}
-          >
-            {`${runProgress.placed}/${runProgress.total}`}
-          </span>
-        ) : null}
-        {unread > 0 ? (
-          <span
-            className="status-cursor__slot status-cursor__slot--unread"
-            data-slot="unread"
-            data-testid="status-cursor-unread"
-            title={`${unread} unread ${unread === 1 ? "message" : "messages"}`}
-          >
-            {unread > 9 ? "9+" : unread}
-          </span>
-        ) : null}
-        {peers.length > 0 ? (
-          <button
-            type="button"
-            className="status-cursor__peers"
-            data-slot="peers"
-            data-testid="status-cursor-peers"
-            title={peerTitle(peers.length)}
-            aria-label={peerTitle(peers.length)}
-            onClick={onPeersClick}
-          >
-            {stack.map((peer) => (
-              <span
-                key={`${peer.name}:${peer.color}`}
-                className="status-cursor__peer"
-                style={{ backgroundColor: peer.color }}
-                aria-hidden="true"
-              />
-            ))}
-            {peers.length > stack.length ? (
-              <span className="status-cursor__peer-more" aria-hidden="true">
-                {`+${peers.length - stack.length}`}
-              </span>
-            ) : null}
-          </button>
         ) : null}
       </span>
     </div>

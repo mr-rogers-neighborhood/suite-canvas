@@ -25,10 +25,16 @@ describe("storage panel", () => {
     render(<StoragePanel workspaceId="ws-1" />);
     expect(screen.getByTestId("storage-status")).toHaveAttribute("data-persist", "denied");
 
+    // The pill is a status even when the browser will not promise to keep the copy.
+    expect(screen.getByTestId("storage-status")).toHaveTextContent("Saved on this device");
+    expect(screen.getByTestId("storage-status")).not.toHaveTextContent("temporarily");
+
     fireEvent.click(screen.getByTestId("storage-status"));
-    // The detail row may speak technically; the banner is what has to sound human.
-    expect(screen.getByTestId("storage-persist")).toHaveTextContent("may clear the local copy");
-    expect(screen.getByTestId("storage-headline")).toHaveTextContent("Sign in to keep it");
+    // The risk lives here, in the panel, with the action that fixes it.
+    expect(screen.getByTestId("storage-persist")).toHaveTextContent("not promised to keep");
+    expect(screen.getByTestId("storage-headline")).toHaveTextContent(
+      "Sign in to keep this workspace anywhere",
+    );
     expect(screen.getByTestId("storage-warning")).toBeInTheDocument();
     expect(screen.getByTestId("storage-export")).toBeInTheDocument();
   });
@@ -39,7 +45,7 @@ describe("storage panel", () => {
     render(<StoragePanel workspaceId="ws-1" />);
     fireEvent.click(screen.getByTestId("storage-status"));
 
-    expect(screen.getByTestId("storage-persist")).toHaveTextContent("agreed not to evict");
+    expect(screen.getByTestId("storage-persist")).toHaveTextContent("agreed to keep the copy");
     expect(screen.queryByTestId("storage-warning")).not.toBeInTheDocument();
     expect(screen.queryByTestId("storage-export")).not.toBeInTheDocument();
   });
@@ -99,9 +105,29 @@ describe("storage panel and the account", () => {
     render(<StoragePanel workspaceId="ws-1" signedIn={false} onSignIn={onSignIn} />);
     fireEvent.click(screen.getByTestId("storage-status"));
 
-    expect(screen.getByTestId("storage-headline")).toHaveTextContent("Sign in to keep it");
+    expect(screen.getByTestId("storage-headline")).toHaveTextContent(
+      "Sign in to keep this workspace anywhere",
+    );
     fireEvent.click(screen.getByTestId("storage-sign-in"));
     expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the durability gesture while the browser has not promised, and not after", async () => {
+    // `denied` is included on purpose: a real click is what browsers weigh, so trying again
+    // from a gesture is the point rather than a wasted press.
+    await requestPersistence({ persist: async () => false, persisted: async () => false });
+    const { unmount } = render(<StoragePanel workspaceId="ws-1" />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+    expect(screen.getByTestId("storage-request-persist")).toHaveTextContent(
+      "Keep a copy on this device",
+    );
+    unmount();
+
+    // Once the browser has agreed, there is nothing left to ask for.
+    await requestPersistence({ persist: async () => true, persisted: async () => true });
+    render(<StoragePanel workspaceId="ws-1" />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+    expect(screen.queryByTestId("storage-request-persist")).not.toBeInTheDocument();
   });
 
   it("shows no sign-in action when nothing is wired to it", async () => {

@@ -75,11 +75,15 @@
   --value-thread-ink: var(--surface);
 
   --value-fan-hue: var(--section-blue);
-  --value-fan-fill: var(--section-blue);
+  /* A chip's fill is a floor, not a hue: the glyph drawn on it has to clear 4.5:1, and
+     `--section-blue` (3.68) is a *stroke* colour that was never asked to carry text.
+     Deepened here once, so sections keep the lighter blue they were chosen for. */
+  --value-fan-fill: #2563eb;
   --value-fan-ink: var(--surface);
 
   --value-branch-hue: var(--section-green);
-  --value-branch-fill: var(--section-green);
+  /* 2.54 against white as a chip; 5.48 as this. The most urgent of the three. */
+  --value-branch-fill: #047857;
   --value-branch-ink: var(--surface);
 
   --value-explore-hue: var(--ink);
@@ -97,7 +101,8 @@
   /* Reserved for `explain` (gate A41): the token lands before the mode, so the mode
      can adopt it without a second pass through every surface. */
   --value-explain-hue: var(--section-violet);
-  --value-explain-fill: var(--section-violet);
+  /* 4.23 against white, which is under the floor by a hair. */
+  --value-explain-fill: #7c3aed;
   --value-explain-ink: var(--surface);
 
   /*
@@ -139,6 +144,11 @@
   --warning: #fbbf24;
   /* On dark surfaces the light brand blue already clears 4.5:1. */
   --mention-ink: var(--section-blue);
+  /* Dark chips keep the bright section hues: against this theme's ink they clear the
+     floor with room (fan 7.2, branch 9.5, explain 6.7), so nothing is deepened here. */
+  --value-fan-fill: var(--section-blue);
+  --value-branch-fill: var(--section-green);
+  --value-explain-fill: var(--section-violet);
 }
 
 html,

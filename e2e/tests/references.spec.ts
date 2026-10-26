@@ -7,7 +7,7 @@ const workspaceUrl = (name: string) => `/?workspace=e2e-refs-${name}-${Date.now(
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const cardTitled = (page: Page, title: string) => cards(page).filter({ hasText: title });
-const activeTab = (page: Page) => page.locator('[data-testid^="board-tab"][aria-selected="true"]');
+const activeTab = (page: Page) => page.locator('[data-testid^="board-tab"][aria-current="page"]');
 
 /** Opens the inspector from the card header, away from the editors. */
 async function openInspector(page: Page, card = cards(page).first()): Promise<void> {
@@ -36,9 +36,9 @@ async function renameCard(page: Page, card: Locator, title: string): Promise<voi
 }
 
 async function createBoard(page: Page): Promise<void> {
-  const before = await page.locator('[role="tab"][data-testid^="board-tab"]').count();
+  const before = await page.locator('[data-testid^="board-tab"]').count();
   await page.getByTestId("board-create").click();
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(before + 1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(before + 1);
 }
 
 async function openLibrary(page: Page, tab: "cards" | "inbox"): Promise<void> {

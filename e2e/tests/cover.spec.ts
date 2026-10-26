@@ -14,7 +14,10 @@ let sequence = 0;
 const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-cover-${name}-${Date.now()}-${++sequence}`);
 
-const boardTabs = (page: Page) => page.getByRole("tablist", { name: "Boards" }).getByRole("tab");
+const boardTabs = (page: Page) =>
+  // Only the board tabs: the strip also holds one close button per board, so counting
+  // its buttons would count twice.
+  page.locator('[data-testid^="board-tab"]');
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAoElEQVR42g3K0QAEMQxF0SAMQhAGIQhFeAhFCEIRgjAIQViEmNzt+T5mZrg9hDmyl7SgbNEmxjZm/uDuhL/Ig/RFuWjfjOcN4Xi8RASKRYao2HQkE+cGvbiC0EISqU0paR1GdUMGnotIodxkJpWHzmLyu6EWXiJqo0qyDlVF18dU39DCexOdqA/ZRfVHdzP9u2E2PknMQVPkfNQ0PT9mhj/jRpPBG+li2wAAAABJRU5ErkJggg==";
 
@@ -81,7 +84,10 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number }> {
 async function boardWithPortal(page: Page): Promise<void> {
   await page.getByTestId("board-create").click();
   await expect(boardTabs(page)).toHaveCount(2);
-  await page.getByRole("tab", { name: "Board 1" }).click();
+  await page
+    .getByRole("navigation", { name: "Boards" })
+    .getByRole("button", { name: "Board 1", exact: true })
+    .click();
   for (let step = 0; step < 3; step += 1)
     await page.getByRole("button", { name: "Zoom Out" }).click();
   await settleViewport(page);

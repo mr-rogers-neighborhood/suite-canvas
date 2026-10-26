@@ -197,14 +197,22 @@ export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: Storag
                   ? "Copy failed"
                   : "Copy diagnostics"}
             </button>
-            {persist === "unknown" ? (
+            {/*
+              A genuine click is what the browser weighs, so this is where durability is
+              actually won: the automatic attempt on first edit is often declined because
+              there was no intent behind it. Offered for `denied` as well as `unknown` —
+              engagement can change the answer — and never for `unsupported`, where the
+              promise cannot be made at all.
+            */}
+            {persist === "unknown" || persist === "denied" ? (
               <button
                 type="button"
                 data-testid="storage-request-persist"
                 onClick={() => void requestPersistence().then(() => refreshEstimate())}
+                title="Ask this browser to keep the copy on this device"
                 className="rounded-lg border border-[var(--hairline)] px-2.5 py-1 text-[11px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
               >
-                Ask this browser to keep it
+                Keep a copy on this device
               </button>
             ) : null}
           </div>

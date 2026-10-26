@@ -48,14 +48,19 @@ export function BoardTabs({
   };
 
   return (
-    // The tablist owns the tab buttons and nothing else; the close control and
-    // the "new board" button sit beside it instead of inside a tab.
+    /*
+     * A navigation, not a tablist.
+     *
+     * These were `role="tablist"` / `role="tab"` siblings of a close button and a rename
+     * field, which axe reports as `aria-required-children`: the tablist's children have to
+     * be tabs, and a per-tab close control cannot be one. The strict-tablist fix would
+     * have moved closing out of the tab strip entirely, losing an affordance every reader
+     * expects; the honest mapping is this one — switching a board replaces the canvas, it
+     * does not reveal a panel on the same page, so `aria-current` is the right word for
+     * "you are here" and the strip is free to hold what it needs (ADR-0064 amendment).
+     */
     <div className="group flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-      <div
-        className="board-tabs flex min-w-0 items-center gap-1"
-        role="tablist"
-        aria-label="Boards"
-      >
+      <nav className="board-tabs flex min-w-0 items-center gap-1" aria-label="Boards">
         {boards.map((board) => {
           const active = board.id === activeBoardId;
           const presence = peersByBoard?.[board.id];
@@ -81,8 +86,7 @@ export function BoardTabs({
             <span key={board.id} className="inline-flex min-w-0 items-center">
               <button
                 type="button"
-                role="tab"
-                aria-selected={active}
+                aria-current={active ? "page" : undefined}
                 data-testid={`board-tab-${board.id}`}
                 data-active={active ? "true" : undefined}
                 title={canManageBoards ? "Double-click to rename" : board.name}
@@ -123,7 +127,7 @@ export function BoardTabs({
             </span>
           );
         })}
-      </div>
+      </nav>
 
       {canCreateBoards ? (
         <button

@@ -7,7 +7,7 @@ test("canvas app boots and renders the board", async ({ page }) => {
   await expect(page.getByTestId("canvas-board")).toBeVisible();
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
   await expect(page.getByTestId("dock-library")).toBeVisible();
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
 });
 
 test("shows render counters with ?perf=1", async ({ page }) => {

@@ -9,11 +9,11 @@ const workspaceUrl = (name: string) =>
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
 async function createBoard(page: Page): Promise<string> {
-  const before = await page.locator('[role="tab"][data-testid^="board-tab"]').count();
+  const before = await page.locator('[data-testid^="board-tab"]').count();
   await page.getByTestId("board-create").click();
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(before + 1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(before + 1);
   const testId = await page
-    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .locator('[data-testid^="board-tab"][aria-current="page"]')
     .getAttribute("data-testid");
   if (!testId) throw new Error("the new board has no tab");
   return testId.replace("board-tab-", "");
@@ -188,7 +188,7 @@ test("deletes a board from the library and asks once", async ({ page }) => {
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
   await expect(page.getByTestId(`library-item-${boardId}`)).toHaveCount(0);
   await expect(cards(page)).toHaveCount(2);
 });
@@ -209,7 +209,7 @@ test("asks before deleting a board with cards and keeps them in the library", as
   await expect(page.getByTestId("dialog")).toBeVisible();
   await page.getByTestId("dialog").getByRole("button", { name: "Unplace cards" }).click();
 
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
   // The card survives; it is simply no longer on the deleted board.
   await expect(page.getByTestId("dock-inbox-count")).toHaveCount(0);
   await openLibrary(page, "inbox");
@@ -268,7 +268,7 @@ test("syncs card titles and title carets between clients", async ({ browser }) =
 test("still resolves a legacy ?doc= link to a workspace", async ({ page }) => {
   await page.goto(`/?doc=e2e-legacy-${Date.now()}`);
   await expect(cards(page)).toHaveCount(2);
-  await expect(page.locator('[role="tab"][data-testid^="board-tab"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="board-tab"]')).toHaveCount(1);
 });
 
 test("scopes the cards list to the active board", async ({ page }) => {

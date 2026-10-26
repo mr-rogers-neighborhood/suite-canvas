@@ -9,7 +9,10 @@ const workspaceUrl = (name: string) =>
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const portalNodes = (page: Page) => page.getByTestId("portal-node");
-const boardTabs = (page: Page) => page.getByRole("tablist", { name: "Boards" }).getByRole("tab");
+const boardTabs = (page: Page) =>
+  // Only the board tabs: the strip also holds one close button per board, so counting
+  // its buttons would count twice.
+  page.locator('[data-testid^="board-tab"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");
 
 /**
@@ -95,7 +98,10 @@ async function dragLinkOnto(page: Page, card: Locator, target: Locator): Promise
 async function boardWithPortal(page: Page): Promise<void> {
   await createBoard(page);
   await createNote(page, "Target Two");
-  await page.getByRole("tab", { name: "Board 1" }).click();
+  await page
+    .getByRole("navigation", { name: "Boards" })
+    .getByRole("button", { name: "Board 1", exact: true })
+    .click();
   await expect(cards(page)).toHaveCount(2);
   await createPortal(page, "Board 2");
 }

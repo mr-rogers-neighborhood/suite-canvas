@@ -26,28 +26,40 @@ const MARKER = ".scratchpad-seen";
  */
 const TEMPLATE = `# Scratchpad
 
-Notes to the agent, written between passes. Append here instead of interrupting a turn:
-the agent reads this file with \`pnpm scratchpad\`, which runs as part of \`pnpm verify\` and
-is the first thing read at the start of a pass.
+The author's queue between passes. Write here instead of interrupting a turn: the agent reads
+this file with \`pnpm scratchpad\`, which runs first in \`pnpm verify\`, so a changed note shows up in
+the output of a command that always runs.
 
-**This file is gitignored.** It is a queue, not a document: nothing here is permanent,
-and it never becomes a second source of truth. Each entry gets promoted, then struck
-through:
+**This file is gitignored** — it is a queue, not a document. Nothing here survives on its own.
 
-| an entry that is… | becomes |
+## How to write here
+
+One bullet per thought, under **Open**. No format, no order, no cleanup needed. Put \`#PRIORITY\`
+on a line to make it the next thing the agent does rather than something it triages.
+
+## How it empties
+
+Each item leaves **Open** and appears under **Promoted** with where it went:
+
+| an item that is… | becomes |
 | --- | --- |
-| a decision with a reason | an amendment on the ADR in \`docs/decisions/\` that owns it |
-| a piece of work | a todo in the session list, or a phase in \`plan.md\` |
+| a decision with a reason | an amendment on the ADR in \`decisions/\` that owns it |
+| a piece of work | a todo, or a phase in the session plan |
 | a fact about what shipped | the "what implementing settled" section of that ADR |
-| a question with two answers | the ADR's open questions, so it is asked once, not twice |
+| a question with two answers | that ADR's open questions, so it is asked once |
 | noise | deleted |
 
-If something is urgent or blocking, put \`#PRIORITY\` on the line and the agent will take
-it as the next thing to do rather than something to triage later.
+---
 
-## Notes
+## Open
 
-<!-- write below this line; newest at the bottom is fine -->
+_Nothing open._
+
+---
+
+## Promoted
+
+Newest first. \`date · item → where it went\`.
 `;
 
 const quiet = process.argv.includes("--quiet");
@@ -58,22 +70,50 @@ if (!existsSync(SCRATCHPAD)) {
   if (!quiet) console.log(`[scratchpad] created ${SCRATCHPAD} from the template`);
 }
 
-const text = readFileSync(SCRATCHPAD, "utf8");
+const raw = readFileSync(SCRATCHPAD, "utf8");
+
+/**
+ * Open items first, because they are the only part that needs acting on.
+ *
+ * The file has three regions: the preamble, `## Open`, and `## Promoted`. A file without
+ * those headings is printed whole, so an older scratchpad still reads.
+ */
+function sections(markdown) {
+  const open = markdown.indexOf("## Open");
+  const promoted = markdown.indexOf("## Promoted");
+  if (open === -1) return { head: markdown, open: "", promoted: "" };
+  const cut = promoted === -1 ? markdown.length : promoted;
+  return {
+    head: markdown.slice(0, open),
+    open: markdown.slice(open, cut),
+    promoted: promoted === -1 ? "" : markdown.slice(promoted),
+  };
+}
+
+const parts = sections(raw);
+const text = [parts.head, parts.open, parts.promoted].filter(Boolean).join("").trimEnd();
 const digest = createHash("sha256").update(text).digest("hex").slice(0, 16);
 const seen = existsSync(MARKER) ? readFileSync(MARKER, "utf8").trim() : "";
 const changed = seen !== digest;
 
 if (!changed && quiet) process.exit(0);
 
+// Count what is actually open: a bullet under `## Open` that is not the placeholder.
+const openLines = parts.open
+  .split("\n")
+  .slice(1)
+  .filter((line) => line.startsWith("- ") && !line.startsWith("- _")).length;
+const openSummary =
+  openLines === 0 ? "queue empty" : `${openLines} open item${openLines === 1 ? "" : "s"}`;
+
 if (changed) {
-  const lines = text.trimEnd().split("\n").length;
   console.log(
     seen === ""
-      ? `[scratchpad] never read (${lines} lines) — full content follows`
-      : `[scratchpad] CHANGED since last read (${lines} lines) — read this before continuing`,
+      ? `[scratchpad] never read, ${openSummary} — full content follows`
+      : `[scratchpad] CHANGED since last read, ${openSummary} — read this before continuing`,
   );
 } else {
-  console.log("[scratchpad] unchanged since last read");
+  console.log(`[scratchpad] unchanged since last read, ${openSummary}`);
 }
 
 console.log("─".repeat(72));

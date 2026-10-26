@@ -7,11 +7,11 @@ const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-boards-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
-const tabs = (page: Page) => page.locator('[role="tab"][data-testid^="board-tab"]');
+const tabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 async function selectedBoardId(page: Page): Promise<string> {
   const testId = await page
-    .locator('[role="tab"][data-testid^="board-tab"][aria-selected="true"]')
+    .locator('[data-testid^="board-tab"][aria-current="page"]')
     .getAttribute("data-testid");
   if (!testId) throw new Error("no board tab is selected");
   return testId.replace("board-tab-", "");
@@ -65,6 +65,23 @@ test("closes a board tab with no prompt and reopens it from the library", async 
   await expect(tabs(page)).toHaveCount(2);
   await expect(page.getByTestId(`library-board-state-${boardId}`)).toHaveText("Open");
   await expect(cards(page)).toHaveCount(1);
+});
+
+test("reaches every board's close control from the keyboard", async ({ page }) => {
+  await page.goto(workspaceUrl("keyboard"));
+  await expect(cards(page)).toHaveCount(2);
+
+  const boardId = await createBoard(page);
+  await expect(tabs(page)).toHaveCount(2);
+
+  // The strip is a navigation of buttons, not a tablist, because a per-board close
+  // control cannot live inside a strict tablist (ADR-0064 amendment). Buttons are in
+  // the tab order, so closing is reachable without a pointer.
+  const close = page.getByTestId(`board-close-${boardId}`);
+  await close.focus();
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(tabs(page)).toHaveCount(1);
 });
 
 test("places a board as a portal without dropping it from the library", async ({ page }) => {

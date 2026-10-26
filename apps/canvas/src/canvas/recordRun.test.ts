@@ -29,8 +29,8 @@ describe("planRecordClick", () => {
     expect(planRecordClick("fan", 0)).toEqual({ action: "newStep", stepIndex: 0 });
   });
 
-  it("reads pattern as thread, because a pattern is a placement shape and not a step verb", () => {
-    expect(planRecordClick("pattern", 2)).toEqual({ action: "newStep", stepIndex: 2 });
+  it("reads branch as thread, because a branch is a shape and not a step verb", () => {
+    expect(planRecordClick("branch", 2)).toEqual({ action: "newStep", stepIndex: 2 });
   });
 });
 

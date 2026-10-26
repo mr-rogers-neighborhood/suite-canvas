@@ -142,14 +142,14 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
   expect(new Set(starts).size).toBe(1);
 });
 
-test("a pattern is held until it is a pattern, not arranged for the user", async ({ page }) => {
-  await page.goto(workspaceUrl("pattern"));
+test("a branch is held until it is placed, not arranged for the user", async ({ page }) => {
+  await page.goto(workspaceUrl("branch"));
   await expect(cards(page)).toHaveCount(2);
   await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
   await page.getByTestId("library-selection-all").click();
-  await page.getByTestId("library-run-pattern").click();
+  await page.getByTestId("library-run-branch").click();
   await expect(page.getByTestId("held-stack")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);
 

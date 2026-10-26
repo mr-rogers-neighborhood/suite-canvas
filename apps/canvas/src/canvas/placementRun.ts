@@ -46,7 +46,7 @@ export interface PlacementRun {
    * grid measures from it.
    */
   originId: string | null;
-  /** The most recent placement: what a `thread` or `pattern` continues from. */
+  /** The most recent placement: what a `thread` or `branch` continues from. */
   anchorId: string | null;
   /** The section this run created to frame itself, once it exists. */
   sectionId: string | null;

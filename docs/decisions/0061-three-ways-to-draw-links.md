@@ -156,3 +156,36 @@ The rename is thorough rather than cosmetic: the stored value (`canvasModes`, `M
 function (`stepFan`), the CSS class (`is-fan`), every label, test and the e2e spec. Mode is UI state and
 is not persisted, so no stored session can carry the old value. If `pattern` is ever renamed, **`branch`
 is the word for it** — with ⋔ as the glyph, because that is what a pattern does.
+
+## Amendment — 2026-10-25: `pattern` is `branch`, and `pattern` goes back to meaning the recipe
+
+The mode family is now **`place · thread · fan · branch`**. Three of those four names existed before; the
+fourth is renamed, and the rename fixes something older than a word.
+
+**The mode was squatting on the word for a concept it is not.** [ADR-0049](./0049-a-mind-map-mode-and-patterns.md)
+defines a *pattern* as a versioned **recipe** — a saved way of placing things, a command with memory.
+Nothing in the schema implements it yet. So "pattern mode" was using the future record's name for a shape
+a click draws, which is why it never felt like it named an action.
+
+After the rename the two are clean:
+
+| Word | Means | Where it lives |
+| --- | --- | --- |
+| **branch** | the shape one click draws — each placement branching from the one before it | the gesture axis, fourth value |
+| **pattern** | a saved recipe that produces shapes; a command with memory | ADR-0049, not yet implemented |
+
+"Branch mode" describes what a click does. "Pattern" is now free for the record when it lands, and the
+label stops implying you are *using a pattern* when you are simply *placing a tree*.
+
+**"Connect" is not coming back for the first slot.** It was the previous name, replaced by `place` in
+ADR-0063 because that one slot serves two tools: as a *link* tool it drags a single link, and as a
+*placement* tool it drops a single card. "Connect" names only the link half, so a run in "connect mode"
+would read as "place one card at a time" — the least connected thing in the product. `place` is the word
+that survives both readings.
+
+**Merging is noted, not adopted.** Merging or splicing content (by heading level, the way some outliner
+plugins do) is a real and interesting idea, and it is **not a fifth mode**: a mode is how one click draws
+one relationship, and merge is an operation over a *selection* — it belongs on the command axis with the
+palette and the item menu. The mode family stays at four because ADR-0064 caps the widgets at two, and a
+fifth value would need a menu where a cycle lives. Recorded here so the next person finds the reasoning
+instead of inventing a fifth mode.

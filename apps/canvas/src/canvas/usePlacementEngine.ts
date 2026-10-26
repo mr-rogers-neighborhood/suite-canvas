@@ -235,7 +235,7 @@ export function usePlacementEngine(): PlacementEngine {
    *
    * **An arrangement is bulk**: `place` computes every position from the planner and
    * lands the set in one commit, because a dump makes no claim about relationships.
-   * **Everything else is held**: `thread`, `fan` and `pattern` draw relationships, so
+   * **Everything else is held**: `thread`, `fan` and `branch` draw relationships, so
    * the cards go into the user's hand as a stack and each click puts one down where
    * they choose (ADR-0063 third amendment).
    */

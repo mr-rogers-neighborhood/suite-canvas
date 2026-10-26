@@ -16,14 +16,14 @@ const purpose = (page: import("@playwright/test").Page) => page.getByTestId("pur
  * and multi-select.
  */
 test("alt previews pattern, the fourth gesture that had no key", async ({ page }) => {
-  await page.goto(workspaceUrl("pattern"));
+  await page.goto(workspaceUrl("branch"));
   await expect(cards(page)).toHaveCount(2);
   await expect(linkMode(page)).toHaveAttribute("data-mode", "place");
 
   await page.keyboard.down("Alt");
 
   // The indicator follows the key...
-  await expect(linkMode(page)).toHaveAttribute("data-hint-mode", "pattern");
+  await expect(linkMode(page)).toHaveAttribute("data-hint-mode", "branch");
   await expect(linkMode(page)).toHaveAttribute("data-hint", "true");
   // ...and the tool is still where the reader left it.
   await expect(linkMode(page)).toHaveAttribute("data-mode", "place");

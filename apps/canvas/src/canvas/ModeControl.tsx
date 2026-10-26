@@ -31,9 +31,9 @@ const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
     label: "Fan mode: every click links from the same starting connector",
     glyph: "\u273b",
   },
-  pattern: {
-    label: "Pattern mode: each placement branches from the one before it",
-    glyph: "\u22b9",
+  branch: {
+    label: "Branch mode: each placement branches from the one before it",
+    glyph: "\u22d4",
   },
 };
 
@@ -73,7 +73,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
    * The modifiers held right now, as one value both controls can read
    * ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
    * Shift chains links without the thread tool, ctrl previews the fan, and alt
-   * previews the pattern — the fourth mode, which had no key before.
+   * previews the branch — the fourth mode, which had no key before.
    *
    * A ref painted onto the DOM, never state: a re-render mid-gesture is exactly
    * what the hint must not cause.
@@ -96,7 +96,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
     node.dataset.hint = displayed === mode ? "false" : "true";
     node.classList.toggle("is-thread", displayed === "thread");
     node.classList.toggle("is-fan", displayed === "fan");
-    node.classList.toggle("is-pattern", displayed === "pattern");
+    node.classList.toggle("is-branch", displayed === "branch");
     if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
   }, [mode]);
 
@@ -194,7 +194,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
       type="button"
       className={`link-mode-control${mode === "thread" ? " is-thread" : ""}${
         mode === "fan" ? " is-fan" : ""
-      }${mode === "pattern" ? " is-pattern" : ""}`}
+      }${mode === "branch" ? " is-branch" : ""}`}
       aria-pressed={active}
       aria-label={`${current.label}. ${switchLabel(mode)}`}
       title={`${current.label}. ${switchLabel(mode)}`}

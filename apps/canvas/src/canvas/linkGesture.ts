@@ -19,10 +19,10 @@ export interface LinkEndpointRef {
  * One slot serves both gestures, because a click cannot mean two things: as a
  * *link* tool `place` drags one link, `thread` chains from the previous endpoint
  * and `fan` links every click from one fixed origin; as a *placement* tool the
- * same four make a single drop, a chain, spokes and a tree. `pattern` is the
+ * same four make a single drop, a chain, spokes and a tree. `branch` is the
  * fourth shape — a chain that branches — and is placement-only today.
  */
-export const canvasModes = ["place", "thread", "fan", "pattern"] as const;
+export const canvasModes = ["place", "thread", "fan", "branch"] as const;
 export type CanvasMode = (typeof canvasModes)[number];
 
 /** Human name of each mode, for menus and labels. */
@@ -30,11 +30,11 @@ export const MODE_NAMES: Record<CanvasMode, string> = {
   place: "place",
   thread: "thread",
   fan: "fan",
-  pattern: "pattern",
+  branch: "branch",
 };
 
 /**
- * The cycle a click walks: place → thread → fan → pattern → place. One reader, so
+ * The cycle a click walks: place → thread → fan → branch → place. One reader, so
  * the widget-bar button and the connector menu can never offer different next
  * steps.
  */

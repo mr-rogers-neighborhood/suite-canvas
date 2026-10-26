@@ -50,7 +50,7 @@ function run(mode: PlanPlacementInput["mode"], count: number, options = DEFAULT_
 
 describe("planPlacementStep: the first card", () => {
   it("lands on the start point in every mode, and draws no line", () => {
-    for (const mode of ["place", "thread", "fan", "pattern"] as const) {
+    for (const mode of ["place", "thread", "fan", "branch"] as const) {
       const result = step({ mode });
       expect(result.position).toEqual(START);
       // There is nothing in the run to link to yet, and linking outside it would
@@ -157,9 +157,9 @@ describe("planPlacementStep: fan", () => {
   });
 });
 
-describe("planPlacementStep: pattern", () => {
+describe("planPlacementStep: branch", () => {
   it("branches right then left, one row down each time", () => {
-    const boxes = run("pattern", 4, { ...DEFAULT_PLACEMENT_OPTIONS, gap: 40 });
+    const boxes = run("branch", 4, { ...DEFAULT_PLACEMENT_OPTIONS, gap: 40 });
 
     // Second card: right of the first, one row down.
     expect(boxes[1]).toEqual({ x: 280, y: 220, ...SIZE });
@@ -169,7 +169,7 @@ describe("planPlacementStep: pattern", () => {
   });
 
   it("links each card to its parent", () => {
-    expect(step({ mode: "pattern", index: 1, anchor: { x: 0, y: 0, ...SIZE } }).link).toEqual({
+    expect(step({ mode: "branch", index: 1, anchor: { x: 0, y: 0, ...SIZE } }).link).toEqual({
       from: "anchor",
       to: "top",
     });

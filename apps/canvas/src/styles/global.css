@@ -2628,7 +2628,7 @@ body {
 /* Pattern is the widest shape (a tree), so it reads as its own paint rather than
    a second accent: two modes that share a colour are two modes a reader cannot
    tell apart. */
-.link-mode-control.is-pattern {
+.link-mode-control.is-branch {
   color: var(--surface);
   background: var(--accent-strong, var(--accent));
   border-color: var(--accent-strong, var(--accent));

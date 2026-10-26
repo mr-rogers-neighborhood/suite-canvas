@@ -97,3 +97,15 @@ from the UI and a keybinding" — maps onto that pair without adding a third con
   library drag, a peer's connector draft), so "a card-shaped hint at a flow point" should become one
   component rather than a third copy.
 - If the mode is ever added, the keybinding map becomes a prerequisite rather than a nicety.
+
+## Amendment — 2026-10-25: the mode is `branch`; `pattern` means the recipe
+
+The fourth gesture mode was called `pattern`, which borrowed this ADR's word for a *record* that does not
+exist yet, and used it for the *shape* a click draws. The mode is now **`branch`**
+([ADR-0061](./0061-three-ways-to-draw-links.md) amendment): a branch is a tree growing from the previous
+placement, while a **pattern** stays what this ADR says it is — a versioned recipe, a command with
+memory, saved and replayed.
+
+Why the distinction matters beyond naming: a recipe can *produce* a branch, but a branch is not a recipe.
+When patterns land they will appear in the command palette and in the rail, not as a fifth mode, because a
+mode is how one click draws one relationship and a recipe is a plan.

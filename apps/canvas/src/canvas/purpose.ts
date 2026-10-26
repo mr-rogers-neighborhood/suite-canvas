@@ -3,7 +3,7 @@ import type { CanvasMode } from "./linkGesture";
 /**
  * What the canvas is *for* ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
  *
- * The second axis. `mode` (place · thread · fan · pattern) says what the next click
+ * The second axis. `mode` (place · thread · fan · branch) says what the next click
  * does; purpose says what the reader is doing with the canvas at all. They are
  * separate because they are orthogonal: a run threads as often as an exploration
  * does, and "recording" is not a shape.

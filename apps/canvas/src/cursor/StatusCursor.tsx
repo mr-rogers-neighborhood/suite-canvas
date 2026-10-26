@@ -19,7 +19,7 @@ export const GESTURE_GLYPHS: Record<CanvasMode, string> = {
   place: "\u2194",
   thread: "\u2933",
   fan: "\u273b",
-  pattern: "\u22b9",
+  branch: "\u22d4",
 };
 
 /**

@@ -78,14 +78,14 @@ test("the connector menu toggles the same mode as the widget bar", async ({ page
   await expect(toggle).toHaveAttribute("data-mode", "thread");
 
   // The menu walks the same cycle as the button, so the two surfaces can never
-  // disagree: thread is followed by fan, fan by pattern, and pattern by place.
+  // disagree: thread is followed by fan, fan by branch, and branch by place.
   await page.getByTestId("connector-dot").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Switch to fan mode" }).click();
   await expect(toggle).toHaveAttribute("data-mode", "fan");
 
   await page.getByTestId("connector-dot").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Switch to pattern mode" }).click();
-  await expect(toggle).toHaveAttribute("data-mode", "pattern");
+  await page.getByRole("menuitem", { name: "Switch to branch mode" }).click();
+  await expect(toggle).toHaveAttribute("data-mode", "branch");
 
   await page.getByTestId("connector-dot").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Switch to place mode" }).click();

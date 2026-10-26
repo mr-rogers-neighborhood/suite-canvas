@@ -91,7 +91,7 @@ describe("ModeControl shift hint", () => {
 });
 
 describe("ModeControl three-state cycle", () => {
-  it("walks place → thread → fan → pattern → place on repeated clicks", () => {
+  it("walks place → thread → fan → branch → place on repeated clicks", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
@@ -106,8 +106,8 @@ describe("ModeControl three-state cycle", () => {
     expect(toggle).not.toHaveClass("is-thread");
     fireEvent.click(toggle);
     // The fourth shape: a chain that branches. See ADR-0063.
-    expect(toggle).toHaveAttribute("data-mode", "pattern");
-    expect(toggle).toHaveClass("is-pattern");
+    expect(toggle).toHaveAttribute("data-mode", "branch");
+    expect(toggle).toHaveClass("is-branch");
     expect(toggle).not.toHaveClass("is-fan");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "place");

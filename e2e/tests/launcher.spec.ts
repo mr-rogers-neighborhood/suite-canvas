@@ -31,10 +31,7 @@ test("starts on the workspace launcher", async ({ page }) => {
 
 test("creates an empty workspace from the launcher", async ({ page }) => {
   await page.getByTestId("launcher-new").click();
-  // Creating a workspace offers the passphrase choice first; this test is about
-  // the empty board, so it takes the documented skip path.
-  await expect(page.getByTestId("recovery-creation")).toBeVisible();
-  await page.getByTestId("recovery-creation-skip").click();
+  // Creating a workspace opens it directly: there is no first-run dialog.
   await expect(page).toHaveURL(/workspace=/);
   await expect(page.getByTestId("empty-board")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);

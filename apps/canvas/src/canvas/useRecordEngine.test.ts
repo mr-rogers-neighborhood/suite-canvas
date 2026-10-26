@@ -111,12 +111,12 @@ describe("the record engine", () => {
     expect(result.current.held).toBe(0);
   });
 
-  it("reads pattern as thread, because a pattern is a placement shape", () => {
+  it("reads branch as thread, because a branch is a shape", () => {
     const { workspace, tutorial, first, second } = fixture();
     const { result } = renderHook(() => useRecordEngine());
 
     act(() => {
-      useUiStore.setState({ mode: "pattern" });
+      useUiStore.setState({ mode: "branch" });
       result.current.start(tutorial.id);
     });
     act(() => result.current.record({ kind: "card", id: first.id }));

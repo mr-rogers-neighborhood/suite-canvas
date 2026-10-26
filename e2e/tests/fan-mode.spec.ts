@@ -191,7 +191,7 @@ test("the mode button walks all four readings and comes back", async ({ page }) 
   await expect(toggle).toHaveAttribute("data-mode", "fan");
   // Pattern is the fourth shape a run can draw (ADR-0063): a chain that branches.
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "pattern");
+  await expect(toggle).toHaveAttribute("data-mode", "branch");
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "place");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");

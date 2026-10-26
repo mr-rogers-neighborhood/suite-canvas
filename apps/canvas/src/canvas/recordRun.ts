@@ -27,7 +27,8 @@ export interface RecordClickPlan {
  * `thread` are the same plan for one click — a sequence — and are kept distinct
  * because the author picked them and the cursor says which.
  *
- * `pattern` has no step meaning: a pattern is a placement shape (ADR-0049), so it is
+ * `branch` has no step meaning: a pattern is a placement *recipe* (ADR-0049), and
+ * a branch is the shape it draws, so it is
  * read as `thread` here rather than inventing a fourth way to add a step.
  */
 export function planRecordClick(gesture: CanvasMode, stepCount: number): RecordClickPlan {

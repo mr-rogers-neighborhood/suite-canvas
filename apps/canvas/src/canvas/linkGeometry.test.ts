@@ -306,3 +306,30 @@ describe("rectContains and endpointAtPoint", () => {
     expect(segmentCrossesRect({ x: 0, y: 0 }, { x: 90, y: 90 }, box)).toBe(false);
   });
 });
+
+describe("anchors on a rounded card", () => {
+  const rect = { x: 100, y: 100, width: 320, height: 200 };
+
+  it("keeps the box edge when the card paints no radius", () => {
+    // Sections and hand-made rects call this with no radius, and must not move.
+    expect(anchorOnRect(rect, { x: 0, y: 0 })).toEqual({ x: 100, y: 100 });
+    expect(anchorOnRect(rect, { x: 0, y: 0 }, 0)).toEqual({ x: 100, y: 100 });
+  });
+
+  it("lands a corner dot on the arc instead of the box corner", () => {
+    const anchor = anchorOnRect(rect, { x: 0, y: 0 }, 28);
+    const inset = 28 - 28 / Math.SQRT2;
+
+    // The dot is drawn on the paint, so the line has to start there too — otherwise a
+    // card-to-section link begins a corner off the dot it belongs to.
+    expect(anchor.x).toBeCloseTo(rect.x + inset, 6);
+    expect(anchor.y).toBeCloseTo(rect.y + inset, 6);
+  });
+
+  it("leaves a side midpoint alone at any radius", () => {
+    // The common case is the whole reason this is a correction rather than a change.
+    for (const radius of [0, 12, 28]) {
+      expect(anchorOnRect(rect, { x: 0.5, y: 0 }, radius)).toEqual({ x: 260, y: 100 });
+    }
+  });
+});

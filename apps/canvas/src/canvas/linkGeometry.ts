@@ -1,5 +1,6 @@
 import type { Card, Connector, EdgeEndpointKind, Placement, Section } from "@suite/graph";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { edgePoint } from "./silhouette";
 
 /** A rectangle in flow coordinates, the only space a link is ever drawn in. */
 export interface LinkRect {
@@ -26,8 +27,12 @@ export interface LinkEndpointRef {
 export interface LinkScene {
   placements: readonly Placement[];
   sections: readonly Section[];
-  /** Connectors live on the card, not the placement. */
-  cards: readonly Pick<Card, "id" | "connectors">[];
+  /**
+   * Connectors live on the card, not the placement, and so does the radius that decides
+   * where its painted edge is: a corner dot is drawn on the arc, so an anchor resolved
+   * from the box would start a line off the dot (ADR-0071 amendment).
+   */
+  cards: readonly (Pick<Card, "id" | "connectors"> & { radius?: number })[];
   /** One entry per portal card: where it sits and which board it opens. */
   portals: readonly { boardId: string; cardId: string; targetBoardId: string }[];
 }
@@ -112,11 +117,23 @@ export function endpointConnector(
   }
 }
 
-/** A normalised point (0..1 within the rect) as a flow-space anchor. */
-export function anchorOnRect(rect: LinkRect, position: { x: number; y: number }): LinkAnchor {
+/**
+ * A normalised point (0..1 within the rect) as a flow-space anchor.
+ *
+ * `radius` is the silhouette the surface paints. It defaults to zero because most
+ * callers are sections and hand-made rects, whose dots sit on the box; a card passes the
+ * radius it resolved, so the anchor lands on the same arc its dot is drawn on.
+ */
+export function anchorOnRect(
+  rect: LinkRect,
+  position: { x: number; y: number },
+  radius = 0,
+): LinkAnchor {
+  const point =
+    radius > 0 ? edgePoint({ width: rect.width, height: rect.height, radius }, position) : position;
   return {
-    x: rect.x + rect.width * clamp01(position.x),
-    y: rect.y + rect.height * clamp01(position.y),
+    x: rect.x + rect.width * clamp01(point.x),
+    y: rect.y + rect.height * clamp01(point.y),
   };
 }
 
@@ -135,6 +152,13 @@ export function nearestSideAnchor(rect: LinkRect, toward: LinkAnchor): LinkAncho
   return { x: center.x, y: dy >= 0 ? rect.y + rect.height : rect.y };
 }
 
+/** The silhouette radius a card resolved; sections and boards paint their own box. */
+function radiusOf(endpoint: LinkEndpointRef, scene: LinkScene): number {
+  if (endpoint.kind !== "card") return 0;
+  const radius = scene.cards.find((entry) => entry.id === endpoint.id)?.radius;
+  return typeof radius === "number" && Number.isFinite(radius) && radius > 0 ? radius : 0;
+}
+
 /** Where one end sits: its connector if it has one, else the facing side. */
 export function endpointAnchor(
   endpoint: LinkEndpointRef,
@@ -146,7 +170,7 @@ export function endpointAnchor(
   if (!rect) return null;
 
   const connector = endpointConnector(endpoint, boardId, scene);
-  if (connector) return anchorOnRect(rect, connector);
+  if (connector) return anchorOnRect(rect, connector, radiusOf(endpoint, scene));
   return nearestSideAnchor(rect, toward);
 }
 
@@ -269,10 +293,14 @@ export function connectorAtPoint(
   scene: LinkScene,
   radius: number,
 ): LinkEndpointRef | null {
-  const nearest = (connectors: readonly Connector[] | undefined, rect: LinkRect) => {
+  const nearest = (
+    connectors: readonly Connector[] | undefined,
+    rect: LinkRect,
+    shapeRadius: number,
+  ) => {
     let best: { id: string; distance: number } | null = null;
     for (const connector of connectors ?? []) {
-      const anchor = anchorOnRect(rect, connector);
+      const anchor = anchorOnRect(rect, connector, shapeRadius);
       const distance = Math.hypot(anchor.x - point.x, anchor.y - point.y);
       if (distance > radius) continue;
       if (!best || distance < best.distance) best = { id: connector.id, distance };
@@ -288,14 +316,18 @@ export function connectorAtPoint(
     const rect = endpointRect({ kind: "card", id: placement.cardId }, boardId, scene);
     const card = scene.cards.find((entry) => entry.id === placement.cardId);
     if (!rect || !card) continue;
-    const connectorId = nearest(card.connectors, rect);
+    const connectorId = nearest(
+      card.connectors,
+      rect,
+      radiusOf({ kind: "card", id: card.id }, scene),
+    );
     if (connectorId) return { kind: "card", id: card.id, connectorId };
   }
 
   for (const section of scene.sections) {
     if (section.boardId !== boardId) continue;
     const rect = { x: section.x, y: section.y, width: section.width, height: section.height };
-    const connectorId = nearest(section.connectors, rect);
+    const connectorId = nearest(section.connectors, rect, 0);
     if (connectorId) return { kind: "section", id: section.id, connectorId };
   }
   return null;

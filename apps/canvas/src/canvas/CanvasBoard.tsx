@@ -50,6 +50,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { useAppearanceStore } from "../theme/useAppearanceStore";
 import { AboveLinkLayer } from "./AboveLinkLayer";
 import { type AlignEdge, type DistributeAxis, planAlign, planDistribute } from "./arrangeCommand";
 import { type EdgeDescriptionData, EdgeDescriptionInput, edgeTypes } from "./EdgeDescription";
@@ -94,6 +95,7 @@ import { PurposeControl } from "./PurposeControl";
 import { usePlacementRunStore } from "./placementRun";
 import { boardBounds } from "./portalMiniature";
 import { isRecording, useRecordRunStore } from "./recordRun";
+import { surfacePaintFor, useSurfaceRules } from "./rules";
 import { SectionLayer } from "./SectionLayer";
 import { type SectionLink, SectionLinkLayer } from "./SectionLinkLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
@@ -432,6 +434,11 @@ export function CanvasBoard() {
   const closeContextMenu = useUiStore((state) => state.closeContextMenu);
   const stopEditing = useUiStore((state) => state.stopEditing);
   const contextMenu = useUiStore((state) => state.contextMenu);
+  // The reader's default radius, the rung a card falls back to when its own style and the
+  // workspace rules name none. Read here so a link anchor can resolve the same number the
+  // card face paints with.
+  const readerRadius = useAppearanceStore((state) => state.appearance.radius);
+  const surfaceRules = useSurfaceRules();
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
@@ -551,6 +558,26 @@ export function CanvasBoard() {
   );
 
   /**
+   * The radius a card paints, in pixels: the ladder `rules.ts` owns (paint, then rule,
+   * then reader preference, then the 12px default), read through the same call the card
+   * face makes. A link anchor needs the number because the dot it belongs to is drawn on
+   * the *painted* edge, not on the box.
+   */
+  const cardRadiusPx = useCallback(
+    (card: Pick<Card, "style" | "primaryTypeId">) => {
+      const paint = surfacePaintFor(
+        card.style,
+        { surface: "card", typeId: card.primaryTypeId },
+        surfaceRules,
+      ).paint;
+      const declared = Number.parseFloat(paint["--paint-radius"] ?? "");
+      if (Number.isFinite(declared)) return declared;
+      return readerRadius;
+    },
+    [surfaceRules, readerRadius],
+  );
+
+  /**
    * Everything a link endpoint resolves against, in flow coordinates. A board
    * endpoint has no position of its own: it is drawn through the portal that
    * opens it, which is why the portals travel with the scene.
@@ -559,7 +586,14 @@ export function CanvasBoard() {
     () => ({
       placements: linkPlacements,
       sections: boardSections,
-      cards: snapshot.cards,
+      cards: snapshot.cards.map((card) => ({
+        id: card.id,
+        connectors: card.connectors,
+        // The radius the card paints, so an anchor lands on the arc its dot is drawn on.
+        // Resolved by `surfacePaintFor`, the same call the card face makes, so this is the
+        // one ladder rather than a second reading of it.
+        radius: cardRadiusPx(card),
+      })),
       portals: activeBoardId
         ? [...portalByTargetBoard].map(([targetBoardId, cardId]) => ({
             boardId: activeBoardId,
@@ -568,7 +602,14 @@ export function CanvasBoard() {
           }))
         : [],
     }),
-    [linkPlacements, boardSections, snapshot.cards, portalByTargetBoard, activeBoardId],
+    [
+      linkPlacements,
+      boardSections,
+      snapshot.cards,
+      portalByTargetBoard,
+      activeBoardId,
+      cardRadiusPx,
+    ],
   );
 
   /**

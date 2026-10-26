@@ -5,7 +5,7 @@ import { cards, workspaceIdFactory } from "../fixtures/support";
 const id = workspaceIdFactory("e2e-appearance");
 
 /**
- * The appearance entry point ([ADR-0071](../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The appearance entry point (ADR-0071).
  *
  * The author's note was that the theme switcher is the obvious door to the style system.
  * What has to be true end to end: it opens from that switcher, a change reaches the

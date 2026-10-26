@@ -3,7 +3,7 @@ import { settleViewport } from "../fixtures/marquee";
 import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
- * A run's sources ([ADR-0063](../docs/decisions/0063-placement-is-a-mode-too.md) §6):
+ * A run's sources (ADR-0063 §6):
  * every place a set of cards can come from hands the engine an ordered list and
  * nothing else. This covers the one that is a *query* — a saved view's result —
  * because its order is the thing that can silently differ from the list.

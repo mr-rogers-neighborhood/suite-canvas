@@ -73,7 +73,7 @@ export async function libraryRowAction(row: Locator, action: string): Promise<vo
 
 /**
  * Back to the launcher from an open workspace, past the leave guard
- * ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md) amendment).
+ * (ADR-0025 amendment).
  *
  * An anonymous workspace with no durability promise asks once before letting the only
  * copy out of sight. The save-state spec asserts that dialog itself; every other trip

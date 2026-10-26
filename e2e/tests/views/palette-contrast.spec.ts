@@ -5,7 +5,7 @@ import { cards, workspaceIdFactory } from "../fixtures/support";
 const id = workspaceIdFactory("e2e-palette-contrast");
 
 /**
- * The palette's accessibility floor ([ADR-0064](../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)
+ * The palette's accessibility floor (ADR-0064
  * fifth amendment).
  *
  * The values are resolved by the browser — `color-mix`, `var()` chains and a per-theme

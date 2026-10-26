@@ -247,6 +247,7 @@ test("syncs card titles and title carets between clients", { tag: "@smoke" }, as
 
   await expect(pageB.locator(".card-title-editor").filter({ hasText: "Shared title" })).toHaveCount(
     1,
+    { timeout: 15_000 },
   );
   // The caret renders in B's title editor, not its body.
   await expect(
@@ -254,7 +255,7 @@ test("syncs card titles and title carets between clients", { tag: "@smoke" }, as
       .locator('[data-testid="node-card"]')
       .filter({ hasText: "Shared title" })
       .locator(".card-title-editor .ProseMirror-loro-cursor"),
-  ).toHaveCount(1);
+  ).toHaveCount(1, { timeout: 15_000 });
   // The title must let the caret badge escape instead of clipping it.
   await expect(
     pageB

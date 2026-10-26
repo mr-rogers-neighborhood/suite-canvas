@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 /**
- * The scratchpad ([docs/scratchpad.md](../docs/scratchpad.md)).
+ * The scratchpad ([.scratchpad.md](../.scratchpad.md)).
  *
  * A place the author can write between passes without sending a chat message, which is
  * the only way to say something without ending the turn the agent is working in. The
@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
  *   pnpm scratchpad --peek    print without marking
  *   pnpm scratchpad --quiet   only speak when something is new (for `verify`)
  */
-const SCRATCHPAD = "docs/scratchpad.md";
+const SCRATCHPAD = ".scratchpad.md";
 const MARKER = ".scratchpad-seen";
 
 /**

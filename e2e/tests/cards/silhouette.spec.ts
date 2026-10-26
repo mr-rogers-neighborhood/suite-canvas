@@ -6,7 +6,7 @@ const id = workspaceIdFactory("e2e-silhouette");
 const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
 
 /**
- * The silhouette contract ([ADR-0071](../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The silhouette contract (ADR-0071).
  *
  * A dot's stored position is a slot on the card's *box*; a rounded card paints an inset
  * edge. Rounding past 6px therefore left a corner dot floating a third of the short side

@@ -3,7 +3,7 @@ name: CI
 # `quality` and `e2e` are the two checks intended to gate `main`. They do not
 # gate anything yet: every workflow on this repository currently ends in
 # `startup_failure` with zero jobs, which is account state rather than YAML, so
-# the real gate is `pnpm verify` + `pnpm e2e` locally. See docs/testing.md.
+# the real gate is `pnpm verify` + `pnpm e2e` locally. See docs/how-to/test-and-verify.md.
 #
 # Tags still run the quality gate, so a release commit is verified. The image
 # and the GitHub release belong to .github/workflows/release.yml — one workflow

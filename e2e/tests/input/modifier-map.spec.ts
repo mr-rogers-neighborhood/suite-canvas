@@ -9,7 +9,7 @@ const linkMode = (page: import("@playwright/test").Page) => page.getByTestId("li
 const purpose = (page: import("@playwright/test").Page) => page.getByTestId("purpose-toggle");
 
 /**
- * The one modifier map ([ADR-0066](../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+ * The one modifier map (ADR-0066).
  *
  * Both families read the same positions, and a held modifier is momentary: it
  * previews while it is down and lets go back to the clicked value when it comes up.

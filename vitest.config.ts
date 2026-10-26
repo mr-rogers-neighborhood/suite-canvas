@@ -16,12 +16,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text-summary", "lcov"],
       reportsDirectory: "coverage",
-      include: [
-        "packages/graph/src/**",
-        "packages/scene/src/**",
-        "apps/collab-server/src/**",
-        "apps/canvas/src/**",
-      ],
+      include: ["packages/graph/src/**", "apps/collab-server/src/**", "apps/canvas/src/**"],
       exclude: [
         "**/*.test.*",
         "**/*.spec.*",
@@ -53,13 +48,6 @@ export default defineConfig({
           name: "graph",
           environment: "node",
           include: ["packages/graph/src/**/*.test.ts"],
-        },
-      },
-      {
-        test: {
-          name: "scene",
-          environment: "node",
-          include: ["packages/scene/src/**/*.test.ts"],
         },
       },
       {

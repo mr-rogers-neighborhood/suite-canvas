@@ -1,0 +1,69 @@
+{
+  // Dead-code and dependency-drift reporting. `pnpm knip` is a report, not a
+  // gate: it exits 1 while the findings below stand, and clearing them is a
+  // separate change. This file exists so the run resolves the same entry points
+  // the app actually starts from instead of guessing, which keeps the report
+  // free of false "unused file" noise.
+  //
+  // Knip's own plugins (vite, tsx, playwright, vitest) already resolve most of
+  // what is spelled out here, so it prints "Remove redundant entry pattern" and
+  // "Remove from ignore" under *Configuration hints*. Those hints are not
+  // findings: the entries are recorded intent, and the report's value is the
+  // unused-file/export/dependency list above them.
+  //
+  "$schema": "./node_modules/knip/schema-jsonc.json",
+  "ignore": [
+    "dist/**",
+    "coverage/**",
+    "storybook-static/**",
+    "e2e/test-results/**",
+    "reports/**",
+    "patches/**",
+    "apps/docs/.next/**",
+    "apps/docs/.source/**",
+    "apps/docs/content/**",
+    "apps/docs/public/docs/**"
+  ],
+  "workspaces": {
+    ".": {
+      // The repo-root `.mjs` scripts are run by `pnpm <script>`, which knip does
+      // not read as an import edge.
+      "entry": ["scripts/*.mjs"],
+      "project": ["scripts/*.mjs"]
+    },
+    "apps/canvas": {
+      // Vite's HTML entry resolves `src/main.tsx`; `admin.html` is the operator
+      // panel, a second bundle with its own entry.
+      "entry": ["index.html", "admin.html", "src/main.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/collab-server": {
+      // `server.ts` is the relay, `ops/admin.ts` and `licenceCli.ts` are the
+      // two operator entry points (`pnpm admin`, `pnpm licence`).
+      "entry": ["src/server.ts", "src/ops/admin.ts", "src/licenceCli.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "apps/docs": {
+      // Next's app router is the entry; the content tree is generated.
+      "entry": ["app/**/*.{ts,tsx}", "next.config.mjs"],
+      "project": ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"]
+    },
+    "packages/graph": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "services/auth": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "services/billing": {
+      // Lambda handlers plus the local dry-run driver (`pnpm dry-run`).
+      "entry": ["src/handler/handler.ts", "src/ops/dev.ts", "src/stripe/checkout.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "e2e": {
+      "entry": ["tests/**/*.spec.ts"],
+      "project": ["**/*.ts"]
+    }
+  }
+}

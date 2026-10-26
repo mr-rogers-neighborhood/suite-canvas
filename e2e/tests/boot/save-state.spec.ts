@@ -6,7 +6,7 @@ import { cards, workspaceIdFactory } from "../fixtures/support";
 const id = workspaceIdFactory("e2e-save-state");
 
 /**
- * The save state as a status ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * The save state as a status (ADR-0025
  * amendment).
  *
  * The pill answers "where is my work", so it cannot change with the browser's answer about

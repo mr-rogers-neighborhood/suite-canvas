@@ -30,6 +30,25 @@
       // which makes this free insurance against the next forgotten `await`.
       "nursery": {
         "noFloatingPromises": "error"
+      },
+      // Shape rules that share one spelling of an idea. Both are already
+      // satisfied repo-wide, so they cost nothing today and stop the next
+      // `let`-that-is-never-reassigned or `cond ? true : false` from landing.
+      //
+      // `style/noNestedTernary` stays off on purpose. The rule exists in 2.5.15
+      // (promoted out of `nursery`, so `nursery/noNestedTernary` is an unknown
+      // key), but it finds 20 ternaries across 14 existing files — a rewrite
+      // dressed as a config change. Turn it on when those call sites are
+      // touched for their own reasons.
+      "style": {
+        // A `let` that is never reassigned reads as mutable state; `const` says
+        // what the binding is.
+        "useConst": "error"
+      },
+      "complexity": {
+        // `a ? true : false` is `Boolean(a)`; the ternary only adds a branch to
+        // read past.
+        "noUselessTernary": "error"
       }
     }
   },

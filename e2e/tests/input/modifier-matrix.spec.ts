@@ -50,7 +50,7 @@ const KEY = {
 } as const;
 
 /**
- * The modifier map as a matrix ([ADR-0066](../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+ * The modifier map as a matrix (ADR-0066).
  *
  * The property under test is not "this key shows this mode" — that is a table the
  * implementation could restate. It is that **whatever is stored, the bar shows the

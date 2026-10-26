@@ -2,7 +2,7 @@
 #
 # Deliberately small. No signing, no SBOM attestation, no multi-arch build, no
 # self-hosted runner: those are V1 work and are named as such in
-# docs/release.md. The runtime image is the collab server; Caddy keeps building
+# docs/how-to/release.md. The runtime image is the collab server; Caddy keeps building
 # from the same Dockerfile.
 name: Release
 
@@ -133,7 +133,7 @@ jobs:
             echo ""
             echo "**Image:** \`${{ needs.image.outputs.ref }}@${{ needs.image.outputs.digest }}\`"
             echo ""
-            echo "**Rollback:** re-pin the previous digest — see [docs/release.md](docs/release.md#rollback)."
+            echo "**Rollback:** re-pin the previous digest — see [docs/how-to/release.md](docs/how-to/release.md#rollback)."
             echo "Gate evidence: [docs/roadmap/alpha.md](docs/roadmap/alpha.md#7-alpha-exit-gates)."
           } >> "$notes"
 

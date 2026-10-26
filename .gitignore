@@ -38,5 +38,14 @@ stryker.log
 
 # The scratchpad and its last-read marker: the author's own queue between passes, so
 # both are per-machine. `pnpm scratchpad` creates the file from a template on demand.
-docs/scratchpad.md
+.scratchpad.md
 .scratchpad-seen
+
+# The Fumadocs site is generated from `docs/` by `scripts/sync-docs.mjs`:
+# pages, frontmatter, meta.json and the copied assets are build input, not
+# source. Edit `docs/` instead.
+apps/docs/content/docs/
+apps/docs/public/docs/
+apps/docs/.source/
+apps/docs/.next/
+internal/

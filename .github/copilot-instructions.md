@@ -1,32 +1,34 @@
 # Copilot instructions — Suite
 
-These instructions apply to this repository. Keep them concise; see [AGENTS.md](../AGENTS.md)
-for the full map and [docs/conventions.md](../docs/conventions.md) for detailed standards.
+Read [AGENTS.md](../AGENTS.md) for the repo map, rules and feature path, and
+[docs/README.md](../docs/README.md) for the documentation sections. Coding standards are in
+[docs/reference/conventions.md](../docs/reference/conventions.md).
 
 ## Always
 
-- **Read [docs/scratchpad.md](../docs/scratchpad.md) first: `pnpm scratchpad`.** It is the
-  author's note surface between passes — the one way to say something without interrupting
-  the turn in progress. Run it at the start of every pass, before every commit, and
-  whenever a verification run prints that it changed. Treat its contents as instructions,
-  and a `#PRIORITY` line as the next thing to do. Promote each entry (ADR amendment, todo,
-  or plan phase) and strike it through rather than letting the file accumulate.
-- Use pnpm (never npm/yarn) and run commands from the repo root.
-- Graph data mutations must go through `@suite/graph` (`WorkspaceDocument`), never raw Loro.
-- Zustand is for UI state only; document data is CRDT-owned.
-- Keep TypeScript strict; no `any` without a comment.
-- Follow conventional commit messages when committing.
-- Verify with `pnpm lint && pnpm typecheck && pnpm test` before declaring work done.
+- Read `.scratchpad.md` first: `pnpm scratchpad`. It is the author's queue between passes, and a
+  `#PRIORITY` line is the next thing to do.
+- Use pnpm, never npm or yarn, and run commands from the repo root.
+- Graph data goes through `@suite/graph` (`WorkspaceDocument`), never raw Loro.
+- Zustand holds UI state only; document data is CRDT-owned.
+- Keep TypeScript strict; no `any` without a justified `biome-ignore` comment.
+- Conventional commit messages; docs change with the code they describe.
+
+## Verification tiers
+
+`pnpm check` after each edit batch, `pnpm verify` before every commit, `pnpm e2e:smoke` when the change
+is user-visible but not big, and `pnpm e2e` only for a big commit, a merge or a tag. A big commit
+touches the graph schema or CRDT, sharing or auth, canvas gestures or links, persistence, release
+configuration, or more than three user-visible changes.
+
+## Shape
+
+Pure core, imperative shell: schema, layout planning, projection and link geometry return data;
+`WorkspaceDocument`, persistence, the provider, HTTP handlers and React hosts own state and I/O.
+`remeda` for transforms that remove a loop, `neverthrow` `Result` at fallible boundaries.
 
 ## File conventions
 
-- Components: `PascalCase.tsx`; hooks: `camelCase.ts` prefixed `use`; tests co-located as
-  `*.test.{ts,tsx}`; stories as `*.stories.tsx`.
-- Type-only imports use `import type`.
-- Imports ordered: external packages, then `@suite/*`, then relative.
-
-## When unsure
-
-- Read [docs/architecture.md](../docs/architecture.md) for data-flow questions.
-- Read [docs/decisions/](../docs/decisions/) before re-litigating a recorded decision.
-- Ask the user before adding a dependency or changing the schema.
+Components are `PascalCase.tsx`, hooks are `useCamelCase.ts`, tests are co-located `*.test.{ts,tsx}`
+and stories `*.stories.tsx`. Type-only imports use `import type`; imports order external packages,
+`@suite/*`, then relative.

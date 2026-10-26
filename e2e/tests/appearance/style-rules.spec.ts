@@ -6,7 +6,7 @@ const id = workspaceIdFactory("e2e-style-rules");
 const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
 
 /**
- * Style rules you can write ([ADR-0071](../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * Style rules you can write (ADR-0071
  * amendment).
  *
  * The feature is one promise: the controls in the inspector reach every rung of the ladder, so "every

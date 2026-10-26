@@ -5,7 +5,7 @@ import { cards, workspaceIdFactory } from "../fixtures/support";
 const id = workspaceIdFactory("e2e-viewport-pill");
 
 /**
- * The pill at the bottom-left, in one piece ([ADR-0071](../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The pill at the bottom-left, in one piece (ADR-0071).
  *
  * Six controls sit there and only three of them are ours, so the pieces used to be three
  * containers: React Flow's own stack, the link tool's button, and the purpose button, each

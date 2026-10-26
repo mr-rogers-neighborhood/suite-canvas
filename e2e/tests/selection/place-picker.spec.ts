@@ -3,7 +3,7 @@ import { settleViewport } from "../fixtures/marquee";
 import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
- * The picker loop ([ADR-0063](../docs/decisions/0063-placement-is-a-mode-too.md) §6)
+ * The picker loop (ADR-0063 §6)
  * and behaviours as ordinary cards (§ R1 of the ADR-0011 amendment): while a run is
  * live, adding a card joins the run instead of landing at a fixed point, and a
  * sketch or a portal is added the same way a note is.

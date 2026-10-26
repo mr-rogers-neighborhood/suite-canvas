@@ -186,3 +186,32 @@ does.
 browser is not the only copy of the work, and a share has neither an export nor an account to offer.
 It does not block leaving, and it introduces no storage state of its own — the pill, the panel and
 this dialog all read the one `storageLadder()` answer.
+
+## Amendment — the native prompt is a gate, not a message
+
+The author's note: *"the native confirm dialogue when closing the tab/window… should be more informative,
+and upon clicking Cancel should then bring up the system prompt again or provide additional guidance."*
+
+**What the browser allows, plainly.** A `beforeunload` handler cannot choose the wording — Chromium shows
+"Changes you made may not be saved", Safari and Firefox their own variants — and it cannot show anything
+custom. It also gives **no signal** for which button was pressed: there is no "cancelled" event, and no way
+to tell a cancelled close from a tab that was simply left open. So "re-prompt after Cancel" cannot be
+implemented as described on any engine, and faking it with a timer would either nag a reader who never
+tried to leave or fire while they are working.
+
+What that leaves, and what the shipped guard does:
+
+1. **The native prompt is the last resort, not the explanation.** It exists to force a decision. Its job is
+   to be *rare* — registered only on the `banner` rung, and disarmed the moment the reader chooses a leave.
+2. **The informative sentence lives where we own the words**: the in-app leaving dialog and the storage
+   panel. That is where sign-in, an export and "leave anyway" are offered, and where the reader can read
+   the risk at their own pace.
+3. **Guidance after a cancelled close is the panel's job.** A reader who cancelled is still in the app with
+   the storage pill in front of them saying "Saved on this device"; opening it explains the state, offers
+   the durability gesture and the export. Making that surface the obvious next step is a *discoverability*
+   problem, and it is cheaper to solve there than to fight the browser.
+4. **If the platform ever gives us a signal** (a `visibilitychange` heuristic is the closest thing, and it
+   is wrong often enough to be worse than silence), the dialog can be raised again on return. Until then we
+   do not pretend to detect it.
+
+Recorded so this is not re-attempted as a bug: it is a platform boundary, not an unfinished feature.

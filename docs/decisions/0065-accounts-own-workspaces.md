@@ -187,3 +187,46 @@ decisions that take the same model further, and leaving them here would make the
 
 The org-owns-many-workspaces model itself is untouched: `workspaces.id` is still the document id, and
 claiming is still one `UPDATE` that changes no id and no share link.
+
+## Open question — what "Open recovery key…" becomes, and to whom
+
+The author's note: *"Do we still plan to remove 'Open Recovery Key' from the workspace launcher… or keep it
+behind a strict local-only feature flag for self-hosted, or some other conditional access? Still undecided…
+My only point of contention is: can we make it as robust and easy to use as the rest of the workspace
+management features, or would we just be throwing it in there as an afterthought?… No users left behind."*
+
+That framing is the decision. The question is not "keep or cut" but **"is it a first-class path or a
+leftover?"** — and §4 already says which: the owner key survives as *the offline key*, not as the identity,
+and the account is the recoverable path. So the key is not deprecated; its **job changed**, and the launcher
+still presents it with the old ceremony.
+
+Three honest postures, none chosen:
+
+1. **First-class, local-only.** "Open recovery key…" stays where it is, for a workspace with no account,
+   with the same polish as the rest: a validation step that names what it will open, a preview of the
+   workspace before it opens, a clear statement that this is a device's copy and not an account. Costs real
+   work, and it is the only posture that satisfies "no users left behind".
+2. **Second door to one flow.** Fold it into the existing "open a workspace" path as a *source* alongside a
+   file — one import surface, two sources, one set of errors. Cheapest coherent option, and it removes the
+   oddity of a launcher action that means "recover".
+3. **Account-only, key retired.** Remove it, on the grounds that the account is the recovery path and a key
+   is a credential most people lose. Simple, and it abandons exactly the self-hosted, offline reader this
+   product exists for.
+
+**Recommendation: 2, with 1's copy.** One import flow, with the key as a source, and the language of a
+first-class path rather than an escape hatch. A research pass is warranted before building it — the author
+asked for one; the question to ask readers is "when the launcher cannot find your work, what do you expect
+to see?", not "do you understand an owner key?".
+
+### A note on offline auth libraries (research lead, not a decision)
+
+The same note points at `better-auth-offline` (IndexedDB session cache with a network-first strategy,
+automatic invalidation on sign-in/sign-out) and `better-auth-capacitor`. Both are **answers to a different
+question**: they keep a *session* usable without a network, which matters for a hosted app whose auth is the
+gateway.
+
+Suite's gateway is not auth: a workspace opens from local storage with no session at all, and sync is the
+part that needs a network. So the useful idea here is narrow — **caching the session so a signed-in reader
+does not have to re-authenticate to see their own already-local work** — and the maturity caveat in the
+note (v0.0.2, very few downloads) is decisive for a credential path. Recorded as a lead to re-check in a
+later pass, not as a dependency to adopt now.

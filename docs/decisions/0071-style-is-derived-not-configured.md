@@ -241,3 +241,42 @@ Built and shipped; the rest is recorded as open.
 - **Still open**: authoring type- and workspace-level style in the UI (the index covers them; no editor
   writes them), named rules and themes as a surface a reader can create, and the utility index rendered as
   a browsable list rather than a per-control source.
+
+## Amendment — the edges of "appearance": rounding is not only a radius
+
+Two notes from the author after the first slice shipped, and both change what a control owes the reader.
+
+**1. Corner rounding drags three other things with it.** *"When changing the rounding on cards and other
+entities, we'll need to account for any shadows/outlines/background, and for the attachment of the
+connectors to ensure visual consistency and avoid layout issues… especially with shapes and particularly
+custom shapes."* He is right, and it is a consequence of radius being the first preference offered rather
+than a cosmetic one:
+
+- a **shadow** follows the silhouette, so a rounded card with a rectangular shadow looks detached;
+- an **outline** (a drawn route, [ADR-0060](./0060-shape-strip-and-rollup.md)'s family) has to be inset by
+  the radius or it cuts the corner;
+- a **connector** anchors at a normalised point (0.5, 0) — *not* at the corner — but its grab ring and its
+  hit target are sized in pixels, so on a very round card the dot can float off the visible edge.
+
+The rule this implies: **a paint that changes the silhouette must publish the silhouette to everything that
+attaches to it.** Practically, one derived value — the resolved outline — rather than four components each
+re-deriving "what is the edge of this card". Custom shapes make it non-optional, which is why this is a
+requirement now rather than a polish item.
+
+**2. Appearance is not the home for every visual option.** *"Canvas should allow custom backgrounds… grid
+visibility, snap-to-grid defaults (could justify a sixth, final toggle/ui in the canvas control menu… but
+that might be overloading that bar), and possibly theme-specific adjustments."*
+
+Three different rungs are tangled in that sentence, and separating them is the whole point of this ADR:
+
+| option | rung | why |
+| --- | --- | --- |
+| canvas background, grid visibility | **reader preference** | it draws differently on this screen and nowhere else |
+| snap-to-grid defaults | **reader preference**, per board at most | it is how *this* pointer behaves, and it is not content |
+| "Reading / Editing / Presentation view" | **not a preference at all** | it changes what a click *does*, which is the purpose axis (ADR-0064) — a view is a mode |
+| theme-specific adjustments | **the theme**, not a control | a theme owns its values; exposing them per reader is a different product |
+
+The author's own instinct about the canvas control bar is also recorded as a constraint: **the widget bar is
+full.** Four mode values, four purposes, zoom and fit already share one column; a sixth segment would make
+it a menu of menus. Anything new that is a preference belongs in Appearance, and anything that is a mode
+belongs on the axis it changes — not in the bar.

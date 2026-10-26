@@ -30,9 +30,13 @@ tiers are about how much confidence a change needs.
 Two cheap checks run beside the tests and belong in every tier above the first:
 
 ```sh
-node scripts/docs-check.mjs                  # links, fences, retired terms, version agreement
-node scripts/generate-limits.mjs --check     # docs/reference/limits.md matches the code
+pnpm docs:check                              # links, fences, prose, generated indexes, limits
+pnpm docs:symbols                            # backticked paths, root scripts, ADR references
+pnpm shape                                   # file length, observe call sites, raw Loro writes
 ```
+
+`pnpm check` and `pnpm verify` run all three. `pnpm docs:check` alone is the fast pass while editing
+prose.
 
 ## Projects
 
@@ -145,7 +149,7 @@ invariant is the thing worth pinning.
 
 ## Visual baselines
 
-`e2e/tests/visual.spec.ts` keeps a small curated set of layout snapshots as committed PNGs under
+`e2e/tests/visual/visual.spec.ts` keeps a small curated set of layout snapshots as committed PNGs under
 `e2e/tests/visual/`, so a run needs no vendor service. Story surfaces are served from the built
 Storybook on `:6006`; the app states run against the normal `webServer`.
 

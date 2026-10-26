@@ -46,6 +46,13 @@
         "useConst": "error"
       },
       "complexity": {
+        // A ratchet, not a target. The two functions above the limit are being
+        // split; lower this as they come down. A rule that fails on day one
+        // gets switched off, so it starts where the tree already passes.
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 120 }
+        },
         // `a ? true : false` is `Boolean(a)`; the ternary only adds a branch to
         // read past.
         "noUselessTernary": "error"

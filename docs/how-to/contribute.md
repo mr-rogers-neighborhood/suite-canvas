@@ -79,10 +79,8 @@ logical change per commit, because a formatting sweep in the same commit hides t
 Fill in `.github/PULL_REQUEST_TEMPLATE.md`: summary (what and why), approach (the choice a reviewer
 would otherwise question), test plan (the commands you ran and their result), and the checklist:
 
-- [ ] `pnpm lint` passes
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm test` passes
-- [ ] `pnpm build` passes (when touching `@suite/graph` or build config)
+- [ ] `pnpm verify` passes
+- [ ] The e2e tier the change earns passes
 - [ ] Docs and conventions updated if needed
 
 A reviewer will ask which test fails without this change, what happens on a second client and on a

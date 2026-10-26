@@ -32,7 +32,8 @@ everything. The facade (`WorkspaceDocument`) and the folder index are the API.
 Co-locate `*.test.ts(x)` and `*.stories.tsx` with the code they cover.
 
 One primary export per file; small helpers stay private. Named exports only, with `App` at the entry as
-the one default. Size is a signal: over about 400 lines, split; over about 700 is a bug.
+the one default. Size is a signal: around 400 lines, look for a seam. `pnpm shape` fails a source file
+over 900 lines. The 400 number is a prompt, the 900 number is the gate.
 
 Components are `PascalCase.tsx`, hooks are `useCamelCase.ts`, other modules are `camelCase.ts`.
 
@@ -68,6 +69,24 @@ Define a tagged error type.
 interface, and validate on every write.
 
 No new dependency without a stated job and the correct package.
+
+## Refactor on sight
+
+Fix these when the file is already open. Each one has a failure mode.
+
+| Smell | Smallest fix |
+| --- | --- |
+| A whole-record write where two fields can change independently | Write the leaf field, or use a map per record |
+| A derivation stored back into the document | Recompute at read time |
+| An effect that exists to run one user action | Run it in the handler |
+| A second copy of geometry, formatting, or presence rules | One helper, one call site |
+| A read share that can write | Check the capability at the mutation |
+| A log line with a token, email, or document body | Redact at the logger |
+
+`pnpm shape` enforces the mechanical half: file length, parameter count, banned dynamic-code APIs, one
+`WorkspaceDocument.observe` call site, and no raw Loro writes to graph roots outside `@suite/graph`.
+`pnpm docs:symbols` enforces that every backticked path, root script, and ADR reference in the docs
+resolves.
 
 ## TypeScript
 

@@ -8,6 +8,24 @@ import wasm from "vite-plugin-wasm";
 // build time (`src/session/mode.ts`). Both entry points are built either way.
 export default defineConfig({
   plugins: [react(), tailwindcss(), wasm()],
+  server: {
+    watch: {
+      // Test output lives under the canvas root (storybook-static) or one level
+      // up (test-results, relay SQLite). A running dev server that reloads on
+      // those files turns a passing test into a page that navigates under it.
+      ignored: [
+        "**/.artifacts/**",
+        "**/.data/**",
+        "**/coverage/**",
+        "**/dist/**",
+        "**/playwright-report/**",
+        "**/storybook-static/**",
+        "**/test-results/**",
+        "**/*.sqlite",
+        "**/*.sqlite-*",
+      ],
+    },
+  },
   // A standalone build is static assets only. The store decides not to build its
   // sync provider from `isStandalone()`, so no define hack is needed here: the
   // profile is read through `VITE_SUITE_MODE` in `src/session/mode.ts`.

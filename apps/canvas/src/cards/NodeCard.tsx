@@ -180,6 +180,10 @@ export function NodeCard({
   // Blur can fire transiently while the card re-renders (presence updates, CRDT
   // sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
+  // A second card can take editing before this card's blur timer fires. The
+  // timer belongs to the field that lost focus, not to the global editing state.
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const pointerOrigin = useRef<{ x: number; y: number } | null>(null);
   // Stable so the menu's Escape listener is not torn down by every presence tick.
@@ -201,8 +205,10 @@ export function NodeCard({
 
   const releaseFocusSoon = () => {
     if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
+    const fieldAtBlur = editingRef.current;
     blurTimeout.current = window.setTimeout(() => {
       blurTimeout.current = null;
+      if (editingRef.current !== fieldAtBlur) return;
       onEditEnd?.();
     }, 120);
   };

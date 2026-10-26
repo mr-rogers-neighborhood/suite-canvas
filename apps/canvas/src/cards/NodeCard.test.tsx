@@ -101,6 +101,28 @@ describe("NodeCard", () => {
     expect(onStartEditing).toHaveBeenCalledWith("body");
   });
 
+  it("does not end a new edit when the previous field's blur timer fires", () => {
+    vi.useFakeTimers();
+    try {
+      const onEditEnd = vi.fn();
+      const view = renderCard({ editing: "title", onEditEnd });
+      const title = view.container.querySelector(".card-title-editor");
+      if (!title) throw new Error("title editor not mounted");
+
+      fireEvent.blur(title);
+      view.rerender(
+        <ReactFlowProvider>
+          <NodeCard {...base} editing={null} onEditEnd={onEditEnd} />
+        </ReactFlowProvider>,
+      );
+      vi.advanceTimersByTime(200);
+
+      expect(onEditEnd).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("presents a tour instead of editing it, from anywhere on the card", () => {
     const onDoubleClickPresent = vi.fn(() => true);
     const onStartEditing = vi.fn();

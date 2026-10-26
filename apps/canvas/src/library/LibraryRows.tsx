@@ -258,17 +258,20 @@ export function LibraryRowList({
   grouped: { id: string; title: string; depth: number; items: LibraryItem[] }[] | null;
   context: LibraryRowContext;
 }) {
-  const renderEntry = (entry: LibraryEntry) =>
-    entry.kind === "board" ? (
+  const renderEntry = (entry: LibraryEntry) => {
+    const key = entry.kind === "board" ? `board:${entry.board.id}` : `card:${entry.card.id}`;
+    return entry.kind === "board" ? (
       <LibraryBoardRow
+        key={key}
         board={entry.board}
         searching={context.searching}
         terms={context.terms}
         onOpenMenu={context.onOpenMenu}
       />
     ) : (
-      <LibraryCardRow item={entry.card} context={context} />
+      <LibraryCardRow key={key} item={entry.card} context={context} />
     );
+  };
 
   if (!grouped) return <ul className="space-y-0.5">{entries.map(renderEntry)}</ul>;
   return (

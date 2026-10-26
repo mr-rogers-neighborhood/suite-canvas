@@ -170,6 +170,10 @@ export function CardPanel({
   // Blur can fire transiently while the panel re-renders (presence updates,
   // CRDT sync). Only leave edit mode when focus does not come back.
   const blurTimeout = useRef<number | null>(null);
+  // A blur timer belongs to the field that lost focus. If another field starts
+  // editing first, that timer must not stop the new one.
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const focusedRow = useRef<HTMLDivElement | null>(null);
 
   const inspector = variant === "inspector";
@@ -245,8 +249,10 @@ export function CardPanel({
 
   const releaseFocusSoon = () => {
     if (blurTimeout.current !== null) window.clearTimeout(blurTimeout.current);
+    const fieldAtBlur = editingRef.current;
     blurTimeout.current = window.setTimeout(() => {
       blurTimeout.current = null;
+      if (editingRef.current !== fieldAtBlur) return;
       onEditEnd();
     }, 120);
   };

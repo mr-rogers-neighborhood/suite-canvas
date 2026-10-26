@@ -17,9 +17,10 @@ Read [AGENTS.md](../AGENTS.md) for the repo map, rules and feature path, and
 ## Verification tiers
 
 `pnpm check` after each edit batch, `pnpm verify` before every commit, `pnpm e2e:smoke` when the change
-is user-visible but not big, and `pnpm e2e` only for a big commit, a merge or a tag. A big commit
-touches the graph schema or CRDT, sharing or auth, canvas gestures or links, persistence, release
-configuration, or more than three user-visible changes.
+is user-visible but not big, and `pnpm e2e` only for a big commit, a merge or a tag. A change inside
+one area can use `pnpm e2e:canvas`, `pnpm e2e:collab`, or `pnpm e2e:views`. A big commit touches the
+graph schema or CRDT, sharing or auth, canvas gestures or links, persistence, release configuration,
+or more than three user-visible changes.
 
 ## Shape
 

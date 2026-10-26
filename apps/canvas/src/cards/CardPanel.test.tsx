@@ -142,6 +142,22 @@ describe("CardPanel", () => {
     expect(onStartEditing).toHaveBeenCalledWith("body");
   });
 
+  it("keeps a new field editable when the previous field's blur timer fires", () => {
+    vi.useFakeTimers();
+    try {
+      const onEditEnd = vi.fn();
+      const view = renderPanel({ editing: "body", bodyEmpty: true, onEditEnd });
+
+      fireEvent.blur(bodyEditor(view.container));
+      view.rerender(<CardPanel {...base} editing="title" bodyEmpty onEditEnd={onEditEnd} />);
+      vi.advanceTimersByTime(200);
+
+      expect(onEditEnd).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the body read-only while the title owns the surface", () => {
     const { container } = renderPanel({ variant: "embedded", editing: "title", bodyEmpty: true });
 

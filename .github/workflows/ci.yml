@@ -144,6 +144,7 @@ jobs:
     name: End-to-end (smoke)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -169,8 +170,10 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: e2e/playwright-report
+          name: playwright-report-smoke
+          path: |
+            e2e/playwright-report
+            e2e/.artifacts
           retention-days: 7
 
   e2e:
@@ -179,6 +182,7 @@ jobs:
     # request gets the smoke tier; the unit and story suites cover the rest.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -204,6 +208,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: e2e/playwright-report
+          name: playwright-report-full
+          path: |
+            e2e/playwright-report
+            e2e/.artifacts
           retention-days: 7

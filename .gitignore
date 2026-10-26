@@ -11,6 +11,10 @@ storybook-static/
 playwright-report/
 test-results/
 blob-report/
+# Per-run e2e state: relay databases and captured server logs. Both are
+# disposable, and a committed log is a stale clue.
+e2e/.data/
+e2e/.artifacts/
 .DS_Store
 *.tsbuildinfo
 *.log

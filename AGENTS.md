@@ -39,7 +39,13 @@ pnpm dev              # canvas on :5173, relay on :1234
 pnpm check            # biome + tsc + the Vitest files your change reaches
 pnpm verify           # the commit gate: lint, typecheck, tests, stories, build
 pnpm e2e:smoke        # the @smoke Playwright specs
+pnpm e2e:canvas       # boot, boards, cards, links, selection, input, library, appearance
+pnpm e2e:collab       # collab, sharing, account
+pnpm e2e:views        # views
 pnpm e2e              # every Playwright spec
+pnpm e2e:doctor       # report processes holding the e2e ports
+pnpm e2e:stop         # stop only those processes
+pnpm e2e:logs         # tail the captured Vite and relay logs
 pnpm build            # graph dist, then the canvas bundle
 pnpm storybook        # component workshop on :6006
 ```

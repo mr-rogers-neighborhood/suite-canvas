@@ -40,7 +40,9 @@ covers the standalone bundle and custom ports.
 | `pnpm check` | Biome, `tsc` across the workspace, and the Vitest files your change reaches |
 | `pnpm verify` | The commit gate: lint, typecheck, unit tests, billing tests, story tests, build |
 | `pnpm e2e:smoke` | The `@smoke` Playwright specs, for a medium change |
+| `pnpm e2e:canvas` / `e2e:collab` / `e2e:views` | One e2e area, for a change inside it |
 | `pnpm e2e` | Every Playwright spec, for a big commit, a merge or a tag |
+| `pnpm e2e:doctor` | Report processes holding the e2e ports before a run |
 | `pnpm build` | `@suite/graph` dist, then the canvas bundle |
 | `pnpm storybook` | Component workshop on :6006 |
 | `pnpm docs:site` | The docs site on :3001 |

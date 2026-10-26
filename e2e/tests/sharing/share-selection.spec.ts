@@ -96,15 +96,13 @@ async function boxFor(page: Page, cardId: string): Promise<Box> {
  */
 async function shiftSelect(page: Page, cardIds: readonly string[]): Promise<void> {
   await page.keyboard.press("Escape");
-  await page.keyboard.down("Shift");
   let expected = 0;
   for (const cardId of cardIds) {
-    const box = await boxFor(page, cardId);
-    await page.mouse.click(box.x + 40, box.y + 60);
+    const card = page.locator(`[data-testid="node-card"][data-node-id="${cardId}"]`);
+    await card.click({ position: { x: 40, y: 60 }, modifiers: ["Shift"] });
     expected += 1;
     await expect(selectedNodes(page)).toHaveCount(expected);
   }
-  await page.keyboard.up("Shift");
   await expect(page.getByTestId("card-inspector")).toHaveCount(0);
 }
 

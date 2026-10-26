@@ -439,9 +439,10 @@ export function RecoveryKeyDialog({
                     className="mt-1.5 grid grid-cols-3 gap-x-2 gap-y-0.5 font-mono text-[10px] text-[var(--ink)]"
                   >
                     {words.split(" ").map((word, index) => (
-                      // The wordlist is test-guaranteed distinct, so the word is a
-                      // stable key and the index is only shown, never identified by.
-                      <li key={word} className="list-none">
+                      // A phrase may repeat a word, so the position is the identity, and
+                      // the list is rebuilt whole whenever `words` changes.
+                      // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity.
+                      <li key={`${index}-${word}`} className="list-none">
                         <span className="mr-1 text-[var(--ink-muted)]">{index + 1}</span>
                         {word}
                       </li>

@@ -15,6 +15,7 @@ touched, and escalate only when the change deserves it.
 | Before every commit | `pnpm verify` | Always, on the commit you intend to keep. No e2e. | lint, typecheck, unit and property tests (graph, server, auth, canvas), billing tests, story tests, and a full build. |
 | A story or visual surface changed | `pnpm test:stories` | A `.stories.tsx` changed, or you touched a component a story renders. | The Storybook suite under jsdom plus axe in both themes. |
 | A medium change | `pnpm e2e:smoke` | The change is user-visible but not in the categories below. | The specs tagged `@smoke`: boot, boards and sections, cards, links, selection, library, views, sharing, sign-in, collab. |
+| One subsystem | `pnpm e2e:canvas`, `pnpm e2e:collab`, or `pnpm e2e:views` | You changed canvas input, collaboration, or views and want the whole area, not every spec. | The matching folder set. Each command starts its own servers. |
 | A big commit, a merge, or a tag | `pnpm e2e` | See the rule below. | Every spec, headless and parallel. |
 | You edited specs | `pnpm e2e:changed` | You changed several e2e specs and want all of them. | Playwright's `--only-changed origin/main`, which selects the specs touched since that ref. |
 | While iterating | `pnpm e2e <spec>` / `pnpm exec vitest run <file>` | You want one failing test's output. | One file, or one test with `-t`/`-g`. |
@@ -49,9 +50,12 @@ prose.
 | `e2e` | Playwright, chromium | `e2e/tests/**/*.spec.ts`, grouped by area (`boot/`, `boards/`, `cards/`, `links/`, `collab/`, `sharing/`, …) | `pnpm e2e` |
 | billing | `node --test` | `services/billing/src/**/*.test.ts` | `pnpm --filter @suite/billing test` |
 
-`pnpm test` is `vitest run` and covers all four Vitest projects. The e2e config starts what it needs
-itself, a canvas dev server on `:5173` and a relay on `:1235` with rate limits raised, and reuses
-servers already listening outside CI.
+`pnpm test` is `vitest run` and covers all four Vitest projects. The e2e config starts its own canvas
+dev server on `:5173` and a relay on `:1235`, with rate limits raised and a database per run. Every e2e
+command runs `scripts/preflight.mjs` first. If a port is already in use, the run stops before a browser
+opens and names the process holding it. `pnpm e2e:stop` stops only the listeners on those ports.
+
+UI mode is the exception: it reuses a running server so the window can stay open between runs.
 
 ## One test at a time
 
@@ -82,9 +86,14 @@ inspect.
 `pnpm e2e:trace` opens the newest `trace.zip` from `e2e/test-results/`. Traces are kept on failure by
 default; `SUITE_TRACE=on pnpm e2e` records one for every test.
 
+`pnpm e2e:logs` prints the tail of the captured Vite and relay logs under `e2e/.artifacts/`. Read it
+when a run stops producing test results or a browser loses its server. The relay log names the request
+that failed; the Vite log names the file that triggered a reload.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CI` | unset | Selects the `github` reporter and stops server reuse. UI mode always reuses a listening server. |
+| `CI` | unset | Selects the `github` reporter and retries a failed test once. Servers are always fresh outside UI mode. |
+| `SUITE_WORKERS` | `3` | Playwright browser workers. Lower it to isolate a timing failure; raise it only on a machine with headroom. |
 | `SUITE_TRACE` | unset | `on` records a trace for every test; anything else keeps `retain-on-failure`. |
 
 Artifacts land under `e2e/test-results/<test-slug>/`: `trace.zip` on failure, `test-failed-1.png` at
@@ -93,9 +102,9 @@ so there is no HTML report unless you pass `--reporter=html`.
 
 ## Reading a failure
 
-An e2e spec that passes alone and fails in the suite is shared state: a leftover workspace, a server
-started by an earlier spec, or real timing. Run `pnpm e2e:headed` with `--workers=1` to keep order and
-watch the sequence.
+An e2e spec that passes alone and fails in the suite usually depends on order or timing, not on a
+server another spec started. Run `pnpm e2e:headed` with `--workers=1` to keep order and watch the
+sequence.
 
 A jsdom test that fails on a measurement is the wrong tool: layout, scrolling and
 `getBoundingClientRect` are zero there, so the assertion belongs in an e2e spec or a story.

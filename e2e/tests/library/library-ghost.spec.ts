@@ -25,8 +25,10 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   // A card that only lives in the inbox, so the drag has somewhere to start.
   await pageA.getByTestId("dock-new-card").click();
   await pageA.getByTestId("dock-type-note").click();
-  await expect(pageA.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
-  await pageA.keyboard.type("Library card");
+  const createdTitle = pageA.locator(".card-title-editor.ProseMirror-focused");
+  await expect(createdTitle).toHaveCount(1);
+  await createdTitle.pressSequentially("Library card");
+  await expect(createdTitle).toContainText("Library card");
   await pageA.keyboard.press("Escape");
   await pageA.locator(".card-header").first().click({ button: "right" });
   await pageA.getByRole("menuitem", { name: "Remove from board" }).click();
@@ -64,6 +66,10 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   await pageA.mouse.up();
   await expect(pageA.getByTestId("library-drop-preview")).toHaveCount(0);
   await expect(pageB.getByTestId("peer-library-ghost")).toHaveCount(0);
+  // The dragger's own board settles first; the peer projection follows the CRDT.
+  await expect(
+    pageA.locator('[data-testid="node-card"]').filter({ hasText: "Library card" }),
+  ).toHaveCount(1);
   await expect(
     pageB.locator('[data-testid="node-card"]').filter({ hasText: "Library card" }),
   ).toHaveCount(1);

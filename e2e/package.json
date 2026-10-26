@@ -4,15 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "playwright test",
+    "e2e": "node scripts/preflight.mjs --clean && playwright test",
+    "e2e:full": "node scripts/preflight.mjs --clean && playwright test",
+    "e2e:canvas": "node scripts/preflight.mjs --clean && playwright test boot boards cards links selection input library appearance",
+    "e2e:collab": "node scripts/preflight.mjs --clean && playwright test collab sharing account",
+    "e2e:views": "node scripts/preflight.mjs --clean && playwright test views",
     "e2e:ui": "playwright test --ui --ui-host=127.0.0.1 --ui-port=8181",
     "e2e:ui:stop": "node -e \"const {execSync}=require(\"node:child_process\");try{const out=execSync(\"ss -ltnp 2>/dev/null | grep 8181\",{encoding:\"utf8\"});const pid=(out.match(/pid=(\\d+)/)||[])[1];if(pid){process.kill(Number(pid));console.log(\"stopped Playwright UI (\"+pid+\")\");}else{console.log(\"Playwright UI is not running\");}}catch{console.log(\"Playwright UI is not running\");}\"",
-    "e2e:headed": "playwright test --headed --workers=1",
-    "e2e:visual": "playwright test visual",
-    "e2e:visual:update": "playwright test visual --update-snapshots",
+    "e2e:headed": "node scripts/preflight.mjs --clean && playwright test --headed --workers=1",
+    "e2e:visual": "node scripts/preflight.mjs --clean --visual && playwright test visual",
+    "e2e:visual:update": "node scripts/preflight.mjs --clean --visual && playwright test visual --update-snapshots",
     "e2e:trace": "node -e \"const fs=require('node:fs'),path=require('node:path');const dir='test-results';const hits=[];const walk=(d)=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.name==='trace.zip')hits.push({p,t:fs.statSync(p).mtimeMs});}};if(fs.existsSync(dir))walk(dir);hits.sort((a,b)=>b.t-a.t);if(!hits.length){console.error('No trace.zip under '+dir+'. Run a failing test, pass --retries=1, or set SUITE_TRACE=on.');process.exit(1);}console.log('Newest trace: '+hits[0].p);const r=require('node:child_process').spawnSync('playwright',['show-trace',hits[0].p],{stdio:'inherit',shell:process.platform==='win32'});process.exit(r.status??1);\"",
-    "e2e:smoke": "playwright test --grep @smoke",
-    "e2e:changed": "playwright test --only-changed origin/main"
+    "e2e:smoke": "node scripts/preflight.mjs --clean && playwright test --grep @smoke",
+    "e2e:changed": "node scripts/preflight.mjs --clean && playwright test --only-changed origin/main",
+    "e2e:doctor": "node scripts/preflight.mjs",
+    "e2e:stop": "node scripts/preflight.mjs --fix --clean",
+    "e2e:logs": "node scripts/logs.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

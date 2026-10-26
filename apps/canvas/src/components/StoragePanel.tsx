@@ -24,12 +24,12 @@ export const OFFLINE_SCOPE =
 export interface StoragePanelProps {
   workspaceId: string;
   /**
-   * Whether this device has an account behind it. Absent until the session surface lands, which keeps
-   * today's answer honest: with no account the anonymous rungs of the ladder apply
-   * ([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §6).
+   * Whether this device has an account behind it. `App` passes the session's answer; the default is
+   * the anonymous rungs of the ladder, so a surface that mounts the panel without a session still
+   * tells the truth ([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §6).
    */
   signedIn?: boolean;
-  /** Opens the sign-in surface the banner offers. Absent while there is none. */
+  /** Opens the sign-in dialog the banner offers. Absent when there is no dialog to open. */
   onSignIn?: (() => void) | undefined;
 }
 

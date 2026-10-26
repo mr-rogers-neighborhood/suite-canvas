@@ -20,6 +20,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { SignInEntry } from "./auth/SignInEntry";
+import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
 import type { CanvasMode } from "./canvas/linkGesture";
@@ -145,6 +147,16 @@ function useSurfacePalette(root: RefObject<HTMLElement | null>, themeMode: strin
 const WorkspaceActions = lazy(async () => {
   const module = await import("./components/WorkspaceActions");
   return { default: module.WorkspaceActions };
+});
+
+/**
+ * The account surfaces pull in the Better Auth client. Loaded on demand for the
+ * same reason as the share dialogs: a standalone build has no server and must not
+ * ship a single byte of `/api/auth`, so the gate is a literal the bundler folds.
+ */
+const SignInSurface = lazy(async () => {
+  const module = await import("./auth/SignInDialogHost");
+  return { default: module.SignInDialogHost };
 });
 
 export default function App() {
@@ -319,6 +331,12 @@ function WorkspaceShell({
   // A standalone build renders from IndexedDB alone: no socket, no presence and
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
+
+  // The account is read once by `SignInDialogHost`; the header and the storage
+  // ladder only consume the answer. A device with no account is signed out, which
+  // is where it already was — nothing about the local path changes (ADR-0067 §6).
+  const signedIn = useAccountStore(accountSignedIn);
+  const openSignIn = useAccountStore((state) => state.openSignIn);
 
   useEffect(() => {
     if (standalone) return;
@@ -1159,7 +1177,9 @@ function WorkspaceShell({
                     Local only
                   </span>
                 ) : null}
-                <StoragePanel workspaceId={workspaceId} />
+                {/* A standalone build has no server, so it has no accounts to offer. */}
+                {standalone ? null : <SignInEntry />}
+                <StoragePanel workspaceId={workspaceId} signedIn={signedIn} onSignIn={openSignIn} />
               </>
             )
           }
@@ -1358,6 +1378,13 @@ function WorkspaceShell({
             canManageTrash={canManageTrash}
           />
         ) : null}
+
+        {/* The account surfaces: sign-in, and the admission panel while an account waits. */}
+        {standalone ? null : (
+          <Suspense fallback={null}>
+            <SignInSurface />
+          </Suspense>
+        )}
 
         <PerfOverlay />
       </div>

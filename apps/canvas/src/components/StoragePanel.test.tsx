@@ -86,3 +86,49 @@ describe("quota classification", () => {
     expect(formatEstimate({ usage: 2048, quota: 4096 })).toBe("2 KB of 4 KB");
   });
 });
+
+describe("storage panel and the account", () => {
+  beforeEach(() => {
+    useDurabilityStore.getState().reset();
+  });
+
+  it("hands the banner's one action to whoever mounts it", async () => {
+    await requestPersistence({ persist: async () => false, persisted: async () => false });
+    const onSignIn = vi.fn();
+
+    render(<StoragePanel workspaceId="ws-1" signedIn={false} onSignIn={onSignIn} />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+
+    expect(screen.getByTestId("storage-headline")).toHaveTextContent("Sign in to keep it");
+    fireEvent.click(screen.getByTestId("storage-sign-in"));
+    expect(onSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no sign-in action when nothing is wired to it", async () => {
+    await requestPersistence({ persist: async () => false, persisted: async () => false });
+    render(<StoragePanel workspaceId="ws-1" />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+    expect(screen.queryByTestId("storage-sign-in")).not.toBeInTheDocument();
+  });
+
+  it("stops asking once the device has an account", async () => {
+    await requestPersistence({ persist: async () => false, persisted: async () => false });
+    const onSignIn = vi.fn();
+
+    render(<StoragePanel workspaceId="ws-1" signedIn onSignIn={onSignIn} />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+
+    expect(screen.queryByTestId("storage-sign-in")).not.toBeInTheDocument();
+    expect(screen.getByTestId("storage-headline")).toHaveTextContent("synced");
+  });
+
+  it("says nothing at all when the account's copy makes the browser's copy a footnote", async () => {
+    await requestPersistence({ persist: async () => true, persisted: async () => true });
+    render(<StoragePanel workspaceId="ws-1" signedIn />);
+    fireEvent.click(screen.getByTestId("storage-status"));
+
+    expect(screen.queryByTestId("storage-headline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("storage-status")).toHaveTextContent("Saved");
+    expect(screen.queryByTestId("storage-warning")).not.toBeInTheDocument();
+  });
+});

@@ -6,10 +6,10 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-26 |
 | [Architecture](architecture.md) | Suite is a local-first collaborative canvas whose data is a typed object graph with semantic links, so the same content can later be read as a knowled… | 2026-10-26 |
-| [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-10-26 |
-| [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-26 |
 | [Billing and licences](billing.md) | Hosted billing is closed for the alpha. There is no button, no price and no deployed route, and SUITE_BILLING_ENABLED defaults to 0, which refuses eve… | 2026-10-26 |
-| [Security model](security-model.md) | Anonymous workspaces are what ships: no sign-up, no email, no password reset, and no user identity on the relay. Every credential is a bearer capabili… | 2026-10-26 |
 | [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-10-26 |
+| [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-26 |
+| [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-10-26 |
+| [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-26 |
+| [Security model](security-model.md) | Anonymous workspaces are what ships: no sign-up, no email, no password reset, and no user identity on the relay. Every credential is a bearer capabili… | 2026-10-26 |

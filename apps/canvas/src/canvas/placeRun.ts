@@ -303,6 +303,57 @@ export function connectorToward(
   return connectorFacing(connectors, side);
 }
 
+/** The two dots a step would link through, or nulls when the card has none. */
+export interface InferredConnectors {
+  source: Connector | null;
+  target: Connector | null;
+}
+
+/**
+ * The dots a placement *would* use, without placing anything.
+ *
+ * This exists so the preview and the commit cannot disagree (ADR-0061 third
+ * amendment): the engine calls it to write the edge, and the held-stack cursor calls
+ * it to highlight the dot under the pointer before the reader commits. Two copies of
+ * "which dot" would eventually pick differently, and the failure would look like the
+ * app changing its mind at the last moment.
+ *
+ * `overrides` is how the reader disposes: a dot they picked by hand wins over the
+ * geometric proposal for that step, and only that step.
+ */
+export function inferConnectors(input: {
+  sourceDots: readonly Connector[];
+  targetDots: readonly Connector[];
+  sourceBox: FacingBox;
+  targetBox: FacingBox;
+  overrides?: { source?: string | null; target?: string | null };
+}): InferredConnectors {
+  const pick = (dots: readonly Connector[], chosen: string | null | undefined): Connector | null =>
+    chosen === null || chosen === undefined
+      ? null
+      : (dots.find((dot) => dot.id === chosen) ?? null);
+
+  const sourceCentre = {
+    x: input.sourceBox.x + input.sourceBox.width / 2,
+    y: input.sourceBox.y + input.sourceBox.height / 2,
+  };
+  const targetCentre = {
+    x: input.targetBox.x + input.targetBox.width / 2,
+    y: input.targetBox.y + input.targetBox.height / 2,
+  };
+
+  return {
+    source:
+      pick(input.sourceDots, input.overrides?.source) ??
+      connectorToward(input.sourceDots, input.sourceBox, targetCentre) ??
+      null,
+    target:
+      pick(input.targetDots, input.overrides?.target) ??
+      connectorToward(input.targetDots, input.targetBox, sourceCentre) ??
+      null,
+  };
+}
+
 /**
  * The connector nearest one side of a card, so a run's links leave and arrive on
  * the sides that face each other.

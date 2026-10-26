@@ -4,6 +4,7 @@ import {
   connectorFacing,
   connectorToward,
   DEFAULT_PLACEMENT_OPTIONS,
+  inferConnectors,
   type PlanPlacementInput,
   planPlacementStep,
   planRunFrame,
@@ -282,5 +283,79 @@ describe("connectorToward: the dot that faces where the card landed", () => {
 
   it("answers nothing for a card with no connectors, rather than inventing one", () => {
     expect(connectorToward([], box, { x: 0, y: 0 })).toBeUndefined();
+  });
+});
+
+describe("inferConnectors: geometry proposes, the reader disposes", () => {
+  const dots = [
+    { id: "left", x: 0, y: 0.5 },
+    { id: "right", x: 1, y: 0.5 },
+    { id: "top", x: 0.5, y: 0 },
+    { id: "bottom", x: 0.5, y: 1 },
+  ];
+  const sourceBox = { x: 0, y: 0, width: 200, height: 100 };
+  // Directly below the source: the inference must say "bottom" and "top".
+  const targetBox = { x: 0, y: 400, width: 200, height: 100 };
+
+  it("proposes the pair that faces, so a card placed below links downward", () => {
+    const pair = inferConnectors({ sourceDots: dots, targetDots: dots, sourceBox, targetBox });
+
+    expect(pair.source?.id).toBe("bottom");
+    expect(pair.target?.id).toBe("top");
+  });
+
+  it("lets a chosen dot win over the proposal, on that end only", () => {
+    // The reader overrules the source and leaves the target to the geometry: an
+    // override is per end, because a thread may want to leave by an unusual port and
+    // still arrive by the obvious one.
+    const pair = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox,
+      overrides: { source: "right" },
+    });
+
+    expect(pair.source?.id).toBe("right");
+    expect(pair.target?.id).toBe("top");
+  });
+
+  it("can overrule both ends, which is how a card is threaded to itself", () => {
+    // Same card: leave the bottom, arrive at the top, the reverse of the proposal.
+    const pair = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox: targetBox,
+      targetBox: sourceBox,
+      overrides: { source: "bottom", target: "top" },
+    });
+
+    expect(pair.source?.id).toBe("bottom");
+    expect(pair.target?.id).toBe("top");
+  });
+
+  it("ignores an override naming a dot the card does not have, and infers instead", () => {
+    // A stale id from an earlier shape must not silently produce a link with no dot.
+    const pair = inferConnectors({
+      sourceDots: dots,
+      targetDots: dots,
+      sourceBox,
+      targetBox,
+      overrides: { source: "gone" },
+    });
+
+    expect(pair.source?.id).toBe("bottom");
+  });
+
+  it("answers nulls for cards with no dots, rather than inventing one", () => {
+    const pair = inferConnectors({
+      sourceDots: [],
+      targetDots: [],
+      sourceBox,
+      targetBox,
+    });
+
+    expect(pair.source).toBeNull();
+    expect(pair.target).toBeNull();
   });
 });

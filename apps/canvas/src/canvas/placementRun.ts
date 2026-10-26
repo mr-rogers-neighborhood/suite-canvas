@@ -29,6 +29,14 @@ export interface RunStep {
   ids: string[];
   /** Overrides the run's live mode for this step. */
   mode?: CanvasMode | undefined;
+  /**
+   * Dots this step should link through, when the reader picked them by hand.
+   *
+   * The geometry proposes a dot; this is how the reader overrules it, per step and
+   * per end, without setting a preference that would stick to the next one
+   * (ADR-0061 third amendment). Absent means "use the inference".
+   */
+  overrides?: { source?: string | null; target?: string | null } | undefined;
 }
 
 /** A step for the common case: one card, the run's own mode. */

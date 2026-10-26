@@ -5,8 +5,8 @@ import { useUiStore } from "../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 import { type PlacementSource, type RunStep, usePlacementRunStore } from "./placementRun";
 import {
-  connectorToward,
   type FacingBox,
+  inferConnectors,
   planPlacementStep,
   planRunFrame,
   planSetOffsets,
@@ -167,7 +167,6 @@ export function usePlacementEngine(): PlacementEngine {
           // other. The sides come from where the cards *landed*, not from the mode, so
           // a fan that spreads upward leaves the top and a thread that continues to the
           // right leaves the right edge without either mode owning a rule.
-          const fromDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
           const headBox = plan.boxes[0];
           if (headBox) {
             const anchorBox: FacingBox = {
@@ -176,21 +175,24 @@ export function usePlacementEngine(): PlacementEngine {
               width: plan.linkFrom.width ?? DEFAULT_CARD_WIDTH,
               height: plan.linkFrom.height ?? DEFAULT_CARD_HEIGHT,
             };
-            const sourceDot = connectorToward(fromDots, anchorBox, {
-              x: headBox.x + headBox.width / 2,
-              y: headBox.y + headBox.height / 2,
+            // One inference, shared with the preview, so what the reader saw while
+            // holding the card is what gets written (ADR-0061 third amendment).
+            const dots = inferConnectors({
+              sourceDots: workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [],
+              targetDots: workspace.getCard(plan.head)?.connectors ?? [],
+              sourceBox: anchorBox,
+              targetBox: headBox,
+              overrides: {
+                source: next.overrides?.source ?? null,
+                target: next.overrides?.target ?? null,
+              },
             });
-            const targetDot = connectorToward(
-              workspace.getCard(plan.head)?.connectors ?? [],
-              headBox,
-              { x: anchorBox.x + anchorBox.width / 2, y: anchorBox.y + anchorBox.height / 2 },
-            );
             workspace.addEdge({
               boardId: activeBoardId,
               source: plan.linkFrom.cardId,
               target: plan.head,
-              ...(sourceDot ? { sourceConnector: sourceDot.id } : {}),
-              ...(targetDot ? { targetConnector: targetDot.id } : {}),
+              ...(dots.source ? { sourceConnector: dots.source.id } : {}),
+              ...(dots.target ? { targetConnector: dots.target.id } : {}),
             });
           }
         }

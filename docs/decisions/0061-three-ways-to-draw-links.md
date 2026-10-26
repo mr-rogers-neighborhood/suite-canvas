@@ -232,3 +232,27 @@ the card has painted and does not jump on the first frame.
 
 Two identical anchors answer `null`: clicking the armed connector disarms instead of drawing, so that
 shape only exists in a hand-edited document, and a degenerate loop would be worse than none.
+
+### Amendment — 2026-10-25: infer the port, show it, let the reader overrule it
+
+The previous amendment drew a hard line — fan and branch decide by geometry, thread decides by choice —
+and the author's refinement replaces the line with a **default plus an override**, which is better for
+both:
+
+1. **The port is inferred, not demanded.** Threading should not begin with "pick a dot": it should
+   begin with the reader pointing at *where the card goes*, and the geometry suggesting which dot that
+   means. The rule from the previous amendment still runs; it just runs *first* instead of being the only
+   option.
+2. **The inference is visible before it is committed.** While the link (and the card, when placing) is
+   in flight, the dot that would be used is highlighted. This is the same convention `place` already
+   follows — you see the line as you draw it — so threading stops being the one mode where the result is
+   only discoverable after the fact.
+3. **Any other dot overrules it.** Clicking a different connector before committing replaces the inferred
+   default for that step. The override is per-step rather than sticky: the next step infers again, so a
+   reader does not have to undo a preference they set for one unusual connection.
+4. **A thread still tracks.** The chosen port becomes the armed tail, so the next inference starts from
+   *that* port rather than from the card's centre. This is what keeps a thread a route through a card:
+   in at the top, out at the bottom is one inference plus one override, not two special cases.
+
+The rule in one line: **geometry proposes, the reader disposes, and the proposal is on screen while it
+is still a proposal.**

@@ -21,7 +21,7 @@ export type PlacementSource = (typeof placementSources)[number];
  * A set keeps its relative geometry where it has one — a section and its cards —
  * and is arranged in a small grid where it does not. A step may also read the
  * shape differently from its neighbours, which is what makes a run an outline of
- * intent ("thread this one, then web that section beside it") instead of a
+ * intent ("thread this one, then fan that section beside it") instead of a
  * repetition of one gesture.
  */
 export interface RunStep {
@@ -42,7 +42,7 @@ export interface PlacementRun {
   /** Card ids this run has already placed. */
   placed: string[];
   /**
-   * The run's first placement. A `web` links every spoke to it, and a `place`
+   * The run's first placement. A `fan` links every spoke to it, and a `place`
    * grid measures from it.
    */
   originId: string | null;

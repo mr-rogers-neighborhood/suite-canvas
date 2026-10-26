@@ -2619,7 +2619,7 @@ body {
 
 /* Web is the widest-reaching mode, so it reads louder than thread's ink: the
    accent marks "everything you click is linked from here". */
-.link-mode-control.is-web {
+.link-mode-control.is-fan {
   color: var(--surface);
   background: var(--accent);
   border-color: var(--accent);
@@ -2634,7 +2634,7 @@ body {
   border-color: var(--accent-strong, var(--accent));
 }
 
-.link-mode-control.is-web:hover {
+.link-mode-control.is-fan:hover {
   background: var(--accent-strong, var(--accent));
 }
 

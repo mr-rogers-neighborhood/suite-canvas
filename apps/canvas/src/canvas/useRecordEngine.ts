@@ -29,7 +29,7 @@ export interface RecordEngine {
   start: (tutorialId: string) => void;
   /**
    * The step the next click lands in, counting from zero, or null when nothing
-   * is being recorded. `web` holds the step it is growing; every other gesture
+   * is being recorded. `fan` holds the step it is growing; every other gesture
    * holds the next one (ADR-0058 amendment).
    */
   held: number | null;

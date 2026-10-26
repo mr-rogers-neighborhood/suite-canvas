@@ -50,7 +50,7 @@ function run(mode: PlanPlacementInput["mode"], count: number, options = DEFAULT_
 
 describe("planPlacementStep: the first card", () => {
   it("lands on the start point in every mode, and draws no line", () => {
-    for (const mode of ["place", "thread", "web", "pattern"] as const) {
+    for (const mode of ["place", "thread", "fan", "pattern"] as const) {
       const result = step({ mode });
       expect(result.position).toEqual(START);
       // There is nothing in the run to link to yet, and linking outside it would
@@ -118,11 +118,11 @@ describe("planPlacementStep: thread", () => {
   });
 });
 
-describe("planPlacementStep: web", () => {
+describe("planPlacementStep: fan", () => {
   it("places spokes around the origin, never on it", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
     const spokes = [1, 2, 3, 4, 5].map(
-      (index) => step({ mode: "web", index, origin, anchor: origin }).position,
+      (index) => step({ mode: "fan", index, origin, anchor: origin }).position,
     );
 
     for (const spoke of spokes) {
@@ -136,8 +136,8 @@ describe("planPlacementStep: web", () => {
 
   it("spaces spokes unevenly on purpose, so any count reads as a ring", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
-    const first = step({ mode: "web", index: 1, origin, anchor: origin }).position;
-    const second = step({ mode: "web", index: 2, origin, anchor: origin }).position;
+    const first = step({ mode: "fan", index: 1, origin, anchor: origin }).position;
+    const second = step({ mode: "fan", index: 2, origin, anchor: origin }).position;
 
     // A fixed angle would place spoke two opposite spoke one; the golden angle does
     // not, which is what keeps three spokes and twelve spokes both readable.
@@ -150,7 +150,7 @@ describe("planPlacementStep: web", () => {
     const origin: RunBox = { x: 0, y: 0, ...SIZE };
     const anchor: RunBox = { x: 400, y: 300, ...SIZE };
 
-    expect(step({ mode: "web", index: 3, origin, anchor }).link).toEqual({
+    expect(step({ mode: "fan", index: 3, origin, anchor }).link).toEqual({
       from: "origin",
       to: "left",
     });

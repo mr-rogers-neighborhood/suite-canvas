@@ -8,7 +8,7 @@ import type { PlacementEngine } from "./usePlacementEngine";
  * The stack a held run carries
  * ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md) third amendment).
  *
- * A `thread` or a `web` draws relationships, so the user places each card; the run
+ * A `thread` or a `fan` draws relationships, so the user places each card; the run
  * therefore has to be *visible* in their hand — the next card's title, layered over
  * the ones behind it, with a count. Without it a run is invisible until it dumps
  * five cards, which teaches the user nothing about what happened.

@@ -198,7 +198,7 @@ export function SectionLayer({
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const setDraftActive = useLinkDraftStore((state) => state.setDraftActive);
   // The armed end, not merely whether one exists: a section dot is the origin
-  // only when the arm names it, and a web returns to that dot click after click.
+  // only when the arm names it, and a fan returns to that dot click after click.
   const armedEnd = useLinkThreadStore((state) => state.armed);
   const mode = useUiStore((state) => state.mode);
 
@@ -407,7 +407,7 @@ export function SectionLayer({
           return;
         }
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
-        // A web keeps its origin, a thread moves to the connector just clicked.
+        // A fan keeps its origin, a thread moves to the connector just clicked.
         const gesture = gestureMode({
           shiftKey: pointer.shiftKey,
           ctrlKey: pointer.ctrlKey,

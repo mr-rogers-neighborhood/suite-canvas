@@ -112,14 +112,14 @@ test("a thread is held as a stack and placed one card per click", async ({ page 
   await expect(cards(page)).toHaveCount(1);
 });
 
-test("a web is held too, and every spoke links to the first card", async ({ page }) => {
-  await page.goto(workspaceUrl("web"));
+test("a fan is held too, and every spoke links to the first card", async ({ page }) => {
+  await page.goto(workspaceUrl("fan"));
   await expect(cards(page)).toHaveCount(2);
   await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
   await page.getByTestId("library-selection-all").click();
-  await page.getByTestId("library-run-web").click();
+  await page.getByTestId("library-run-fan").click();
   await expect(page.getByTestId("held-stack")).toBeVisible();
 
   await placeHeld(page, { dx: -200, dy: -60 });
@@ -129,7 +129,7 @@ test("a web is held too, and every spoke links to the first card", async ({ page
   await fitBoard(page);
   await expect(cards(page)).toHaveCount(3);
   await expect(edges(page)).toHaveCount(2);
-  // A web of three from one origin is two lines, and both start at the first.
+  // A fan of three from one origin is two lines, and both start at the first.
   const starts = await page.evaluate(() =>
     [...document.querySelectorAll<SVGPathElement>(".react-flow__edge-path")].map((path) => {
       const matrix = path.getScreenCTM();

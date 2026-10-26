@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 /**
  * The one modifier map both mode families read ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
  *
- * A family lists its values in order, resting first: `place · thread · web ·
+ * A family lists its values in order, resting first: `place · thread · fan ·
  * pattern` and `explore · run · record` (with `explain` reserved for alt). No
  * modifier is the first value, shift the second, ctrl the third, alt the fourth.
  *

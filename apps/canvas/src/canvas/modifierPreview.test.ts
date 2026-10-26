@@ -32,7 +32,7 @@ describe("the modifier map", () => {
 
   it("reads both families with one rule", () => {
     expect(previewedValue(canvasModes, { shift: true, ctrl: false, alt: false })).toBe("thread");
-    expect(previewedValue(canvasModes, { shift: false, ctrl: true, alt: false })).toBe("web");
+    expect(previewedValue(canvasModes, { shift: false, ctrl: true, alt: false })).toBe("fan");
     expect(previewedValue(canvasModes, { shift: false, ctrl: false, alt: true })).toBe("pattern");
 
     expect(previewedValue(choosablePurposes, { shift: true, ctrl: false, alt: false })).toBe("run");

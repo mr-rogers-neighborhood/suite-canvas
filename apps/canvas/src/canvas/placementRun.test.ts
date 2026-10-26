@@ -50,7 +50,7 @@ describe("advancing a run", () => {
     expect(store().run?.queue).toEqual([cardStep("b"), cardStep("c")]);
 
     store().advance(cardStep("b"));
-    // The origin stays put: a web keeps returning to it.
+    // The origin stays put: a fan keeps returning to it.
     expect(store().run?.originId).toBe("a");
     expect(store().run?.anchorId).toBe("b");
     expect(store().run?.placed).toEqual(["a", "b"]);
@@ -169,9 +169,9 @@ describe("a step can be a set, and can change the mode", () => {
   });
 
   it("keeps a step's own mode in the queue", () => {
-    store().startSteps([{ ids: ["a"] }, { ids: ["b", "c"], mode: "web" }]);
+    store().startSteps([{ ids: ["a"] }, { ids: ["b", "c"], mode: "fan" }]);
 
-    expect(store().run?.queue[1]?.mode).toBe("web");
+    expect(store().run?.queue[1]?.mode).toBe("fan");
   });
 
   it("ignores an empty step list", () => {

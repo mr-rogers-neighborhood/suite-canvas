@@ -23,7 +23,7 @@ export interface ThreadStep {
  */
 export function isChaining(input: {
   shiftKey?: boolean | undefined;
-  /** Held Control (or Command) asks for a web, the way Shift asks for a thread. */
+  /** Held Control (or Command) asks for a fan, the way Shift asks for a thread. */
   ctrlKey?: boolean | undefined;
   mode: CanvasMode;
 }): boolean {
@@ -38,7 +38,7 @@ export function gestureMode(input: {
   ctrlKey?: boolean | undefined;
   mode: CanvasMode;
 }): CanvasMode {
-  if (input.ctrlKey === true) return "web";
+  if (input.ctrlKey === true) return "fan";
   if (input.shiftKey === true) return "thread";
   return input.mode;
 }
@@ -60,12 +60,12 @@ export function stepThread(armed: LinkConnectorRef | null, clicked: LinkConnecto
 }
 
 /**
- * One click of a web. The first click arms the origin; every later click links
+ * One click of a fan. The first click arms the origin; every later click links
  * *from that same origin*, so a hub costs one click per spoke instead of writing
  * a chain that says B→C. Clicking the origin again disarms, which is the only way
- * to end a web without leaving the mode.
+ * to end a fan without leaving the mode.
  */
-export function stepWeb(armed: LinkConnectorRef | null, clicked: LinkConnectorRef): ThreadStep {
+export function stepFan(armed: LinkConnectorRef | null, clicked: LinkConnectorRef): ThreadStep {
   if (!armed) return { armed: clicked, link: null };
   if (sameConnector(armed, clicked)) return { armed: null, link: null };
   return { armed, link: { from: armed, to: clicked } };
@@ -77,12 +77,12 @@ export function stepLink(
   armed: LinkConnectorRef | null,
   clicked: LinkConnectorRef,
 ): ThreadStep {
-  return mode === "web" ? stepWeb(armed, clicked) : stepThread(armed, clicked);
+  return mode === "fan" ? stepFan(armed, clicked) : stepThread(armed, clicked);
 }
 
 /**
  * Why an origin is armed: a key being held (Shift for a thread, Control for a
- * web), or a mode chosen in the control. Only a held key ends when it is released.
+ * fan), or a mode chosen in the control. Only a held key ends when it is released.
  */
 export type ThreadArmSource = "gesture" | "mode";
 

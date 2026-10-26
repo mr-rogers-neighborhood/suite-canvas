@@ -80,7 +80,7 @@ describe("the record engine", () => {
     const { result } = renderHook(() => useRecordEngine());
 
     act(() => {
-      useUiStore.setState({ mode: "web" });
+      useUiStore.setState({ mode: "fan" });
       result.current.start(tutorial.id);
     });
     act(() => result.current.record({ kind: "card", id: first.id }));
@@ -102,7 +102,7 @@ describe("the record engine", () => {
     const { result } = renderHook(() => useRecordEngine());
 
     act(() => {
-      useUiStore.setState({ mode: "web" });
+      useUiStore.setState({ mode: "fan" });
       result.current.start(tutorial.id);
     });
     act(() => result.current.record({ kind: "card", id: first.id }));
@@ -150,7 +150,7 @@ describe("the record engine", () => {
     const { result } = renderHook(() => useRecordEngine());
 
     act(() => {
-      useUiStore.setState({ mode: "web" });
+      useUiStore.setState({ mode: "fan" });
       result.current.start(tutorial.id);
     });
     act(() => result.current.record({ kind: "card", id: first.id }));

@@ -3,14 +3,14 @@ import { selectCard } from "../interactions";
 import { withOwnerKey } from "./ownerUrl";
 
 /**
- * The third way to draw a link (ADR-0061): a web keeps the *starting* connector
+ * The third way to draw a link (ADR-0061): a fan keeps the *starting* connector
  * armed, so every click adds another spoke from that one origin instead of
  * chasing the tail the way a thread does.
  */
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-web-${name}-${Date.now()}-${++sequence}`);
+  withOwnerKey(`/?workspace=e2e-fan-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");
@@ -60,20 +60,20 @@ async function dotCentre(page: Page, cardIndex: number, dotIndex: number) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-test("web mode draws every link from the same starting connector", async ({ page }) => {
+test("fan mode draws every link from the same starting connector", async ({ page }) => {
   await page.goto(workspaceUrl("spokes"));
   await expect(cards(page)).toHaveCount(2);
   await createCard(page);
   await expect(cards(page)).toHaveCount(3);
 
-  // Two clicks past connect: connect → thread → web.
+  // Two clicks past connect: connect → thread → fan.
   const toggle = page.getByTestId("link-mode-toggle");
   await toggle.click();
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "web");
+  await expect(toggle).toHaveAttribute("data-mode", "fan");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-  // Web mode reveals every dot, so nothing needs selecting first.
+  // Fan mode reveals every dot, so nothing needs selecting first.
   await expect(cards(page).nth(0).getByTestId("connector")).toHaveCount(4);
 
   const origin = await dotCentre(page, 0, 1);
@@ -82,7 +82,7 @@ test("web mode draws every link from the same starting connector", async ({ page
 
   await clickDot(page, 1, 3);
   await expect(edges(page)).toHaveCount(1);
-  // The origin stays marked as the armed end: a web returns to it every click.
+  // The origin stays marked as the armed end: a fan returns to it every click.
   await expect(armedDots(page)).toHaveCount(1);
 
   // The second click on a *third* card is another spoke from the origin, where a
@@ -96,7 +96,7 @@ test("web mode draws every link from the same starting connector", async ({ page
   }
 });
 
-test("a thread moves its armed end, a web keeps it", async ({ page }) => {
+test("a thread moves its armed end, a fan keeps it", async ({ page }) => {
   await page.goto(workspaceUrl("contrast"));
   await expect(cards(page)).toHaveCount(2);
   await createCard(page);
@@ -116,10 +116,10 @@ test("a thread moves its armed end, a web keeps it", async ({ page }) => {
     cards(page).nth(0).locator('[data-testid="connector"][data-armed="true"]'),
   ).toHaveCount(0);
 
-  // Same two clicks in web mode leave the arm on the starting card.
+  // Same two clicks in fan mode leave the arm on the starting card.
   await page.keyboard.press("Escape");
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "web");
+  await expect(toggle).toHaveAttribute("data-mode", "fan");
   await clickDot(page, 0, 2);
   await clickDot(page, 1, 1);
   await expect(edges(page)).toHaveCount(2);
@@ -128,7 +128,7 @@ test("a thread moves its armed end, a web keeps it", async ({ page }) => {
   ).toHaveCount(1);
 });
 
-test("holding Control webs without switching the stored mode", async ({ page }) => {
+test("holding Control fans out without switching the stored mode", async ({ page }) => {
   await page.goto(workspaceUrl("ctrl"));
   await expect(cards(page)).toHaveCount(2);
   await createCard(page);
@@ -142,7 +142,7 @@ test("holding Control webs without switching the stored mode", async ({ page }) 
 
   // The indicator previews the gesture while Control is held.
   await page.keyboard.down("Control");
-  await expect(toggle).toHaveAttribute("data-hint-mode", "web");
+  await expect(toggle).toHaveAttribute("data-hint-mode", "fan");
   await clickDot(page, 0, 1);
   await clickDot(page, 1, 3);
   await expect(edges(page)).toHaveCount(1);
@@ -161,7 +161,7 @@ test("Escape clears the armed origin", async ({ page }) => {
   const toggle = page.getByTestId("link-mode-toggle");
   await toggle.click();
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "web");
+  await expect(toggle).toHaveAttribute("data-mode", "fan");
 
   await clickDot(page, 0, 1);
   await expect(armedDots(page)).toHaveCount(1);
@@ -175,7 +175,7 @@ test("Escape clears the armed origin", async ({ page }) => {
   await expect(page.getByTestId("thread-link-preview")).toHaveCount(0);
   await expect(armedDots(page)).toHaveCount(0);
 
-  // Nothing is armed, so the next click starts a new web rather than linking.
+  // Nothing is armed, so the next click starts a new fan rather than linking.
   await clickDot(page, 1, 3);
   await expect(edges(page)).toHaveCount(0);
 });
@@ -188,7 +188,7 @@ test("the mode button walks all four readings and comes back", async ({ page }) 
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "thread");
   await toggle.click();
-  await expect(toggle).toHaveAttribute("data-mode", "web");
+  await expect(toggle).toHaveAttribute("data-mode", "fan");
   // Pattern is the fourth shape a run can draw (ADR-0063): a chain that branches.
   await toggle.click();
   await expect(toggle).toHaveAttribute("data-mode", "pattern");

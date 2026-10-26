@@ -123,7 +123,7 @@ describe("StatusCursor", () => {
 
   it("keeps everything but the bubble and the stack transparent to the pointer", () => {
     const { container } = render(
-      <StatusCursor user={ana} purpose="run" gesture="web" peers={[bo]} isSelf />,
+      <StatusCursor user={ana} purpose="run" gesture="fan" peers={[bo]} isSelf />,
     );
 
     // Expressed as classes because the discipline is the stylesheet's: the layer

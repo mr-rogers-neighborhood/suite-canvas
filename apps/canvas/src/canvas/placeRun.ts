@@ -23,7 +23,7 @@ export interface PlacementOptions {
   gap: number;
   /** How many cards a `place` run fills before wrapping to a new row. */
   columns: number;
-  /** Distance from the origin to a `web` spoke's centre. */
+  /** Distance from the origin to a `fan` spoke's centre. */
   radius: number;
   /** Padding a run's wrapping section keeps around what it placed. */
   sectionPadding: number;
@@ -153,7 +153,7 @@ function planChain(input: PlanPlacementInput, options: PlacementOptions): { x: n
 }
 
 /**
- * `web`: spokes on a ring around the origin. The first card is the hub and the
+ * `fan`: spokes on a ring around the origin. The first card is the hub and the
  * rest are placed at the golden angle around it, so the shape reads as "these
  * relate to that one" at any count.
  */
@@ -166,7 +166,7 @@ function planSpokes(
   // Two boxes overlap while their centres are closer than the sum of their half
   // sizes on both axes, so the floor that guarantees a clear ring is the diagonal
   // of the two cards plus the gap. A configured radius smaller than that is raised
-  // rather than obeyed: a spoke lying on the hub is not a smaller web, it is a bug.
+  // rather than obeyed: a spoke lying on the hub is not a smaller fan, it is a bug.
   const ring = Math.max(
     options.radius,
     Math.hypot(origin.width + size.width, origin.height + size.height) / 2 + options.gap,
@@ -214,7 +214,7 @@ export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
         return planGrid(input, options);
       case "thread":
         return planChain(input, options);
-      case "web":
+      case "fan":
         return planSpokes(input, options);
       case "pattern":
         return planBranches(input, options);
@@ -230,7 +230,7 @@ export function planPlacementStep(input: PlanPlacementInput): PlacementStep {
       ? null
       : input.mode === "pattern"
         ? { from: "anchor", to: "top" }
-        : { from: input.mode === "web" ? "origin" : "anchor", to: "left" };
+        : { from: input.mode === "fan" ? "origin" : "anchor", to: "left" };
 
   return { position, link };
 }

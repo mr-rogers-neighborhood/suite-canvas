@@ -31,14 +31,14 @@ export const useLinkDraftStore = create<LinkDraftState>((set) => ({
 export interface NodeConnectorWiring {
   nodeId: string;
   connectors: readonly ConnectorModel[];
-  /** A chaining mode (thread or web) is on, so every dot is a link target. */
+  /** A chaining mode (thread or fan) is on, so every dot is a link target. */
   chaining: boolean;
   /** True while this client is dragging a link out of (or into) a connector. */
   draftActive: boolean;
   /** True while a thread is armed, so every candidate connector is visible. */
   armed: boolean;
   /**
-   * The armed end of the chain when it lives on this node: the origin a web keeps
+   * The armed end of the chain when it lives on this node: the origin a fan keeps
    * returning to, or the tail a thread moved. Marked so the reader can see where
    * the next click will link from.
    */
@@ -60,7 +60,7 @@ export interface NodeConnectorWiring {
 
 /**
  * A chaining mode reveals every node's connectors, because the user is picking
- * link targets one click at a time. Thread and web are the same problem for the
+ * link targets one click at a time. Thread and fan are the same problem for the
  * reveal rule — only what a click *does* differs — so both count. One reader, so
  * every node kind and the section layer agree.
  */
@@ -177,7 +177,7 @@ export function useNodeConnectorWiring(
       }
 
       // The mode decides what the next click means: a thread moves its armed end,
-      // a web keeps it ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
+      // a fan keeps it ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
       const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
       // A gesture started by a modifier ends when the modifier is released; only a
       // mode chosen in the control survives the key.

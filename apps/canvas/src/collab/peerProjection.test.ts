@@ -197,11 +197,11 @@ describe("the two axes on a peer", () => {
   it("projects what a peer is doing, so their cursor can say it", () => {
     const peer = peerWith({
       [AWARENESS_FIELDS.purpose]: "record",
-      [AWARENESS_FIELDS.gesture]: "web",
+      [AWARENESS_FIELDS.gesture]: "fan",
     });
 
     expect(peer.purpose).toBe("record");
-    expect(peer.gesture).toBe("web");
+    expect(peer.gesture).toBe("fan");
   });
 
   it("reads a peer from before the axes existed as explore and place", () => {

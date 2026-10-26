@@ -6,7 +6,7 @@ import type { CanvasMode } from "./linkGesture";
  * amendment, [ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md) §9).
  *
  * Recording is a *purpose*, and the gesture axis becomes the step verb: `place` and
- * `thread` append a step per click, `web` accumulates several targets into one step.
+ * `thread` append a step per click, `fan` accumulates several targets into one step.
  * A tour's order is its step list — recording draws no links — so nothing here
  * touches edges.
  */
@@ -22,7 +22,7 @@ export interface RecordClickPlan {
 /**
  * What one click means while recording.
  *
- * `web` is the interesting one: the author is building *one* step that spotlights
+ * `fan` is the interesting one: the author is building *one* step that spotlights
  * several entities, so every click after the first joins the same step. `place` and
  * `thread` are the same plan for one click — a sequence — and are kept distinct
  * because the author picked them and the cursor says which.
@@ -31,8 +31,8 @@ export interface RecordClickPlan {
  * read as `thread` here rather than inventing a fourth way to add a step.
  */
 export function planRecordClick(gesture: CanvasMode, stepCount: number): RecordClickPlan {
-  if (gesture === "web" && stepCount > 0) {
-    // The step already being written is the last one: `web` grows it.
+  if (gesture === "fan" && stepCount > 0) {
+    // The step already being written is the last one: `fan` grows it.
     return { action: "addTarget", stepIndex: stepCount - 1 };
   }
   return { action: "newStep", stepIndex: stepCount };

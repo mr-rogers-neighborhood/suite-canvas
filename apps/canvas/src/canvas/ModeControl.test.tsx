@@ -91,7 +91,7 @@ describe("ModeControl shift hint", () => {
 });
 
 describe("ModeControl three-state cycle", () => {
-  it("walks place → thread → web → pattern → place on repeated clicks", () => {
+  it("walks place → thread → fan → pattern → place on repeated clicks", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
@@ -99,44 +99,44 @@ describe("ModeControl three-state cycle", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "thread");
     expect(toggle).toHaveClass("is-thread");
-    expect(toggle).not.toHaveClass("is-web");
+    expect(toggle).not.toHaveClass("is-fan");
     fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("data-mode", "web");
-    expect(toggle).toHaveClass("is-web");
+    expect(toggle).toHaveAttribute("data-mode", "fan");
+    expect(toggle).toHaveClass("is-fan");
     expect(toggle).not.toHaveClass("is-thread");
     fireEvent.click(toggle);
     // The fourth shape: a chain that branches. See ADR-0063.
     expect(toggle).toHaveAttribute("data-mode", "pattern");
     expect(toggle).toHaveClass("is-pattern");
-    expect(toggle).not.toHaveClass("is-web");
+    expect(toggle).not.toHaveClass("is-fan");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "place");
 
     expect(useUiStore.getState().mode).toBe("place");
   });
 
-  it("previews web mode while Control is held", () => {
+  it("previews fan mode while Control is held", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
     fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
-    expect(toggle).toHaveAttribute("data-hint-mode", "web");
+    expect(toggle).toHaveAttribute("data-hint-mode", "fan");
     expect(toggle).toHaveAttribute("data-hint", "true");
-    expect(toggle).toHaveClass("is-web");
+    expect(toggle).toHaveClass("is-fan");
     expect(toggle).toHaveAttribute("data-mode", "place");
 
     fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
     expect(toggle).toHaveAttribute("data-hint-mode", "place");
-    expect(toggle).not.toHaveClass("is-web");
+    expect(toggle).not.toHaveClass("is-fan");
   });
 
-  it("prefers web over thread when Control and Shift are both held", () => {
+  it("prefers fan over thread when Control and Shift are both held", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true, ctrlKey: true });
-    expect(toggle).toHaveAttribute("data-hint-mode", "web");
-    expect(toggle).toHaveClass("is-web");
+    expect(toggle).toHaveAttribute("data-hint-mode", "fan");
+    expect(toggle).toHaveClass("is-fan");
     expect(toggle).not.toHaveClass("is-thread");
   });
 
@@ -149,7 +149,7 @@ describe("ModeControl three-state cycle", () => {
 
     fireEvent.click(screen.getByTestId("link-mode-toggle"));
 
-    // An origin armed for a web means a different graph once the mode is thread.
+    // An origin armed for a fan means a different graph once the mode is thread.
     expect(useLinkThreadStore.getState().armed).toBeNull();
   });
 });

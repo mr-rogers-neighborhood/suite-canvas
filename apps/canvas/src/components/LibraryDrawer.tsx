@@ -175,7 +175,7 @@ const HOLD_THRESHOLD = 4;
 const VERB_LABELS: Record<CanvasMode, string> = {
   place: "Place",
   thread: "Thread",
-  web: "Web",
+  fan: "Fan",
   pattern: "Pattern",
 };
 
@@ -1056,7 +1056,7 @@ export function LibraryDrawer({
               Pick rows to act on them together
             </span>
           ) : null}
-          {(["place", "thread", "web", "pattern"] as const).map((verb) => (
+          {(["place", "thread", "fan", "pattern"] as const).map((verb) => (
             <button
               key={verb}
               type="button"

@@ -27,8 +27,8 @@ const MODES: Record<CanvasMode, { label: string; glyph: string }> = {
     label: "Thread mode: click connector after connector to chain links",
     glyph: "\u2933",
   },
-  web: {
-    label: "Web mode: every click links from the same starting connector",
+  fan: {
+    label: "Fan mode: every click links from the same starting connector",
     glyph: "\u273b",
   },
   pattern: {
@@ -72,7 +72,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   /**
    * The modifiers held right now, as one value both controls can read
    * ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
-   * Shift chains links without the thread tool, ctrl previews the web, and alt
+   * Shift chains links without the thread tool, ctrl previews the fan, and alt
    * previews the pattern — the fourth mode, which had no key before.
    *
    * A ref painted onto the DOM, never state: a re-render mid-gesture is exactly
@@ -95,7 +95,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
     node.dataset.hintMode = displayed;
     node.dataset.hint = displayed === mode ? "false" : "true";
     node.classList.toggle("is-thread", displayed === "thread");
-    node.classList.toggle("is-web", displayed === "web");
+    node.classList.toggle("is-fan", displayed === "fan");
     node.classList.toggle("is-pattern", displayed === "pattern");
     if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
   }, [mode]);
@@ -193,7 +193,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
       ref={button}
       type="button"
       className={`link-mode-control${mode === "thread" ? " is-thread" : ""}${
-        mode === "web" ? " is-web" : ""
+        mode === "fan" ? " is-fan" : ""
       }${mode === "pattern" ? " is-pattern" : ""}`}
       aria-pressed={active}
       aria-label={`${current.label}. ${switchLabel(mode)}`}
@@ -208,7 +208,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
       onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
         // Changing mode must also disarm whatever the old mode armed: an origin
-        // from a web means something different once the mode is thread.
+        // from a fan means something different once the mode is thread.
         useLinkThreadStore.getState().clear();
         setMode(nextMode(mode));
       }}

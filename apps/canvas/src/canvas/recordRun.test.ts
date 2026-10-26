@@ -21,12 +21,12 @@ describe("planRecordClick", () => {
   });
 
   it("grows one step when webbing, because a step holds several targets", () => {
-    expect(planRecordClick("web", 1)).toEqual({ action: "addTarget", stepIndex: 0 });
-    expect(planRecordClick("web", 4)).toEqual({ action: "addTarget", stepIndex: 3 });
+    expect(planRecordClick("fan", 1)).toEqual({ action: "addTarget", stepIndex: 0 });
+    expect(planRecordClick("fan", 4)).toEqual({ action: "addTarget", stepIndex: 3 });
   });
 
   it("starts a step when webbing has nothing to grow yet", () => {
-    expect(planRecordClick("web", 0)).toEqual({ action: "newStep", stepIndex: 0 });
+    expect(planRecordClick("fan", 0)).toEqual({ action: "newStep", stepIndex: 0 });
   });
 
   it("reads pattern as thread, because a pattern is a placement shape and not a step verb", () => {
@@ -41,8 +41,8 @@ describe("the recording store", () => {
     store().captured(planRecordClick("thread", 1));
     expect(store().steps).toBe(2);
 
-    // A web click joins the step it is on, so the count stands still.
-    store().captured(planRecordClick("web", 2));
+    // A fan click joins the step it is on, so the count stands still.
+    store().captured(planRecordClick("fan", 2));
     expect(store().steps).toBe(2);
   });
 

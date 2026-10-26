@@ -1,1 +1,192 @@
-/* The status cursor (ADR-0064). */
+/* The status cursor (ADR-0064): one renderer, drawn for the reader's pointer and
+   for every peer's. The bubble says who, the ring says what the canvas is for, and
+   the slots say what is happening — in that order, and nowhere else. */
+
+/* The anchor is a place on the glass, not a place in the scene: positioned in
+   client pixels, outside React Flow's transform, so it never scales with the board.
+   Below the held stack (60), because the card being placed is the subject. */
+.status-cursor-anchor {
+  position: fixed;
+  z-index: 55;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.status-cursor {
+  /* The purpose's hue, from the shell's tokens (ADR-0046, ADR-0064 §5). The
+     fallbacks are the documented intent, not a second palette: white at rest,
+     ink engaged, the danger-adjacent hue while recording, success while
+     presenting — the values a theme is expected to override. */
+  --status-cursor-ring: var(--state-idle, #ffffff);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* The anchor is the pointer itself; the bubble hangs below-right of it so it
+     never covers the click point. */
+  padding: 11px 0 0 11px;
+  pointer-events: none;
+  user-select: none;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.status-cursor[data-purpose="run"] {
+  --status-cursor-ring: var(--state-active, #1d1d1f);
+}
+
+.status-cursor[data-purpose="record"] {
+  --status-cursor-ring: var(--state-recording, #e5484d);
+}
+
+.status-cursor[data-purpose="present"] {
+  --status-cursor-ring: var(--state-presenting, #30a46c);
+}
+
+/* The corner pointer is what makes the bubble a cursor rather than an avatar: its
+   tip is the pointer position, and it inherits the owner's presence colour. */
+.status-cursor__pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--ink) 45%, transparent));
+}
+
+.status-cursor__body {
+  position: relative;
+  display: inline-flex;
+}
+
+.status-cursor__bubble,
+.status-cursor__peers {
+  pointer-events: auto;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-cursor__bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+/* Shape, not only hue (§5). Four states a monochrome screenshot can still tell
+   apart, and four a colour-blind reader can too. */
+.status-cursor__ring {
+  position: absolute;
+  inset: -3px;
+  border: 2px solid var(--status-cursor-ring);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.status-cursor__ring[data-shape="solid"] {
+  /* At rest the ring is quiet: one hairline's worth of state, and an outer
+     hairline so a pale idle hue still has an edge to sit on. */
+  border-width: 1px;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+.status-cursor__ring[data-shape="double"] {
+  border-width: 1px;
+  outline: 1px solid var(--status-cursor-ring);
+  outline-offset: 2px;
+}
+
+.status-cursor__ring[data-shape="dashed"] {
+  border-style: dashed;
+}
+
+.status-cursor__ring[data-shape="halo"] {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-cursor-ring) 28%, transparent);
+}
+
+/* The purpose's glyph, on the ring. Not a slot: the four slots are the gesture,
+   the run, unread and the peers, in that order. */
+.status-cursor__purpose {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--status-cursor-ring);
+  font-size: 7px;
+  line-height: 1;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+.status-cursor__slots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.status-cursor__slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.status-cursor__slot--gesture {
+  font-size: 10px;
+}
+
+.status-cursor__slot--unread {
+  border-color: transparent;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.status-cursor__peers {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 16px;
+  padding: 0 4px 0 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.status-cursor__peer {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+.status-cursor__peer-more {
+  padding-left: 2px;
+  color: var(--ink-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}

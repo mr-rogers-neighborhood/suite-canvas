@@ -6,7 +6,7 @@ import {
   projectPeers,
   type SeenGesture,
 } from "./peerProjection";
-import { AWARENESS_FIELDS, peerIsInteracting } from "./presence";
+import { AWARENESS_FIELDS, type PeerPresence, peerIsInteracting } from "./presence";
 
 const SELF = "self";
 const PEER = "peer";
@@ -181,6 +181,48 @@ describe("projectPeers with a new-link drag", () => {
         position: { x: 90 },
       },
     );
+  });
+});
+
+describe("the two axes on a peer", () => {
+  const peerWith = (overrides: Record<string, unknown> = {}): PeerPresence => {
+    const peer = project(1000, new Map(), {
+      [AWARENESS_FIELDS.dragging]: undefined,
+      ...overrides,
+    })[PEER];
+    if (peer === undefined) throw new Error("the fixture must project one peer");
+    return peer;
+  };
+
+  it("projects what a peer is doing, so their cursor can say it", () => {
+    const peer = peerWith({
+      [AWARENESS_FIELDS.purpose]: "record",
+      [AWARENESS_FIELDS.gesture]: "web",
+    });
+
+    expect(peer.purpose).toBe("record");
+    expect(peer.gesture).toBe("web");
+  });
+
+  it("reads a peer from before the axes existed as explore and place", () => {
+    const peer = peerWith();
+
+    // Absent is not unknown: an old client publishes neither field, and the
+    // honest reading of "said nothing" is the default the axis starts in.
+    expect(peer.purpose).toBeNull();
+    expect(peer.gesture).toBeNull();
+  });
+
+  it("does not count a purpose as an in-flight gesture", () => {
+    // A mode is state, not a held drag: it must not keep a stale cursor alive
+    // past the TTL, because nothing is being dragged.
+    const peer = peerWith({
+      [AWARENESS_FIELDS.purpose]: "run",
+      [AWARENESS_FIELDS.gesture]: "thread",
+    });
+
+    expect(gestureSignature(peer)).toBe("");
+    expect(peerIsInteracting(peer)).toBe(false);
   });
 });
 

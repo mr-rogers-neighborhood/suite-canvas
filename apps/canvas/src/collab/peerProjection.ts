@@ -1,3 +1,5 @@
+import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasPurpose } from "../canvas/purpose";
 import {
   AWARENESS_FIELDS,
   type ConnectorState,
@@ -91,6 +93,8 @@ export function toPeerPresence(clientId: string, state: Record<string, unknown>)
     connect: (state[AWARENESS_FIELDS.connect] as ConnectState | undefined) ?? null,
     labelDrag: (state[AWARENESS_FIELDS.labelDrag] as LabelDragState | undefined) ?? null,
     libraryDrag: (state[AWARENESS_FIELDS.libraryDrag] as LibraryDragState | undefined) ?? null,
+    purpose: (state[AWARENESS_FIELDS.purpose] as CanvasPurpose | undefined) ?? null,
+    gesture: (state[AWARENESS_FIELDS.gesture] as CanvasMode | undefined) ?? null,
     gestureBeat: readBeat(state[AWARENESS_FIELDS.gestureBeat]),
   };
 }

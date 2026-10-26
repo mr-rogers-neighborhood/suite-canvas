@@ -1,5 +1,7 @@
 import type { EphemeralStore, Value } from "loro-crdt";
 import { create } from "zustand";
+import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasPurpose } from "../canvas/purpose";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";
 import { projectPeers, type SeenGesture, sanitizeDraggedNodeIds } from "./peerProjection";
@@ -44,6 +46,10 @@ interface PresenceState {
   setLabelDrag: (labelDrag: LabelDragState | null) => void;
   /** A card held in the library, in flow units, so peers see where it lands. */
   setLibraryDrag: (libraryDrag: LibraryDragState | null) => void;
+  /** The purpose axis, so a peer's cursor can say "recording a tour" (ADR-0064). */
+  setPurpose: (purpose: CanvasPurpose | null) => void;
+  /** The gesture axis, so a peer's cursor can say what their next click does. */
+  setGesture: (gesture: CanvasMode | null) => void;
 }
 
 /**
@@ -219,6 +225,11 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
       publishGesture(AWARENESS_FIELDS.libraryDrag, libraryDrag);
       if (libraryDrag) clearPointer();
     },
+    // The two axes are *state*, not gestures: an in-flight payload that needs
+    // refreshing, but a standing fact about what the reader is doing. They ride
+    // the ordinary publish so a mode click does not start a keep-alive.
+    setPurpose: (purpose) => publish(AWARENESS_FIELDS.purpose, purpose),
+    setGesture: (gesture) => publish(AWARENESS_FIELDS.gesture, gesture),
   };
 });
 

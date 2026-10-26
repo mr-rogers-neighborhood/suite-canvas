@@ -39,6 +39,7 @@ import { isPortalCard, portalTargetId } from "../cards/portal";
 import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
+import { usePublishAxes } from "../collab/usePublishAxes";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { StatusCursorLayer } from "../cursor/StatusCursorLayer";
 import { markBoot, measureBoot } from "../dev/bootTiming";
@@ -351,6 +352,7 @@ export function CanvasBoard() {
   const workspace = useCanvasStore((state) => state.workspace);
   const activeBoardId = useUiStore((state) => state.activeBoardId);
   const peers = useBoardPeers(activeBoardId);
+  usePublishAxes();
   const setPointer = usePresenceStore((state) => state.setPointer);
   const setDragging = usePresenceStore((state) => state.setDragging);
   const setPresenceSelection = usePresenceStore((state) => state.setSelection);

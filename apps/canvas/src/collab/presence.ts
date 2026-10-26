@@ -1,3 +1,6 @@
+import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasPurpose } from "../canvas/purpose";
+
 export interface PresenceUser {
   name: string;
   color: string;
@@ -148,6 +151,15 @@ export const AWARENESS_FIELDS = {
   labelDrag: "labelDrag",
   libraryDrag: "libraryDrag",
   /**
+   * What the canvas is *for*, so a peer's cursor can say "recording a tour" and not
+   * only "here" ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+   * The two-axis state is small and changes when a reader clicks, so it rides the
+   * existing beat instead of opening a channel of its own.
+   */
+  purpose: "purpose",
+  /** What the peer's next click does; the gesture axis, beside `purpose`. */
+  gesture: "gesture",
+  /**
    * Liveness of an in-flight gesture, as a counter the sender bumps while it
    * holds one. A gesture is refreshed only when its payload *changes*, so a peer
    * that presses and holds without moving would age out of everyone's view; the
@@ -176,6 +188,10 @@ export interface PeerPresence {
   labelDrag: LabelDragState | null;
   /** A card held in the library, and where it would land. */
   libraryDrag?: LibraryDragState | null;
+  /** The peer's purpose axis, as their cursor announces it (ADR-0064). */
+  purpose?: CanvasPurpose | null;
+  /** The peer's gesture axis: what their next click does (ADR-0064). */
+  gesture?: CanvasMode | null;
   /** Sender's liveness counter for an in-flight gesture; see `gestureBeat`. */
   gestureBeat?: number;
 }

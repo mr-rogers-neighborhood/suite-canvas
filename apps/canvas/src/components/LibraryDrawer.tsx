@@ -1062,6 +1062,9 @@ export function LibraryDrawer({
               type="button"
               className="library-action"
               data-testid={`library-run-${verb}`}
+              // The same four values the widget bar and the connector menu use, so
+              // "fan is blue" holds here too (ADR-0064 fifth amendment).
+              data-mode={verb}
               disabled={selection.ids.length === 0}
               // The verb is the mode: "Thread cards" is thread mode plus a queue.
               onClick={() => runVerb(verb)}

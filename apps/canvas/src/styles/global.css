@@ -38,6 +38,76 @@
   --warning: #b26a00;
   /* The brand blue is too light for chip text (2.9:1); this keeps the hue. */
   --mention-ink: color-mix(in srgb, var(--section-blue) 72%, #000);
+
+  /*
+   * The value palette (ADR-0064 fifth amendment). Eight values across two families,
+   * named by ROLE and never by colour: a theme changes what a role resolves to, never
+   * which role a value is.
+   *
+   * Each value has three tokens, because two of them are not a single paint:
+   *   -hue   its identity — the ring, the border, the glyph at rest
+   *   -fill  what the control is painted with
+   *   -ink   the glyph on that fill
+   *
+   * `place` and `explore` are solid: the strongest ink, with the surface as the glyph.
+   * `thread` and `run` are that pair **inverted** — a surface chip carrying an ink
+   * glyph and an ink hairline — which is why "white" survives dark mode as a role
+   * rather than as a literal, and why the two read as opposites when they sit next to
+   * each other in the widget bar.
+   *
+   * The families run parallel (first value ink, second its inverse) and diverge by
+   * temperature (gesture blue -> green, purpose red -> purple), so a hue says which
+   * family a value belongs to as well as which value it is.
+   */
+  /* The resting value *blends with the bar*: surface fill, ink glyph, a hairline for
+     its edge. Its "black" is the ink of the glyph, not a filled block — a filled
+     block is what made the pill look like it had two white segments bolted on in
+     dark mode. */
+  --value-place-hue: var(--ink);
+  --value-place-fill: var(--surface);
+  --value-place-ink: var(--ink);
+
+  /* The second value is that pairing *inverted*: an ink chip with a surface glyph.
+     In a dark theme that reads as the white chip the author asked for; in a light one
+     it reads as black. Both are the same role, which is why this survives a theme. */
+  --value-thread-hue: var(--ink);
+  --value-thread-fill: var(--ink);
+  --value-thread-ink: var(--surface);
+
+  --value-fan-hue: var(--section-blue);
+  --value-fan-fill: var(--section-blue);
+  --value-fan-ink: var(--surface);
+
+  --value-branch-hue: var(--section-green);
+  --value-branch-fill: var(--section-green);
+  --value-branch-ink: var(--surface);
+
+  --value-explore-hue: var(--ink);
+  --value-explore-fill: var(--surface);
+  --value-explore-ink: var(--ink);
+
+  --value-run-hue: var(--ink);
+  --value-run-fill: var(--ink);
+  --value-run-ink: var(--surface);
+
+  --value-record-hue: var(--danger);
+  --value-record-fill: var(--danger);
+  --value-record-ink: var(--surface);
+
+  /* Reserved for `explain` (gate A41): the token lands before the mode, so the mode
+     can adopt it without a second pass through every surface. */
+  --value-explain-hue: var(--section-violet);
+  --value-explain-fill: var(--section-violet);
+  --value-explain-ink: var(--surface);
+
+  /*
+   * One block maps an attribute to the current value, so a component says
+   * `data-mode` or `data-purpose` and reads `--value-*` — no component ever holds a
+   * hex, and no component decides which colour a mode is.
+   */
+  --value-hue: var(--value-place-hue);
+  --value-fill: var(--value-place-fill);
+  --value-ink: var(--value-place-ink);
 }
 
 .dark {
@@ -1094,6 +1164,38 @@ body {
 .library-action:hover {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: var(--ink);
+}
+
+/*
+ * A run verb *is* a mode, so it wears the mode's own paint (ADR-0064 fifth
+ * amendment): Place black, Thread white-on-ink, Fan blue, Branch green — the same
+ * four the widget bar and the connector menu show, so "fan is blue" is true in the
+ * library too. The `[data-mode]` guard matters: every other row action stays quiet.
+ */
+.library-action[data-mode] {
+  border: 1px solid var(--value-hue);
+  background: var(--value-fill);
+  color: var(--value-ink);
+  font-weight: 500;
+}
+
+/* The chip values are identified by a glyph on a light ground, so a full-strength
+   ink hairline around one would read as a filled button that lost its fill. */
+.library-action[data-mode="thread"] {
+  border-color: color-mix(in srgb, var(--value-hue) 40%, var(--hairline));
+}
+
+.library-action[data-mode]:hover:not(:disabled) {
+  border-color: var(--value-hue);
+  background: color-mix(in srgb, var(--value-hue) 14%, var(--value-fill));
+  color: var(--value-ink);
+}
+
+/* Disabled keeps the value visible but drops the claim that it is actionable: the
+   colour still says "this is fan mode", which is the part worth keeping. */
+.library-action[data-mode]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Expanded: the library takes the window the way an asset browser would, keeping
@@ -2597,45 +2699,53 @@ body {
   height: 26px;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--hairline);
+  /* Painted by its value (ADR-0064 fifth amendment): `data-mode` selects which one,
+     and this rule decides only the geometry and that a value is painted at all. The
+     resting value blends with the bar, so its edge is softened. */
+  border: 1px solid color-mix(in srgb, var(--value-hue) 40%, var(--hairline));
   border-top: 0;
   border-radius: 0;
-  background: var(--surface);
-  color: var(--ink-muted);
+  background: var(--value-fill);
+  color: var(--value-ink);
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
 }
 
+/* The chip treatments soften their border: a chip is identified by its glyph, and an
+   ink hairline around an ink glyph reads as a filled button that lost its fill. */
+.link-mode-control[data-mode="thread"] {
+  border-color: var(--value-hue);
+}
+
 .link-mode-control:hover {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border-color: var(--value-hue);
+  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
+/*
+ * A held modifier previews the value it would choose, so the *hint* classes re-point
+ * the palette rather than naming a colour: one source, and the preview is by
+ * construction the same painting as the committed mode. `data-mode` keeps the stored
+ * value; these classes win on specificity only while a modifier is down.
+ */
 .link-mode-control.is-thread {
-  color: var(--surface);
-  background: var(--ink);
+  --value-hue: var(--value-thread-hue);
+  --value-fill: var(--value-thread-fill);
+  --value-ink: var(--value-thread-ink);
+  border-color: var(--value-hue);
 }
 
-/* Web is the widest-reaching mode, so it reads louder than thread's ink: the
-   accent marks "everything you click is linked from here". */
 .link-mode-control.is-fan {
-  color: var(--surface);
-  background: var(--accent);
-  border-color: var(--accent);
+  --value-hue: var(--value-fan-hue);
+  --value-fill: var(--value-fan-fill);
+  --value-ink: var(--value-fan-ink);
 }
 
-/* Pattern is the widest shape (a tree), so it reads as its own paint rather than
-   a second accent: two modes that share a colour are two modes a reader cannot
-   tell apart. */
 .link-mode-control.is-branch {
-  color: var(--surface);
-  background: var(--accent-strong, var(--accent));
-  border-color: var(--accent-strong, var(--accent));
-}
-
-.link-mode-control.is-fan:hover {
-  background: var(--accent-strong, var(--accent));
+  --value-hue: var(--value-branch-hue);
+  --value-fill: var(--value-branch-fill);
+  --value-ink: var(--value-branch-ink);
 }
 
 /* The armed end of a thread reads as "the next click goes here". */
@@ -2654,4 +2764,89 @@ body {
 
 .sketch-focus .whiteboard-surface {
   height: 100%;
+}
+
+/* Value -> palette. One place, so the widget bar, the connector menu, the library's
+   run verbs and a peer's cursor cannot disagree about what `fan` looks like.
+   `data-preview` is included for the same reason on the other axis: a held modifier
+   paints the value it would choose, so the preview of `run` *is* the committed `run`
+   rather than a second guess at it. */
+[data-mode="place"],
+[data-purpose="explore"],
+[data-preview="explore"] {
+  --value-hue: var(--value-place-hue);
+  --value-fill: var(--value-place-fill);
+  --value-ink: var(--value-place-ink);
+}
+
+[data-mode="thread"],
+[data-purpose="run"],
+[data-preview="run"] {
+  --value-hue: var(--value-thread-hue);
+  --value-fill: var(--value-thread-fill);
+  --value-ink: var(--value-thread-ink);
+}
+
+[data-mode="fan"],
+[data-preview="fan"] {
+  --value-hue: var(--value-fan-hue);
+  --value-fill: var(--value-fan-fill);
+  --value-ink: var(--value-fan-ink);
+}
+
+[data-mode="branch"],
+[data-preview="branch"] {
+  --value-hue: var(--value-branch-hue);
+  --value-fill: var(--value-branch-fill);
+  --value-ink: var(--value-branch-ink);
+}
+
+[data-purpose="record"],
+[data-preview="record"] {
+  --value-hue: var(--value-record-hue);
+  --value-fill: var(--value-record-fill);
+  --value-ink: var(--value-record-ink);
+}
+
+[data-purpose="explain"],
+[data-preview="explain"] {
+  --value-hue: var(--value-explain-hue);
+  --value-fill: var(--value-explain-fill);
+  --value-ink: var(--value-explain-ink);
+}
+
+/* `present` takes no hue: it is a tour's state, not one of the four choices, so a
+   colour here would imply a fifth mode. Its ring is a halo in the theme's ink and its
+   *shape* carries it (ADR-0064 §11). */
+[data-purpose="present"] {
+  --value-hue: var(--ink);
+  --value-fill: var(--surface);
+  --value-ink: var(--ink);
+}
+
+/*
+ * A held modifier outranks the stored value. The two attributes share an element, so
+ * this rule exists only to settle the tie: without it, `data-purpose="record"` and
+ * `data-preview="run"` are equal specificity and source order would decide — meaning a
+ * preview could silently fail to paint depending on where a block sits in the file.
+ */
+[data-preview="explore"] {
+  --value-hue: var(--value-explore-hue);
+  --value-fill: var(--value-explore-fill);
+  --value-ink: var(--value-explore-ink);
+}
+[data-preview="run"] {
+  --value-hue: var(--value-run-hue);
+  --value-fill: var(--value-run-fill);
+  --value-ink: var(--value-run-ink);
+}
+[data-preview="record"] {
+  --value-hue: var(--value-record-hue);
+  --value-fill: var(--value-record-fill);
+  --value-ink: var(--value-record-ink);
+}
+[data-preview="explain"] {
+  --value-hue: var(--value-explain-hue);
+  --value-fill: var(--value-explain-fill);
+  --value-ink: var(--value-explain-ink);
 }

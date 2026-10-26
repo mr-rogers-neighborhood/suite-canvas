@@ -30,6 +30,19 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
  */
 export const choosablePurposes = ["explore", "run", "record"] as const;
 
+/**
+ * The values the modifier map can *preview* on the purpose axis, including one that
+ * cannot be chosen yet.
+ *
+ * `explain` is gate A41: it is specified (a selection becomes a scoped context answered
+ * from the handbook) and not built. It appears here so the palette can show the fourth
+ * colour the author assigned — purple under alt — without also shipping a mode that
+ * does nothing when clicked. Choosing it is refused, with a title that says why, so the
+ * preview never becomes a lie.
+ */
+export const previewablePurposes = ["explore", "run", "record", "explain"] as const;
+export type PreviewablePurpose = (typeof previewablePurposes)[number];
+
 /** The cycle the purpose control walks: explore → run → record → explore. */
 export function nextPurpose(purpose: CanvasPurpose): CanvasPurpose {
   // Leaving a presentation is the only move available from it, and it goes to the

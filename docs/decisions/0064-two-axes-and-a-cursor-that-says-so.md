@@ -147,3 +147,51 @@ actually mean.
    as a button stuck under a widget. It is now the pill's **bottom segment** — same width, same left edge,
    no seam, the pill's own bottom corners, and the link mode above it as a middle segment. The pill's
    shadow comes from its bottom-most segment, so the column casts one shadow instead of three.
+
+## Amendment — 2026-10-25: one palette, eight values, named by role
+
+The first cut gave purposes a colour and gestures none, so `fan` and `branch` were the same grey and the
+`--state-*` tokens named *states* (`idle`, `active`, `recording`, `presenting`) rather than values. The
+author's assignment fixes that by giving both families one palette:
+
+| Gesture | | Purpose | |
+| --- | --- | --- | --- |
+| `place` | **resting** — the bar's own surface, ink glyph | `explore` | **resting** — the same |
+| `thread` | **inverted** — an ink chip, surface glyph | `run` | **inverted** — the same |
+| `fan` | blue | `record` | red |
+| `branch` | green | `explain` | purple *(reserved)* |
+
+**"Black" and "white" are a resting/inverted pair, not two fixed colours.** The first
+implementation filled the resting value with ink, which in a dark theme turned the bottom of the pill
+into two white blocks bolted onto a dark bar. The correction, from a screenshot: the resting value
+**blends with the bar it sits in**, and the second value is that same pairing **inverted**. In a dark
+theme the inverted chip reads white and the resting value reads dark; in a light theme they swap. That
+is why the author's words "black and white respectively" hold in both themes even though no colour is
+hardcoded.
+
+Three properties are what make it a language rather than a list of colours.
+
+1. **The axes run parallel, then diverge.** The first value is ink, the second is that ink inverted, and
+   only then do the families part: gesture warms toward blue and green, purpose toward red and purple. So a
+   hue answers two questions at once — which family, and which value — which a single shared sequence could
+   not.
+2. **Resting versus inverted, resolved per theme.** `--value-*-fill` and `--value-*-ink` are what carry
+   it: resting values fill with the surface and draw the glyph in ink, so they are part of the bar;
+   inverted values do the opposite. Literal `#000`/`#fff` would make `thread` invisible on a light pill and
+   `place` vanish in dark mode. The rule the first amendment stated survives verbatim: a theme may change
+   what a role resolves to; it may not change which role a value is.
+3. **`present` takes no hue at all.** It is a tour's state rather than one of the four choices, so a colour
+   would imply a fifth mode — and the one it had (success green) now belongs to `branch`. Its ring is the
+   theme's ink and its *shape* (the halo) carries the meaning, which is the same reasoning that already
+   makes every state carry a glyph.
+
+**One source, four surfaces.** `[data-mode]` and `[data-purpose]` select the value in `global.css`; every
+control reads `--value-hue`, `--value-fill` and `--value-ink` and none holds a colour. That is what lets the
+held-modifier preview re-point the palette instead of naming a colour, so the preview of `run` *is* the
+committed `run` — the inconsistency that started this. The same tokens paint the widget bar, the connector
+menu, the library's run verbs, the status cursor's ring and a peer's cursor, so "fan is blue" is true
+everywhere or nowhere.
+
+`--state-*` is retired. `modePalette.test.ts` asserts the palette stays whole: every value has all three
+tokens, every attribute has a mapping, `present` names no hue, the retired tokens are gone, and no mode
+stylesheet contains a hex.

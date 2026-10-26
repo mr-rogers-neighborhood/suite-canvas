@@ -127,12 +127,21 @@ describe("PurposeControl modifier preview", () => {
     expect(useUiStore.getState().purpose).toBe("run");
   });
 
-  it("leaves alt alone, because a presentation uses no modifiers and explain has no slot", () => {
+  it("previews explain on alt, and refuses the click because that mode is not built", () => {
     render(<PurposeControl />);
 
     fireEvent.keyDown(window, { key: "Alt", altKey: true });
 
-    expect(toggle()).not.toHaveAttribute("data-preview");
+    // The fourth colour exists (purple, gate A41) and the preview shows it...
+    expect(toggle()).toHaveAttribute("data-preview", "explain");
+    expect(toggle()).toHaveAttribute("aria-disabled", "true");
+    expect(toggle()).toHaveAttribute("title", expect.stringContaining("not built"));
+
+    // ...but a click does not commit a mode that does nothing, which is what keeps
+    // the preview paint rather than a promise.
+    fireEvent.click(toggle());
+    expect(useUiStore.getState().purpose).toBe("explore");
+
     fireEvent.keyUp(window, { key: "Alt", altKey: false });
   });
 

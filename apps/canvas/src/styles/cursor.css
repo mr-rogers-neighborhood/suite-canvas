@@ -13,11 +13,10 @@
 }
 
 .status-cursor {
-  /* The purpose's hue, from the shell's tokens (ADR-0046, ADR-0064 §5). The
-     fallbacks are the documented intent, not a second palette: white at rest,
-     ink engaged, the danger-adjacent hue while recording, success while
-     presenting — the values a theme is expected to override. */
-  --status-cursor-ring: var(--state-idle, #ffffff);
+  /* The purpose's hue, from the value palette (ADR-0064 fifth amendment). The
+     fallback is the resting value's hue, so a cursor with no `data-purpose` still
+     draws something a theme controls rather than a hardcoded colour. */
+  --status-cursor-ring: var(--value-hue, var(--ink));
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -31,17 +30,16 @@
   line-height: 1;
 }
 
-.status-cursor[data-purpose="run"] {
-  --status-cursor-ring: var(--state-active, #1d1d1f);
-}
-
-.status-cursor[data-purpose="record"] {
-  --status-cursor-ring: var(--state-recording, #e5484d);
-}
-
-.status-cursor[data-purpose="present"] {
-  --status-cursor-ring: var(--state-presenting, #30a46c);
-}
+/*
+ * The ring reads the same palette the controls do, so a peer's bubble says what your
+ * own does. `[data-purpose]` on this element already selects the value in
+ * `global.css`, which is why there is nothing per-value to declare here — only the
+ * one line above.
+ *
+ * `present` deliberately has no hue of its own: it is a tour's state, not one of the
+ * four choices, so it takes the theme's ink and lets the ring's *shape* (the halo)
+ * say what it is.
+ */
 
 /* The corner pointer is what makes the bubble a cursor rather than an avatar: its
    tip is the pointer position, and it inherits the owner's presence colour. */
@@ -156,12 +154,17 @@
 
 .status-cursor__slot--gesture {
   font-size: 10px;
+  /* The gesture slot carries the value's ink, so the bubble's own glyph says which
+     mode the peer is in with the same colour the widget bar uses. */
+  color: var(--value-hue, var(--ink));
 }
 
 .status-cursor__slot--unread {
   border-color: transparent;
   background: var(--accent);
-  color: #ffffff;
+  /* The accent's own on-colour, so a theme that retunes the accent does not leave a
+     hardcoded white glyph behind. */
+  color: var(--surface);
   font-weight: 600;
 }
 

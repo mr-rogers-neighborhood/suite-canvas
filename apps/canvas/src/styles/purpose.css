@@ -2,20 +2,15 @@
  * The purpose control (ADR-0064). Two questions, one column: "what the canvas is
  * for" and "what the next click does" are separate controls but a single pill —
  * zoom, then link mode, then purpose on the floor. Each segment owns its corners
- * only at the ends (below), so the stack reads as one object rather than a button
- * stuck under a rounded pill.
+ * only at the ends, so the stack reads as one object rather than a button stuck
+ * under a rounded pill.
  *
- * The four `--state-*` tokens are the purpose's hue in either theme; a theme may
- * change the hues, never the rule that hue means purpose and contrast means
- * engaged.
+ * The palette comes from `--value-*` in `global.css` (ADR-0064 fifth amendment):
+ * `data-purpose` selects the value, and this file only decides *how* a value is
+ * painted. No hue is named here, so a theme can re-tune one without a component
+ * knowing, and `run`'s inverted chip is the same pair the link tool uses for
+ * `thread` — which is what makes holding shift look like the mode you get.
  */
-:root {
-  --state-idle: var(--ink-muted);
-  --state-active: var(--ink);
-  --state-recording: var(--danger);
-  --state-presenting: var(--success);
-}
-
 .purpose-control {
   position: absolute;
   left: 15px;
@@ -31,47 +26,44 @@
   height: 26px;
   margin: 0;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--purpose-state) 40%, var(--hairline));
+  /* The palette decides the colour; this rule only decides the geometry and that a
+     value is painted at all. `data-purpose` selects which value. The edge is softened
+     because the resting purpose is the same colour as the pill it sits in. */
+  border: 1px solid color-mix(in srgb, var(--value-hue) 40%, var(--hairline));
   /* Continues the link mode above it: no seam, and the pill's own bottom corners. */
   border-top: 0;
   border-radius: 0 0 10px 10px;
-  background: var(--surface);
+  background: var(--value-fill);
   box-shadow: var(--card-shadow);
-  color: var(--purpose-state);
+  color: var(--value-ink);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
 }
 
-.purpose-control[data-purpose="explore"] {
-  --purpose-state: var(--state-idle);
-}
-
-/* Run is engaged rather than "selected": the contrast step is what says so. */
-.purpose-control[data-purpose="run"] {
-  --purpose-state: var(--state-active);
-
-  border-color: var(--state-active);
-  background: var(--state-active);
-  color: var(--surface);
-}
-
-/* A capture in progress is the one state that fills: it should feel live. */
-.purpose-control[data-purpose="record"] {
-  --purpose-state: var(--state-recording);
-
-  border-color: var(--state-recording);
-  background: var(--state-recording);
-  color: var(--surface);
-}
-
-/* Presenting is "you are in something", not "you are doing something": a ring. */
+/*
+ * Two treatments, because the palette decides the colour and the treatment decides the
+ * emphasis:
+ *
+ *   rest    the bar's own surface with an ink glyph — explore, and the resting look  (explore)
+ *   chip    an ink fill with a surface glyph, i.e. the bar inverted  (run, present)
+ *   solid   a hue fill with a surface glyph  (record)
+ *
+ * `run` is the chip on purpose: it is what holding shift shows, so the preview and
+ * the committed control are the same painting — which is the whole point of the note
+ * that started this. In a dark theme the chip reads white; in a light one, black.
+ */
+.purpose-control[data-purpose="run"],
 .purpose-control[data-purpose="present"] {
-  --purpose-state: var(--state-presenting);
+  border-color: var(--value-hue);
+}
 
-  border-color: var(--state-presenting);
-  background: color-mix(in srgb, var(--state-presenting) 14%, var(--surface));
-  color: var(--state-presenting);
+/* Recording is live capture: the fill is the signal, so it keeps the solid treatment
+   even though it is also a "choice". */
+.purpose-control[data-purpose="record"] {
+  background: var(--value-fill);
+  color: var(--value-ink);
+  border-color: var(--value-hue);
 }
 
 .purpose-control:hover {

@@ -139,6 +139,9 @@ export function StatusCursor({
       data-testid="status-cursor"
       data-purpose={purpose}
       data-gesture={gesture}
+      // `data-mode` is what the palette reads, so a peer's gesture glyph is the same
+      // colour as the widget its owner is using (ADR-0064 fifth amendment).
+      data-mode={gesture}
       data-self={isSelf ? "true" : "false"}
       // The corner pointer inherits the owner's presence colour from here, so the
       // pointer and the bubble cannot drift apart.

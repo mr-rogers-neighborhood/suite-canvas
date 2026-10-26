@@ -1,6 +1,11 @@
 import { useUiStore } from "../store/useUiStore";
 import { previewedValue } from "./modifierPreview";
-import { type CanvasPurpose, choosablePurposes, nextPurpose } from "./purpose";
+import {
+  type CanvasPurpose,
+  nextPurpose,
+  type PreviewablePurpose,
+  previewablePurposes,
+} from "./purpose";
 import { useModifierState } from "./useModifierState";
 
 /**
@@ -14,6 +19,19 @@ import { useModifierState } from "./useModifierState";
  * reads as media playback — "play this tour back" — and a run is the opposite of
  * playback: a list of cards being placed one click at a time (ADR-0064 §11).
  */
+/**
+ * Display for the four previewable values. `explain` is here but not in
+ * `CanvasPurpose`: it has a glyph and a colour (gate A41 specified it), and not yet a
+ * behaviour, so it is shown and refused rather than hidden and forgotten.
+ */
+const PREVIEW_DISPLAY: Record<CanvasPurpose | "explain", { label: string; glyph: string }> = {
+  explore: { label: "Explore mode: edit the canvas", glyph: "\u25cb" },
+  run: { label: "Run mode: place a sequence of cards", glyph: "\u2261" },
+  record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
+  explain: { label: "Explain mode: gather this selection into a context", glyph: "\u25c8" },
+  present: { label: "Presenting a tour", glyph: "\u25a3" },
+};
+
 const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
   explore: {
     label: "Explore mode: edit the canvas",
@@ -70,16 +88,22 @@ export function PurposeControl() {
   const modifiers = useModifierState();
 
   // What a click would choose: the previewed value when a modifier points at one,
-  // otherwise the next value in the cycle.
+  // otherwise the next value in the cycle. Previewed against the four-value list so
+  // `alt` reaches `explain`'s purple, which the cycle can never enter.
   const previewed =
-    purpose === "present" ? null : previewedValue<CanvasPurpose>(choosablePurposes, modifiers);
-  const target = previewed ?? nextPurpose(purpose);
+    purpose === "present"
+      ? null
+      : previewedValue<PreviewablePurpose>(previewablePurposes, modifiers);
+  const unbuilt = previewed === "explain";
+  const target = unbuilt ? purpose : (previewed ?? nextPurpose(purpose));
 
   const current = PURPOSES[purpose];
-  const label = `${current.label}. ${switchLabel(purpose, target)}`;
+  const label = unbuilt
+    ? `${current.label}. Explain mode is not built yet`
+    : `${current.label}. ${switchLabel(purpose, target)}`;
   // The previewed value is shown, not stored: the ring stays on what the reader is
   // actually doing, and the glyph says what the modifier would make it.
-  const shown = PURPOSES[previewed ?? purpose];
+  const shown = PREVIEW_DISPLAY[previewed ?? purpose];
 
   return (
     <button
@@ -91,11 +115,17 @@ export function PurposeControl() {
       data-testid="purpose-toggle"
       data-purpose={purpose}
       data-preview={previewed ?? undefined}
+      aria-disabled={unbuilt || undefined}
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
-      onClick={() => setPurpose(target)}
+      onClick={() => {
+        // A preview of an unbuilt mode is paint, not a promise: refusing the click is
+        // what keeps `alt` honest until gate A41 lands.
+        if (unbuilt) return;
+        setPurpose(target);
+      }}
     >
       <span aria-hidden="true">{shown.glyph}</span>
     </button>

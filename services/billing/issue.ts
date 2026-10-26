@@ -58,7 +58,9 @@ export type BillingFailure =
   | "malformed-event"
   | "manual-request"
   | "signing-failed"
-  | "email-failed";
+  | "email-failed"
+  /** A Stripe API call from the checkout front door failed; see `checkout.ts`. */
+  | "stripe-error";
 
 /** A failure the handler turns into a 500, with a token-free `code` for logs. */
 export class BillingError extends Error {

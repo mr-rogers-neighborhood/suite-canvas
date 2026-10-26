@@ -12,17 +12,22 @@ import {
 } from "./handler.ts";
 import type { Logger } from "./log.ts";
 import {
+  APP_ORIGIN,
+  CHECKOUT_URL,
   CUSTOMER_EMAIL,
   CUSTOMER_ID,
   checkoutObject,
   claimsOf,
   DAY,
   eventBody,
+  fakeStripe,
   invoiceObject,
   NOW,
+  PORTAL_URL,
   privatePem,
   recordingEmailer,
   recordingStore,
+  STRIPE_TEST_KEY,
   signatureHeader,
   TIERS_JSON,
   WEBHOOK_SECRET,
@@ -43,6 +48,8 @@ function testEnv(overrides: Partial<BillingEnvironment> = {}): BillingEnvironmen
     SUITE_SES_REGION: undefined,
     SUITE_BILLING_STORE: undefined,
     SUITE_BILLING_TABLE: undefined,
+    STRIPE_SECRET_KEY: STRIPE_TEST_KEY,
+    SUITE_APP_ORIGIN: APP_ORIGIN,
     ...overrides,
   };
 }
@@ -51,14 +58,20 @@ interface Harness {
   handler: (event: LambdaHttpEvent) => Promise<LambdaHttpResponse>;
   store: ReturnType<typeof recordingStore>;
   messages: ReturnType<typeof recordingEmailer>["messages"];
+  stripe: ReturnType<typeof fakeStripe>;
   lines: string[];
 }
 
 function harness(
-  options: { store?: ReturnType<typeof recordingStore>; env?: Partial<BillingEnvironment> } = {},
+  options: {
+    store?: ReturnType<typeof recordingStore>;
+    env?: Partial<BillingEnvironment>;
+    stripe?: ReturnType<typeof fakeStripe>;
+  } = {},
 ): Harness {
   const store = options.store ?? recordingStore();
   const mail = recordingEmailer();
+  const stripe = options.stripe ?? fakeStripe();
   const lines: string[] = [];
   const log: Logger = (level, message, fields) => {
     lines.push(JSON.stringify({ level, message, ...fields }));
@@ -70,9 +83,11 @@ function harness(
       env: testEnv(options.env),
       now: () => NOW,
       log,
+      stripeFetch: stripe.fetch,
     }),
     store,
     messages: mail.messages,
+    stripe,
     lines,
   };
 }
@@ -383,5 +398,92 @@ describe("store selection", () => {
     const store = await billingStoreFor(testEnv());
     assert.equal(await store.claimEvent("evt_selection_1"), true);
     assert.equal(await store.claimEvent("evt_selection_1"), false);
+  });
+});
+
+describe("billing routes", () => {
+  const CHECKOUT_BODY = JSON.stringify({
+    organizationId: "org_test_1",
+    workspaceId: "ws_test_1",
+    tier: "solo",
+  });
+
+  it("answers a checkout request at its own path", async () => {
+    const { handler, stripe, store } = harness();
+    const response = await handler({
+      body: CHECKOUT_BODY,
+      headers: {},
+      rawPath: "/api/billing/checkout",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(bodyOf(response).url, CHECKOUT_URL);
+    assert.equal(stripe.calls.length, 1);
+    assert.deepEqual(store.puts, [], "a front door never mints");
+  });
+
+  it("answers a portal request at its own path", async () => {
+    const { handler, stripe } = harness({ stripe: fakeStripe({ body: { url: PORTAL_URL } }) });
+    const response = await handler({
+      body: JSON.stringify({ customerId: CUSTOMER_ID }),
+      headers: {},
+      rawPath: "/api/billing/portal",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(bodyOf(response).url, PORTAL_URL);
+    assert.equal(stripe.calls[0]?.url, "https://api.stripe.com/v1/billing_portal/sessions");
+  });
+
+  it("refuses the front door under the same switch as the webhook", async () => {
+    const { handler, stripe } = harness({ env: { SUITE_BILLING_ENABLED: "0" } });
+    const response = await handler({ body: CHECKOUT_BODY, rawPath: "/api/billing/checkout" });
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(bodyOf(response), { ok: false, error: "billing-disabled" });
+    assert.equal(stripe.calls.length, 0);
+  });
+
+  it("never mints a licence from a signed delivery posted to the checkout path", async () => {
+    const { handler, store } = harness();
+    const response = await handler({
+      ...signed(checkoutBody()),
+      rawPath: "/api/billing/checkout",
+    });
+
+    assert.equal(response.statusCode, 400, "a webhook body is not a checkout request");
+    assert.deepEqual(bodyOf(response), { ok: false, error: "invalid-request" });
+    assert.equal(store.puts.length, 0);
+    assert.deepEqual(store.claims, [], "the event id is never claimed either");
+  });
+
+  it("answers 404 for a path it does not serve, without claiming anything", async () => {
+    const { handler, store } = harness();
+    const response = await handler({
+      ...signed(checkoutBody()),
+      rawPath: "/api/billing/nope",
+    });
+
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(bodyOf(response), { ok: false, error: "not-found" });
+    assert.deepEqual(store.claims, []);
+    assert.equal(store.puts.length, 0);
+  });
+
+  it("keeps treating a request with no path as the webhook", async () => {
+    const { handler, store } = harness();
+    const response = await handler(signed(checkoutBody()));
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(bodyOf(response), { ok: true, status: "issued" });
+    assert.equal(store.puts.length, 1);
+  });
+
+  it("accepts the REST API spelling of the webhook path", async () => {
+    const { handler, store } = harness();
+    const response = await handler({ ...signed(checkoutBody()), path: "/stripe/webhook/" });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(store.puts.length, 1);
   });
 });

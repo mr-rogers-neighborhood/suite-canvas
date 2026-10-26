@@ -1,4 +1,15 @@
+import {
+  type BillingRoute,
+  CHECKOUT_PATH,
+  createCheckoutRoute,
+  createPortalRoute,
+  type FrontDoorEnvironment,
+  globalFetch,
+  PORTAL_PATH,
+  type StripeFetch,
+} from "./checkout.ts";
 import { type Emailer, emailerFromEnvironment } from "./email.ts";
+import { billingEnabled, billingStoreBackend } from "./env.ts";
 import {
   BillingError,
   type IssueOutcome,
@@ -18,10 +29,11 @@ import {
 } from "./stripe.ts";
 
 /**
- * The Lambda entry point: one HTTPS POST from Stripe in, one signed licence
- * out.
+ * The Lambda entry point: one route for Stripe to call, two for a surface to
+ * start a payment.
  *
- * Status codes are the whole retry protocol:
+ * The webhook — one HTTPS POST from Stripe in, one signed licence out — is the
+ * only thing that mints. Its status codes are the whole retry protocol:
  *
  *   400  the request is not a Stripe event we can trust (bad signature, bad
  *        body). Retrying cannot help, so Stripe stops.
@@ -35,11 +47,17 @@ import {
  *        sent; Stripe keeps retrying in case the function was deployed by
  *        mistake.
  *
+ * The two front-door routes (`POST /api/billing/checkout`, `POST
+ * /api/billing/portal`, see `checkout.ts`) answer the same 503 under the same
+ * switch, and are answered before the store or the email transport is warmed: a
+ * customer must be able to start a payment even when SES is misconfigured, and
+ * a checkout must not load the SES SDK to find that out.
+ *
  * Nothing in this file ever writes the token to the log.
  */
 
-/** Everything the webhook reads from the environment, once per invocation. */
-export interface BillingEnvironment {
+/** Everything the handler reads from the environment, once per invocation. */
+export interface BillingEnvironment extends FrontDoorEnvironment {
   /**
    * `1` (or `true`) allows the endpoint to mint a licence. Anything else —
    * including unset — refuses, which is the alpha default: hosted billing is
@@ -81,27 +99,17 @@ export function environment(
     SUITE_SES_REGION: source.SUITE_SES_REGION,
     SUITE_BILLING_STORE: source.SUITE_BILLING_STORE,
     SUITE_BILLING_TABLE: source.SUITE_BILLING_TABLE,
+    // The front door's two. `STRIPE_SECRET_KEY` is read only when a checkout or
+    // portal session is created, never by the webhook.
+    STRIPE_SECRET_KEY: source.STRIPE_SECRET_KEY,
+    SUITE_APP_ORIGIN: source.SUITE_APP_ORIGIN,
   };
 }
 
-/**
- * The closed-by-default switch. Only the two spellings an operator types on
- * purpose open the door; `0`, `false`, empty and unset all refuse.
- */
-export function billingEnabled(env: BillingEnvironment): boolean {
-  const raw = env.SUITE_BILLING_ENABLED?.trim().toLowerCase();
-  return raw === "1" || raw === "true";
-}
-
-export type BillingStoreBackend = "memory" | "dynamodb";
-
-/**
- * Only the one deliberate spelling selects DynamoDB; everything else — unset,
- * `memory`, a typo — keeps the in-memory store, which is the alpha default.
- */
-export function billingStoreBackend(env: BillingEnvironment): BillingStoreBackend {
-  return env.SUITE_BILLING_STORE?.trim().toLowerCase() === "dynamodb" ? "dynamodb" : "memory";
-}
+// The deployment switches are shared with the front door, so they live in
+// `env.ts`; re-exported here because this module is what deployments and tests
+// import.
+export { type BillingStoreBackend, billingEnabled, billingStoreBackend } from "./env.ts";
 
 /**
  * The adapter is imported only when it is selected, so a deployment on the
@@ -124,6 +132,9 @@ export interface LambdaHttpEvent {
   body?: string | null;
   headers?: Record<string, string | undefined> | null;
   isBase64Encoded?: boolean;
+  /** HTTP API (payload v2) puts the request path here; REST API (v1) uses `path`. */
+  rawPath?: string | null;
+  path?: string | null;
 }
 
 export interface LambdaHttpResponse {
@@ -138,9 +149,30 @@ export interface HandlerDeps {
   env: BillingEnvironment;
   now?: () => number;
   log?: Logger;
+  /** Injected by the routing tests; a deployment uses the runtime's `fetch`. */
+  stripeFetch?: StripeFetch;
 }
 
 export type BillingHandler = (event: LambdaHttpEvent) => Promise<LambdaHttpResponse>;
+
+/** The one route Stripe calls; every other path belongs to the front door. */
+export const WEBHOOK_PATH = "/stripe/webhook";
+
+/**
+ * API Gateway hands the path over as `rawPath` (HTTP API) or `path` (REST API).
+ *
+ * `null` means the request carries no path at all — every fixture in these
+ * tests, and an invocation that is not an API Gateway proxy — which is the
+ * webhook, because that is what this function was before it had a second route.
+ * A path is never guessed from the body: a signed delivery posted to the
+ * checkout route is a caller error, not a licence.
+ */
+export function pathOf(event: LambdaHttpEvent): string | null {
+  const raw = typeof event.rawPath === "string" ? event.rawPath : event.path;
+  const path = typeof raw === "string" ? raw.trim() : "";
+  if (path.length === 0) return null;
+  return path.replace(/\/+$/, "") || "/";
+}
 
 const HANDLED_EVENTS = new Set(["checkout.session.completed", "invoice.paid"]);
 
@@ -233,17 +265,47 @@ function failureOf(error: unknown): { code: string; problem: string } {
   return { code: "unexpected", problem: String(error) };
 }
 
+/**
+ * The routes that are not the webhook. Built per invocation — they hold no
+ * state but the logger — and answered before the store or the email transport
+ * is warmed, because a checkout needs neither.
+ */
+function frontDoorRoute(
+  env: BillingEnvironment,
+  log: Logger,
+  fetch: StripeFetch,
+  path: string | null,
+): BillingRoute | null {
+  if (path === null) return null;
+  const deps = { env, log, fetch };
+  if (path === CHECKOUT_PATH) return createCheckoutRoute(deps);
+  if (path === PORTAL_PATH) return createPortalRoute(deps);
+  return null;
+}
+
 export function createHandler(deps: HandlerDeps): BillingHandler {
   const log = deps.log ?? jsonLogger;
   const now = deps.now ?? Date.now;
+  const stripeFetch = deps.stripeFetch ?? globalFetch;
 
   return async function billingHandler(event) {
+    // The path decides the route before anything else happens. A front door
+    // request is not a delivery and must never reach the signature check, and an
+    // unknown path is a 404 rather than a webhook attempt.
+    const path = pathOf(event);
+    const frontDoor = frontDoorRoute(deps.env, log, stripeFetch, path);
+    if (frontDoor !== null) return frontDoor(event);
+    if (path !== null && path !== WEBHOOK_PATH) {
+      log("warn", "route not found", { path: path.slice(0, 128) });
+      return json(404, { ok: false, error: "not-found" });
+    }
+
     // First, before the signature is even read: a disabled deployment cannot
     // mint a licence no matter what arrives. 503 rather than 200 tells Stripe
     // the delivery was not handled, so a misconfigured function is visible in
     // the dashboard instead of silently swallowing a paid event.
     if (!billingEnabled(deps.env)) {
-      log("warn", "webhook refused", { code: "billing-disabled" });
+      log("warn", "billing refused", { code: "billing-disabled" });
       return json(503, { ok: false, error: "billing-disabled" });
     }
 
@@ -367,10 +429,20 @@ function sharedEmailer(env: BillingEnvironment): Promise<Emailer> {
 export async function handler(event: LambdaHttpEvent): Promise<LambdaHttpResponse> {
   const env = environment();
 
+  // The front door first, and before any transport is warmed: a checkout needs
+  // no store and no SES, so a broken email identity must not stop a customer
+  // from paying. The route refuses on its own when billing is off.
+  const path = pathOf(event);
+  const frontDoor = frontDoorRoute(env, jsonLogger, globalFetch, path);
+  if (frontDoor !== null) return frontDoor(event);
+  if (path !== null && path !== WEBHOOK_PATH) {
+    return json(404, { ok: false, error: "not-found" });
+  }
+
   // Closed before any transport is warmed: a disabled deployment must not load
   // SES, read a key or touch the store.
   if (!billingEnabled(env)) {
-    jsonLogger("warn", "webhook refused", { code: "billing-disabled" });
+    jsonLogger("warn", "billing refused", { code: "billing-disabled" });
     return json(503, { ok: false, error: "billing-disabled" });
   }
 

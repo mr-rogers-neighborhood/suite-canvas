@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac, generateKeyPairSync, verify } from "node:crypto";
+import type { StripeFetch } from "./checkout.ts";
 import type { Emailer, EmailMessage } from "./email.ts";
 import { type BillingStore, type LicenceRecord, memoryStore } from "./store.ts";
 
@@ -23,6 +24,16 @@ export const CUSTOMER_ID = "cus_test_1";
 export const CUSTOMER_EMAIL = "buyer@example.com";
 export const PRICE_SOLO = "price_solo";
 export const PRICE_STUDIO = "price_studio";
+
+/** The front-door fixtures: a test-mode key, an app origin, and Stripe's answer. */
+export const STRIPE_TEST_KEY = "sk_test_51NtestKeyForFixturesOnly";
+export const APP_ORIGIN = "https://canvas.example.com";
+/** The billing subject: a subscription belongs to an organization (ADR-0065). */
+export const ORGANIZATION_ID = "org_test_1";
+/** A workspace, carried only so the browser lands where it was. */
+export const WORKSPACE_ID = "ws_test_1";
+export const CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_a1";
+export const PORTAL_URL = "https://billing.stripe.com/p/session/test_a1";
 
 export const TIERS_JSON = JSON.stringify({
   [PRICE_SOLO]: {
@@ -145,6 +156,47 @@ export function recordingStore(): RecordingStore {
     async putCustomer(record) {
       puts.push(record);
       await inner.putCustomer(record);
+    },
+  };
+}
+
+export interface RecordedStripeCall {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+  /** The body as Stripe reads it, so a test asserts field names not string order. */
+  form: URLSearchParams;
+}
+
+export interface FakeStripe {
+  fetch: StripeFetch;
+  calls: RecordedStripeCall[];
+}
+
+/**
+ * Stands in for `https://api.stripe.com`. It records the form it was sent and
+ * answers what the test asked for, so the front-door tests pin the wire format
+ * without a network — which is the point: a wrong field name is the classic bug
+ * here and only the encoded body shows it.
+ */
+export function fakeStripe(options: { status?: number; body?: unknown } = {}): FakeStripe {
+  const calls: RecordedStripeCall[] = [];
+  const status = options.status ?? 200;
+  const payload = options.body === undefined ? { url: CHECKOUT_URL } : options.body;
+
+  return {
+    calls,
+    async fetch(url, init) {
+      calls.push({
+        url,
+        method: init.method,
+        headers: init.headers,
+        body: init.body,
+        form: new URLSearchParams(init.body),
+      });
+      const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+      return { ok: status >= 200 && status < 300, status, text: async () => text };
     },
   };
 }

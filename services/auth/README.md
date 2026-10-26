@@ -81,7 +81,28 @@ All four are `createAuthHandler(deps)` — one event in, one JSON response out, 
 `SUITE_AUTH_ENABLED` (default `0`), `SUITE_AUTH_SECRET` (32+ chars), `SUITE_AUTH_URL`,
 `SUITE_AUTH_DATABASE_URL`, `SUITE_GOOGLE_CLIENT_ID`/`_SECRET` (together or not at all),
 `SUITE_AUTH_EMAIL_FROM`, `SUITE_AUTH_RP_ID`, `SUITE_AUTH_RP_NAME`, `SUITE_AUTH_MAX_ORGS_PER_USER`
-(default `1`).
+(default `1`), `SUITE_TURNSTILE_SECRET` (unset means no challenge), `SUITE_ADMISSION_REQUIRED`
+(default off: every account is admitted).
+
+## Plugins
+
+Better Auth is composed of plugins rather than hand-rolled routes, and each one is here for a stated
+reason ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md)):
+
+| Plugin | Why |
+| --- | --- |
+| `organization` | the tenant: members, roles, invitations. Teams disabled, because our sync unit is one document |
+| `passkey`, `magicLink`, Google | the three ways in; no passwords |
+| `anonymous` | a real session with no PII, and `onLinkAccount` — the hook that moves an anonymous account's workspaces to a real one on sign-up |
+| `lastLoginMethod` | so the sign-in screen can offer the method that worked last |
+| `twoFactor` | available to operators and org owners |
+| `admin` | the user-management half of the admin panel: role field, ban, impersonation |
+| `captcha` | invisible Turnstile, only where `SUITE_TURNSTILE_SECRET` is set |
+
+Admission is **ours**, not a plugin: `admittedAt` on the user plus one global hook that refuses
+`/organization/create` (and, later, claim and sync) while it is null. It is a licensing gate, never an
+authentication one — local editing, import and export are never refused
+([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md) §7).
 
 ## Tests
 

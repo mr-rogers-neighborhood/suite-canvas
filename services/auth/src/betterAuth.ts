@@ -1,6 +1,22 @@
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
-import { magicLink, organization } from "better-auth/plugins";
+import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import {
+  admin,
+  anonymous,
+  captcha,
+  lastLoginMethod,
+  magicLink,
+  organization,
+  twoFactor,
+} from "better-auth/plugins";
+import {
+  ADMISSION_PENDING_CODE,
+  ADMISSION_PENDING_MESSAGE,
+  admissionRequired,
+  admitted,
+  isAdmissionGatedPath,
+} from "./admission.js";
 import {
   authConfigProblems,
   authEnabled,
@@ -49,6 +65,16 @@ export interface AuthServiceDeps {
   memberships: MembershipReader;
   /** Deliver a magic link. Required by the plugin; the route only runs when configured. */
   sendMagicLink: (input: { email: string; url: string; token: string }) => Promise<void>;
+  /**
+   * Hand everything an anonymous account owned to the account that just signed up.
+   *
+   * Better Auth calls this from `anonymous`'s `onLinkAccount` **before** it deletes
+   * the anonymous user, which is the only window in which the rows still name
+   * someone. It is injected so this service never depends on the workspace
+   * repository: the callback moves *ownership*, and a bug in it must be testable
+   * without a database.
+   */
+  transferAnonymousWorkspaces?: (input: { fromUserId: string; toUserId: string }) => Promise<void>;
   now?: () => number;
 }
 
@@ -61,7 +87,7 @@ export interface AuthInstance {
 }
 
 interface AuthSessionPayload {
-  user: { id: string; email?: string | null };
+  user: { id: string; email?: string | null; admittedAt?: number | null };
   session: { activeOrganizationId?: string | null };
 }
 
@@ -124,11 +150,42 @@ export function createAuthService(deps: AuthServiceDeps): AuthInstance {
   const now = deps.now ?? Date.now;
   const maxOrganizations = maxOrganizationsPerUser(env);
 
+  const needsAdmission = admissionRequired(env);
+  const turnstile = env.SUITE_TURNSTILE_SECRET?.trim();
+
   const instance = betterAuth({
     baseURL: env.SUITE_AUTH_URL?.trim(),
     secret: env.SUITE_AUTH_SECRET?.trim(),
     database: deps.database,
     emailAndPassword: { enabled: false },
+    user: {
+      additionalFields: {
+        /**
+         * When an operator admitted this account, or null while it waits. `input:
+         * false` because only the admin surface writes it: a field a client could
+         * set is a field that admits itself.
+         */
+        admittedAt: { type: "number", required: false, input: false },
+      },
+    },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        // Admission is a licensing gate, not an authentication one: it never
+        // decides who may read a document, only who may spend our storage or
+        // join a tenant (ADR-0067 §7).
+        if (!needsAdmission) return;
+        if (!isAdmissionGatedPath(ctx.path)) return;
+        // Resolved here rather than read from `ctx.context.session`: a global `before`
+        // hook runs before the endpoint's own session middleware, so the context is
+        // still empty at this point and a gate that trusted it would never fire.
+        const session = await getSessionFromCtx(ctx);
+        // No session is a *sign-up*, which is exactly what admission allows.
+        if (session === null) return;
+        const user = session.user as { admittedAt?: number | null };
+        if (admitted(user, true)) return;
+        throw refusal(ADMISSION_PENDING_CODE, ADMISSION_PENDING_MESSAGE);
+      }),
+    },
     ...(googleConfigured(env)
       ? {
           socialProviders: {
@@ -178,6 +235,35 @@ export function createAuthService(deps: AuthServiceDeps): AuthInstance {
         rpID: env.SUITE_AUTH_RP_ID?.trim() || "localhost",
         rpName: env.SUITE_AUTH_RP_NAME?.trim() || "Suite",
       }),
+      // A session with no PII, so a first launch can be a real user from minute one.
+      // `onLinkAccount` is the whole point: it fires on the first real sign-in, and
+      // it runs before Better Auth deletes the anonymous user.
+      anonymous({
+        onLinkAccount: async ({ anonymousUser, newUser }) => {
+          await deps.transferAnonymousWorkspaces?.({
+            fromUserId: anonymousUser.user.id,
+            toUserId: newUser.user.id,
+          });
+        },
+      }),
+      // Remembers the method that worked, so the sign-in screen can offer it first
+      // instead of presenting four equal doors (ADR-0067 §11).
+      lastLoginMethod(),
+      // Operators and org owners only; the plugin is available to everyone, the
+      // admin surface is what gates enrolment.
+      twoFactor({ issuer: env.SUITE_AUTH_RP_NAME?.trim() || "Suite" }),
+      // `admin` supplies the user role field and the management endpoints the admin
+      // panel's people/ops half is built on (ADR-0068 §7).
+      admin(),
+      // Invisible challenge in front of sign-up, only where a deployment opted in.
+      ...(turnstile === "" || turnstile === undefined
+        ? []
+        : [
+            captcha({
+              provider: "cloudflare-turnstile",
+              secretKey: turnstile,
+            }),
+          ]),
     ],
   });
 
@@ -214,12 +300,16 @@ export function sessionReader(
         return null;
       }
       if (payload === null) return null;
+      // Read from the user row on every session, not cached on it: admitting someone
+      // then takes effect without asking them to sign in again.
+      const admittedAt =
+        typeof payload.user.admittedAt === "number" ? payload.user.admittedAt : null;
       const organizationId = payload.session.activeOrganizationId ?? null;
       if (organizationId === null) {
-        return { userId: payload.user.id, organizationId: null, role: null };
+        return { userId: payload.user.id, organizationId: null, role: null, admittedAt };
       }
       const role = await memberships.roleFor(organizationId, payload.user.id);
-      return { userId: payload.user.id, organizationId, role };
+      return { userId: payload.user.id, organizationId, role, admittedAt };
     },
   };
 }

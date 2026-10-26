@@ -15,6 +15,7 @@ const session = {
   userId: "user-1",
   organizationId: ORG,
   role: "admin" as const,
+  admittedAt: 1,
 };
 
 describe("resolvePrincipal", () => {
@@ -30,6 +31,8 @@ describe("resolvePrincipal", () => {
       ownerKeyHash: "a".repeat(64),
       shareToken: "share-token",
     });
+    // Admitting is a licensing gate the routes read from the session; the principal
+    // stays a statement of who is acting and what they may do.
     expect(principal).toEqual({
       kind: "account",
       workspaceId: WORKSPACE,
@@ -99,7 +102,7 @@ describe("resolvePrincipal", () => {
     const principal = resolvePrincipal({
       workspaceId: WORKSPACE,
       organizationId: ORG,
-      session: { userId: "user-1", organizationId: null, role: "owner" },
+      session: { userId: "user-1", organizationId: null, role: "owner", admittedAt: 1 },
       ownerKeyHash: "c".repeat(64),
     });
     expect(principal?.kind).toBe("owner");

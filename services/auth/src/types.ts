@@ -147,6 +147,12 @@ export interface AccountSession {
   organizationId: string | null;
   /** That user's role in that organization, or null when membership is gone. */
   role: OrganizationRole | null;
+  /**
+   * When an operator admitted this account, or null while it waits. Read from the
+   * user row on every session rather than cached on the session, so admitting
+   * someone takes effect without asking them to sign in again.
+   */
+  admittedAt: number | null;
 }
 
 /** Everything the control plane reads from the environment, once per invocation. */
@@ -172,4 +178,17 @@ export interface AuthEnvironment {
    * the default of 1 is the product's "one tenant, many workspaces" shape.
    */
   SUITE_AUTH_MAX_ORGS_PER_USER: string | undefined;
+  /**
+   * Cloudflare Turnstile secret. Set it to put invisible captcha in front of the
+   * sign-up routes; unset means no challenge, which is the self-host default and
+   * the shape a test run should have (ADR-0067 §9).
+   */
+  SUITE_TURNSTILE_SECRET: string | undefined;
+  /**
+   * `1` or `true` makes every new account wait for admission
+   * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §7).
+   * Off by default: a self-host with one user does not need a queue, and the
+   * gate must never surprise a deployment that did not ask for it.
+   */
+  SUITE_ADMISSION_REQUIRED: string | undefined;
 }

@@ -29,6 +29,9 @@ const modelNames = [
   "member",
   "invitation",
   "passkey",
+  // `twoFactor` is the only plugin table among the ones wired: admin adds fields to
+  // `user`/`session`, anonymous and last-login-method add fields, captcha adds none.
+  "twoFactor",
 ] as const;
 
 type Store = Record<string, unknown[]>;
@@ -110,13 +113,22 @@ interface Harness {
   setLicence: (value: SeatLicence | null) => void;
   signIn: (email: string) => Promise<{ cookie: string; userId: string }>;
   addUser: (email: string) => string;
+  /** Stamp a user as admitted, the way the admin panel's queue does. */
+  admit: (userId: string) => void;
+  /** What `onLinkAccount` asked to move, in call order. */
+  transfers: Array<{ fromUserId: string; toUserId: string }>;
+  /** The magic link the plugin asked us to deliver, if any. */
+  lastLink: () => string | null;
 }
 
-function harness(options: { seats?: number; maxOrganizations?: number } = {}): Harness {
+function harness(
+  options: { seats?: number; maxOrganizations?: number; admission?: boolean } = {},
+): Harness {
   const store: Store = Object.fromEntries(modelNames.map((name) => [name, []]));
   const memberships = storeMemberships(store);
   let licence: SeatLicence | null = seatLicence(claims(), options.seats ?? 5);
   let link: string | null = null;
+  const transfers: Array<{ fromUserId: string; toUserId: string }> = [];
 
   const auth = createAuthService({
     env: authEnvironment({
@@ -129,12 +141,16 @@ function harness(options: { seats?: number; maxOrganizations?: number } = {}): H
       SUITE_AUTH_RP_ID: "suite.example",
       SUITE_AUTH_RP_NAME: "Suite",
       SUITE_AUTH_MAX_ORGS_PER_USER: String(options.maxOrganizations ?? 1),
+      ...(options.admission === true ? { SUITE_ADMISSION_REQUIRED: "1" } : {}),
     }),
     database: memoryAdapter(store),
     licences: { forOrganization: async () => licence },
     memberships,
     sendMagicLink: async ({ url }) => {
       link = url;
+    },
+    transferAnonymousWorkspaces: async (input) => {
+      transfers.push(input);
     },
     now: () => NOW,
   }) as unknown as TestAuth;
@@ -182,6 +198,15 @@ function harness(options: { seats?: number; maxOrganizations?: number } = {}): H
       licence = value;
     },
     signIn,
+    admit: (userId) => {
+      const row = (store.user ?? []).find((entry) => (entry as { id?: string }).id === userId) as
+        | { admittedAt?: number }
+        | undefined;
+      if (row === undefined) throw new Error(`${userId} is not a stored user`);
+      row.admittedAt = NOW;
+    },
+    transfers,
+    lastLink: () => link,
     addUser,
   };
 }
@@ -199,7 +224,9 @@ describe("the Better Auth surface", () => {
     const { auth, signIn, store } = harness();
     const { cookie, userId } = await signIn("owner@example.com");
     const session = await sessionReader(auth, storeMemberships(store)).sessionFor({ cookie });
-    expect(session).toEqual({ userId, organizationId: null, role: null });
+    // Signed in, unadmitted: the session says so rather than hiding it, so a route
+    // can answer "you are on the list" instead of "forbidden".
+    expect(session).toEqual({ userId, organizationId: null, role: null, admittedAt: null });
   });
 
   it("returns no session for a cookie it did not issue", async () => {
@@ -275,5 +302,98 @@ describe("organization policy through the plugin's hooks", () => {
         headers: new Headers({ cookie }),
       }),
     ).rejects.toThrow(/organization/u);
+  });
+});
+
+describe("admission", () => {
+  it("refuses an organization to an account that is still on the list", async () => {
+    const { auth, signIn } = harness({ admission: true });
+    const { cookie } = await signIn("waiting@example.com");
+
+    // Held, not forbidden: the code says which, so a surface can render the queue
+    // message instead of a permissions error (ADR-0067 §7).
+    await expect(
+      auth.api.createOrganization({
+        body: { name: "Too Early", slug: "too-early" },
+        headers: new Headers({ cookie }),
+      }),
+    ).rejects.toMatchObject({ body: { code: "admission-pending" } });
+  });
+
+  it("lets an admitted account create the organization it was waiting for", async () => {
+    const { auth, signIn, admit, store } = harness({ admission: true });
+    const { cookie, userId } = await signIn("admitted@example.com");
+
+    admit(userId);
+    const organization = await auth.api.createOrganization({
+      body: { name: "Finally", slug: "finally" },
+      headers: new Headers({ cookie }),
+    });
+
+    expect(organization?.slug).toBe("finally");
+    expect(store.organization).toHaveLength(1);
+  });
+
+  it("does not gate a deployment that never asked for a queue", async () => {
+    const { auth, signIn } = harness();
+    const { cookie } = await signIn("self-host@example.com");
+
+    // The default is off: a self-host with one user should not need an operator.
+    const organization = await auth.api.createOrganization({
+      body: { name: "Solo", slug: "solo" },
+      headers: new Headers({ cookie }),
+    });
+
+    expect(organization?.slug).toBe("solo");
+  });
+
+  it("reports the admission state on the session so a route can explain itself", async () => {
+    const { auth, signIn, admit, store } = harness({ admission: true });
+    const { cookie, userId } = await signIn("explain@example.com");
+    const reader = sessionReader(auth, storeMemberships(store));
+
+    expect((await reader.sessionFor({ cookie }))?.admittedAt).toBeNull();
+
+    admit(userId);
+    // Read from the user row on every session: admitting takes effect without
+    // asking the reader to sign in again.
+    expect((await reader.sessionFor({ cookie }))?.admittedAt).toBe(NOW);
+  });
+});
+
+describe("an anonymous account that signs up", () => {
+  const anonymousSignIn = async (auth: TestAuth): Promise<{ cookie: string; userId: string }> => {
+    const response = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/sign-in/anonymous`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: BASE_URL },
+        body: "{}",
+      }),
+    );
+    const cookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
+    if (cookie.length === 0) throw new Error("no anonymous session cookie");
+    const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
+    if (session === null) throw new Error("the anonymous cookie resolved to no session");
+    return { cookie, userId: session.user.id };
+  };
+
+  it("hands its workspaces to the real account before the anonymous user is deleted", async () => {
+    const { auth, transfers, lastLink, signIn } = harness();
+    const anonymous = await anonymousSignIn(auth);
+
+    // The anonymous cookie rides the sign-in, which is how the plugin knows there is
+    // something to link: without it this is an ordinary first sign-in.
+    await auth.api.signInMagicLink({
+      body: { email: "founder@example.com" },
+      headers: new Headers({ origin: BASE_URL, cookie: anonymous.cookie }),
+    });
+    const link = lastLink();
+    if (link === null) throw new Error("the plugin never asked for a magic link");
+    await auth.handler(
+      new Request(link, { redirect: "manual", headers: { cookie: anonymous.cookie } }),
+    );
+
+    const real = await signIn("founder@example.com");
+    expect(transfers).toEqual([{ fromUserId: anonymous.userId, toUserId: real.userId }]);
   });
 });

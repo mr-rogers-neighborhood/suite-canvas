@@ -170,6 +170,15 @@ const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "trash", label: "Trash" },
 ];
 
+/**
+ * What a press has to land on to *not* dismiss the drawer: the drawer, the button
+ * that toggles it, and the menu and dialogs it portals out of its own tree. A row
+ * menu's backdrop is deliberately absent — pressing off the menu closes the menu,
+ * and the library with it.
+ */
+const LIBRARY_PRESS_KEEP =
+  '[data-testid="library-drawer"], [data-testid="dock-library"], [data-testid="context-menu"], [data-testid="dialog"]';
+
 const HOLD_THRESHOLD = 4;
 
 /** The verb a run's shape is called when it applies to a set of rows. */
@@ -468,14 +477,16 @@ export function LibraryDrawer({
    * A press outside the drawer closes it. On the board's own pane the press *is* the
    * dismissal — it must not also place a card behind the drawer — while chrome and
    * cards keep their press, because a control you aimed at is one you meant to click.
-   * The trigger is exempt entirely: it toggles, and a dismissal followed by a toggle
-   * would reopen what the press just closed.
+   * The trigger is exempt entirely (it toggles, and a dismissal followed by a toggle
+   * would reopen what the press just closed), and so is everything the drawer itself
+   * opened: its row menu and its dialogs are portalled outside this element, and a
+   * press there is still a press on the library.
    */
   useEffect(() => {
     if (!open || holdingCard) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Element | null;
-      if (target?.closest?.('[data-testid="library-drawer"], [data-testid="dock-library"]')) return;
+      if (target?.closest?.(LIBRARY_PRESS_KEEP)) return;
       if (target?.closest?.(".react-flow__pane")) {
         event.preventDefault();
         event.stopPropagation();

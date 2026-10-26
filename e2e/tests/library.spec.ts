@@ -394,7 +394,10 @@ test("opens a library row in the inspector instead of expanding it", async ({ pa
   await page.keyboard.type("From the row");
   await expect(canvasCard.locator(".node-card-editor")).toContainText("From the row");
 
-  // The drawer stays a list: closing and reopening shows rows, not a panel.
+  // Working in the inspector and on the card dismissed the drawer, which is the
+  // drawer behaving as one (a press outside closes it). The point of the step is
+  // that it is still a list: closing and reopening shows rows, not a panel.
+  await openLibrary(page, "cards");
   await page.getByLabel("Close library").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
   await openLibrary(page, "cards");

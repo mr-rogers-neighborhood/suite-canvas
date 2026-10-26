@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Permission } from "loro-protocol";
+import type { ConnectionPrincipal, RelaySeatGate } from "./seatGate.js";
 import { SHARE_ROOM_PREFIX, type ShareStore } from "./shares.js";
 import type { WorkspaceRegistry } from "./workspaces.js";
 
@@ -14,6 +15,13 @@ export interface AuthorizeDeps {
   projectionToken: string;
   /** Worker token that may write a workspace room only when an editor share exists. */
   sourceToken: string;
+  /**
+   * The hosted licence seat gate. Absent on a self-host — and absent means
+   * "nothing to enforce", which is the same posture as `licence.ts` being inert
+   * without `SUITE_HOSTED=1`. See `seatGate.ts` for what this process can and
+   * cannot answer.
+   */
+  seats?: RelaySeatGate;
 }
 
 export interface WorkerTokens {
@@ -84,6 +92,21 @@ export async function authorize(
   const token = decoder.decode(auth ?? new Uint8Array());
   if (token.length === 0) return null;
 
+  /**
+   * The credential check decides *what* this connection may do; the seat gate
+   * decides *whether it may do it at all* today. They are kept separate so a
+   * lapsed licence cannot quietly widen a permission, and so the gate is
+   * skipped entirely for the internal worker tokens, which are not seats.
+   */
+  const gated = (
+    permission: Permission | null,
+    principal: ConnectionPrincipal | null,
+  ): Permission | null => {
+    if (permission === null) return null;
+    if (principal === null || deps.seats === undefined) return permission;
+    return deps.seats.allow(principal).ok ? permission : null;
+  };
+
   if (
     deps.projectionToken.length > 0 &&
     constantTimeEqual(token, deps.projectionToken) &&
@@ -102,8 +125,14 @@ export async function authorize(
 
   const share = deps.shares.resolve(token) ?? deps.shares.resolveSession(token);
   if (share) {
-    if (roomId === share.roomId) return share.role === "editor" ? "write" : "read";
-    return baseRoomOf(roomId) === share.roomId ? "write" : null;
+    // A share opens its own room and that room's ephemeral siblings; the seat
+    // gate is asked about the workspace the share belongs to, not the room id,
+    // because a projection room (`share-<token>`) names no workspace.
+    const principal: ConnectionPrincipal = { kind: "share", workspaceId: share.workspaceId };
+    if (roomId === share.roomId) {
+      return gated(share.role === "editor" ? "write" : "read", principal);
+    }
+    return baseRoomOf(roomId) === share.roomId ? gated("write", principal) : null;
   }
 
   const baseRoom = baseRoomOf(roomId);
@@ -112,7 +141,9 @@ export async function authorize(
   if (baseRoom.startsWith(SHARE_ROOM_PREFIX)) return null;
 
   try {
-    return deps.workspaces.verify(baseRoom, token) ? "write" : null;
+    return deps.workspaces.verify(baseRoom, token)
+      ? gated("write", { kind: "owner", workspaceId: baseRoom })
+      : null;
   } catch {
     // The registry rejects malformed ids and keys; a rejected join is not a match.
     return null;

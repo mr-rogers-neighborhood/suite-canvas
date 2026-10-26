@@ -70,6 +70,16 @@ export default defineConfig({
         },
       },
       {
+        // The account control plane. Its own project because it is the only
+        // suite allowed to reach for `better-auth`, and because a failure here
+        // should name itself in CI rather than hide inside the relay's suite.
+        test: {
+          name: "auth",
+          environment: "node",
+          include: ["services/auth/src/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "canvas",
           environment: "jsdom",

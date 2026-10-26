@@ -33,6 +33,7 @@ import {
   disconnectWorkspaceShares,
   flushDirtyDocuments,
 } from "./roomSockets.js";
+import { relaySeatGateFromClaims } from "./seatGate.js";
 import { createSettingsStore } from "./settings.js";
 import { createShareStore, SHARE_ROOM_PREFIX, type Share, type ShareStore } from "./shares.js";
 import {
@@ -120,6 +121,9 @@ if (bootProblem !== null) {
 // The hosted relay records a licence per workspace; its quotas are the tighter
 // of the signed token and the instance limits. A self-host never opens it.
 const licenceClaims = licenceRequired() ? defaultLicenceClaimStore() : null;
+// The same rows answer "is this workspace still licensed?" at connection time.
+// A self-host has no licence, so the gate is inert and no join pays for it.
+const seatGate = relaySeatGateFromClaims(licenceClaims, licenceClaims !== null);
 const quotaOptions: QuotaOptions = {
   documents: store,
   shares,
@@ -231,6 +235,7 @@ const server = new SimpleServer({
       workspaces: countedWorkspaces,
       projectionToken,
       sourceToken,
+      seats: seatGate,
     });
   },
 });

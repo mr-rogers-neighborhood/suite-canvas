@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AuthorizeDeps, authorize, resolveWorkerTokens } from "./auth.js";
+import { createRelaySeatGate } from "./seatGate.js";
 import { createShareStore, type ShareStore } from "./shares.js";
 import { createWorkspaceRegistry, type WorkspaceRegistry } from "./workspaces.js";
 
@@ -324,5 +325,45 @@ describe("resolveWorkerTokens", () => {
 
     expect(tokens.projectionToken).toBe("legacy");
     expect(tokens.sourceToken).not.toBe("legacy");
+  });
+});
+
+describe("authorize with the seat gate wired in", () => {
+  const NOW = 1_760_000_000_000;
+  const lapsedGate = () =>
+    createRelaySeatGate({ enforced: true, licenceFor: () => null, now: () => NOW });
+
+  it("is unchanged when no gate is configured, which is every self-host", async () => {
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+    const gate = createRelaySeatGate({
+      enforced: false,
+      licenceFor: () => null,
+      now: () => NOW,
+    });
+    await expect(authorize("ws-1", encode(OWNER_KEY), { ...deps, seats: gate })).resolves.toBe(
+      "write",
+    );
+  });
+
+  it("drops a credential that the licence no longer covers", async () => {
+    workspaces.claimOrVerify("ws-1", OWNER_KEY);
+    // No licence row for the workspace: the hosted relay refuses the join even
+    // though the owner key is correct, and it opens no socket to explain why.
+    await expect(
+      authorize("ws-1", encode(OWNER_KEY), { ...deps, seats: lapsedGate() }),
+    ).resolves.toBeNull();
+  });
+
+  it("leaves the internal worker tokens ungated", async () => {
+    const gate = createRelaySeatGate({
+      enforced: true,
+      licenceFor: () => null,
+      now: () => NOW,
+    });
+    // The projection worker is not a seat: it writes only projection rooms and
+    // holding it back on a lapsed licence would leave drafts unpublished.
+    await expect(
+      authorize("share-abc", encode(PROJECTION_TOKEN), { ...deps, seats: gate }),
+    ).resolves.toBe("write");
   });
 });

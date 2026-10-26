@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@loro-dev/flock": "^4.5.2",
+    "@suite/auth": "workspace:*",
     "@suite/graph": "workspace:*",
     "loro-adaptors": "^0.6.1",
     "loro-crdt": "^1.16.4",

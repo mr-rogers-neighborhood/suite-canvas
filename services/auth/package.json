@@ -1,0 +1,26 @@
+{
+  "name": "@suite/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Control plane for owned workspaces: Better Auth organizations, invite keys, claim-workspace and the server-side seat check. A workspace package so `turbo run typecheck` and `turbo run test` gate the identity path.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./seats": "./src/seats.ts",
+    "./principals": "./src/principal.ts",
+    "./repository": "./src/repository.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "^1.7.12",
+    "better-auth": "^1.7.12"
+  }
+}

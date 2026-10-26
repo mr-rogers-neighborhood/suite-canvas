@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    // A workspace package installs its own dev dependencies, so the Node types
+    // live next to this tsconfig; keep the hoisted root as a fallback.
+    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"]
+  },
+  "include": ["src"]
+}

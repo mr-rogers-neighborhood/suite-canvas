@@ -36,6 +36,51 @@ gets the live workspace surface — boards, types, tags and the trash — but no
 sections and edges and edit what it publishes; a card draft edits only its card. Neither can create
 boards, schema, trash or links.
 
+## When accounts exist
+
+Everything above is the model as it runs today, and it stays true for every workspace that has no
+organization behind it. Accounts add an *ownership layer* on top ([ADR-0065](decisions/0065-accounts-own-workspaces.md));
+they do not replace the capability model, and the capability model is not a fallback that gets worse
+once you sign in.
+
+**What changes.** An organization is the tenant and owns many workspaces; a `member` row with a role
+(`owner`, `admin`, `member`) replaces "whoever holds the link" for the people inside it. The role
+becomes the app's capability flags through one mapping (`capabilitiesForRole` in `services/auth`), and
+those flags are what the UI reads — the same nine flags a share session gets. Claiming an anonymous
+workspace sets its organization and changes nothing else: the document id, its URL and every share
+link already handed out keep working, so adopting an account is never a migration of the work.
+
+**What stays.** The owner key is still the offline key — the only way to open a workspace when the
+control plane is unreachable — and share links still grant exactly what their role says. Revoking a
+link, rotating the owner key and the operator commands above behave the same. Anonymous workspaces
+(no organization) are still first-class, still ungated by any licence, and still need no login.
+
+**One resolver, one precedence: session > owner key > share token.** A request may carry all three.
+The session wins *only* if it names the organization that owns this workspace and the account still
+has a `member` row there; otherwise the owner key applies, and otherwise the share token. Two
+consequences worth knowing before you read a bug report:
+
+- A signed-in person opening someone else's share link is a **share holder**, not an account: their
+  session names a different tenant, so it does not shadow the link.
+- Someone removed from an organization who still holds an owner link or a share link keeps that
+  access. Removing a member row is not a revocation of the capabilities the workspace handed out;
+  rotate the owner key and revoke the links, exactly as before.
+
+**The check is server-side or it is decoration.** The relay verifies the Ed25519 licence and, at the
+moment a socket joins, refuses a workspace whose licence is missing or expired — a lapsed licence
+loses *sync*, never local data. Seats and the per-organization workspace ceiling are decided by the
+control plane from its own rows (member counts, non-archived workspaces), never from a client claim.
+A websocket carries an owner key or a share token, not a session, so the relay refuses an *account*
+credential until the browser side sends one: guessing a seat count there would be worse than
+refusing.
+
+**New material to protect.** The control-plane database holds accounts, sessions, passkeys,
+organizations, members, invitations and invite-key **hashes** — no document bytes, ever. Invite keys
+and magic-link tokens are bearer capabilities for as long as they last: an invite key is a SHA-256
+hash at rest, single-purpose (it grants admin or member, never ownership), expiring and revocable, and
+redeeming it writes one `member` row. A leaked key is fixed by revoking the row, the same way a leaked
+link is fixed by revoking the share.
+
 ## What the relay can see
 
 - **Documents are plaintext.** SQLite stores the full Loro snapshot of every workspace and every
@@ -168,7 +213,9 @@ Deletion is immediate and cannot be undone; take a backup first.
 
 ## Not in this model
 
-- No accounts, email, OAuth, organizations or per-user ACLs; no audit trail of who changed what.
+- No audit trail of who changed what. Accounts and organizations exist behind `SUITE_AUTH_ENABLED`
+  (see "When accounts exist"), but they attribute nothing inside a document: presence is still
+  ephemeral, and the document itself records no author.
 - No end-to-end encryption and no encrypted backups.
 - No multi-replica relay or external database.
 - No user-facing permanent delete.

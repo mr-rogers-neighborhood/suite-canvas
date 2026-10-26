@@ -148,3 +148,41 @@ disappears on its own because the state changed rather than because the copy did
 
 Signed-in readers are untouched: "Saved", no caveat. That is the state every hosted reader is in, which
 is why the hedge was only ever visible to the anonymous, local-only case the author described.
+
+## Amendment — the risk is named once on the way out
+
+The resolved decision above puts the risk in the panel's sentence, which only a reader who opens the
+panel will read. A reader whose workspace sits on the `banner` rung — anonymous, with no promise that
+this browser will keep the copy — is one click from leaving the only copy behind: back to the
+launcher, or out of the tab. Neither moment had anything to catch it.
+
+**What it does.** While `storageLadder()` reports `banner`, a return to the launcher is intercepted by
+a small in-app dialog (`apps/canvas/src/components/LeavingDialog.tsx`). It carries one sentence in
+plain words — "This workspace is saved only in this browser, and the browser may clear it when the
+device needs the space." — the two actions that make the work safe, and "Leave anyway". The actions
+are the ones that already exist rather than new ones: "Sign in" opens the account dialog the header
+uses, and "Export a copy" writes the same backup as File → Export backup… . Leaving proceeds when the
+reader chooses it. The condition (`shouldWarnBeforeLeaving`) lives in
+`apps/canvas/src/session/leavingGuard.ts` and is read from the ladder's rung, not from a second rule
+in a component; the dialog and the native prompt are its two mechanisms.
+
+**Why a second, native mechanism.** An in-app dialog cannot see a tab close, and that is the other
+half of the same loss. The same rung therefore also registers a `beforeunload` listener
+(`apps/canvas/src/session/useBeforeUnload.ts`). The browser owns that wording, so the listener only
+asks the question; it is registered while the rung is `banner` and removed when the rung changes, when
+the reader has begun the navigation they chose, and it is never registered for a signed-in reader or
+for `blocking`, whose risk is already present tense in the chrome and the panel and would gain no way
+to be fixed from a close prompt.
+
+**Why once per session.** A reader who has been told and has chosen to stay does not need the same
+sentence on every return to the launcher, and a guard that repeats itself becomes a guard people
+dismiss unread. The dismissal lives in memory only — not `localStorage`, where it would outlive the
+session and could hide the warning after the reload it describes — and it is tied to the document's
+version: once the work changes, the old warning no longer describes what could be lost, so the next
+leave asks again. Choosing "Leave anyway" is itself a dismissal, and the session ends when the page
+does.
+
+**What it deliberately does not do.** It does not run for a share session: the projection in this
+browser is not the only copy of the work, and a share has neither an export nor an account to offer.
+It does not block leaving, and it introduces no storage state of its own — the pill, the panel and
+this dialog all read the one `storageLadder()` answer.

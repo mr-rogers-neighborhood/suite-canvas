@@ -26,6 +26,13 @@ export interface WorkspaceActionsProps {
   workspaceId: string;
   boardId: string | null;
   title: string;
+  /**
+   * Leaving for the launcher, when the shell wants to intercept it
+   * ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md) amendment).
+   * Without it this menu navigates directly, which is right for a surface that has
+   * nothing to warn about.
+   */
+  onLeave?: (() => void) | undefined;
 }
 
 /**
@@ -33,7 +40,7 @@ export interface WorkspaceActionsProps {
  * board or a card, export the exact backup, and return to the launcher. Import
  * lives on the launcher so it can never merge into the open document.
  */
-export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActionsProps) {
+export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: WorkspaceActionsProps) {
   const workspace = useCanvasStore((state) => state.workspace);
   const flush = useCanvasStore((state) => state.flush);
   const inspectorNodeId = useUiStore((state) => state.inspectorNodeId);
@@ -91,7 +98,8 @@ export function WorkspaceActions({ workspaceId, boardId, title }: WorkspaceActio
   const goHome = async () => {
     setMenuOpen(false);
     await flush();
-    window.location.assign("/");
+    if (onLeave) onLeave();
+    else window.location.assign("/");
   };
 
   const exportTo = async (kind: "backup" | "json" | "markdown") => {

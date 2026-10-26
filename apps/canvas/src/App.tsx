@@ -53,6 +53,7 @@ import { CommandPaletteHost } from "./components/CommandPalette";
 import { sectionPath } from "./components/cardWhere";
 import type { Capability } from "./components/commandRegistry";
 import { Dock } from "./components/Dock";
+import { LeavingDialog } from "./components/LeavingDialog";
 import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
 import { UNSORTED_SECTION } from "./components/libraryFilters";
 import { buildPaletteItems } from "./components/paletteProviders";
@@ -69,8 +70,16 @@ import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
+import {
+  createLeavingGuard,
+  documentVersion,
+  leavingAtRisk,
+  shouldWarnBeforeLeaving,
+} from "./session/leavingGuard";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
+import { useBeforeUnload } from "./session/useBeforeUnload";
+import { useStorageLadder } from "./session/useStorageLadder";
 import {
   friendlyWorkspaceName,
   readWorkspaceNames,
@@ -411,8 +420,23 @@ function WorkspaceShell({
     document.title = `${workspaceName} — Suite`;
   }, [workspaceName]);
 
+  // The leave guard ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md)
+  // amendment). `banner` is the ladder's own answer — anonymous, and no promise
+  // that this browser will keep the copy — so it is the only condition here.
+  const ladder = useStorageLadder(signedIn);
+  const leavingGuard = useRef(createLeavingGuard());
+  // Set synchronously by a navigation the reader chose, so the native prompt does
+  // not ask again during the unload that gesture just started.
+  const leavingStarted = useRef(false);
+  const [leavingPrompt, setLeavingPrompt] = useState(false);
+  // A share is someone else's work: this browser holds a projection, not the only copy.
+  const leavingAtOwnRisk = share === null && leavingAtRisk(ladder);
+
+  useBeforeUnload(leavingAtOwnRisk && !leaving, () => !leavingStarted.current);
+
   const goHome = useCallback(() => {
     if (leaving) return;
+    leavingStarted.current = true;
     if (prefersReducedMotion()) {
       window.location.assign("/");
       return;
@@ -420,6 +444,36 @@ function WorkspaceShell({
     setLeaving(true);
     window.setTimeout(() => window.location.assign("/"), 180);
   }, [leaving]);
+
+  /** Every path back to the launcher comes through here, so no route skips the guard. */
+  const requestLeave = useCallback(() => {
+    if (leaving || leavingPrompt) return;
+    const version = documentVersion(workspace.doc);
+    if (
+      shouldWarnBeforeLeaving({
+        ladder,
+        guard: leavingGuard.current,
+        version,
+        applicable: share === null,
+      })
+    ) {
+      setLeavingPrompt(true);
+      return;
+    }
+    goHome();
+  }, [leaving, leavingPrompt, ladder, workspace, share, goHome]);
+
+  // Being told is the point, so closing the dialog is an answer: the next leave
+  // stays quiet until the work changes.
+  const dismissLeavePrompt = useCallback(() => {
+    leavingGuard.current.dismiss(documentVersion(workspace.doc));
+    setLeavingPrompt(false);
+  }, [workspace]);
+
+  const leaveAnyway = useCallback(() => {
+    dismissLeavePrompt();
+    goHome();
+  }, [dismissLeavePrompt, goHome]);
 
   useEffect(() => {
     if (!ready) return;
@@ -1133,7 +1187,7 @@ function WorkspaceShell({
         style={shellPaint.vars as CSSProperties}
       >
         <TitleBar
-          onNavigateHome={goHome}
+          onNavigateHome={requestLeave}
           onOpenSearch={() => setPaletteOpen(true)}
           // A standalone build never opens a socket, so "Syncing" would be a lie;
           // the status slot reports the connection it has (none) beside the note.
@@ -1166,6 +1220,7 @@ function WorkspaceShell({
                     workspaceId={workspaceId}
                     boardId={activeBoardId}
                     title={activeBoardName ?? "Workspace"}
+                    onLeave={requestLeave}
                   />
                 </Suspense>
                 {standalone ? (
@@ -1385,6 +1440,17 @@ function WorkspaceShell({
             <SignInSurface />
           </Suspense>
         )}
+
+        {/* The way out, when this browser is the only place the work exists. */}
+        {leavingPrompt ? (
+          <LeavingDialog
+            workspaceId={workspaceId}
+            title={workspaceName}
+            {...(standalone ? {} : { onSignIn: openSignIn })}
+            onLeave={leaveAnyway}
+            onDismiss={dismissLeavePrompt}
+          />
+        ) : null}
 
         <PerfOverlay />
       </div>

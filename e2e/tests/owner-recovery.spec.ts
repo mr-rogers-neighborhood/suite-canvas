@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { leaveForLauncher } from "./support";
 
 let sequence = 0;
 const workspaceId = (name: string) => `e2e-owner-${name}-${Date.now()}-${++sequence}`;
@@ -171,8 +172,7 @@ test("offers a recovery key after a launcher export and opens one from the launc
   await page.goto(`/?workspace=${id}`);
   await expect(cards(page)).toHaveCount(2);
 
-  await page.getByTestId("workspace-file").click();
-  await page.getByTestId("workspace-home").click();
+  await leaveForLauncher(page);
   await expect(page.getByTestId("workspace-launcher")).toBeVisible();
 
   // The launcher's per-row export is the second backup path, so it gets the

@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
+import { leaveForLauncher } from "./support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
@@ -84,9 +85,7 @@ test("refuses a backup from a newer Suite", async ({ page }, testInfo) => {
 test("lists and exports a recent workspace from the launcher", async ({ page }) => {
   await page.goto(workspaceUrl("recent"));
   await expect(cards(page)).toHaveCount(2);
-  await page.getByTestId("workspace-file").click();
-  await page.getByTestId("workspace-home").click();
-  await expect(page).toHaveURL(/\/$/);
+  await leaveForLauncher(page);
   const entry = page.locator('[data-testid^="launcher-recent-"]').first();
   await expect(entry).toBeVisible();
   await expect(entry).toContainText("Board 1");

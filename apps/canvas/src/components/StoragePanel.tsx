@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { crashReportingAvailable, readCrashConsent, setCrashConsent } from "../crash/consent";
 import { startCrashReporting } from "../crash/report";
 import { getSession } from "../session/session";
-import { storageLadder } from "../session/storageLadder";
+import { useStorageLadder } from "../session/useStorageLadder";
 import { buildDiagnostics, copyText, safeRoute, useDiagnosticsStore } from "../shell/diagnostics";
 import {
   formatEstimate,
@@ -82,10 +82,7 @@ export function StoragePanel({ workspaceId, signedIn = false, onSignIn }: Storag
     });
   }, []);
 
-  const ladder = useMemo(
-    () => storageLadder({ persist, signedIn, failing: quota !== null }),
-    [persist, signedIn, quota],
-  );
+  const ladder = useStorageLadder(signedIn);
   const atRisk = ladder.rung === "banner" || ladder.rung === "blocking";
 
   return (

@@ -32,3 +32,40 @@ test("an anonymous workspace says where the work is, never that it is temporary"
   );
   await expect(page.getByTestId("storage-persist")).not.toBeEmpty();
 });
+
+test("a local-only reader is warned before leaving for the launcher", async ({ page }) => {
+  await page.goto(withOwnerKey(`/?workspace=${id("leaving")}`));
+  await expect(cards(page)).toHaveCount(2);
+
+  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-home").click();
+
+  // The one moment before the only copy is left behind, in plain words.
+  await expect(page.getByTestId("leaving-dialog")).toBeVisible();
+  await expect(page.getByTestId("leaving-sentence")).toContainText("only in this browser");
+
+  // Both ways to make the work safe are the affordances that already exist.
+  await expect(page.getByTestId("leaving-sign-in")).toBeVisible();
+  await expect(page.getByTestId("leaving-export")).toBeVisible();
+
+  await page.getByTestId("leaving-anyway").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("workspace-launcher")).toBeVisible();
+});
+
+test("asks once, until the work changes", async ({ page }) => {
+  await page.goto(withOwnerKey(`/?workspace=${id("once")}`));
+  await expect(cards(page)).toHaveCount(2);
+
+  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-home").click();
+  await expect(page.getByTestId("leaving-dialog")).toBeVisible();
+
+  // Staying is an answer: the same work does not get the same sentence twice.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("leaving-dialog")).toHaveCount(0);
+
+  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-home").click();
+  await expect(page).toHaveURL(/\/$/);
+});

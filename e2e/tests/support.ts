@@ -61,3 +61,22 @@ export async function libraryRowAction(row: Locator, action: string): Promise<vo
   await row.getByRole("button", { name: /^Actions for / }).click();
   await row.page().getByRole("menuitem", { name: action }).click();
 }
+
+/**
+ * Back to the launcher from an open workspace, past the leave guard
+ * ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md) amendment).
+ *
+ * An anonymous workspace with no durability promise asks once before letting the only
+ * copy out of sight. The save-state spec asserts that dialog itself; every other trip
+ * to the launcher just gives the reader's answer.
+ */
+export async function leaveForLauncher(page: Page): Promise<void> {
+  await page.getByTestId("workspace-file").click();
+  await page.getByTestId("workspace-home").click();
+  const leaving = page.getByTestId("leaving-dialog");
+  await leaving.waitFor({ state: "visible", timeout: 2_000 }).catch(() => {});
+  if (await leaving.isVisible()) {
+    await page.getByTestId("leaving-anyway").click();
+  }
+  await expect(page).toHaveURL(/\/$/);
+}

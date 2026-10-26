@@ -20,7 +20,6 @@ import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
 import { LeavingDialog } from "../dialogs/LeavingDialog";
 import { FeedbackHost } from "../feedback/FeedbackHost";
-import { FeedbackRail } from "../feedback/FeedbackRail";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
@@ -287,6 +286,9 @@ export function WorkspaceShellView({
           status={standalone ? "disconnected" : status}
           {...(share ? { role: share.role } : {})}
           peerCount={standalone ? 0 : peerCount}
+          signedIn={signedIn}
+          workspaceId={workspaceId}
+          onSignIn={openSignIn}
           // Everything about *this* device's copy lives under the same control that
           // says who else is here (ADR-0064 amendment): one status, one press.
           storage={
@@ -450,8 +452,6 @@ export function WorkspaceShellView({
           <CardInspectorHost />
           <CardFocusHost />
           <TourOverlayHost />
-          {/* The relay, this device's storage and the saved state, above the board. */}
-          <FeedbackRail workspaceId={workspaceId} signedIn={signedIn} synced={inRoom} />
           {/* Restoring writes a change, so history belongs to a session that may
               write; a viewer's copy is the relay's, and undo is the owner's. */}
           {workspaceSurface && !readOnly ? <HistoryPanelHost workspace={workspace} /> : null}

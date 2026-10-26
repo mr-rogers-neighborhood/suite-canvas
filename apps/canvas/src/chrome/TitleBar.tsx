@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "../styles/ThemeToggle";
+import { SyncPanel } from "./SyncPanel";
 
 export type TitleBarRole = "editor" | "viewer";
 
@@ -13,6 +15,15 @@ export interface TitleBarProps {
    */
   role?: TitleBarRole;
   peerCount?: number;
+  /**
+   * Whether an account stands behind this browser. A signed-out browser is local,
+   * not refused, and the status control says so.
+   */
+  signedIn?: boolean;
+  /** The relay's name for this workspace, shown inside the status panel. */
+  workspaceId?: string;
+  /** Opens the sign-in dialog from the status panel's local reading. */
+  onSignIn?: (() => void) | undefined;
   /**
    * What this device can say about its own copy, shown under the sync indicator.
    * Absent when the host has no storage surface to offer.
@@ -37,48 +48,13 @@ export interface TitleBarProps {
   onOpenSearch?: (() => void) | undefined;
 }
 
-const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connected: "Synced",
-  connecting: "Syncing",
-  // Back from offline and pushing the local edits: the same word as a first sync,
-  // because it is the same "catching up" state, and the panel says which one it is.
-  rejoining: "Syncing",
-  disconnected: "Offline",
-  // Not "Offline": the relay answered. Telling someone whose access was refused
-  // to check their connection sends them after the one thing that is working.
-  unauthorized: "No access",
-};
-
-/** The room, in one sentence: how many people, and whether it is going anywhere. */
-function roomSentence(status: ConnectionStatus, peerCount: number, role?: TitleBarRole): string {
-  if (status === "disconnected") {
-    return "Working offline. This tab keeps working; a reload will not.";
-  }
-  if (status === "unauthorized") {
-    return "This workspace refused this browser's access, so it cannot sync. Your edits stay on this device; sign in again, or ask the workspace's owner for a seat.";
-  }
-  if (status === "connecting") return "Connecting to the relay.";
-  if (status === "rejoining") return "Back online, catching up with the room.";
-  if (role !== undefined) {
-    return role === "viewer"
-      ? "You are viewing this workspace."
-      : "You are editing this workspace.";
-  }
-  return peerCount === 0 ? "You are the only one here." : `${peerCount + 1} here, including you.`;
-}
-
-const STATUS_DOT: Record<ConnectionStatus, string> = {
-  connected: "bg-emerald-500",
-  connecting: "bg-amber-400",
-  rejoining: "bg-amber-400",
-  disconnected: "bg-gray-400 dark:bg-gray-500",
-  unauthorized: "bg-red-500",
-};
-
 export function TitleBar({
   status,
   role,
   peerCount = 0,
+  signedIn = false,
+  workspaceId,
+  onSignIn,
   storage,
   workspaceName,
   canRenameWorkspace = false,
@@ -106,6 +82,15 @@ export function TitleBar({
   }, [statusOpen]);
 
   useEscapeLayer(() => setStatusOpen(false), statusOpen);
+
+  // The button and the panel read one decision, so they cannot disagree.
+  const presentation = syncPresentation({
+    status,
+    signedIn,
+    peerCount,
+    role,
+    pending: 0,
+  });
 
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
@@ -222,25 +207,20 @@ export function TitleBar({
             className="inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
             onClick={() => setStatusOpen((value) => !value)}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
-            {STATUS_LABEL[status]}
+            <span className={`h-1.5 w-1.5 rounded-full ${presentation.dot}`} />
+            {presentation.label}
             {peerCount > 0 ? <span className="tabular-nums">· {peerCount + 1} here</span> : null}
           </button>
           {statusOpen ? (
-            <div
-              data-testid="sync-panel"
-              role="dialog"
-              aria-label="Sync and storage"
-              className="absolute top-7 right-0 z-50 w-[320px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 text-[12px] shadow-lg"
-            >
-              <h2 className="text-[13px] font-semibold text-[var(--ink)]">Sync</h2>
-              <p data-testid="sync-room" className="mt-2 leading-5 text-[var(--ink)]">
-                {roomSentence(status, peerCount, role)}
-              </p>
-              {storage ? (
-                <div className="mt-3 border-t border-[var(--hairline)] pt-3">{storage}</div>
-              ) : null}
-            </div>
+            <SyncPanel
+              status={status}
+              signedIn={signedIn}
+              peerCount={peerCount}
+              {...(role === undefined ? {} : { role })}
+              {...(workspaceId === undefined ? {} : { workspaceId })}
+              {...(storage === undefined ? {} : { storage })}
+              {...(onSignIn === undefined ? {} : { onSignIn })}
+            />
           ) : null}
         </div>
         {actions}

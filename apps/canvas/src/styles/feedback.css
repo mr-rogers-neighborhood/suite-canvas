@@ -140,151 +140,6 @@
   }
 }
 
-/* The status rail: connection first, then how this device is doing. */
-.feedback-rail {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  z-index: 35;
-  display: flex;
-  max-width: min(560px, calc(100vw - 2 * (var(--canvas-gutter) + 16px)));
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.feedback-rail > * {
-  pointer-events: auto;
-}
-
-.connection-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 5px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: var(--card-shadow);
-  color: var(--ink);
-  font-size: 11.5px;
-  line-height: 18px;
-  backdrop-filter: blur(14px) saturate(1.15);
-}
-
-.connection-banner[data-tone="warning"] {
-  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
-}
-
-.connection-banner[data-tone="success"] {
-  border-color: color-mix(in srgb, var(--success) 45%, var(--hairline));
-}
-
-.connection-banner__dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--ink-muted);
-}
-
-.connection-banner[data-tone="warning"] .connection-banner__dot {
-  background: var(--warning);
-}
-
-.connection-banner[data-tone="success"] .connection-banner__dot {
-  background: var(--success);
-}
-
-.connection-banner[data-kind="reconnecting"] .connection-banner__dot {
-  animation: connection-breathe 1.4s ease-in-out infinite;
-}
-
-.connection-banner__count {
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.connection-banner__action {
-  padding: 1px 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  color: var(--ink);
-  font-size: 11px;
-}
-
-.connection-banner__action:hover {
-  background: var(--segmented-bg);
-}
-
-.connection-banner__action:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-@keyframes connection-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* Local persistence, read without the relay: saved, saving, or not durable. */
-.save-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 9px;
-  border: 1px solid transparent;
-  border-radius: 9999px;
-  color: var(--ink-muted);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.save-indicator[data-state="saving"],
-.save-indicator[data-state="not-durable"] {
-  border-color: var(--hairline);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-}
-
-.save-indicator[data-state="not-durable"] {
-  border-color: color-mix(in srgb, var(--warning) 45%, var(--hairline));
-  color: var(--ink);
-}
-
-.save-indicator__dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: 9999px;
-  background: var(--ink-muted);
-}
-
-.save-indicator[data-state="not-durable"] .save-indicator__dot {
-  background: var(--warning);
-}
-
-.save-indicator[data-state="saving"] .save-indicator__dot {
-  animation: save-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes save-pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
 /* A lazy dialog's chunk: the boot skeleton's bar, sized to what replaces it. */
 .loading-placeholder {
   pointer-events: none;
@@ -352,8 +207,7 @@
 /* Both reduced-motion switches: the OS setting and Appearance's own. */
 @media (prefers-reduced-motion: reduce) {
   .toast,
-  .connection-banner__dot,
-  .save-indicator__dot {
+  .toast__dot {
     animation: none;
   }
 
@@ -365,8 +219,6 @@
 }
 
 html[data-motion="reduced"] .toast,
-html[data-motion="reduced"] .connection-banner .connection-banner__dot,
-html[data-motion="reduced"] .save-indicator .save-indicator__dot,
 html[data-motion="reduced"] .loading-placeholder__fill {
   animation: none;
 }
@@ -429,17 +281,10 @@ html[data-motion="reduced"] .loading-placeholder__fill {
   .toast-layer[data-inspector="open"] {
     top: 96px;
   }
-
-  /* The panel one press away still reports the saved state; the rail keeps the
-     two surfaces a person has to act on. */
-  .save-indicator {
-    display: none;
-  }
 }
 
 @media (min-width: 641px) {
-  .toast-layer[data-inspector="open"],
-  .feedback-rail[data-inspector="open"] {
+  .toast-layer[data-inspector="open"] {
     left: calc(50% - 166px);
   }
 }

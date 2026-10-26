@@ -1,17 +1,20 @@
 import { WorkspaceDocument } from "@suite/graph";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { LoroList, LoroMap, LoroText } from "loro-crdt";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { requestPersistence, useDurabilityStore } from "./durability";
-import { StorageWarningBanner, storageWarningState } from "./StorageWarningBanner";
+import { storageWarningState, useStorageWarning } from "./storageWarning";
+
+/** The live answer, read the way the sync panel reads it. */
+function currentWarning() {
+  return renderHook(() => useStorageWarning()).result.current;
+}
 
 /**
- * A3: the refusal is visible where the reader already is.
+ * Whether this device's copy is at risk.
  *
- * The storage panel is behind a press, so a denied `persist()` used to be
- * visible only to someone who opened it. The banner is the same state outside
- * the popover, and the point of the test is that the *document* is untouched by
- * any of it: persistence is a side channel, never the source of truth.
+ * Persistence is a side channel, never the source of truth: none of these states
+ * may touch the document, which is what the second case pins down.
  */
 
 function titledWorkspace(): { workspace: WorkspaceDocument; cardId: string } {
@@ -30,32 +33,19 @@ function titledWorkspace(): { workspace: WorkspaceDocument; cardId: string } {
   return { workspace, cardId: card.id };
 }
 
-describe("storage warning outside the popover", () => {
+describe("the storage warning", () => {
   beforeEach(() => {
     useDurabilityStore.getState().reset();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("warns and offers an export when persist() resolves false", async () => {
+  it("warns when persist() resolves false, and says what to do about it", async () => {
     const persist = vi.fn(async () => false);
     await requestPersistence({ persist, persisted: async () => false });
     expect(persist).toHaveBeenCalledTimes(1);
 
-    const onExport = vi.fn();
-    render(<StorageWarningBanner workspaceId="ws-1" onExport={onExport} />);
-
-    const warning = screen.getByTestId("storage-shell-warning");
-    expect(warning).toHaveTextContent("has not promised to keep this workspace");
-    expect(warning).toHaveAttribute("role", "status");
-
-    fireEvent.click(screen.getByTestId("storage-shell-export"));
-    expect(onExport).toHaveBeenCalledWith("ws-1");
-    await waitFor(() =>
-      expect(screen.getByTestId("storage-shell-export")).toHaveTextContent("Exported"),
-    );
+    const warning = currentWarning();
+    expect(warning.visible).toBe(true);
+    expect(warning.message).toContain("has not promised to keep this workspace");
   });
 
   it("keeps the in-memory document through a denial and a refused write", async () => {
@@ -72,22 +62,17 @@ describe("storage warning outside the popover", () => {
         "This browser is out of storage, so the latest change could not be saved.",
       );
 
-    render(<StorageWarningBanner workspaceId="ws-1" onExport={vi.fn()} />);
-
     // The quota sentence is present tense and wins over the general warning.
-    await waitFor(() =>
-      expect(screen.getByTestId("storage-shell-warning")).toHaveTextContent("out of storage"),
-    );
+    expect(currentWarning().message).toContain("out of storage");
 
     // Still one card, still its text: a denial is a storage fact, not an edit.
     expect(workspace.listCards().map((card) => card.id)).toEqual([cardId]);
     expect(workspace.displayTitle(cardId)).toBe(before);
   });
 
-  it("renders nothing while the browser has promised to keep the copy", async () => {
+  it("says nothing while the browser has promised to keep the copy", async () => {
     await requestPersistence({ persist: async () => true, persisted: async () => true });
-    render(<StorageWarningBanner workspaceId="ws-1" />);
-    expect(screen.queryByTestId("storage-shell-warning")).not.toBeInTheDocument();
+    expect(currentWarning().visible).toBe(false);
   });
 
   it("treats every 'no promise' answer as the same warning", () => {

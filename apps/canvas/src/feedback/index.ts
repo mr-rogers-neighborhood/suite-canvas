@@ -1,9 +1,10 @@
 /**
  * The feedback layer's public surface.
  *
- * Two kinds of caller: the shell mounts `FeedbackHost` and `FeedbackRail`; a
- * lane that owns a command the document runs (or a failure it catches) calls
- * `announceUndo`, `announceRedo` or `reportHydrationFailure`.
+ * Two kinds of caller: the shell mounts `FeedbackHost`; a lane that owns a
+ * command the document runs (or a failure it catches) calls `announceUndo`,
+ * `announceRedo` or `reportHydrationFailure`. Nothing here is chrome: the board's
+ * status lives in the title bar's one control.
  */
 
 export {
@@ -15,16 +16,13 @@ export {
   resetAnnouncerForTests,
   useAnnouncerStore,
 } from "./announcer";
-export { ConnectionBanner } from "./ConnectionBanner";
 export { bannerStateOf, type ConnectionBannerState, usePendingChanges } from "./connection";
 export { DocumentAnnouncer } from "./DocumentAnnouncer";
 export { FeedbackHost } from "./FeedbackHost";
-export { FeedbackRail } from "./FeedbackRail";
 export { LAST_ERROR_MESSAGE, QUOTA_MESSAGE, useFailureToasts } from "./failures";
 export { HYDRATION_MESSAGE, reportHydrationFailure } from "./hydration";
 export { LiveRegion } from "./LiveRegion";
 export { useReducedMotion } from "./motion";
-export { SaveIndicator } from "./SaveIndicator";
 export {
   localPersistenceAvailable,
   SAVE_SETTLE_MS,
@@ -32,6 +30,13 @@ export {
   saveStateOf,
   useSaveState,
 } from "./saveState";
+export {
+  NOT_DURABLE_REASON,
+  SAVE_LABEL,
+  type SyncFacts,
+  type SyncPresentation,
+  syncPresentation,
+} from "./syncState";
 export { ToastLayer } from "./ToastLayer";
 export {
   DEFAULT_TIMEOUTS,

@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { TitleBar } from "./TitleBar";
 
 // `role` is this component's own prop (who is reading the share), not an ARIA
-// role, so the a11y rule is reading the JSX too literally here.
-const bar = (props: Parameters<typeof TitleBar>[0]) => render(<TitleBar {...props} />);
+// role, so the a11y rule is reading the JSX too literally here. Signed in by
+// default: a signed-out browser is its own case, below.
+const bar = (props: Parameters<typeof TitleBar>[0]) => render(<TitleBar signedIn {...props} />);
 
 describe("TitleBar", () => {
   it("says Synced, and puts what the share allows in the panel", () => {
@@ -55,7 +56,7 @@ describe("TitleBar", () => {
 
     const sentence = screen.getByTestId("sync-room");
     expect(sentence).toHaveTextContent("refused this browser's access");
-    expect(sentence).toHaveTextContent("sign in again");
+    expect(sentence).toHaveTextContent("Sign in again");
     expect(sentence).not.toHaveTextContent(/connection/i);
   });
 
@@ -63,12 +64,44 @@ describe("TitleBar", () => {
     bar({ status: "disconnected" });
     fireEvent.click(screen.getByTestId("sync-status"));
 
-    expect(screen.getByTestId("sync-room")).toHaveTextContent("Working offline");
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("Offline");
+  });
+
+  /**
+   * A browser with no session has no credential to refuse, so the relay never
+   * said no. Calling that "No access" told every local session its own workspace
+   * had rejected it.
+   */
+  it("reads a signed-out browser as local, not refused", () => {
+    bar({ status: "unauthorized", signedIn: false });
+
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Local");
+    expect(screen.getByTestId("sync-status")).not.toHaveTextContent("No access");
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+
+    const sentence = screen.getByTestId("sync-room");
+    expect(sentence).toHaveTextContent("Local only");
+    expect(sentence).toHaveTextContent("Sign in to sync");
+    expect(sentence).not.toHaveTextContent(/refused/i);
+    expect(screen.getByTestId("sync-sign-in")).toBeInTheDocument();
+  });
+
+  it("offers a retry when the connection dropped", () => {
+    bar({ status: "disconnected" });
+    fireEvent.click(screen.getByTestId("sync-status"));
+    expect(screen.getByTestId("connection-retry")).toBeInTheDocument();
   });
 
   it("says Synced outside a share too", () => {
     bar({ status: "connected" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Synced");
+  });
+
+  it("names the room the relay holds", () => {
+    bar({ status: "connected", workspaceId: "ws-42" });
+    fireEvent.click(screen.getByTestId("sync-status"));
+    expect(screen.getByTestId("sync-facts")).toHaveTextContent("ws-42");
   });
 
   it("counts the people in the room", () => {

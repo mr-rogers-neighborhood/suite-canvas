@@ -134,11 +134,16 @@ same pool — `LicenceStore`, `MembershipReader` and `WorkspaceRepository`
 what makes the rules testable without a database; a deployment passes the Postgres
 ones.
 
+Or in one call, which is what a hosted deployment writes:
+
 ```ts
-const { database, close } = postgresDatabase({ connectionString });
-const repos = postgresRepositories(database as never);
-const auth = createAuthEntry(env, { ...repos, sendMagicLink, close });
+const auth = createPostgresAuthEntry(env, { sendMagicLink, transferAnonymousWorkspaces });
+// env.SUITE_AUTH_DATABASE_URL -> one pool -> Better Auth *and* the repositories
 ```
+
+Pass `queryable` to share a pool you already own (the memory adapter works too, which
+is how it is tested). The point of sharing is ADR-0070's: a licence check and a session
+lookup are the same database, so they cannot disagree.
 
 ## Migrations
 

@@ -1090,3 +1090,19 @@ Images are **nodes that name bytes stored beside the document**, never bytes ins
   Because the bytes travel with the file, a workspace full of screenshots produces a large
   `.suite`: above 25 MB (`BACKUP_SIZE_WARNING_BYTES`) the app states the real size before writing
   the file, then writes it anyway. Refusing to back up would be worse than a big backup.
+
+## The control plane
+
+Identity, membership, entitlement and money live in one Postgres database
+([ADR-0070](decisions/0070-one-postgres-control-plane.md)): Better Auth's own tables
+(`user`, `session`, `account`, `verification`, `organization`, `member`, `invitation`,
+`passkey`, `twoFactor`), ours (`workspaces`, `organization_licences`, `billing_event`,
+`billing_customer`), and the audit trail. **Document bytes never enter it** — a `.loro`
+snapshot, an attachment and a rendered projection all belong to the document store,
+because putting content here would make every backup a copy of every customer's work and
+make the control plane the hot path for editing.
+
+The relay is deliberately outside it: it verifies a signed licence offline and keeps its
+own small claim store (SQLite), so a deployment can run with no database connection at
+all. That is the asymmetry to remember when something is down — sign-in needs the control
+plane, editing does not.

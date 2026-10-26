@@ -1,6 +1,6 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { describe, expect, it } from "vitest";
-import { createAuthEntry } from "./entry.js";
+import { createAuthEntry, createPostgresAuthEntry } from "./entry.js";
 import { authEnvironment } from "./env.js";
 import { databaseUrlProblem } from "./postgres.js";
 import { seatLicence } from "./seats.js";
@@ -119,5 +119,40 @@ describe("the auth entry", () => {
 
     await entry.close();
     expect(closed).toBe(true);
+  });
+});
+
+describe("the one-call Postgres entry", () => {
+  const memoryTables = () => ({
+    user: [],
+    session: [],
+    account: [],
+    verification: [],
+    organization: [],
+    member: [],
+    invitation: [],
+    passkey: [],
+    twoFactor: [],
+  });
+
+  it("refuses a broken URL before building anything", () => {
+    expect(() =>
+      createPostgresAuthEntry(configured({ SUITE_AUTH_DATABASE_URL: "mysql://u@h/db" }), deps()),
+    ).toThrowError(/SUITE_AUTH_DATABASE_URL must be a postgres/);
+  });
+
+  it("composes against an injected database, so a deployment can share its pool", async () => {
+    const adapter = memoryAdapter(memoryTables());
+    const entry = createPostgresAuthEntry(configured(), {
+      ...deps(),
+      // The memory adapter satisfies the same shape the pool does; the repositories
+      // read `member` and `workspaces` from the same object Better Auth writes to.
+      queryable: adapter as never,
+    });
+
+    const response = await entry.handler(
+      new Request(`${BASE_URL}/api/auth/get-session`, { headers: { origin: BASE_URL } }),
+    );
+    expect(response.status).toBe(200);
   });
 });

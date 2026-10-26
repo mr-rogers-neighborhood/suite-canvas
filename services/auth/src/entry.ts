@@ -1,6 +1,7 @@
 import { type AuthDatabase, type AuthServiceDeps, createAuthService } from "./betterAuth.js";
 import { authEnabled } from "./env.js";
-import { databaseUrlProblem, postgresDatabase } from "./postgres.js";
+import { databaseUrlProblem, postgresDatabase, type Queryable } from "./postgres.js";
+import { postgresRepositories } from "./postgresRepositories.js";
 import type { AuthEnvironment } from "./types.js";
 
 /**
@@ -77,4 +78,62 @@ export function createAuthEntry(env: AuthEnvironment, deps: AuthEntryDeps): Auth
       if (!injected) await owned?.close();
     },
   };
+}
+
+/**
+ * The deployment in one call: environment → pool → repositories → Better Auth.
+ *
+ * This is the composition a hosted deployment actually writes, and it exists so the
+ * *order* and the *shared pool* are not something each deployment reassembles by
+ * hand. The repositories come from the same `Queryable` as Better Auth, which is the
+ * whole point of one control plane
+ * ([ADR-0070](../../../docs/decisions/0070-one-postgres-control-plane.md)): a licence
+ * check and a session lookup are the same database, so they cannot disagree.
+ *
+ * `queryable` exists for tests and for a deployment that already owns a pool — the
+ * memory adapter satisfies it. Without it, the pool is built from
+ * `SUITE_AUTH_DATABASE_URL` and closed by this function on shutdown.
+ */
+export interface PostgresAuthEntryDeps
+  extends Pick<AuthServiceDeps, "sendMagicLink">,
+    Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now"> {
+  /** An adapter/pool to share instead of building one. */
+  queryable?: Queryable;
+}
+
+export function createPostgresAuthEntry(
+  env: AuthEnvironment,
+  deps: PostgresAuthEntryDeps,
+): AuthEntry {
+  if (deps.queryable !== undefined) {
+    const repositories = postgresRepositories(deps.queryable);
+    return createAuthEntry(env, {
+      ...repositories,
+      sendMagicLink: deps.sendMagicLink,
+      database: deps.queryable as unknown as AuthDatabase,
+      ...(deps.transferAnonymousWorkspaces === undefined
+        ? {}
+        : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    });
+  }
+
+  const problem = databaseUrlProblem(env.SUITE_AUTH_DATABASE_URL);
+  if (problem !== null && authEnabled(env)) {
+    throw new Error(`SUITE_AUTH_DATABASE_URL ${problem}`);
+  }
+  const opened = postgresDatabase({
+    connectionString: env.SUITE_AUTH_DATABASE_URL?.trim() ?? "",
+  });
+  const repositories = postgresRepositories(opened.database as unknown as Queryable);
+  return createAuthEntry(env, {
+    ...repositories,
+    sendMagicLink: deps.sendMagicLink,
+    database: opened.database,
+    close: opened.close,
+    ...(deps.transferAnonymousWorkspaces === undefined
+      ? {}
+      : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
+    ...(deps.now === undefined ? {} : { now: deps.now }),
+  });
 }

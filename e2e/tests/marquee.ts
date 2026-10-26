@@ -161,19 +161,26 @@ function gridSlots(board: Box, count: number, card: { width: number; height: num
   const usableHeight = board.height - insetTop - insetBottom;
   const fitColumns = Math.max(1, Math.floor((usableWidth + gap) / (card.width + gap)));
 
-  // Columns are chosen so the rows also fit: overlapping cards would make a
-  // later drag start on whichever card happens to be on top, which measures the
-  // fixture rather than the behaviour. A tall card needs more columns than the
-  // width alone suggests.
+  // Columns are chosen so no two cards touch: an overlapping row would make a
+  // later drag start on whichever card happens to be on top, and — because the
+  // marquee selects whatever the box *touches* (`SelectionMode.Partial`) — a box
+  // aimed at one row would reach into the next. The gap has to clear the margin
+  // callers put around a box, so it is larger than the grid's own spacing. A tall
+  // card therefore needs more columns than the width alone suggests.
+  const separation = 16;
   let columns = Math.min(count, fitColumns);
-  while (columns < count && Math.ceil(count / columns) * (card.height + gap) - gap > usableHeight) {
-    if (columns >= count) break;
-    if (Math.floor((usableWidth + gap) / (card.width + gap)) < columns + 1) {
-      // No room for another column; accept the overlap and let the caller's
-      // assertions fail loudly rather than loop forever.
+  // Widening the grid trades column pitch for row pitch, so the first layout that
+  // separates in both directions wins; today's fallback stands when none does
+  // (a viewport too small for the cards), and the caller's assertions say so.
+  for (let candidate = columns; candidate <= count; candidate += 1) {
+    const rows = Math.ceil(count / candidate);
+    const stepX = (usableWidth - card.width) / Math.max(candidate - 1, 1);
+    const stepY = (usableHeight - card.height) / Math.max(rows - 1, 1);
+    const apart = stepX >= card.width + separation && stepY >= card.height + separation;
+    if (rows === 1 ? stepX >= card.width + separation : apart) {
+      columns = candidate;
       break;
     }
-    columns += 1;
   }
 
   const rows = Math.ceil(count / columns);
@@ -331,11 +338,27 @@ export async function expectPageInteractive(page: Page, cardCount: number): Prom
   await expect(page.getByTestId("card-inspector")).toHaveCount(0);
 }
 
+/**
+ * The account probe (`auth/availability.ts`) asks every deployment whether
+ * accounts exist, and a dev server answers `404`; the browser logs that as a
+ * resource error even though "no accounts here" is the correct answer. It is the
+ * only expected console error, and it is matched on its URL rather than its text
+ * so a genuine missing asset still fails the gate.
+ */
+const expectedMiss = (url: string) => url.endsWith("/api/auth/ok");
+
 /** Console errors and uncaught exceptions seen so far; empty when the page is healthy. */
 export function watchErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() !== "error") return;
+    if (
+      message.text().startsWith("Failed to load resource") &&
+      expectedMiss(message.location().url)
+    ) {
+      return;
+    }
+    errors.push(message.text());
   });
   page.on("pageerror", (error) => errors.push(error.message));
   return errors;

@@ -214,7 +214,7 @@ test("links to one field of another card and lands on it", async ({ page }) => {
   await expect(options.nth(1)).toHaveAttribute("data-kind", "reference");
   await expect(options.nth(1)).toContainText("Owner");
   await page.keyboard.press("ArrowDown");
-  await expect(options.nth(1)).toHaveAttribute("aria-current", "page");
+  await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
 
   const chip = source.getByTestId("mention-chip");
@@ -281,7 +281,7 @@ test("steps into a card's fields with the arrow keys", async ({ page }) => {
   const cardRows = page.locator('[data-testid="mention-option"][data-kind="card"]');
   const targetRow = cardRows.filter({ hasText: "Target" });
   await expect(targetRow).toBeVisible({ timeout: 10_000 });
-  await expect(targetRow).toHaveAttribute("aria-current", "page");
+  await expect(targetRow).toHaveAttribute("aria-selected", "true");
   await expect(targetRow.getByTestId("mention-option-submenu")).toContainText("1");
   await expect(source.locator(".mention-ghost")).toHaveText("get");
   expect(await typedText(source)).toBe("@Tar");
@@ -289,12 +289,12 @@ test("steps into a card's fields with the arrow keys", async ({ page }) => {
   // Right steps in, Left steps back out to the card.
   const nested = page.locator('[data-testid="mention-option"][data-nested="true"]');
   await page.keyboard.press("ArrowRight");
-  await expect(nested).toHaveAttribute("aria-current", "page");
+  await expect(nested).toHaveAttribute("aria-selected", "true");
   await expect(nested).toContainText("Owner");
   await page.keyboard.press("ArrowLeft");
-  await expect(targetRow).toHaveAttribute("aria-current", "page");
+  await expect(targetRow).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowRight");
-  await expect(nested).toHaveAttribute("aria-current", "page");
+  await expect(nested).toHaveAttribute("aria-selected", "true");
 
   await page.keyboard.press("Enter");
   const chip = source.getByTestId("mention-chip");
@@ -328,7 +328,7 @@ test("opens the submenu with a dot without typing it", async ({ page }) => {
   // Typing while the submenu is open filters its fields, not the cards.
   await page.keyboard.type("Ow");
   await expect(fields).toHaveCount(1);
-  await expect(fields.first()).toHaveAttribute("aria-current", "page");
+  await expect(fields.first()).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
 
   await expect(source.getByTestId("mention-chip").getByTestId("mention-chip-value")).toHaveText(

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { withOwnerKey } from "./ownerUrl";
 
 let sequence = 0;
@@ -6,6 +6,11 @@ const workspaceUrl = (name: string) =>
   withOwnerKey(`/?workspace=e2e-card-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
+
+interface Point {
+  x: number;
+  y: number;
+}
 
 /** Creates a card from the canvas menu, which leaves its title focused. */
 async function createCard(page: Page): Promise<void> {
@@ -95,6 +100,19 @@ test("double-clicks the body to edit and drags the body to move", async ({ page 
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(0);
 });
 
+/**
+ * The header's grab point while an editor has focus. A focused title or body is
+ * `nodrag` — it owns its own text, so a press inside it selects text — and the
+ * title editor stretches to the ⋯ button, so the header's own padding is the part
+ * of it a pointer can still drag by. Off-centre horizontally because the top
+ * edge's connector dot (a handle, and also `nodrag`) sits at the middle.
+ */
+async function headerGrabPoint(card: Locator): Promise<Point> {
+  const header = await card.locator(".card-header").boundingBox();
+  if (!header) throw new Error("card header not visible");
+  return { x: header.x + header.width * 0.3, y: header.y + 3 };
+}
+
 test("drags from the header while the title or body is being edited", async ({ page }) => {
   await page.goto(workspaceUrl("drag-while-editing"));
   const card = cards(page).first();
@@ -105,7 +123,7 @@ test("drags from the header while the title or body is being edited", async ({ p
   await expect(page.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   await page.keyboard.type("Editing");
 
-  const headerPoint = { x: initial.x + initial.width - 40, y: initial.y + 14 };
+  const headerPoint = await headerGrabPoint(card);
   await page.mouse.move(headerPoint.x, headerPoint.y);
   await page.mouse.down();
   await page.mouse.move(headerPoint.x + 140, headerPoint.y + 80, { steps: 12 });
@@ -121,7 +139,7 @@ test("drags from the header while the title or body is being edited", async ({ p
   if (!afterTitle) throw new Error("card not visible");
   await card.getByTestId("card-body").dblclick();
   await expect(page.locator(".node-card-editor.ProseMirror-focused")).toHaveCount(1);
-  const bodyHeader = { x: afterTitle.x + afterTitle.width - 40, y: afterTitle.y + 14 };
+  const bodyHeader = await headerGrabPoint(card);
   await page.mouse.move(bodyHeader.x, bodyHeader.y);
   await page.mouse.down();
   await page.mouse.move(bodyHeader.x + 140, bodyHeader.y + 80, { steps: 12 });

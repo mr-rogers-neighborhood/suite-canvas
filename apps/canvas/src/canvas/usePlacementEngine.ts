@@ -4,7 +4,13 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
 import { type PlacementSource, type RunStep, usePlacementRunStore } from "./placementRun";
-import { connectorFacing, planPlacementStep, planRunFrame, planSetOffsets } from "./placeRun";
+import {
+  connectorToward,
+  type FacingBox,
+  planPlacementStep,
+  planRunFrame,
+  planSetOffsets,
+} from "./placeRun";
 
 /**
  * The engine that carries out a placement run
@@ -157,20 +163,36 @@ export function usePlacementEngine(): PlacementEngine {
           if (box) workspace.placeCard(activeBoardId, id, box);
         });
         if (plan.planned.link && plan.linkFrom) {
-          // Ordinary links, leaving and arriving on the sides that face each other: a
-          // line from right dot to right dot loops around a card and reads as a
-          // mistake rather than a chain.
+          // Ordinary links, leaving and arriving on the dots that actually face each
+          // other. The sides come from where the cards *landed*, not from the mode, so
+          // a fan that spreads upward leaves the top and a thread that continues to the
+          // right leaves the right edge without either mode owning a rule.
           const fromDots = workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [];
-          const toDots = workspace.getCard(plan.head)?.connectors ?? [];
-          const sourceDot = connectorFacing(fromDots, "right");
-          const targetDot = connectorFacing(toDots, plan.planned.link.to);
-          workspace.addEdge({
-            boardId: activeBoardId,
-            source: plan.linkFrom.cardId,
-            target: plan.head,
-            ...(sourceDot ? { sourceConnector: sourceDot.id } : {}),
-            ...(targetDot ? { targetConnector: targetDot.id } : {}),
-          });
+          const headBox = plan.boxes[0];
+          if (headBox) {
+            const anchorBox: FacingBox = {
+              x: plan.linkFrom.x,
+              y: plan.linkFrom.y,
+              width: plan.linkFrom.width ?? DEFAULT_CARD_WIDTH,
+              height: plan.linkFrom.height ?? DEFAULT_CARD_HEIGHT,
+            };
+            const sourceDot = connectorToward(fromDots, anchorBox, {
+              x: headBox.x + headBox.width / 2,
+              y: headBox.y + headBox.height / 2,
+            });
+            const targetDot = connectorToward(
+              workspace.getCard(plan.head)?.connectors ?? [],
+              headBox,
+              { x: anchorBox.x + anchorBox.width / 2, y: anchorBox.y + anchorBox.height / 2 },
+            );
+            workspace.addEdge({
+              boardId: activeBoardId,
+              source: plan.linkFrom.cardId,
+              target: plan.head,
+              ...(sourceDot ? { sourceConnector: sourceDot.id } : {}),
+              ...(targetDot ? { targetConnector: targetDot.id } : {}),
+            });
+          }
         }
         if (run.wrap) {
           const { sectionPadding } = useUiStore.getState().placementOptions;

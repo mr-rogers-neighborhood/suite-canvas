@@ -189,3 +189,34 @@ one relationship, and merge is an operation over a *selection* — it belongs on
 palette and the item menu. The mode family stays at four because ADR-0064 caps the widgets at two, and a
 fifth value would need a menu where a cycle lives. Recorded here so the next person finds the reasoning
 instead of inventing a fifth mode.
+
+## Amendment — 2026-10-25: fan and branch are geometric; thread is chosen
+
+The two families answer a different question, and the difference is the user's, not the implementation's:
+
+| Mode | The dot is decided by | Because |
+| --- | --- | --- |
+| **fan** | geometry — the dot on the origin facing where the card landed | you are placing spokes, and a spoke should leave toward its spoke |
+| **branch** | geometry — same rule, from the previous card | a tree should not cross itself to reach its own child |
+| **thread** | **you** — the dot you armed, tracked click after click | a thread is a route through a card, and a route has ports |
+
+So `connectorToward` (coming in with the fan/branch work) applies to *placement runs*, and never to a
+thread gesture. `stepThread` already has the right shape: the first click arms a connector, every later
+click links *from the armed one* and arms the one just clicked — the thread **tracks** the port rather
+than being told it by a bounding box. That is what lets a thread enter a card at the top and leave at the
+bottom, which no geometric rule could infer.
+
+**Card-to-itself is therefore a real use case, not a curiosity.** `A.top → A.bottom` is one thread step,
+and nothing in the document layer forbids it: `addEdge` accepts it, and the reference index already
+counts it ("a self-loop yields one row"). The name people reach for — a card with a line leaving it and
+coming back — describes a visible loop.
+
+**The gap, stated precisely.** `edgeRoute.reversePartnerOf` correctly answers "no reverse partner" for a
+self-loop, so nothing suppresses it. What is missing is *routing*: source and target anchors sit on the
+same card, and the current path is drawn between them, so a top→bottom loop cuts across the card face
+instead of bowing around its edge. `drawRoute` does not receive the card's rect, so the fix is a
+`selfLoopRoute(source, target, rect)` alongside `pairOffset`/`shiftRoute`, called when the edge's two
+ends are the same card — and it belongs with the rest of the geometry, not in an edge component.
+
+Recorded as a todo rather than implemented here, because it changes how every self-loop looks and
+deserves its own tests next to `pairOffset`'s.

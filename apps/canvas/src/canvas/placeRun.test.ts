@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   boxesOverlap,
   connectorFacing,
+  connectorToward,
   DEFAULT_PLACEMENT_OPTIONS,
   type PlanPlacementInput,
   planPlacementStep,
@@ -237,5 +238,49 @@ describe("planSetOffsets", () => {
   it("never leaves the first card without a position", () => {
     expect(planSetOffsets(0, SIZE)).toEqual([]);
     expect(planSetOffsets(1, SIZE)).toEqual([{ x: 0, y: 0 }]);
+  });
+});
+
+describe("connectorToward: the dot that faces where the card landed", () => {
+  const dots = [
+    { id: "left", x: 0, y: 0.5 },
+    { id: "right", x: 1, y: 0.5 },
+    { id: "top", x: 0.5, y: 0 },
+    { id: "bottom", x: 0.5, y: 1 },
+  ];
+  const box = { x: 100, y: 100, width: 200, height: 100 };
+
+  it("leaves the top when the card it links to is above", () => {
+    // Thread a card above the anchor and the link must leave the top edge, which is
+    // the whole point: the side is decided by where things are, not by the mode.
+    expect(connectorToward(dots, box, { x: 200, y: 20 })?.id).toBe("top");
+  });
+
+  it("leaves the bottom when the card it links to is below", () => {
+    expect(connectorToward(dots, box, { x: 200, y: 400 })?.id).toBe("bottom");
+  });
+
+  it("leaves the side it points at for a horizontal neighbour", () => {
+    expect(connectorToward(dots, box, { x: 900, y: 150 })?.id).toBe("right");
+    expect(connectorToward(dots, box, { x: -400, y: 150 })?.id).toBe("left");
+  });
+
+  it("reads a diagonal placement as the axis with the bigger offset", () => {
+    // Steeply above-and-right is still "above": a spoke at 70° should not attach to
+    // the right edge just because it is slightly to the right.
+    expect(connectorToward(dots, box, { x: 360, y: -200 })?.id).toBe("top");
+    expect(connectorToward(dots, box, { x: 700, y: 210 })?.id).toBe("right");
+  });
+
+  it("prefers a vertical dot on an exact diagonal, because those read apart", () => {
+    // Equal offsets: vertical wins, so a card dropped diagonally does not flicker
+    // between two dots depending on a pixel.
+    // Box centre is (200, 150): these are exact 45° offsets in each direction.
+    expect(connectorToward(dots, box, { x: 500, y: -150 })?.id).toBe("top");
+    expect(connectorToward(dots, box, { x: 200, y: 450 })?.id).toBe("bottom");
+  });
+
+  it("answers nothing for a card with no connectors, rather than inventing one", () => {
+    expect(connectorToward([], box, { x: 0, y: 0 })).toBeUndefined();
   });
 });

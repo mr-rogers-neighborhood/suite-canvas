@@ -258,6 +258,51 @@ const FACING = {
   bottom: { x: 0.5, y: 1 },
 } as const;
 
+/** A card's box in flow units, which is all the geometry below needs. */
+export interface FacingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The connector on `box` that faces `toward`, chosen by direction rather than by
+ * compass side.
+ *
+ * The old helper asked for a literal `"right"` or `"left"`, which is why a fan that
+ * spreads upward still linked out of the right edge: the side was decided when the
+ * link was planned, before the card was placed. Choosing by *direction* fixes that
+ * for every mode at once — a card threaded above its anchor leaves the top, a spoke
+ * placed below-right arrives on its own top-left, and no mode needs its own rule.
+ *
+ * Two details make it behave like a person would:
+ *
+ * - **The dominant direction wins**, so a spoke at 70° still reads as "above" rather
+ *   than as "slightly right"; the comparison is on the axis with the larger offset.
+ * - **Ties go vertical.** A card placed exactly diagonally (equal offset on both
+ *   axes) is more often "above" or "below" in practice, and vertical dots are the
+ *   ones a reader can tell apart at a glance.
+ *
+ * Returns `undefined` only when the card has no connectors at all, which the caller
+ * already treats as "link without naming a dot".
+ */
+export function connectorToward(
+  connectors: readonly Connector[],
+  box: FacingBox,
+  toward: { x: number; y: number },
+): Connector | undefined {
+  if (connectors.length === 0) return undefined;
+
+  // Offset from the box's centre to the thing we are facing.
+  const dx = toward.x - (box.x + box.width / 2);
+  const dy = toward.y - (box.y + box.height / 2);
+  const side: keyof typeof FACING =
+    Math.abs(dy) >= Math.abs(dx) ? (dy >= 0 ? "bottom" : "top") : dx >= 0 ? "right" : "left";
+
+  return connectorFacing(connectors, side);
+}
+
 /**
  * The connector nearest one side of a card, so a run's links leave and arrive on
  * the sides that face each other.

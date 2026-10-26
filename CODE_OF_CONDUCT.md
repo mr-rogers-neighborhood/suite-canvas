@@ -7,10 +7,10 @@ about the work, not the person.
 
 ## Expected behaviour
 
-- Critique the change, the design or the evidence — not the contributor.
+- Critique the change, the design or the evidence, not the contributor.
 - Ask before assuming. "What did you mean by this?" costs one message.
 - Accept that a maintainer's decision on scope is a decision, and that "not in
-  this alpha" is a legitimate answer.
+  this beta" is a legitimate answer.
 - Give credit where it is due, and say when you were wrong.
 - Keep review comments about what you want to see change; a review is not a
   place to keep score.
@@ -39,14 +39,14 @@ that the report arrived; what follows depends on the report:
 
 - A private word with the person, when the behaviour is a one-off.
 - A request to stop and a cooling-off period, when it is not.
-- Removal from the project — review rights, issue access, or all participation —
-  when it continues, or when the behaviour is serious on its own.
+- Removal from the project (review rights, issue access, or all participation) when it
+  continues, or when the behaviour is serious on its own.
 
 Exactly what happened, and what the reporter wants, decides which of those
 applies. A maintainer involved in the report steps out of the decision.
 
 There is no escalation ladder beyond the maintainer while the project is
-single-maintainer; that is a limitation of the alpha, not a policy.
+single-maintainer; that is a limitation of the beta, not a policy.
 
 ## Attribution
 

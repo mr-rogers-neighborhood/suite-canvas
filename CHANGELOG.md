@@ -3,11 +3,38 @@
 Notable changes, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with a pre-release
-suffix while the product is in alpha.
+suffix while the product is in beta.
 
 A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
-the artifact to roll back to. See [docs/release.md](docs/release.md).
+the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
+
+## [0.2.0-beta.1] - 2026-10-26
+
+The first Beta line. Docs are the four Diátaxis sections plus a dashboard, the
+docs site serves the same Markdown, and the e2e suite has a fast smoke gate.
+
+### Added
+
+- `apps/docs`: a Fumadocs site over `docs/`, with full-text search, a tabbed
+  dashboard, `llms.txt`, `llms-full.txt` and a Markdown view of every page.
+- `pnpm check` (lint, typecheck, changed tests), `pnpm e2e:smoke` (critical
+  paths) and `pnpm e2e:changed` (specs changed since `origin/main`).
+- `pnpm docs:check` now also verifies the generated section indexes and the
+  house prose rules.
+- `scripts/sync-docs.mjs` and `scripts/generate-doc-indexes.mjs` keep the site
+  and the section indexes derived from `docs/`.
+
+### Changed
+
+- Documentation is `docs/README.md` plus `tutorials/`, `how-to/`, `reference/`
+  and `explanation/`. Decision records, programme roadmaps and design history
+  live in the local-only `internal/` tree.
+- `@suite/graph` is split into domain modules behind `WorkspaceDocument`;
+  `apps/canvas` feature folders replace the flat `components/` directory; the
+  relay and the auth/billing services are folderised.
+- The default test loop is `pnpm check`. Full e2e is a deliberate gate before a
+  big commit, a merge or a tag.
 
 ## [0.2.0-alpha.1] - 2026-10-23
 

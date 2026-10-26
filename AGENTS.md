@@ -1,98 +1,105 @@
-# AGENTS.md — Suite
+# AGENTS.md
 
-Local-first, collaborative canvas application (Heptabase-style infinite canvas with a
-semantic, typed object graph). This file is the entry point for AI agents (Copilot, Cursor,
-Claude Code, …). Read it first; keep it high-signal.
+Suite is a local-first, collaborative canvas: React 19 on a React Flow surface, one Loro document per
+workspace, and a typed object graph validated by Zod. This file is the entry point for AI agents.
+
+Read [docs/README.md](docs/README.md) for the four documentation sections, and
+[docs/how-to/test-and-verify.md](docs/how-to/test-and-verify.md) before running tests.
 
 ## Stack
 
-- **Monorepo:** pnpm workspaces + Turborepo (task caching)
-- **Canvas app** ([apps/canvas](apps/canvas)): React 19, Vite, TypeScript, Tailwind CSS v4,
-  Zustand (UI state), React Flow (`@xyflow/react`) as **the only canvas surface**, Tiptap 3 (every
-  node is an editor). There is no second surface and no engine adapter.
-- **Collaboration:** Loro (CRDT) as the single source of truth, IndexedDB snapshot/update
-  persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
-- **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +
-  a typed Loro wrapper (`WorkspaceDocument`)
-- **Notes between passes:** [docs/scratchpad.md](docs/scratchpad.md) is a queue, not a
-  document. `pnpm scratchpad` prints it (and `pnpm verify` runs it first). Read it at the
-  start of every pass and before every commit; promote entries to an ADR amendment, a
-  todo, or a plan phase, then strike them through.
-- **Quality:** Biome (lint + format), Vitest + React Testing Library, Playwright e2e,
-  Storybook, commitlint (conventional commits)
+- pnpm workspaces and Turborepo.
+- Canvas: React 19, Vite, TypeScript, Tailwind CSS v4, Zustand for UI state, React Flow
+  (`@xyflow/react`), Tiptap 3 for every card.
+- Document: Loro CRDT, IndexedDB snapshot and update log, `loro-websocket` for sync.
+- Graph: `@suite/graph` with Zod schemas over a typed `WorkspaceDocument`.
+- Docs site: Next.js and Fumadocs in `apps/docs`.
+- Quality: Biome, Vitest and React Testing Library, Playwright, Storybook, commitlint.
 
 ## Repo map
 
 | Path | Purpose |
 | --- | --- |
-| `apps/canvas` | The React canvas app (launcher, board, editor, collab provider, Zustand store) |
-| `apps/collab-server` | Loro WebSocket sync server |
-| `packages/graph` | `@suite/graph` — schema, types, typed Loro layer, workspace file and portable export |
-| `e2e` | Playwright end-to-end tests |
-| `docs/` | Architecture, conventions, ADRs (read [docs/conventions.md](docs/conventions.md) before big changes) |
-| `.github/` | CI, PR/issue templates, [copilot-instructions.md](.github/copilot-instructions.md) |
+| `apps/canvas` | The canvas app: launcher, boards, cards, editor, library, panels, collab provider, Zustand store |
+| `apps/collab-server` | Loro WebSocket relay, six SQLite stores, projection worker, attachments |
+| `apps/docs` | The documentation site |
+| `packages/graph` | `@suite/graph`: schema, types, typed Loro layer, workspace file and portable export |
+| `services/auth` | Accounts, organizations, invitations, licensing. Built and tested, not mounted |
+| `services/billing` | Licence and Stripe webhook verification, run with `node --test` |
+| `e2e` | Playwright specs, tagged `@smoke` for the smoke tier |
+| `docs` | Tutorials, how-to, reference and explanation |
+| `deploy` | Caddyfile, headers, backup and restore scripts, drill records |
+| `scripts` | `docs-check`, `generate-limits`, `scratchpad`, `db-verify` |
 
 ## Commands
 
 ```sh
-pnpm install          # install (also prepares git hooks)
-pnpm dev              # run canvas + collab-server (turbo)
-pnpm lint             # biome check .
-pnpm lint:fix         # biome check --write .
-pnpm typecheck        # tsc across all packages (turbo)
-pnpm test             # vitest (workspace mode)
-pnpm e2e              # playwright
-pnpm build            # turbo build (graph dist + canvas)
-pnpm storybook        # storybook dev server
+pnpm install          # also installs the git hooks
+pnpm dev              # canvas on :5173, relay on :1234
+pnpm check            # biome + tsc + the Vitest files your change reaches
+pnpm verify           # the commit gate: lint, typecheck, tests, stories, build
+pnpm e2e:smoke        # the @smoke Playwright specs
+pnpm e2e              # every Playwright spec
+pnpm build            # graph dist, then the canvas bundle
+pnpm storybook        # component workshop on :6006
 ```
 
-## Architecture in one paragraph
+## Speed tiers
 
-A single `LoroDoc` per workspace is the source of truth. `boards`, `cards`, `placements`,
-`sections`, `types`, `tags`, `edges`, the derived `references` index, and per-card rich text
-(`content`/`titles`) live in the same doc; `@suite/graph` validates every write with Zod before it
-reaches the CRDT. The doc is persisted offline as a Loro
-snapshot plus an update log in IndexedDB and synced by the `loro-websocket` provider when online.
-The workspace id comes from `?workspace=<id>` (`?doc=` is a legacy alias). Zustand holds **UI
-state only** (selection, active node, context menu) — never document data. Every node is a Tiptap
-editor; formatting uses Tiptap's built-in `BubbleMenu`, and presence (`user`, `pointer`, `focus`,
-`dragging`, carets) rides Loro `EphemeralStore` channels.
+Run the least that proves the change. `pnpm check` after each edit batch, `pnpm verify` before every
+commit, `pnpm e2e:smoke` when the change is user-visible but not big, and the full `pnpm e2e` only for
+a big commit, a merge or a tag.
 
-## Rules (non-negotiable)
+A big commit touches the graph schema or the CRDT layer, sharing or auth, canvas gestures or links,
+persistence or stored formats, release or deploy configuration, or more than three user-visible
+changes. Everything else gets a smoke run.
 
-1. **Never write raw Loro for graph data.** All node/edge/content mutations go through
-   `WorkspaceDocument` (or new typed methods you add to `@suite/graph`).
-2. **Document truth never lives in Zustand, React state, or localStorage.**
-3. **Schema changes are additive-first.** Updating `packages/graph/src/schema.ts` requires
-   updating its tests; bumping a schema is an explicit decision (see ADRs).
-4. **TypeScript strict.** No `any` without a comment; prefer `unknown` + narrowing.
-5. **Prefer library primitives over hand-rolled UI**: Tiptap `BubbleMenu` / `useEditorState`,
-   React Flow `useNodesState` / `useEdgesState` / `ViewportPortal`. See
-   [docs/conventions.md](docs/conventions.md).
-6. **Presence uses flow coordinates** (`screenToFlowPosition`) and is drawn in `<ViewportPortal>`;
-   document positions persist on drag stop, live drag positions ride `EphemeralStore`.
-7. **Conventional commits** (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-8. **Verify before claiming done:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (and `pnpm build`
-   when touching the graph package or build config).
+## Rules
 
-## Definition of done for a feature
+1. Graph data goes through `@suite/graph`. Never write raw Loro for document data.
+2. Document truth never lives in Zustand, React state or localStorage. Zustand holds UI state only.
+3. Schema changes are additive first. `packages/graph/src/schema.ts` changes with its tests, and
+   bumping the schema version needs a recorded decision.
+4. TypeScript stays strict. No `any` without a justified `biome-ignore`; prefer `unknown` and
+   narrowing.
+5. Prefer the library primitive: Tiptap `BubbleMenu` and `useEditorState`, React Flow `useNodesState`,
+   `useEdgesState` and `ViewportPortal`.
+6. Presence uses flow coordinates and renders in `<ViewportPortal>`. Positions persist on drag stop;
+   live drag positions ride `EphemeralStore`.
+7. Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
+8. No new dependency without a stated job and the right package.
 
-- Schema/types updated in `@suite/graph` + unit tests
-- UI implemented with a Storybook story where visually relevant
-- Component/unit tests where behavior is non-trivial
-- `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` all green
+## Code shape
 
-## Adding a feature (typical path)
+Pure core, imperative shell: schema, layout planning, projection and link geometry take data and
+return data, with no DOM, Loro, `fetch` or timers; `WorkspaceDocument`, persistence, the provider, HTTP
+handlers and React hosts own state and I/O. Dependencies point inward, one owner per piece of state.
 
-1. Model it in `packages/graph/src/schema.ts` (node/edge kinds) + tests.
-2. Expose typed accessors/mutations on `WorkspaceDocument`.
-3. Consume it in `apps/canvas` via `useWorkspaceSnapshot` / the Zustand store.
-4. Add a Storybook story + tests.
-5. Run the full verification set above.
+`remeda` is for transforms that remove a loop; do not wrap a one-liner. `neverthrow` `Result<T, E>`
+belongs at fallible boundaries: parsing, validation, HTTP handlers, licence and admission checks.
 
-## Guardrails
+[docs/reference/conventions.md](docs/reference/conventions.md) has the file, naming, error and import
+rules, and [docs/reference/glossary.md](docs/reference/glossary.md) fixes the vocabulary.
 
-- Prefer small, focused changes; do not refactor unrelated code.
-- Follow import order and naming in [docs/conventions.md](docs/conventions.md).
-- Do not add dependencies without a stated reason (and add them to the correct package).
-- Keep `AGENTS.md` and `copilot-instructions.md` short and current when conventions change.
+## Scratchpad
+
+`.scratchpad.md` is the author's queue between passes, gitignored and per-machine. `pnpm scratchpad`
+prints it and marks what you read; `pnpm verify` runs it first. Promote an entry to a decision record,
+a todo or a plan phase, then strike it through.
+
+## Feature path
+
+1. Model it in `packages/graph/src/schema.ts` with tests.
+2. Expose typed accessors and mutations on `WorkspaceDocument`.
+3. Consume it in `apps/canvas` through `useWorkspaceSnapshot` and the Zustand store.
+4. Add a Storybook story and component tests.
+5. Run `pnpm verify`, then the e2e tier the change earns.
+
+## Definition of done
+
+Schema and types in `@suite/graph` with unit tests, UI with a story where it is visual, a test where
+behaviour is non-trivial, docs updated in the same change, and `pnpm verify` green. A big commit also
+passes `pnpm e2e`.
+
+Recorded decisions live in `internal/decisions/`, which is gitignored and local-only; ask the
+maintainer for the current copy before re-litigating one.

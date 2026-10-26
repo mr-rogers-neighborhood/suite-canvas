@@ -1,141 +1,88 @@
-# Release and rollback
+# Release and roll back
 
-How an alpha is cut, what artefact identifies it, and how to go back one. The
-version this page is written against is `v0.2.0-alpha.1`; every release edits the
-tag and the digest recorded below.
+A release is a tag, an image built from it, the digest that identifies that image, a smoke test against
+a host, and a rollback path. This page is written against `0.2.0-beta.1`; every release edits the tag
+and the digest recorded below.
 
 ## What a release is
 
 | Thing | Value |
 | --- | --- |
-| Version | `0.2.0-alpha.1` in `package.json` |
-| Git tag | `v0.2.0-alpha.1` on the release commit |
-| Image | `ghcr.io/<owner>/suite:v0.2.0-alpha.1`, also published as `:latest` |
-| Identity | the image digest (`ghcr.io/<owner>/suite@sha256:…`) recorded in the release notes |
-| Change record | the matching section of [CHANGELOG.md](../CHANGELOG.md) |
-| Evidence | the gate rows in [roadmap/alpha.md](roadmap/alpha.md) |
+| Version | `0.2.0-beta.1` in `package.json` and the newest `CHANGELOG.md` heading |
+| Git tag | `v0.2.0-beta.1` on the release commit |
+| Image | `ghcr.io/<owner>/suite:v0.2.0-beta.1`, also `:sha-<12>` and `:latest` |
+| Identity | the image digest, `ghcr.io/<owner>/suite@sha256:…`, in the release notes |
+| Change record | the matching `CHANGELOG.md` section |
+| Evidence | the Beta gate rows in the internal roadmap |
 
-`SUITE_VERSION` is baked into the image at build time, so a running container
-reports exactly what it is: `/api/admin/status` returns `version`, `/metrics`
-carries `suite_build_info{version="…"} 1`, and the startup line names it.
+`SUITE_VERSION` is baked into the image at build time, so a running container reports what it is:
+`version` in `/api/admin/status`, `suite_build_info{version="…"} 1` in `/metrics`, and the
+`server ready` line. The policy behind the scheme is ADR-0026 in
+the internal decision log.
 
-The tag is created by the lead after integration, not by a workstream. Nothing
-in a workstream pushes a tag.
+The lead creates the tag after integration. A workstream does not push one.
 
-## Cutting a release
+## Cut one
 
-1. `package.json` version and the newest `CHANGELOG.md` heading agree
-   (`node scripts/docs-check.mjs` enforces this).
-2. `node scripts/generate-limits.mjs --check` and `node scripts/docs-check.mjs`
-   are clean.
-3. The gate is green on the commit: `pnpm verify` and `pnpm e2e`
-   (see [testing.md](testing.md) for why this is local for now).
-4. Tag the integration commit: `git tag -a v0.2.0-alpha.1 -m "Suite 0.2.0-alpha.1"`.
-5. Push the tag: `git push origin v0.2.0-alpha.1`.
+1. `package.json` and the newest `CHANGELOG.md` heading both say `0.2.0-beta.1`.
+2. `node scripts/docs-check.mjs` and `node scripts/generate-limits.mjs --check` are clean.
+3. The gate is green on the commit being tagged: `pnpm verify` and `pnpm e2e`, in that order, with
+   nothing already listening on `:5173` or `:1235`. The tiers are in
+   [test-and-verify.md](test-and-verify.md).
+4. `git tag -a v0.2.0-beta.1 -m "Suite 0.2.0-beta.1"`.
+5. `git push origin v0.2.0-beta.1`.
 
-`.github/workflows/release.yml` then builds the runtime target, pushes
-`:<tag>` and `:latest`, and opens a GitHub release whose body is the changelog
-section for that version plus the pushed image digest.
+`.github/workflows/release.yml` then runs three jobs:
 
-> **Alpha caveat — the account cannot run hosted runners.** Every workflow on
-> this account ends in `startup_failure` with zero jobs: 100 runs in this
-> repository and 169 in a second private one, with no successful run ever and no
-> check suite created. That is an account entitlement for private repositories,
-> not a defect in the workflow files, which stay in place and correct. Read it as
-> [roadmap/alpha.md](roadmap/alpha.md) gate A3, state `blocked`.
->
-> So the image is built and published by hand. Do not tag unless the local gate
-> in the next section is green on the exact commit being tagged.
+| Job | Does | Fails when |
+| --- | --- | --- |
+| `preflight` | Installs, compares `GITHUB_REF_NAME` with `package.json`, runs both docs checks | The tag and the version disagree, or a doc is stale |
+| `image` | Builds the `runtime` target with `SUITE_VERSION=<tag>` and pushes `:<tag>`, `:sha-<12>` and `:latest` to GHCR | The build fails |
+| `release` | Opens a GitHub release whose body is the changelog section plus the image digest and a rollback link | `CHANGELOG.md` has no section for the version |
 
-## The gate, and how to reproduce it
+Record the digest from the run. It is the artefact every later rollback names.
 
-The gate is four commands, run from the repository root on the commit that will
-be tagged. Every claim in the release notes about "tests pass" means this
-transcript.
+### When Actions cannot run
+
+Every workflow on this account still ends in `startup_failure` with zero jobs, which is account state
+rather than workflow content. If that is still true at the tag, build and push by hand with the same
+three tags and the same build argument, record the digest in the release notes, and say the image was
+built manually so nobody assumes `release.yml` produced it.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm verify                      # lint, typecheck, unit tests, billing tests, stories, build
-pnpm e2e                         # Playwright: boots its own Vite and relay
-node scripts/docs-check.mjs      # version, links, code fences, retired terms
-node scripts/generate-limits.mjs --check   # docs/limits.md matches the enforcement code
+docker build --target runtime --build-arg SUITE_VERSION=v0.2.0-beta.1 \
+  -t ghcr.io/<owner>/suite:v0.2.0-beta.1 -t ghcr.io/<owner>/suite:latest .
+docker push ghcr.io/<owner>/suite:v0.2.0-beta.1 && docker push ghcr.io/<owner>/suite:latest
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<owner>/suite:v0.2.0-beta.1
 ```
 
-What each covers, so a reader can judge the claim rather than accept it:
+Do not tag unless the local gate is green on the exact commit. The tag is the only quality claim this
+project can currently make.
 
-| Command | Claims it supports |
-| --- | --- |
-| `pnpm verify` | The tree lints, type-checks, and builds; unit and property tests pass; the story suite renders with axe clean in both themes; billing tests pass |
-| `pnpm e2e` | The app boots, two clients sync, shares and selections project, portals and card focus work, and the marquee and drag regressions stay fixed |
-| `docs-check` | The version, links, fences and retired vocabulary are consistent, so the docs describe this commit |
-| `limits --check` | Every published number in `docs/limits.md` still exists in the code that enforces it |
+## Smoke test the release
 
-**Isolated e2e.** `pnpm e2e` reuses servers already listening on `:5173` and
-`:1235`. For a release run, stop anything you have running first and let
-Playwright boot both, or the run is not against this commit. `docs/testing.md`
-has the isolation recipe, including a temporary data directory.
-
-### Recorded run
-
-| Field | Value |
-| --- | --- |
-| Commit | fill in at the tag |
-| Node / pnpm | Node 22, pnpm 12.13.0 |
-| `pnpm verify` | fill in at the tag |
-| `pnpm e2e` | fill in at the tag |
-| `docs-check` | fill in at the tag |
-| `limits --check` | fill in at the tag |
-
-### Publishing the image by hand
-
-The steps `release.yml` would have run, in order:
+Against the host that will serve it, before announcing anything:
 
 ```sh
-# 1. Build. SUITE_VERSION is what the running container reports.
-docker build --target runtime \
-  --build-arg SUITE_VERSION=v0.2.0-alpha.1 \
-  -t ghcr.io/<owner>/suite:v0.2.0-alpha.1 \
-  -t ghcr.io/<owner>/suite:latest .
-
-# 2. Push both tags.
-docker push ghcr.io/<owner>/suite:v0.2.0-alpha.1
-docker push ghcr.io/<owner>/suite:latest
-
-# 3. Record the digest. This line is the artefact to roll back to.
-docker inspect --format='{{index .RepoDigests 0}}' \
-  ghcr.io/<owner>/suite:v0.2.0-alpha.1
-
-# 4. Open the release with the changelog section and that digest.
-gh release create v0.2.0-alpha.1 --title "Suite 0.2.0-alpha.1" --notes-file <(sed -n '/^## \[0.2.0-alpha.1\]/,/^## \[/p' CHANGELOG.md)
+SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1 docker compose pull app
+SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-beta.1 docker compose up -d
+docker compose ps                                     # app healthy, caddy up
+curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
+curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/api/admin/status | head -c 400
+curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/metrics | grep suite_build_info
 ```
 
-The release notes must say the image was built manually, and why, so the next
-person does not assume `release.yml` produced it.
-
-## Smoke test a release
-
-Run against the host that will serve it, before announcing the tag:
-
-```sh
-SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-alpha.1 docker compose pull app
-SUITE_IMAGE=ghcr.io/<owner>/suite:v0.2.0-alpha.1 docker compose up -d
-docker compose ps                       # app healthy, caddy up
-curl -fsS https://$SUITE_DOMAIN/health  # {"ok":true}
-curl -fsS -H "authorization: Bearer $SUITE_ADMIN_TOKEN" \
-  https://$SUITE_DOMAIN/api/admin/status | head -c 400   # "version":"0.2.0-alpha.1"
-curl -fsS https://$SUITE_DOMAIN/metrics | grep suite_build_info
-```
-
-Then open a workspace, upload an attachment, reload, open the same workspace in
-a second tab, and confirm the limits page matches what the server reports on
-refusal: [limits.md](limits.md).
+`/api/admin/status` must report `"version":"0.2.0-beta.1"` and `suite_build_info` must carry the same
+tag. Then, by hand: open a workspace, upload an attachment, reload, open the same workspace in a second
+tab, and confirm the published limits still match what the server reports on a refusal
+([reference/limits.md](../reference/limits.md)). A container that reports the wrong version is not a
+release, however healthy `/health` looks.
 
 ## Rollback
 
-Rollback is re-pinning the previous image. It is not a code change and does not
-need a build.
+Rollback is re-pinning the previous image. It needs no code change and no build.
 
-1. Find the last good digest: the previous GitHub release body, or
+1. Find the last good digest, either in the previous GitHub release body or with
    `docker image inspect ghcr.io/<owner>/suite:v<previous> --format '{{index .RepoDigests 0}}'`.
 2. Set `SUITE_IMAGE` to that digest in `.env` and recreate `app` only:
 
@@ -143,27 +90,19 @@ need a build.
    SUITE_IMAGE=ghcr.io/<owner>/suite@sha256:<digest> docker compose up -d app
    ```
 
-3. Confirm `/health` answers and `/api/admin/status` reports the expected
-   `version`.
-4. **If the release changed a stored format** (a schema bump, a new store, a
-   backup manifest change), the older binary may refuse the newer data. Stop
-   `app`, restore the backup taken before the upgrade with `deploy/restore.sh`,
-   then start the older image. Do not run an older binary against data written by
-   a newer one and call it rolled back.
-5. Record what happened in the release notes: digest restored, time, and whether
-   a backup restore was needed.
+3. Confirm `/health` answers and `/api/admin/status` reports the expected `version`.
+4. If the release changed a stored format (a schema bump, a new store, a backup manifest change), the
+   older binary may refuse the newer data. Stop `app`, restore the pre-upgrade backup with
+   `deploy/restore.sh --force` ([operate.md](operate.md)), then start the older image. An older binary
+   against newer data is not a rollback.
+5. Record the digest restored, the time, and whether a restore was needed, in the release notes.
 
-`caddy` does not need to move during a rollback; it serves a static bundle from
-the image and proxies to `app`.
+`caddy` never moves during a rollback. It serves a static bundle from its own image and proxies to
+`app`.
 
-## Not in the alpha
+## Not in Beta
 
-These are V1 work and are deliberately absent from the tag workflow:
-
-- Image signing (cosign / keyless) and signature verification on pull.
-- SBOM generation and attestation (SPDX or CycloneDX, `provenance: true`).
-- Multi-architecture images, multi-OS CI matrices, self-hosted runners.
-- A staging environment or a canary. There is one host and one tag.
-
-Adding any of them is a change to `.github/workflows/release.yml`, and should
-land with an ADR rather than by habit.
+The tag workflow deliberately omits image signing and verification on pull, SBOM generation and
+attestation, multi-architecture images, self-hosted runners, and a staging environment or canary. There
+is one host and one tag. Adding any of them changes `release.yml` and should land with an ADR rather
+than by habit.

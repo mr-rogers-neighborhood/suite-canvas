@@ -1,68 +1,64 @@
 # Contributing
 
-Suite is a pnpm monorepo: a React canvas, a Loro sync server, a typed document
-package, and a small billing service that is not deployed for the alpha. The
-rules below are the short version of [AGENTS.md](AGENTS.md) and
-[docs/conventions.md](docs/conventions.md).
+[docs/how-to/contribute.md](docs/how-to/contribute.md) is the full guide, from branch to merge. This
+page is the checklist.
 
-## Set up
+## Setup
 
 ```sh
-pnpm install          # also installs the git hooks
-pnpm dev              # canvas on :5173, collab server on :1234
+pnpm install          # also installs husky, lint-staged and commitlint
+pnpm dev              # canvas on :5173, relay on :1234
 ```
 
-Node 22 or newer and pnpm 12 are what CI uses.
+Node 22 or newer and pnpm 12, the versions CI pins. Use pnpm; npm and yarn write a lockfile this
+repository does not read.
 
-## Before you open a change
+## Verify
 
 ```sh
-pnpm verify           # lint, typecheck, unit tests, billing tests, stories, build
-pnpm e2e              # Playwright; separate because it needs browsers
-node scripts/docs-check.mjs
-node scripts/generate-limits.mjs --check
+pnpm check            # after each edit batch: biome, tsc, changed Vitest files
+pnpm verify           # before every commit: lint, typecheck, tests, stories, build
+pnpm e2e:smoke        # a user-visible change
+pnpm e2e              # a big commit, a merge or a tag
 ```
 
-`pnpm verify` and `pnpm e2e` are the gate. GitHub Actions is not executing on
-this repository yet, so a green local run is the evidence; see
-[docs/testing.md](docs/testing.md).
+A big commit touches the graph schema or CRDT, sharing or auth, canvas gestures or links, persistence,
+release configuration, or more than three user-visible changes. The tier table is in
+[docs/how-to/test-and-verify.md](docs/how-to/test-and-verify.md).
 
-## What a change needs
+A user-visible change needs a test that fails without it. A bug fix gets a regression test committed
+with the fix. A change that spans two clients needs a two-document test.
 
-- **Tests for behaviour.** A user-visible change has a unit test or an e2e spec
-  that fails without it. Bug fixes get a regression test that reproduces the
-  bug first.
-- **A conventional commit.** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
-  `chore:`; `commitlint` enforces it. One logical change per commit.
-- **No unrelated refactors.** A formatting sweep hides the change that matters.
-- **Generated files stay generated.** `docs/limits.md` comes from
-  `node scripts/generate-limits.mjs`; editing it by hand fails the check in CI.
+## Documentation is part of the change
 
-## Documents are part of the change
+- A command, port, store path or default changes with [docs/how-to/operate.md](docs/how-to/operate.md)
+  or [docs/how-to/deploy.md](docs/how-to/deploy.md).
+- `docs/reference/limits.md` is generated: run `node scripts/generate-limits.mjs`, never edit it.
+- `node scripts/docs-check.mjs` fails on a broken link, an unbalanced fence, a retired term or a stale
+  version.
+- A decision that changes behaviour, ownership or a published number gets a record in the internal
+  decision log, which is gitignored. Ask the maintainer for the template.
 
-- `docs/decisions/` holds ADRs. A decision that changes behaviour, ownership or a
-  published number gets one; copy `docs/decisions/0000-template.md`.
-- `docs/operations.md` is the runbook. If a change alters a command, a store
-  path or a default, that page changes in the same commit.
-- `docs/limits.md` is generated. If a change alters a quota, regenerate.
-- Retired terms fail `scripts/docs-check.mjs`: `GraphDocument`,
-  `useGraphSnapshot`, "three SQLite files", and a stale "Yjs". Historical
-  documents under `docs/decisions/` and `docs/roadmap/` are exempt.
+## Commits
 
-<!-- docs-check: retired-terms-allowed -->
+Conventional commits, one logical change each: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
+`chore:`. `commitlint` enforces the format on commit.
+
+## Pull request checklist
+
+- One logical change, with the test that proves it.
+- `pnpm verify` green, plus the e2e tier the change earns.
+- Docs updated in the same commit.
+- No unrelated reformatting.
+- No secrets, licence keys, webhook secrets or customer data.
 
 ## Dependencies
 
-Add a dependency only with a stated reason, and put it in the package that uses
-it. Dependabot proposes grouped weekly updates for `npm` and `github-actions`;
-that is the only dependency automation.
+Add a dependency only with a stated reason, in the package that uses it. Dependabot proposes grouped
+weekly updates for `npm` and `github-actions`.
 
-## Security
+## Security and conduct
 
-Do not commit secrets, licence private keys, webhook secrets or real customer
-data. Report a vulnerability per [SECURITY.md](SECURITY.md) rather than in an
-issue.
-
-## Conduct
-
-Participation is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Report a vulnerability per [SECURITY.md](SECURITY.md), never in a public issue. Participation is
+covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). The repo rules for human and AI contributors are
+in [AGENTS.md](AGENTS.md).

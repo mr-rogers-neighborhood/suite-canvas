@@ -9,6 +9,35 @@ A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
 
+## [1.0.2] - 2026-10-26
+
+Making the local stack explain itself. Four defects, all of the same kind: something
+was built and nothing said how to reach it.
+
+### Added
+
+- `pnpm check:env` reports Node, pnpm, Docker, Postgres on 5433, accounts, billing,
+  the Stripe CLI and each of the three processes, one line each. Every failing line
+  names the single command that fixes it.
+- `pnpm stripe --login` runs the browser login and then creates the fixture prices,
+  which is what a first run actually wants.
+
+### Fixed
+
+- `.env.example` and the generated `.env` named `pnpm dev:stripe`, a script that had
+  been deleted, sending a reader after a command that never existed.
+- `pnpm stripe` stopped dead on a missing CLI. It now prints the install line for the
+  platform and the separate login step, and a missing test key names both ways to get
+  one.
+- `docs/tutorials/run-locally.md` implied Stripe was part of getting started. Signing
+  in needs none of it, so the page now separates the two paths.
+- `e2e-grep.txt`, a scratch file committed by accident, is gone.
+
+### Added (documentation)
+
+- `WHAT-CHANGED.md` lists the eight commits between `1722a65` and `1.0.1` with what
+  each did and what to read to verify it.
+
 ## [1.0.1] - 2026-10-26
 
 A local run can sign in and pay in test mode. `pnpm dev` started three processes

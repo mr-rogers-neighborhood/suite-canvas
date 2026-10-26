@@ -1,6 +1,6 @@
 {
   "name": "suite",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.13.0",
@@ -61,7 +61,8 @@
     "docs:index": "node scripts/generate-doc-indexes.mjs",
     "dev:db": "docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
     "dev:db:stop": "docker compose -f compose.yaml -f compose.dev.yaml stop postgres",
-    "dev:env": "node scripts/dev-env.mjs"
+    "dev:env": "node scripts/dev-env.mjs",
+    "check:env": "node scripts/check-env.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

@@ -2,12 +2,17 @@
 #
 # Local Stripe setup for test-mode billing.
 #
-#   pnpm stripe                     create the fixture prices, print the environment
+#   pnpm stripe --login             log the CLI in, then create the fixtures and print
+#                                   the environment the control plane needs
+#   pnpm stripe                     create or reuse the fixture prices, print the environment
 #   pnpm stripe --listen            forward webhooks to the control plane
 #   pnpm stripe --clock             create a test clock for a renewal run
 #
 # Nothing here talks to a live account: every Stripe call is in test mode, and the
 # secret key comes from `stripe login`, not from the dashboard.
+#
+# Logging in and creating prices are two steps, and the first one is a browser
+# flow. `--login` runs both in order, which is what a first run wants.
 
 set -euo pipefail
 
@@ -23,10 +28,11 @@ die() {
 
 usage() {
   cat <<'USAGE'
-Usage: pnpm stripe [--listen | --clock | --help]
+Usage: pnpm stripe [--login | --listen | --clock | --help]
 
+  --login     run `stripe login`, then do what the no-flag form does
   (no flag)   create or reuse the fixture prices in fixtures.json, then print the
-              environment the control plane needs
+              environment the control plane needs. Requires a logged-in CLI.
   --listen    forward Stripe webhooks to http://localhost:1236/api/auth/stripe/webhook
   --clock     create a test clock, and print the commands that move it forward
   --help      this text
@@ -34,8 +40,26 @@ USAGE
 }
 
 need_cli() {
-  command -v stripe >/dev/null 2>&1 ||
-    die "the Stripe CLI is not installed: https://docs.stripe.com/stripe-cli"
+  command -v stripe >/dev/null 2>&1 && return 0
+  cat >&2 <<'MISSING'
+The Stripe CLI is not installed, or not on PATH.
+
+Install it, then come back:
+
+  Arch        yay -S stripe-cli      (or: paru -S stripe-cli)
+  macOS       brew install stripe/stripe-cli/stripe
+  Debian      see https://docs.stripe.com/stripe-cli#install
+  Any         download the release binary for your platform:
+              https://github.com/stripe/stripe-cli/releases
+
+Then log in, which opens a browser:
+
+  pnpm stripe --login
+
+Billing is optional. Without it sign-in, organizations and sync all work; only
+checkout and the customer portal are unavailable.
+MISSING
+  exit 1
 }
 
 need_fixtures() {
@@ -59,6 +83,14 @@ first_id() {
 test_key() {
   stripe config --list 2>/dev/null |
     sed -n "s/^test_mode_api_key = '\(.*\)'\$/\1/p"
+}
+
+login() {
+  need_cli
+  printf 'Opening the Stripe browser login. Choose a test-mode account.\n\n'
+  stripe login
+  printf '\nLogged in. Creating the fixture prices next.\n\n'
+  create_fixtures
 }
 
 listen() {
@@ -99,7 +131,20 @@ create_fixtures() {
 
   local key
   key="$(test_key)"
-  [ -n "$key" ] || die "no test-mode key: run 'stripe login' first"
+  if [ -z "$key" ]; then
+    cat >&2 <<'NOKEY'
+The Stripe CLI has no test-mode key stored, so no price can be created.
+
+Log in first, which opens a browser and stores a test key:
+
+  pnpm stripe --login
+
+If the CLI is already logged in under a different config directory, set the key
+directly instead: put STRIPE_SECRET_KEY=sk_test_... in .env and run
+`pnpm stripe` again.
+NOKEY
+    exit 1
+  fi
 
   local currency
   currency="$(node -e 'process.stdout.write(require(process.argv[1]).currency)' "$fixtures")"
@@ -158,6 +203,7 @@ ENV
 
 case "${1:-}" in
   "") create_fixtures ;;
+  --login) login ;;
   --listen) listen ;;
   --clock) clock ;;
   --help | -h) usage ;;

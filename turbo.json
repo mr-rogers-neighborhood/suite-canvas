@@ -21,5 +21,6 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     }
-  }
+  },
+  "globalPassThroughEnv": ["POSTGRES_PORT"]
 }

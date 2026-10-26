@@ -28,6 +28,9 @@ presence.
 canvas and the relay, so the app is local-only. The control plane refuses to start and names the
 variable it needs, rather than pretending accounts work.
 
+`pnpm check:env` reports what is set up and what is not, one line each, with the command that fixes
+the failing ones. Run it before opening an issue about the stack.
+
 Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. [Run Suite
 locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.
 

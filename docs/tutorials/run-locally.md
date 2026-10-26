@@ -44,22 +44,45 @@ Signing up creates an account. Creating a workspace creates an organization, and
 its owner. The room credential is a five-minute token that the relay verifies against the key set the
 control plane publishes.
 
-## 2b. Billing in test mode
+## 2b. Check what is set up
 
 ```sh
-stripe login
-pnpm stripe          # creates the fixture prices and prints three values
+pnpm check:env
 ```
 
-Add the three values it prints to `.env`, set `SUITE_BILLING_ENABLED=1`, and restart `pnpm dev`. Then
-forward deliveries in a fourth terminal:
+One line per dependency. Anything marked `FAIL` blocks the app; anything marked `note` is optional.
+Each line names the one command that fixes it. Signing in needs Node, pnpm, Docker, Postgres and the
+`SUITE_AUTH_*` values, and nothing else.
+
+## 2c. Billing in test mode (optional)
+
+Sign-in, organizations, seats and sync all work without Stripe. Only checkout and the customer portal
+need it, and they stay switched off until the four values exist.
+
+The Stripe CLI is a separate install, and logging in is a browser flow:
+
+```sh
+# install, then:
+pnpm stripe --login      # opens a browser, then creates the fixture prices
+```
+
+It prints three values. Put them in `.env` next to the key you already have, set
+`SUITE_BILLING_ENABLED=1`, and restart `pnpm dev`:
+
+| Value | Where it comes from |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | the CLI's stored test key, printed by `pnpm stripe` |
+| `STRIPE_PRICE_TIERS` | printed by `pnpm stripe` |
+| `STRIPE_WEBHOOK_SECRET` | printed by `pnpm stripe --listen` |
+
+Forward deliveries in a fourth terminal:
 
 ```sh
 pnpm stripe --listen
 ```
 
-Checkout and the customer portal are reachable from the account menu. `pnpm stripe --clock` creates a
-test clock for a renewal or cancellation run. Nothing here touches a live account.
+`pnpm stripe --clock` creates a test clock for a renewal or cancellation run. Nothing here touches a
+live account. `pnpm check:env` says whether all four values are present.
 
 ## 3. Create a workspace
 
@@ -87,6 +110,13 @@ the caret and the peer name. The relay is carrying Loro updates between the two 
 Stop the app with `Ctrl-C`.
 
 ## If it does not start
+
+```sh
+pnpm check:env
+```
+
+That is the first thing to run: it distinguishes "Postgres is not up" from "accounts are not
+configured" from "the processes are simply not running", and says which command fixes each.
 
 Port 5173, 1234 or 1235 is already in use. Stop the process that owns it, or run the canvas alone with
 `pnpm --filter @suite/canvas dev` and skip sync. A canvas without the collab server still edits and

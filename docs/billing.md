@@ -7,9 +7,9 @@ so a function deployed by mistake can neither mint a licence nor take a card. Wh
 is the part that is real today: the licence token format, the self-host path, and the design of the
 service that will take money when billing opens, now including the [front door](#front-door) a
 surface uses to start a payment. The payment path is V1 work; the alpha closes A5 by being explicitly
-closed rather than by being durable. A DynamoDB adapter (`SUITE_BILLING_STORE=dynamodb`) exists
+closed rather than by being durable. A **Postgres** adapter (`SUITE_BILLING_STORE=postgres`) exists
 behind the same interface but is not deployed for the alpha either — see
-[DynamoDB store](#dynamodb-store).
+[Postgres store](#postgres-store).
 
 Nothing in the app asks for payment. A licence key is a signed token you paste into the workspace
 when you run a hosted relay; local editing never consults it. Self-hosting needs no key at all.
@@ -99,7 +99,7 @@ which reuses the customer; a duplicate subscription is a support refund, not a c
 pretending; this is the field it reads to say it.
 
 **Real money needs the durable store, and the response says so.** When `SUITE_BILLING_STORE` is not
-`dynamodb`, a successful checkout answer carries `"warning":"billing store is not durable"` and the
+`postgres`, a successful checkout answer carries `"warning":"billing store is not durable"` and the
 service logs one line per container. Test mode is not blocked — a duplicated test event costs
 nothing — but a surface can read the warning and refuse to present a live checkout. This is the code
 half of ADR-0065 item 7 and [beta gate A5](roadmap/beta.md): the sentence is in the response, not
@@ -117,6 +117,7 @@ nothing:
 | `STRIPE_PRICE_TIERS` | the table below, with test-mode price ids |
 | `SUITE_APP_ORIGIN` | where the canvas runs, e.g. `http://localhost:5173` (the default) |
 | `SUITE_BILLING_STORE` | leave unset for test mode; the answer then carries the warning |
+| `SUITE_BILLING_DATABASE_URL` | only with `SUITE_BILLING_STORE=postgres`; falls back to `SUITE_AUTH_DATABASE_URL` |
 
 The webhook that turns a payment into a licence still needs `STRIPE_WEBHOOK_SECRET`,
 `SUITE_LICENCE_PRIVATE_KEY`, `STRIPE_PRICE_TIERS` and (if mail is to leave) `SES_FROM_ADDRESS`. The
@@ -166,63 +167,55 @@ Two layers, because one is not enough:
   day is reported as `unchanged` — no second token, no second email.
 
 The in-process store is not atomic across concurrent invocations: two *different* event ids for one
-invoice arriving in the same instant could both mint. That is the reason the DynamoDB adapter exists:
+invoice arriving in the same instant could both mint. That is the reason the Postgres adapter exists:
 it makes the claim a conditional put on the event id and the customer write conditional on
 `updatedAt`, so the second writer loses instead of overwriting. The ordered retries Stripe actually
 performs are already covered by the in-process store. The default stays the in-process store — see
-[DynamoDB store](#dynamodb-store).
+[Postgres store](#postgres-store).
 
 The licence id is derived from the Stripe customer id (`lic-` + 16 hex chars of SHA-256), not
 random. A retry, or a lost store entry, therefore re-issues under the same id, and the relay — which
 records claims per licence id — cannot grant one subscription two workspace quotas.
 
-## DynamoDB store
+## Postgres store
 
-`services/billing/store-dynamodb.ts` implements the same `BillingStore` on one DynamoDB table.
-Selection is one variable, and unset is the in-process default:
+`services/billing/store-postgres.ts` implements the same `BillingStore` on the **control-plane Postgres**
+([ADR-0069](decisions/0069-billing-runs-on-the-stripe-plugin.md) amendment). DynamoDB was the durable
+adapter until that decision: subscriptions already live in this database, so a second store made
+entitlement exist twice. Selection is one variable, and unset is the in-process default:
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
-| `SUITE_BILLING_STORE` | no | `dynamodb` selects the table below. Unset, empty, `memory` or any other spelling keeps the in-process store. |
-| `SUITE_BILLING_TABLE` | with `SUITE_BILLING_STORE=dynamodb` | Table name. Missing is a `500`, never a silent fall back to memory: a Lambda that forgot its claims would mint twice. |
+| `SUITE_BILLING_STORE` | no | `postgres` selects the database below. Unset, empty, `memory` or any other spelling — including the retired `dynamodb` — keeps the in-process store. |
+| `SUITE_BILLING_DATABASE_URL` | with `SUITE_BILLING_STORE=postgres` | Connection string. `SUITE_AUTH_DATABASE_URL` is accepted as a fallback because it is the same database. Missing is a `500`, never a silent fall back to memory: a Lambda that forgot its claims would mint twice. |
 
-One table, string partition key `pk`, no sort key, two prefixes:
+Two tables, because the two jobs have different shapes:
 
-| Row | Key | Value |
+| Table | Key | Holds |
 | --- | --- | --- |
-| Event claim | `event#<stripe event id>` | `claimedAt` and `ttl` (30 days). The row existing *is* the claim. |
-| Customer | `customer#<stripe customer id>` | The `LicenceRecord` from `store.ts`, unchanged in shape, flattened beside `pk`. |
+| `billing_event` | `event_id` (PK) | One row per processed Stripe event, with `claimed_at` and `expires_at` (30 days). The row existing *is* the claim. |
+| `billing_customer` | `customer_id` (PK) | The `LicenceRecord` from `store.ts`, one column per field. |
 
-Every write is conditional. A read followed by a write is two round trips with a window in between,
-and two deliveries of one event routinely land in different containers:
+**Correctness comes from the write, not from reading first.** A read followed by a write is two round
+trips with a window in between, and two deliveries of one event routinely land in different containers:
 
-- `claimEvent` is `PutItem` with `attribute_not_exists(pk)`. A `ConditionalCheckFailedException`
-  means "already processed" and returns `false`; every other error propagates. `releaseEvent`
-  deletes the row, so a retry after a `500` is not mistaken for a duplicate.
-- `putCustomer` is `PutItem` with `attribute_not_exists(updatedAt) OR updatedAt <= :updatedAt`. A
-  slow retry carrying an older `updatedAt` is refused rather than rolling a customer back to a
-  shorter expiry; an equal timestamp still writes, so replaying the same record is harmless.
-- TTL only tidies the table, and DynamoDB deletes on its own schedule. Correctness rests on the
-  conditional write, not on the deletion.
+- `claimEvent` is one `INSERT … ON CONFLICT (event_id) DO NOTHING RETURNING event_id`. A returned row
+  means this statement inserted it; no row means someone else did. `releaseEvent` deletes the row, so a
+  retry after a `500` is not mistaken for a duplicate.
+- `putCustomer` is one `INSERT … ON CONFLICT (customer_id) DO UPDATE`. The record is the *latest* answer
+  for that customer, so a renewal replaces the token and moves `expires_at` rather than being refused.
+- `expires_at` on a claim only tidies the table. Correctness rests on the conflict clause, not on the
+  deletion, so a stale row can never mint twice.
 
-IAM for the function role — one table, three actions, no query:
+The pool is small (`max: 4`) and module-scoped, held for the life of the container: the handler makes a
+handful of queries per delivery, and a pool per request would be a connection storm against the control
+plane. RDS Proxy is the answer if invocation rates ever make that a problem.
 
-```json
-{
-  "Effect": "Allow",
-  "Action": ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DeleteItem"],
-  "Resource": "arn:aws:dynamodb:<region>:<account>:table/<table>"
-}
-```
-
-Every access is one item by key (`GetItem`, `PutItem`, `DeleteItem`); the adapter never queries or
-scans, and TTL expiry is performed by DynamoDB itself. `dynamodb:DescribeTable` is not needed at
-runtime.
-
-`@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` are optional dependencies of the service and
+The `pg` driver is a dependency of the service, loaded lazily so an in-memory deployment never imports
+it. `@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` **were** optional dependencies and
 are imported by name only when the flag selects them, so a deployment on the in-process store neither
-installs nor initializes them; put them in the Lambda bundle (or a layer) for a DynamoDB deployment.
-The adapter is tested against a fake client (`store-dynamodb.test.ts`); there is no live AWS test.
+installed nor initialized them; the DynamoDB adapter is gone with ADR-0069. The Postgres adapter is
+tested against a recording fake client (`store-postgres.test.ts`); there is no live database test.
 
 > **Not deployed for the alpha.** This is code and tests only: the flag is unset wherever the alpha
 > ships, no table exists, and `SUITE_BILLING_ENABLED=0` still closes the endpoint before the store is
@@ -242,8 +235,8 @@ The adapter is tested against a fake client (`store-dynamodb.test.ts`); there is
 | `SUITE_SELF_HOST_URL` | no | Link in the email for the self-hosted path. Defaults to this repo's deployment section. |
 | `SES_FROM_ADDRESS` | no | Verified SES identity. Unset ⇒ the console transport logs "email sent" without sending or printing the token. |
 | `SUITE_SES_REGION` | no | SES region; defaults to the Lambda's region. |
-| `SUITE_BILLING_STORE` | no | `dynamodb` selects the durable store; unset keeps the in-process store. See [DynamoDB store](#dynamodb-store). |
-| `SUITE_BILLING_TABLE` | with `SUITE_BILLING_STORE=dynamodb` | DynamoDB table name; the default table has key `pk`. |
+| `SUITE_BILLING_STORE` | no | `postgres` selects the durable store; unset keeps the in-process store. See [Postgres store](#postgres-store). |
+| `SUITE_BILLING_DATABASE_URL` | with `SUITE_BILLING_STORE=postgres` | Connection string; `SUITE_AUTH_DATABASE_URL` is an accepted fallback, since it is the same database. |
 
 `STRIPE_PRICE_TIERS` is what makes a tier configuration instead of code:
 
@@ -355,7 +348,7 @@ There is no server to patch:
 | API Gateway (HTTP API) | `POST /stripe/webhook` (no auth beyond the signature), `POST /api/billing/checkout` and `POST /api/billing/portal`, payload limit ≥ 1 MiB, integration timeout 30 s. The front-door routes need the app origin in CORS (`POST`, `content-type`) if the canvas calls them from a browser. |
 | Lambda (Node 24+, ESM) | handler `handler.handler`, 256 MB, 10 s timeout, env from the table above. `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY` and `SUITE_LICENCE_PRIVATE_KEY` from SSM SecureString. Node 22.18+ also runs these files, since they rely on built-in type stripping. |
 | SES | Verified domain or address; `SES_FROM_ADDRESS` is that identity. Request production access before selling. |
-| DynamoDB | One table, `pk` string key: `event#<event id>` claims (TTL 30 days) and `customer#<customer id>` for the `LicenceRecord`. The adapter is selected by `SUITE_BILLING_STORE=dynamodb`; see [DynamoDB store](#dynamodb-store). The default in-process store in `store.ts` only survives a warm container and **must** not take real money. |
+| Postgres (control plane) | Two tables: `billing_event` for claims (30-day expiry) and `billing_customer` for the `LicenceRecord`, in the same database as accounts, organizations and subscriptions. Selected by `SUITE_BILLING_STORE=postgres`; see [Postgres store](#postgres-store). The default in-process store in `store.ts` only survives a warm container and **must** not take real money. |
 | CloudWatch | The handler logs `{ts, level, msg, component:"billing", eventId, licenceId, tier, expiresAt}`. A checkout adds `{organizationId, workspaceId, tier, priceId, mode}`. It never logs the token, the private key, the webhook secret or the Stripe key. |
 
 Deploy steps, when billing opens: create the SES identity first (verification takes time), then the
@@ -364,7 +357,7 @@ Stripe webhook at
 `https://<api-id>.execute-api.<region>.amazonaws.com/stripe/webhook` for
 `checkout.session.completed` and `invoice.paid`, and paste the signing secret into the Lambda
 environment. Set `SUITE_APP_ORIGIN` to the deployed canvas origin — the default points at a
-developer's machine — and `SUITE_BILLING_STORE=dynamodb` before the key is anything but a test key.
+developer's machine — and `SUITE_BILLING_STORE=postgres` before the key is anything but a test key.
 
 Bundling: `@aws-sdk/client-ses` is an `optionalDependencies` entry of this package and is imported by
 name at runtime, so the main repository install stays Stripe- and AWS-free. The Lambda package needs
@@ -390,7 +383,7 @@ not installed here. That distinction is load-bearing — installing the SDK flip
 asserts the missing-SDK path, which is how the constraint was found.
 
 What is not covered by the tests, because neither Stripe nor SES is reachable from them: the real
-webhook handshake, SES delivery (including sandbox restrictions), and the deployed DynamoDB store.
+webhook handshake, SES delivery (including sandbox restrictions), and the deployed Postgres store.
 Everything up to those boundaries — signature verification, event parsing, tier mapping, signing,
 email rendering, idempotency, routing and status codes — is exercised against in-memory fixtures.
 The front door is tested the same way, against a fake `fetch` (`checkout.test.ts`): the assertion is

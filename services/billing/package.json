@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda; a workspace package so `turbo run typecheck` and `turbo run test` gate the payment path. Its SES and DynamoDB dependencies are optional, so the main install stays AWS-free.",
+  "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda; a workspace package so `turbo run typecheck` and `turbo run test` gate the payment path. Its SES dependency is optional, so the main install stays AWS-free; the durable store is the control-plane Postgres.",
   "scripts": {
     "test": "node --test \"*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -14,8 +14,9 @@
     "typescript": "~5.9.3"
   },
   "optionalDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/client-ses": "^3.0.0",
-    "@aws-sdk/lib-dynamodb": "^3.0.0"
+    "@aws-sdk/client-ses": "^3.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }

@@ -42,7 +42,7 @@ function envOf(overrides: Partial<FrontDoorEnvironment> = {}): FrontDoorEnvironm
     SUITE_BILLING_ENABLED: "1",
     // Durable by default so the warning does not decorate every other test;
     // the tests that are about the warning take the in-process store on purpose.
-    SUITE_BILLING_STORE: "dynamodb",
+    SUITE_BILLING_STORE: "postgres",
     STRIPE_PRICE_TIERS: TIERS_JSON,
     STRIPE_SECRET_KEY: STRIPE_TEST_KEY,
     SUITE_APP_ORIGIN: APP_ORIGIN,
@@ -285,7 +285,7 @@ describe("checkout route", () => {
 
   it("does not warn when the store is durable", async () => {
     resetFrontDoorWarnings();
-    const { route, lines } = harness({ env: { SUITE_BILLING_STORE: "dynamodb" } });
+    const { route, lines } = harness({ env: { SUITE_BILLING_STORE: "postgres" } });
     const response = await route(post(CHECKOUT_BODY));
 
     assert.equal("warning" in bodyOf(response), false);

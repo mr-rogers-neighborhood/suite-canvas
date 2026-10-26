@@ -305,7 +305,7 @@ export function resetFrontDoorWarnings(): void {
  */
 function answered(env: FrontDoorEnvironment, log: Logger, url: string, mode: string) {
   const body: Record<string, unknown> = { ok: true, url, mode };
-  if (billingStoreBackend(env) !== "dynamodb") {
+  if (billingStoreBackend(env) !== "postgres") {
     if (!nonDurableWarningLogged) {
       nonDurableWarningLogged = true;
       log("warn", NON_DURABLE_STORE, { code: "billing-store-not-durable", backend: "memory" });

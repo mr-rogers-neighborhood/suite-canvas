@@ -72,13 +72,20 @@ export interface BillingEnvironment extends FrontDoorEnvironment {
   SES_FROM_ADDRESS: string | undefined;
   SUITE_SES_REGION: string | undefined;
   /**
-   * `dynamodb` makes the event claims and customer records durable across
+   * `postgres` makes the event claims and customer records durable across
    * containers. Unset — the alpha default — keeps the in-memory store, which
    * is right for tests and dry runs and wrong for real money.
    */
   SUITE_BILLING_STORE: string | undefined;
-  /** Table the DynamoDB store reads and writes; required by that backend only. */
-  SUITE_BILLING_TABLE: string | undefined;
+  /**
+   * The control plane this service writes to. `SUITE_AUTH_DATABASE_URL` is
+   * accepted as a fallback because it is the same database: accounts,
+   * organizations, subscriptions and licence records live together
+   * (ADR-0069 amendment), and asking a deployment to set one connection string
+   * twice invites them to drift.
+   */
+  SUITE_BILLING_DATABASE_URL: string | undefined;
+  SUITE_AUTH_DATABASE_URL: string | undefined;
 }
 
 export const DEFAULT_SELF_HOST_URL =
@@ -98,7 +105,8 @@ export function environment(
     SES_FROM_ADDRESS: source.SES_FROM_ADDRESS,
     SUITE_SES_REGION: source.SUITE_SES_REGION,
     SUITE_BILLING_STORE: source.SUITE_BILLING_STORE,
-    SUITE_BILLING_TABLE: source.SUITE_BILLING_TABLE,
+    SUITE_BILLING_DATABASE_URL: source.SUITE_BILLING_DATABASE_URL,
+    SUITE_AUTH_DATABASE_URL: source.SUITE_AUTH_DATABASE_URL,
     // The front door's two. `STRIPE_SECRET_KEY` is read only when a checkout or
     // portal session is created, never by the webhook.
     STRIPE_SECRET_KEY: source.STRIPE_SECRET_KEY,
@@ -112,9 +120,11 @@ export function environment(
 export { type BillingStoreBackend, billingEnabled, billingStoreBackend } from "./env.ts";
 
 /**
- * The adapter is imported only when it is selected, so a deployment on the
- * in-memory store never loads the AWS SDK (and never needs it installed).
- * A construction failure is thrown, not swallowed: answering 500 keeps Stripe
+ * The store, opened on first use.
+ *
+ * The driver is imported only when it is selected, so a deployment on the
+ * in-memory store never loads `pg` and the tests never need a database. A
+ * construction failure is thrown, not swallowed: answering 500 keeps Stripe
  * retrying instead of silently falling back to a store that cannot remember a
  * claim between containers.
  */
@@ -123,8 +133,16 @@ export async function billingStoreFor(
   log: Logger = jsonLogger,
 ): Promise<BillingStore> {
   if (billingStoreBackend(env) === "memory") return memoryStore();
-  const { dynamoDbStoreFromEnvironment } = await import("./store-dynamodb.ts");
-  return dynamoDbStoreFromEnvironment({ table: env.SUITE_BILLING_TABLE, log });
+  const connectionString = (env.SUITE_BILLING_DATABASE_URL ?? env.SUITE_AUTH_DATABASE_URL)?.trim();
+  if (connectionString === undefined || connectionString.length === 0) {
+    // Named together, because the fallback is what a deployment usually sets.
+    throw new BillingError(
+      "invalid-config",
+      "SUITE_BILLING_STORE=postgres needs SUITE_BILLING_DATABASE_URL (or SUITE_AUTH_DATABASE_URL)",
+    );
+  }
+  const { postgresStoreFromEnvironment } = await import("./store-postgres.ts");
+  return postgresStoreFromEnvironment(connectionString, log);
 }
 
 /** API Gateway (REST or HTTP API) proxy event, narrowed to what we read. */

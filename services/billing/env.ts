@@ -16,7 +16,7 @@ export interface BillingStoreEnvironment {
   SUITE_BILLING_STORE: string | undefined;
 }
 
-export type BillingStoreBackend = "memory" | "dynamodb";
+export type BillingStoreBackend = "memory" | "postgres";
 
 /**
  * The closed-by-default switch. Only the two spellings an operator types on
@@ -28,9 +28,13 @@ export function billingEnabled(env: BillingSwitchEnvironment): boolean {
 }
 
 /**
- * Only the one deliberate spelling selects DynamoDB; everything else — unset,
+ * Only the one deliberate spelling selects Postgres; everything else — unset,
  * `memory`, a typo — keeps the in-memory store, which is the alpha default.
+ *
+ * DynamoDB was the durable backend until ADR-0069's amendment: the control plane
+ * already holds the subscriptions these records derive from, so a second store was
+ * a second source of truth for entitlement.
  */
 export function billingStoreBackend(env: BillingStoreEnvironment): BillingStoreBackend {
-  return env.SUITE_BILLING_STORE?.trim().toLowerCase() === "dynamodb" ? "dynamodb" : "memory";
+  return env.SUITE_BILLING_STORE?.trim().toLowerCase() === "postgres" ? "postgres" : "memory";
 }

@@ -47,7 +47,8 @@ function testEnv(overrides: Partial<BillingEnvironment> = {}): BillingEnvironmen
     SES_FROM_ADDRESS: undefined,
     SUITE_SES_REGION: undefined,
     SUITE_BILLING_STORE: undefined,
-    SUITE_BILLING_TABLE: undefined,
+    SUITE_BILLING_DATABASE_URL: undefined,
+    SUITE_AUTH_DATABASE_URL: undefined,
     STRIPE_SECRET_KEY: STRIPE_TEST_KEY,
     SUITE_APP_ORIGIN: APP_ORIGIN,
     ...overrides,
@@ -380,17 +381,19 @@ describe("billing switch", () => {
 });
 
 describe("store selection", () => {
-  it("keeps the in-memory store unless the flag names dynamodb", () => {
+  it("keeps the in-memory store unless the flag names postgres", () => {
     assert.equal(billingStoreBackend(testEnv()), "memory");
-    for (const value of [undefined, "", "memory", "postgres", "dynamo"]) {
+    // Including the retired spelling: a deployment still set to `dynamodb` falls
+    // back to memory, where the durability warning tells it what that means.
+    for (const value of [undefined, "", "memory", "dynamo", "dynamodb"]) {
       assert.equal(
         billingStoreBackend(testEnv({ SUITE_BILLING_STORE: value })),
         "memory",
         String(value),
       );
     }
-    for (const value of ["dynamodb", " DynamoDB ", "DYNAMODB"]) {
-      assert.equal(billingStoreBackend(testEnv({ SUITE_BILLING_STORE: value })), "dynamodb", value);
+    for (const value of ["postgres", " Postgres ", "POSTGRES"]) {
+      assert.equal(billingStoreBackend(testEnv({ SUITE_BILLING_STORE: value })), "postgres", value);
     }
   });
 

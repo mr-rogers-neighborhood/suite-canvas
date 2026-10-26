@@ -78,6 +78,14 @@ share link.
     joins a tenant: pin the version, wrap redemption in our own tested route, keep `beforeAddMember` as
     the only seat gate, and always write the full role set (Better Auth stores roles as one
     comma-separated string, and a bare `setRole` strips invite-granted ones).
+
+    **A constraint found after this item was written.** `better-enrollment`'s redemption assumes
+    passwords: its example config sets `emailAndPassword: { enabled: true, disableSignUp: true }`, a
+    private invite "sets their password", and `invite.redeem` takes one — which conflicts with §11's
+    "no passwords". Its **open mode** ("invitations become role and organization grants for self-serve
+    sign-ups") is the path that may not need one, because the person signs up with a passkey or magic
+    link first and redemption only grants membership. That must be proven before `invite_keys` are
+    deleted, so they stay until it is. Adopting a plugin is not a reason to bring passwords back.
 11. **Sign-in methods are passkeys, magic link and Google**, with `last-login-method` remembering the
     last one used so the screen can offer *"continue with your passkey"* instead of four equal buttons.
     `2fa` is available to operators and org owners, not to everyone.

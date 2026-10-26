@@ -49,23 +49,52 @@ panel, a pending gesture) belongs in `useUiStore.ts`.
 
 ## 4. Build the surface
 
-Components live in the folder that owns the surface: `cards/`, `panels/`, `library/`, `canvas/`,
-`sharing/`, `chrome/`. One component per file, named export, `PascalCase.tsx`.
+Components live in the folder that owns the surface, under `apps/canvas/src/`:
 
-Use the library primitive before writing plumbing: Tiptap `BubbleMenu` and `useEditorState`, React Flow
-`useNodesState`/`useEdgesState`, Zustand selectors. A card may be mounted on several surfaces, so
-consult `editingSurface` in the UI store rather than starting a second editor. A reveal goes through
-`focusTarget` (`focusCard`, `focusSection`); a panel never calls `setCenter` or `fitBounds`. Format
-values through `displayTemplate(field)` and `ValueTemplate` instead of formatting by hand.
+| Folder | Surface |
+| --- | --- |
+| `canvas/` | The board, cards on it, sections, connectors, placement and the outline rail |
+| `cards/` | The card face, the panel, the body and title editors, field controls |
+| `editor/` | The Tiptap nodes, marks, suggestion menus and collaboration plugin |
+| `field/` | Field kind registration and the composing kinds |
+| `library/` | The drawer, its filters, rows and drag-out |
+| `chrome/` | Title bar, board tabs, views bar, dock |
+| `panels/` | Container panel, link inspector, type settings |
+| `dialogs/` | Modal shell, context menu, confirmations |
+| `command/` | The command registry, palette and ranking |
+| `styles/`, `theme/` | Style rules, the appearance dialog, theme tokens and resolution |
+| `presence/`, `cursor/` | Peer cursors, name tags, avatars, the status cursor |
+
+One component per file, named export, `PascalCase.tsx`. The two reference pages are the map for this
+work: [reference/editing.md](../reference/editing.md) for text, fields, chips and undo, and
+[reference/ui.md](../reference/ui.md) for the shell, focus and theme rules.
+
+Use the library primitive before writing plumbing: Tiptap `BubbleMenu`, `useEditorState` and
+`useNodesState`/`useEdgesState` on the board, Zustand selectors. A card may be mounted on several
+surfaces, so consult `editingSurface` in the UI store rather than starting a second editor. A reveal
+goes through `focusTarget` (`focusCard`, `focusSection`); a panel never calls `setCenter` or
+`fitBounds`. A modal panel gets `useFocusTrap` from `apps/canvas/src/dialogs/useFocusTrap.ts`, a menu
+gets `menuKeyDown` from `apps/canvas/src/dialogs/menuKeys.ts`, and Escape is registered with
+`useEscapeLayer` rather than a listener of its own. Format values through `displayTemplate(field)` and
+`ValueTemplate` instead of formatting by hand; that rule and its history are in
+[reference/editing.md](../reference/editing.md).
 
 ## 5. Story and test
 
+Tests sit beside the thing they test: `apps/canvas/src/cards/NodeCard.test.tsx` covers the card face,
+`apps/canvas/src/field/compositeKinds.test.tsx` covers the composing field kinds, and
+`packages/graph/src/schema.test.ts` covers the schema.
+
 - A story (`*.stories.tsx`) when the surface is visual, with the states a reviewer would ask about:
   default, empty, long content, error. Stories are what the visual baselines render.
-- A React Testing Library test (`*.test.tsx`) for behaviour that is not trivially presentational.
-- A Playwright spec in the matching `e2e/tests/<area>/` folder when the behaviour only exists across
-  the server and the browser. Tag the happy path `@smoke` if that area already has a smoke test, since
-  `pnpm e2e:smoke` runs exactly those.
+- A React Testing Library test (`*.test.tsx`) for behaviour that is not trivially presentational. A
+  new node, mark or field renderer also has to keep
+  `apps/canvas/src/editor/editorSchemaContract.test.ts` passing; the procedure is in
+  [change-the-editor.md](change-the-editor.md).
+- A Playwright spec under the matching `e2e/tests/<area>/` folder when the behaviour only exists
+  across the server and the browser. The areas today are `account`, `appearance`, `boards`, `boot`,
+  `cards`, `collab`, `input`, `library`, `links`, `selection`, `sharing`, `views` and `visual`. Tag the
+  happy path `@smoke` if that area already has a smoke test, since `pnpm e2e:smoke` runs exactly those.
 
 ## 6. Touch the server only if the feature reaches it
 
@@ -92,8 +121,9 @@ N−1 fixture under `apps/collab-server/src/fixtures/n-1/` and a test that opens
 ## 7. Verify in tiers
 
 ```sh
-pnpm check                    # while editing
-pnpm verify                   # before the commit: lint, types, unit, stories, build
+pnpm check                    # while editing: lint, types, changed tests, docs symbols, shape
+pnpm exec vitest run apps/canvas/src/cards   # one area, while iterating
+pnpm verify                   # before the commit: lint, types, unit, stories, build, docs
 pnpm e2e:smoke                # the feature is user-visible
 pnpm e2e                      # schema/CRDT, sharing, gestures, persistence or >3 surfaces changed
 ```

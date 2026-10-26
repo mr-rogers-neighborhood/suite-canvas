@@ -99,12 +99,6 @@ stay open. Because a password can be guessed as well as stolen, `/sign-in/email`
 named rate-limit rule, and its limiter storage is per instance, so a multi-instance deployment needs a
 shared store.
 
-A password exists only where an invitation created it. Self-serve password sign-up is closed, so the one
-path that sets a password is redeeming a private invitation. Passkeys, magic links and Google sign-in
-stay open. Because a password can be guessed as well as stolen, `/sign-in/email` is the one route with a
-named rate-limit rule, and its limiter storage is per instance, so a multi-instance deployment needs a
-shared store.
-
 ## What the relay can see
 
 Documents are plaintext. The document store holds the full Loro snapshot of every workspace, and the
@@ -186,7 +180,9 @@ the workspace first can become the owner.
 ## Deployment expectations
 
 TLS is required. Serve the app and the relay over HTTPS and WSS, do not expose the plaintext HTTP port,
-and prefer one same-origin deployment with an allowlist rather than `*` for CORS.
+and prefer one same-origin deployment. `SUITE_ALLOWED_ORIGINS` is the browser allowlist: unset answers a
+loopback origin only, a list answers exactly those origins, and `*` answers any origin, which is a decision
+an operator makes rather than a default.
 
 Encrypt the host disk and the backups. SQLite has no encryption at rest in Suite, so use an encrypted
 volume for the data directory and encrypt off-site backups.

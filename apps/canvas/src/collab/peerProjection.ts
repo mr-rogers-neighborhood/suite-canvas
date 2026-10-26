@@ -103,68 +103,45 @@ function readBeat(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * The in-flight gestures, in one list. The TTL check, the signature and the
+ * clear-out all read it, so a new gesture field is added here once instead of in
+ * three places that can drift and leave a ghost that never expires.
+ */
+const GESTURE_FIELDS = [
+  "dragging",
+  "connector",
+  "resizing",
+  "sectionDrag",
+  "sectionResize",
+  "reconnect",
+  "connect",
+  "labelDrag",
+  "libraryDrag",
+  "selectionBox",
+] as const satisfies readonly (keyof PeerPresence)[];
+
+function hasGesture(peer: PeerPresence): boolean {
+  for (const field of GESTURE_FIELDS) {
+    if (peer[field] !== null && peer[field] !== undefined) return true;
+  }
+  return false;
+}
+
 /** Only the in-flight gestures: selections and carets are state, not gestures. */
 export function gestureSignature(peer: PeerPresence): string {
-  if (
-    !peer.dragging &&
-    !peer.connector &&
-    !peer.resizing &&
-    !peer.sectionDrag &&
-    !peer.sectionResize &&
-    !peer.reconnect &&
-    !peer.connect &&
-    !peer.labelDrag &&
-    !peer.libraryDrag &&
-    !peer.selectionBox
-  ) {
-    return "";
-  }
+  if (!hasGesture(peer)) return "";
   // The beat is part of the signature on purpose: a gesture that stops arriving
   // unchanged is a peer who stopped holding it (or stopped existing), and the TTL
   // is what turns that into "the ghost is gone".
-  return JSON.stringify([
-    peer.dragging,
-    peer.connector,
-    peer.resizing,
-    peer.sectionDrag,
-    peer.sectionResize,
-    peer.reconnect,
-    peer.connect,
-    peer.labelDrag,
-    peer.libraryDrag,
-    peer.selectionBox,
-    peer.gestureBeat ?? 0,
-  ]);
+  return JSON.stringify([...GESTURE_FIELDS.map((field) => peer[field]), peer.gestureBeat ?? 0]);
 }
 
 function withoutGesture(peer: PeerPresence): PeerPresence {
-  if (
-    !peer.dragging &&
-    !peer.connector &&
-    !peer.resizing &&
-    !peer.sectionDrag &&
-    !peer.sectionResize &&
-    !peer.reconnect &&
-    !peer.connect &&
-    !peer.labelDrag &&
-    !peer.libraryDrag &&
-    !peer.selectionBox
-  ) {
-    return peer;
-  }
-  return {
-    ...peer,
-    dragging: null,
-    connector: null,
-    resizing: null,
-    sectionDrag: null,
-    sectionResize: null,
-    reconnect: null,
-    connect: null,
-    labelDrag: null,
-    libraryDrag: null,
-    selectionBox: null,
-  };
+  if (!hasGesture(peer)) return peer;
+  const cleared: PeerPresence = { ...peer };
+  for (const field of GESTURE_FIELDS) cleared[field] = null;
+  return cleared;
 }
 
 /**

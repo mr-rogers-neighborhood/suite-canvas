@@ -1,4 +1,4 @@
-import { type ContainerID, LoroDoc, type LoroMap, type Value } from "loro-crdt";
+import { LoroDoc, type LoroMap, type Value } from "loro-crdt";
 import type { Drawing, DrawingElement } from "../drawings.js";
 import type { ApplyLayoutPlanOptions, LayoutPlan, LayoutPlanSummary } from "../layoutPlan.js";
 import type {
@@ -10,7 +10,6 @@ import type {
   FieldDefinition,
   GraphEdge,
   Placement,
-  PropertyValue,
   Section,
   SelectOption,
   StyleRule,
@@ -21,19 +20,15 @@ import type { SavedView, ViewQuery } from "../views.js";
 import type { DocApi } from "./api.js";
 import { createDocApi } from "./api.js";
 import { DocContext } from "./context.js";
+import { CardsFacade } from "./facade/cards.js";
 import { STRUCT_KEYS } from "./keys.js";
 import type {
-  CardContainers,
-  CardFieldView,
-  CreateCardInput,
   CreateEdgeInput,
   CreateFieldInput,
-  CreatePortalCardInput,
   CreateSectionInput,
   CreateTypeInput,
   CreateViewInput,
   DuplicateBoardOptions,
-  DuplicateCardOptions,
   LayerAction,
   PlacementMoveInput,
   WorkspaceChange,
@@ -84,7 +79,31 @@ export type {
   WorkspaceSection,
 } from "./model.js";
 
-export class WorkspaceDocument {
+/** Binds every root of `doc` to the context the domain modules read through. */
+function openContext(doc: LoroDoc): DocContext {
+  return new DocContext(doc, {
+    boards: doc.getMap(WorkspaceDocument.BOARDS_KEY),
+    cards: doc.getMap(WorkspaceDocument.CARDS_KEY),
+    placements: doc.getMap(WorkspaceDocument.PLACEMENTS_KEY),
+    edges: doc.getMap(WorkspaceDocument.EDGES_KEY),
+    types: doc.getMap(WorkspaceDocument.TYPES_KEY),
+    tags: doc.getMap(WorkspaceDocument.TAGS_KEY),
+    sections: doc.getMap(WorkspaceDocument.SECTIONS_KEY),
+    content: doc.getMap(WorkspaceDocument.CONTENT_KEY),
+    titles: doc.getMap(WorkspaceDocument.TITLES_KEY),
+    references: doc.getMap(WorkspaceDocument.REFERENCES_KEY),
+    meta: doc.getMap(WorkspaceDocument.META_KEY),
+    viewsMap: doc.getMap(WorkspaceDocument.VIEWS_KEY),
+    drawings: doc.getMap(WorkspaceDocument.DRAWINGS_KEY),
+  });
+}
+
+/**
+ * The document facade: roots, workspace metadata, boards, views, types, tags, sections,
+ * placements, edges and drawings. The card domain lives in {@link CardsFacade}, which this
+ * class extends, so every method stays on one prototype.
+ */
+export class WorkspaceDocument extends CardsFacade {
   static readonly BOARDS_KEY = STRUCT_KEYS.boards;
   static readonly CARDS_KEY = STRUCT_KEYS.cards;
   static readonly PLACEMENTS_KEY = STRUCT_KEYS.placements;
@@ -124,29 +143,16 @@ export class WorkspaceDocument {
   private readonly cardTypesApi: DocApi["cardTypes"];
   private readonly tagsApi: DocApi["tags"];
   private readonly sectionsApi: DocApi["sections"];
-  private readonly cardsApi: DocApi["cards"];
   private readonly placementsApi: DocApi["placements"];
   private readonly edgesApi: DocApi["edges"];
   private readonly drawingsApi: DocApi["drawings"];
   private readonly snapshotApi: DocApi["snapshot"];
 
   constructor(doc: LoroDoc = new LoroDoc()) {
-    this.ctx = new DocContext(doc, {
-      boards: doc.getMap(WorkspaceDocument.BOARDS_KEY),
-      cards: doc.getMap(WorkspaceDocument.CARDS_KEY),
-      placements: doc.getMap(WorkspaceDocument.PLACEMENTS_KEY),
-      edges: doc.getMap(WorkspaceDocument.EDGES_KEY),
-      types: doc.getMap(WorkspaceDocument.TYPES_KEY),
-      tags: doc.getMap(WorkspaceDocument.TAGS_KEY),
-      sections: doc.getMap(WorkspaceDocument.SECTIONS_KEY),
-      content: doc.getMap(WorkspaceDocument.CONTENT_KEY),
-      titles: doc.getMap(WorkspaceDocument.TITLES_KEY),
-      references: doc.getMap(WorkspaceDocument.REFERENCES_KEY),
-      meta: doc.getMap(WorkspaceDocument.META_KEY),
-      viewsMap: doc.getMap(WorkspaceDocument.VIEWS_KEY),
-      drawings: doc.getMap(WorkspaceDocument.DRAWINGS_KEY),
-    });
-    const api = createDocApi(this.ctx);
+    const ctx = openContext(doc);
+    const api = createDocApi(ctx);
+    super(api.cards);
+    this.ctx = ctx;
     this.undoApi = api.undo;
     this.workspaceApi = api.workspace;
     this.boardsApi = api.boards;
@@ -154,7 +160,6 @@ export class WorkspaceDocument {
     this.cardTypesApi = api.cardTypes;
     this.tagsApi = api.tags;
     this.sectionsApi = api.sections;
-    this.cardsApi = api.cards;
     this.placementsApi = api.placements;
     this.edgesApi = api.edges;
     this.drawingsApi = api.drawings;
@@ -530,182 +535,6 @@ export class WorkspaceDocument {
     options: { snap?: boolean } = {},
   ): void {
     this.sectionsApi.moveSectionConnector(sectionId, connectorId, position, options);
-  }
-
-  listCards(): Card[] {
-    return this.cardsApi.listCards();
-  }
-
-  getCard(id: string): Card | undefined {
-    return this.cardsApi.getCard(id);
-  }
-
-  setCard(card: Card): void {
-    this.cardsApi.setCard(card);
-  }
-
-  createCard(input: CreateCardInput = {}): Card {
-    return this.cardsApi.createCard(input);
-  }
-
-  templateCard(typeId: string): Card | undefined {
-    return this.cardsApi.templateCard(typeId);
-  }
-
-  createPortalCard(input: CreatePortalCardInput): Card {
-    return this.cardsApi.createPortalCard(input);
-  }
-
-  duplicateCard(cardId: string, options: DuplicateCardOptions = {}): Card {
-    return this.cardsApi.duplicateCard(cardId, options);
-  }
-
-  moveCardToBoard(cardId: string, boardId: string, position?: { x: number; y: number }): Placement {
-    return this.cardsApi.moveCardToBoard(cardId, boardId, position);
-  }
-
-  isTrashed(cardId: string): boolean {
-    return this.cardsApi.isTrashed(cardId);
-  }
-
-  trashCard(id: string): void {
-    this.cardsApi.trashCard(id);
-  }
-
-  restoreCard(id: string): void {
-    this.cardsApi.restoreCard(id);
-  }
-
-  purgeCard(id: string): void {
-    this.cardsApi.purgeCard(id);
-  }
-
-  emptyTrash(): void {
-    this.cardsApi.emptyTrash();
-  }
-
-  peekContent(cardId: string): LoroMap | null {
-    return this.cardsApi.peekContent(cardId);
-  }
-
-  peekTitle(cardId: string): LoroMap | null {
-    return this.cardsApi.peekTitle(cardId);
-  }
-
-  getContent(cardId: string): LoroMap {
-    return this.cardsApi.getContent(cardId);
-  }
-
-  getTitle(cardId: string): LoroMap {
-    return this.cardsApi.getTitle(cardId);
-  }
-
-  contentId(cardId: string): ContainerID | null {
-    return this.cardsApi.contentId(cardId);
-  }
-
-  titleId(cardId: string): ContainerID | null {
-    return this.cardsApi.titleId(cardId);
-  }
-
-  hasTitle(cardId: string): boolean {
-    return this.cardsApi.hasTitle(cardId);
-  }
-
-  cardContainers(cardId: string): CardContainers {
-    return this.cardsApi.cardContainers(cardId);
-  }
-
-  observeContainers(cardId: string, listener: () => void): () => void {
-    return this.cardsApi.observeContainers(cardId, listener);
-  }
-
-  observeTitle(cardId: string, listener: () => void): () => void {
-    return this.cardsApi.observeTitle(cardId, listener);
-  }
-
-  displayTitle(cardId: string): string {
-    return this.cardsApi.displayTitle(cardId);
-  }
-
-  referencesFor(cardId: string): string[] {
-    return this.cardsApi.referencesFor(cardId);
-  }
-
-  listReferences(): Record<string, string[]> {
-    return this.cardsApi.listReferences();
-  }
-
-  cardText(cardId: string): string {
-    return this.cardsApi.cardText(cardId);
-  }
-
-  bodyPropertyBlocks(cardId: string): string[] {
-    return this.cardsApi.bodyPropertyBlocks(cardId);
-  }
-
-  appendPropertyBlock(cardId: string, fieldId: string): boolean {
-    return this.cardsApi.appendPropertyBlock(cardId, fieldId);
-  }
-
-  removePropertyBlock(cardId: string, fieldId: string): boolean {
-    return this.cardsApi.removePropertyBlock(cardId, fieldId);
-  }
-
-  ensureReferences(): number {
-    return this.cardsApi.ensureReferences();
-  }
-
-  rebuildReferences(): number {
-    return this.cardsApi.rebuildReferences();
-  }
-
-  setCardStyle(cardId: string, style: SurfaceStyle | null): void {
-    this.cardsApi.setCardStyle(cardId, style);
-  }
-
-  setCardTypes(cardId: string, typeIds: string[], primaryTypeId?: string): void {
-    this.cardsApi.setCardTypes(cardId, typeIds, primaryTypeId);
-  }
-
-  addCardType(cardId: string, typeId: string): void {
-    this.cardsApi.addCardType(cardId, typeId);
-  }
-
-  removeCardType(cardId: string, typeId: string): void {
-    this.cardsApi.removeCardType(cardId, typeId);
-  }
-
-  setPrimaryType(cardId: string, typeId: string): void {
-    this.cardsApi.setPrimaryType(cardId, typeId);
-  }
-
-  addCardTag(cardId: string, tagId: string): void {
-    this.cardsApi.addCardTag(cardId, tagId);
-  }
-
-  removeCardTag(cardId: string, tagId: string): void {
-    this.cardsApi.removeCardTag(cardId, tagId);
-  }
-
-  viewCardFields(card: Card): CardFieldView[] {
-    return this.cardsApi.viewCardFields(card);
-  }
-
-  setProperty(cardId: string, fieldId: string, value: PropertyValue | null): void {
-    this.cardsApi.setProperty(cardId, fieldId, value);
-  }
-
-  clearProperty(cardId: string, fieldId: string): void {
-    this.cardsApi.clearProperty(cardId, fieldId);
-  }
-
-  listCardsOfType(typeId: string): Card[] {
-    return this.cardsApi.listCardsOfType(typeId);
-  }
-
-  listCardsWithTag(tagId: string): Card[] {
-    return this.cardsApi.listCardsWithTag(tagId);
   }
 
   listPlacements(): Placement[] {

@@ -28,16 +28,17 @@ export interface FieldEditorProps {
   excludeCardId?: string | undefined;
 }
 
-/** What a kind contributes. */
+/**
+ * What a kind contributes.
+ *
+ * Only the editor. A read-only face formats through `formatPropertyValue` in
+ * `@suite/graph`, so a kind cannot give the same value two readings: this
+ * registry used to accept a `format` function, and its group summary counted a
+ * blank sub-field as filled while the graph's did not.
+ */
 export interface FieldKindEntry {
   kind: string;
   editor: ComponentType<FieldEditorProps>;
-  /**
-   * The value as text, for a chip, a cell and a canvas summary. Optional: the
-   * default prints scalars and reads anything composite as empty, which is the
-   * honest reading of a value the caller does not understand.
-   */
-  format?: (value: PropertyValue | undefined, field: FieldDefinition | undefined) => string;
 }
 
 const entries = new Map<string, FieldKindEntry>();
@@ -63,25 +64,4 @@ export function registeredFieldKinds(): string[] {
 /** Only for tests: forget every registration. */
 export function resetFieldKinds(): void {
   entries.clear();
-}
-
-/**
- * The text a read-only surface shows. Composite or unknown values read as empty
- * rather than as `[object Object]`.
- */
-export function formatFieldValue(
-  kind: string,
-  value: PropertyValue | undefined,
-  field?: FieldDefinition | undefined,
-): string {
-  const entry = entries.get(kind);
-  if (entry?.format) return entry.format(value, field);
-  return defaultFormat(value);
-}
-
-function defaultFormat(value: PropertyValue | undefined): string {
-  if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "object") return "";
-  return String(value);
 }

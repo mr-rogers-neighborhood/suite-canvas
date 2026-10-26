@@ -1,5 +1,6 @@
 import type { Card, CardType } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
+import { menuKeyDown } from "../dialogs/menuKeys";
 
 /**
  * The multi-type picker (ADR-0053).
@@ -95,6 +96,7 @@ export function CardTypePicker({
                 role="menu"
                 aria-label="Primary type"
                 data-testid="type-primary-options"
+                onKeyDown={menuKeyDown}
                 className={menuClass}
               >
                 {others.length === 0 ? (
@@ -169,6 +171,7 @@ export function CardTypePicker({
                 role="menu"
                 aria-label="Add a type"
                 data-testid="type-add-menu"
+                onKeyDown={menuKeyDown}
                 className={menuClass}
               >
                 {addable.map((type) => (

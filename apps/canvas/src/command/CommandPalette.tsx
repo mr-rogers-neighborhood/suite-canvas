@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
 import { type PaletteItem, paletteGroups, rankPaletteItems } from "./paletteRank";
@@ -30,12 +31,6 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
   const ranked = useMemo(() => rankPaletteItems(items, query).slice(0, MAX_ROWS), [items, query]);
   const groups = useMemo(() => paletteGroups(ranked), [ranked]);
 
-  // The highlight follows the query: a new search starts at its best match.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the query is the reset signal.
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
-
   // The palette exists to take the keyboard, so the search box owns it from the
   // first frame; the panel only catches keys when the box has lost focus.
   useEffect(() => {
@@ -43,6 +38,7 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
   }, []);
 
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   const run = (item: PaletteItem) => {
     onClose();
@@ -100,7 +96,13 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
           <input
             ref={input}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              // A new search starts at its best match, in the same update that
+              // changes the query; an effect would leave one frame where Enter
+              // could run the row the reader just typed away.
+              setActiveIndex(0);
+            }}
             aria-label="Search boards, cards, views and actions"
             aria-controls="command-palette-list"
             aria-activedescendant={

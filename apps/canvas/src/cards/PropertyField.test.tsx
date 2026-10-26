@@ -16,6 +16,22 @@ function field(overrides: Partial<FieldDefinition>): FieldDefinition {
 }
 
 describe("PropertyField", () => {
+  it("should render a composing kind without the caller registering it", () => {
+    // The registry is populated by importing the module that owns a kind, and
+    // this component is the one place a field control passes through. Before
+    // the import existed, a `rating` field rendered nothing at all.
+    render(
+      <PropertyField
+        field={field({ name: "Score", kind: "rating", rating: { scale: 5 } })}
+        value={3}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Score: 3 of 5")).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("should commit text on blur instead of every keystroke", () => {
     const onChange = vi.fn();
     render(<PropertyField field={field({})} value="idle" onChange={onChange} onClear={vi.fn()} />);

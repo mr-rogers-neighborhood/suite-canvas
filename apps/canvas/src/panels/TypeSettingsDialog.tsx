@@ -1,8 +1,9 @@
 import type { CardType, CreateFieldInput, FieldDefinition, SubField } from "@suite/graph";
 import { displayTemplate, fieldKinds, subFieldKinds, typePluralName } from "@suite/graph";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
 
 export interface TypeSettingsDialogProps {
@@ -141,7 +142,10 @@ export function TypeSettingsDialog({
     [types, selectedId],
   );
 
+  const panel = useRef<HTMLDivElement | null>(null);
+
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   const createField = () => {
     if (!selected) return;
@@ -192,9 +196,11 @@ export function TypeSettingsDialog({
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Card types"
+        tabIndex={-1}
         data-testid="type-settings"
         className="relative flex h-[min(560px,calc(100vh-3rem))] w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] shadow-xl"
       >

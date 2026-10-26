@@ -6,10 +6,11 @@ import {
   presetOf,
   type TemplateContext,
 } from "@suite/graph";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ValueTemplate } from "../cards/ValueTemplate";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { useFocusTrap } from "./useFocusTrap";
 
 export type DisplayScope = "field" | "instance";
 
@@ -67,8 +68,10 @@ export function DisplayStyleDialog({
 }: DisplayStyleDialogProps) {
   const [draft, setDraft] = useState(template || DEFAULT_DISPLAY_TEMPLATE);
   const [scope, setScope] = useState<DisplayScope>(allowFieldScope ? "field" : "instance");
+  const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
 
   const preset = presetOf(draft);
   // Preview with the context's real value, so an empty field reads as it will.
@@ -83,9 +86,11 @@ export function DisplayStyleDialog({
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label={`Display for ${fieldName}`}
+        tabIndex={-1}
         data-testid="display-style"
         className="relative w-[min(420px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >

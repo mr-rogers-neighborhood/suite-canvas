@@ -243,6 +243,19 @@ describe("CommandPalette", () => {
     expect(rows()[1]?.getAttribute("aria-selected")).toBe("true");
   });
 
+  it("should put the highlight back on the best match when the query changes", () => {
+    render(<CommandPalette items={items} onClose={() => {}} />);
+    const rows = () => screen.getAllByTestId("command-palette-row");
+
+    fireEvent.keyDown(screen.getByTestId("command-palette"), { key: "ArrowDown" });
+    expect(rows()[1]?.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.change(screen.getByTestId("command-palette-input"), { target: { value: "e" } });
+
+    expect(rows().length).toBeGreaterThan(1);
+    expect(rows()[0]?.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("should close on Escape", () => {
     const onClose = vi.fn();
     render(<CommandPalette items={items} onClose={onClose} />);

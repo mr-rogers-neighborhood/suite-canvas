@@ -1,9 +1,224 @@
+import type { Card } from "@suite/graph";
 import { useEffect } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import type { useBoardProjection } from "./useBoardProjection";
+import { NEW_SECTION_SIZE } from "./useBoardSections";
 import type { useBoardUi } from "./useBoardUi";
+
+type BoardUi = ReturnType<typeof useBoardUi>;
+type UiState = ReturnType<typeof useUiStore.getState>;
+type FlowPoint = { x: number; y: number };
+type Size = { width: number; height: number };
+
+const NEW_CARD_SIZE: Size = { width: DEFAULT_CARD_WIDTH, height: DEFAULT_CARD_HEIGHT };
+
+/** Board helpers a key action may call. */
+interface KeyCommands {
+  workspace: BoardUi["workspace"];
+  store: BoardUi["store"];
+  screenToFlowPosition: BoardUi["screenToFlowPosition"];
+  activeBoardId: BoardUi["activeBoardId"];
+  canCreateContent: boolean;
+  canEditContent: boolean;
+  canEditLayout: boolean;
+  canManageTrash: boolean;
+  canManageStructure: boolean;
+  goBackBoard: () => void;
+  createNoteAt: (position: FlowPoint) => void;
+  createSectionAt: (position: FlowPoint, wrapSelection?: boolean) => void;
+  enterPortal: (nodeId: string, targetBoardId: string) => void;
+  trashSelected: () => void;
+  unplaceSelected: () => void;
+}
+
+/** Everything one key press reads, resolved at press time. */
+interface KeyContext {
+  event: KeyboardEvent;
+  /** The focused element takes text, so a bare key belongs to it. */
+  typing: boolean;
+  state: UiState;
+  commands: KeyCommands;
+  cardsById: ReadonlyMap<string, Card>;
+  boardCardIds: { current: string[] };
+}
+
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+}
+
+/** Centre of a `size` box placed at the middle of the viewport, in flow units. */
+function centreOfViewport(commands: KeyCommands, size: Size): FlowPoint {
+  const centre = commands.screenToFlowPosition({
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+  });
+  return { x: centre.x - size.width / 2, y: centre.y - size.height / 2 };
+}
+
+/**
+ * Quick capture: Cmd/Ctrl+Enter adds a card at the viewport centre and opens its
+ * title. A text surface keeps the browser's own chord, so the shortcut never
+ * steals a key inside an editor body or a field.
+ */
+function captureCard(ctx: KeyContext): boolean {
+  const { event, typing, commands } = ctx;
+  if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter" || typing) return false;
+  if (event.target instanceof HTMLElement && event.target.closest(".ProseMirror")) return false;
+  if (!commands.canCreateContent || !commands.activeBoardId) return false;
+  event.preventDefault();
+  commands.createNoteAt(centreOfViewport(commands, NEW_CARD_SIZE));
+  return true;
+}
+
+/**
+ * The Escape ladder, most specific layer first. A held run and an armed thread
+ * are layers above the board, so they never reach this hook.
+ */
+function escapeRung(ctx: KeyContext): boolean {
+  const { event, state, commands } = ctx;
+  if (event.key !== "Escape") return false;
+
+  if (state.editingSectionId) {
+    state.setEditingSection(null);
+    return true;
+  }
+  if (state.selectedSectionId) {
+    state.selectSection(null);
+    state.closeContainerInspector();
+    return true;
+  }
+  if (state.containerInspector) {
+    state.closeContainerInspector();
+    return true;
+  }
+  // Focus is a mode of its own: Escape leaves it (and stops its editing) before
+  // the card-level or selection-level branches see the key.
+  if (state.cardFocusId) {
+    state.closeCardFocus();
+    return true;
+  }
+  if (state.editingNodeId) {
+    state.stopEditing();
+    (document.activeElement as HTMLElement | null)?.blur();
+    return true;
+  }
+  if (state.focusTarget) {
+    state.clearFocusTarget();
+    return true;
+  }
+  // A board entered through a portal is a doorway: Escape steps back to the
+  // exact board and viewport it was entered from.
+  if (state.boardHistory.at(-1)?.via === "portal") {
+    commands.goBackBoard();
+    return true;
+  }
+  // Last rung: drop the selection once nothing more specific owns Escape.
+  if (
+    state.selectedNodeIds.length > 0 ||
+    state.selectedEdgeIds.length > 0 ||
+    state.selectedConnector
+  ) {
+    commands.store.getState().unselectNodesAndEdges();
+    state.setSelectedNodeIds([]);
+    state.setSelectedEdgeIds([]);
+    state.setSelectedConnector(null);
+    return true;
+  }
+  return false;
+}
+
+/** Cmd/Ctrl chords other than quick capture: undo, new section, select all. */
+function modifierChord(ctx: KeyContext): boolean {
+  const { event, typing, state, commands } = ctx;
+  if (!(event.metaKey || event.ctrlKey) || typing) return false;
+  const key = event.key.toLowerCase();
+
+  // Inside a card the editor owns undo (per-fragment history); here it covers
+  // structure: moves, links, connectors, place and trash.
+  if (key === "z" || key === "y") {
+    event.preventDefault();
+    if (!commands.canEditContent && !commands.canEditLayout) return true;
+    if (key === "z" && !event.shiftKey) commands.workspace.undo();
+    else commands.workspace.redo();
+    state.setSelectedNodeIds([]);
+    state.stopEditing();
+    return true;
+  }
+
+  if (key === "g" && commands.canCreateContent) {
+    event.preventDefault();
+    commands.createSectionAt(centreOfViewport(commands, NEW_SECTION_SIZE), true);
+    return true;
+  }
+
+  // Select every card on the board, never the page text.
+  if (key === "a" && !event.altKey && !event.shiftKey) {
+    event.preventDefault();
+    const ids = ctx.boardCardIds.current;
+    const flow = commands.store.getState();
+    flow.unselectNodesAndEdges();
+    flow.addSelectedNodes(ids);
+    state.selectAllOnBoard(ids);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Delete and Backspace. Selected links go first: they are edges, not entities,
+ * and nothing else is left dangling by removing one.
+ */
+function removeKey(ctx: KeyContext): boolean {
+  const { event, typing, state, commands } = ctx;
+  if (event.key !== "Delete" && event.key !== "Backspace") return false;
+  if (typing) return true;
+
+  if (state.selectedEdgeIds.length > 0 && commands.canManageStructure) {
+    event.preventDefault();
+    for (const edgeId of state.selectedEdgeIds) commands.workspace.removeEdge(edgeId);
+    state.setSelectedEdgeIds([]);
+    return true;
+  }
+  if (state.selectedSectionId) {
+    // Sections are workspace structure: an editor may change them, not delete them.
+    if (!commands.canManageStructure) return true;
+    event.preventDefault();
+    commands.workspace.deleteSection(state.selectedSectionId);
+    state.selectSection(null);
+    return true;
+  }
+  if (state.selectedNodeIds.length === 0) return true;
+  if (!commands.canManageTrash && !commands.canEditLayout) return true;
+  event.preventDefault();
+  // Shift is the explicit trash gesture and stays owner-only. A share editor's
+  // Delete unplaces, which is the only destructive act it owns.
+  if (event.shiftKey && commands.canManageTrash) commands.trashSelected();
+  else if (commands.canEditLayout) commands.unplaceSelected();
+  return true;
+}
+
+/** Enter opens the selected card, or walks through a selected portal. */
+function openKey(ctx: KeyContext): boolean {
+  const { event, typing, state, commands, cardsById } = ctx;
+  if (event.key !== "Enter" || typing || state.editingNodeId) return false;
+  const first = state.selectedNodeIds[0];
+  if (!first) return false;
+  // A selected portal is a doorway even for a viewer: navigating is not an edit.
+  const targetBoardId = portalTargetId(cardsById.get(first));
+  if (targetBoardId) {
+    event.preventDefault();
+    commands.enterPortal(first, targetBoardId);
+    return true;
+  }
+  if (!commands.canEditContent) return true;
+  event.preventDefault();
+  state.startEditing(first, "body");
+  return true;
+}
 
 /**
  * The board's keys: quick capture, the Escape ladder, curated undo, select-all,
@@ -40,185 +255,48 @@ export function useBoardKeyboard(
   const { createNoteAt, createSectionAt, enterPortal, trashSelected, unplaceSelected } = input;
 
   useEffect(() => {
+    const commands: KeyCommands = {
+      workspace,
+      store,
+      screenToFlowPosition,
+      activeBoardId,
+      canCreateContent,
+      canEditContent,
+      canEditLayout,
+      canManageTrash,
+      canManageStructure,
+      goBackBoard,
+      createNoteAt,
+      createSectionAt,
+      enterPortal,
+      trashSelected,
+      unplaceSelected,
+    };
+
+    // Order is the contract: capture runs before the Escape ladder, and a chord
+    // runs before the bare-key actions that share its key.
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isTyping =
-        target?.isContentEditable || target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
-      const state = useUiStore.getState();
-
-      // Quick capture: Cmd/Ctrl+Enter adds a card at the viewport centre and
-      // opens its title. A text surface keeps the browser's own chord, so the
-      // shortcut never steals a key inside an editor body or a field.
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key === "Enter" &&
-        !isTyping &&
-        !(target instanceof HTMLElement && target.closest(".ProseMirror"))
-      ) {
-        if (!canCreateContent || !activeBoardId) return;
-        event.preventDefault();
-        const centre = screenToFlowPosition({
-          x: window.innerWidth / 2,
-          y: window.innerHeight / 2,
-        });
-        // Place the card's centre, not its top-left corner, under the cursor.
-        createNoteAt({
-          x: centre.x - DEFAULT_CARD_WIDTH / 2,
-          y: centre.y - DEFAULT_CARD_HEIGHT / 2,
-        });
-        return;
-      }
-
-      // A held run and an armed thread are layers (`useEscapeLayer` above), not
-      // branches here: they start after the surface they stand over, and Escape
-      // has to end the most recently started thing.
-      if (event.key === "Escape" && state.editingSectionId) {
-        state.setEditingSection(null);
-        return;
-      }
-
-      if (event.key === "Escape" && state.selectedSectionId) {
-        state.selectSection(null);
-        state.closeContainerInspector();
-        return;
-      }
-
-      if (event.key === "Escape" && state.containerInspector) {
-        state.closeContainerInspector();
-        return;
-      }
-
-      // Focus is a mode of its own: Escape leaves it (and stops its editing)
-      // before the card-level or selection-level branches see the key.
-      if (event.key === "Escape" && state.cardFocusId) {
-        state.closeCardFocus();
-        return;
-      }
-
-      if (event.key === "Escape" && state.editingNodeId) {
-        state.stopEditing();
-        (document.activeElement as HTMLElement | null)?.blur();
-        return;
-      }
-
-      if (event.key === "Escape" && state.focusTarget) {
-        state.clearFocusTarget();
-        return;
-      }
-
-      // A board entered through a portal is a doorway: Escape steps back to the
-      // exact board and viewport it was entered from.
-      if (event.key === "Escape" && state.boardHistory.at(-1)?.via === "portal") {
-        goBackBoard();
-        return;
-      }
-
-      // Last of the Escape branches: drop the selection once nothing more
-      // specific (a rename, an editing card, a pending reveal) owns Escape.
-      if (
-        event.key === "Escape" &&
-        (state.selectedNodeIds.length > 0 ||
-          state.selectedEdgeIds.length > 0 ||
-          state.selectedConnector)
-      ) {
-        store.getState().unselectNodesAndEdges();
-        state.setSelectedNodeIds([]);
-        state.setSelectedEdgeIds([]);
-        state.setSelectedConnector(null);
-        return;
-      }
-
-      if ((event.metaKey || event.ctrlKey) && !isTyping) {
-        const key = event.key.toLowerCase();
-        // Inside a card the editor owns undo (per-fragment history); here it
-        // covers structure: moves, links, connectors, place and trash.
-        if (key === "z" || key === "y") {
-          event.preventDefault();
-          if (!canEditContent && !canEditLayout) return;
-          if (key === "z" && !event.shiftKey) workspace.undo();
-          else workspace.redo();
-          state.setSelectedNodeIds([]);
-          state.stopEditing();
-          return;
-        }
-
-        if (key === "g" && canCreateContent) {
-          event.preventDefault();
-          const centre = screenToFlowPosition({
-            x: window.innerWidth / 2,
-            y: window.innerHeight / 2,
-          });
-          createSectionAt({ x: centre.x - 180, y: centre.y - 130 }, true);
-          return;
-        }
-
-        // Select every card on the board, never the page text.
-        if (key === "a" && !event.altKey && !event.shiftKey) {
-          event.preventDefault();
-          const ids = boardCardIds.current;
-          const flow = store.getState();
-          flow.unselectNodesAndEdges();
-          flow.addSelectedNodes(ids);
-          state.selectAllOnBoard(ids);
-          return;
-        }
-      }
-
-      if (event.key === "Delete" || event.key === "Backspace") {
-        if (isTyping) return;
-        // Selected links go first: they are edges, not entities, and nothing else
-        // is left dangling by removing one.
-        if (state.selectedEdgeIds.length > 0 && canManageStructure) {
-          event.preventDefault();
-          for (const edgeId of state.selectedEdgeIds) workspace.removeEdge(edgeId);
-          state.setSelectedEdgeIds([]);
-          return;
-        }
-        if (state.selectedSectionId) {
-          // Sections are workspace structure: an editor may change them, not delete them.
-          if (!canManageStructure) return;
-          event.preventDefault();
-          workspace.deleteSection(state.selectedSectionId);
-          state.selectSection(null);
-          return;
-        }
-        if (state.selectedNodeIds.length === 0) return;
-        if (!canManageTrash && !canEditLayout) return;
-        event.preventDefault();
-        // Shift is the explicit trash gesture and stays owner-only. A share
-        // editor's Delete unplaces, which is the only destructive act it owns.
-        if (event.shiftKey && canManageTrash) trashSelected();
-        else if (canEditLayout) unplaceSelected();
-        return;
-      }
-
-      if (event.key === "Enter" && !isTyping && !state.editingNodeId) {
-        const first = state.selectedNodeIds[0];
-        if (!first) return;
-        // A selected portal is a doorway even for a viewer: navigating is not
-        // an edit. Any other card opens its body editor.
-        const targetBoardId = portalTargetId(cardsById.get(first));
-        if (targetBoardId) {
-          event.preventDefault();
-          enterPortal(first, targetBoardId);
-          return;
-        }
-        if (!canEditContent) return;
-        event.preventDefault();
-        state.startEditing(first, "body");
-      }
+      const ctx: KeyContext = {
+        event,
+        typing: isTextEntry(event.target),
+        state: useUiStore.getState(),
+        commands,
+        cardsById,
+        boardCardIds,
+      };
+      if (captureCard(ctx)) return;
+      if (escapeRung(ctx)) return;
+      if (modifierChord(ctx)) return;
+      if (removeKey(ctx)) return;
+      openKey(ctx);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    trashSelected,
-    unplaceSelected,
     workspace,
-    createSectionAt,
-    createNoteAt,
-    screenToFlowPosition,
     store,
+    screenToFlowPosition,
     activeBoardId,
     canCreateContent,
     canEditContent,
@@ -226,8 +304,12 @@ export function useBoardKeyboard(
     canManageTrash,
     canManageStructure,
     goBackBoard,
+    createNoteAt,
+    createSectionAt,
     enterPortal,
+    trashSelected,
+    unplaceSelected,
     cardsById,
-    boardCardIds.current,
+    boardCardIds,
   ]);
 }

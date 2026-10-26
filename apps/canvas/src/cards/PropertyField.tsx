@@ -2,6 +2,15 @@ import type { Card, FieldDefinition, PropertyValue } from "@suite/graph";
 import { isPropertyValueEmpty } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { fieldKindEntry } from "../field/fieldKindRegistry";
+// Populates the registry: a kind exists once the module that owns it is
+// imported, and this switch is the one place every field control passes
+// through. Without it the composing kinds registered, but no surface loaded
+// them, so a `rating`, `group` or `list` field rendered no control at all.
+import "../field/compositeKinds";
+// Populates the registry: a kind exists once the module that owns it is
+// imported, and this switch is the one place every field control passes
+// through. Without it the composing kinds registered, but no surface loaded
+// them, so a `rating`, `group` or `list` field rendered no control at all.
 import { CardPicker, type CardPickerOption } from "./CardPicker";
 
 const inputClass =

@@ -3,7 +3,6 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   fieldKindEntry,
-  formatFieldValue,
   registeredFieldKinds,
   registerFieldKind,
   resetFieldKinds,
@@ -38,19 +37,6 @@ describe("field kind registry", () => {
     const Editor = entry.editor;
     render(<Editor field={field} value={5} onCommit={() => {}} />);
     expect(screen.getByTestId("rating-editor")).toHaveTextContent("stars");
-  });
-
-  it("lets a kind format its own value, and falls back for the rest", () => {
-    registerFieldKind({
-      kind: "rating",
-      editor: () => null,
-      format: (value) => (typeof value === "number" ? `${value}/10` : ""),
-    });
-    expect(formatFieldValue("rating", 7)).toBe("7/10");
-    // An unregistered kind still prints a scalar and drops a composite.
-    expect(formatFieldValue("text", "hello")).toBe("hello");
-    expect(formatFieldValue("group", { a: 1 } as never)).toBe("");
-    expect(formatFieldValue("text", undefined)).toBe("");
   });
 
   it("is replaceable: the last registration for a kind wins", () => {

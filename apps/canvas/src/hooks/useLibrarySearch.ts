@@ -1,6 +1,7 @@
 import type { SearchHit, WorkspaceDocument } from "@suite/graph";
 import { buildSearchText, cardSearchText, searchCards, searchTerms } from "@suite/graph";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { workspaceSnapshotStore } from "../store/workspaceSnapshotStore";
 
 /**
  * Window event the dock fires after it opens the library on the Cards tab. The
@@ -37,10 +38,9 @@ export interface LibrarySearch {
  *
  * The index is `buildSearchText`'s map, built on the first non-empty query and
  * kept in a ref afterwards. Body text is expensive to re-extract, so changes
- * only dirty a card id and a debounced flush patches those entries. Structural
- * changes come from the same `observe` stream `workspaceSnapshotStore` uses;
- * text edits arrive on the document subscription, which carries the paths
- * `observe` never reports.
+ * only dirty a card id and a debounced flush patches those entries. Card changes
+ * come from `workspaceSnapshotStore`, which owns the one document subscription
+ * and reports both record and text edits.
  */
 export function useLibrarySearch(
   workspace: WorkspaceDocument | null | undefined,
@@ -85,25 +85,12 @@ export function useLibrarySearch(
       if (timer === null) timer = setTimeout(flush, REBUILD_DELAY_MS);
     };
 
-    const stopStructure = workspace.observe((change) => {
-      if (change.section === "cards") mark(change.key);
-    });
-    const stopText = workspace.doc.subscribe((batch) => {
-      for (const event of batch.events) {
-        const root = event.path[0];
-        if (root !== "content" && root !== "titles" && root !== "cards") continue;
-        const cardId = event.path[1];
-        if (typeof cardId === "string") {
-          mark(cardId);
-        } else if (event.diff.type === "map") {
-          for (const key of Object.keys(event.diff.updated)) mark(key);
-        }
-      }
+    const stopCards = workspaceSnapshotStore(workspace).subscribeCardChanges((cardIds) => {
+      for (const cardId of cardIds) mark(cardId);
     });
 
     return () => {
-      stopStructure();
-      stopText();
+      stopCards();
       if (timer !== null) clearTimeout(timer);
     };
   }, [workspace]);

@@ -868,7 +868,8 @@ body {
   }
 
   .presence-cursor-arrow,
-  .presence-cursor-label {
+  .presence-cursor-label,
+  .peer-drag-group {
     transition: none;
   }
 }

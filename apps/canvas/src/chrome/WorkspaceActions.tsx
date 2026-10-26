@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
+import { menuKeyDown } from "../dialogs/menuKeys";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { hasSavedRecoveryKey, readSavedRecoveryKey } from "../session/ownerKit";
 import { getSession, isShareSession } from "../session/session";
@@ -165,6 +166,7 @@ export function WorkspaceActions({
           <div
             role="menu"
             data-testid="workspace-menu-list"
+            onKeyDown={menuKeyDown}
             className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
           >
             {canManageLinks && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (

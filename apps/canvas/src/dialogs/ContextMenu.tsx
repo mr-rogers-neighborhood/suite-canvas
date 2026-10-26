@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { menuKeyDown } from "./menuKeys";
 
 export interface ContextMenuItem {
   label: string;
@@ -55,6 +56,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         role="menu"
         className="fixed z-50 min-w-[180px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
         style={{ left: menuLeft, top: menuTop }}
+        onKeyDown={menuKeyDown}
         onContextMenu={(event) => event.preventDefault()}
       >
         {items.map((item) =>
@@ -81,6 +83,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                 <div
                   role="menu"
                   aria-label={item.label}
+                  onKeyDown={menuKeyDown}
                   data-testid="context-submenu"
                   className={`absolute top-0 min-w-[170px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl ${
                     flipSubmenu ? "right-full mr-1" : "left-full ml-1"

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { deleteWorkspaceEverywhere, type WorkspaceDeleteProfile } from "../session/workspaceDelete";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useFocusTrap } from "./useFocusTrap";
 
 export interface DeleteWorkspaceDialogProps {
   workspaceId: string;
@@ -45,10 +46,12 @@ export function DeleteWorkspaceDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+  const panel = useRef<HTMLDivElement | null>(null);
 
   const name = title.trim() || workspaceId;
 
   useEscapeLayer(onClose);
+  useFocusTrap(panel);
   useEffect(() => {
     input.current?.focus();
   }, []);
@@ -90,9 +93,11 @@ export function DeleteWorkspaceDialog({
         onClick={busy ? undefined : onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Delete this workspace?"
+        tabIndex={-1}
         data-testid="delete-workspace-dialog"
         className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >

@@ -225,6 +225,22 @@ A `deploy/Caddyfile` change needs `docker compose build caddy && docker compose 
 costs a couple of seconds of 502. Enable the commented `caddy-data` volume if you recreate Caddy often,
 or it re-issues certificates until Let's Encrypt's five-per-week limit stops you.
 
+## Docs site
+
+The reader-facing docs are a separate Next app in `apps/docs`, built from `docs/`. It needs no
+database, no volume and no relay.
+
+```sh
+docker compose --profile docs up -d --build docs
+curl -fsS http://127.0.0.1:3001/docs > /dev/null
+curl -fsS http://127.0.0.1:3001/llms.txt > /dev/null
+```
+
+The image reads the Markdown at build time, so a docs edit needs a rebuild. The container runs as
+`nextjs` (uid 1001) on port 3001. It is not routed through Caddy: put it behind whatever proxy serves
+`docs.example.com`, or keep it private on the host. The same build runs locally with
+`pnpm docs:site:build` and `pnpm docs:site:start`.
+
 ## What not to do
 
 - A second `app` replica, through `--scale app=2`, an autoscaling group or a load balancer, corrupts the

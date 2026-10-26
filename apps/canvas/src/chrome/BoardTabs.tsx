@@ -1,5 +1,6 @@
 import type { Board } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
+import { menuKeyDown } from "../dialogs/menuKeys";
 import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** Peers whose active board is this one, named for the tab's tooltip. */
@@ -196,6 +197,7 @@ export function BoardTabs({
               role="menu"
               aria-label="Open or create a board"
               data-testid="board-chooser"
+              onKeyDown={menuKeyDown}
               className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
             >
               {openableBoards.length > 0 ? (

@@ -7,6 +7,9 @@ import { DRAG_THROTTLE_MS } from "./boardSupport";
 import type { useBoardProjection } from "./useBoardProjection";
 import type { useBoardUi } from "./useBoardUi";
 
+/** Default box for a section created without a selection to wrap. */
+export const NEW_SECTION_SIZE = { width: 360, height: 260 } as const;
+
 /**
  * Sections on this board: their live drag/resize offsets, the presence those
  * gestures publish, and the writes a finished gesture commits. A section is not
@@ -201,7 +204,7 @@ export function useBoardSections(
     (position: { x: number; y: number }, wrapSelection = false) => {
       if (!canCreateContent || !activeBoardId) return;
       const selected = useUiStore.getState().selectedNodeIds;
-      let rect: Rect = { x: position.x, y: position.y, width: 360, height: 260 };
+      let rect: Rect = { x: position.x, y: position.y, ...NEW_SECTION_SIZE };
 
       if (wrapSelection && selected.length > 0) {
         const lookup = store.getState().nodeLookup;

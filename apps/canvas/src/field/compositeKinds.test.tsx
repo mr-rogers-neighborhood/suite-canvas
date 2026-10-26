@@ -1,8 +1,8 @@
-import type { FieldDefinition } from "@suite/graph";
+import { type FieldDefinition, formatPropertyValue } from "@suite/graph";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "./compositeKinds";
-import { fieldKindEntry, formatFieldValue, registeredFieldKinds } from "./fieldKindRegistry";
+import { fieldKindEntry, registeredFieldKinds } from "./fieldKindRegistry";
 
 function field(overrides: Partial<FieldDefinition>): FieldDefinition {
   return {
@@ -70,9 +70,9 @@ describe("composing field kinds", () => {
     fireEvent.click(screen.getByLabelText("Score: 7 of 10"));
 
     expect(onCommit).toHaveBeenCalledWith(7);
-    expect(formatFieldValue("rating", 7, field({ kind: "rating", rating: { scale: 10 } }))).toBe(
-      "7/10",
-    );
+    // The read-only face formats through the graph, so this is the only reading
+    // a rating has (ADR-0057 §5).
+    expect(formatPropertyValue(field({ kind: "rating", rating: { scale: 10 } }), 7)).toBe("7/10");
   });
 
   it("should offer half steps only when the field declares them", () => {
@@ -98,7 +98,10 @@ describe("composing field kinds", () => {
     fireEvent.blur(screen.getByLabelText("Page"));
 
     expect(onCommit).toHaveBeenCalledWith({ chapter: "One", page: 12 });
-    expect(formatFieldValue("group", { chapter: "One" }, groupField)).toBe("1/2 filled");
+    expect(formatPropertyValue(groupField, { chapter: "One" })).toBe("1/2 filled");
+    // A blank sub-value is an absent one: the graph counts it that way, and the
+    // registry used to count it as filled.
+    expect(formatPropertyValue(groupField, { chapter: "" })).toBe("\u2014");
   });
 
   it("should append, edit and remove list rows while committing an array", () => {
@@ -112,7 +115,7 @@ describe("composing field kinds", () => {
     rerender(<List field={listField} value={["Mix", "Bake"]} onCommit={onCommit} />);
     fireEvent.click(screen.getByLabelText("Remove Steps item 1"));
     expect(onCommit).toHaveBeenLastCalledWith(["Bake"]);
-    expect(formatFieldValue("list", ["Mix", "Bake"])).toBe("2 items");
+    expect(formatPropertyValue(listField, ["Mix", "Bake"])).toBe("2 items");
   });
 
   it("should edit a list of groups row by row", () => {

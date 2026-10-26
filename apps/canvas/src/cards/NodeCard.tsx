@@ -379,6 +379,13 @@ export function NodeCard({
               type="button"
               aria-label="Edit card title"
               className="absolute inset-0 z-10 cursor-text"
+              // A pointer opens the title on double-click; a keyboard press fires
+              // `click` with no detail, and that is the same intent.
+              onClick={(event) => {
+                if (event.detail !== 0) return;
+                event.stopPropagation();
+                onStartEditing?.("title");
+              }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 onStartEditing?.("title");

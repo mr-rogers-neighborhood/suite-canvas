@@ -85,6 +85,58 @@ describe("WorkspaceSnapshotStore", () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it("should report a card record change to card-change subscribers", () => {
+    const { workspace, board } = setup();
+    const store = new WorkspaceSnapshotStore(workspace);
+    const cardChanges = vi.fn();
+    store.subscribeCardChanges(cardChanges);
+
+    workspace.createCard({ id: "b", boardId: board.id });
+
+    expect(cardChanges.mock.calls.flatMap(([ids]) => ids)).toContain("b");
+  });
+
+  it("should report a text change without republishing the snapshot", () => {
+    const { workspace } = setup();
+    const store = new WorkspaceSnapshotStore(workspace);
+    const before = store.getSnapshot();
+    const cardChanges = vi.fn();
+    const snapshotChanges = vi.fn();
+    store.subscribe(snapshotChanges);
+    const unsubscribe = store.subscribeCardChanges(cardChanges);
+
+    workspace.doc.getMap("content").delete("a");
+    workspace.doc.commit({ origin: "test" });
+
+    expect(cardChanges).toHaveBeenCalledWith(["a"]);
+    expect(snapshotChanges).not.toHaveBeenCalled();
+    expect(store.getSnapshot()).toBe(before);
+
+    unsubscribe();
+    workspace.getContent("a");
+    expect(cardChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep the text stream open until the last card listener leaves", () => {
+    const { workspace } = setup();
+    const store = new WorkspaceSnapshotStore(workspace);
+    const first = vi.fn();
+    const second = vi.fn();
+    const unsubscribeFirst = store.subscribeCardChanges(first);
+    const unsubscribeSecond = store.subscribeCardChanges(second);
+
+    unsubscribeFirst();
+    workspace.doc.getMap("content").delete("a");
+    workspace.doc.commit({ origin: "test" });
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith(["a"]);
+
+    unsubscribeSecond();
+    workspace.getContent("a");
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it("should carry the derived reference index", async () => {
     const { workspace } = setup();
     const store = new WorkspaceSnapshotStore(workspace);

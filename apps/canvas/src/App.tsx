@@ -1,93 +1,36 @@
-import {
-  defaultConnectors,
-  PORTAL_BOARD_FIELD_ID,
-  resolveSurfaceStyle,
-  type StyleRule,
-  type SurfaceStyle,
-  sectionForCard,
-  sectionMembership,
-  type WorkspaceDocument,
-} from "@suite/graph";
+import { PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
-import {
-  type CSSProperties,
-  lazy,
-  type RefObject,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { SignInEntry } from "./auth/SignInEntry";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { shellPaletteItems } from "./app/palette";
+import { useBoardDerivations } from "./app/useBoardDerivations";
+import { useLeaveGuard } from "./app/useLeaveGuard";
+import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
+import { WorkspaceShellView } from "./app/WorkspaceShellView";
+import { useSurfacePalette, useWorkspaceNavigation, useWorkspacePaint } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
-import { BoardOutlineHost } from "./canvas/BoardOutline";
-import { CanvasBoard } from "./canvas/CanvasBoard";
-import { DEFAULT_CARD_WIDTH } from "./canvas/interactions/multiSelect";
 import type { CanvasMode } from "./canvas/links/linkGesture";
-import { prefersReducedMotion } from "./canvas/localEasing";
-import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
 import type { CanvasPurpose } from "./canvas/purpose";
-import {
-  readPalette,
-  type SurfacePalette,
-  SurfaceRulesContext,
-  shellPaintFor,
-  shellRegionPaintFor,
-} from "./canvas/rules";
-import { surfacePaintVars } from "./canvas/surfacePaint";
+import { shellPaintFor, shellRegionPaintFor } from "./canvas/rules";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
-import { CardFocusHost } from "./cards/CardFocusHost";
-import { CardInspectorHost } from "./cards/CardInspectorHost";
-import { sectionPath } from "./cards/cardWhere";
-import { TourOverlayHost } from "./cards/TourOverlayHost";
 import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
 import { ensureWhiteboardType } from "./cards/whiteboard";
-import { type BoardPresence, BoardTabs } from "./chrome/BoardTabs";
+import type { BoardPresence } from "./chrome/BoardTabs";
 import { BootSkeleton } from "./chrome/BootSkeleton";
-import { Dock } from "./chrome/Dock";
-import { TitleBar } from "./chrome/TitleBar";
-import { useSavedViews, ViewsBar } from "./chrome/ViewsBar";
-import { TAB_ID } from "./collab/tabId";
+import { useSavedViews } from "./chrome/ViewsBar";
 import { usePresenceStore } from "./collab/usePresenceStore";
-import { CommandPaletteHost } from "./command/CommandPalette";
-import type { Capability } from "./command/commandRegistry";
-import { buildPaletteItems } from "./command/paletteProviders";
-import { markBoot, measureBoot } from "./dev/bootTiming";
-import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
-import { LeavingDialog } from "./dialogs/LeavingDialog";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
-import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "./library/LibraryDrawer";
-import { UNSORTED_SECTION } from "./library/libraryFilters";
-import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./library/TemplateGallery";
-import { TypeSettingsHost } from "./panels/TypeSettingsHost";
-import {
-  createLeavingGuard,
-  documentVersion,
-  leavingAtRisk,
-  shouldWarnBeforeLeaving,
-} from "./session/leavingGuard";
+import type { LibraryBoard, LibraryItem } from "./library/LibraryDrawer";
+import { createStarterBoard, templateCopyName } from "./library/TemplateGallery";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
-import { useBeforeUnload } from "./session/useBeforeUnload";
-import { useStorageLadder } from "./session/useStorageLadder";
-import {
-  friendlyWorkspaceName,
-  readWorkspaceNames,
-  rememberWorkspaceName,
-} from "./session/workspaceName";
-import { rememberWorkspace } from "./session/workspaceTransfer";
-import { SharePublishButton } from "./sharing/SharePublishButton";
-import { StoragePanel } from "./sharing/StoragePanel";
-import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
+import { useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme, useThemeStore } from "./theme/useThemeStore";
@@ -97,117 +40,6 @@ import { applyWorkspaceTheme } from "./theme/workspaceTheme";
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
 const CARD_HALF_HEIGHT = 60;
-
-/** What the app bar calls this document. A share never names its owner's workspace. */
-function documentLabel(share: ShareSession, workspaceId: string): string {
-  if (share.scope === "board") return "Board share";
-  if (share.scope === "card") return "Card share";
-  if (share.scope === "selection") return "Selection share";
-  return workspaceId;
-}
-
-/**
- * The workspace's own paint — the shell's style and the named rules — read from
- * the document meta. It re-renders only when that paint actually changes, so a
- * keystroke in a card never repaints the shell (ADR-0046 §3).
- */
-/**
- * Where the workspace says its navigation goes: the board that opens when nothing
- * is open, and the board a new tab opens. Both are workspace meta, which is not a
- * snapshot section, so this reads them the same way the paint hook does — and only
- * when they actually change.
- */
-function useWorkspaceNavigation(workspace: WorkspaceDocument): {
-  homeBoardId: string | null;
-  newTabBoardId: string | null;
-} {
-  const read = useCallback(
-    () => ({
-      homeBoardId: workspace.workspaceHomeBoardId(),
-      newTabBoardId: workspace.newTabBoardId(),
-    }),
-    [workspace],
-  );
-  const [navigation, setNavigation] = useState(read);
-  const signature = useRef(JSON.stringify(navigation));
-  useEffect(() => {
-    const sync = () => {
-      const next = read();
-      const key = JSON.stringify(next);
-      if (key === signature.current) return;
-      signature.current = key;
-      setNavigation(next);
-    };
-    sync();
-    return workspace.observeWorkspacePaint(sync);
-  }, [read, workspace]);
-  return navigation;
-}
-
-function useWorkspacePaint(workspace: WorkspaceDocument): {
-  shellStyle: SurfaceStyle | undefined;
-  rules: StyleRule[];
-} {
-  const read = useCallback(
-    () => ({ shellStyle: workspace.shellStyle(), rules: workspace.styleRules() }),
-    [workspace],
-  );
-  const [paint, setPaint] = useState(read);
-  const signature = useRef(JSON.stringify(paint));
-  useEffect(() => {
-    const sync = () => {
-      const next = read();
-      const key = JSON.stringify(next);
-      if (key === signature.current) return;
-      signature.current = key;
-      setPaint(next);
-    };
-    sync();
-    // The workspace's own paint is meta, not a snapshot section, so it has its
-    // own subscription; the snapshot would never mention it.
-    return workspace.observeWorkspacePaint(sync);
-  }, [read, workspace]);
-  return paint;
-}
-
-/**
- * The live role palette, read from the token layer on the shell root rather than
- * kept as a second copy (ADR-0046 §1). A theme change is exactly when it moves.
- */
-function useSurfacePalette(root: RefObject<HTMLElement | null>, themeMode: string): SurfacePalette {
-  const [palette, setPalette] = useState<SurfacePalette>({});
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the theme mode is the trigger, not an input — the palette is read back from the DOM once the theme's classes have moved.
-  useEffect(() => {
-    const node = root.current;
-    if (node) setPalette(readPalette(node));
-  }, [root, themeMode]);
-  return palette;
-}
-
-/**
- * The workspace actions pull in the share dialog, the recovery dialog and the
- * relay clients. Loading them on demand keeps `/api` out of the standalone
- * build's app chunk entirely, rather than relying on a runtime guard.
- */
-const StylesDialog = lazy(async () => {
-  const module = await import("./styles/StylesDialog");
-  return { default: module.StylesDialog };
-});
-
-const WorkspaceActions = lazy(async () => {
-  const module = await import("./chrome/WorkspaceActions");
-  return { default: module.WorkspaceActions };
-});
-
-/**
- * The account surfaces pull in the Better Auth client. Loaded on demand for the
- * same reason as the share dialogs: a standalone build has no server and must not
- * ship a single byte of `/api/auth`, so the gate is a literal the bundler folds.
- */
-const SignInSurface = lazy(async () => {
-  const module = await import("./auth/SignInDialogHost");
-  return { default: module.SignInDialogHost };
-});
 
 export default function App() {
   useEffect(() => initTheme(), []);
@@ -239,7 +71,6 @@ function WorkspaceShell({
   const ready = useCanvasStore((state) => state.ready);
   const synced = useCanvasStore((state) => state.synced);
   const boot = useBootGate(ready);
-  const [leaving, setLeaving] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
   const snapshot = useWorkspaceSnapshot();
   countRender("shell");
@@ -416,7 +247,6 @@ function WorkspaceShell({
   }, [libraryOpen]);
 
   const stagger = useRef(0);
-  const shareCardOpened = useRef(false);
   // A standalone build renders from IndexedDB alone: no socket, no presence and
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
@@ -426,246 +256,33 @@ function WorkspaceShell({
   // is where it already was — nothing about the local path changes (ADR-0067 §6).
   const signedIn = useAccountStore(accountSignedIn);
   const openSignIn = useAccountStore((state) => state.openSignIn);
+  const { leaving, leavingPrompt, inRoom, requestLeave, dismissLeavePrompt, leaveAnyway } =
+    useLeaveGuard({ standalone, peerCount, signedIn, share, workspace });
 
-  useEffect(() => {
-    if (standalone) return;
-    connect();
-  }, [connect, standalone]);
-
-  useEffect(() => {
-    if (standalone) {
-      // Nothing will sync in this build, so the relay's 5 s grace period would
-      // only delay the first seed of a local workspace.
-      if (!useCanvasStore.getState().synced) useCanvasStore.setState({ synced: true });
-      return;
-    }
-    if (provider) bindPresence(presence, TAB_ID);
-  }, [bindPresence, presence, provider, standalone]);
-
-  // Seeding is once per workspace, so deleting every card stays deleted. It also
-  // waits for the first server sync: seeding an empty local doc would resurrect
-  // starter cards in a workspace someone emptied on another client.
-  useEffect(() => {
-    // A share reads a projection the owner's workspace already seeded; writing
-    // in a share room (even the idempotent type repair) belongs to the draft,
-    // not to this page's boot.
-    if (share || readOnly || !ready || !synced) return;
-    // Starter types are structural, not sample data: every workspace has them,
-    // and the note type is the fallback for cards with no type.
-    workspace.ensureDefaultTypes();
-    if (!workspace.hasSeeded()) {
-      const board = workspace.ensureBoard();
-      // A direct URL can create the first document without the launcher, so
-      // the friendly default is applied here too; an existing name always wins.
-      if (!workspace.hasWorkspaceName()) {
-        workspace.renameWorkspace(friendlyWorkspaceName());
-        setWorkspaceName(workspace.workspaceName());
-      }
-      // A workspace created from the launcher starts blank; older workspaces
-      // keep the two-card demo they were seeded with.
-      const fresh = new URLSearchParams(window.location.search).get("fresh") === "1";
-      if (!fresh && workspace.listCards().length === 0) {
-        // Connector ids are derived from the card id, not random. Two clients
-        // opening the same new workspace both seed it; the cards carry fixed ids
-        // and converge, so random dot ids would union into eight connectors on
-        // one card instead of four.
-        const starters = (cardId: string) =>
-          defaultConnectors().map((connector, index) => ({
-            ...connector,
-            id: `${cardId}-connector-${index + 1}`,
-          }));
-        workspace.createCard({
-          id: "starter-1",
-          boardId: board.id,
-          position: { x: 0, y: 0 },
-          connectors: starters("starter-1"),
-        });
-        // One card width plus a gap, so the two starters read as two cards and a
-        // section drawn around the first does not reach into the second.
-        workspace.createCard({
-          id: "starter-2",
-          boardId: board.id,
-          position: { x: DEFAULT_CARD_WIDTH + 192, y: 0 },
-          connectors: starters("starter-2"),
-        });
-      }
-      workspace.markSeeded();
-    }
-    // The reference index is derived, so repairing it is safe and idempotent. It
-    // runs after the first sync so mentions that arrived offline are indexed too.
-    workspace.ensureReferences();
-  }, [ready, synced, workspace, readOnly, share]);
-
-  useEffect(() => {
-    document.title = `${workspaceName} — Suite`;
-  }, [workspaceName]);
-
-  // The leave guard (ADR-0025
-  // amendment). `banner` is the ladder's own answer — anonymous, and no promise
-  // that this browser will keep the copy — so it is the only condition here.
-  // Whether *another* device is in the room right now, which is what lets the ladder
-  // stay quiet while two people work: a warning about this device's storage is noise
-  // once a second copy exists (author's note, ADR-0025 amendment). A socket of our
-  // own is not enough — a single reader alone in a workspace is still the only copy.
-  const inRoom = !standalone && peerCount > 0;
-  const ladder = useStorageLadder(signedIn, inRoom);
-  const leavingGuard = useRef(createLeavingGuard());
-  // Set synchronously by a navigation the reader chose, so the native prompt does
-  // not ask again during the unload that gesture just started.
-  const leavingStarted = useRef(false);
-  const [leavingPrompt, setLeavingPrompt] = useState(false);
-  // A share is someone else's work: this browser holds a projection, not the only copy.
-  const leavingAtOwnRisk = share === null && leavingAtRisk(ladder);
-
-  useBeforeUnload(leavingAtOwnRisk && !leaving, () => !leavingStarted.current);
-
-  const goHome = useCallback(() => {
-    if (leaving) return;
-    leavingStarted.current = true;
-    if (prefersReducedMotion()) {
-      window.location.assign("/");
-      return;
-    }
-    setLeaving(true);
-    window.setTimeout(() => window.location.assign("/"), 180);
-  }, [leaving]);
-
-  /** Every path back to the launcher comes through here, so no route skips the guard. */
-  const requestLeave = useCallback(() => {
-    if (leaving || leavingPrompt) return;
-    const version = documentVersion(workspace.doc);
-    if (
-      shouldWarnBeforeLeaving({
-        ladder,
-        guard: leavingGuard.current,
-        version,
-        applicable: share === null,
-      })
-    ) {
-      setLeavingPrompt(true);
-      return;
-    }
-    goHome();
-  }, [leaving, leavingPrompt, ladder, workspace, share, goHome]);
-
-  // Being told is the point, so closing the dialog is an answer: the next leave
-  // stays quiet until the work changes.
-  const dismissLeavePrompt = useCallback(() => {
-    leavingGuard.current.dismiss(documentVersion(workspace.doc));
-    setLeavingPrompt(false);
-  }, [workspace]);
-
-  const leaveAnyway = useCallback(() => {
-    dismissLeavePrompt();
-    goHome();
-  }, [dismissLeavePrompt, goHome]);
-
-  useEffect(() => {
-    if (!ready) return;
-    markBoot("shell:ready");
-    measureBoot("to-ready", "store:created", "shell:ready");
-  }, [ready]);
-
-  // The launcher may have named this workspace before its document existed.
-  // Adopt that mirror once, and only when the document has no name of its own.
-  useEffect(() => {
-    if (!ready || !synced || share || readOnly || workspace.hasWorkspaceName()) return;
-    const mirror = readWorkspaceNames()[workspaceId]?.trim();
-    if (!mirror) return;
-    try {
-      workspace.renameWorkspace(mirror);
-      setWorkspaceName(workspace.workspaceName());
-    } catch {
-      // A name that no longer validates stays in the mirror; the document keeps
-      // its derived label rather than failing the boot.
-    }
-  }, [ready, synced, share, readOnly, workspace, workspaceId]);
-
-  // Resolve the board from the URL, falling back to the first one.
-  useEffect(() => {
-    if (!ready || !synced) return;
-    const boards = snapshot.boards;
-    if (boards.length === 0) {
-      // A projection can arrive a moment after the room joins; wait for it
-      // instead of minting a board the share may not write.
-      if (!share && !readOnly) workspace.ensureBoard();
-      return;
-    }
-    if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
-
-    // What the reader asked for, then the board they named as home, then the
-    // first board: closing every tab lands somewhere they chose (ADR-0040, A24).
-    const requested = resolveBoardId();
-    const home = navigation.homeBoardId;
-    const next =
-      boards.find((board) => board.id === requested)?.id ??
-      boards.find((board) => board.id === home)?.id ??
-      boards[0]?.id ??
-      null;
-    if (next && next !== activeBoardId) setActiveBoardId(next);
-  }, [
+  useWorkspaceBoot({
+    workspace,
+    workspaceId,
+    workspaceName,
+    setWorkspaceName,
+    snapshot,
+    share,
+    readOnly,
     ready,
     synced,
-    snapshot.boards,
+    standalone,
     activeBoardId,
     setActiveBoardId,
-    workspace,
-    readOnly,
-    share,
-    navigation.homeBoardId,
-  ]);
-
-  // Keep the URL shareable without a reload. A share keeps its token and never
-  // gains a workspace id: the link is the whole credential.
-  useEffect(() => {
-    if (!activeBoardId) return;
-    const url = new URL(window.location.href);
-    if (share) {
-      url.searchParams.set("share", share.token);
-      url.searchParams.set("board", activeBoardId);
-      // A share link carries no workspace id, even if it was pasted with one,
-      // and never carries the owner fragment of the page it was created from.
-      url.searchParams.delete("workspace");
-      url.searchParams.delete("doc");
-      url.searchParams.delete("fresh");
-      url.hash = "";
-    } else {
-      url.searchParams.set("workspace", workspaceId);
-      url.searchParams.set("board", activeBoardId);
-      url.searchParams.delete("fresh");
-    }
-    window.history.replaceState(null, "", url);
-  }, [activeBoardId, workspaceId, share]);
-
-  useEffect(() => {
-    // A share is a visit, not a workspace to come back to from the launcher.
-    if (!activeBoardId || share) return;
-    rememberWorkspace({
-      id: workspaceId,
-      title: snapshot.boards.find((board) => board.id === activeBoardId)?.name,
-      boardId: activeBoardId,
-    });
-  }, [workspaceId, activeBoardId, snapshot.boards, share]);
-
-  // A card link opens on that card. The projection may still be syncing, so wait
-  // for the card to exist; once opened, closing the panel is the reader's choice.
-  useEffect(() => {
-    if (share?.scope !== "card" || shareCardOpened.current) return;
-    if (!ready || !synced || !share.cardId) return;
-    if (!snapshot.cards.some((card) => card.id === share.cardId)) return;
-    shareCardOpened.current = true;
-    openInspector(share.cardId);
-  }, [share, ready, synced, snapshot.cards, openInspector]);
-
-  useEffect(() => {
-    setBoard(activeBoardId);
-  }, [activeBoardId, setBoard]);
-
-  // Carets are card- and field-scoped: peers only draw them in the editor the
-  // author is actually typing in.
-  useEffect(() => {
-    setFocus(editingNodeId ? { nodeId: editingNodeId, field: editingField } : null);
-  }, [editingNodeId, editingField, setFocus]);
+    homeBoardId: navigation.homeBoardId,
+    connect,
+    provider,
+    presence,
+    bindPresence,
+    setBoard,
+    editingNodeId,
+    editingField,
+    setFocus,
+    openInspector,
+  });
 
   const canvasPoint = useCallback(
     (clientPoint?: { x: number; y: number }) => {
@@ -857,166 +474,93 @@ function WorkspaceShell({
    * creation are wired to the same store actions and helpers the shell already
    * uses, so the palette cannot drift from the controls it duplicates.
    */
-  const paletteItems = useMemo(() => {
-    const capabilities: Capability[] = [];
-    if (canEditContent) capabilities.push("canEditContent");
-    if (canEditLayout) capabilities.push("canEditLayout");
-    if (canPublish) capabilities.push("canPublish");
-    if (canCreateContent) capabilities.push("canCreateContent");
-    if (canCreateBoards) capabilities.push("canCreateBoards");
-    if (canManageBoards) capabilities.push("canManageBoards");
-    if (canManageSchema) capabilities.push("canManageSchema");
-    if (canManageTrash) capabilities.push("canManageTrash");
-    if (canManageLinks) capabilities.push("canManageLinks");
-
-    const targetCardId = cardFocusId ?? inspectorNodeId ?? selectedNodeIds[0] ?? null;
-    const cardPlaced =
-      targetCardId !== null &&
-      activeBoardId !== null &&
-      workspace
-        .listCardPlacements(targetCardId)
-        .some((placement) => placement.boardId === activeBoardId);
-
-    return buildPaletteItems({
-      capabilities,
-      state: {
+  const paletteItems = useMemo(
+    () =>
+      shellPaletteItems({
+        workspace,
+        snapshot,
+        savedViews,
+        activeBoardId,
+        activeViewId,
+        cardFocusId,
+        inspectorNodeId,
+        selectedNodeIds,
         workspaceSurface,
         readOnly,
         paletteOpen,
         libraryOpen,
         libraryTab,
-        activeBoardId,
-        activeViewId,
-        cardId: targetCardId,
-        cardPlaced,
-        boards: snapshot.boards.map((board) => ({ id: board.id, name: board.name })),
-        views: savedViews.map((view) => ({ id: view.id, name: view.name })),
-        sections: snapshot.sections.map((section) => ({
-          id: section.id,
-          boardId: section.boardId,
-          title: section.title,
-        })),
-        cards: snapshot.cards.map((card) => {
-          const type = workspace.getType(card.primaryTypeId);
-          return {
-            id: card.id,
-            title: workspace.displayTitle(card.id),
-            typeName: type?.name ?? "Card",
-          };
-        }),
-        types: snapshot.types.map((type) => ({ id: type.id, name: type.name })),
-        trashedCount: workspace.listTrashedCards().length,
-      },
-      actions: {
-        openPalette: () => setPaletteOpen(true),
-        openLibrary: () => setLibraryOpen(true),
-        openLibraryTab: (tab) => {
-          setLibraryTab(tab);
-          setLibraryOpen(true);
-        },
-        searchLibrary: () => {
-          setLibraryTab("cards");
-          setLibraryOpen(true);
-        },
-        goToBoard: (boardId) => activateBoard(boardId),
-        goToSection: (sectionId) => {
-          const section = workspace.getSection(sectionId);
-          if (!section) return;
-          activateBoard(section.boardId);
-          selectSection(section.id);
-        },
-        focusCard: (cardId) => openCardFocus(cardId),
-        openCard: (cardId) => openInspector(cardId),
-        applyView: (viewId) => {
-          const view = workspace.getView(viewId);
-          if (view) applyView(view.id, view.query);
-        },
-        exitView: () => exitView(),
-        createCard: (typeId) => createCard(typeId),
-        createCardInInbox: () => {
-          workspace.createCard();
-        },
-        createSketch: () => {
-          const whiteboard = ensureWhiteboardType(workspace);
-          createCard(whiteboard.id);
-        },
-        createSection: () => {
-          if (!activeBoardId) return;
-          const centre = canvasPoint();
-          workspace.createSection({ boardId: activeBoardId, x: centre.x - 180, y: centre.y - 130 });
-        },
-        createBoard: () => {
-          const board = workspace.createBoard();
-          activateBoard(board.id);
-        },
-        editCard: (cardId) => openCardFocus(cardId),
-        // "Set type" means "make this the primary": a card that carries several
-        // types must not lose the others because a palette row was picked
-        // (ADR-0053).
-        setCardType: (cardId, typeId) => workspace.setPrimaryType(cardId, typeId),
-        trashCard: (cardId) => workspace.trashCard(cardId),
-        restoreCard: (cardId) => workspace.restoreCard(cardId),
-        deleteCardForever: (cardId) => workspace.purgeCard(cardId),
-        emptyTrash: () => workspace.emptyTrash(),
-        duplicateCard: (cardId) => {
-          workspace.duplicateCard(cardId, activeBoardId ? { boardId: activeBoardId } : {});
-        },
-        removeFromBoard: (cardId) => {
-          if (activeBoardId) workspace.unplaceCard(activeBoardId, cardId);
-        },
-        placeCard: (cardId) => placeCard(cardId),
-        openTypes: () => openTypeSettings(),
-        openShare: () => requestShare("workspace"),
-        toggleTheme: () => setThemeMode(themeMode === "dark" ? "light" : "dark"),
-      },
-    });
-  }, [
-    snapshot.boards,
-    snapshot.cards,
-    snapshot.types,
-    snapshot.sections,
-    savedViews,
-    activeBoardId,
-    activeViewId,
-    workspace,
-    workspaceSurface,
-    readOnly,
-    paletteOpen,
-    libraryOpen,
-    libraryTab,
-    cardFocusId,
-    inspectorNodeId,
-    selectedNodeIds,
-    canEditContent,
-    canEditLayout,
-    canPublish,
-    canCreateContent,
-    canCreateBoards,
-    canManageBoards,
-    canManageSchema,
-    canManageTrash,
-    canManageLinks,
-    activateBoard,
-    selectSection,
-    openCardFocus,
-    openInspector,
-    applyView,
-    exitView,
-    createCard,
-    canvasPoint,
-    placeCard,
-    setLibraryOpen,
-    setPaletteOpen,
-    setLibraryTab,
-    openTypeSettings,
-    requestShare,
-    setThemeMode,
-    themeMode,
-  ]);
+        canEditContent,
+        canEditLayout,
+        canPublish,
+        canCreateContent,
+        canCreateBoards,
+        canManageBoards,
+        canManageSchema,
+        canManageTrash,
+        canManageLinks,
+        activateBoard,
+        selectSection,
+        openCardFocus,
+        openInspector,
+        applyView,
+        exitView,
+        createCard,
+        canvasPoint,
+        placeCard,
+        setLibraryOpen,
+        setPaletteOpen,
+        setLibraryTab,
+        openTypeSettings,
+        requestShare,
+        setThemeMode,
+        themeMode,
+      }),
+    [
+      snapshot,
+      savedViews,
+      activeBoardId,
+      activeViewId,
+      workspace,
+      workspaceSurface,
+      readOnly,
+      paletteOpen,
+      libraryOpen,
+      libraryTab,
+      cardFocusId,
+      inspectorNodeId,
+      selectedNodeIds,
+      canEditContent,
+      canEditLayout,
+      canPublish,
+      canCreateContent,
+      canCreateBoards,
+      canManageBoards,
+      canManageSchema,
+      canManageTrash,
+      canManageLinks,
+      activateBoard,
+      selectSection,
+      openCardFocus,
+      openInspector,
+      applyView,
+      exitView,
+      createCard,
+      canvasPoint,
+      placeCard,
+      setLibraryOpen,
+      setPaletteOpen,
+      setLibraryTab,
+      openTypeSettings,
+      requestShare,
+      setThemeMode,
+      themeMode,
+    ],
+  );
 
   /**
    * A new sketch, placed where the dock's card would land and opened in the
-   * focus surface — the same result as the canvas's own "New sketch" menu item.
+   * focus surface. The result matches the canvas's own "New sketch" menu item.
    */
   const createSketch = useCallback(() => {
     if (!canCreateContent) return;
@@ -1036,70 +580,8 @@ function WorkspaceShell({
     createPortal(board.id);
   }, [activeBoardId, canCreateBoards, workspace, createPortal]);
 
-  const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
-  // The canvas behind the cards is a surface of its own (ADR-0051 §1), so the
-  // board's style paints it. React Flow's own layer reads --xy-background-color,
-  // which is what lets the paint reach it without the canvas knowing about styles.
-  const boardPaint = useMemo((): Record<string, string> => {
-    const board = snapshot.boards.find((entry) => entry.id === activeBoardId);
-    if (!board?.style) return {};
-    const paint = surfacePaintVars(resolveSurfaceStyle(board.style, "board"));
-    return { ...paint, "--xy-background-color": "var(--paint-surface)" };
-  }, [snapshot.boards, activeBoardId]);
-  const boardPainted = Object.keys(boardPaint).length > 0;
-  const boardSections = useMemo(
-    () =>
-      activeBoardId ? snapshot.sections.filter((section) => section.boardId === activeBoardId) : [],
-    [snapshot.sections, activeBoardId],
-  );
-  const boardPlacements = useMemo(
-    () =>
-      activeBoardId
-        ? snapshot.placements.filter((placement) => placement.boardId === activeBoardId)
-        : [],
-    [snapshot.placements, activeBoardId],
-  );
-  const boardMembership = useMemo(
-    () =>
-      activeBoardId ? sectionMembership(boardPlacements, boardSections) : new Map<string, string>(),
-    [activeBoardId, boardPlacements, boardSections],
-  );
-  // The same trees the outline rail draws, so the facet and the grouping agree
-  // with it about order and depth.
-  const sectionOrder = useMemo(
-    () =>
-      outlineRows(boardSections, boardMembership).map((row) => ({
-        id: row.section.id,
-        title: row.section.title.trim() || "Untitled section",
-        depth: row.depth,
-      })),
-    [boardSections, boardMembership],
-  );
-
-  /**
-   * A card's section on the active board plus every ancestor, innermost first,
-   * or the unsorted sentinel. Selecting a section therefore includes its subtree.
-   */
-  const sectionIdsByCard = useMemo(() => {
-    const ids = new Map<string, string[]>();
-    for (const placement of boardPlacements) {
-      const match = sectionForCard(placement, boardSections);
-      ids.set(
-        placement.cardId,
-        match
-          ? sectionPath(match, boardSections)
-              .map((section) => section.id)
-              .reverse()
-          : [UNSORTED_SECTION],
-      );
-    }
-    return ids;
-  }, [boardPlacements, boardSections]);
-
-  const sectionIdsFor = useCallback(
-    (cardId: string): string[] => sectionIdsByCard.get(cardId) ?? [UNSORTED_SECTION],
-    [sectionIdsByCard],
-  );
+  const { activeBoardName, boardPaint, boardPainted, sectionOrder, sectionIdsFor } =
+    useBoardDerivations({ snapshot, activeBoardId });
 
   const toItem = useCallback(
     (cardId: string): LibraryItem => {
@@ -1284,309 +766,104 @@ function WorkspaceShell({
   if (boot.show) return <BootSkeleton exiting={boot.exiting} />;
 
   return (
-    <SurfaceRulesContext.Provider value={surfaceRules}>
-      <div
-        ref={shellRef}
-        className="app-canvas flex h-screen w-screen flex-col"
-        data-ready={ready && synced}
-        data-leaving={leaving ? "true" : undefined}
-        // The shell's own paint: present only when the workspace names a style,
-        // so an unstyled workspace renders exactly as it did before the rules.
-        data-shell-paint={shellPaint.fields || undefined}
-        data-shell-regions={paintedShellRegions || undefined}
-        style={{ ...shellPaint.vars, ...shellRegionVars } as CSSProperties}
-      >
-        <TitleBar
-          onNavigateHome={requestLeave}
-          onOpenSearch={() => setPaletteOpen(true)}
-          // A standalone build never opens a socket, so "Syncing" would be a lie;
-          // the status slot reports the connection it has (none) beside the note.
-          status={standalone ? "disconnected" : status}
-          {...(share ? { role: share.role } : {})}
-          peerCount={standalone ? 0 : peerCount}
-          // Everything about *this* device's copy lives under the same control that
-          // says who else is here (ADR-0064 amendment): one status, one press.
-          storage={
-            <StoragePanel
-              workspaceId={workspaceId}
-              signedIn={signedIn}
-              synced={inRoom}
-              onSignIn={openSignIn}
-            />
-          }
-          workspaceName={share ? documentLabel(share, workspaceId) : workspaceName}
-          canRenameWorkspace={!share && !readOnly}
-          onRenameWorkspace={(name) => {
-            try {
-              workspace.renameWorkspace(name);
-              rememberWorkspaceName(workspaceId, workspace.workspaceName());
-              setWorkspaceName(workspace.workspaceName());
-              return null;
-            } catch (cause) {
-              return cause instanceof Error ? cause.message : "Could not rename the workspace.";
-            }
-          }}
-          actions={
-            // Share sessions only exist on a relay. The literal is inlined by Vite,
-            // so a standalone build drops this branch — and the publish button and
-            // `/api/shares` client behind it — instead of shipping dead relay UI.
-            // A constant or `isStandalone()` call would be opaque to the bundler.
-            share && import.meta.env.VITE_SUITE_MODE !== "standalone" ? (
-              <SharePublishButton />
-            ) : (
-              <>
-                <Suspense fallback={null}>
-                  <WorkspaceActions
-                    workspaceId={workspaceId}
-                    boardId={activeBoardId}
-                    title={activeBoardName ?? "Workspace"}
-                    onLeave={requestLeave}
-                    {...(canManageSchema ? { onOpenStyles: () => setStylesOpen(true) } : {})}
-                  />
-                </Suspense>
-                {standalone ? (
-                  <span
-                    data-testid="local-only"
-                    title="This build keeps every workspace in this browser: no sync, no sharing."
-                    className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)]"
-                  >
-                    Local only
-                  </span>
-                ) : null}
-                {/* A standalone build has no server, so it has no accounts to offer. */}
-                {standalone ? null : <SignInEntry />}
-              </>
-            )
-          }
-        >
-          {workspaceSurface ? (
-            <>
-              <div className="views-bar">
-                <ViewsBar
-                  canManage={canManageSchema}
-                  // A view's result is a queue like any other; the view's sorts are
-                  // the order, so a threaded run follows the list on screen.
-                  {...(canEditLayout
-                    ? {
-                        onPlaceResults: (cardIds: readonly string[]) =>
-                          runCards(cardIds, useUiStore.getState().mode, "view"),
-                      }
-                    : {})}
-                />
-              </div>
-              {/*
-              A way back exists only where the reader was *taken* somewhere: a
-              portal entry. Tab clicks already leave every board one click away,
-              so a chevron for those was a second, single-direction control in
-              the busiest corner of the bar.
-            */}
-              {activeBoardId && boardHistory.at(-1)?.via === "portal" ? (
-                <button
-                  type="button"
-                  data-testid="portal-back"
-                  aria-label={`Back to ${
-                    snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                      ?.name ?? "the previous board"
-                  }`}
-                  title={`Back to ${
-                    snapshot.boards.find((board) => board.id === boardHistory.at(-1)?.boardId)
-                      ?.name ?? "the previous board"
-                  }`}
-                  className="portal-back"
-                  onClick={() => goBackBoard()}
-                >
-                  <span aria-hidden="true">{"\u2039"}</span>
-                </button>
-              ) : null}
-              <BoardTabs
-                boards={openBoards}
-                activeBoardId={activeBoardId}
-                homeBoardId={navigation.homeBoardId}
-                newTabBoardId={navigation.newTabBoardId}
-                openableBoards={snapshot.boards.filter((board) => !openBoardIds.includes(board.id))}
-                onSelect={activateBoard}
-                peersByBoard={peersByBoard}
-                canCreateBoards={canCreateBoards}
-                canManageBoards={canManageBoards}
-                onCreate={() => {
-                  const board = workspace.createBoard();
-                  activateBoard(board.id);
-                }}
-                onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
-                onClose={closeBoardTab}
-              />
-            </>
-          ) : null}
-        </TitleBar>
-
-        <main
-          ref={boardRef}
-          className={`board-surface relative z-10 min-h-0 flex-1${boardPainted ? " is-painted" : ""}`}
-          style={boardPainted ? (boardPaint as CSSProperties) : undefined}
-        >
-          <CanvasBoard />
-          {workspaceSurface && canCreateContent && boardEmpty ? (
-            <div
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
-              data-testid="empty-board"
-            >
-              <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
-                <p className="text-[13px] font-semibold">A blank board</p>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--ink-muted)]">
-                  Double-click anywhere, or start with a note.
-                </p>
-                <button
-                  type="button"
-                  className="mt-3 rounded-lg bg-[var(--ink)] px-3 py-1.5 text-[12px] font-medium text-[var(--surface)] hover:opacity-90"
-                  onClick={() => createCard("note")}
-                >
-                  New note
-                </button>
-              </div>
-            </div>
-          ) : null}
-          {sharedEmpty ? (
-            <div
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4"
-              data-testid="empty-board"
-              data-empty-reason="shared-cards-gone"
-            >
-              <div className="pointer-events-auto max-w-[320px] rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] px-5 py-4 text-center shadow-lg">
-                <p className="text-[12px] leading-5 text-[var(--ink-muted)]">
-                  Nothing to show — these shared cards were moved or deleted.
-                </p>
-              </div>
-            </div>
-          ) : null}
-          <BoardOutlineHost />
-          <CardInspectorHost />
-          <CardFocusHost />
-          <TourOverlayHost />
-        </main>
-
-        {workspaceSurface && !readOnly && !cardFocusId ? (
-          <Dock
-            inboxCount={unplaced.length}
-            libraryOpen={libraryOpen}
-            onToggleLibrary={() => setLibraryOpen(!libraryOpen)}
-            types={snapshot.types}
-            boards={snapshot.boards}
-            activeBoardId={activeBoardId}
-            onCreateCard={createCardInRun}
-            onCreatePortal={createPortal}
-            onCreateSketch={createSketch}
-            onCreateSection={createSection}
-            onCreateBoardPortal={createBoardPortal}
-            onManageTypes={openTypeSettings}
-            canManageSchema={canManageSchema}
-            canCreateContent={canCreateContent}
-            canCreateBoards={canCreateBoards}
-          />
-        ) : null}
-
-        {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
-
-        {/*
-          The rule list is a view of the document, not a mode: it opens over the board and closes on
-          Escape, like the type settings it sits beside.
-        */}
-        {workspaceSurface && canManageSchema && stylesOpen ? (
-          <Suspense fallback={null}>
-            <StylesDialog open canEdit onClose={() => setStylesOpen(false)} />
-          </Suspense>
-        ) : null}
-
-        {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
-
-        {workspaceSurface && !readOnly ? (
-          <LibraryDrawer
-            open={libraryOpen}
-            tab={libraryTab}
-            counts={{
-              inbox: unplaced.length,
-              cards: allCards.length,
-              boards: snapshot.boards.length,
-              trash: trashed.length,
-            }}
-            inbox={inboxItems}
-            cards={cardItems}
-            trash={trashItems}
-            boards={boardEntries}
-            onOpenBoard={activateBoard}
-            onPlaceBoard={createPortal}
-            onUnplaceBoardCards={unplaceBoardCards}
-            onDeleteBoard={deleteBoard}
-            onLocateCard={locateCard}
-            onLocateBoard={locateBoard}
-            {...(canCreateBoards
-              ? {
-                  onUseBoardTemplate: useBoardTemplate,
-                  onUseStarter: useStarter,
-                  starters: BOARD_STARTERS,
-                }
-              : {})}
-            {...(canManageBoards ? { onSetBoardTemplate: setBoardTemplate } : {})}
-            onTab={setLibraryTab}
-            onClose={() => setLibraryOpen(false)}
-            onPlace={placeCard}
-            onCreateInInbox={() => workspace.createCard()}
-            onTrash={(cardId) => workspace.trashCard(cardId)}
-            onRestore={(cardId) => workspace.restoreCard(cardId)}
-            onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
-            onEmptyTrash={() => workspace.emptyTrash()}
-            onGoToBoard={activateBoard}
-            onDropAt={(cardId, point) => placeCard(cardId, point)}
-            canPlace={canEditLayout}
-            types={snapshot.types}
-            tags={snapshot.tags}
-            typeFilter={libraryTypeFilter}
-            tagFilter={libraryTagFilter}
-            onToggleType={toggleLibraryType}
-            onToggleTag={toggleLibraryTag}
-            onClearFilters={clearLibraryFilters}
-            activeBoardId={activeBoardId}
-            activeBoardName={activeBoardName}
-            scope={libraryScope}
-            onScope={setLibraryScope}
-            full={libraryFull}
-            onFull={setLibraryFull}
-            sectionFilter={librarySectionFilter}
-            onToggleSection={toggleLibrarySection}
-            sectionOrder={sectionOrder}
-            groupBySection={libraryGroupBySection}
-            onToggleGroup={toggleLibraryGroupBySection}
-            onOpenCard={openInspector}
-            onRunCards={(cardIds, runMode) => runCards(cardIds, runMode, "selection")}
-            onQueueCards={(cardIds) => {
-              usePlacementRunStore.getState().enqueue(cardIds);
-              placementRun.step();
-            }}
-            onRunLoop={(cardIds) => startPlacementLoop(cardIds)}
-            runActive={placementRunActive}
-            canManageTrash={canManageTrash}
-          />
-        ) : null}
-
-        {/* The account surfaces: sign-in, and the admission panel while an account waits. */}
-        {standalone ? null : (
-          <Suspense fallback={null}>
-            <SignInSurface />
-          </Suspense>
-        )}
-
-        {/* The way out, when this browser is the only place the work exists. */}
-        {leavingPrompt ? (
-          <LeavingDialog
-            workspaceId={workspaceId}
-            title={workspaceName}
-            {...(standalone ? {} : { onSignIn: openSignIn })}
-            onLeave={leaveAnyway}
-            onDismiss={dismissLeavePrompt}
-          />
-        ) : null}
-
-        <PerfOverlay />
-      </div>
-    </SurfaceRulesContext.Provider>
+    <WorkspaceShellView
+      shellRef={shellRef}
+      boardRef={boardRef}
+      ready={ready}
+      synced={synced}
+      leaving={leaving}
+      leavingPrompt={leavingPrompt}
+      shellPaint={shellPaint}
+      shellRegionVars={shellRegionVars}
+      paintedShellRegions={paintedShellRegions}
+      surfaceRules={surfaceRules}
+      requestLeave={requestLeave}
+      setPaletteOpen={setPaletteOpen}
+      standalone={standalone}
+      status={status}
+      share={share}
+      peerCount={peerCount}
+      workspaceId={workspaceId}
+      workspace={workspace}
+      workspaceName={workspaceName}
+      setWorkspaceName={setWorkspaceName}
+      signedIn={signedIn}
+      inRoom={inRoom}
+      openSignIn={openSignIn}
+      readOnly={readOnly}
+      setStylesOpen={setStylesOpen}
+      activeBoardId={activeBoardId}
+      activeBoardName={activeBoardName}
+      canManageSchema={canManageSchema}
+      workspaceSurface={workspaceSurface}
+      canEditLayout={canEditLayout}
+      canCreateContent={canCreateContent}
+      canCreateBoards={canCreateBoards}
+      canManageBoards={canManageBoards}
+      canManageTrash={canManageTrash}
+      setLibraryOpen={setLibraryOpen}
+      libraryOpen={libraryOpen}
+      libraryTab={libraryTab}
+      snapshot={snapshot}
+      openBoards={openBoards}
+      openBoardIds={openBoardIds}
+      boardHistory={boardHistory}
+      goBackBoard={goBackBoard}
+      navigation={navigation}
+      peersByBoard={peersByBoard}
+      activateBoard={activateBoard}
+      closeBoardTab={closeBoardTab}
+      runCards={runCards}
+      boardPainted={boardPainted}
+      boardPaint={boardPaint}
+      boardEmpty={boardEmpty}
+      sharedEmpty={sharedEmpty}
+      createCard={createCard}
+      createCardInRun={createCardInRun}
+      createPortal={createPortal}
+      createSketch={createSketch}
+      createSection={createSection}
+      createBoardPortal={createBoardPortal}
+      openTypeSettings={openTypeSettings}
+      stylesOpen={stylesOpen}
+      paletteItems={paletteItems}
+      unplaced={unplaced}
+      trashed={trashed}
+      allCards={allCards}
+      trashItems={trashItems}
+      cardFocusId={cardFocusId}
+      inboxItems={inboxItems}
+      cardItems={cardItems}
+      boardEntries={boardEntries}
+      unplaceBoardCards={unplaceBoardCards}
+      deleteBoard={deleteBoard}
+      locateCard={locateCard}
+      locateBoard={locateBoard}
+      useBoardTemplate={useBoardTemplate}
+      useStarter={useStarter}
+      setBoardTemplate={setBoardTemplate}
+      setLibraryTab={setLibraryTab}
+      placeCard={placeCard}
+      toggleLibraryType={toggleLibraryType}
+      toggleLibraryTag={toggleLibraryTag}
+      clearLibraryFilters={clearLibraryFilters}
+      libraryTypeFilter={libraryTypeFilter}
+      libraryTagFilter={libraryTagFilter}
+      libraryScope={libraryScope}
+      setLibraryScope={setLibraryScope}
+      libraryFull={libraryFull}
+      setLibraryFull={setLibraryFull}
+      librarySectionFilter={librarySectionFilter}
+      toggleLibrarySection={toggleLibrarySection}
+      sectionOrder={sectionOrder}
+      libraryGroupBySection={libraryGroupBySection}
+      toggleLibraryGroupBySection={toggleLibraryGroupBySection}
+      openInspector={openInspector}
+      startPlacementLoop={startPlacementLoop}
+      placementRunStep={placementRun.step}
+      placementRunActive={placementRunActive}
+      leaveAnyway={leaveAnyway}
+      dismissLeavePrompt={dismissLeavePrompt}
+    />
   );
 }

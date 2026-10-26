@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { menuKeyDown } from "../dialogs/menuKeys";
 import { UNSORTED_SECTION } from "../library/libraryFilters";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
@@ -193,6 +194,7 @@ export function ViewsBar({
           role="menu"
           aria-label="Saved views"
           data-testid="views-menu"
+          onKeyDown={menuKeyDown}
           className="absolute left-0 top-full z-50 mt-1 min-w-[200px] max-w-[260px] rounded-lg border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
         >
           {views.length === 0 ? (

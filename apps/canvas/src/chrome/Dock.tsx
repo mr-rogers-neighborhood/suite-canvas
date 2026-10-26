@@ -2,6 +2,7 @@ import type { Board, CardType } from "@suite/graph";
 import { PORTAL_TYPE_ID } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { PORTAL_GLYPH } from "../cards/portal";
+import { menuKeyDown } from "../dialogs/menuKeys";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
@@ -161,6 +162,7 @@ export function Dock({
           <div
             role="menu"
             data-testid="dock-type-menu"
+            onKeyDown={menuKeyDown}
             className="absolute bottom-full left-1/2 mb-2 w-48 -translate-x-1/2 overflow-visible rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
           >
             {creatableTypes.map((type) => (
@@ -249,6 +251,7 @@ export function Dock({
                       role="menu"
                       aria-label="New portal"
                       data-testid="dock-portal-menu"
+                      onKeyDown={menuKeyDown}
                       className="absolute bottom-0 left-full ml-1 min-w-[170px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
                     >
                       {portalTargets.map((board) => (

@@ -49,7 +49,7 @@ stores in one file. Two stores must never share a file, whatever the mode.
 | `SUITE_VERSION` | `package.json` | the stamp reported by `/metrics`, `/api/admin/status` and the startup line; an empty value is refused |
 | `SUITE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `SUITE_TRUST_PROXY` | `0` | `1` uses the first `X-Forwarded-For` hop as the client address for rate limits |
-| `SUITE_ALLOWED_ORIGINS` | empty | comma-separated extra browser origins for the HTTP API; empty means same-origin |
+| `SUITE_ALLOWED_ORIGINS` | empty | browser origins for the HTTP API, comma-separated; empty answers loopback origins only, `*` answers any origin |
 | `SUITE_PUBLIC_URL` | none | base URL used for links created by `POST /api/admin/fixtures` |
 
 An unset worker token is generated per start, which only matters if a worker reconnects after a restart.

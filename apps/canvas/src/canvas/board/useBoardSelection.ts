@@ -9,6 +9,25 @@ import type { useBoardRefs } from "./useBoardRefs";
 import type { useBoardUi } from "./useBoardUi";
 
 /**
+ * React Flow's marquee in screen pixels, as a normalised flow rectangle. Both
+ * box consumers — the presence publish and the section-scope release — read it
+ * from here, so they cannot disagree about the conversion at a zoom level.
+ */
+function flowBoxOf(
+  screenToFlowPosition: (point: { x: number; y: number }) => { x: number; y: number },
+  rect: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const start = screenToFlowPosition({ x: rect.x, y: rect.y });
+  const end = screenToFlowPosition({ x: rect.x + rect.width, y: rect.y + rect.height });
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+}
+
+/**
  * Who is selected, and the marquee that decides it. React Flow owns the live
  * gesture; this hook keeps its guard flags honest, reconciles the store once per
  * gesture, and publishes the box and the selection to peers.
@@ -294,17 +313,7 @@ export function useBoardSelection(
       setSelectionBox(null);
       return;
     }
-    const start = screenToFlowPosition({ x: selectionRect.x, y: selectionRect.y });
-    const end = screenToFlowPosition({
-      x: selectionRect.x + selectionRect.width,
-      y: selectionRect.y + selectionRect.height,
-    });
-    const box = {
-      x: Math.min(start.x, end.x),
-      y: Math.min(start.y, end.y),
-      width: Math.abs(end.x - start.x),
-      height: Math.abs(end.y - start.y),
-    };
+    const box = flowBoxOf(screenToFlowPosition, selectionRect);
     // Kept unthrottled: the closing gesture reads this, and a frame that lands
     // inside the throttle window is still part of the box the user drew.
     marqueeBox.current = box;
@@ -328,18 +337,7 @@ export function useBoardSelection(
       releaseMarqueeScope();
       return;
     }
-    const start = screenToFlowPosition({ x: selectionRect.x, y: selectionRect.y });
-    const end = screenToFlowPosition({
-      x: selectionRect.x + selectionRect.width,
-      y: selectionRect.y + selectionRect.height,
-    });
-    const box = {
-      x: Math.min(start.x, end.x),
-      y: Math.min(start.y, end.y),
-      width: Math.abs(end.x - start.x),
-      height: Math.abs(end.y - start.y),
-    };
-    if (leavesSection(section, box)) {
+    if (leavesSection(section, flowBoxOf(screenToFlowPosition, selectionRect))) {
       releaseMarqueeScope();
       return;
     }

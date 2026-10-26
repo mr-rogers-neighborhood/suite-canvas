@@ -1,5 +1,5 @@
 import type { StyleRule, StyleRuleScope, WorkspaceDocument } from "@suite/graph";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StyledSurfaceKind } from "../canvas/styleTargets";
 import {
@@ -10,6 +10,7 @@ import {
   surfacesUnderRule,
   withoutRule,
 } from "../canvas/styleTargets";
+import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -80,8 +81,10 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
   const rules = useStyleRules(workspace);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
+  const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose, open);
+  useFocusTrap(panel, open);
 
   if (!open) return null;
 
@@ -133,9 +136,11 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Styles"
+        tabIndex={-1}
         data-testid="styles-dialog"
         className="relative flex h-[min(560px,calc(100vh-3rem))] w-[min(820px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] shadow-xl"
       >

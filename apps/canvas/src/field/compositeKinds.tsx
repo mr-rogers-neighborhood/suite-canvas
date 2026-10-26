@@ -328,30 +328,6 @@ function ListEditor({
   );
 }
 
-/** `7/10`: the number the field actually stores, with its scale. */
-function formatRating(
-  value: PropertyValue | undefined,
-  field: FieldDefinition | undefined,
-): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "";
-  return `${value}/${field ? ratingScale(field) : 5}`;
-}
-
-/** A view counts rather than edits a composite field (ADR-0057 §5). */
-function formatGroup(value: PropertyValue | undefined, field: FieldDefinition | undefined): string {
-  if (!field) return "";
-  const record = asRecord(value);
-  const subs = sortedSubFields(field);
-  const filled = subs.filter((sub) => record[sub.id] !== undefined).length;
-  return filled === 0 ? "" : `${filled}/${subs.length} filled`;
-}
-
-function formatList(value: PropertyValue | undefined): string {
-  const items = asItems(value);
-  if (items.length === 0) return "";
-  return items.length === 1 ? "1 item" : `${items.length} items`;
-}
-
-registerFieldKind({ kind: "rating", editor: RatingEditor, format: formatRating });
-registerFieldKind({ kind: "group", editor: GroupEditor, format: formatGroup });
-registerFieldKind({ kind: "list", editor: ListEditor, format: formatList });
+registerFieldKind({ kind: "rating", editor: RatingEditor });
+registerFieldKind({ kind: "group", editor: GroupEditor });
+registerFieldKind({ kind: "list", editor: ListEditor });

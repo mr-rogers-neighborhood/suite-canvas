@@ -354,6 +354,28 @@ describe("CardPanel tabs", () => {
     expect(screen.queryByTestId("property-owner")).not.toBeInTheDocument();
   });
 
+  it("moves between tabs with the arrow keys and keeps one tab in the tab order", () => {
+    renderPanel();
+    const details = screen.getByTestId("card-panel-tab-details");
+    const content = screen.getByTestId("card-panel-tab-content");
+    const style = screen.getByTestId("card-panel-tab-style");
+
+    // The strip is one stop: only the selected tab is reachable with Tab.
+    expect(details).toHaveAttribute("tabindex", "0");
+    expect(content).toHaveAttribute("tabindex", "-1");
+    expect(style).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(details, { key: "ArrowRight" });
+
+    expect(content).toHaveAttribute("aria-selected", "true");
+    expect(content).toHaveFocus();
+
+    fireEvent.keyDown(content, { key: "ArrowLeft" });
+
+    expect(details).toHaveAttribute("aria-selected", "true");
+    expect(details).toHaveFocus();
+  });
+
   it("opens on Details when it was asked to reveal a field", () => {
     renderPanel({ bodyEmpty: true, focusedField: "owner" });
 

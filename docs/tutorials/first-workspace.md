@@ -5,19 +5,23 @@ survives a reload. Start the app first with [Run Suite locally](run-locally.md).
 
 ## 1. Create a board
 
-Use the plus in the board tab bar to add a board. The new board is empty and selected. Board tabs
-switch between boards inside the same workspace.
+The board tabs sit at the top. The control at their right opens a menu; choose **New board**. The new
+board is empty and selected, and the menu lists every other board in the workspace.
 
 ## 2. Add a card
 
-Open the dock at the bottom of the canvas. The library opens on the **Cards** tab. Click a card type
-to create a card on the current board.
+The dock is the floating toolbar at the bottom centre. **New card** opens a menu of card types; choose
+**Note**. The card is created at the centre of the viewport and its title is focused for typing.
 
 Click the card title and type `Launch plan`. The title is rich text, so bold and italics work there.
 
+**Library** in the same dock opens the drawer, which lists every card in the workspace and offers the
+same types.
+
 ## 3. Add a second card
 
-Create another card and title it `Interview notes`. Put the two cards side by side by dragging one.
+Create another card and title it `Interview notes`. Put the two cards side by side by dragging one. The
+live position follows the pointer; the drop writes the placement.
 
 ## 4. Link the cards
 
@@ -28,20 +32,24 @@ Select the link to change its path style or add a description.
 
 ## 5. Take a card off the board
 
-Drag `Interview notes` to the library dock. The card leaves the board but stays in the workspace. It
-is in the **Inbox** tab, and the **Cards** tab lists every card in the workspace.
+Right-click `Interview notes` and choose **Remove from board**. The card leaves the board and stays in
+the workspace, which puts it in the drawer's **Inbox** tab; the **Cards** tab still lists every card.
 
-Place it back on the board with the row menu.
+The row menu in the library offers **Place on board** to put it back.
 
 ## 6. Reload
 
-Reload the page. The board, both cards, the link and the card's position come back. Move a card and
-reload again. The new position persists because positions are written to the CRDT on drag stop.
+Reload the page. The board and the card on it come back, and `Interview notes` is still in the Inbox.
+The link is still in the document; it draws again as soon as both of its cards are on the board.
+
+Move a card and reload again. The new position persists because the drop writes the placement to the
+CRDT.
 
 ## 7. Look at the model
 
 A workspace owns its cards. A board is a view that places those cards. A card exists without a board,
 which is why the library can show it after it leaves one.
 
-The model is described in [architecture.md](../reference/architecture.md). The gestures and
-shortcuts are in [add-a-feature.md](../how-to/add-a-feature.md) when you want to change them.
+The model is described in [architecture.md](../reference/architecture.md). The layers that draw the
+board and own each gesture are in [canvas.md](../reference/canvas.md); changing a gesture is
+[change-the-canvas.md](../how-to/change-the-canvas.md).

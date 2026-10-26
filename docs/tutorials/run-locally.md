@@ -19,21 +19,26 @@ The install also prepares the git hooks.
 pnpm dev
 ```
 
-This starts the canvas on <http://localhost:5173> and the Loro sync relay on port 1234. Open the
-canvas URL in your browser.
+This runs two Vite/tsx watchers: the canvas on <http://localhost:5173> and the collab server. The
+server listens on port 1234 for the Loro WebSocket and on port 1235 for its HTTP API. Open the canvas
+URL in your browser.
 
 ## 3. Create a workspace
 
-The app opens on the workspace launcher. Choose **Start a blank workspace**. A workspace contains one
-board and a small set of starter cards.
+The app opens on the workspace launcher. Choose **New workspace**. The launcher writes an owner key for
+the new workspace in this browser and opens it.
+
+A new workspace starts blank: one board, no cards. Workspaces created before the blank default keep the
+two starter cards they were seeded with.
 
 The URL now names the workspace (`?workspace=<id>`). Bookmark it. The id is the sync room and the
 IndexedDB key, so the same URL opens the same document.
 
 ## 4. Check that it persists
 
-Change a card title, then reload the page. The title is still there. The document is stored in
-IndexedDB as a Loro snapshot plus an update log, so a reload rehydrates without the network.
+Add a card with **New card**, type a title, then reload the page. The card and its title are still
+there. The document is stored in IndexedDB as a Loro snapshot plus an update log, so a reload rehydrates
+without the network.
 
 ## 5. Open a second window
 
@@ -44,8 +49,9 @@ Stop the app with `Ctrl-C`.
 
 ## If it does not start
 
-Port 5173 or 1234 is already in use. Stop the process that owns it, or run the canvas alone with
-`pnpm --filter @suite/canvas dev` and skip sync.
+Port 5173, 1234 or 1235 is already in use. Stop the process that owns it, or run the canvas alone with
+`pnpm --filter @suite/canvas dev` and skip sync. A canvas without the collab server still edits and
+persists in this browser; the title bar reads **Offline**.
 
 If the page loads but the document is empty, check the browser console for an IndexedDB error. A
 private window with storage disabled cannot persist a workspace.

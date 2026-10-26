@@ -8,4 +8,4 @@ Why the product and the code are shaped this way, including the decisions that p
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Design direction](design.md) | Suite is a local-first, collaborative tool for thinking. The canvas is where ideas are arranged, and the workspace is the set of objects those arrange… | 2026-10-26 |
+| [Design direction](design.md) | Suite is a local-first canvas over a workspace of typed cards. One Loro document holds the whole workspace, the browser edits it offline, and a relay… | 2026-10-26 |

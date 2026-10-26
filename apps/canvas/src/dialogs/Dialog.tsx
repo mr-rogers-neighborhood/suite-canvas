@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { useFocusTrap } from "./useFocusTrap";
 
 export interface DialogAction {
   label: string;
@@ -22,9 +23,7 @@ export function Dialog({ title, description, actions, onClose }: DialogProps) {
   const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose);
-  useEffect(() => {
-    panel.current?.focus();
-  }, []);
+  useFocusTrap(panel);
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">

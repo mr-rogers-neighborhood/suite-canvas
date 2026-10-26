@@ -25,6 +25,7 @@ test("a peer sees the card being dragged out of the library", async ({ browser }
   // A card that only lives in the inbox, so the drag has somewhere to start.
   await pageA.getByTestId("dock-new-card").click();
   await pageA.getByTestId("dock-type-note").click();
+  await expect(pageA.locator(".card-title-editor.ProseMirror-focused")).toHaveCount(1);
   await pageA.keyboard.type("Library card");
   await pageA.keyboard.press("Escape");
   await pageA.locator(".card-header").first().click({ button: "right" });

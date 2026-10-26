@@ -143,6 +143,13 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     beatNow();
   };
 
+  /**
+   * Stops the previous binding's subscription and poll. A reconnect hands over a
+   * new `EphemeralStore`, and a leaked pair would keep publishing into a store
+   * nobody reads and rewriting the peer list twice a second.
+   */
+  let stopBinding: (() => void) | null = null;
+
   return {
     localUser: getOrCreateIdentity(),
     presenceStore: initial.presence ?? null,
@@ -153,14 +160,16 @@ export const usePresenceStore = create<PresenceState>((set, get) => {
     bind: (store, peerId) => {
       const current = get();
       if (current.bound && current.presenceStore === store && current.peerId === peerId) return;
+      stopBinding?.();
       store.set(peerId, localState);
-      store.subscribe(sync);
+      const unsubscribe = store.subscribe(sync);
       const timer = setInterval(sync, 1000);
+      stopBinding = () => {
+        unsubscribe();
+        window.clearInterval(timer);
+      };
       set({ presenceStore: store, peerId, bound: true });
       sync();
-      // The timer is intentionally process-lifetime: the store lives as long as
-      // the workspace, and Dev HMR replaces the module rather than the store.
-      void timer;
     },
 
     setBoard: (boardId) => publish(AWARENESS_FIELDS.board, boardId),

@@ -114,11 +114,14 @@ export interface CardTitleOption {
 /**
  * Live display titles for every card. A title is rich text, so editing it moves
  * no card record and no snapshot section; the picker and the reference rows
- * would otherwise keep naming cards by their old titles. One subscription per
- * card updates a single entry per keystroke, coalesced to one frame.
+ * would otherwise keep naming cards by their old titles. Card changes arrive on
+ * the snapshot store's one stream, coalesced to a frame, so the number of cards
+ * does not decide how many subscriptions this opens or how often they are torn
+ * down.
  */
 export function useCardTitles(): readonly CardTitleOption[] {
   const workspace = useCanvasStore((state) => state.workspace);
+  const store = useWorkspaceStore();
   const snapshot = useWorkspaceSnapshot();
   const [titles, setTitles] = useState<ReadonlyMap<string, string>>(() => new Map());
   const pending = useRef(new Set<string>());
@@ -134,7 +137,7 @@ export function useCardTitles(): readonly CardTitleOption[] {
         let next: Map<string, string> | null = null;
         for (const cardId of changed) {
           const title = workspace.displayTitle(cardId);
-          // Body edits also fire the title listener; keep the same map when the
+          // Body edits also fire a card change; keep the same map when the
           // first line did not move so the host does not re-render per keystroke.
           if (previous.get(cardId) === title) continue;
           next ??= new Map(previous);
@@ -144,20 +147,18 @@ export function useCardTitles(): readonly CardTitleOption[] {
       });
     };
 
-    const unsubscribers = snapshot.cards.map((card) =>
-      workspace.observeTitle(card.id, () => {
-        pending.current.add(card.id);
-        if (frame.current === null) frame.current = requestAnimationFrame(flush);
-      }),
-    );
+    const stopCards = store.subscribeCardChanges((cardIds) => {
+      for (const cardId of cardIds) pending.current.add(cardId);
+      if (frame.current === null) frame.current = requestAnimationFrame(flush);
+    });
 
     return () => {
-      for (const unsubscribe of unsubscribers) unsubscribe();
+      stopCards();
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
       pending.current.clear();
     };
-  }, [workspace, snapshot.cards]);
+  }, [store, workspace]);
 
   return useMemo(
     () =>

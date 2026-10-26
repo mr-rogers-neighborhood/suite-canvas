@@ -415,3 +415,11 @@
   line-height: 1.5;
   outline: none;
 }
+
+/* A spotlight that slides between steps is movement, not a colour change: with
+   reduced motion it jumps to the next target instead. */
+@media (prefers-reduced-motion: reduce) {
+  .tour-overlay__spotlight {
+    transition: none;
+  }
+}

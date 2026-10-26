@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import { useFocusTrap } from "./useFocusTrap";
 
 /**
  * The in-app leave interstitial (ADR-0025
@@ -34,9 +35,7 @@ export function LeavingDialog({
   const [exported, setExported] = useState<"idle" | "done" | "failed">("idle");
 
   useEscapeLayer(onDismiss);
-  useEffect(() => {
-    panel.current?.focus();
-  }, []);
+  useFocusTrap(panel);
 
   // The same backup File → Export backup writes: a leave prompt is not the place
   // to invent a second export format.

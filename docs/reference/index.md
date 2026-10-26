@@ -6,9 +6,14 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
-| [Architecture](architecture.md) | Suite is a local-first collaborative canvas whose data is a typed object graph with semantic links, so the same content can later be read as a knowled… | 2026-10-26 |
-| [Billing and licences](billing.md) | Hosted billing is closed for the alpha. There is no button, no price and no deployed route, and SUITE_BILLING_ENABLED defaults to 0, which refuses eve… | 2026-10-26 |
+| [Runtime](runtime.md) | The browser process: boot order, persistence, the relay, sharing, and the diagnostics an operator can read. It does not cover the document model (data… | 2026-10-26 |
+| [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-26 |
+| [Editing](editing.md) | How card text, fields, templates and reference chips are stored and edited; the document model underneath is in architecture.md. | 2026-10-26 |
+| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-26 |
+| [Data model](data-model.md) | This page does not cover how the canvas draws these records or how a share link is authenticated; architecture.md and security-model.md own those. It… | 2026-10-26 |
 | [Coding conventions](conventions.md) | The rules as rules. The model they serve is architecture.md. The procedure that applies them is ../how-to/add-a-feature.md, and the gate is ../how-to/… | 2026-10-26 |
+| [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-26 |
+| [Billing and licences](billing.md) | Hosted billing is closed for the alpha. There is no button, no price and no deployed route, and SUITE_BILLING_ENABLED defaults to 0, which refuses eve… | 2026-10-26 |
 | [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-26 |
 | [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-10-26 |
 | [Limits](limits.md) | What one Suite instance accepts, and what happens at the boundary. The numbers below are read from the code that enforces them, so they cannot drift f… | 2026-10-26 |

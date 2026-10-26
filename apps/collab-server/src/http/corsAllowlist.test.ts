@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CORS_HEADERS } from "./respond.js";
+import { applyCors, CORS_HEADERS } from "./respond.js";
 
 /**
  * Every custom request header the browser app sends must be named in
@@ -73,5 +74,72 @@ describe("CORS header allowlist", () => {
     for (const header of ["content-type", "authorization"]) {
       expect(allowed).toContain(header);
     }
+  });
+});
+
+describe("CORS origin policy", () => {
+  /** The two members `applyCors` touches. */
+  function corsFor(origin: string | undefined): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const request = { headers: origin === undefined ? {} : { origin } } as IncomingMessage;
+    const response = {
+      setHeader: (name: string, value: string) => {
+        headers[name.toLowerCase()] = value;
+      },
+    } as unknown as ServerResponse;
+    applyCors(request, response);
+    return headers;
+  }
+
+  function withUnsetAllowlist<T>(run: () => T): T {
+    const previous = process.env.SUITE_ALLOWED_ORIGINS;
+    delete process.env.SUITE_ALLOWED_ORIGINS;
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.SUITE_ALLOWED_ORIGINS;
+      else process.env.SUITE_ALLOWED_ORIGINS = previous;
+    }
+  }
+
+  it("answers a loopback origin when the allowlist is unset", () => {
+    const headers = withUnsetAllowlist(() => corsFor("http://localhost:5173"));
+    expect(headers["access-control-allow-origin"]).toBe("http://localhost:5173");
+    expect(headers["access-control-allow-credentials"]).toBe("true");
+  });
+
+  it("refuses a public origin when the allowlist is unset", () => {
+    const headers = withUnsetAllowlist(() => corsFor("https://evil.example.com"));
+    expect(headers["access-control-allow-origin"]).toBeUndefined();
+    expect(headers["access-control-allow-credentials"]).toBeUndefined();
+  });
+
+  it("answers every origin when the allowlist is `*`", () => {
+    const previous = process.env.SUITE_ALLOWED_ORIGINS;
+    process.env.SUITE_ALLOWED_ORIGINS = "*";
+    try {
+      expect(corsFor("https://app.example.com")["access-control-allow-origin"]).toBe(
+        "https://app.example.com",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.SUITE_ALLOWED_ORIGINS;
+      else process.env.SUITE_ALLOWED_ORIGINS = previous;
+    }
+  });
+
+  it("matches a configured origin a browser spells without the default port", () => {
+    const previous = process.env.SUITE_ALLOWED_ORIGINS;
+    process.env.SUITE_ALLOWED_ORIGINS = "http://localhost:80";
+    try {
+      expect(corsFor("http://localhost")["access-control-allow-origin"]).toBe("http://localhost");
+    } finally {
+      if (previous === undefined) delete process.env.SUITE_ALLOWED_ORIGINS;
+      else process.env.SUITE_ALLOWED_ORIGINS = previous;
+    }
+  });
+
+  it("keeps the wildcard for a request with no Origin", () => {
+    const headers = withUnsetAllowlist(() => corsFor(undefined));
+    expect(headers["access-control-allow-origin"]).toBe("*");
   });
 });

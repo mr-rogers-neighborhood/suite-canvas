@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "admin": "tsx src/ops/admin.ts",
-    "licence": "tsx src/licenceCli.ts"
+    "licence": "tsx src/licenceCli.ts",
+    "bench:load": "node bench/load.mjs"
   },
   "dependencies": {
     "@loro-dev/flock": "^4.5.2",

@@ -1,4 +1,4 @@
-import { defaultConnectors, type WorkspaceDocument } from "@suite/graph";
+import { applyWorkspaceTemplate, defaultConnectors, type WorkspaceDocument } from "@suite/graph";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef } from "react";
 import { DEFAULT_CARD_WIDTH } from "../canvas/interactions/multiSelect";
@@ -66,6 +66,8 @@ export function useWorkspaceBoot(args: {
     openInspector,
   } = args;
   const shareCardOpened = useRef(false);
+  /** The board a launcher template wrote, so a new workspace opens on it. */
+  const templatedBoardId = useRef<string | null>(null);
 
   useEffect(() => {
     if (standalone) return;
@@ -129,6 +131,15 @@ export function useWorkspaceBoot(args: {
           connectors: starters("starter-2"),
         });
       }
+      // The template the launcher offered, applied here because this is where
+      // the document is first written: one board (and its regions and cards)
+      // lands as a single undoable change, and the reader opens on it. A blank
+      // workspace has no template, which is why the picker's default is empty.
+      const templateId = new URLSearchParams(window.location.search).get("template");
+      if (templateId) {
+        const applied = applyWorkspaceTemplate(workspace, templateId);
+        templatedBoardId.current = applied?.boardIds[0] ?? null;
+      }
       workspace.markSeeded();
     }
     // The reference index is derived, so repairing it is safe and idempotent. It
@@ -173,12 +184,15 @@ export function useWorkspaceBoot(args: {
     }
     if (activeBoardId && boards.some((board) => board.id === activeBoardId)) return;
 
-    // What the reader asked for, then the board they named as home, then the
-    // first board: closing every tab lands somewhere they chose (ADR-0040, A24).
+    // What the reader asked for, then the template they just chose, then the
+    // board they named as home, then the first board: closing every tab lands
+    // somewhere they chose (ADR-0040, A24).
     const requested = resolveBoardId();
     const home = homeBoardId;
+    const template = templatedBoardId.current;
     const next =
       boards.find((board) => board.id === requested)?.id ??
+      (template === null ? undefined : boards.find((board) => board.id === template)?.id) ??
       boards.find((board) => board.id === home)?.id ??
       boards[0]?.id ??
       null;
@@ -208,11 +222,15 @@ export function useWorkspaceBoot(args: {
       url.searchParams.delete("workspace");
       url.searchParams.delete("doc");
       url.searchParams.delete("fresh");
+      url.searchParams.delete("template");
       url.hash = "";
     } else {
       url.searchParams.set("workspace", workspaceId);
       url.searchParams.set("board", activeBoardId);
       url.searchParams.delete("fresh");
+      // The template has been applied; keeping it would re-apply on a reload
+      // that found the workspace unseeded again.
+      url.searchParams.delete("template");
     }
     window.history.replaceState(null, "", url);
   }, [activeBoardId, workspaceId, share]);

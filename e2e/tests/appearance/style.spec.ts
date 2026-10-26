@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
  * The paint system (ADR-0051): one style record over every surface, written
@@ -8,8 +7,7 @@ import { withOwnerKey } from "../fixtures/ownerUrl";
  */
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-style-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-style-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const dotSelector = '[data-testid="connector-dot"], [data-testid="section-connector-dot"]';

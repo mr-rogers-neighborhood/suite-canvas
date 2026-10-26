@@ -1,6 +1,19 @@
 import { readFile } from "node:fs/promises";
-import { expect, type Locator, type Page, type Request, test } from "@playwright/test";
+import {
+  type APIRequestContext,
+  expect,
+  type Locator,
+  type Page,
+  type Request,
+  test,
+} from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { cardByTitle, cards, createNote } from "../fixtures/support";
+
+// Attachments live on the relay, and the relay takes the session JWT (ADR-0074).
+// The run's sign-in rides in as storage state; the deletes below mint their own
+// token from the same cookie.
+test.use({ storageState: ACCOUNT_STATE });
 
 /**
  * The attachment round trip, which is the product's trust path: a `.suite`
@@ -67,14 +80,28 @@ async function expectCardsMounted(page: Page, count: number): Promise<void> {
     .toBe(count);
 }
 
-/** Opens a fresh workspace with an owner key this test knows, so it can delete relay rows. */
-async function openWorkspace(page: Page, name: string): Promise<{ id: string; ownerKey: string }> {
+/** Opens a fresh workspace the account owns, seeded with its two starter cards. */
+async function openWorkspace(page: Page, name: string): Promise<{ id: string }> {
   const id = `e2e-attachment-${name}-${Date.now()}-${++sequence}`;
-  const ownerKey = crypto.randomUUID();
-  await page.goto(`/?workspace=${id}#owner=${ownerKey}`);
+  await page.goto(hostedUrl(`/?workspace=${id}`));
   // A fresh workspace is seeded with two starter cards.
   await expectCardsMounted(page, 2);
-  return { id, ownerKey };
+  return { id };
+}
+
+/**
+ * A token fit to present to the relay, minted from the session cookie this request
+ * context already carries (ADR-0074). The page mints its own per room join; this
+ * one exists because two tests delete a relay row from Node rather than a page.
+ */
+async function relayToken(request: APIRequestContext): Promise<string> {
+  const minted = await request.get(hostedUrl("/api/auth/token"));
+  if (!minted.ok()) throw new Error(`the token mint answered ${minted.status()}`);
+  const body = (await minted.json()) as { token?: unknown };
+  if (typeof body.token !== "string" || body.token.length === 0) {
+    throw new Error("the token mint returned no token");
+  }
+  return body.token;
 }
 
 /**
@@ -206,7 +233,8 @@ test("a pasted image survives export, a storage wipe and import", async ({
   context,
   request,
 }) => {
-  const { id: workspaceId, ownerKey } = await openWorkspace(page, "roundtrip");
+  const { id: workspaceId } = await openWorkspace(page, "roundtrip");
+  const token = await relayToken(request);
   await createNote(page, "Attachment card");
   await expectCardsMounted(page, 3);
   const card = cardByTitle(page, "Attachment card");
@@ -251,13 +279,13 @@ test("a pasted image survives export, a storage wipe and import", async ({
   // to carry would still draw here by re-fetching the id from the relay, which
   // is exactly the "bytes did not survive" failure this test is about.
   const removal = await request.delete(`http://localhost:1235/api/attachments/${nodeId}`, {
-    headers: { authorization: `Bearer ${ownerKey}` },
+    headers: { authorization: `Bearer ${token}` },
   });
   expect(removal.status()).toBe(200);
 
   // Leave the workspace first — a live editor writes its owner key and recents
   // back on unload, which would undo a wipe done underneath it.
-  await page.goto("/");
+  await page.goto(hostedUrl("/"));
   await expect(page.getByTestId("workspace-launcher")).toBeVisible();
   const cdp = await context.newCDPSession(page);
   await cdp.send("Storage.clearDataForOrigin", {
@@ -268,7 +296,7 @@ test("a pasted image survives export, a storage wipe and import", async ({
   // would otherwise keep serving the deleted image from its own cache.
   await cdp.send("Network.clearBrowserCache");
   await cdp.detach();
-  await page.goto("/");
+  await page.goto(hostedUrl("/"));
   await expect(page.getByTestId("workspace-launcher")).toBeVisible();
 
   const remaining = await page.evaluate(async () => {
@@ -368,7 +396,8 @@ test("an image whose bytes are gone is named in the warning and the export still
   context,
   request,
 }) => {
-  const { ownerKey } = await openWorkspace(page, "missing");
+  await openWorkspace(page, "missing");
+  const token = await relayToken(request);
   await createNote(page, "Ghost image");
   await expectCardsMounted(page, 3);
   const card = cardByTitle(page, "Ghost image");
@@ -388,7 +417,7 @@ test("an image whose bytes are gone is named in the warning and the export still
   // gone from both places an export can look.
   await deleteLocalAttachment(page, nodeId);
   const removal = await request.delete(`http://localhost:1235/api/attachments/${nodeId}`, {
-    headers: { authorization: `Bearer ${ownerKey}` },
+    headers: { authorization: `Bearer ${token}` },
   });
   expect(removal.status()).toBe(200);
   // The relay marks attachment reads `immutable` for a year, so a browser that

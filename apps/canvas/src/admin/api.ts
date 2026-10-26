@@ -193,6 +193,34 @@ export interface MutationResult {
   [key: string]: unknown;
 }
 
+/**
+ * The public readiness probe, with no token. `/health` answers `200 {"ok":true}`
+ * on the relay's API port and needs no credential, which is exactly why the
+ * support screen may show it: a status statement that required an operator token
+ * would be unavailable to the person who needs it.
+ */
+export async function getRelayHealth(): Promise<{
+  ok: boolean;
+  status: number;
+  at: number;
+}> {
+  const at = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(`${collabHttpBase()}/health`, { method: "GET" });
+  } catch {
+    return { ok: false, status: 0, at };
+  }
+  let ok = response.ok;
+  try {
+    const body = (await response.json()) as { ok?: unknown };
+    if (body.ok === false) ok = false;
+  } catch {
+    // A body that is not JSON is not a readiness answer this panel can vouch for.
+  }
+  return { ok, status: response.status, at };
+}
+
 export function getStatus(token: string): Promise<AdminStatus> {
   return request<AdminStatus>("/status", token);
 }
@@ -222,13 +250,6 @@ export function revokeShare(token: string, shareId: string): Promise<MutationRes
 
 export function revokeAllShares(token: string, workspaceId: string): Promise<MutationResult> {
   return request(`/shares?workspaceId=${encode(workspaceId)}`, token, { method: "DELETE" });
-}
-
-export function resetOwner(token: string, workspaceId: string): Promise<MutationResult> {
-  return request(`/workspaces/${encode(workspaceId)}/reset-owner`, token, {
-    method: "POST",
-    body: JSON.stringify({ revokeShares: false }),
-  });
 }
 
 export function deleteWorkspace(token: string, workspaceId: string): Promise<MutationResult> {

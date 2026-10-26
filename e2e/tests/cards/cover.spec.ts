@@ -1,6 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, newBoard } from "../fixtures/support";
 
 /**
@@ -11,8 +10,7 @@ import { cards, newBoard } from "../fixtures/support";
  */
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-cover-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-cover-${name}-${Date.now()}-${++sequence}`;
 
 const boardTabs = (page: Page) =>
   // Only the board tabs: the strip also holds one close button per board, so counting

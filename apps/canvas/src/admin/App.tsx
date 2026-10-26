@@ -10,10 +10,11 @@ import { FixturesPanel } from "./panels/FixturesPanel";
 import { RoomsPanel } from "./panels/RoomsPanel";
 import { SharesPanel } from "./panels/SharesPanel";
 import { StatusPanel } from "./panels/StatusPanel";
+import { SupportPanel } from "./panels/SupportPanel";
 import { WorkspacesPanel } from "./panels/WorkspacesPanel";
 import { ErrorLine } from "./ui";
 
-type View = "status" | "workspaces" | "rooms" | "shares" | "fixtures";
+type View = "status" | "workspaces" | "rooms" | "shares" | "fixtures" | "support";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "status", label: "Status" },
@@ -21,6 +22,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: "rooms", label: "Rooms" },
   { id: "shares", label: "Shares" },
   { id: "fixtures", label: "Fixtures" },
+  { id: "support", label: "Support" },
 ];
 
 /**
@@ -139,6 +141,7 @@ export function App() {
         {view === "rooms" ? <RoomsPanel token={token} /> : null}
         {view === "shares" ? <SharesPanel token={token} /> : null}
         {view === "fixtures" ? <FixturesPanel token={token} /> : null}
+        {view === "support" ? <SupportPanel token={token} /> : null}
       </main>
     </div>
   );

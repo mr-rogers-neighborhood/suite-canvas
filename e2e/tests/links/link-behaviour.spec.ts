@@ -1,6 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards } from "../fixtures/support";
 
 /**
@@ -12,7 +11,7 @@ import { cards } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-behaviour-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-behaviour-${name}-${Date.now()}-${++sequence}`;
 
 const dotSelector = '[data-testid="connector-dot"], [data-testid="section-connector-dot"]';
 const sectionLinkHit = (page: Page) => page.locator('[data-testid="section-link-hit"]');

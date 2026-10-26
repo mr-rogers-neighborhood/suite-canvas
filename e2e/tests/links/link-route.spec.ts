@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards } from "../fixtures/support";
 
 /**
@@ -10,7 +9,7 @@ import { cards } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-link-route-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-link-route-${name}-${Date.now()}-${++sequence}`;
 
 const panel = (page: Page) => page.getByTestId("link-inspector");
 const dotSelector = '[data-testid="connector-dot"], [data-testid="section-connector-dot"]';

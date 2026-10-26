@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { expectPeersConnected } from "../../interactions";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { libraryRows, openLibrary } from "../fixtures/support";
+
+// Two peers in one room means two contexts of one account: presence and the
+// document both need a session the relay verifies (ADR-0074, ADR-0076).
+test.use({ storageState: ACCOUNT_STATE });
 
 /**
  * Dragging a card out of the library is a gesture one person makes and everyone
@@ -8,8 +13,7 @@ import { libraryRows, openLibrary } from "../fixtures/support";
  * flow-space preview and peers draw where the card would land.
  */
 
-const docUrl = () =>
-  `/?doc=e2e-library-ghost-${Date.now()}-${crypto.randomUUID()}#owner=${crypto.randomUUID()}`;
+const docUrl = () => hostedUrl(`/?doc=e2e-library-ghost-${Date.now()}-${crypto.randomUUID()}`);
 
 test("a peer sees the card being dragged out of the library", async ({ browser }) => {
   const contextA = await browser.newContext();

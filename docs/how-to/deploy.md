@@ -146,8 +146,8 @@ curl -fsS https://canvas.example.com/health           # {"ok":true}
 curl -fsS -o /dev/null -w '%{http_code}\n' https://canvas.example.com/admin
 ```
 
-Open the canvas, create a workspace, and store the recovery key. It is the only credential that opens
-that workspace, and there is no account to reset. To keep the panel off the public internet, uncomment
+Open the canvas, create a workspace, and sign in. There is no recovery key any more: a workspace belongs
+to the organization that first opened it, and access is the account's own sign-in. To keep the panel off the public internet, uncomment
 the two `remote_ip` lines in `deploy/Caddyfile`, list your office or VPN addresses, and rebuild Caddy.
 
 ## 7. Backups and the mount guard
@@ -224,6 +224,64 @@ that is what the pre-upgrade backup is for. See [release.md](release.md).
 A `deploy/Caddyfile` change needs `docker compose build caddy && docker compose up -d caddy`, which
 costs a couple of seconds of 502. Enable the commented `caddy-data` volume if you recreate Caddy often,
 or it re-issues certificates until Let's Encrypt's five-per-week limit stops you.
+
+## Container hardening
+
+`compose.yaml` runs every service with the smallest surface it can and still work. The two server
+processes are the strict case, because they are the ones exposed to a document and to the internet:
+
+| Control | `app` | `control-plane` | `caddy` |
+| --- | --- | --- | --- |
+| User | `1000:1000` (`node`, set by the image) | same | root, with one capability |
+| Root filesystem | `read_only: true` | `read_only: true` | `read_only: true` |
+| Writable paths | the `suite-data` volume at `/data`, `tmpfs` on `/tmp` | `tmpfs` on `/tmp` | `tmpfs` on `/tmp`, `/config`, `/data` |
+| Capabilities | `cap_drop: ALL` | `cap_drop: ALL` | `cap_drop: ALL`, `cap_add: NET_BIND_SERVICE` |
+| Escalation | `no-new-privileges:true` | same | same |
+| Limits | `mem_limit: 1536m`, `cpus: "1.0"`, `pids_limit: 256` | `512m`, `0.5`, `128` | `256m`, `0.5`, `128` |
+
+The relay never needed a writable root: its six stores are on the volume, and the `tmpfs` on `/tmp` is
+there because Node and `tsx` want a scratch directory. Caddy is the exception on two counts — ports 80
+and 443 need `NET_BIND_SERVICE`, and its certificate cache would be tmpfs unless the commented
+`caddy-data` volume is enabled, in which case a certificate survives a recreate.
+
+Prove it rather than read it. The relay, with every store on the volume and a read-only root:
+
+```sh
+docker build --target runtime -t suite-relay .
+docker run --rm -d --name suite-relay-probe \
+  --read-only --tmpfs /tmp:size=32m,mode=1777 \
+  --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
+  -v suite-probe-data:/data \
+  -e PORT=1234 -e HEALTH_PORT=1235 \
+  -e SUITE_DB=/data/documents.sqlite -e SUITE_SHARES_DB=/data/shares.sqlite \
+  -e SUITE_WORKSPACES_DB=/data/workspaces.sqlite -e SUITE_SETTINGS_DB=/data/settings.sqlite \
+  -e SUITE_LICENCE_DB=/data/licences.sqlite -e SUITE_ATTACHMENTS_DB=/data/attachments.sqlite \
+  -e SUITE_REQUIRE_DURABLE_STORES=1 suite-relay
+docker exec suite-relay-probe node -e "fetch('http://127.0.0.1:1235/health').then(async r=>console.log(r.status, await r.text()))"
+# 200 {"ok":true}
+docker exec suite-relay-probe id
+# uid=1000(node) gid=1000(node) groups=1000(node)
+```
+
+The control plane needs Postgres, because it refuses to boot without a database URL:
+
+```sh
+docker build --target control-plane -t suite-control-plane .
+docker run --rm -d --name suite-pg -e POSTGRES_USER=suite -e POSTGRES_PASSWORD=suite -e POSTGRES_DB=suite postgres:17-alpine
+docker run --rm -d --name suite-cp-probe --read-only --tmpfs /tmp:size=32m,mode=1777 \
+  --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
+  -e PORT=1236 -e SUITE_CONTROL_PLANE_DATABASE_URL=postgres://suite:suite@<postgres-host>:5432/suite \
+  -e SUITE_AUTH_ENABLED=0 -e SUITE_BILLING_ENABLED=0 suite-control-plane
+docker exec suite-cp-probe node -e "fetch('http://127.0.0.1:1236/health').then(async r=>console.log(r.status, await r.text()))"
+# 200 {"status":"ok","buildId":"0.0.0","uptimeMs":8744,"modules":[{"name":"auth","state":"mounted"},{"name":"billing","state":"mounted"}]}
+```
+
+And that the runtime tree carries no toolchain:
+
+```sh
+docker run --rm suite-relay sh -c 'ls node_modules/.pnpm | grep -E "^(typescript|vitest|@biomejs|@stryker|turbo)@" || echo clean'
+# clean
+```
 
 ## Docs site
 

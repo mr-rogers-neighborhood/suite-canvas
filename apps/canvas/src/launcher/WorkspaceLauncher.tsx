@@ -1,4 +1,7 @@
+import { STARTER_TEMPLATES } from "@suite/graph";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { ToastLayer } from "../feedback/ToastLayer";
+import { toast } from "../feedback/toast";
 import {
   forgetWorkspaceName,
   friendlyWorkspaceName,
@@ -21,6 +24,7 @@ import {
   rememberWorkspace,
   workspaceUrl,
 } from "../session/workspaceTransfer";
+import { importVaultIntoWorkspace, vaultName } from "./vaultImport";
 
 /** A recents row with the workspace name resolved for display. */
 interface RecentEntry extends RecentWorkspace {
@@ -88,6 +92,8 @@ export function WorkspaceLauncher() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [template, setTemplate] = useState("");
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const renameCancelled = useRef(false);
   // A mail link names one invitation, and this page is where it lands.
@@ -122,12 +128,17 @@ export function WorkspaceLauncher() {
    * A new workspace is written here and nowhere else. There is no credential to
    * create: the document id is the workspace's identity, and the session decides
    * who may open it.
+   *
+   * A chosen template travels in the URL rather than being written here: the
+   * document does not exist until the editor opens it, so the template is
+   * applied there, once, on the same boot that seeds a blank workspace.
    */
   const startNew = () => {
     const workspaceId = newWorkspaceId();
     rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
     const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
+    if (template) url.searchParams.set("template", template);
     navigateTo(url.toString());
   };
 
@@ -144,6 +155,51 @@ export function WorkspaceLauncher() {
       openWorkspace(imported.id, imported.boardId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not import that workspace.");
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Drops go into a workspace this browser already holds; the row is the choice
+   * of workspace, so nothing is created and nothing has to be named twice.
+   *
+   * `dataTransfer.items` is only readable while the drop event is being
+   * handled, so the entries are taken before the first `await`.
+   */
+  const importVault = async (entry: RecentEntry, transfer: DataTransfer) => {
+    const entries = Array.from(transfer.items, (item) => item.webkitGetAsEntry());
+    const homeBoardName = vaultName(entries);
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const outcome = await importVaultIntoWorkspace({
+        workspaceId: entry.id,
+        entries,
+        ...(homeBoardName === undefined ? {} : { homeBoardName }),
+      });
+      if (!outcome.ok) {
+        toast.failure(outcome.message, {
+          urgent: true,
+          ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+        });
+        return;
+      }
+      // A partial import still lands: the toast names what did not come across,
+      // and the workspace's own history has it as one change.
+      toast.success(outcome.message, {
+        ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+        ...(outcome.boardId === undefined
+          ? {}
+          : {
+              action: {
+                label: "Open",
+                onAction: () => openWorkspace(entry.id, outcome.boardId ?? null),
+              },
+            }),
+      });
+      setRecents(readRecentWorkspaces().map((row) => labelRecent(row, readWorkspaceNames())));
+    } finally {
       setBusy(false);
     }
   };
@@ -201,6 +257,11 @@ export function WorkspaceLauncher() {
     <main
       data-testid="workspace-launcher"
       className="workspace-launcher flex min-h-screen items-center justify-center bg-[var(--canvas-bg)] px-4 py-10 text-[var(--ink)]"
+      // A vault is dropped on a row, never on the page. Claiming the drag here
+      // stops the browser from navigating to the dropped file when someone
+      // misses a row, which would lose the launcher instead of doing nothing.
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => event.preventDefault()}
     >
       <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--hairline)] bg-[var(--surface)] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.55)]">
         <header className="border-b border-[var(--hairline)] px-8 pt-8 pb-7">
@@ -250,6 +311,27 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
+            {/* Blank is the default: a template is a choice, and an empty
+                document is still the shortest way to start. The template is
+                applied by the editor's boot, right after the document exists. */}
+            <label className="ml-1 flex items-center gap-2 text-[12px] text-[var(--ink-muted)]">
+              <span>Start from</span>
+              <select
+                data-testid="launcher-template"
+                aria-label="Workspace template"
+                value={template}
+                onChange={(event) => setTemplate(event.target.value)}
+                disabled={busy}
+                className="rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
+              >
+                <option value="">Blank</option>
+                {STARTER_TEMPLATES.map((starter) => (
+                  <option key={starter.id} value={starter.id}>
+                    {starter.name} — {starter.description}
+                  </option>
+                ))}
+              </select>
+            </label>
             {/* Identity lives here as well as in the title bar: this is the first
                 screen someone sees, and an account is what keeps a workspace
                 across devices. The literal keeps every byte of `/api/auth` out of
@@ -302,137 +384,163 @@ export function WorkspaceLauncher() {
               Nothing here yet. Start a new workspace or open a <code>.suite</code> file.
             </p>
           ) : (
-            <ul className="mt-3 divide-y divide-[var(--hairline)]">
-              {recents.map((entry) => {
-                const renaming = renamingId === entry.id;
-                // The board name repeats the workspace name until someone names
-                // the workspace, so it only earns space when it differs.
-                const board = entry.title?.trim();
-                const detail = [board && board !== entry.name ? board : null, entry.boardId]
-                  .filter((part): part is string => Boolean(part))
-                  .join(" · ");
-                return (
-                  <li
-                    key={entry.id}
-                    data-testid={`launcher-recent-${entry.id}`}
-                    className="group flex items-center gap-3 py-2.5"
-                  >
-                    {renaming ? (
-                      <div className="min-w-0 flex-1">
-                        <input
-                          // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
-                          autoFocus
-                          data-testid={`launcher-rename-input-${entry.id}`}
-                          aria-label={`Rename ${entry.name}`}
-                          aria-invalid={nameError ? true : undefined}
-                          value={draft}
-                          className="w-full rounded bg-transparent px-1 text-[13px] font-medium leading-5 outline-none ring-1 ring-blue-400"
-                          onChange={(event) => {
-                            setDraft(event.target.value);
-                            setNameError(null);
-                          }}
-                          onBlur={() => void commitRename(entry)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              event.currentTarget.blur();
-                            }
-                            if (event.key === "Escape") {
-                              renameCancelled.current = true;
-                              setRenamingId(null);
-                              setNameError(null);
-                            }
-                          }}
-                        />
-                        <span
-                          data-testid={`launcher-rename-hint-${entry.id}`}
-                          role={nameError ? "alert" : undefined}
-                          className={`block truncate text-[11px] leading-4 ${
-                            nameError ? "text-red-600 dark:text-red-300" : "text-[var(--ink-muted)]"
-                          }`}
-                        >
-                          {nameError ?? "Enter to save · Escape to cancel"}
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => openWorkspace(entry.id, entry.boardId)}
-                      >
-                        <span
-                          data-testid={`launcher-name-${entry.id}`}
-                          className="block truncate text-[13px] font-medium"
-                        >
-                          {entry.name}
-                        </span>
-                        <span className="flex items-baseline gap-2 text-[11px] text-[var(--ink-muted)]">
-                          <span
-                            data-testid={`launcher-detail-${entry.id}`}
-                            title={detail}
-                            className="min-w-0 truncate"
-                          >
-                            {detail}
-                          </span>
-                          <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
-                        </span>
-                      </button>
-                    )}
-                    {renaming ? null : (
-                      <button
-                        type="button"
-                        data-testid={`launcher-rename-${entry.id}`}
-                        aria-label={`Rename ${entry.name}`}
-                        title="Rename workspace"
-                        className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                        onClick={() => startRename(entry)}
-                        disabled={busy}
-                      >
-                        Rename
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      data-testid={`launcher-export-${entry.id}`}
-                      className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                      onClick={() => void exportRecent(entry)}
-                      disabled={busy}
-                    >
-                      Export
-                    </button>
-                    {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
-                      <button
-                        type="button"
-                        data-testid={`launcher-delete-${entry.id}`}
-                        aria-label="Delete this workspace…"
-                        title="Delete this workspace…"
-                        className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
-                        onClick={() => setDeleteTarget(entry)}
-                        disabled={busy}
-                      >
-                        Delete
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      aria-label="Remove from this list (does not delete the workspace)"
-                      title="Remove from this list (does not delete the workspace)"
-                      className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                      onClick={() => {
-                        forgetWorkspace(entry.id);
-                        setRecents(
-                          readRecentWorkspaces().map((row) =>
-                            labelRecent(row, readWorkspaceNames()),
-                          ),
-                        );
+            <>
+              <p className="mt-3 text-[11px] text-[var(--ink-muted)]">
+                Drop an Obsidian vault folder onto a workspace to import its notes and canvases.
+              </p>
+              <ul className="mt-2 divide-y divide-[var(--hairline)]">
+                {recents.map((entry) => {
+                  const renaming = renamingId === entry.id;
+                  const dropping = dropTargetId === entry.id;
+                  // The board name repeats the workspace name until someone names
+                  // the workspace, so it only earns space when it differs.
+                  const board = entry.title?.trim();
+                  const detail = [board && board !== entry.name ? board : null, entry.boardId]
+                    .filter((part): part is string => Boolean(part))
+                    .join(" · ");
+                  return (
+                    <li
+                      key={entry.id}
+                      data-testid={`launcher-recent-${entry.id}`}
+                      data-drop-target={dropping ? "vault" : undefined}
+                      className={`group flex items-center gap-3 py-2.5 ${
+                        dropping
+                          ? "rounded-lg bg-black/5 ring-1 ring-blue-400 dark:bg-white/10"
+                          : ""
+                      }`}
+                      onDragOver={(event) => {
+                        // Claiming the drop is what makes this row a target.
+                        event.preventDefault();
+                        setDropTargetId(entry.id);
+                      }}
+                      onDragLeave={() =>
+                        setDropTargetId((current) => (current === entry.id ? null : current))
+                      }
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        setDropTargetId(null);
+                        void importVault(entry, event.dataTransfer);
                       }}
                     >
-                      ×
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                      {renaming ? (
+                        <div className="min-w-0 flex-1">
+                          <input
+                            // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
+                            autoFocus
+                            data-testid={`launcher-rename-input-${entry.id}`}
+                            aria-label={`Rename ${entry.name}`}
+                            aria-invalid={nameError ? true : undefined}
+                            value={draft}
+                            className="w-full rounded bg-transparent px-1 text-[13px] font-medium leading-5 outline-none ring-1 ring-blue-400"
+                            onChange={(event) => {
+                              setDraft(event.target.value);
+                              setNameError(null);
+                            }}
+                            onBlur={() => void commitRename(entry)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                event.currentTarget.blur();
+                              }
+                              if (event.key === "Escape") {
+                                renameCancelled.current = true;
+                                setRenamingId(null);
+                                setNameError(null);
+                              }
+                            }}
+                          />
+                          <span
+                            data-testid={`launcher-rename-hint-${entry.id}`}
+                            role={nameError ? "alert" : undefined}
+                            className={`block truncate text-[11px] leading-4 ${
+                              nameError
+                                ? "text-red-600 dark:text-red-300"
+                                : "text-[var(--ink-muted)]"
+                            }`}
+                          >
+                            {nameError ?? "Enter to save · Escape to cancel"}
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => openWorkspace(entry.id, entry.boardId)}
+                        >
+                          <span
+                            data-testid={`launcher-name-${entry.id}`}
+                            className="block truncate text-[13px] font-medium"
+                          >
+                            {entry.name}
+                          </span>
+                          <span className="flex items-baseline gap-2 text-[11px] text-[var(--ink-muted)]">
+                            <span
+                              data-testid={`launcher-detail-${entry.id}`}
+                              title={detail}
+                              className="min-w-0 truncate"
+                            >
+                              {detail}
+                            </span>
+                            <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
+                          </span>
+                        </button>
+                      )}
+                      {renaming ? null : (
+                        <button
+                          type="button"
+                          data-testid={`launcher-rename-${entry.id}`}
+                          aria-label={`Rename ${entry.name}`}
+                          title="Rename workspace"
+                          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                          onClick={() => startRename(entry)}
+                          disabled={busy}
+                        >
+                          Rename
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        data-testid={`launcher-export-${entry.id}`}
+                        className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                        onClick={() => void exportRecent(entry)}
+                        disabled={busy}
+                      >
+                        Export
+                      </button>
+                      {import.meta.env.VITE_SUITE_MODE === "standalone" ? (
+                        <button
+                          type="button"
+                          data-testid={`launcher-delete-${entry.id}`}
+                          aria-label="Delete this workspace…"
+                          title="Delete this workspace…"
+                          className="rounded-md px-2 py-1 text-[11px] text-red-600 opacity-0 transition-opacity hover:bg-red-50 group-hover:opacity-100 focus:opacity-100 dark:text-red-300 dark:hover:bg-red-500/15"
+                          onClick={() => setDeleteTarget(entry)}
+                          disabled={busy}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label="Remove from this list (does not delete the workspace)"
+                        title="Remove from this list (does not delete the workspace)"
+                        className="rounded-md px-2 py-1 text-[13px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                        onClick={() => {
+                          forgetWorkspace(entry.id);
+                          setRecents(
+                            readRecentWorkspaces().map((row) =>
+                              labelRecent(row, readWorkspaceNames()),
+                            ),
+                          );
+                        }}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </section>
 
@@ -458,6 +566,9 @@ export function WorkspaceLauncher() {
           />
         </Suspense>
       ) : null}
+      {/* The import's report has nowhere else to go on this screen: the launcher
+          is the whole page, so it mounts the one toast stack itself. */}
+      <ToastLayer />
     </main>
   );
 }

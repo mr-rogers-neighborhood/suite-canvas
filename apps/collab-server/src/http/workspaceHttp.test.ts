@@ -120,6 +120,9 @@ function seedWorkspace(): { token: string; shareId: string } {
   });
   shares.setBaseline(created.share.id, new Uint8Array([1, 2, 3]));
   documents.save(`%LOR:share-${created.token}`, new TextEncoder().encode("projected board"));
+  // The delete route removes rows through its own connection, so the fixture has
+  // to be on disk the way `sync/server.ts` makes it before a delete.
+  documents.flush();
   return { token: created.token, shareId: created.share.id };
 }
 

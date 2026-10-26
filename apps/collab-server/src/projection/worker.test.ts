@@ -131,7 +131,15 @@ async function startHarness(
     worker?: Partial<
       Pick<
         ProjectionWorkerOptions,
-        "idleHours" | "now" | "roomClients" | "onRoomClosed" | "maxRooms"
+        | "idleHours"
+        | "now"
+        | "roomClients"
+        | "onRoomClosed"
+        | "maxRooms"
+        | "maxCards"
+        | "buildCapMs"
+        | "outstanding"
+        | "onRun"
       >
     >;
   } = {},
@@ -1604,5 +1612,132 @@ describe("editor shares", () => {
     } finally {
       await closeOwnerAndEditor(owner, editor);
     }
+  }, 20_000);
+});
+
+describe("projection skips, caps and backpressure", () => {
+  it("skips a rebuild whose source version vector has not changed", async () => {
+    const state = await startHarness();
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    try {
+      await startViewing(state, share);
+      await waitFor(() => boardCards(viewer).length === 2, "the first projection");
+      const afterFirst = state.worker.projectionStats();
+      expect(afterFirst.maxBuildMs).toBeGreaterThanOrEqual(0);
+
+      // An owner save with no change: the stored bytes are rewritten but the
+      // source version vector is identical, so the projection cannot differ.
+      saveSource(state);
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+      await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+      const stats = state.worker.projectionStats();
+      expect(stats.skipped).toBeGreaterThan(0);
+      expect(stats.maxBuildMs).toBe(afterFirst.maxBuildMs);
+      // The room keeps the content it had; a skip is not an empty share.
+      expect(boardCards(viewer)).toEqual(["a", "b"]);
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("refuses to project a board over the card cap and keeps the share empty", async () => {
+    const state = await startHarness({ worker: { maxCards: 1 } });
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    try {
+      await startViewing(state, share);
+      await waitFor(
+        () => state.worker.projectionStats().capped !== undefined,
+        "the worker to start",
+      );
+      expect(boardCards(viewer)).toEqual([]);
+      expect(state.worker.projectionStats().capped).toBeGreaterThan(0);
+      expect(state.warnings.some((line) => line.includes("SUITE_MAX_PROJECTION_CARDS"))).toBe(true);
+      // The refusal is recorded on the room, so an operator can find it.
+      expect(state.worker.projectionRooms()[0]?.capped).toBe(true);
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("freezes a room that rebuilds slower than the build cap", async () => {
+    let clock = 0;
+    const state = await startHarness({
+      worker: { buildCapMs: 50, now: () => (clock += 100) },
+    });
+    const { token, share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    const viewer = await openViewer(state.url, share.roomId as string, token);
+    try {
+      await startViewing(state, share);
+      await waitFor(
+        () => (state.worker.projectionStats().capped ?? 0) > 0,
+        "the build-time cap to bite",
+      );
+      expect(state.warnings.some((line) => line.includes("SUITE_PROJECTION_BUILD_MS"))).toBe(true);
+      expect(state.worker.projectionRooms()[0]?.capped).toBe(true);
+      expect(state.worker.projectionStats().maxBuildMs).toBeGreaterThan(50);
+      // It still shows the projection it built before freezing.
+      await waitFor(() => boardCards(viewer).length === 2, "the frozen projection");
+    } finally {
+      await viewer.room.leave().catch(() => undefined);
+      viewer.client.close();
+    }
+  });
+
+  it("coalesces a second rebuild request and refuses one past the work bound", async () => {
+    const runs: string[] = [];
+    const state = await startHarness({
+      worker: { outstanding: 1, onRun: (run) => runs.push(run.kind) },
+    });
+    const { share } = state.shares.create({
+      workspaceId: WORKSPACE_ID,
+      scope: "board",
+      role: "viewer",
+      boardId: BOARD_ID,
+    });
+    await startViewing(state, share);
+
+    // A long task holds the room's only slot, which is what a slow publish does.
+    let release = () => {};
+    const held = state.worker.enqueue(
+      WORKSPACE_ID,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const refused = await state.worker.schedule(WORKSPACE_ID, { immediate: true });
+
+    expect(refused).toBeUndefined();
+    expect(state.worker.projectionStats().backpressured).toBeGreaterThan(0);
+    expect(state.warnings.some((line) => line.includes("SUITE_ROOM_OUTSTANDING_MAX"))).toBe(true);
+
+    release();
+    await held;
+    // The slot is released a microtask after the task settles.
+    await delay(20);
+
+    // With the slot free, two requests in the same turn share one rebuild.
+    const first = state.worker.schedule(WORKSPACE_ID, { immediate: true });
+    const second = state.worker.schedule(WORKSPACE_ID, { immediate: true });
+    await Promise.all([first, second]);
+    expect(state.worker.projectionStats().coalesced).toBeGreaterThan(0);
+    expect(runs).toContain("refused");
   }, 20_000);
 });

@@ -1,10 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startBodyEdit as editBody } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-mentions-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-mentions-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -338,12 +338,12 @@ test("opens the submenu with a dot without typing it", async ({ page }) => {
 
 test("syncs a mention and its live title to a peer", async ({ browser }) => {
   test.setTimeout(60_000);
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = workspaceUrl("two-clients");
+  const url = hostedUrl(workspaceUrl("two-clients"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();

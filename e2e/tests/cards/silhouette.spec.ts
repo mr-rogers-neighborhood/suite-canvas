@@ -1,9 +1,8 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-silhouette");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 /**
  * The silhouette contract (ADR-0071).

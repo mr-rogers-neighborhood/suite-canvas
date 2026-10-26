@@ -1,16 +1,19 @@
 import { expect, type Page, test } from "@playwright/test";
 import { emptyPanePoint } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { createNote, libraryRowAction, newBoard } from "../fixtures/support";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-portal-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-portal-${name}-${Date.now()}-${++sequence}`;
 
 const portalNodes = (page: Page) => page.getByTestId("portal-node");
 const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 
 async function createBoard(page: Page): Promise<string> {
+  // The board command writes through the store, and the store adopts the
+  // document when the canvas reports ready. A click that lands before that is
+  // written into a snapshot the boot replaces, so the new board disappears.
+  await expect(page.locator('.app-canvas[data-ready="true"]')).toBeVisible();
+  await expect(boardTabs(page)).toHaveCount(1);
   await newBoard(page);
   await expect(boardTabs(page)).toHaveCount(2);
   const testId = await page

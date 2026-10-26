@@ -135,6 +135,18 @@ export interface CommandActions {
   openShare(): void;
   toggleTheme(): void;
   /**
+   * Arranges the selected card and its subtree on rings (`radialLayout`). Optional
+   * until the board supplies it: a mind map needs the board's placements, so the
+   * command is listed only where a surface can actually run it.
+   */
+  arrangeRadial?: (() => void) | undefined;
+  /**
+   * Installs the selected card as a type blueprint: its title names the type, its body
+   * declares the fields (`installBlueprintCard`). Optional for the same reason: without a
+   * handler the row is never listed.
+   */
+  installBlueprint?: (() => void) | undefined;
+  /**
    * The File menu owns the export dialog, and the publish control owns the
    * draft hand-off; both wire their own handler when they read this table.
    */
@@ -658,6 +670,39 @@ export const commands: readonly CommandDefinition[] = [
     run: (context) => {
       if (context.state.cardId) context.actions.removeFromBoard(context.state.cardId);
     },
+  }),
+  define({
+    id: "layout.arrangeRadial",
+    label: "Arrange as a mind map",
+    group: "layout",
+    owner: "canvas",
+    capabilities: ["canEditLayout"],
+    // The command needs a root and a board to lay it out on, and a handler to run it.
+    available: (context) =>
+      onBoard(context) && onCard(context) && context.actions.arrangeRadial !== undefined,
+    palette: {
+      group: "Layout",
+      weight: 62,
+      subtitle: "This card and its links, on rings",
+      keywords: ["mind map", "mindmap", "radial", "arrange", "layout", "tree", "branch"],
+    },
+    run: (context) => context.actions.arrangeRadial?.(),
+  }),
+  define({
+    id: "type.installBlueprint",
+    label: "Install this blueprint",
+    group: "create",
+    owner: "canvas",
+    capabilities: ["canManageSchema"],
+    available: (context) =>
+      onBoard(context) && onCard(context) && context.actions.installBlueprint !== undefined,
+    palette: {
+      group: "Create",
+      weight: 58,
+      subtitle: "The selected card names a type; its body declares the fields",
+      keywords: ["blueprint", "type", "schema", "install", "template", "fields"],
+    },
+    run: (context) => context.actions.installBlueprint?.(),
   }),
   define({
     id: "workspace.exportBackup",

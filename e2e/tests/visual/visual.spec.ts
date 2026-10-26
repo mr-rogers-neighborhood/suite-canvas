@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, type TestInfo, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 /**
  * Visual regression baselines for the surfaces where layout is the contract:
@@ -211,17 +211,24 @@ test.describe("visual: app", () => {
     deviceScaleFactor: 1,
     colorScheme: "light",
   });
+  // A real workspace, not a refused one. Without a session the relay says no,
+  // and the frame picks up the "Not syncing" banner and the storage warning —
+  // chrome that has nothing to do with the layout these baselines are about.
+  test.use({ storageState: ACCOUNT_STATE });
 
   const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
   async function openWorkspace(page: Page): Promise<void> {
     // A fresh workspace per run: the collab server keeps documents, so a fixed
     // id would inherit whatever a previous run (or a person) left behind.
-    await page.goto(withOwnerKey(`/?workspace=visual-${Date.now()}-${crypto.randomUUID()}`));
+    await page.goto(hostedUrl(`/?workspace=visual-${Date.now()}-${crypto.randomUUID()}`));
     await expect(page.getByTestId("canvas-board")).toBeVisible({ timeout: 30_000 });
     await expect(cards(page)).toHaveCount(2, { timeout: 30_000 });
     await expect(page.locator(".app-canvas")).toHaveAttribute("data-ready", "true");
-    await expect(page.getByTestId("sync-status")).toHaveText("Synced");
+    // In the room before the frame: a workspace still syncing draws the same
+    // banner state a refused one does, and the baseline would then be a picture
+    // of the connection rather than of the board.
+    await expect(page.getByTestId("sync-status")).toHaveText("Synced", { timeout: 20_000 });
   }
 
   test("board with a section and a connector after Fit View", async ({ page }) => {
@@ -284,6 +291,9 @@ test.describe("visual: app", () => {
         page.getByTestId("workspace-name"),
         page.getByRole("tab").first(),
         page.getByTestId("sync-status"),
+        // The account chip carries the session's own address, which the setup
+        // mints per run.
+        page.getByTestId("account-chip"),
       ],
     });
   });

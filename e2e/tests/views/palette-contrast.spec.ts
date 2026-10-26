@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-palette-contrast");
@@ -56,7 +55,7 @@ function contrast(background: string, ink: string): number | null {
 
 for (const theme of ["light", "dark"] as const) {
   test(`${theme}: every value clears 4.5:1 for its glyph on its fill`, async ({ page }) => {
-    await page.goto(withOwnerKey(`/?workspace=${id(theme)}`));
+    await page.goto(`/?workspace=${id(theme)}`);
     await expect(cards(page)).toHaveCount(2);
     await page.getByTestId("theme-toggle").click();
     await page.getByTestId(`theme-${theme}`).click();

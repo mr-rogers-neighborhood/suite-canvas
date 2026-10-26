@@ -1,6 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { cardByTitle, cards, createNote, workspaceIdFactory } from "../fixtures/support";
+
+// Deleting a workspace is an account action now: the relay half needs the session
+// JWT (ADR-0074), so this file runs on the hosted origin with the run's sign-in.
+test.use({ storageState: ACCOUNT_STATE });
 
 const id = workspaceIdFactory("e2e-delete-workspace");
 
@@ -54,7 +58,7 @@ async function cachedDocumentRows(page: Page, workspaceId: string): Promise<numb
 
 test("requires the exact name, then forgets the workspace in this browser", async ({ page }) => {
   const workspace = id("remove");
-  await page.goto(withOwnerKey(`/?workspace=${workspace}`));
+  await page.goto(hostedUrl(`/?workspace=${workspace}`));
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Doomed note");
   await expect(cardByTitle(page, "Doomed note")).toHaveCount(1);
@@ -80,10 +84,8 @@ test("requires the exact name, then forgets the workspace in this browser", asyn
 });
 
 /**
- * The other half of the delete: the workspace stops being owned, so its URL no
- * longer belongs to the key this browser held. Another browser can claim the id
- * instead of being refused, which is what "deleted" means for a workspace with
- * no accounts to notify.
+ * The other half of the delete: the relay forgets the workspace, so the id is
+ * claimable again rather than refused to every later session.
  *
  * Owning the id is only half of it. The relay used to keep the live room open
  * after the owner DELETE, and because a room saves every `saveInterval` (2 s)
@@ -91,19 +93,18 @@ test("requires the exact name, then forgets the workspace in this browser", asyn
  * browser then opened the old cards. `server.ts` now passes `onDeleted`, which
  * disconnects the room and forgets its document, so this test also waits out
  * that save interval and then checks the content is gone and stays gone.
+ *
+ * The second browser is a *different browser profile* of the same account — the
+ * run's session rides in as storage state, and a browser context is where
+ * IndexedDB, and therefore the local copy, lives. That is exactly the "other
+ * device" the dialog warns about, and it is the honest shape now that ownership
+ * is an organization rather than a fragment a stranger could mint.
  */
-test("after deleting, another browser can claim the workspace id", async ({ page, browser }) => {
+test("after deleting, another browser opens an empty workspace", async ({ page, browser }) => {
   const workspace = id("gone");
-  await page.goto(withOwnerKey(`/?workspace=${workspace}`));
+  await page.goto(hostedUrl(`/?workspace=${workspace}`));
   await expect(cards(page)).toHaveCount(2);
   await createNote(page, "Vanishing note");
-
-  // Before the delete the id is owned: a different key is refused.
-  const stranger = await browser.newContext();
-  const strangerPage = await stranger.newPage();
-  await strangerPage.goto(withOwnerKey(`/?workspace=${workspace}`));
-  await expect(strangerPage.getByTestId("workspace-protected")).toBeVisible();
-  await stranger.close();
 
   await openDeleteDialog(page);
   await confirmDelete(page);
@@ -115,16 +116,15 @@ test("after deleting, another browser can claim the workspace id", async ({ page
   // fresh browser immediately would pass even with the bug.
   await page.waitForTimeout(4_000);
 
-  // After it, the owner row is gone, so the same different key claims the id.
+  // After it, the relay holds nothing for the id, so another browser gets a new
+  // workspace rather than the deleted one.
   const fresh = await browser.newContext();
   try {
     const freshPage = await fresh.newPage();
-    await freshPage.goto(withOwnerKey(`/?workspace=${workspace}`));
+    await freshPage.goto(hostedUrl(`/?workspace=${workspace}`));
     await expect(freshPage.locator('.app-canvas[data-ready="true"]')).toBeVisible({
       timeout: 15_000,
     });
-    await expect(freshPage.getByTestId("workspace-protected")).toHaveCount(0);
-
     // And it claims an empty document, not the deleted one: the deleted note is
     // nowhere, and the only cards are the two starters a new workspace seeds.
     await expect(freshPage.getByText("Vanishing note")).toHaveCount(0);

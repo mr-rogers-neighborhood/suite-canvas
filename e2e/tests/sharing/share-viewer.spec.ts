@@ -1,10 +1,17 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startBodyEdit as editBody } from "../../interactions";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { newBoard } from "../fixtures/support";
+
+// Building a link needs the account session: the relay authorises share creation
+// with the same JWT it accepts for sync (ADR-0074, ADR-0076). The people who open
+// those links are somebody else's browser, so the helpers below start a clean
+// context rather than one carrying this run's cookie.
+test.use({ storageState: ACCOUNT_STATE });
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  `/?workspace=e2e-share-viewer-${name}-${Date.now()}-${++sequence}`;
+  hostedUrl(`/?workspace=e2e-share-viewer-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
@@ -79,7 +86,7 @@ async function createViewerLink(
 }
 
 async function openViewer(browser: Browser, url: string): Promise<Page> {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto(url);
   return page;

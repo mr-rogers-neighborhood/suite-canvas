@@ -1,10 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import { selectCard } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-thread-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-thread-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");

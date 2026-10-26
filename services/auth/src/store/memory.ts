@@ -1,4 +1,5 @@
 import type { LicenceStore, MembershipReader } from "../licensing/licences.js";
+import { freeSeatLicence } from "../organizations/freeTier.js";
 import type { WorkspaceRepository } from "../organizations/workspaces.js";
 import type { MemberRecord, OrganizationRole, SeatLicence, WorkspaceRecord } from "../types.js";
 
@@ -38,12 +39,22 @@ export interface MemoryControlPlane {
   workspaces: WorkspaceRepository;
   licences: LicenceStore;
   memberships: MembershipReader;
-  /** Seeds an organization with its members (owner included); returns its id. */
+  /**
+   * Seeds an organization, and with it the free licence the schema's trigger would
+   * have written (ADR-0065 §7); returns its id.
+   *
+   * `licence: null` models the bug this exists to prevent — an organization with no
+   * licence row at all — and nothing else does. Omitting it is the production shape:
+   * `sql/0009_free_licence_provisioning.sql` writes `FREE_LICENCE_TIER` in the same
+   * transaction as the `organization` row, so a double that left it out would be
+   * testing a deployment nobody runs.
+   */
   addOrganization: (input: {
     name?: string;
     slug?: string;
     id?: string;
     members?: readonly { userId: string; role: OrganizationRole }[];
+    licence?: SeatLicence | null;
   }) => string;
   addMember: (organizationId: string, userId: string, role: OrganizationRole) => MemberRecord;
   /** Seeds a workspace row; used to model a workspace that exists before it is claimed. */
@@ -108,6 +119,10 @@ export function memoryControlPlane(): MemoryControlPlane {
           memberRow(id, member.userId, member.role, 0),
         ),
       });
+      // The same row the trigger writes, so a seeded organization is licensed the way
+      // a created one is. `null` is the one way to model the provisioning bug.
+      const licence = input.licence === undefined ? freeSeatLicence(id, Date.now()) : input.licence;
+      if (licence !== null) licences.set(id, licence);
       return id;
     },
 

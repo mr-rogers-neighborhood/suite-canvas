@@ -1,4 +1,5 @@
 import type { SavedView, WorkspaceDocument } from "@suite/graph";
+import { DEFAULT_PORTAL_SIZE } from "../canvas/PortalCard";
 import { ensureWhiteboardType } from "../cards/whiteboard";
 import type { Capability } from "../command/commandRegistry";
 import { buildPaletteItems } from "../command/paletteProviders";
@@ -178,6 +179,22 @@ export function shellPaletteItems(args: ShellPaletteArgs): PaletteItem[] {
         if (!activeBoardId) return;
         const centre = canvasPoint();
         workspace.createSection({ boardId: activeBoardId, x: centre.x - 180, y: centre.y - 130 });
+      },
+      // `portal.create` expands to one row per other board, and each row needs
+      // this handler: without it the registry hides the rows, because a portal
+      // cannot be created without a target. The card and its target land in one
+      // commit, centred on the viewport the reader is looking at.
+      createPortalOnBoard: (targetBoardId) => {
+        if (!activeBoardId) return;
+        const centre = canvasPoint();
+        workspace.createPortalCard({
+          boardId: activeBoardId,
+          targetBoardId,
+          position: {
+            x: centre.x - DEFAULT_PORTAL_SIZE.width / 2,
+            y: centre.y - DEFAULT_PORTAL_SIZE.height / 2,
+          },
+        });
       },
       createBoard: () => {
         const board = workspace.createBoard();

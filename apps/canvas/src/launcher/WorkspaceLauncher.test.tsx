@@ -11,12 +11,22 @@ import {
   navigateTo,
   readRecentWorkspaces,
 } from "../session/workspaceTransfer";
+import { importVaultIntoWorkspace } from "./vaultImport";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
 
 vi.mock("../session/workspaceName", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceName")>();
   return { ...actual, renameCachedWorkspace: vi.fn(async () => true) };
 });
+
+// The drop reads and writes a real document; what this file is about is the row
+// it lands on and what the person is told, so the import itself is replaced.
+vi.mock("./vaultImport", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./vaultImport")>();
+  return { ...actual, importVaultIntoWorkspace: vi.fn() };
+});
+
+const importVault = vi.mocked(importVaultIntoWorkspace);
 
 vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceTransfer")>();
@@ -99,6 +109,7 @@ beforeEach(() => {
   exportWorkspace.mockClear();
   navigate.mockClear();
   renameCached.mockClear();
+  importVault.mockReset();
 });
 
 afterEach(() => {
@@ -286,5 +297,86 @@ describe("WorkspaceLauncher workspace names", () => {
     // Both rows still carry their (identical) board as secondary detail.
     expect(screen.getByTestId("launcher-detail-ws-a")).toHaveTextContent("board-1");
     expect(screen.getByTestId("launcher-detail-ws-b")).toHaveTextContent("board-1");
+  });
+});
+
+describe("WorkspaceLauncher templates", () => {
+  it("starts blank unless a template is chosen", () => {
+    render(<WorkspaceLauncher />);
+
+    expect(screen.getByTestId("launcher-template")).toHaveValue("");
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
+    // Blank means no template parameter at all: the editor applies nothing.
+    expect(url.searchParams.get("template")).toBeNull();
+  });
+
+  it("carries the chosen template to the editor that writes the document", () => {
+    render(<WorkspaceLauncher />);
+
+    fireEvent.change(screen.getByTestId("launcher-template"), { target: { value: "research" } });
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
+    expect(url.searchParams.get("template")).toBe("research");
+    expect(url.searchParams.get("fresh")).toBe("1");
+  });
+});
+
+describe("WorkspaceLauncher Obsidian drop", () => {
+  function dropOnto(id: string): void {
+    fireEvent.drop(screen.getByTestId(`launcher-recent-${id}`), {
+      dataTransfer: { items: [{ webkitGetAsEntry: () => null }] },
+    });
+  }
+
+  it("imports into the workspace whose row the vault was dropped on", async () => {
+    seedRecent();
+    importVault.mockResolvedValueOnce({ ok: true, message: "3 cards in 1 board" });
+    render(<WorkspaceLauncher />);
+
+    dropOnto(WORKSPACE);
+
+    await waitFor(() => expect(importVault).toHaveBeenCalledTimes(1));
+    expect(importVault.mock.calls[0]?.[0]).toMatchObject({ workspaceId: WORKSPACE });
+    // The row's workspace is the target: the launcher never mints a new id.
+    expect(navigate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByTestId("toast-success")).toHaveTextContent("3 cards in 1 board"),
+    );
+  });
+
+  it("shows what a partial import lost", async () => {
+    seedRecent();
+    importVault.mockResolvedValueOnce({
+      ok: true,
+      message: "3 cards in 1 board",
+      detail: "2 link(s) point at notes the vault did not have: Nowhere, Later.",
+    });
+    render(<WorkspaceLauncher />);
+
+    dropOnto(WORKSPACE);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("toast-success")).toHaveTextContent("2 link(s) point at notes"),
+    );
+  });
+
+  it("reports a refusal as a failure, with its reason", async () => {
+    seedRecent();
+    importVault.mockResolvedValueOnce({
+      ok: false,
+      message: "Nothing was imported: this workspace is not stored on this device yet.",
+      detail: "Open it from the list once, then drop the vault onto its row again.",
+    });
+    render(<WorkspaceLauncher />);
+
+    dropOnto(WORKSPACE);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("toast-failure")).toHaveTextContent("not stored on this device"),
+    );
+    expect(screen.getByTestId("toast-failure")).toHaveTextContent("Open it from the list once");
   });
 });

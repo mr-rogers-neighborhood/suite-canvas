@@ -15,9 +15,19 @@ import type { LicenceClaims, Principal, SeatLicence } from "../types.js";
  *
  * `anonymous` is not "no licence yet": it is the local-first case, a workspace
  * no organization owns. Anonymous workspaces are first-class in this product and
- * nothing may gate them (ADR-0065, consequences). `unlicensed` is the failure —
- * an owned workspace whose organization has no licence row — and it must fail
- * closed, because otherwise deleting a row would be a way to keep syncing free.
+ * nothing may gate them (ADR-0065, consequences).
+ *
+ * `unlicensed` costs a name and a distinction, because two very different things
+ * used to collapse into it:
+ *
+ * - a **free** organization is `licensed`, with the row
+ *   `sql/0009_free_licence_provisioning.sql` writes. Its ceilings are real numbers
+ *   (`FREE_LICENCE_TIER`), so exhausting one is a billing answer: buy a plan.
+ * - **no row where a row must exist** is `unlicensed`, and that is a provisioning
+ *   fault, not a customer's problem — every organization gets a licence row in the
+ *   transaction that creates it. It fails closed (deleting a row must never be a way
+ *   to keep syncing free) and it refuses with its own code, `licence-unprovisioned`,
+ *   so it cannot be mistaken for "your plan does not cover this".
  */
 export type LicenceState =
   | { kind: "anonymous" }
@@ -25,6 +35,9 @@ export type LicenceState =
   | { kind: "licensed"; licence: SeatLicence };
 
 export type SeatRefusal =
+  /** No licence row for an owned organization: a provisioning bug, never billing. */
+  | "licence-unprovisioned"
+  /** This credential was never a capability for this workspace. */
   | "licence-missing"
   | "licence-expired"
   | "workspace-allowance-exhausted"
@@ -37,8 +50,13 @@ export type SeatDecision =
 /** One sentence per refusal, safe to show to the person being refused. */
 export function seatProblemMessage(reason: SeatRefusal): string {
   switch (reason) {
+    case "licence-unprovisioned":
+      // Deliberately not "your licence has expired" or "you need a plan": the state
+      // this describes is a deployment that never wrote the row, which no upgrade
+      // fixes. Naming it for the operator is the only useful thing to say.
+      return "this organization has no licence row at all, so its free licence was never provisioned; this is a deployment fault rather than a billing one";
     case "licence-missing":
-      return "this workspace belongs to an organization with no licence";
+      return "this credential is not a capability for this workspace";
     case "licence-expired":
       return "the licence for this organization has expired";
     case "workspace-allowance-exhausted":
@@ -63,7 +81,7 @@ export interface LicenceInput {
  */
 function licenceRefusal(input: LicenceInput): SeatRefusal | null {
   if (input.licence.kind === "anonymous") return null;
-  if (input.licence.kind === "unlicensed") return "licence-missing";
+  if (input.licence.kind === "unlicensed") return "licence-unprovisioned";
   return input.licence.licence.claims.expiresAt <= input.now ? "licence-expired" : null;
 }
 
@@ -82,7 +100,7 @@ export function checkWorkspaceAllowance(input: WorkspaceAllowanceInput): SeatDec
   if (input.licence.kind === "anonymous") return { ok: true, seat: "anonymous" };
   const refusal = licenceRefusal(input);
   if (refusal !== null) return { ok: false, reason: refusal };
-  if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-missing" };
+  if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-unprovisioned" };
   const ceiling = input.licence.licence.claims.workspaces;
   if (!Number.isFinite(ceiling)) return { ok: true, seat: "licensed-member" };
   return input.workspaceCount <= ceiling
@@ -99,6 +117,12 @@ export function checkWorkspaceAllowance(input: WorkspaceAllowanceInput): SeatDec
  * adapter and therefore never passes through a hook). A refused licence yields `0`
  * rather than a separate "no licence" answer, which is the fail-closed direction: a
  * missing row admits nobody but the people already counted.
+ *
+ * The consequence is the one place this distinction leaks: the invitation plugin turns
+ * `0` into its own `SEAT_LIMIT_REACHED`, which `enrollment.ts` maps to `seat-refused`.
+ * A redemption against an organization with no licence row therefore still reads like a
+ * billing refusal rather than `licence-unprovisioned`. That is a real gap, reported
+ * rather than papered over here: the plugin's answer is an ordinal, not a reason.
  */
 export function seatCeiling(input: LicenceInput): number {
   if (input.licence.kind !== "licensed") return 0;
@@ -127,7 +151,7 @@ export function checkSeatAllowance(input: SeatAllowanceInput): SeatDecision {
   if (input.licence.kind === "anonymous") return { ok: true, seat: "anonymous" };
   const refusal = licenceRefusal(input);
   if (refusal !== null) return { ok: false, reason: refusal };
-  if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-missing" };
+  if (input.licence.kind !== "licensed") return { ok: false, reason: "licence-unprovisioned" };
   const seats = seatCeiling(input);
   if (!Number.isFinite(seats)) return { ok: true, seat: "licensed-member" };
   return input.memberCount <= seats

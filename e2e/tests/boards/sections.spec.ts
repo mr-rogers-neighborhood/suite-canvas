@@ -1,9 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-section-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-section-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -39,8 +39,19 @@ test("creates a section from a card and persists its title", { tag: "@smoke" }, 
   await page.getByTestId("inspector-close").click();
 
   await page.locator(".section-title").dblclick();
-  await page.getByTestId("section-title-input").fill("Renamed region");
-  await page.getByTestId("section-title-input").press("Enter");
+  const titleInput = page.getByTestId("section-title-input");
+  await titleInput.fill("Renamed region");
+  await expect(titleInput).toHaveValue("Renamed region");
+  // The commit on Enter reads the component's own draft, so the render that
+  // carries the filled value has to land before the keypress: `fill` settles the
+  // input, not React's state. Two frames is the same settle `createNote` uses.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  await titleInput.press("Enter");
   await expect(page.locator(".section-header")).toContainText("Renamed region");
 
   await page.reload();
@@ -83,11 +94,11 @@ test("resizes a section", { tag: "@smoke" }, async ({ page }) => {
 test("drags a section with its cards and syncs to a peer", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  const url = workspaceUrl("drag-peer");
+  const url = hostedUrl(workspaceUrl("drag-peer"));
 
   await pageA.goto(url);
   await pageB.goto(url);

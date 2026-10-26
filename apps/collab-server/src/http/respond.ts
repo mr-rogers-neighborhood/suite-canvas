@@ -84,6 +84,9 @@ export function applyCors(request: IncomingMessage, response: ServerResponse): v
   if (!allows(policy, origin)) return;
   response.setHeader("access-control-allow-origin", origin);
   response.setHeader("access-control-allow-credentials", "true");
+  // `x-request-id` is the one response header a page reads: it joins a failed
+  // request to the server's log line in a support ticket.
+  response.setHeader("access-control-expose-headers", "x-request-id");
   response.setHeader("vary", "origin");
 }
 

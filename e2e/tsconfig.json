@@ -4,5 +4,10 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "tests"]
+  "include": [
+    "playwright.config.ts",
+    "scripts/global-setup.ts",
+    "scripts/global-teardown.ts",
+    "tests"
+  ]
 }

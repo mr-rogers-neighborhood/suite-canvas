@@ -183,6 +183,42 @@ row, so the command palette lists the same three. A portal row names its target 
 <board>`) because a portal needs one; its action is the optional `CommandActions.createPortalOnBoard`,
 so those rows stay hidden until the shell supplies that handler.
 
+## Arranging
+
+An arrangement is a plan, not a rule. `canvas/interactions/arrangeCommand.ts` turns a selection and its
+placements into a `LayoutPlan`, and `WorkspaceDocument.applyLayoutPlan` commits every write in one
+undoable batch. Nothing is left behind that would move a card the reader places by hand afterwards.
+
+| Command | Planner | What it does |
+| --- | --- | --- |
+| Align an edge or a centre line | `planAlign` | Moves the selection onto one edge of its common box |
+| Distribute along an axis | `planDistribute` | Keeps the two extremes and evens the gaps between |
+| Arrange as a mind map | `planRadial` | Rings the selected card's subtree around it |
+
+`planRadial` in `canvas/interactions/radialLayout.ts` is the mind-map mode of ADR-0049, in its simplified
+form: the selected card is the root and stays exactly where the reader put it, its children sit on the
+first ring at `RADIAL_RING_GAP` (320 flow units) and their children on the second, and each branch owns an
+arc proportional to how many cards hang off it. The tree is read from the document as it stands, through
+`childrenFromLinks`: an outbound card link or a body mention is a child, a portal link is not. The
+breadth-first walk means a cyclic or diamond-shaped graph draws each card once, at its shallowest depth.
+
+The command is `layout.arrangeRadial` in `apps/canvas/src/command/commandRegistry.ts`, so the palette and
+the dock cannot disagree about it. It is listed only while `CommandActions.arrangeRadial` is supplied;
+`arrangeRadialSelection` in `board/useBoardCommands.ts` is the board's handler, and the shell passes it into
+the action table. Sections a moved card leaves grow to contain it again, by the same rule align and
+distribute follow.
+
+## Rollups
+
+A rollup is a card reduced to its header line plus a count of what it hides (ADR-0060). The count is not a
+number the card keeps: `canvas/rollup.ts` builds the member list first, from outbound card links and body
+mentions, minus trashed cards and the card itself, and `count` is that list's length. `rollupSummary`
+prints the same list, so a header cannot claim three cards while two rows exist.
+
+`canvas/RollupSummary.tsx` draws the header and, on a press, the rows. Each row is a button that opens the
+card it names, which is the way back the record asks for, and every row is reachable by Tab. A card that
+points at nothing says "Nothing to summarise" and offers no disclosure rather than showing a zero.
+
 ## Presence and cursors
 
 Presence rides one `EphemeralStore` per workspace, joined by `collab/loroProvider.ts` at
@@ -261,6 +297,10 @@ other members out of formation.
 | `canvas/BoardCameraControls.tsx` | zoom readout, zoom to selection, outline and grid toggles |
 | `canvas/BoardHints.tsx` | the arrow-key nudge hint |
 | `canvas/BulkStyleBar.tsx` | style patch for a multi-selection |
+| `canvas/RollupSummary.tsx` | a card as its header line and the rows it hides |
+| `canvas/rollup.ts` | the member list and the count it justifies |
+| `canvas/interactions/radialLayout.ts` | mind-map rings from a card's subtree |
+| `canvas/peek/` | hover-peek resolver, delay rules and the read-only surface |
 | `sections/SectionLayer.tsx` | section paint, header chrome, resize handles, pointer gestures |
 | `links/linkGeometry.ts` | anchors, rects and path fractions without React |
 | `links/edgeRoute.ts` | route modes and bend handling; pure geometry |

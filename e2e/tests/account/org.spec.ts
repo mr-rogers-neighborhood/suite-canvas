@@ -1,9 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cardByTitle, cards, createNote, newBoard, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-org");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 const boardTabs = (page: Page) => page.locator('[data-testid^="board-tab"]');
 

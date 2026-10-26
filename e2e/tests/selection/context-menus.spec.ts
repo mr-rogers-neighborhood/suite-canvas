@@ -1,12 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startBodyEdit as editBody } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 test.describe.configure({ timeout: 60_000 });
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-context-menus-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 

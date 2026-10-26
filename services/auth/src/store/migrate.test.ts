@@ -148,6 +148,7 @@ describe("migration discovery", () => {
       "0006_jwks.sql",
       "0007_subscription.sql",
       "0008_drop_billing_tables.sql",
+      "0009_free_licence_provisioning.sql",
     ]);
     for (const file of files) {
       expect(file.sql.length).toBeGreaterThan(0);
@@ -198,11 +199,12 @@ describe("migrate", () => {
       "0006_jwks.sql",
       "0007_subscription.sql",
       "0008_drop_billing_tables.sql",
+      "0009_free_licence_provisioning.sql",
     ]);
     expect(report.skipped).toEqual([]);
-    expect(target.committed.size).toBe(8);
-    expect(target.connects).toBe(8);
-    expect(target.releases).toBe(8);
+    expect(target.committed.size).toBe(9);
+    expect(target.connects).toBe(9);
+    expect(target.releases).toBe(9);
     expect(lines).toEqual([
       "auth migration applied: 0001_control_plane.sql",
       "auth migration applied: 0002_plugins.sql",
@@ -212,6 +214,7 @@ describe("migrate", () => {
       "auth migration applied: 0006_jwks.sql",
       "auth migration applied: 0007_subscription.sql",
       "auth migration applied: 0008_drop_billing_tables.sql",
+      "auth migration applied: 0009_free_licence_provisioning.sql",
     ]);
 
     // Each body sits between its own BEGIN and COMMIT.
@@ -300,6 +303,7 @@ describe("status", () => {
       "0006_jwks.sql",
       "0007_subscription.sql",
       "0008_drop_billing_tables.sql",
+      "0009_free_licence_provisioning.sql",
     ]);
   });
 

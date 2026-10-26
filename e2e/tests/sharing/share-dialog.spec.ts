@@ -1,4 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
+
+// Building a link needs the account session: the relay authorises share creation
+// with the same JWT it accepts for sync (ADR-0074, ADR-0076). The people who open
+// those links are somebody else's browser, so the helpers below start a clean
+// context rather than one carrying this run's cookie.
+test.use({ storageState: ACCOUNT_STATE });
 
 const shareApi = process.env.VITE_COLLAB_HTTP_URL ?? "http://localhost:1235";
 
@@ -8,7 +15,7 @@ test("creates and revokes links from the Share dialog", { tag: "@smoke" }, async
 }) => {
   // A fresh workspace per run: shares are stored per workspace id on the server.
   const workspaceId = `e2e-share-${Date.now()}`;
-  await page.goto(`/?workspace=${workspaceId}`);
+  await page.goto(hostedUrl(`/?workspace=${workspaceId}`));
   await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
 
   // Management needs the owner key the editor holds; a bare request is refused.

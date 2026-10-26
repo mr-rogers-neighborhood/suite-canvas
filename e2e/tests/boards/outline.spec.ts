@@ -1,9 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-outline-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-outline-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const rows = (page: Page) => page.getByTestId("outline-row");
@@ -32,12 +32,16 @@ async function createSection(
   await expect(headerFor(page, title)).toContainText(title);
 }
 
-test("hides the rail on a board without sections", async ({ page }) => {
+test("keeps the rail and says a board has no sections", async ({ page }) => {
   await page.goto(workspaceUrl("empty"));
   await expect(cards(page)).toHaveCount(2);
 
-  await expect(page.getByTestId("outline-rail")).toHaveCount(0);
-  await expect(page.getByTestId("outline-panel")).toHaveCount(0);
+  // A rail that vanishes is indistinguishable from one with nothing to say, so an
+  // empty board keeps it and explains itself instead.
+  await expect(page.getByTestId("outline-rail")).toBeVisible();
+  await expect(page.getByTestId("outline-panel")).toBeVisible();
+  await expect(page.getByTestId("outline-empty")).toBeVisible();
+  await expect(page.getByTestId("outline-empty")).toContainText("No sections on this board.");
   await expect(page.getByTestId("outline-row")).toHaveCount(0);
 });
 
@@ -136,11 +140,11 @@ test("collapses and expands the rail with the [ key", async ({ page }) => {
 });
 
 test("shows a peer dot when a collaborator selects a section", async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  const url = workspaceUrl("peer");
+  const url = hostedUrl(workspaceUrl("peer"));
 
   await pageA.goto(url);
   await pageB.goto(url);

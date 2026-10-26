@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import {
   beginMarquee,
   cardByTitle,
@@ -16,12 +17,11 @@ import {
   unionOf,
   watchErrors,
 } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
 /** A blank board: `fresh=1` skips the two starter cards, so counts are exact. */
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?fresh=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`);
+  `/?fresh=1&workspace=e2e-marquee-${name}-${Date.now()}-${++sequence}`;
 
 /**
  * Gate A10, §6.3: a marquee must never break the page.
@@ -140,12 +140,12 @@ test("selects across two sections", async ({ page }) => {
  * that has nothing to do with selection.
  */
 test("stays interactive when a peer drags during the marquee", async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
   const errors = watchErrors(pageA);
-  const url = workspaceUrl("peer-drag");
+  const url = hostedUrl(workspaceUrl("peer-drag"));
 
   await pageA.goto(url);
   await pageB.goto(url);

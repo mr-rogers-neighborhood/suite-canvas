@@ -7,6 +7,10 @@ import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import "../styles/outline.css";
 import "./boardAffordances.css";
 import { outlinePeerIds, outlineRows } from "./outlineTree";
+import { PeekSurface } from "./peek/PeekSurface";
+import { anchorOf } from "./peek/peekAnchor";
+import { useEntityPeek } from "./peek/useEntityPeek";
+import type { PeekController } from "./peek/usePeek";
 
 export interface OutlineTreeProps {
   sections: Section[];
@@ -20,6 +24,8 @@ export interface OutlineTreeProps {
   onContextMenu: (event: ReactMouseEvent, sectionId: string) => void;
   /** Whether this session may make a section, which the empty rail offers. */
   canCreate?: boolean;
+  /** The peek a row opens on rest or on keyboard focus (ADR-0055). */
+  peek?: PeekController | undefined;
 }
 
 /** The rail itself: plain props so Storybook can render it without the store. */
@@ -33,6 +39,7 @@ export function OutlineTree({
   onSelect,
   onContextMenu,
   canCreate = false,
+  peek,
 }: OutlineTreeProps) {
   const rows = useMemo(() => outlineRows(sections, membership), [sections, membership]);
   const peersBySection = useMemo(() => outlinePeerIds(peers), [peers]);
@@ -88,6 +95,16 @@ export function OutlineTree({
                   style={{ paddingLeft: 8 + depth * 12 }}
                   onClick={() => onSelect(section.id)}
                   onContextMenu={(event) => onContextMenu(event, section.id)}
+                  // A rest names the section; a click still selects it, because a
+                  // focus that followed a press is suppressed in `usePeek`.
+                  onPointerEnter={(event) =>
+                    peek?.hover({ kind: "section", id: section.id }, anchorOf(event.currentTarget))
+                  }
+                  onPointerLeave={() => peek?.leave()}
+                  onFocus={(event) =>
+                    peek?.focus({ kind: "section", id: section.id }, anchorOf(event.currentTarget))
+                  }
+                  onBlur={() => peek?.leave()}
                 >
                   <span
                     aria-hidden="true"
@@ -116,6 +133,18 @@ export function OutlineTree({
               );
             })}
           </div>
+          {/* One peek for the whole rail: a row's rest opens it, and moving into it
+              keeps it while the pointer is there. */}
+          <PeekSurface
+            peek={peek?.peek ?? null}
+            onEnter={peek?.stay}
+            onLeave={peek?.leave}
+            onOpen={(target) => {
+              if (target.kind !== "section") return;
+              onSelect(target.id);
+              peek?.dismiss();
+            }}
+          />
         </nav>
       ) : (
         <button
@@ -152,6 +181,7 @@ export function BoardOutlineHost() {
   const focusSection = useUiStore((state) => state.focusSection);
   const openContextMenu = useUiStore((state) => state.openContextMenu);
   const peers = useBoardPeers(activeBoardId);
+  const peek = useEntityPeek();
 
   const sections = useMemo(
     () =>
@@ -222,6 +252,7 @@ export function BoardOutlineHost() {
       onSelect={handleSelect}
       onContextMenu={handleContextMenu}
       canCreate={canCreateContent}
+      peek={peek}
     />
   );
 }

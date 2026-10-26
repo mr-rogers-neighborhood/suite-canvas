@@ -1,6 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { selectCard } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 /**
@@ -11,7 +10,7 @@ import { cards, workspaceIdFactory } from "../fixtures/support";
  */
 
 const id = workspaceIdFactory("e2e-record");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 const purpose = (page: Page) => page.getByTestId("purpose-toggle");
 const library = (page: Page) => page.getByTestId("library-drawer");

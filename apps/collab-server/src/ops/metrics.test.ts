@@ -47,6 +47,8 @@ describe("MetricsCollector", () => {
     openRooms: () => 2,
     projectionRooms: () => 1,
     documents: () => 7,
+    documentWritesPending: () => 0,
+    eventLoopLagMaxSeconds: () => 0.25,
   };
 
   it("increments every counter independently", () => {
@@ -109,6 +111,13 @@ describe("MetricsCollector", () => {
       "suite_rate_limit_rejections_total",
       "suite_projection_rebuilds_total",
       "suite_projection_failures_total",
+      "suite_projection_skips_total",
+      "suite_projection_build_capped_total",
+      "suite_peer_limit_rejections_total",
+      "suite_document_limit_rejections_total",
+      "suite_room_backpressure_total",
+      "suite_document_writes_total",
+      "suite_event_loop_lag_breaches_total",
       "suite_build_info",
       "suite_rss_bytes",
       "suite_uptime_seconds",
@@ -118,6 +127,8 @@ describe("MetricsCollector", () => {
       "suite_open_rooms",
       "suite_projection_rooms",
       "suite_documents",
+      "suite_document_writes_pending",
+      "suite_event_loop_lag_max_seconds",
     ]) {
       expect(text, name).toContain(`# TYPE ${name} `);
       expect(text, name).toContain(`# HELP ${name} `);
@@ -206,6 +217,8 @@ describe("MetricsCollector", () => {
       openRooms: 2,
       projectionRooms: 1,
       documents: 7,
+      documentWritesPending: 0,
+      eventLoopLagMaxSeconds: 0.25,
     });
   });
 

@@ -1,9 +1,8 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-card-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-card-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -159,12 +158,12 @@ test("drags from the header while the title or body is being edited", { tag: "@s
 });
 
 test("resizes a card and projects the resize to a peer", { tag: "@smoke" }, async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = workspaceUrl("resize");
+  const url = hostedUrl(workspaceUrl("resize"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
@@ -209,12 +208,12 @@ test("resizes a card and projects the resize to a peer", { tag: "@smoke" }, asyn
 test("projects a top-left resize in the same direction as the gesture", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = workspaceUrl("resize-corner");
+  const url = hostedUrl(workspaceUrl("resize-corner"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();

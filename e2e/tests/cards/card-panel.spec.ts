@@ -1,9 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-panel-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-panel-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -146,12 +145,12 @@ test("shows the empty-body placeholder on the card and in the inspector", async 
 });
 
 test("syncs panel text and a caret to a peer's canvas card", async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = workspaceUrl("two-clients");
+  const url = hostedUrl(workspaceUrl("two-clients"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();

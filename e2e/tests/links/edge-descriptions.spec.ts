@@ -1,14 +1,13 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { expectPeersConnected, selectCard } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
 
 /**
  * Each test gets its own document so parallel tests never share CRDT state.
  */
-const docUrl = (name: string) =>
-  withOwnerKey(`/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`);
+const docUrl = (name: string) => `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`;
 
 /**
  * React Flow re-renders nodes (detaching handles) while a second client syncs, so
@@ -272,12 +271,12 @@ test("keeps the rest of the edge menu", async ({ page }) => {
 });
 
 test("a peer sees a new description without reloading", async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = docUrl("edge-description-peer");
+  const url = hostedUrl(docUrl("edge-description-peer"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();
@@ -346,12 +345,12 @@ test("slides the label along the link and keeps where it landed", async ({ page 
 });
 
 test("a peer sees the label sliding before it is released", async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = docUrl("edge-description-slide-peer");
+  const url = hostedUrl(docUrl("edge-description-slide-peer"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();

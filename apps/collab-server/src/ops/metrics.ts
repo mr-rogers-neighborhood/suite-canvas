@@ -46,6 +46,31 @@ export interface MetricsGauges {
   projectionRooms?: () => number | null;
   /** Stored documents (workspace rooms plus projections). */
   documents?: () => number | null;
+  /** Writes accepted by the document store and not yet on disk. */
+  documentWritesPending?: () => number | null;
+  /** Longest event-loop lag sample seen, in seconds. */
+  eventLoopLagMaxSeconds?: () => number | null;
+}
+
+/**
+ * A histogram rendered into Prometheus text. The relay keeps four of them —
+ * event-loop lag, projection build time, document write time — so the shape is
+ * generic and the collector only renders what a source reports.
+ */
+export interface HistogramSnapshot {
+  /** Cumulative counts, one per bound plus the implicit `+Inf`. */
+  counts: readonly number[];
+  count: number;
+  sum: number;
+}
+
+export interface HistogramSeries {
+  /** Metric name, without the `_bucket`, `_sum` or `_count` suffix. */
+  name: string;
+  help: string;
+  /** Upper bounds, ascending; the last bucket is `+Inf`. */
+  bounds: readonly number[];
+  read: () => HistogramSnapshot;
 }
 
 export interface MetricsSnapshot {
@@ -59,6 +84,13 @@ export interface MetricsSnapshot {
     rateLimitRejections: number;
     projectionRebuilds: number;
     projectionFailures: number;
+    projectionSkips: number;
+    projectionCapped: number;
+    peerLimitRejections: number;
+    documentLimitRejections: number;
+    roomBackpressureRejections: number;
+    documentWrites: number;
+    eventLoopLagBreaches: number;
   };
   gauges: {
     rssBytes: number | null;
@@ -69,6 +101,8 @@ export interface MetricsSnapshot {
     openRooms: number | null;
     projectionRooms: number | null;
     documents: number | null;
+    documentWritesPending: number | null;
+    eventLoopLagMaxSeconds: number | null;
   };
 }
 
@@ -97,6 +131,13 @@ function zeroCounters(): MetricsSnapshot["counters"] {
     rateLimitRejections: 0,
     projectionRebuilds: 0,
     projectionFailures: 0,
+    projectionSkips: 0,
+    projectionCapped: 0,
+    peerLimitRejections: 0,
+    documentLimitRejections: 0,
+    roomBackpressureRejections: 0,
+    documentWrites: 0,
+    eventLoopLagBreaches: 0,
   };
 }
 
@@ -155,6 +196,8 @@ const GAUGE_HELP: Record<keyof MetricsSnapshot["gauges"], string> = {
   openRooms: "Rooms the sync server currently holds.",
   projectionRooms: "Share projection rooms the projection worker holds.",
   documents: "Stored documents: workspace snapshots plus share projections.",
+  documentWritesPending: "Document writes accepted by the store and not yet on disk.",
+  eventLoopLagMaxSeconds: "Longest event-loop lag sample seen since start, in seconds.",
 };
 
 const GAUGE_NAMES: Record<keyof MetricsSnapshot["gauges"], string> = {
@@ -166,6 +209,8 @@ const GAUGE_NAMES: Record<keyof MetricsSnapshot["gauges"], string> = {
   openRooms: "suite_open_rooms",
   projectionRooms: "suite_projection_rooms",
   documents: "suite_documents",
+  documentWritesPending: "suite_document_writes_pending",
+  eventLoopLagMaxSeconds: "suite_event_loop_lag_max_seconds",
 };
 
 /** One counter/gauge collector for a whole process. */
@@ -173,6 +218,7 @@ export class MetricsCollector {
   private counters = zeroCounters();
   private gauges: MetricsGauges;
   private version: string;
+  private histograms: HistogramSeries[] = [];
 
   constructor(options: MetricsOptions = {}) {
     this.gauges = { ...options.gauges };
@@ -182,6 +228,16 @@ export class MetricsCollector {
   /** Merges gauge readers; the last wiring of a name wins. */
   setGauges(gauges: MetricsGauges): void {
     this.gauges = { ...this.gauges, ...gauges };
+  }
+
+  /**
+   * Registers histograms to render alongside the counters. Re-registering a name
+   * replaces it, so boot wiring is idempotent and a test can reset a collector.
+   */
+  setHistograms(histograms: readonly HistogramSeries[]): void {
+    const merged = new Map(this.histograms.map((series) => [series.name, series]));
+    for (const series of histograms) merged.set(series.name, series);
+    this.histograms = [...merged.values()];
   }
 
   /** Stamps `suite_build_info`; called once at boot with the resolved version. */
@@ -228,6 +284,41 @@ export class MetricsCollector {
     this.counters.projectionFailures += count;
   }
 
+  /** Rebuilds skipped because the source had not changed since the last one. */
+  projectionSkipped(count = 1): void {
+    this.counters.projectionSkips += count;
+  }
+
+  /** A rebuild refused or abandoned because it exceeded the build-time cap. */
+  projectionCapped(count = 1): void {
+    this.counters.projectionCapped += count;
+  }
+
+  /** Joins refused because the room had reached `SUITE_MAX_PEERS_PER_ROOM`. */
+  peerLimitRejected(count = 1): void {
+    this.counters.peerLimitRejections += count;
+  }
+
+  /** Joins refused because the room's document is over its byte budget. */
+  documentLimitRejected(count = 1): void {
+    this.counters.documentLimitRejections += count;
+  }
+
+  /** Work refused because one room already had its outstanding bound in flight. */
+  roomBackpressure(count = 1): void {
+    this.counters.roomBackpressureRejections += count;
+  }
+
+  /** Document writes made durable by the store's writer. */
+  documentWritten(count = 1): void {
+    this.counters.documentWrites += count;
+  }
+
+  /** Event-loop samples at or above the threshold since start. */
+  eventLoopLagBroke(count = 1): void {
+    this.counters.eventLoopLagBreaches += count;
+  }
+
   /** Counters as they stand, plus gauges read now. */
   snapshot(): MetricsSnapshot {
     const gauges = this.gauges;
@@ -252,6 +343,13 @@ export class MetricsCollector {
         rateLimitRejections: this.counters.rateLimitRejections,
         projectionRebuilds: this.counters.projectionRebuilds,
         projectionFailures: this.counters.projectionFailures,
+        projectionSkips: this.counters.projectionSkips,
+        projectionCapped: this.counters.projectionCapped,
+        peerLimitRejections: this.counters.peerLimitRejections,
+        documentLimitRejections: this.counters.documentLimitRejections,
+        roomBackpressureRejections: this.counters.roomBackpressureRejections,
+        documentWrites: this.counters.documentWrites,
+        eventLoopLagBreaches: this.counters.eventLoopLagBreaches,
       },
       gauges: {
         rssBytes,
@@ -262,6 +360,8 @@ export class MetricsCollector {
         openRooms: read(gauges.openRooms, () => null),
         projectionRooms: read(gauges.projectionRooms, () => null),
         documents: read(gauges.documents, () => null),
+        documentWritesPending: read(gauges.documentWritesPending, () => null),
+        eventLoopLagMaxSeconds: read(gauges.eventLoopLagMaxSeconds, () => null),
       },
     };
   }
@@ -322,6 +422,51 @@ export class MetricsCollector {
     counter("suite_projection_failures_total", "Projection rebuilds that failed.", [
       `suite_projection_failures_total ${formatNumber(counters.projectionFailures)}`,
     ]);
+    counter(
+      "suite_projection_skips_total",
+      "Projection rebuilds skipped because the source had not changed.",
+      [`suite_projection_skips_total ${formatNumber(counters.projectionSkips)}`],
+    );
+    counter(
+      "suite_projection_build_capped_total",
+      "Projection rebuilds refused or abandoned over the build-time cap.",
+      [`suite_projection_build_capped_total ${formatNumber(counters.projectionCapped)}`],
+    );
+    counter("suite_peer_limit_rejections_total", "Joins refused by the per-room peer cap.", [
+      `suite_peer_limit_rejections_total ${formatNumber(counters.peerLimitRejections)}`,
+    ]);
+    counter(
+      "suite_document_limit_rejections_total",
+      "Joins refused because the room's document is over its byte budget.",
+      [`suite_document_limit_rejections_total ${formatNumber(counters.documentLimitRejections)}`],
+    );
+    counter(
+      "suite_room_backpressure_total",
+      "Room work refused because that room already had its bound in flight.",
+      [`suite_room_backpressure_total ${formatNumber(counters.roomBackpressureRejections)}`],
+    );
+    counter("suite_document_writes_total", "Document writes made durable.", [
+      `suite_document_writes_total ${formatNumber(counters.documentWrites)}`,
+    ]);
+    counter("suite_event_loop_lag_breaches_total", "Event-loop samples over the threshold.", [
+      `suite_event_loop_lag_breaches_total ${formatNumber(counters.eventLoopLagBreaches)}`,
+    ]);
+
+    for (const series of this.histograms) {
+      const snapshot = series.read();
+      lines.push(`# HELP ${series.name} ${series.help}`, `# TYPE ${series.name} histogram`);
+      let index = 0;
+      for (const bound of series.bounds) {
+        const value = snapshot.counts[index] ?? snapshot.count;
+        lines.push(`${series.name}_bucket{le="${formatNumber(bound)}"} ${formatNumber(value)}`);
+        index += 1;
+      }
+      lines.push(
+        `${series.name}_bucket{le="+Inf"} ${formatNumber(snapshot.counts[series.bounds.length] ?? snapshot.count)}`,
+        `${series.name}_sum ${formatNumber(snapshot.sum)}`,
+        `${series.name}_count ${formatNumber(snapshot.count)}`,
+      );
+    }
 
     lines.push(
       "# HELP suite_build_info Build information; the value is always 1.",

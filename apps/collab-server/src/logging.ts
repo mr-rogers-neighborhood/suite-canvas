@@ -201,6 +201,9 @@ export function createRequestLogger(
   const requestId = requestIdOf(request);
   const method = (request.method ?? "GET").toUpperCase();
   const path = redactUrl(request.url ?? "/");
+  // The id travels back in the response so a client can name it in a support
+  // ticket; the log line and the header are the same value by construction.
+  response?.setHeader("x-request-id", requestId);
   let written = false;
 
   const finish = (status?: number): void => {

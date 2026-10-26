@@ -1,6 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 import { selectCard } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
  * The third way to draw a link (ADR-0061): a fan keeps the *starting* connector
@@ -9,8 +8,7 @@ import { withOwnerKey } from "../fixtures/ownerUrl";
  */
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-fan-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-fan-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");

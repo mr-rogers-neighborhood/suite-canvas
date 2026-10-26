@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 test("canvas app boots and renders the board", { tag: "@smoke" }, async ({ page }) => {
   // A fresh workspace per run: the default one is shared state on the collab server.
@@ -25,9 +25,9 @@ test("shows render counters with ?perf=1", { tag: "@smoke" }, async ({ page }) =
 test("does not reseed a workspace another client emptied", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const url = withOwnerKey(`/?workspace=e2e-no-reseed-${Date.now()}`);
+  const url = hostedUrl(`/?workspace=e2e-no-reseed-${Date.now()}`);
 
-  const first = await browser.newContext();
+  const first = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await first.newPage();
   await pageA.goto(url);
   await expect(pageA.locator('[data-testid="node-card"]')).toHaveCount(2);
@@ -46,7 +46,7 @@ test("does not reseed a workspace another client emptied", { tag: "@smoke" }, as
   // workspace. Seeding waits for the server's snapshot, so a slow sync cannot
   // resurrect starter cards here (the gate is asserted in the store, this test
   // pins the end state a joining client must reach).
-  const second = await browser.newContext();
+  const second = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageB = await second.newPage();
   await pageB.goto(url);
   await expect(pageB.locator(".app-canvas")).toHaveAttribute("data-ready", "true");

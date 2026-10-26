@@ -36,6 +36,12 @@ export interface WorkspaceRequestHooks {
   storage?: AdminPaths;
   /** The entitlement record a delete drops, or null on a self-host. */
   licences?: Pick<LicenceClaimStore, "remove"> | null;
+  /**
+   * The attachment bytes the workspace owns. A workspace export carries its
+   * images, so an erasure that left the bytes behind would be a delete in name
+   * only: `gc` with no referenced ids removes every row of that workspace.
+   */
+  attachments?: { gc: (workspaceId: string, referencedIds: Iterable<string>) => number } | null;
 }
 
 export interface WorkspaceRequestDeps extends WorkspaceRequestHooks {
@@ -112,6 +118,9 @@ async function remove(
   // The licence row only exists on a hosted relay, and only that deployment
   // opens the store; a self-host delete must not create one.
   const licenceRows = deps.licences?.remove(id) ?? 0;
+  // No card survives the delete, so every attachment row of the workspace is
+  // unreferenced by construction.
+  const attachmentBytes = deps.attachments?.gc(id, []) ?? 0;
   deps.forgetWorkspace?.(id);
 
   sendJson(response, 200, {
@@ -120,6 +129,7 @@ async function remove(
     organizationId: principal.organizationId,
     ...result,
     licenceRows,
+    attachments: attachmentBytes,
   });
   try {
     deps.onDeleted?.(id);

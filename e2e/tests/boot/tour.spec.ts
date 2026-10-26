@@ -1,10 +1,9 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { startBodyEdit } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-tour");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 const overlay = (page: Page) => page.getByTestId("tour-overlay");
 

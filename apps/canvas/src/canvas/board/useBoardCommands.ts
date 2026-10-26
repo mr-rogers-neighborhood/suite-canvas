@@ -3,6 +3,7 @@ import type { Node } from "@xyflow/react";
 import { useCallback } from "react";
 import { ensureWhiteboardType } from "../../cards/whiteboard";
 import { useUiStore } from "../../store/useUiStore";
+import { installBlueprintCard } from "../blueprints/blueprint";
 import {
   type AlignEdge,
   type DistributeAxis,
@@ -10,6 +11,7 @@ import {
   planDistribute,
 } from "../interactions/arrangeCommand";
 import { dragMoves, dragRects, layerActions, orderedSelection } from "../interactions/multiSelect";
+import { childrenFromLinks, planRadial } from "../interactions/radialLayout";
 import { portalSizeForBounds } from "../PortalCard";
 import { boardBounds } from "../portalMiniature";
 import { sectionsExpandPlan } from "../sections/sectionLayout";
@@ -33,6 +35,7 @@ export function useBoardCommands(
     canEditLayout,
     canCreateContent,
     canCreateBoards,
+    canManageSchema,
     canManageTrash,
     setSelectedNodeIds,
     setPresenceSelection,
@@ -42,7 +45,7 @@ export function useBoardCommands(
     selectedNodeIds,
   } = ui;
   const { projection } = input;
-  const { boardSections, boardPlacementList, boardOrder } = projection;
+  const { boardSections, boardEdges, boardPlacementList, boardOrder } = projection;
 
   const unplaceSelected = useCallback(() => {
     const state = useUiStore.getState();
@@ -262,6 +265,53 @@ export function useBoardCommands(
     [canEditLayout, activeBoardId, selectedNodeIds, boardPlacementList, boardSections, workspace],
   );
 
+  /**
+   * Mind-map mode (ADR-0049), simplified: the selected card is the root and its links
+   * and mentions are the branches. One plan, one undo step, no rule left behind that
+   * would move a card the reader has since placed by hand.
+   */
+  const arrangeRadialSelection = useCallback(() => {
+    if (!canEditLayout || !activeBoardId) return;
+    const [rootCardId] = orderedSelection(boardOrder, selectedNodeIds);
+    if (!rootCardId) return;
+    const plan = planRadial({
+      boardId: activeBoardId,
+      rootCardId,
+      children: childrenFromLinks({
+        boardId: activeBoardId,
+        edges: boardEdges,
+        references: snapshot.references,
+      }),
+      placements: boardPlacementList,
+      sections: boardSections,
+    });
+    if (!plan) return;
+    workspace.applyLayoutPlan(plan, { origin: "layout:mindmap" });
+  }, [
+    canEditLayout,
+    activeBoardId,
+    selectedNodeIds,
+    boardOrder,
+    boardEdges,
+    boardPlacementList,
+    boardSections,
+    snapshot.references,
+    workspace,
+  ]);
+
+  /**
+   * Installs the selected card as a type blueprint (ADR-0059). The card's title is the type
+   * name and its body declares the fields, so one graph call path does the whole install in
+   * one undo step. Returns what happened, because a card that is not a blueprint is a real
+   * answer the caller may want to say out loud.
+   */
+  const installBlueprintSelection = useCallback(() => {
+    if (!canManageSchema) return null;
+    const [cardId] = orderedSelection(boardOrder, selectedNodeIds);
+    if (!cardId) return null;
+    return installBlueprintCard(workspace, cardId);
+  }, [canManageSchema, boardOrder, selectedNodeIds, workspace]);
+
   return {
     unplaceSelected,
     trashSelected,
@@ -277,5 +327,7 @@ export function useBoardCommands(
     moveCardToBoard,
     otherBoards,
     arrangeSelection,
+    arrangeRadialSelection,
+    installBlueprintSelection,
   };
 }

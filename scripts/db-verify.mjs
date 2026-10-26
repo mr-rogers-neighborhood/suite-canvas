@@ -440,11 +440,23 @@ async function main() {
       `INSERT INTO member (id, "organizationId", "userId", role) VALUES ($1, $2, $3, $4)`,
       ["member-1", "org-1", "user-1", "owner"],
     );
+    // `organization_licences.organization_id` is the primary key, so a paid licence
+    // *replaces* the free row instead of adding a second one: this is the upsert the
+    // billing lane's licence write has to be, and 0009 makes the free row the thing it
+    // replaces.
     await query(
       `INSERT INTO organization_licences (
-         organization_id, licence_id, tier, workspaces, document_bytes, attachment_bytes, expires_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      ["org-1", "lic-1", "team", 3, 268_435_456, 1_073_741_824, new Date(NOW + DAY)],
+         organization_id, licence_id, tier, workspaces, seats, document_bytes, attachment_bytes, expires_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (organization_id) DO UPDATE
+         SET licence_id = EXCLUDED.licence_id,
+             tier = EXCLUDED.tier,
+             workspaces = EXCLUDED.workspaces,
+             seats = EXCLUDED.seats,
+             document_bytes = EXCLUDED.document_bytes,
+             attachment_bytes = EXCLUDED.attachment_bytes,
+             expires_at = EXCLUDED.expires_at`,
+      ["org-1", "lic-1", "team", 3, 0, 268_435_456, 1_073_741_824, new Date(NOW + DAY)],
     );
 
     const repositories = postgresRepositories(client);
@@ -479,6 +491,186 @@ async function main() {
       assert.equal(licence.claims.documentBytes, 268_435_456);
       assert.equal(licence.claims.attachmentBytes, 1_073_741_824);
       return "document_bytes and attachment_bytes read as numbers";
+    });
+
+    // --- the free tier, which every organization is born on -------------------
+
+    const { FREE_LICENCE_TIER } = await import(
+      pathToFileURL(join(root, "services/auth/src/organizations/freeTier.ts")).href
+    );
+    const { checkSeatAllowance } = await import(
+      pathToFileURL(join(root, "services/auth/src/organizations/seats.ts")).href
+    );
+    const { licenceStateFor } = await import(
+      pathToFileURL(join(root, "services/auth/src/licensing/licences.ts")).href
+    );
+
+    await check("creating an organization provisions its free licence (0009)", async () => {
+      // org-2 was inserted above, before any repository ran: the trigger on
+      // `organization` has to have written the row in that same statement.
+      const licence = await repositories.licences.forOrganization("org-2");
+      assert.ok(licence !== null, "a new organization has no licence row, so nobody can join it");
+      // Every number the free tier names, compared with the object the TypeScript
+      // side uses: two descriptions of one tier, and a gate on them drifting.
+      assert.equal(licence.claims.tier, FREE_LICENCE_TIER.tier);
+      assert.equal(licence.claims.workspaces, FREE_LICENCE_TIER.workspaces);
+      assert.equal(licence.seats, FREE_LICENCE_TIER.seats);
+      assert.equal(licence.claims.documentBytes, FREE_LICENCE_TIER.documentBytes);
+      assert.equal(licence.claims.attachmentBytes, FREE_LICENCE_TIER.attachmentBytes);
+      assert.equal(licence.claims.id, "free:org-2");
+      const days = Math.round((licence.claims.expiresAt - Date.now()) / DAY);
+      assert.ok(
+        Math.abs(days - FREE_LICENCE_TIER.days) <= 1,
+        `expires_at is ${days} days away, not ${FREE_LICENCE_TIER.days}`,
+      );
+      return `${licence.claims.tier}: ${licence.claims.workspaces} workspace(s), ${licence.seats} seat(s)`;
+    });
+
+    await check("a paid licence replaces the free row rather than adding one", async () => {
+      const { rows } = await client.query(
+        `SELECT count(*)::int AS count, min(tier) AS tier
+         FROM organization_licences WHERE organization_id = $1`,
+        ["org-1"],
+      );
+      assert.equal(rows[0].count, 1, "org-1 holds two licence rows");
+      assert.equal(rows[0].tier, "team", "the paid tier did not replace the free one");
+      return "one row, tier team";
+    });
+
+    await check("the free row admits the owner and refuses a second member", async () => {
+      const licence = await repositories.licences.forOrganization("org-2");
+      const now = Date.now();
+      const decision = (memberCount) =>
+        checkSeatAllowance({
+          organizationId: "org-2",
+          licence: licenceStateFor(true, licence),
+          memberCount,
+          now,
+        });
+      assert.deepEqual(decision(1), { ok: true, seat: "licensed-member" });
+      assert.deepEqual(decision(2), { ok: false, reason: "seat-allowance-exhausted" });
+      return "1 seat allowed, 2 refused as a billing answer";
+    });
+
+    await check("no licence row is a named provisioning fault, not a billing refusal", async () => {
+      // The state the e2e harness found: an organization with no row at all. 0009 makes
+      // it unreachable through the insert path, which is why this one is built by
+      // disabling the trigger.
+      await query(`ALTER TABLE organization DISABLE TRIGGER organization_free_licence`);
+      try {
+        await query(`INSERT INTO organization (id, name, slug) VALUES ($1, $2, $3)`, [
+          "org-unprovisioned",
+          "Orphan",
+          "orphan",
+        ]);
+      } finally {
+        await query(`ALTER TABLE organization ENABLE TRIGGER organization_free_licence`);
+      }
+      const licence = await repositories.licences.forOrganization("org-unprovisioned");
+      assert.equal(licence, null, "a disabled trigger still wrote a licence row");
+      assert.deepEqual(
+        checkSeatAllowance({
+          organizationId: "org-unprovisioned",
+          licence: licenceStateFor(true, licence),
+          memberCount: 1,
+          now: Date.now(),
+        }),
+        { ok: false, reason: "licence-unprovisioned" },
+      );
+    });
+
+    await check("the 0009 backfill gives an older organization the same row", async () => {
+      // 0009's last statement is this call for every existing organization; running it
+      // again must fill the orphan above and must not disturb a paid row.
+      await query(`SELECT provision_free_organization_licence(id) FROM organization`);
+      const filled = await repositories.licences.forOrganization("org-unprovisioned");
+      assert.ok(filled !== null, "the backfill left the orphan unlicensed");
+      assert.equal(filled.claims.tier, FREE_LICENCE_TIER.tier);
+      const paid = await repositories.licences.forOrganization("org-1");
+      assert.ok(paid !== null);
+      assert.equal(paid.claims.tier, "team", "the backfill overwrote a paid licence");
+      return "orphan filled, paid row untouched";
+    });
+
+    // --- the real plugin, on the real schema ----------------------------------
+
+    await check("an organization created through the plugin can add its first member", async () => {
+      // The bug this exists to catch: `beforeAddMember` refuses the creator of a brand
+      // new organization with `seat-refused: licence-missing`. Nothing but the real
+      // plugin, the real hooks and a real Postgres shows it, so this drives
+      // `POST /api/auth/organization/create` the way the app does.
+      const { createAuthService } = await import(
+        pathToFileURL(join(root, "services/auth/src/identity/betterAuth.ts")).href
+      );
+      const { authEnvironment } = await import(
+        pathToFileURL(join(root, "services/auth/src/http/env.ts")).href
+      );
+      const { postgresDatabase } = await import(
+        pathToFileURL(join(root, "services/auth/src/store/postgres.ts")).href
+      );
+
+      await query(`INSERT INTO "user" (id, name, email) VALUES ($1, $2, $3)`, [
+        "user-founder",
+        "Grace",
+        "grace@example.com",
+      ]);
+
+      // The cluster listens on a unix socket only, so the connection string names the
+      // socket directory rather than a host:port.
+      const database = postgresDatabase({
+        connectionString: `postgres://postgres@localhost/postgres?host=${encodeURIComponent(socketDir)}&port=${port}`,
+      });
+      try {
+        const service = createAuthService({
+          env: authEnvironment({
+            SUITE_AUTH_ENABLED: "1",
+            SUITE_AUTH_SECRET: "v".repeat(32),
+            SUITE_AUTH_URL: "http://localhost:1236",
+          }),
+          database: database.database,
+          licences: repositories.licences,
+          memberships: repositories.memberships,
+          sendMagicLink: async () => {},
+          sendVerificationEmail: async () => {},
+          sendOrganizationInvitation: async () => {},
+        });
+
+        const response = await service.handler(
+          new Request("http://localhost:1236/api/auth/organization/create", {
+            method: "POST",
+            headers: { "content-type": "application/json", origin: "http://localhost:1236" },
+            body: JSON.stringify({
+              name: "Grace's Agency",
+              slug: "graces-agency",
+              userId: "user-founder",
+            }),
+          }),
+        );
+        const body = await response.json();
+        assert.equal(response.status, 200, `the plugin refused: ${JSON.stringify(body)}`);
+        const organizationId = body.id;
+        assert.ok(typeof organizationId === "string" && organizationId.length > 0);
+
+        // The member row is the proof: `beforeAddMember` let the creator through, which
+        // is only possible because the licence row existed before the hook ran.
+        const seats = await query(
+          `SELECT role FROM member WHERE "organizationId" = $1 AND "userId" = $2`,
+          [organizationId, "user-founder"],
+        );
+        assert.deepEqual(
+          seats.map((row) => row.role),
+          ["owner"],
+          "the creator is not a member of the organization they just created",
+        );
+
+        const licence = await repositories.licences.forOrganization(organizationId);
+        assert.ok(licence !== null, "the plugin's organization has no licence row");
+        assert.equal(licence.claims.tier, FREE_LICENCE_TIER.tier);
+        assert.equal(licence.seats, FREE_LICENCE_TIER.seats);
+        return `organization ${organizationId} created with its owner and a free licence`;
+      } finally {
+        await database.close();
+      }
     });
 
     await check("postgresWorkspaces.claim claims an unowned workspace", async () => {

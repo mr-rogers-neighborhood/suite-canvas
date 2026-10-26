@@ -117,9 +117,12 @@ export function postgresLicences(client: Queryable): LicenceStore {
     async forOrganization(organizationId) {
       const { rows } = await client.query(LICENCE_SQL, [organizationId]);
       const row = rows[0] as Record<string, unknown> | undefined;
-      // No row means no licence — which the seat check already treats as "fail
-      // closed for an owned workspace", so returning null is the honest answer
-      // rather than a permissive default.
+      // No row means no licence — which the seat check reports as
+      // `licence-unprovisioned`, not as an exhausted allowance: every organization gets
+      // one in the transaction that creates it
+      // (`sql/0009_free_licence_provisioning.sql`), so a null here is a deployment
+      // fault. Returning null is still the honest answer rather than a permissive
+      // default; inventing a free licence at read time would hide exactly that fault.
       if (row === undefined) return null;
       const documentBytes = ceiling(row.document_bytes);
       const attachmentBytes = ceiling(row.attachment_bytes);

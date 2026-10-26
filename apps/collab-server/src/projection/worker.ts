@@ -4,10 +4,12 @@ import { LoroDoc } from "loro-crdt";
 import { LoroWebsocketClient, RoomJoinStatus } from "loro-websocket";
 import { sumBy } from "remeda";
 import type { Share } from "../store/shares.js";
+import { RoomWorkBudget, roomOutstandingLimit } from "../sync/limits.js";
 import { type DraftHost, draftStatus, publishDraft, reloadDraft } from "./apply.js";
 import type {
   PendingRebuild,
   ProjectionRoomStats,
+  ProjectionRun,
   ProjectionWorkerOptions,
   RoomState,
   SharePublishResult,
@@ -30,6 +32,8 @@ import type { ProjectionRoomInfo, RoomSweepReport } from "./rooms.js";
 import {
   deleteRoomDocuments,
   loadLoroDocument,
+  projectionBuildCap,
+  projectionCardLimit,
   projectionRoomLimit,
   roomIdleHours,
 } from "./rooms.js";
@@ -75,6 +79,16 @@ export class ProjectionWorker implements DraftHost {
   private refused = 0;
   /** Joins in flight, counted against the ceiling so concurrent opens cannot race past it. */
   private opening = 0;
+  /** Rebuild outcomes since `start()`, for the operator inventory. */
+  private skipped = 0;
+  private capped = 0;
+  private backpressured = 0;
+  private coalesced = 0;
+  private maxBuildMs = 0;
+  /** Outstanding work per workspace: what keeps one board from queuing forever. */
+  private readonly budget: RoomWorkBudget;
+  /** A rebuild already queued for a workspace, so a second request joins it. */
+  private readonly queuedRebuilds = new Map<string, Promise<void>>();
 
   constructor(options: ProjectionWorkerOptions) {
     this.options = options;
@@ -100,9 +114,29 @@ export class ProjectionWorker implements DraftHost {
       sources: this.sources,
       touch: (room) => this.touch(room),
       warn: (text) => this.warn(text),
+      now: () => this.now(),
+      maxCards: options.maxCards ?? projectionCardLimit(),
+      buildCapMs: options.buildCapMs ?? projectionBuildCap(),
+      report: (run) => this.note(run),
     };
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.maxRooms = options.maxRooms ?? projectionRoomLimit();
+    this.budget = new RoomWorkBudget(options.outstanding ?? roomOutstandingLimit());
+  }
+
+  /**
+   * Counts one rebuild outcome. The worker owns the numbers an operator reads in
+   * `/api/admin/status`; `onRun` lets the server count the same event once into
+   * the process metrics, so the two can never describe different runs.
+   */
+  private note(run: ProjectionRun): void {
+    if (run.kind === "skipped") this.skipped += 1;
+    if (run.kind === "capped") this.capped += 1;
+    if (run.kind === "refused") this.backpressured += 1;
+    if (run.kind === "rebuilt" || run.kind === "capped") {
+      this.maxBuildMs = Math.max(this.maxBuildMs, run.buildMs);
+    }
+    this.options.onRun?.(run);
   }
 
   /**
@@ -401,8 +435,13 @@ export class ProjectionWorker implements DraftHost {
   /**
    * Serializes work per workspace so two saves, or a save and a publish, cannot
    * interleave writes. Every task runs even when the task before it failed.
+   *
+   * The queue is also where the per-room bound lives: the slot is taken when the
+   * task is queued and released when it settles, so `run` can ask whether this
+   * workspace already has its share of the process.
    */
   enqueue<T>(workspaceId: string, work: () => Promise<T>): Promise<T> {
+    this.budget.enter(workspaceId);
     const previous = this.queues.get(workspaceId) ?? Promise.resolve();
     const next = previous.then(work, work);
     const settled = next.then(
@@ -411,14 +450,51 @@ export class ProjectionWorker implements DraftHost {
     );
     this.queues.set(workspaceId, settled);
     void settled.then(() => {
+      this.budget.leave(workspaceId);
       if (this.queues.get(workspaceId) === settled) this.queues.delete(workspaceId);
     });
     return next;
   }
 
-  /** Serializes rebuilds per workspace so two saves cannot interleave writes. */
+  /**
+   * Serializes rebuilds per workspace, and bounds them.
+   *
+   * Two rules, both about one board not spending the process on itself:
+   *
+   * - **Coalesce.** A rebuild reads the freshest source, so a request that
+   *   arrives while one is already queued is satisfied by it. Without this, a
+   *   board being dragged around during a slow rebuild queued one rebuild per
+   *   save interval, and every one of them read the same final state.
+   * - **Refuse past the bound.** When a workspace already holds
+   *   `SUITE_ROOM_OUTSTANDING_MAX` tasks, the rebuild is refused and counted:
+   *   freshness for one board is the cheapest thing to lose.
+   */
   private run(workspaceId: string): Promise<void> {
-    return this.enqueue(workspaceId, () => this.refresh(workspaceId));
+    const queued = this.queuedRebuilds.get(workspaceId);
+    if (queued) {
+      // Not a refusal: the queued rebuild will read the state this request is
+      // asking about, so the caller waits on that one.
+      this.coalesced += 1;
+      return queued;
+    }
+    if (this.budget.atLimit(workspaceId)) {
+      this.note({
+        kind: "refused",
+        workspaceId,
+        outstanding: this.budget.inFlight(workspaceId),
+      });
+      this.warn(
+        `refusing a projection rebuild for ${workspaceId}: it already has ` +
+          `${String(this.budget.inFlight(workspaceId))} task(s) outstanding ` +
+          `(SUITE_ROOM_OUTSTANDING_MAX=${String(this.budget.limit)})`,
+      );
+      return Promise.resolve();
+    }
+    const promise = this.enqueue(workspaceId, () => this.refresh(workspaceId)).finally(() => {
+      this.queuedRebuilds.delete(workspaceId);
+    });
+    this.queuedRebuilds.set(workspaceId, promise);
+    return promise;
   }
 
   private async refresh(workspaceId: string): Promise<void> {
@@ -525,6 +601,10 @@ export class ProjectionWorker implements DraftHost {
         lastActiveAt: this.now(),
         bytes: seeded,
         measured: doc.version(),
+        sourceVersion: null,
+        builtAt: 0,
+        buildMs: 0,
+        capped: false,
       };
       // A draft that survived a restart is still the editor's until it is
       // published or reloaded. The version vector cannot answer that on its own:
@@ -662,6 +742,8 @@ export class ProjectionWorker implements DraftHost {
       role: room.role,
       hasBaseline: room.baseline !== null,
       dirty: room.dirty,
+      buildMs: room.buildMs,
+      capped: room.capped,
     }));
   }
 
@@ -681,6 +763,11 @@ export class ProjectionWorker implements DraftHost {
       evicted: this.evicted,
       refused: this.refused,
       documentBytes: sumBy([...this.rooms.values()], (room) => room.bytes),
+      skipped: this.skipped,
+      capped: this.capped,
+      backpressured: this.backpressured,
+      coalesced: this.coalesced,
+      maxBuildMs: this.maxBuildMs,
     };
   }
 

@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import {
   cardByTitle,
   cards,
@@ -10,7 +9,7 @@ import {
 } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-views");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 const search = (page: Page) => page.getByTestId("library-search");
 const viewsButton = (page: Page) => page.getByTestId("views-menu-button");

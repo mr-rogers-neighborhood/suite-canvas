@@ -1,9 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, createNote, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-templates");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 /** Opens the type editor from the dock and selects a type by id. */
 async function openTypes(page: Page, typeId: string) {

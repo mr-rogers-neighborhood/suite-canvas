@@ -48,6 +48,20 @@
 	}
 }
 
+# Where a blocked resource reports. Both names are needed: `report-to` is the
+# modern Reporting API and reads the group below, `report-uri` is what every
+# other browser still sends. The endpoint is the relay's, so only the two sites
+# that proxy `/api/*` to it import this; a docs host has no API to report to and
+# sending it there would only teach the browser that reporting is broken.
+#
+# The policy stays *enforcing*. Nothing here sets `Content-Security-Policy-
+# Report-Only`: a report-only policy protects nobody, and a site that switched to
+# it without saying so would look safe and be open.
+(suite_csp_reporting) {
+	header Report-To "{\"group\":\"suite-csp\",\"max_age\":10886400,\"endpoints\":[{\"url\":\"https://{http.request.host}/api/report/csp\"}]}"
+	header Reporting-Endpoints "suite-csp=\"https://{http.request.host}/api/report/csp\""
+}
+
 # Caching for the canvas, in one place. Vite content-hashes the bundles under
 # /assets/*, so those never change and may be cached for a year. Everything
 # else is JSON on /api/*, a token-gated scrape, a WebSocket upgrade, one of the
@@ -64,7 +78,8 @@
 {$SUITE_DOMAIN:localhost} {
 	encode zstd gzip
 	import suite_security_headers
-	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN:localhost}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+	import suite_csp_reporting
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN:localhost}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/report/csp; report-to suite-csp"
 	import suite_caching
 
 	# Loro sync. No special directive is needed: reverse_proxy forwards the
@@ -75,7 +90,8 @@
 		reverse_proxy app:1234
 	}
 
-	# The HTTP API (shares, workspaces) and the health probe share port 1235.
+	# The HTTP API (shares, workspaces, CSP reports) and the health probe share
+	# port 1235.
 	handle /api/* {
 		reverse_proxy app:1235
 	}
@@ -130,7 +146,8 @@
 {$SUITE_APP_HOST:app.suite.run} {
 	encode zstd gzip
 	import suite_security_headers
-	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_APP_HOST:app.suite.run}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+	import suite_csp_reporting
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_APP_HOST:app.suite.run}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/report/csp; report-to suite-csp"
 	import suite_caching
 
 	handle /api/auth/* {

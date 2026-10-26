@@ -48,6 +48,31 @@ Its tab strip has Details, Content and Style. Details carries the type and tag p
 
 `ContainerPanel` covers the container selection (section or portal), `LinkInspector` covers one edge, and `ExplainPanel` shows the explain context. `TypeSettingsDialog` edits the type registry and its fields. Each of these writes through `@suite/graph`; none keeps a copy of the record it edits.
 
+Two panels read a card's metadata without owning it. `apps/canvas/src/panels/AnnotationReader.tsx` shows the passage an annotation card points into, resolved against the source's text (ADR-0072). A record keeps the quoted text and the offsets it was captured at; the quote is the anchor and the offsets are a hint, so an edit above the passage shifts the range silently. Stale means one thing: the source no longer contains the quote at all, or the source card is gone. Only that state asks the reader to act. `apps/canvas/src/panels/BlueprintInstallPanel.tsx` shows what installing a type blueprint would write, one checkbox per field, and it reads its own footer from `planBlueprintInstall` rather than counting on its own.
+
+## Hover peek
+
+A rest on a rendered entity names it (ADR-0055). `apps/canvas/src/canvas/peek/peekResolver.ts` answers for one `Target` at a time (a card, a board, a section or a link) and returns `null` for a kind it cannot describe, so the surface opens nothing rather than guessing. A card reads the same way in the outline rail, on a rollup row and on a link endpoint because all three ask the same resolver.
+
+`usePeek` in `canvas/peek/usePeek.ts` holds the timing rules, which are the whole difficulty:
+
+| Rule | Value | Why |
+| --- | --- | --- |
+| Open after a rest | `openAfterMs` 450 | Long enough to separate a passing pointer from a rest |
+| Grace after leaving | `closeAfterMs` 120 | Lets the pointer cross the gap into the peek |
+| A focus this soon after a press came from it | `pointerFocusGraceMs` 250 | A click selects; it does not peek |
+
+Escape, a pointer press anywhere, a scroll and a zoom all dismiss, and those listeners live in the hook rather than in each surface, so no surface can forget one. Keyboard access is the same resolve: `focus` opens the peek at once, with no delay, and `PeekSurface` renders in place rather than through a portal so Tab from the trigger reaches its one button. The surface never takes focus itself, and it is a reading: a name, a kind, one line of context and a route to open the thing. Editing stays in the inspector.
+
+The outline rail is the first surface wired to it: `BoardOutline.tsx` gives each section row a `peek` controller, and the rail renders one `PeekSurface` for all of its rows.
+
+## Error codes
+
+`apps/canvas/src/i18n/` ships codes before sentences. `codes.ts` is a closed union of `domain.subject.reason` strings, `messages.en.ts` is the English catalogue typed as `Record<ErrorCode, string>` so a code without a message fails the typecheck, and `messageFor` turns a code into a sentence with `{name}` placeholders filled.
+
+An unknown code is returned as itself, which keeps a log line greppable and leaves the interface short rather than blank. There is one locale and no plural or number formatting yet; a second catalogue is a new file and one entry in `catalogues`, because nothing outside the catalogue holds a sentence.
+
+
 ## Selection
 
 Selection is UI state with several readers: the canvas paints it, the inspector opens on it, and the commands that act on "this" resolve against it. `selectedNodeIds`, `selectedEdgeIds`, `selectedSectionId` and `containerInspector` in `useUiStore` are the whole of it.
@@ -115,6 +140,8 @@ Keys: typing filters, `ArrowDown` and `ArrowUp` move the highlight, `Enter` runs
 
 The library, the inspector and the canvas context menu read the same registry. Availability is a property of the command, which is why a read-only session loses a command everywhere at once rather than in the surfaces someone remembered to guard.
 
+Two commands arrived with their handlers. `layout.arrangeRadial` runs `arrangeRadialSelection`, and `type.installBlueprint` runs `installBlueprintSelection`; both handlers live in `apps/canvas/src/canvas/board/useBoardCommands.ts`. Each is listed only while its `CommandActions` field is supplied, so the palette and the dock never offer a row the board cannot run. `type.installBlueprint` needs `canManageSchema`, which the board reads from the same capability matrix as every other write.
+
 ## Focus and keyboard
 
 Escape is a stack. `apps/canvas/src/shell/escapeLayers.ts` keeps one layer per open surface, the most recent wins, and the key is claimed in the capture phase so the canvas chain never also acts on it. A text field inside a non-modal surface keeps Escape for itself; a field inside a dialog does not, because a dialog is what Escape is for.
@@ -149,5 +176,11 @@ Focus is always visible on interactive elements, and a focusable read-only contr
 | Library filters and selection | `apps/canvas/src/library/*.test.ts` |
 | Theme and appearance resolution | `apps/canvas/src/theme/*.test.ts` |
 | Escape layer order | `apps/canvas/src/shell/escapeLayers.test.ts` |
+| Hover-peek timing and dismissal | `apps/canvas/src/canvas/peek/usePeek.test.ts` |
+| Peek resolution per entity kind | `apps/canvas/src/canvas/peek/peekResolver.test.ts` |
+| Outline peek wiring | `apps/canvas/src/canvas/peek/outlinePeek.test.tsx` |
+| Annotation range states | `apps/canvas/src/canvas/annotations/annotationRecord.test.ts` |
+| Blueprint install diff and partial install | `apps/canvas/src/canvas/blueprints/blueprint.test.ts` |
+| Error codes and the catalogue | `apps/canvas/src/i18n/i18n.test.ts` |
 
 Storybook covers the components whose look is the behaviour: `*.stories.tsx` beside each component in `apps/canvas/src/chrome/`, `apps/canvas/src/library/`, `apps/canvas/src/presence/` and `apps/canvas/src/dialogs/`.

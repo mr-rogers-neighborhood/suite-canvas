@@ -14,6 +14,7 @@ import { createWorkspaceAccess, type WorkspaceClaimDeps } from "../http/access.j
 import { handleAdminRequest } from "../http/admin/index.js";
 import { handleAttachmentRequest } from "../http/attachmentHttp.js";
 import { authorize, resolveWorkerTokens } from "../http/auth.js";
+import { handleReportRequest } from "../http/report.js";
 import {
   createSessionVerifier,
   noSessionVerifier,
@@ -22,6 +23,7 @@ import {
 import { handleShareRequest } from "../http/shareHttp.js";
 import { handleWorkspaceRequest } from "../http/workspaceHttp.js";
 import { createLogger, createRequestLogger } from "../logging.js";
+import { EventLoopLagMonitor, eventLoopLagThreshold } from "../ops/eventLoopLag.js";
 import { metrics as processMetrics, readProcessRss } from "../ops/metrics.js";
 import {
   forgetRoomDocument,
@@ -43,6 +45,7 @@ import {
   type ShareStore,
 } from "../store/shares.js";
 import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
+import { joinRefusal, limitRoomOf, peersPerRoomLimit } from "../sync/limits.js";
 import {
   disconnectProjectionViewers,
   disconnectWorkspaceShares,
@@ -92,7 +95,11 @@ const paths = {
 // `store/persistence.ts`): WAL, the busy timeout and the schema stamp travel
 // with the module that opens the file, so none of them depends on a boot-time
 // pass having run first.
-const store = createDocumentStore(paths.documents);
+const store = createDocumentStore(paths.documents, {
+  // The counter is incremented where the write is durable, not where it is
+  // accepted, so it can never run ahead of the disk.
+  onWritten: (rows) => processMetrics.documentWritten(rows),
+});
 // Shares live in their own file so token writes never contend with the
 // document store's save interval.
 const shares = createShareStore(paths.shares);
@@ -207,9 +214,58 @@ const worker = new ProjectionWorker({
   onRoomClosed: (roomId) => {
     forgetRoomDocument(server, roomId);
   },
+  // One counter per rebuild outcome. The worker keeps its own numbers for the
+  // operator inventory; this is the same event, counted once for the scraper.
+  onRun: (run) => {
+    if (run.kind === "skipped") processMetrics.projectionSkipped();
+    if (run.kind === "capped") processMetrics.projectionCapped();
+    if (run.kind === "refused") processMetrics.roomBackpressure();
+  },
 });
 
 const isWorkspaceRoom = (roomId: string): boolean => !roomId.startsWith(SHARE_ROOM_PREFIX);
+
+/** `SUITE_MAX_PEERS_PER_ROOM`, read once so every join compares the same number. */
+const peerLimit = peersPerRoomLimit();
+
+/**
+ * What a room-limit check needs, read from the live process rather than stored:
+ * peers from the sync server's own session table, and the document size from a
+ * `length(state)` read, which never materializes the blob.
+ *
+ * Only a projection room is compared against a byte budget, and against the
+ * projection budget, because that is the quota the workspace already agreed to
+ * for its shared bytes.
+ */
+function joinFacts(roomId: string): {
+  peers: number | null;
+  documentBytes: number | null;
+  documentBudget: number;
+  peerLimit: number;
+} {
+  const room = limitRoomOf(roomId);
+  const projection = room.startsWith(SHARE_ROOM_PREFIX);
+  // A workspace room is never refused on size: the owner has to be able to open
+  // it to trim it, and its saves are never dropped. What a projection room may
+  // hold is a share of that workspace, so refusing to serve an oversized one
+  // protects the process without taking anybody's workspace away.
+  const documentBudget = projection
+    ? currentLimits().limits.projectionBytesPerWorkspace
+    : Number.POSITIVE_INFINITY;
+  let documentBytes: number | null = null;
+  if (projection) {
+    for (const key of loroDocumentKeys(room)) {
+      const bytes = store.measure(key);
+      if (bytes !== null) documentBytes = Math.max(documentBytes ?? 0, bytes);
+    }
+  }
+  return {
+    peers: roomSessionCount(server, room, projection ? projectionToken : sourceToken),
+    documentBytes,
+    documentBudget,
+    peerLimit,
+  };
+}
 
 /**
  * Every rebuild the server asks for goes through here, so the counter and the
@@ -251,8 +307,8 @@ const server = new SimpleServer({
     if (isWorkspaceRoom(roomId)) scheduleProjection(roomId);
   },
 
-  authenticate(roomId, _crdtType, auth) {
-    return authorize(roomId, auth, {
+  async authenticate(roomId, _crdtType, auth) {
+    const permission = await authorize(roomId, auth, {
       shares: countedShares,
       ...(sessions === undefined ? {} : { sessions }),
       workspaces: workspaceClaims,
@@ -260,6 +316,20 @@ const server = new SimpleServer({
       sourceToken,
       seats: seatGate,
     });
+    if (permission === null) return null;
+    // A credential is not an answer to "is this room too big to serve". The
+    // ceiling is per room, checked before the session exists, so a refusal
+    // writes nothing and a workspace keeps saving whatever it is told here.
+    const refusal = joinRefusal(limitRoomOf(roomId), joinFacts(roomId));
+    if (refusal === null) return permission;
+    if (refusal.code === "peer-limit") processMetrics.peerLimitRejected();
+    else processMetrics.documentLimitRejected();
+    logger.warn("join refused by a room limit", {
+      code: refusal.code,
+      message: refusal.message,
+      room: limitRoomOf(roomId),
+    });
+    return null;
   },
 });
 
@@ -341,9 +411,16 @@ const health = createServer((request, response) => {
   })
     .then((handled) => {
       if (handled || response.writableEnded) return;
+      // A delete removes rows through its own connection (`ops/admin.ts`), so
+      // the writer's queue must be on disk first: otherwise the delete misses a
+      // row still in memory and the next save puts it back.
+      if (request.method === "DELETE") store.flush();
       return handleWorkspaceRequest(request, response, {
         access,
         licences: licenceClaims,
+        // The same store the attachment route serves from: a deleted workspace
+        // takes its image bytes with it, not just the rows that point at them.
+        attachments: defaultAttachmentStore(),
         exists: (workspaceId) =>
           // The same evidence the admin inventory uses: a stored document under
           // any key a room may have used, or a share row that points here.
@@ -401,6 +478,12 @@ const health = createServer((request, response) => {
     })
     .then((handled) => {
       if (handled || response.writableEnded) return;
+      // CSP violation reports from the browser: public, bounded, and answered
+      // `204` whatever happens, so a blocked asset never turns into a retry loop.
+      return handleReportRequest(request, response);
+    })
+    .then((handled) => {
+      if (handled || response.writableEnded) return;
       if (request.url === "/health") {
         // Readiness only: no counts, no database sizes. Detailed state lives in
         // `/api/admin/status`, which requires the operator token.
@@ -429,6 +512,25 @@ health.listen(healthPort);
 // process alive on its own.
 store.startMaintenance();
 
+/**
+ * Event-loop lag, sampled every 50 ms, and published as a histogram rather than
+ * as a duration for the save path: a document write is measured by how late the
+ * loop was, not by how long the write took, because that is the number a reader
+ * of the board feels. The sustained-breach line carries the write counters so
+ * the one line an operator sees says whether writes are the cause.
+ */
+const lag = new EventLoopLagMonitor({
+  thresholdMs: eventLoopLagThreshold(),
+  logger,
+  onBreach: () => processMetrics.eventLoopLagBroke(),
+  context: () => ({
+    documentWrites: processMetrics.snapshot().counters.documentWrites,
+    documentWritesPending: store.writeStats().queued,
+    projectionCapped: processMetrics.snapshot().counters.projectionCapped,
+  }),
+});
+lag.start();
+
 // Gauges are read at scrape time, so they see the live stores and the worker's
 // current rooms rather than boot-time numbers.
 processMetrics.setVersion(config.version);
@@ -438,7 +540,17 @@ processMetrics.setGauges({
   documents: () => store.inventory().documents,
   openRooms: socketRoomCount,
   projectionRooms: () => worker.projectionRooms().length,
+  documentWritesPending: () => store.writeStats().queued,
+  eventLoopLagMaxSeconds: () => lag.maxSeconds(),
 });
+processMetrics.setHistograms([
+  {
+    name: "suite_event_loop_lag_seconds",
+    help: "Event-loop lag per sample (seconds): how late the loop woke up.",
+    bounds: lag.histogram.boundsSeconds,
+    read: () => lag.histogram.snapshot(),
+  },
+]);
 
 logger.info("server ready", {
   version: config.version,
@@ -462,6 +574,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         clearInterval(expirySweep);
         clearInterval(idleSweep);
         health.close();
+        lag.stop();
+        // Closes the writer first and blocks until it is on disk, so a shutdown
+        // never loses the last snapshot the server accepted.
         store.close();
         shares.close();
         orgs.close();

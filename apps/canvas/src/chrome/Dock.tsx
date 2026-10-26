@@ -2,6 +2,13 @@ import type { Board, CardType } from "@suite/graph";
 import { PORTAL_TYPE_ID } from "@suite/graph";
 import { useEffect, useRef, useState } from "react";
 import { PORTAL_GLYPH } from "../cards/portal";
+import {
+  type Capability,
+  type CommandActions,
+  type CommandContext,
+  type CommandState,
+  commandsFor,
+} from "../command/commandRegistry";
 import { menuKeyDown } from "../dialogs/menuKeys";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
@@ -98,27 +105,76 @@ export function Dock({
     onCreateCard(typeId);
   };
 
-  const createPortal = (targetBoardId: string) => {
+  const closeMenu = () => {
     setMenuOpen(false);
     setPortalOpen(false);
-    onCreatePortal?.(targetBoardId);
-  };
-
-  const createBoardPortal = () => {
-    setMenuOpen(false);
-    setPortalOpen(false);
-    onCreateBoardPortal?.();
   };
 
   // A portal always needs a target, so the seed's portal type never appears in
   // the ordinary "new card" list: creating one without a board is meaningless.
   const creatableTypes = types.filter((type) => type.id !== PORTAL_TYPE_ID);
-  const portalTargets = boards.filter((board) => board.id !== activeBoardId);
   /** The sketch type's glyph, and a section's dashed frame, drawn as text. */
   const SKETCH_GLYPH = "\u270e";
   const SECTION_GLYPH = "\u25a2";
 
-  const portalAction = canCreateContent && (portalTargets.length > 0 || canCreateBoards);
+  /**
+   * The "new thing" rows are the canvas's own commands, read from the registry
+   * so this menu and the palette cannot disagree about a label or a capability.
+   *
+   * Only canvas-owned creation commands are listed here. The rest of
+   * `CommandState` feeds navigation rows the palette owns, so it keeps the value
+   * that leaves those rows out; the three commands below read `activeBoardId`,
+   * `boards` and the capabilities, which are all supplied.
+   */
+  const commandState: CommandState = {
+    workspaceSurface: true,
+    readOnly: false,
+    paletteOpen: false,
+    libraryOpen,
+    libraryTab: "cards",
+    activeBoardId,
+    activeViewId: null,
+    cardId: null,
+    cardPlaced: false,
+    boards: boards.map((board) => ({ id: board.id, name: board.name })),
+    views: [],
+    sections: [],
+    cards: [],
+    types: types.map((type) => ({ id: type.id, name: type.name })),
+    trashedCount: 0,
+  };
+  const capabilities: Capability[] = canCreateContent ? ["canCreateContent"] : [];
+  const commandContext: CommandContext = {
+    capabilities,
+    state: commandState,
+    // `commandsFor` reads no action while it filters, and the rows rendered
+    // below call only these three handlers, so the rest of the table — which
+    // belongs to the shell — is not stubbed here.
+    actions: {
+      createSketch: () => onCreateSketch?.(),
+      createSection: () => onCreateSection?.(),
+      ...(onCreatePortal ? { createPortalOnBoard: onCreatePortal } : {}),
+    } as CommandActions,
+  };
+  const canvasCommands = commandsFor("canvas", commandContext);
+  // A row appears only when this dock was given the handler: the registry keeps
+  // `createPortalOnBoard` optional for the same reason, and a row that cannot
+  // run is not offered.
+  const sketch =
+    onCreateSketch === undefined
+      ? undefined
+      : canvasCommands.find((command) => command.id === "card.createSketch");
+  const section =
+    onCreateSection === undefined
+      ? undefined
+      : canvasCommands.find((command) => command.id === "section.create");
+  const portal =
+    onCreatePortal === undefined
+      ? undefined
+      : canvasCommands.find((command) => command.id === "portal.create");
+  const portalTargets = portal?.expand?.(commandContext) ?? [];
+  const newBoardPortal = canCreateBoards && onCreateBoardPortal !== undefined;
+  const portalAction = portal !== undefined && (portalTargets.length > 0 || newBoardPortal);
 
   return (
     <div className="dock" role="toolbar" aria-label="Card library">
@@ -181,45 +237,43 @@ export function Dock({
               </button>
             ))}
 
-            {onCreateSketch || onCreateSection ? (
-              <div className="my-1 h-px bg-[var(--hairline)]" />
-            ) : null}
+            {sketch || section ? <div className="my-1 h-px bg-[var(--hairline)]" /> : null}
             {/* Sketch and Section mirror the canvas's own context menu, so the
                 dock is a complete "new" surface rather than a subset of it. A
                 sketch is a type, so it is offered here next to the others; a
                 section is not a card, which is why it needs its own row. */}
-            {onCreateSketch ? (
+            {sketch ? (
               <button
                 type="button"
                 role="menuitem"
                 data-testid="dock-new-sketch"
                 className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-black/5 dark:hover:bg-white/10"
                 onClick={() => {
-                  setMenuOpen(false);
-                  onCreateSketch();
+                  closeMenu();
+                  sketch.run?.(commandContext);
                 }}
               >
                 <span aria-hidden="true" className="w-4 text-center text-[var(--ink-muted)]">
                   {SKETCH_GLYPH}
                 </span>
-                <span className="min-w-0 flex-1 truncate">New sketch</span>
+                <span className="min-w-0 flex-1 truncate">{sketch.label}</span>
               </button>
             ) : null}
-            {onCreateSection ? (
+            {section ? (
               <button
                 type="button"
                 role="menuitem"
                 data-testid="dock-new-section"
                 className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-black/5 dark:hover:bg-white/10"
                 onClick={() => {
-                  setMenuOpen(false);
-                  onCreateSection();
+                  closeMenu();
+                  section.run?.(commandContext);
                 }}
               >
                 <span aria-hidden="true" className="w-4 text-center text-[var(--ink-muted)]">
                   {SECTION_GLYPH}
                 </span>
-                <span className="min-w-0 flex-1 truncate">New section</span>
+                <span className="min-w-0 flex-1 truncate">{section.label}</span>
               </button>
             ) : null}
 
@@ -241,7 +295,7 @@ export function Dock({
                     <span aria-hidden="true" className="w-4 text-center text-[var(--ink-muted)]">
                       {PORTAL_GLYPH}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">New portal</span>
+                    <span className="min-w-0 flex-1 truncate">{portal?.label ?? "New portal"}</span>
                     <span aria-hidden="true" className="text-xs opacity-60">
                       {"\u25b8"}
                     </span>
@@ -254,25 +308,31 @@ export function Dock({
                       onKeyDown={menuKeyDown}
                       className="absolute bottom-0 left-full ml-1 min-w-[170px] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
                     >
-                      {portalTargets.map((board) => (
+                      {portalTargets.map((target) => (
                         <button
-                          key={board.id}
+                          key={target.key}
                           type="button"
                           role="menuitem"
-                          data-testid={`dock-portal-${board.id}`}
+                          data-testid={`dock-portal-${target.key}`}
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-black/5 dark:hover:bg-white/10"
-                          onClick={() => createPortal(board.id)}
+                          onClick={() => {
+                            closeMenu();
+                            target.run(commandContext);
+                          }}
                         >
-                          <span className="min-w-0 flex-1 truncate">{board.name}</span>
+                          <span className="min-w-0 flex-1 truncate">{target.label}</span>
                         </button>
                       ))}
-                      {canCreateBoards ? (
+                      {newBoardPortal ? (
                         <button
                           type="button"
                           role="menuitem"
                           data-testid="dock-portal-new-board"
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-                          onClick={createBoardPortal}
+                          onClick={() => {
+                            closeMenu();
+                            onCreateBoardPortal?.();
+                          }}
                         >
                           <span className="min-w-0 flex-1 truncate">New board</span>
                         </button>

@@ -69,6 +69,36 @@ or each start generates new ones and a worker cannot reconnect. The hosted licen
 goes on the relay. Tokens are compared in constant time, and `share`, `token`, `key` and `owner` are
 redacted from every log line.
 
+## The images
+
+Two server images are built from one checkout: `runtime` for the relay and `control-plane` for accounts
+and billing. Both end at the same `server-base` stage, and three properties of that stage are load-bearing.
+
+**The sources stay TypeScript and the image runs `tsx`.** There is no second compile pipeline. `tsx`
+4.23.15 is installed globally and pinned in `Dockerfile`, which is what lets `services/auth` keep
+exporting `./src/index.ts` instead of a `dist` nobody builds. The cost is one runtime dependency; the
+alternative was a build step for a package that has never had one, and two type graphs that `pnpm
+typecheck` would only gate one of.
+
+**No development dependencies.** `prod-deps` runs `pnpm install --prod --frozen-lockfile --filter
+@suite/collab-server... --filter @suite/control-plane...`, so the shipped tree is the production closure
+of the two servers and the workspace packages they import. TypeScript, Vite, Vitest, Biome, Stryker,
+Turbo, Storybook and Playwright are absent. Verify it rather than trust it:
+
+```sh
+docker run --rm suite-relay sh -c 'ls node_modules/.pnpm | grep -E "^(typescript|vitest|@biomejs|@stryker|turbo)@" || echo clean'
+```
+
+**The workspace packages a server imports are copied, not assumed.** The runtime stage carries
+`packages/graph/dist`, `packages/licence/dist`, `services/auth/src` and `services/auth/sql`; the
+control-plane stage swaps the last for `apps/control-plane/src` and `services/billing/dist`. A missing one
+is not a slow start, it is `ERR_MODULE_NOT_FOUND` after the process has already printed a boot line.
+
+Both images run as `node` (uid 1000) and declare `/data` as the only directory they own. `compose.yaml`
+adds `read_only: true`, a `tmpfs` on `/tmp`, `cap_drop: ALL`, `no-new-privileges`, `pids_limit` and a
+memory/CPU cap, so the root filesystem cannot be rewritten by a compromised process. The commands that
+prove this, and their output, are in [deploy.md](deploy.md#container-hardening).
+
 ## Watch it
 
 ### `/health`
@@ -76,11 +106,59 @@ redacted from every log line.
 `GET /health` answers `200 {"ok":true}` on the API port. It is a readiness probe: no counts, no sizes.
 The compose healthcheck polls it.
 
+The control plane answers its own `/health` on `PORT` (1236 by default) with a little more, because the
+question there is different: `status` (`ok` or `degraded`), `buildId`, `uptimeMs` and one entry per
+route module (`mounted`, `absent` or `failed`). A failed module makes it `503`, so a monitor sees "the
+control plane is up but billing is missing" instead of a bare green tick.
+
+Both answers are point-in-time. Neither reports uptime history, and no page in the product invents an
+availability percentage: `/admin` → Support shows the last `/health` answer with the time it was asked.
+
+### Support, and the diagnostics bundle
+
+`/admin` has a **Support** tab beside its other sections. It is the in-app route to support: a status
+statement read live from `/health`, the two ways to reach a person (an issue for anything that is not a
+vulnerability, `SECURITY.md` for anything that is), and one button that produces a file a ticket can
+carry.
+
+A crash screen offers the same bundle, which is the case that matters: the tab is broken, so the person
+cannot reach a panel. Both call `buildDiagnosticBundle` in
+`apps/canvas/src/shell/diagnostics.ts`.
+
+The bundle contains: build version and mode, the sanitised route, the redacted configuration (relay
+origin, canvas surface, session kind, online state, viewport, user agent, language), storage state and
+estimate, connection state, document counts, room and store statistics when the operator API supplied
+them, the last ten uncaught errors with up to twelve stack frames each, and up to ten `x-request-id`
+values this page saw. A request id is only useful because the relay now returns `x-request-id` on every
+response and logs the same value on its `http.request` line.
+
+The bundle deliberately excludes, and has no field for: the session JWT, any share token, the licence
+token, the admin token, cookies, card titles or bodies, attachment names and bytes, document snapshots,
+and every request and response body. It is built from an allowlist rather than filtered afterwards, and
+every string that came from outside, including an error message, a stack frame or a configured URL, is
+scrubbed twice: once when it is recorded and once when the bundle is written. A URL-shaped value in the
+configuration is reduced to its origin, because a query is not ours to keep.
+
+### CSP violation reports
+
+`POST /api/report/csp` is the collector both app hosts name in `report-uri` and `report-to`
+(`deploy/Caddyfile`). It is public: a browser posts there from a page that may already be broken. Reports
+are capped at 16 KiB and 120 per address per minute, are answered `204` whatever happens, and become one
+`csp.violation` log line with the document URL and source file redacted. The policy itself stays
+enforcing. Nothing in this deployment sends `Content-Security-Policy-Report-Only`, and a downgrade to
+report-only is a deliberate change with a note, not a fallback.
+
 ### `/metrics`
 
 Prometheus text, no client library, gated by the same token as `/api/admin/*`: `404` without
 `SUITE_ADMIN_TOKEN`, `401` on a wrong bearer, `200` with the right one, `429` under the admin rate
 limit. Never cached.
+
+The relay samples event-loop lag every 50 ms and exports it as a histogram, because a document write
+is a full-snapshot upsert and the interesting question is how late the loop was, not how long one
+write took. Five samples in a row at or over `SUITE_EVENT_LOOP_LAG_MS` (default 100) log one line at
+`warn` with `code: "event-loop-lag"`, the run length and the document write counters for the same
+window, so the first thing an operator reads says whether writes are the cause.
 
 ```sh
 curl -s -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/metrics
@@ -97,6 +175,11 @@ curl -s -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/metr
 | `suite_share_creates_total`, `suite_publish_attempts_total`, `suite_publish_conflicts_total` | counter | Links accepted; publishes that reached the worker; of those, the ones refused on a conflict. |
 | `suite_claim_attempts_total{outcome}` | counter | `owner` (first claim or matching key) against `mismatch`. |
 | `suite_rate_limit_rejections_total`, `suite_projection_rebuilds_total`, `suite_projection_failures_total` | counter | `429`s from any limiter; rebuild passes requested, where coalesced saves share one; rebuilds that rejected. |
+| `suite_event_loop_lag_seconds` | histogram | How late the event loop woke up, per sample, in 5 ms to 10 s buckets. This is the number a reader of a board feels, and the one the save path is judged by. |
+| `suite_event_loop_lag_max_seconds`, `suite_event_loop_lag_breaches_total` | gauge, counter | The worst sample since start, and how many samples were at or over `SUITE_EVENT_LOOP_LAG_MS`. |
+| `suite_document_writes_pending`, `suite_document_writes_total` | gauge, counter | Writes accepted by the document store that are not on disk yet, and writes made durable. A pending count that does not return to zero is a stuck writer. |
+| `suite_projection_skips_total`, `suite_projection_build_capped_total` | counter | Rebuilds skipped because the source had not changed; rebuilds refused or frozen by the card or build-time cap. |
+| `suite_peer_limit_rejections_total`, `suite_document_limit_rejections_total`, `suite_room_backpressure_total` | counter | Joins refused by a per-room cap, and rebuilds refused because one room already held its work bound. Those are per room; the `429` counter is per address. |
 
 Labels are closed sets. No workspace id, share id, room id or token ever becomes a label, so a scrape
 cannot multiply series or copy a capability into a metrics store.
@@ -273,8 +356,17 @@ An upgrade is a new image tag, and a rollback after a schema change is a restore
 
 Quotas degrade a workspace; they never drop a save. A workspace over its document budget keeps loading
 and saving for its owner, but cannot mint new share links, and its next status call says so. Refusal
-happens only where nothing has been written yet: a new workspace and a new share link. The numbers are
-in [reference/limits.md](../reference/limits.md).
+happens only where nothing has been written yet: a new workspace, a new share link, a new session in a
+room that is at its peer or projection-byte ceiling. The numbers and the refusal codes are in
+[reference/limits.md](../reference/limits.md).
+
+The stream limits are per room rather than per address: `SUITE_MAX_PEERS_PER_ROOM`,
+`SUITE_ROOM_OUTSTANDING_MAX`, `SUITE_MAX_PROJECTION_CARDS` and `SUITE_PROJECTION_BUILD_MS`. Each one
+lets one boarding room degrade itself instead of the process: a join beyond the peer cap is refused
+before a session exists, a rebuild past the outstanding bound is refused rather than queued, a board
+over the card cap is not projected, and a room whose rebuild exceeded the build-time cap stops
+rebuilding until somebody reloads or publishes into it. Every one of them logs a line with a `code`
+field, so `grep '"code":"peer-limit"'` answers "why was I refused" without reading the relay.
 
 Resolution order is built-in defaults, then `SUITE_*` environment, then runtime overrides, resolved in
 `config/limits.ts`. An unreadable value is reported at boot and the layer below wins; a contradiction
@@ -303,6 +395,8 @@ Overrides live in `SUITE_SETTINGS_DB`, so they survive a restart and are include
 | `PRAGMA optimize` | document store on start and hourly | `store/persistence.ts` |
 | Journal mode | WAL on the document and attachment stores | `store/persistence.ts`, `store/attachments.ts` |
 | Disk measurement cache | 1 s per process | `config/limits.ts` |
+| Document writes | batched per turn of the loop, on a writer thread; `flush` blocks on close | `store/persistenceWriter.ts` |
+| Event-loop lag sample, breach threshold, sustained run | every 50 ms, 100 ms, 5 samples | `ops/eventLoopLag.ts` |
 
 Rate limits are fixed-window counters in this process, keyed by client address. Behind a proxy set
 `SUITE_TRUST_PROXY=1` so they key on the real client. They blunt casual abuse, not a determined flood,
@@ -316,14 +410,46 @@ and the WAL while editing is busy. A `-wal` that grows without limit means check
 usually from long readers or a stalled backup; a restart checkpoints on close. Never put the directory
 on a network filesystem, where SQLite locking and WAL shared memory both break.
 
-A projection room is rebuilt whenever the owner's workspace is saved, so cost has two factors: how many
-rooms are open, capped by `SUITE_PROJECTION_ROOMS_MAX`, and how big one projection is. Measured with
+A document write is a full-snapshot upsert, so it runs on a writer thread rather than on the event loop
+(`store/persistenceWriter.ts`). The read path keeps a connection of its own, and a read that follows a
+save in the same tick answers from the accepted-write overlay, so `save` then `load` never returns the
+previous bytes. Ordering is the whole design: the host numbers every write before queueing it, one
+writer thread applies the batches in arrival order inside one transaction, and a writer that fails is
+replaced by inline writes on the main thread in the same sequence, never by a second writer. `close`
+blocks until the queue is on disk, so a graceful shutdown loses nothing; a `SIGKILL` can lose the last
+partial batch, which is the same window the 2 s save interval already had.
+
+A projection room is rebuilt whenever the owner's workspace is saved, unless the source version vector
+has not moved since the last rebuild: the worker records the vector it built from, so a save that
+changes a card outside a share costs one comparison per open room. A rebuild past the card cap or the
+build-time cap freezes the room at its last good projection. Those are the two numbers that used to
+make one big board everybody's problem. Measured with
 `pnpm bench` (`packages/graph/bench/projection.bench.ts`), a 500-card board rebuilds in about 0.6 s to
 1.04 MiB, 2 000 cards in 3.4 s to 4.15 MiB, and 5 000 cards in 8.3 s to 10.39 MiB, while a 200-card
 selection stays under 1 s and about 550 KiB at any board size. A whole-board share of a very large
 board is the expensive case; going below these numbers needs the deferred index and card split
 (ADR-0021) rather than more tuning. `sync/roomsLoad.test.ts` converges 200 edits from five editors in
 about a second and fails only past 20 s.
+
+### What a load run measured
+
+`apps/collab-server/bench/load.mjs` (`pnpm --filter @suite/collab-server bench:load`) starts a real
+relay on a seeded workspace, opens real share rooms with real peers, drives edits, and prints rooms,
+document size, peers, p50 and p99 latency, peak RSS and event-loop lag. The numbers it produced on this
+checkout, and the profile they were produced at, are in
+[`apps/collab-server/bench/report.md`](../../apps/collab-server/bench/report.md). Read the profile
+line before the numbers: a run at four rooms is not a run at the published concurrency.
+
+Two ceilings that report found, both outside the relay's own code:
+
+- A peer receives a document in one Loro message, and `loro-protocol` caps a message at 256 KiB
+  (`MAX_MESSAGE_SIZE`). A board whose snapshot is larger cannot be delivered to a joining client at
+  all: the socket stays open and the document never arrives. On this schema that starts somewhere
+  between a 240-card and a 300-card board, which is far below `SUITE_MAX_PROJECTION_CARDS`. Chunked
+  snapshots are the fix, and they are not in this build.
+- A shared board lags its owner by one save interval plus one rebuild: the relay coalesces socket
+  saves at 2 s (`saveInterval`), the projection debounce adds 200 ms, and the rebuild itself follows
+  the measured numbers above. That is the p50 a reader of a share actually sees.
 
 Run `VACUUM` by hand, never on a schedule: after large deletions through the admin CLI, or when a store
 is much larger than `/api/admin/status` suggests. It rewrites the file, needs free disk roughly equal

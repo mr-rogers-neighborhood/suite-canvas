@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-modifiers");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 const linkMode = (page: import("@playwright/test").Page) => page.getByTestId("link-mode-toggle");
 const purpose = (page: import("@playwright/test").Page) => page.getByTestId("purpose-toggle");

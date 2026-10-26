@@ -233,3 +233,100 @@ The command reads `SUITE_DB`, `SUITE_SHARES_DB` and `SUITE_WORKSPACES_DB`, which
 `suite.documents.sqlite`, `suite.shares.sqlite` and `suite.workspaces.sqlite` relative to the package
 directory when run through `pnpm --filter`. Deletion is immediate and cannot be undone, so take a backup
 first.
+
+## Threat model
+
+The rest of this page describes what the system does. This section says what it is defending against, so
+a mitigation can be read as an answer to a named adversary rather than as a feature list.
+
+### Assets, in the order a leak hurts
+
+| Asset | Where it lives now | Blast radius if it is read |
+| --- | --- | --- |
+| Document content | plaintext Loro snapshots in `documents.sqlite`, `.suite` exports, backups | Everything the workspace ever held. There is no encryption to break, only access to control. |
+| Attachment bytes | `attachments.sqlite` on the relay | The same, for images: pasted screenshots, scans, photos. |
+| Account identity | Postgres: users, sessions, organizations, members, invitations | Who works with whom, and every address an account signed up with. |
+| Share tokens | SHA-256 hashes in `shares.sqlite` | A working link, which is a working credential, until it is revoked or expires. |
+| Operator tokens | the process environment (`SUITE_ADMIN_TOKEN`, `SUITE_ADMIN_READ_TOKEN`) | Every workspace's metadata, every link, and the ability to delete. |
+| Licence private key | never on the relay; the control plane signs with it | The ability to mint entitlements for any tier. |
+| Licence claims | `licences.sqlite` per workspace, `licence` rows in Postgres | Quota bookkeeping, not a credential. |
+
+### Adversaries and the path each one takes
+
+| Adversary | Path | What stops it today |
+| --- | --- | --- |
+| Anonymous internet | probing `/api/*`, `/ws`, `/metrics`, `/api/admin/*` | Share resolution is the only unauthenticated read and it needs a token; `/metrics` and `/api/admin/*` answer `404` while no operator token is set; CORS names its origins; every route has a per-address rate limit. |
+| A share-link recipient | the link itself | The link is written as a hash, expires (30 days by default), and can be revoked; revocation closes the sockets holding it and drops the projected draft. It cannot be turned into an account credential or used to mint another link. |
+| A revoked member | a session JWT already held | The 5-minute TTL is the revocation window. A live socket is not re-authenticated mid-session, so a removed member keeps a working socket for at most that long. |
+| Another organization | naming someone else's workspace id in a verified session | First claim wins: the relay records `workspace_orgs` on the first verified join and refuses a later one from a different `org` with `403`. The relay never consults Postgres per message. |
+| A hostile member of the same organization | a valid session for the same tenant | Nothing above the organization boundary. Members of one tenant are trusted with each other's workspaces by design; the `role` claim only labels the seat and sets capability flags in the app, and the relay does not enforce a per-role split inside a tenant. |
+| An XSS payload in a shared document | the page's own origin | The CSP in `deploy/Caddyfile` (`script-src 'self'`, no `unsafe-inline` on the app hosts) plus React's escaping. A successful one would read whatever the tab can reach: the in-memory session token and, on the operator panel, the token in `sessionStorage`. |
+| A network attacker | the wire | TLS is required; `Strict-Transport-Security` is set on every site; the app never mixes an `https` page with a `ws://` socket. |
+| Someone holding a backup | the bucket or `/srv/backups` | Nothing in Suite: snapshots are plaintext. Encryption at rest is the host disk and the bucket's server-side encryption. |
+| A compromised dependency | any package in the tree | Nothing specific to Suite beyond a frozen lockfile, a pinned pnpm version and a supply-chain policy check on install. Treat `better-auth`, `loro-*` and the Stripe SDK as trusted code. |
+| The operator | `docker exec`, the database files, `/metrics` | Nothing. An operator can read every document and delete any of them. This is a stated capability, not a vulnerability; the only control is the audit line every mutating admin request writes. |
+
+### What this model does not claim
+
+There is no end-to-end encryption, so the relay is inside the trust boundary for content. There is no
+at-rest encryption of documents, so disk access equals content access. A share link's reader cannot be
+attributed beyond "the link was opened", and presence is discarded rather than recorded. Nothing here is
+a promise of forward secrecy or of surviving a compromised relay host.
+
+## Content Security Policy and violation reporting
+
+Every site sends an enforcing `Content-Security-Policy`. `Content-Security-Policy-Report-Only` appears
+nowhere, because a report-only policy protects nobody and a site that downgraded to one without saying so
+would look safe and be open.
+
+The two sites that proxy `/api/*` to the relay also send `report-uri /api/report/csp` and
+`report-to suite-csp`, plus the `Report-To` and `Reporting-Endpoints` headers that name the same path.
+Both directive names are present on purpose: `report-to` is the Reporting API, `report-uri` is what the
+other browsers still implement.
+
+`apps/collab-server/src/http/report.ts` is the collector:
+
+- It accepts `application/csp-report`, `application/reports+json` and a plain JSON body, and answers
+  `204` with no body whatever happens, because a malformed report is not an error a browser can act on.
+- The body is capped at 16 KiB and reports are limited to 120 per address per minute. Past either bound
+  the request is dropped, still with `204`, so a page that reports in a loop cannot turn into a disk
+  filler or a retry storm.
+- One `csp.violation` log line per accepted report carries `documentUri`, `blockedUri`, the directive,
+  `disposition`, `sourceFile` and the line number. `documentUri` and `sourceFile` are redacted with the
+  same rule as the request log, because the page that triggered a violation can be a share link whose URL
+  carries a token in the query.
+- Nothing is stored and nothing is re-served. The collector is a log writer, not a database.
+
+## Your data: export and deletion
+
+Two things are true at once, and the difference matters to anyone filing an erasure request.
+
+**What exists today.**
+
+- A workspace export: the app writes a `.suite` file from the live document, and an operator can export
+  the same workspace through `GET /api/admin/workspaces/:id/export`. The file opens without an account and
+  contains the document; it does not contain account rows or the relay's share records.
+- A workspace delete, by the account that owns it (`DELETE /api/workspaces/:id`) or by an operator
+  (`admin delete`). It removes, in one pass: the workspace document and every projected share room, the
+  share rows and their draft baselines, the recorded organization row, the licence record when the relay
+  is hosted, and every attachment row and byte of that workspace. The response reports each count, so a delete that removed less than expected is visible
+  instead of assumed.
+- The local half: `purgeWorkspaceLocally` clears this browser's cached document, recents entry, cached
+  credential and licence token. Another device keeps its copy until it opens the workspace again and
+  finds the relay empty.
+
+**What does not exist, and is not implied.** There is no account-level self-service export and no
+account-level delete. Nothing in the control plane removes a user row, an organization, its members, its
+invitations or its subscription rows, and `apps/control-plane/src/modules/auth.ts` mounts no such route.
+An erasure request against a hosted account is therefore a manual operation today: delete the
+organization's workspaces through the routes above, then remove the account in Postgres with the queries
+in `services/auth/sql/`, then rotate any operator token the account knew. Treat that as the current
+procedure rather than as a feature.
+
+**Backups age out; they do not vanish.** A delete is immediate on the live stores and permanent for the
+relay, but the snapshot that contains the deleted rows is kept until its retention window passes:
+`deploy/backup.sh` writes a daily copy and a weekly copy on Sundays, and the bucket lifecycle rule expires
+`daily/` after 7 days and `weekly/` after 35 days. The local `/srv/backups` directory is pruned by the
+`find … -mtime +14` cron entry in [deploy.md](../how-to/deploy.md). So a deleted workspace can remain
+recoverable from backup for up to 35 days, and from a Postgres dump on the same schedule for the identity
+rows. That is the honest answer to "when is it really gone": after the window, not on the click.

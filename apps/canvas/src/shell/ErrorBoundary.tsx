@@ -5,7 +5,9 @@ import { buildInfo } from "./buildInfo";
 import {
   buildDiagnostics,
   copyText,
+  type DiagnosticConfigInput,
   describeError,
+  downloadDiagnostics,
   type LastError,
   safeRoute,
   useDiagnosticsStore,
@@ -68,6 +70,26 @@ export class CanvasErrorBoundary extends Component<BoundaryProps, BoundaryState>
 }
 
 /**
+ * The configuration a crash bundle may name. Everything here is read from the
+ * page itself, so the fallback needs no store and no session: an origin, the
+ * canvas surface asked for, whether the tab is online, and the browser's own
+ * strings. A token is never in reach of this function.
+ */
+function crashConfig(route: string): DiagnosticConfigInput {
+  if (typeof window === "undefined") return {};
+  const surface = new URLSearchParams(window.location.search).get("canvas") ?? undefined;
+  return {
+    relay: window.location.origin,
+    surface: surface ?? "(default)",
+    session: route.includes("share") ? "share-link" : "page",
+    online: navigator.onLine,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    userAgent: navigator.userAgent,
+    language: navigator.language,
+  };
+}
+
+/**
  * Reads the connection status without importing the store eagerly: the store
  * opens a socket at module load, and the fallback must render on a page whose
  * store never got that far.
@@ -103,23 +125,36 @@ function CrashFallback({
   const estimate = useDurabilityStore((state) => state.estimate);
   const quota = useDurabilityStore((state) => state.quota);
   const connection = useConnectionLabel();
+  const recorded = useDiagnosticsStore((state) => state.errors);
   const [copied, setCopied] = useState<"idle" | "done" | "failed">("idle");
+  const [downloaded, setDownloaded] = useState<string | null>(null);
   const [exported, setExported] = useState<"idle" | "done" | "failed">("idle");
 
-  const diagnostics = useMemo(
-    () =>
-      buildDiagnostics({
-        route,
-        build,
-        storage: { persist, estimate, quota },
-        connection,
-        lastError: error,
-      }),
-    [route, build, persist, estimate, quota, error, connection],
+  const input = useMemo(
+    () => ({
+      route,
+      build,
+      storage: { persist, estimate, quota },
+      connection,
+      lastError: error,
+      config: crashConfig(route),
+      errors: recorded.length === 0 ? [error] : recorded,
+    }),
+    [route, build, persist, estimate, quota, error, connection, recorded],
   );
+
+  const diagnostics = useMemo(() => buildDiagnostics(input), [input]);
 
   const copy = async () => {
     setCopied((await copyText(diagnostics)) ? "done" : "failed");
+  };
+
+  const download = () => {
+    try {
+      setDownloaded(downloadDiagnostics(input));
+    } catch {
+      setDownloaded("failed");
+    }
   };
 
   const exportWorkspace = async () => {
@@ -190,6 +225,18 @@ function CrashFallback({
               : copied === "failed"
                 ? "Copy failed — select the text"
                 : "Copy diagnostics"}
+          </button>
+          <button
+            type="button"
+            data-testid="download-diagnostics"
+            onClick={download}
+            className="rounded-lg border border-[var(--hairline)] px-3 py-1.5 text-[12px] text-[var(--ink)] hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            {downloaded === null
+              ? "Download bundle"
+              : downloaded === "failed"
+                ? "Download failed"
+                : `Saved ${downloaded}`}
           </button>
           <button
             type="button"

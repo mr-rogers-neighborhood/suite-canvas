@@ -1,5 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { createLogger } from "../logging.js";
+import {
+  createDocumentWriteQueue,
+  type DocumentWriteQueue,
+  type DocumentWriteStats,
+} from "./persistenceWriter.js";
 
 /**
  * How often the store refreshes SQLite's query planner. An hour matches
@@ -88,10 +93,21 @@ export function decodeSnapshot(stored: Uint8Array): Uint8Array {
 const logger = createLogger().child({ component: "sqlite" });
 
 export interface DocumentStore {
-  /** Latest stored state for a document, or null when it was never saved. */
+  /**
+   * Latest stored state for a document, or null when it was never saved.
+   *
+   * Reads are synchronous and always see the writes this process accepted: a
+   * save that has not reached the disk yet is answered from the pending
+   * overlay, so `save` then `load` never returns the previous bytes.
+   */
   load: (name: string) => Uint8Array | null;
+  /**
+   * Accepts a write. The row is made durable by the writer thread, in the order
+   * the server accepted the writes; it is deliberately not synchronous, so the
+   * event loop does not wait for a full-snapshot upsert.
+   */
   save: (name: string, state: Uint8Array) => void;
-  /** Removes a document, used when a share is revoked. */
+  /** Removes a document, used when a share is revoked. Ordered with the saves. */
   delete: (name: string) => void;
   close: () => void;
 }
@@ -115,6 +131,11 @@ export interface DocumentInventory {
   list: () => StoredDocument[];
   /** Bytes the SQLite database occupies (page count × page size). */
   size: () => number;
+  /**
+   * Stored bytes of one document, without reading the blob — the number a room
+   * ceiling compares against. `null` when the key was never saved.
+   */
+  measure: (name: string) => number | null;
   /** Read-only facts about the open database, for startup logs and operators. */
   inventory: () => DocumentStoreFacts;
 }
@@ -141,6 +162,13 @@ export interface DocumentMaintenance {
   startMaintenance: (intervalMs?: number) => NodeJS.Timeout;
   /** The journal mode this connection ended up in. */
   journalMode: () => string;
+  /** Queue depth, mode and bytes of the write path, for the metrics endpoint. */
+  writeStats: () => DocumentWriteStats;
+  /**
+   * Blocks until every accepted write is on disk. The server does not call this
+   * on the request path — `close` does — but a test or an operator tool may.
+   */
+  flush: () => void;
 }
 
 interface DocumentRow {
@@ -190,30 +218,43 @@ export function configureConnection(db: DatabaseSync, schemaVersion: number): st
  * SQLite-backed document store. The server no longer depends on a client being
  * connected to keep a workspace alive: state is flushed to disk as it changes and
  * replayed when a document is next loaded.
+ *
+ * Two connections exist, and only one of them writes. The connection below is
+ * the *read* side (`load`, `list`, `size`, `PRAGMA optimize`); the writes go to
+ * `persistenceWriter.ts`, which owns them on a worker thread so a full-snapshot
+ * upsert never blocks the event loop. `configureConnection` still runs on this
+ * connection first, which is what refuses a store written by a newer build — a
+ * refusal has to happen before a writer thread is started.
  */
+export interface DocumentStoreOptions {
+  /** Called after a batch of writes is durable, with the number of rows it held. */
+  onWritten?: (rows: number) => void;
+}
+
 export function createDocumentStore(
   path: string,
+  options: DocumentStoreOptions = {},
 ): DocumentStore & DocumentInventory & DocumentMaintenance {
   const db = new DatabaseSync(path);
   // WAL, the busy timeout and the schema stamp in one place; see
   // `configureConnection`. A store from a newer build is refused there.
   const journal = configureConnection(db, DOCUMENT_STORE_SCHEMA);
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS documents (
+  const schema = `CREATE TABLE IF NOT EXISTS documents (
        name TEXT PRIMARY KEY,
        state BLOB NOT NULL,
        updated_at INTEGER NOT NULL
-     )`,
-  );
+     )`;
+  db.exec(schema);
   // Collected statistics are refreshed on open and hourly; see `maintenance`.
   db.exec("PRAGMA optimize");
 
   const select = db.prepare("SELECT state FROM documents WHERE name = ?");
-  const upsert = db.prepare(
-    `INSERT INTO documents (name, state, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(name) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at`,
-  );
-  const remove = db.prepare("DELETE FROM documents WHERE name = ?");
+  const exists = db.prepare("SELECT 1 AS found FROM documents WHERE name = ?");
+  const upsertSql = `INSERT INTO documents (name, state, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(name) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at`;
+  const removeSql = "DELETE FROM documents WHERE name = ?";
+  const upsert = db.prepare(upsertSql);
+  const remove = db.prepare(removeSql);
   // `bytes` is the document, not the container: the format tag is subtracted so
   // a per-workspace budget does not move when the tag is introduced. `hex()`
   // keeps the comparison a text-to-text one; a BLOB never equals a TEXT pattern.
@@ -225,6 +266,12 @@ export function createDocumentStore(
        FROM documents`,
   );
   const countAll = db.prepare("SELECT COUNT(*) AS count FROM documents");
+  // `length(state)` is answered from the row header, so the size of a document
+  // can be checked without materializing it — which is the point of a ceiling.
+  const measureOne = db.prepare(
+    `SELECT length(state) - CASE WHEN substr(hex(state), 1, ?) = ? THEN ? ELSE 0 END AS bytes
+       FROM documents WHERE name = ?`,
+  );
   const pageCount = db.prepare("PRAGMA page_count");
   const pageSize = db.prepare("PRAGMA page_size");
 
@@ -240,38 +287,112 @@ export function createDocumentStore(
 
   let maintenance: NodeJS.Timeout | null = null;
 
+  // The write half. `path === ":memory:"` stays inline: an in-memory database is
+  // private to the connection that opened it, so a second thread would be a
+  // different database, not a shared one.
+  const writer: DocumentWriteQueue = createDocumentWriteQueue({
+    path,
+    statements: { save: upsertSql, remove: removeSql },
+    setup: ["PRAGMA busy_timeout = 5000", "PRAGMA journal_mode = WAL", schema],
+    inline: {
+      save: (name, state, updatedAt) => {
+        upsert.run(name, state, updatedAt);
+      },
+      remove: (name) => {
+        remove.run(name);
+      },
+    },
+    warn: (text, fields) => logger.warn(text, { path, ...fields }),
+    ...(options.onWritten === undefined ? {} : { onWritten: options.onWritten }),
+  });
+
+  const storedDocuments = (): StoredDocument[] => {
+    const rows = (
+      listAll.all(
+        String(tagHex.length),
+        tagHex,
+        String(TAG_PREFIX.byteLength),
+      ) as unknown as DocumentRow[]
+    ).map((row) => ({
+      name: row.name,
+      bytes: Number(row.bytes),
+      updatedAt: Number(row.updated_at),
+    }));
+    // Accepted writes are part of the inventory: a quota computed a moment after
+    // a save must count it, or a share would be minted against a stale size.
+    const pending = writer.pendingAll();
+    if (pending.size === 0) return rows;
+    const merged = new Map(rows.map((row) => [row.name, row]));
+    for (const [name, write] of pending) {
+      if (write.state === null) {
+        merged.delete(name);
+        continue;
+      }
+      merged.set(name, {
+        name,
+        bytes: write.state.byteLength - TAG_PREFIX.byteLength,
+        updatedAt: write.updatedAt,
+      });
+    }
+    return [...merged.values()];
+  };
+
+  /** Stored documents, adjusted for the writes the writer has not placed yet. */
+  const documentCount = (): number => {
+    let count = Number((countAll.get() as { count?: number } | undefined)?.count ?? 0);
+    for (const [name, write] of writer.pendingAll()) {
+      const present = exists.get(name) !== undefined;
+      if (write.state === null) {
+        if (present) count -= 1;
+      } else if (!present) {
+        count += 1;
+      }
+    }
+    return Math.max(0, count);
+  };
+
   return {
     load: (name) => {
+      const accepted = writer.pending(name);
+      if (accepted !== undefined) {
+        return accepted.state === null ? null : decodeSnapshot(accepted.state);
+      }
       const row = select.get(name) as { state?: Uint8Array } | undefined;
       return row?.state ? decodeSnapshot(new Uint8Array(row.state)) : null;
     },
     save: (name, state) => {
-      upsert.run(name, encodeSnapshot(state), Date.now());
+      writer.append({ name, state: encodeSnapshot(state), updatedAt: Date.now() });
     },
     delete: (name) => {
-      remove.run(name);
+      writer.append({ name, state: null, updatedAt: Date.now() });
     },
-    list: () =>
-      (
-        listAll.all(
-          String(tagHex.length),
-          tagHex,
-          String(TAG_PREFIX.byteLength),
-        ) as unknown as DocumentRow[]
-      ).map((row) => ({
-        name: row.name,
-        bytes: Number(row.bytes),
-        updatedAt: Number(row.updated_at),
-      })),
+    list: storedDocuments,
+    measure: (name) => {
+      const accepted = writer.pending(name);
+      if (accepted !== undefined) {
+        return accepted.state === null ? null : accepted.state.byteLength - TAG_PREFIX.byteLength;
+      }
+      const row = measureOne.get(
+        String(tagHex.length),
+        tagHex,
+        String(TAG_PREFIX.byteLength),
+        name,
+      ) as { bytes?: number } | undefined;
+      return row?.bytes === undefined ? null : Number(row.bytes);
+    },
     size,
     inventory: () => ({
       path,
       bytes: size(),
-      documents: Number((countAll.get() as { count?: number } | undefined)?.count ?? 0),
+      documents: documentCount(),
       journalMode: journalMode(),
     }),
     journalMode,
     optimize,
+    writeStats: () => writer.stats(),
+    flush: () => {
+      writer.flush();
+    },
     startMaintenance: (intervalMs = OPTIMIZE_INTERVAL_MS) => {
       maintenance ??= setInterval(() => {
         try {
@@ -292,6 +413,10 @@ export function createDocumentStore(
         clearInterval(maintenance);
         maintenance = null;
       }
+      // Writes first: closing the read connection under an outstanding write
+      // would leave the last snapshot in memory. `close` blocks until the
+      // writer has either committed or reported that it could not.
+      writer.close();
       db.close();
     },
   };

@@ -1,9 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-selection-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-selection-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const selectedNodes = (page: Page) => page.locator(".react-flow__node.selected");
@@ -142,11 +142,11 @@ test("shift-drag catches cards it only partly covers, repeatedly", { tag: "@smok
 });
 
 test("a peer sees the marquee while it is being drawn", { tag: "@smoke" }, async ({ browser }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  const url = workspaceUrl("marquee-peer");
+  const url = hostedUrl(workspaceUrl("marquee-peer"));
 
   await pageA.goto(url);
   await pageB.goto(url);
@@ -252,11 +252,11 @@ test("shift-click toggles membership without opening the inspector", { tag: "@sm
 test("a modifier click survives a peer's edits landing mid-gesture", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  const url = workspaceUrl("shift-race");
+  const url = hostedUrl(workspaceUrl("shift-race"));
 
   await pageA.goto(url);
   await pageB.goto(url);
@@ -392,11 +392,11 @@ test("selects every card with Control+A and removes them with Delete", { tag: "@
 test("a peer sees a multi-card drag and lands the same positions", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  const url = workspaceUrl("multi-peer");
+  const url = hostedUrl(workspaceUrl("multi-peer"));
 
   await pageA.goto(url);
   await pageB.goto(url);

@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-appearance");
@@ -13,7 +12,7 @@ const id = workspaceIdFactory("e2e-appearance");
  * because a preference that forgets itself is a setting nobody will use.
  */
 test("the theme switcher opens Appearance, and a change sticks", async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("appearance")}`));
+  await page.goto(`/?workspace=${id("appearance")}`);
   await expect(cards(page)).toHaveCount(2);
 
   const root = page.locator("html");

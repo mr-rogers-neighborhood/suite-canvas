@@ -1,6 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
  * The picker loop (ADR-0063 §6)
@@ -10,8 +9,7 @@ import { withOwnerKey } from "../fixtures/ownerUrl";
  */
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-picker-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-picker-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 

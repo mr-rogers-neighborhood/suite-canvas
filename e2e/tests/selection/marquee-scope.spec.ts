@@ -10,12 +10,10 @@ import {
   settleViewport,
   watchErrors,
 } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
 /** A blank board: `fresh=1` skips the two starter cards, so counts are exact. */
-const workspaceUrl = () =>
-  withOwnerKey(`/?fresh=1&workspace=e2e-marquee-scope-${Date.now()}-${++sequence}`);
+const workspaceUrl = () => `/?fresh=1&workspace=e2e-marquee-scope-${Date.now()}-${++sequence}`;
 
 const sectionRegion = (page: Page) => page.locator(".section-region").first();
 

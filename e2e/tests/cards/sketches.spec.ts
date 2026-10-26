@@ -1,9 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-sketch-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-sketch-${name}-${Date.now()}-${++sequence}`;
 
 const sketchNodes = (page: Page) => page.getByTestId("whiteboard-node");
 const sketchFace = (page: Page) => page.getByTestId("whiteboard-card");

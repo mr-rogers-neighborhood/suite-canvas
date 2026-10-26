@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, openLibrary, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-palette");
-const workspaceUrl = (name: string) => withOwnerKey(`/?workspace=${id(name)}`);
+const workspaceUrl = (name: string) => `/?workspace=${id(name)}`;
 
 test("opens the command palette from the app bar and jumps to an action", async ({ page }) => {
   await page.goto(workspaceUrl("bar"));

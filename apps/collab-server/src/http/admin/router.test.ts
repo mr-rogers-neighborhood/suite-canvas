@@ -145,6 +145,10 @@ function seedWorkspace(id: string, cards = 2): void {
     });
   }
   documents.save(loroDocumentKey(id), workspace.doc.export({ mode: "snapshot" }));
+  // The store writes through a worker thread, so a fixture that a second
+  // connection must see (the admin delete opens the file itself) is flushed the
+  // way `sync/server.ts` flushes before a delete.
+  documents.flush();
 }
 
 /** Writes one attachment-shaped node into a card body, as the editor would. */

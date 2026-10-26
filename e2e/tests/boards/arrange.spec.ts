@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards } from "../fixtures/support";
 
 /**
@@ -9,7 +8,7 @@ import { cards } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-arrange-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-arrange-${name}-${Date.now()}-${++sequence}`;
 
 /** Select every card by pressing one and Shift-pressing the other. */
 async function selectAll(page: Page): Promise<void> {

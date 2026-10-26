@@ -1,6 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, newBoard } from "../fixtures/support";
 
 /**
@@ -22,9 +21,7 @@ test.describe.configure({ timeout: 300_000 });
 // Two tests start in the same millisecond in different workers, so the id needs
 // something that cannot collide across processes as well as within one.
 const workspaceUrl = (name: string) =>
-  withOwnerKey(
-    `/?workspace=e2e-matrix-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  );
+  `/?workspace=e2e-matrix-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const dotSelector = '[data-testid="connector-dot"], [data-testid="section-connector-dot"]';
 const boardTabs = (page: Page) =>

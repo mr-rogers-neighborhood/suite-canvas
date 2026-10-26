@@ -33,6 +33,7 @@ import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
+import { HistoryPanelHost } from "./HistoryPanelHost";
 import { documentLabel } from "./workspacePaint";
 
 type UiState = ReturnType<typeof useUiStore.getState>;
@@ -448,6 +449,9 @@ export function WorkspaceShellView({
           <TourOverlayHost />
           {/* The relay, this device's storage and the saved state, above the board. */}
           <FeedbackRail workspaceId={workspaceId} signedIn={signedIn} synced={inRoom} />
+          {/* Restoring writes a change, so history belongs to a session that may
+              write; a viewer's copy is the relay's, and undo is the owner's. */}
+          {workspaceSurface && !readOnly ? <HistoryPanelHost workspace={workspace} /> : null}
         </main>
 
         {workspaceSurface && !readOnly && !cardFocusId ? (

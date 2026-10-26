@@ -1,6 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
  * A run's sources (ADR-0063 §6):
@@ -11,7 +10,7 @@ import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-viewplace-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-viewplace-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");

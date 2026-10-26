@@ -73,11 +73,12 @@ HTML report unless you pass `--reporter=html`.
 | Project | Runner | Scope | Command |
 | --- | --- | --- | --- |
 | `graph` | Vitest, node | `packages/graph/src/**/*.test.ts` | `pnpm exec vitest --project graph` |
+| `importer` | Vitest, node | `packages/import-obsidian/src/**/*.test.ts`: the drop walk, markdown and frontmatter parsing, canvas colour mapping, and the vault as a whole | `pnpm exec vitest --project importer` |
 | `licence` | Vitest, node | `packages/licence/src/**/*.test.ts` | `pnpm exec vitest --project licence` |
 | `server` | Vitest, node | `apps/collab-server/src/**/*.test.ts` (`http/`, `store/`, `projection/`, `config/`, `sync/`, `ops/`) | `pnpm exec vitest --project server` |
 | `control-plane` | Vitest, node | `apps/control-plane/src/**/*.test.ts` | `pnpm exec vitest --project control-plane` |
 | `auth` | Vitest, node | `services/auth/src/**/*.test.ts` (`http/`, `identity/`, `invitations/`, `licensing/`, `organizations/`, `store/`) | `pnpm exec vitest --project auth` |
-| `canvas` | Vitest, jsdom | `apps/canvas/src/**/*.test.{ts,tsx}` | `pnpm exec vitest --project canvas` |
+| `canvas` | Vitest, jsdom | `apps/canvas/src/**/*.test.{ts,tsx}`, with `apps/canvas/src/test/setup.ts` | `pnpm exec vitest --project canvas` |
 | `e2e` | Playwright, chromium | `e2e/tests/**/*.spec.ts`, grouped by area (`boot/`, `boards/`, `cards/`, `links/`, `collab/`, `sharing/`, …) | `pnpm e2e` |
 | billing | `node --test` | `services/billing/src/**/*.test.ts` | `pnpm --filter @suite/billing test` |
 
@@ -136,10 +137,12 @@ use it to turn a red test green locally.
 ## Coverage
 
 `pnpm coverage` runs the whole Vitest suite with `@vitest/coverage-v8` and writes `coverage/`
-(`coverage/lcov-report/index.html` for the browsable view). Every project is measured; only
-`@suite/graph` is gated, through one glob key in `coverage.thresholds` at the root of
-`vitest.config.ts`. The others are printed, not gated: their uncovered lines are socket, SQLite and
-entry-point wiring that e2e already drives, and a threshold would invite assertion-free tests.
+(`coverage/lcov-report/index.html` for the browsable view). `coverage.include` names four sources:
+`graph`, `licence`, `server` and `canvas`, so `importer`, `control-plane` and `auth` run without being
+measured. Of the measured four only `@suite/graph` is gated, through one glob key in
+`coverage.thresholds` at the root of `vitest.config.ts`. The others are printed, not gated: their
+uncovered lines are socket, SQLite and entry-point wiring that e2e already drives, and a threshold would
+invite assertion-free tests.
 
 ## Mutation testing
 

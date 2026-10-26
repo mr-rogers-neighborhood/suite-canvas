@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-viewport-pill");
@@ -50,7 +49,7 @@ async function segments(page: import("@playwright/test").Page) {
 }
 
 test("the pill is one box with uniform cells", async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("pill-one-owner")}`));
+  await page.goto(`/?workspace=${id("pill-one-owner")}`);
   await expect(cards(page).first()).toBeVisible();
 
   const cells = await segments(page);
@@ -82,7 +81,7 @@ test("the pill is one box with uniform cells", async ({ page }) => {
 });
 
 test("a value fills its cell edge to edge, in both themes", async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("pill-fills")}`));
+  await page.goto(`/?workspace=${id("pill-fills")}`);
   await expect(cards(page).first()).toBeVisible();
 
   for (const theme of ["light", "dark"] as const) {
@@ -131,7 +130,7 @@ test("a value fills its cell edge to edge, in both themes", async ({ page }) => 
 });
 
 test("a run's bar is its own panel above the pill", async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("pill-run-bar")}`));
+  await page.goto(`/?workspace=${id("pill-run-bar")}`);
   await expect(cards(page).first()).toBeVisible();
 
   await page.getByTestId("dock-library").click();

@@ -1,10 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { libraryRowAction, newBoard } from "../fixtures/support";
 
 let sequence = 0;
-const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-ws-${name}-${Date.now()}-${++sequence}`);
+const workspaceUrl = (name: string) => `/?workspace=e2e-ws-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 
@@ -227,12 +226,12 @@ test("asks before deleting a board with cards and keeps them in the library", {
 test("syncs card titles and title carets between clients", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
+  const contextA = await browser.newContext({ storageState: ACCOUNT_STATE });
+  const contextB = await browser.newContext({ storageState: ACCOUNT_STATE });
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  const url = workspaceUrl("title-presence");
+  const url = hostedUrl(workspaceUrl("title-presence"));
   await pageA.goto(url);
   await pageB.goto(url);
   await expect(pageA.getByTestId("canvas-board")).toBeVisible();

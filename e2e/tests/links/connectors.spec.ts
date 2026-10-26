@@ -1,11 +1,10 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { createNote, newBoard } from "../fixtures/support";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-connector-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-connector-${name}-${Date.now()}-${++sequence}`;
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const portalNodes = (page: Page) => page.getByTestId("portal-node");

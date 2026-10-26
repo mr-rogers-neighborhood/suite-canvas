@@ -69,6 +69,8 @@ function actions(overrides: Partial<CommandActions> = {}): CommandActions {
     openTypes: vi.fn(),
     openShare: vi.fn(),
     toggleTheme: vi.fn(),
+    arrangeRadial: vi.fn(),
+    installBlueprint: vi.fn(),
     ...overrides,
   };
 }
@@ -140,6 +142,8 @@ const fixtures: Readonly<Record<string, Fixture>> = {
   "library.placeCard": { unavailable: { state: { cardId: null } } },
   "card.duplicate": { unavailable: { state: { cardId: null } } },
   "card.removeFromBoard": { unavailable: { state: { cardPlaced: false } } },
+  "layout.arrangeRadial": { unavailable: { state: { cardId: null } } },
+  "type.installBlueprint": { unavailable: { state: { cardId: null } } },
   "workspace.exportBackup": { unavailable: { state: { workspaceSurface: false } } },
   "share.publish": { unavailable: { capabilities: [] } },
 };

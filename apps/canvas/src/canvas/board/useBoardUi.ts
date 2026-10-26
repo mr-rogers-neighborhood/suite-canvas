@@ -69,6 +69,7 @@ export function useBoardUi() {
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
   const canCreateBoards = useUiStore((state) => state.canCreateBoards);
+  const canManageSchema = useUiStore((state) => state.canManageSchema);
   const canManageTrash = useUiStore((state) => state.canManageTrash);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
   const requestShare = useUiStore((state) => state.requestShare);
@@ -135,6 +136,7 @@ export function useBoardUi() {
     canEditLayout,
     canCreateContent,
     canCreateBoards,
+    canManageSchema,
     canManageTrash,
     canManageLinks,
     requestShare,

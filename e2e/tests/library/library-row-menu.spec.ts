@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 
 /**
  * The library's rows are a title and a menu, not a title and a wall of buttons
@@ -10,7 +9,7 @@ import { withOwnerKey } from "../fixtures/ownerUrl";
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-rowmenu-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-rowmenu-${name}-${Date.now()}-${++sequence}`;
 
 const drawer = (page: Page) => page.getByTestId("library-drawer");
 const rows = (page: Page) => page.locator("li[data-row-id]");

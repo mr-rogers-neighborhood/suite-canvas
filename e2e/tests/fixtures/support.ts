@@ -1,9 +1,9 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
- * One workspace id per test. The caller wraps it in a URL, because recovery
- * tests deliberately open a workspace without an owner fragment while the rest
- * use `withOwnerKey`.
+ * One workspace id per test. The caller decides which origin opens it: the plain
+ * dev server for a workspace that only needs local editing, or the hosted origin
+ * (`fixtures/account.ts`) when the test needs an account and a relay.
  */
 export function workspaceIdFactory(prefix: string): (name: string) => string {
   let sequence = 0;

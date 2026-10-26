@@ -6,7 +6,6 @@ import {
   errorText,
   getWorkspace,
   listWorkspaces,
-  resetOwner,
   revokeAllShares,
   revokeShare,
   type WorkspaceDetail,
@@ -300,12 +299,6 @@ export function WorkspacesPanel({ token }: { token: string }) {
                         confirmLabel="Confirm revoke"
                         onConfirm={() => act(() => revokeAllShares(token, row.id))}
                         disabled={row.shares === 0}
-                      />
-                      <ConfirmButton
-                        label="Reset owner"
-                        confirmLabel="Confirm reset"
-                        onConfirm={() => act(() => resetOwner(token, row.id))}
-                        disabled={!row.claimed}
                       />
                       <Button tone="danger" onClick={() => setDeleting(row.id)}>
                         Delete

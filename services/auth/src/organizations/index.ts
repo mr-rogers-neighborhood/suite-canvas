@@ -13,6 +13,11 @@ export {
   adoptAnonymousOrganizations,
 } from "./adoption.js";
 export {
+  FREE_LICENCE_TIER,
+  type FreeLicenceTier,
+  freeSeatLicence,
+} from "./freeTier.js";
+export {
   canAddWorkspace,
   checkSeat,
   checkSeatAllowance,

@@ -1,6 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 import { settleViewport } from "../fixtures/marquee";
-import { withOwnerKey } from "../fixtures/ownerUrl";
 import { cardByTitle, cards, createNote, libraryRowAction, newBoard } from "../fixtures/support";
 
 /**
@@ -12,7 +11,7 @@ import { cardByTitle, cards, createNote, libraryRowAction, newBoard } from "../f
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  withOwnerKey(`/?workspace=e2e-container-${name}-${Date.now()}-${++sequence}`);
+  `/?workspace=e2e-container-${name}-${Date.now()}-${++sequence}`;
 
 const panel = (page: Page) => page.getByTestId("container-inspector");
 const boardTabs = (page: Page) =>

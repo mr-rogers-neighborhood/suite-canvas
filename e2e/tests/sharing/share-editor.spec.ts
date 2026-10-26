@@ -1,11 +1,18 @@
 import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { newBoard } from "../fixtures/support";
+
+// Building a link needs the account session: the relay authorises share creation
+// with the same JWT it accepts for sync (ADR-0074, ADR-0076). The people who open
+// those links are somebody else's browser, so the helpers below start a clean
+// context rather than one carrying this run's cookie.
+test.use({ storageState: ACCOUNT_STATE });
 
 test.describe.configure({ timeout: 60_000 });
 
 let sequence = 0;
 const workspaceUrl = (name: string) =>
-  `/?workspace=e2e-share-editor-${name}-${Date.now()}-${++sequence}`;
+  hostedUrl(`/?workspace=e2e-share-editor-${name}-${Date.now()}-${++sequence}`);
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const cardByTitle = (page: Page, title: string) => cards(page).filter({ hasText: title });
@@ -147,7 +154,7 @@ async function createEditorLink(page: Page, scope: "board" | "card"): Promise<st
 }
 
 async function openEditor(browser: Browser, url: string): Promise<Page> {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto(url);
   await expect(page.getByTestId("sync-status")).toHaveAttribute("data-role", "editor", {

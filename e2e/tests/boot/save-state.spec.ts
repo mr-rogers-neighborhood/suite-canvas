@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectPeersConnected } from "../../interactions";
-import { withOwnerKey } from "../fixtures/ownerUrl";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 import { cards, workspaceIdFactory } from "../fixtures/support";
 
 const id = workspaceIdFactory("e2e-save-state");
@@ -17,13 +17,17 @@ const id = workspaceIdFactory("e2e-save-state");
 test("an anonymous workspace says where the work is, never that it is temporary", {
   tag: "@smoke",
 }, async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("anonymous")}`));
+  await page.goto(`/?workspace=${id("anonymous")}`);
   await expect(cards(page)).toHaveCount(2);
 
   // One status in the chrome, and it answers "is anyone else here" — everything
   // about this device's own copy is one press away under the same control.
+  //
+  // This origin serves no account service, and the relay accepts only a session
+  // JWT (ADR-0074), so the pill's honest word is "No access". It is not "Saved
+  // temporarily": nothing about this device's copy depends on the relay.
   const status = page.getByTestId("sync-status");
-  await expect(status).toHaveText(/Synced/);
+  await expect(status).toHaveAttribute("data-status", "unauthorized", { timeout: 20_000 });
   await status.click();
   await expect(page.getByTestId("sync-panel")).toBeVisible();
 
@@ -37,11 +41,11 @@ test("an anonymous workspace says where the work is, never that it is temporary"
   await expect(page.getByTestId("storage-persist")).not.toBeEmpty();
 });
 
-test("goes quiet about this device once someone else is in the room", { tag: "@smoke" }, async ({
+test("an account keeps this browser quiet about its own copy", { tag: "@smoke" }, async ({
   browser,
 }) => {
-  const url = withOwnerKey(`/?workspace=${id("shared-copy")}-${crypto.randomUUID()}`);
-  const context = await browser.newContext();
+  const url = hostedUrl(`/?workspace=${id("shared-copy")}-${crypto.randomUUID()}`);
+  const context = await browser.newContext({ storageState: ACCOUNT_STATE });
   try {
     const peer = await context.newPage();
     await peer.goto(url);
@@ -49,10 +53,12 @@ test("goes quiet about this device once someone else is in the room", { tag: "@s
     await me.goto(url);
     await expectPeersConnected(me, peer);
 
-    // Two copies exist, so this browser's own copy is not the only one: the warning
-    // that exists for exactly that case gives way to one calm line.
+    // The account is what makes the local copy a second copy: the ladder answers
+    // "Saved" and the warning that exists for a sole copy on a browser that
+    // promised nothing gives way to silence. "Saved here and synced" is the
+    // no-account rung and needs an owner-key session this build no longer has.
     await me.getByTestId("sync-status").click();
-    await expect(me.getByTestId("storage-status")).toHaveText("Saved here and synced");
+    await expect(me.getByTestId("storage-status")).toHaveText("Saved");
     await expect(me.getByTestId("storage-warning")).toHaveCount(0);
     await expect(me.getByTestId("storage-sign-in")).toHaveCount(0);
   } finally {
@@ -63,7 +69,7 @@ test("goes quiet about this device once someone else is in the room", { tag: "@s
 test("a local-only reader is warned before leaving for the launcher", { tag: "@smoke" }, async ({
   page,
 }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("leaving")}`));
+  await page.goto(`/?workspace=${id("leaving")}`);
   await expect(cards(page)).toHaveCount(2);
 
   await page.getByTestId("workspace-menu").click();
@@ -83,7 +89,7 @@ test("a local-only reader is warned before leaving for the launcher", { tag: "@s
 });
 
 test("asks once, until the work changes", { tag: "@smoke" }, async ({ page }) => {
-  await page.goto(withOwnerKey(`/?workspace=${id("once")}`));
+  await page.goto(`/?workspace=${id("once")}`);
   await expect(cards(page)).toHaveCount(2);
 
   await page.getByTestId("workspace-menu").click();

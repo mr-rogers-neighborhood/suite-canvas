@@ -152,6 +152,10 @@ export interface ProjectionRoomInfo {
   hasBaseline: boolean;
   /** Whether an editor changed the draft since the last projection. */
   dirty: boolean;
+  /** How long the room's last rebuild took, in milliseconds. */
+  buildMs?: number;
+  /** Whether the room is frozen after exceeding the build-time cap. */
+  capped?: boolean;
 }
 
 /** One projection room the idle sweep closed, or would close on a dry run. */
@@ -236,6 +240,50 @@ export function projectionRoomLimit(
  * boot cost: before rooms became lazy this number equalled the count of stored
  * links and the process died with it.
  */
+
+/**
+ * Cards one projection may build from.
+ *
+ * A whole-board share is the expensive case: measured with `pnpm bench`
+ * (`packages/graph/bench/projection.bench.ts`), a 500-card board rebuilds in
+ * about 0.6 s, 2 000 cards in 3.4 s and 5 000 cards in 8.3 s. The default sits
+ * at the last number that fits inside a save interval; above it the rebuild is
+ * refused and the share keeps its last good projection. `SUITE_MAX_PROJECTION_CARDS`
+ * tunes it.
+ */
+export const DEFAULT_MAX_PROJECTION_CARDS = 2000;
+
+/**
+ * How long one rebuild may take before its room is frozen.
+ *
+ * The cap is a backstop for a board under the card cap that still rebuilds
+ * slowly (dense rich text, many sections). A room over it stops rebuilding and
+ * says so, rather than holding the event loop every save interval for as long
+ * as the board stays that size. `SUITE_PROJECTION_BUILD_MS` tunes it.
+ */
+export const DEFAULT_PROJECTION_BUILD_MS = 5000;
+
+/** Reads a positive integer from the environment, falling back on anything else. */
+function positiveInteger(raw: string | undefined, fallback: number): number {
+  const text = raw?.trim();
+  if (!text) return fallback;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+}
+
+/** Card ceiling for one projection: `SUITE_MAX_PROJECTION_CARDS`. */
+export function projectionCardLimit(
+  env: { SUITE_MAX_PROJECTION_CARDS?: string | undefined } = process.env,
+): number {
+  return positiveInteger(env.SUITE_MAX_PROJECTION_CARDS, DEFAULT_MAX_PROJECTION_CARDS);
+}
+
+/** Build-time cap for one projection: `SUITE_PROJECTION_BUILD_MS`. */
+export function projectionBuildCap(
+  env: { SUITE_PROJECTION_BUILD_MS?: string | undefined } = process.env,
+): number {
+  return positiveInteger(env.SUITE_PROJECTION_BUILD_MS, DEFAULT_PROJECTION_BUILD_MS);
+}
 
 /** The operator-facing shape of one swept room. */
 export function sweptRoom(room: RoomState, now: number): SweptRoom {

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,21 @@ const reuseExistingServer = uiMode;
 
 const database = (name: string) => path.join(DATA_DIR, `${name}.sqlite`);
 
+// The account specs need the control plane, and the control plane needs Postgres.
+// A machine without `initdb` keeps the local half of the suite (`pnpm e2e:canvas`)
+// but the account half fails in `globalSetup` with the install instructions rather
+// than at a web-server timeout. The preflight treats an install that is present but
+// broken as a failure on purpose.
+const postgresAvailable =
+  spawnSync("initdb", ["--version"], { stdio: "ignore" }).error === undefined;
+
+/**
+ * The deployment shape the account specs use: one origin for the page and the
+ * account API, the way the reverse proxy in `compose.yaml` serves a real install.
+ * `scripts/hosted-origin.mjs` is that proxy; `fixtures/account.ts` builds URLs on it.
+ */
+const HOSTED_ORIGIN = "http://localhost:5180";
+
 export default defineConfig({
   testDir: "./tests",
   // Playwright's default, spelled out so `pnpm e2e:trace` can rely on it.
@@ -36,6 +52,12 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? "github" : "list",
+  // One real sign-in per run, reused as `storageState` by the specs that need an
+  // account. Runs after the web servers, which is what makes it able to reach them.
+  globalSetup: "./scripts/global-setup.ts",
+  // The Postgres cluster is the run's own process; nothing else stops it if a
+  // run is interrupted.
+  globalTeardown: "./scripts/global-teardown.mjs",
   use: {
     baseURL: "http://localhost:5173",
     trace,
@@ -49,6 +71,27 @@ export default defineConfig({
       reuseExistingServer,
       timeout: 60_000,
     },
+    ...(postgresAvailable
+      ? [
+          {
+            // The account service, on its own throwaway Postgres. Health is the
+            // host's own `/health`, which reports whether the auth module mounted.
+            command: "node scripts/with-log.mjs control-plane node e2e/scripts/control-plane.mjs",
+            url: "http://localhost:1236/health",
+            reuseExistingServer,
+            timeout: 120_000,
+          },
+          {
+            // The origin a page shares with the account API. Started last in this
+            // list but Playwright brings servers up in parallel; the proxy needs
+            // nothing to be listening to bind its port.
+            command: "node scripts/with-log.mjs hosted-origin node e2e/scripts/hosted-origin.mjs",
+            url: `${HOSTED_ORIGIN}/`,
+            reuseExistingServer,
+            timeout: 30_000,
+          },
+        ]
+      : []),
     {
       command: "node scripts/with-log.mjs relay pnpm --filter @suite/collab-server start",
       // Loro's sync endpoint is a WebSocket, so probe a small HTTP health
@@ -75,6 +118,10 @@ export default defineConfig({
         // sweep the dev instance accumulates hundreds of projection rooms and
         // slows every later run. One idle hour is enough for a test run.
         SUITE_ROOM_IDLE_HOURS: "1",
+        // The relay verifies the control plane's session JWT against its published
+        // key set (ADR-0074). The hosted origin is what the token names as `iss`
+        // and `aud`, so it is also where the keys are fetched from.
+        SUITE_AUTH_URL: HOSTED_ORIGIN,
       },
     },
   ],

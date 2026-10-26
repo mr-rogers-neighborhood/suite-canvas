@@ -15,6 +15,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { PG_PORT, stopPostgres } from "./postgres.mjs";
 
 const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = path.join(E2E_DIR, ".data");
@@ -28,6 +29,12 @@ const PORTS = [
   { port: 5173, name: "canvas dev server" },
   { port: 1234, name: "relay websocket" },
   { port: 1235, name: "relay health" },
+  // Accounts: the control plane, the origin its pages share, and the throwaway
+  // Postgres behind it. All three belong to the run, so a leftover from a crashed
+  // one is a reason to stop rather than to reuse.
+  { port: 1236, name: "control plane" },
+  { port: 5180, name: "hosted origin proxy" },
+  { port: PG_PORT, name: "e2e Postgres" },
   ...(visual ? [{ port: 6006, name: "storybook preview" }] : []),
 ];
 
@@ -151,6 +158,9 @@ async function stop(pids, port) {
 }
 
 if (clean) {
+  // Stop the cluster before its directory goes away: a Postgres whose data
+  // directory has been deleted under it cannot be asked to shut down afterwards.
+  stopPostgres();
   rmSync(DATA_DIR, { recursive: true, force: true });
   rmSync(ARTIFACT_DIR, { recursive: true, force: true });
 }

@@ -22,12 +22,29 @@ services:
       context: .
       target: runtime
     restart: unless-stopped
-    # Sized for a 1 vCPU / 2 GB instance (see docs/deploy-aws.md). Every open
+    # Hardening. The image already ends with `USER node`; naming the uid here
+    # keeps that visible in the file that deploys it. The root filesystem is
+    # read-only and the six stores are the only writable thing, so a compromised
+    # process cannot rewrite its own code, drop a cron entry or leave a payload
+    # behind. `no-new-privileges` plus an empty capability set means no setuid
+    # escalation is available even if one is found. `/tmp` is a memory-backed
+    # scratch dir: Node and tsx want one and nothing here belongs on disk.
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    # Sized for a 1 vCPU / 2 GB instance (see docs/how-to/deploy.md). Every open
     # room stays in memory while a client is connected, so a hard cap turns a
-    # leak or one huge board into a container restart instead of an OOM kill
-    # of the whole box. Uncomment on a real deployment.
-    # mem_limit: 1536m
-    # cpus: "1.0"
+    # leak or one huge board into a container restart instead of an OOM kill of
+    # the whole box. Raise both before raising the file-descriptor limit; the
+    # room count is what actually drives memory here.
+    mem_limit: 1536m
+    cpus: "1.0"
     environment:
       NODE_ENV: production
       PORT: "1234"
@@ -134,6 +151,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # The same hardening as `app`, and the same reason: this process holds the
+    # Stripe signing secret and the auth signing key, so the smaller its
+    # writable surface, the better. It owns no file of its own -- Postgres is a
+    # network service -- so a read-only root fits it exactly.
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: "0.5"
     environment:
       NODE_ENV: production
       PORT: "1236"
@@ -211,8 +243,25 @@ services:
       app:
         condition: service_healthy
     # Caddy holds one certificate, a TLS session cache and the built canvas.
-    # mem_limit: 256m
-    # cpus: "0.5"
+    # It needs 80/443, so it keeps exactly one capability and nothing else; the
+    # root filesystem is read-only and its three state directories are tmpfs
+    # unless the `caddy-data` volume below is enabled, which is what makes a
+    # certificate survive a recreate.
+    user: "0:0"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /config:size=8m
+      - /data:size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: "0.5"
     environment:
       SUITE_DOMAIN: ${SUITE_DOMAIN:-localhost}
       SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}

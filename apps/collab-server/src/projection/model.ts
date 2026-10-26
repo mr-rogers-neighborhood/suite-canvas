@@ -63,7 +63,28 @@ export interface ProjectionRoomStats {
   refused: number;
   /** Bytes the open projection documents are estimated to hold, summed. */
   documentBytes: number;
+  /**
+   * Rebuild outcomes, optional so a caller that only knows the room counts can
+   * still build a stats object (the admin route's empty default, a test stub).
+   */
+  skipped?: number;
+  capped?: number;
+  backpressured?: number;
+  coalesced?: number;
+  maxBuildMs?: number;
 }
+
+/**
+ * What one rebuild did, reported once per pass so the counters in
+ * `ops/metrics.ts` and the worker's own stats describe the same events.
+ */
+export type ProjectionRun =
+  | { kind: "rebuilt"; workspaceId: string; buildMs: number }
+  | { kind: "skipped"; workspaceId: string }
+  | { kind: "dirty"; workspaceId: string }
+  | { kind: "capped"; workspaceId: string; buildMs: number }
+  | { kind: "refused"; workspaceId: string; outstanding: number }
+  | { kind: "failed"; workspaceId: string; error: string };
 
 export interface ProjectionWorkerOptions {
   /** Sync server the worker joins, e.g. `ws://localhost:1234`. */
@@ -104,6 +125,25 @@ export interface ProjectionWorkerOptions {
    * somebody opens the link. Either way the in-memory copy must go.
    */
   onRoomClosed?: (roomId: string) => void;
+  /**
+   * Ceiling on cards one projection may build from. A board over the cap is not
+   * projected: the share keeps its last good projection and the refusal is
+   * counted, because a 5 000-card rebuild (measured at 8.3 s) would hold the
+   * loop for everybody. Defaults to `projectionCardLimit()`.
+   */
+  maxCards?: number;
+  /**
+   * How long one rebuild may take before the room is frozen at its last good
+   * projection. Defaults to `projectionBuildCap()`.
+   */
+  buildCapMs?: number;
+  /**
+   * Outstanding tasks one workspace may have queued before further rebuilds are
+   * refused. Defaults to `roomOutstandingLimit()`.
+   */
+  outstanding?: number;
+  /** Reports every rebuild outcome, so the server can count it once. */
+  onRun?: (run: ProjectionRun) => void;
   /** Clock for idle accounting; tests replace it. */
   now?: () => number;
   logger?: Pick<Console, "warn">;
@@ -132,6 +172,21 @@ export interface RoomState {
   bytes: number;
   /** Document version `bytes` was measured at, so only the delta is measured. */
   measured: VersionVector;
+  /**
+   * Canonical version vector of the source the last successful rebuild read.
+   * Equal to the source's current vector means the projection cannot have
+   * changed, so the next rebuild is skipped instead of rewritten.
+   */
+  sourceVersion: string | null;
+  /** Epoch milliseconds of the last successful rebuild; `0` means never. */
+  builtAt: number;
+  /** How long the last rebuild took, in milliseconds. */
+  buildMs: number;
+  /**
+   * Set when a rebuild exceeded the build-time cap. The room keeps what it has
+   * and stops rebuilding until somebody reloads or publishes into it.
+   */
+  capped: boolean;
 }
 
 /** The worker's writer connection to a real workspace room, used by publish. */

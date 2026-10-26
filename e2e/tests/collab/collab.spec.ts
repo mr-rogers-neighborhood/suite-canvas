@@ -1,5 +1,6 @@
 import { type BoundingBox, expect, type Locator, type Page, test } from "@playwright/test";
 import { expectPeersConnected } from "../../interactions";
+import { ACCOUNT_STATE, hostedUrl } from "../fixtures/account";
 
 /**
  * Finds a point on the React Flow pane with no node or control panel under it,
@@ -52,15 +53,19 @@ async function createNote(page: Page): Promise<void> {
 const editingCard = (page: Page) =>
   page.locator('[data-testid="node-card"]:has([contenteditable="true"])');
 
+// Every test here needs the relay, and the relay accepts one credential: the
+// session JWT the run's sign-in mints (ADR-0074, ADR-0076). `storageState` is
+// merged into every context Playwright creates, so the two-browser tests get two
+// browsers of the same account without either of them filling in a form.
+test.use({ storageState: ACCOUNT_STATE });
+
 /**
  * Each test gets its own document so parallel tests never share CRDT state. The
  * random suffix keeps repeats of the same test apart even when two workers start
  * in the same millisecond.
  */
-// The owner key rides in the fragment so both contexts of a test can claim the
-// same workspace; a second context without it is a different owner.
 const docUrl = (name: string) =>
-  `/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}#owner=${crypto.randomUUID()}`;
+  hostedUrl(`/?doc=e2e-${name}-${Date.now()}-${crypto.randomUUID()}`);
 
 test("creates, edits, and deletes a note", async ({ page }) => {
   await page.goto(docUrl("create-edit-delete"));

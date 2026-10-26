@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LicenceClaims, Principal, SeatLicence } from "../types.js";
+import { freeSeatLicence } from "./freeTier.js";
 import type { LicenceState } from "./seats.js";
 import {
   canAddWorkspace,
@@ -40,6 +41,9 @@ function licence(seats: number, overrides: Partial<LicenceClaims> = {}): SeatLic
 }
 
 const licensed = (value: SeatLicence): LicenceState => ({ kind: "licensed", licence: value });
+
+/** The row an organization is born with: `0009_free_licence_provisioning.sql`. */
+const freeLicence = (): SeatLicence => freeSeatLicence(ORG, NOW);
 
 const accountPrincipal = (role: "owner" | "admin" | "member"): Principal => ({
   kind: "account",
@@ -137,15 +141,49 @@ describe("checkSeatAllowance", () => {
 });
 
 describe("licence validity", () => {
-  it("refuses an owned workspace with no licence row", () => {
+  it("names a missing licence row as a provisioning fault, not billing", () => {
+    const missing: LicenceState = { kind: "unlicensed" };
+    expect(
+      checkSeatAllowance({ organizationId: ORG, licence: missing, memberCount: 1, now: NOW }),
+    ).toEqual({ ok: false, reason: "licence-unprovisioned" });
+    expect(
+      checkWorkspaceAllowance({
+        organizationId: ORG,
+        licence: missing,
+        workspaceCount: 1,
+        now: NOW,
+      }),
+    ).toEqual({ ok: false, reason: "licence-unprovisioned" });
+  });
+
+  it("distinguishes no row from a free row that ran out of seats", () => {
+    const free = freeLicence();
+    // The free row admits its owner and no one else: exhausting it is a billing
+    // answer, and it must not read like the provisioning fault above.
+    expect(
+      checkSeatAllowance({
+        organizationId: ORG,
+        licence: licensed(free),
+        memberCount: 1,
+        now: NOW,
+      }),
+    ).toEqual({ ok: true, seat: "licensed-member" });
+    expect(
+      checkSeatAllowance({
+        organizationId: ORG,
+        licence: licensed(free),
+        memberCount: 2,
+        now: NOW,
+      }),
+    ).toEqual({ ok: false, reason: "seat-allowance-exhausted" });
     expect(
       checkSeatAllowance({
         organizationId: ORG,
         licence: { kind: "unlicensed" },
-        memberCount: 1,
+        memberCount: 2,
         now: NOW,
       }),
-    ).toEqual({ ok: false, reason: "licence-missing" });
+    ).toEqual({ ok: false, reason: "licence-unprovisioned" });
   });
 
   it("refuses an expired licence even though the count fits", () => {
@@ -286,6 +324,7 @@ describe("seatLicence", () => {
 describe("seatProblemMessage", () => {
   it("has a sentence for every refusal", () => {
     for (const reason of [
+      "licence-unprovisioned",
       "licence-missing",
       "licence-expired",
       "workspace-allowance-exhausted",

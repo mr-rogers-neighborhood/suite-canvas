@@ -154,12 +154,14 @@ itself to decide how much detail to draw.
 Focus requests move the camera over `FOCUS_DURATION_MS` (300 ms), never past `FOCUS_MAX_ZOOM` (1.2), and
 wait up to `FOCUS_POLL_TIMEOUT_MS` (1500 ms) for React Flow to register a card that has just been placed.
 
-Camera controls render in their own stack beside React Flow's built-in `<Controls>`, not inside it: that
-pill is a row of uniform 26px cells and a percentage does not fit one. `canvas/BoardCameraControls.tsx`
-adds a zoom readout that resets the camera to 100% when pressed, zoom to the selection (`fitView` over
-the selected ids at `SELECTION_PADDING` 0.2), the outline toggle and the dot-grid toggle. The grid is a
-reader preference in `canvas/cameraPrefs.ts`, kept per browser and never written to the document. Zoom to
-selection follows `prefersReducedMotion()`: a reader who asked for less motion arrives instead of flying.
+Camera controls are React Flow's own `<Controls>` pill, plus one button. Zoom in, zoom out and fit stay on
+the built-in control; `BoardSurface.tsx` adds zoom to the selection (`fitView` over the selected ids at
+`SELECTION_PADDING` 0.2) because the built-in pill has no equivalent. Zoom to selection follows
+`prefersReducedMotion()`: a reader who asked for less motion arrives instead of flying.
+
+The dot grid is always painted. It used to be a toggle beside a zoom readout in a second corner stack, which
+is a control bar of its own for a preference nobody changes twice. The outline moved to the navigation row
+beside the board tabs, and `[` still toggles it.
 
 ## Selection affordances
 
@@ -210,23 +212,23 @@ surfaces supply it from the same plan: the board's menu runs `arrangeRadialSelec
 same `planRadial` and `childrenFromLinks` the board uses to `applyLayoutPlan`. Sections a moved card leaves
 grow to contain it again, by the same rule align and distribute follow.
 
-## Rollups
+## Folds
 
-A rollup is a card reduced to its header line plus a count of what it hides (ADR-0060). The count is not a
-number the card keeps: `canvas/rollup.ts` builds the member list first, from outbound card links and body
-mentions, minus trashed cards and the card itself, and `count` is that list's length. `rollupSummary`
-prints the same list, so a header cannot claim three cards while two rows exist.
+A card folds to its header line and a section folds to its own header. Both are reader state, held in
+`collapsedCards` and `collapsedSections` in `apps/canvas/src/store/useUiStore.ts`, and neither is written to
+the document. Two people on one board can fold different things away.
 
-`canvas/RollupSummary.tsx` draws the header and, on a press, the rows. Each row is a button that opens the
-card it names, which is the way back the record asks for, and every row is reachable by Tab. A card that
-points at nothing says "Nothing to summarise" and offers no disclosure rather than showing a zero.
+A folded card does not mount its body, so nothing inside it can hold a caret. Its placement keeps the height
+it had, which is why unfolding restores the card exactly. The height a folded card paints at is
+`COLLAPSED_CARD_HEIGHT` in `canvas/nodeData.ts`, and the header's reference count is what the fold hides.
 
-The collapse control is the rail in `apps/canvas/src/app/RollupSummaryHost.tsx`, because neither obvious
-home can hold one yet: a card's chrome belongs to the board projection and a section cannot collapse, so a
-fold there would have nothing to fold. `rollupOpen` in `apps/canvas/src/store/useUiStore.ts` is the flag,
-reader state beside `outlineOpen` and never a document write, and the rail reads the card in front of the
-reader: the focus surface's card, else the inspector's, else the first selected card. A row opens its
-member on the board that member sits on.
+A folded section stops drawing its members: `board/useBoardNodes.ts` skips a placement whose section is
+folded, so the cards are absent rather than invisible. `sections/SectionLayer.tsx` paints the frame at header
+height through `paintRect`, and the stored rect is untouched so unfolding puts every member back. A folded
+section shows no resize handles, because there is nothing to resize.
+
+There is no separate summary surface. An earlier build carried a rollup rail in the corner of the board
+because neither a card nor a section could fold; the fold is on the two headers now and the rail is gone.
 
 ## Presence and cursors
 
@@ -303,11 +305,10 @@ other members out of formation.
 | `board/usePaneDoubleClick.ts` | empty-canvas double-click creates a card |
 | `canvas/snapping.ts` | edge and centre snapping, pure geometry, guide extents |
 | `canvas/SnapGuideLayer.tsx` | alignment guides in a viewport portal |
-| `canvas/BoardCameraControls.tsx` | zoom readout, zoom to selection, outline and grid toggles |
+| `canvas/board/BoardSurface.tsx` | the React Flow surface, its dot grid and the control pill |
 | `canvas/BoardHints.tsx` | the arrow-key nudge hint |
 | `canvas/BulkStyleBar.tsx` | style patch for a multi-selection |
-| `canvas/RollupSummary.tsx` | a card as its header line and the rows it hides |
-| `canvas/rollup.ts` | the member list and the count it justifies |
+| `canvas/nodeData.ts` | what a card node paints from, and the folded card height |
 | `canvas/interactions/radialLayout.ts` | mind-map rings from a card's subtree |
 | `canvas/peek/` | hover-peek resolver, delay rules and the read-only surface |
 | `sections/SectionLayer.tsx` | section paint, header chrome, resize handles, pointer gestures |

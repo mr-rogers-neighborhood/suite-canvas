@@ -71,7 +71,9 @@ Commands and tiers are in [../how-to/test-and-verify.md](../how-to/test-and-veri
 
 ## Status
 
-The current release is Beta. Anonymous workspaces, local persistence, live collaboration, share links and publishing work.
+Local persistence, accounts, live collaboration, share links, publishing and billing are implemented. A
+browser with no session works locally and syncs nothing; a signed-in account has a personal organization from
+its first minute.
 
 Two processes are the target shape, behind one Caddy. The relay (`apps/collab-server`) keeps the socket, its SQLite stores and the projection. A control plane (`apps/control-plane`) hosts Postgres, identity and billing, and is the only process that depends on `pg`: it mounts `services/auth` at `/api/auth/*`, `services/billing` at `/api/billing/*` and `/stripe/*`, and the relay imports neither. The canvas is a static bundle, so a deployment serves three hosts from that pair (`deploy/Caddyfile`).
 

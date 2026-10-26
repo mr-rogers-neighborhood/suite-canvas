@@ -58,8 +58,8 @@ join; a live socket is not re-authenticated mid-session.
 
 `apps/collab-server/src/http/sessionToken.ts` verifies the signature, `iss`, `aud`, `exp` and `iat`, then
 narrows the payload to the five claims above. Anything else in the token is ignored. A token that fails
-any step is a refusal: the join closes, and nothing is retried as a share token or as an anonymous
-connection. `apps/collab-server/src/sync/seatGate.ts` then answers from the claims alone, with no database
+any step is a refusal: the join closes, and nothing is retried as a share token or as a second
+credential. `apps/collab-server/src/sync/seatGate.ts` then answers from the claims alone, with no database
 read. It refuses a session whose `org` is empty and a token whose `tier` is empty, and it treats a share
 visitor as a capability rather than a seat.
 
@@ -76,23 +76,26 @@ TTL, so a generous value would widen the revocation window by the same amount.
 The relay fetches nothing at boot. A control plane that is down means no account can join; a control plane
 that comes back is picked up by the next fetch, without restarting the relay.
 
-## What an anonymous workspace can do
+## What a browser with no session can do
 
 A workspace with no account is local-only. It opens, edits, exports and deletes from the browser with no
-prompt and no credential, and it never reaches a relay. The socket answers `Authentication failed`
-because a room credential is a session token, and a token names an organization; there is nothing else on
-the wire that could attribute a room to an owner.
+prompt and no credential, and it never reaches a relay. The socket answers `Authentication failed` because a
+room credential is a session token, and a token names an organization.
 
-This is a deliberate narrowing, not a gap left open. The owner key used to authorise an anonymous room by
-being a bearer secret nobody else had. Deleting it removed the only attribution an anonymous connection had,
-and inventing a second anonymous credential would have recreated the thing that was deleted. Sync also
-costs a seat, so it needs an owner to charge.
+This is a deliberate narrowing, not a gap left open. The owner key used to authorise a local room by being a
+bearer secret nobody else had. Deleting it removed the only attribution such a connection had, and inventing
+a second credential for it would have recreated the thing that was deleted. Sync also costs a seat, so it
+needs an owner to charge.
 
-The local-first promise survives intact: everything a reader can do alone still works with no account, and
-the document is theirs to export. What changes is the second browser. A workspace becomes visible to
-another machine at the moment it is claimed by an account, which is also the moment it can be paid for.
-`onLinkAccount` moves the claimed rows and the ids do not change, so a link shared point-to-point before
-sign-up still resolves afterwards.
+Better Auth's anonymous sessions are gone for the same reason. A session that could be created without a
+person is a session nobody can be charged for and nobody can be held to, and the browser never needed one:
+the document is in IndexedDB, and the workspace id in the URL is the whole of its identity.
+
+The local-first promise survives intact. Everything a reader can do alone still works with no account, and
+the document is theirs to export. What changes is the second browser. A workspace becomes visible to another
+machine at the moment it is claimed by a signed-in account, which is also the moment it can be paid for. The
+claim is the first join: the relay records the organization on the `workspace_orgs` row and the ids do not
+change, so a link shared point-to-point before sign-up still resolves afterwards.
 
 A self-hosted instance that runs only the relay therefore has no sync either. It is the same rule seen from
 the other side: the relay has no way to decide who may join, so it refuses everyone. A self-host that wants

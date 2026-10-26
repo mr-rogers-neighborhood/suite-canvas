@@ -40,8 +40,12 @@ open, and `.env` sets `SUITE_AUTH_REQUIRE_VERIFICATION=0` because there is no ma
 unset the address must be confirmed first, and the console transport redacts the token it prints, so
 you could not finish a sign-up at all.
 
-Signing up creates an account. Creating a workspace creates an organization, and the account becomes
-its owner. The room credential is a five-minute token that the relay verifies against the key set the
+A browser that never signs in is local-only: it edits and saves to IndexedDB and joins no relay. The sync
+control in the title bar says `Local`, and signing in changes that.
+
+Signing up creates an account, a personal organization named after you, and the owner and administrator
+rows that go with it. The personal organization is made active at the same time, so the first board you open
+joins the relay. The room credential is a five-minute token the relay verifies against the key set the
 control plane publishes.
 
 ## 2b. Check what is set up

@@ -4,16 +4,18 @@ How the shell, the library, the panels, the styling surfaces and the command pal
 
 ## Shell composition
 
-`apps/canvas/src/App.tsx` renders the shell in one column. The title bar sits at the top, the board fills the middle, and the dock and the library drawer sit over its bottom-left corner. The outline rail, the inspector, the card focus and the tour overlay are children of the board area, so they open in the same stacking context as the canvas; the dock, the drawer, the palette and the dialogs are siblings that portal or float above it.
+`apps/canvas/src/App.tsx` renders the shell in one column. The title bar sits at the top, the board fills the middle, and the dock and the library drawer sit over its bottom-left corner. The inspector, the card focus and the tour overlay are children of the board area, so they open in the same stacking context as the canvas; the dock, the drawer, the palette and the dialogs are siblings that portal or float above it.
+
+Three surfaces hold the chrome: the title bar, the navigation row inside it, and the dock. A board at rest shows nothing else over the canvas. Everything that used to float there (connection state, the saved state, the storage warning, the history toggle, the camera stack) is either a row in the sync panel or a control in the navigation row.
 
 | Surface | Component | What it owns |
 | --- | --- | --- |
 | Title bar | `apps/canvas/src/chrome/TitleBar.tsx` | Workspace name and rename, the command bar, sync and storage status, the workspace menu, the account slot, the theme toggle |
-| Board tabs | `apps/canvas/src/chrome/BoardTabs.tsx` | Open boards, the home board, per-board peer counts, board close and rename |
+| Navigation row | `BoardTabs.tsx`, `UndoRedo.tsx`, the history and outline buttons in `app/WorkspaceShellView.tsx` | Home, the open boards with their peer counts, undo, redo, version history and the outline, in one row |
+| Sync panel | `apps/canvas/src/chrome/SyncPanel.tsx` | Connection state, unsent changes, this device's copy, the relay's room name, the storage warning and the storage surface |
 | Views bar | `apps/canvas/src/chrome/ViewsBar.tsx` | Saved views, applying one, renaming and deleting one |
 | Dock | `apps/canvas/src/chrome/Dock.tsx` | Library toggle with the inbox count, new card, new sketch, new section, new portal, type settings |
-| Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence |
-| Rollup rail | `apps/canvas/src/app/RollupSummaryHost.tsx` | The card in front of the reader as its header line and the count it hides |
+| Outline rail | `apps/canvas/src/canvas/BoardOutline.tsx` | The active board's section tree, in reading order, with counts and presence. Hidden while the board has no sections |
 | Inspector | `apps/canvas/src/cards/CardInspectorHost.tsx` | The one panel for the selected card or container |
 | Blueprint install | `apps/canvas/src/app/BlueprintInstallHost.tsx` | The type a card's title and body declare, previewed before it is written |
 | Library drawer | `apps/canvas/src/library/LibraryDrawer.tsx` | Every card, board and trashed record, with search and facets |
@@ -60,7 +62,7 @@ Two panels read a card's metadata without owning it. `apps/canvas/src/panels/Ann
 
 ## Hover peek
 
-A rest on a rendered entity names it (ADR-0055). `apps/canvas/src/canvas/peek/peekResolver.ts` answers for one `Target` at a time (a card, a board, a section or a link) and returns `null` for a kind it cannot describe, so the surface opens nothing rather than guessing. A card reads the same way in the outline rail, on a rollup row and on a link endpoint because all three ask the same resolver.
+A rest on a rendered entity names it (ADR-0055). `apps/canvas/src/canvas/peek/peekResolver.ts` answers for one `Target` at a time (a card, a board, a section or a link) and returns `null` for a kind it cannot describe, so the surface opens nothing rather than guessing. A card reads the same way in the outline rail, in the inspector and on a link endpoint because all three ask the same resolver.
 
 `usePeek` in `canvas/peek/usePeek.ts` holds the timing rules, which are the whole difficulty:
 

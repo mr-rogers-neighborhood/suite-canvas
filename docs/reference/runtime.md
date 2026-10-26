@@ -57,8 +57,8 @@ delete) and the sync join. The relay verifies it against the key set at `<SUITE_
 
 The first verified session that opens a workspace records its organization in the `workspace_orgs` table
 of `SUITE_WORKSPACES_DB`, and every later join, upload and link operation is authorized against that row.
-An empty credential never writes a workspace room, and a token that does not verify is a refused join
-rather than an anonymous one.
+An empty credential never writes a workspace room, and a token that does not verify is a refused join.
+There is no second credential to fall back to.
 
 A share link is unchanged: the token is exchanged on first open for a short-lived `HttpOnly` session
 cookie, and a visitor with no account keeps exactly the access the link grants.

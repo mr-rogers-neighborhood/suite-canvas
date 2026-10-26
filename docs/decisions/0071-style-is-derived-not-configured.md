@@ -197,3 +197,47 @@ Also noted from the same pass, and belonging to this ADR's scope rather than to 
 a Control in the Style tab**, and the property inspector, the library row menu and the context menus must
 present the *same* controls from one abstraction. Three surfaces grown separately is exactly the drift that
 made the two mode families need one palette.
+
+## Note — home, navigation and new-tab surfaces when they come
+
+The author asked for a revisit: *"Revisit home, navigation, and new tab pages/boards to consider when they
+should be implemented and how they should interact with the overall style/theme system."*
+
+The rungs answer half of it, and it is worth writing down now so the surfaces are not invented twice:
+
+- **A home board is document content.** It is a board that the workspace names, so every rung above it
+  applies unchanged: its paint is a board style, its cards carry their own, and a visitor sees what the
+  author set. Nothing new is needed; the record is a board id on the workspace, and the place it is
+  remembered is the same "which board am I looking at" that already survives a reload.
+- **The new-tab chooser is shell chrome.** It is a *choice surface*, not a place, so it is a reader
+  preference (what this device opens with) and writes nothing to the document. It must not become a
+  board, which would make a navigation setting collaborative and undoable by a peer.
+- **The ordering follows from that split**: the home board can ship with nothing but a board id and a
+  navigation rule; the chooser wants the reader-preference store the appearance slice just built, so it
+  is cheaper *after* this slice than before it.
+
+Nothing is built here. The point of recording it is that the two surfaces look alike and belong to
+different rungs — which is exactly the confusion this ADR exists to prevent.
+
+## What implementing the first slice settled
+
+Built and shipped; the rest is recorded as open.
+
+- **The ladder already existed.** `rules.ts` resolves global → kind → type → shell and then the surface's
+  own style, with a contrast floor and corrections. The slice did not add a second one; it added **an
+  index over it** (`canvas/styleUtilities.ts`) that answers what a control cannot: which rungs may own a
+  property, and what removing it falls back to. The paint utilities are the `SurfaceStyle` fields that
+  already existed — the index names them, it does not invent them.
+- **Provenance is what makes "Inherit" honest.** `styleProvenance` reports the rung and a readable label
+  per property, so the Style tab's empty option reads "Inherit from Concept" when a rule has an opinion
+  and stays plain when none does. A word with no object was the real defect, not the control.
+- **Reader preferences are attributes, not inline styles.** `[data-density]`, `[data-canvas]`,
+  `[data-motion]` and `--reader-card-radius` on `<html>`, so the stylesheet owns what compact *means* and
+  the canvas behind the panel is the preview. `--reader-card-radius` is a default only: a card's own
+  radius still wins, which is the ladder working.
+- **`!important` is the honest tool for reduced motion, once.** A component's own transition rule is more
+  specific than any selector that catches every element, and a preference that loses to one of them is not
+  a preference. The rule is the last thing in the sheet, with the reason on it.
+- **Still open**: authoring type- and workspace-level style in the UI (the index covers them; no editor
+  writes them), named rules and themes as a surface a reader can create, and the utility index rendered as
+  a browsable list rather than a per-control source.

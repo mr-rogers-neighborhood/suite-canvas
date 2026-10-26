@@ -1344,6 +1344,17 @@ body {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(16px) saturate(1.2);
+  transition: opacity 120ms ease;
+}
+
+/*
+ * A drawn link needs to be seen under the drawer it crosses: the preview runs
+ * beneath the panel and the destination is usually what the panel covers.
+ * Opacity only — the panel keeps its pointer events, so a release over it still
+ * lands on it rather than falling through to the canvas.
+ */
+html[data-inspector-linking] .card-inspector {
+  opacity: 0.3;
 }
 
 @media (max-width: 640px) {

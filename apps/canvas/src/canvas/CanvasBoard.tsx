@@ -388,6 +388,7 @@ export function CanvasBoard() {
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
+  const setLinkingInProgress = useUiStore((state) => state.setLinkingInProgress);
   const mode = useUiStore((state) => state.mode);
   /** The record lane's one engine, beside the placement run's (ADR-0064 §9). */
   const recordEngine = useRecordEngine();
@@ -486,6 +487,12 @@ export function CanvasBoard() {
     anchorConnector: string | null;
   } | null>(null);
   const [connecting, setConnecting] = useState<ConnectAnchor | null>(null);
+  // Published for surfaces the board does not own: the inspector fades while a
+  // link is drawn, because the preview and its destination are under the panel.
+  useEffect(() => {
+    setLinkingInProgress(connecting !== null);
+    return () => setLinkingInProgress(false);
+  }, [connecting, setLinkingInProgress]);
   const [edgeDescription, setEdgeDescription] = useState<{
     edgeId: string;
     x: number;

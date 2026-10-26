@@ -83,3 +83,33 @@ test("the library clears its query before it closes", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
 });
+
+/**
+ * The panel covers a third of the canvas exactly when the reader is aiming under
+ * it: a link drawn from a dot runs its preview beneath the drawer, and the card it
+ * is aimed at is usually one the drawer is over. The fade is paint only, because
+ * a panel that stopped taking presses would hand a release to the canvas.
+ */
+test("the inspector fades while a link is drawn and comes back", async ({ page }) => {
+  await page.goto(workspaceUrl("fade"));
+  await expect(cards(page)).toHaveCount(2);
+  await openCardInfo(page);
+
+  const drawer = page.getByTestId("card-inspector");
+  await expect(drawer).toHaveCSS("opacity", "1");
+
+  const first = cards(page).first();
+  await first.click();
+  const dot = await first.getByTestId("connector-dot").nth(1).boundingBox();
+  if (!dot) throw new Error("cannot measure a dot");
+  await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dot.x + 60, dot.y + 40, { steps: 6 });
+
+  await expect(drawer).toHaveCSS("opacity", "0.3");
+  // Still a panel, not a hole: it takes the press that would fall through.
+  await expect(drawer).toBeVisible();
+
+  await page.mouse.up();
+  await expect(drawer).toHaveCSS("opacity", "1");
+});

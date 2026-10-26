@@ -938,50 +938,54 @@ export function CardPanel({
       data-testid="card-panel"
       data-variant={variant}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the title overlay button starts editing; the editor owns keyboard input */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay button is the keyboard path */}
-      <div
-        className="card-panel-title relative mb-1 px-3 pt-3 pb-2"
-        data-testid="card-panel-title"
-        style={titlePeerStyle}
-        onClick={(event) => {
-          if (!editContent || editing === "title") return;
-          event.stopPropagation();
-          startEditing("title");
-        }}
-      >
-        {editing === "title" && titleId ? (
-          <CardTitleEditor
-            cardDoc={cardDoc}
-            titleId={titleId}
-            cursorStore={cursorStore}
-            localUser={localUser}
-            editable
-            ariaLabel="Card panel title"
-            onFocus={keepFocusAlive}
-            onBlur={releaseFocusSoon}
-            onCommit={onEditEnd}
-          />
-        ) : (
-          <>
-            {editContent ? (
-              <button
-                type="button"
-                aria-label="Edit card title"
-                className="absolute inset-0 z-10 cursor-text"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  startEditing("title");
-                }}
-              />
-            ) : null}
-            <p className="truncate text-[13px] font-semibold text-[var(--ink)]">
-              {title || "Untitled"}
-            </p>
-          </>
-        )}
-        {titlePeer ? <PeerNameTag user={titlePeer} className="card-peer-tag" /> : null}
-      </div>
+      {/* The drawer draws the title in its own header, so this surface only owns
+          one above the body when it stands alone (focus or embedded). */}
+      {inspector ? null : (
+        // biome-ignore lint/a11y/noStaticElementInteractions: the title overlay button starts editing; the editor owns keyboard input
+        // biome-ignore lint/a11y/useKeyWithClickEvents: the title overlay button is the keyboard path
+        <div
+          className="card-panel-title relative mb-1 px-3 pt-3 pb-2"
+          data-testid="card-panel-title"
+          style={titlePeerStyle}
+          onClick={(event) => {
+            if (!editContent || editing === "title") return;
+            event.stopPropagation();
+            startEditing("title");
+          }}
+        >
+          {editing === "title" && titleId ? (
+            <CardTitleEditor
+              cardDoc={cardDoc}
+              titleId={titleId}
+              cursorStore={cursorStore}
+              localUser={localUser}
+              editable
+              ariaLabel="Card panel title"
+              onFocus={keepFocusAlive}
+              onBlur={releaseFocusSoon}
+              onCommit={onEditEnd}
+            />
+          ) : (
+            <>
+              {editContent ? (
+                <button
+                  type="button"
+                  aria-label="Edit card title"
+                  className="absolute inset-0 z-10 cursor-text"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    startEditing("title");
+                  }}
+                />
+              ) : null}
+              <p className="truncate text-[13px] font-semibold text-[var(--ink)]">
+                {title || "Untitled"}
+              </p>
+            </>
+          )}
+          {titlePeer ? <PeerNameTag user={titlePeer} className="card-peer-tag" /> : null}
+        </div>
+      )}
 
       {inspector ? (
         <div className="card-panel-tabs px-3 pb-2" data-testid="card-panel-tabs">

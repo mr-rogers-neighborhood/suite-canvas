@@ -86,6 +86,29 @@ function inspector(
   );
 }
 
+describe("CardInspector title", () => {
+  it("should own the title in its header, with no second control below it", () => {
+    const onStartEditing = vi.fn();
+    render(inspector(noteCard(), callbacks.onEdit, { onStartEditing }));
+
+    // One control for one value: the drawer's header is the title row, and the
+    // shared panel beneath it renders no title of its own.
+    const titles = screen.getAllByTestId("card-panel-title");
+    expect(titles).toHaveLength(1);
+    expect(titles[0]).toContainElement(screen.getByTestId("inspector-title-edit"));
+
+    fireEvent.click(screen.getByTestId("inspector-title-edit"));
+    expect(onStartEditing).toHaveBeenCalledWith("title");
+  });
+
+  it("should show the title as text when the reader cannot edit content", () => {
+    render(inspector(noteCard(), callbacks.onEdit, { readOnly: true }));
+
+    expect(screen.queryByTestId("inspector-title-edit")).not.toBeInTheDocument();
+    expect(screen.getByTestId("card-panel-title")).toHaveTextContent("Sketch one");
+  });
+});
+
 describe("CardInspector sketch controls", () => {
   it("should show the display toggle for a sketch only", () => {
     const sketch = sketchCard();

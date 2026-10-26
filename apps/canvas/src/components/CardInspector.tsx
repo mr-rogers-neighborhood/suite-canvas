@@ -13,8 +13,10 @@ import {
 } from "../cards/whiteboard";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { CardTitleEditor } from "./CardBodyEditor";
 import { type CardLinks, CardPanel, type CardPanelEditingField, type CardWhere } from "./CardPanel";
 import type { CardPickerOption } from "./CardPicker";
+import { PeerNameTag } from "./PeerNameTag";
 
 export interface CardInspectorProps {
   card: Card;
@@ -179,6 +181,11 @@ export function CardInspector({
   const panelFields = sketch
     ? fields.filter((entry) => entry.field.name !== SKETCH_DISPLAY_FIELD_NAME)
     : fields;
+  // Whoever else is editing this card's title gets the same ring here that the
+  // panel paints on the canvas: the header is now the title, so it carries it.
+  const titlePeer =
+    peers.find((peer) => peer.focus?.nodeId === card.id && peer.focus.field === "title")?.user ??
+    null;
   // Locate and Place are one pair of meanings, shared with the library rows: a
   // card on this board is located, a card that is not is placed.
   const currentBoard = where.entries.find((entry) => entry.isCurrent) ?? null;
@@ -186,9 +193,48 @@ export function CardInspector({
     <aside className="card-inspector" data-testid="card-inspector" aria-label="Card info">
       <header className="flex items-start gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-[var(--ink)]" title={title}>
-            {title || "Untitled"}
-          </p>
+          {/*
+            One title, one control. The drawer's header *is* the card's title row,
+            so the shared panel below no longer repeats it — a second editor for one
+            value is the mistake the save pill was. The test id moved with the
+            control, so every caller that renamed a card from the drawer still does.
+          */}
+          <div
+            className="card-inspector-title"
+            data-testid="card-panel-title"
+            style={titlePeer ? { boxShadow: `0 0 0 2px ${titlePeer.color}33` } : undefined}
+          >
+            {editing === "title" && titleId ? (
+              <CardTitleEditor
+                cardDoc={cardDoc}
+                titleId={titleId}
+                cursorStore={cursorStore}
+                localUser={localUser}
+                editable
+                ariaLabel="Card title"
+                onCommit={onEditEnd}
+              />
+            ) : editContent ? (
+              <button
+                type="button"
+                aria-label="Edit card title"
+                title={title}
+                data-testid="inspector-title-edit"
+                className="block w-full cursor-text truncate text-left text-[13px] font-semibold text-[var(--ink)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onStartEditing("title");
+                }}
+              >
+                {title || "Untitled"}
+              </button>
+            ) : (
+              <p className="truncate text-[13px] font-semibold text-[var(--ink)]" title={title}>
+                {title || "Untitled"}
+              </p>
+            )}
+            {titlePeer ? <PeerNameTag user={titlePeer} className="card-peer-tag" /> : null}
+          </div>
           <p className="flex items-center gap-1.5 text-[11px] text-[var(--ink-muted)]">
             <span>
               {where.unplaced

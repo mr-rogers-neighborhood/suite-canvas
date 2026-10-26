@@ -206,6 +206,14 @@ interface UiState extends SessionCapabilities {
   editingSurface: EditingSurface;
   /** Card or section a surface asked to reveal; consumed once by the canvas. */
   focusTarget: FocusTarget | null;
+  /**
+   * A link is being drawn from a connector right now. Shared because the
+   * inspector fades for it (`CardInspectorHost`): the preview runs under the
+   * panel, and the destination is usually the thing the panel covers. Reader
+   * state only — nothing about a draft is ever written to the document.
+   */
+  linkingInProgress: boolean;
+  setLinkingInProgress: (linking: boolean) => void;
   /** Card whose inspector panel is open, if any. */
   inspectorNodeId: string | null;
   /** Field the panel was asked to reveal, so a link can land on it. */
@@ -394,6 +402,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   editingField: "body",
   editingSurface: "canvas",
   focusTarget: null,
+  linkingInProgress: false,
   inspectorNodeId: null,
   inspectorFieldId: null,
   expandedCardMeta: {},
@@ -592,6 +601,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedEdgeIds: [],
       selectedConnector: null,
     }),
+  setLinkingInProgress: (linkingInProgress) => set({ linkingInProgress }),
   openInspector: (inspectorNodeId, fieldId = null) =>
     set((state) => ({
       inspectorNodeId,

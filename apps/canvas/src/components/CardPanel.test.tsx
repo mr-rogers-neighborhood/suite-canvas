@@ -123,7 +123,9 @@ function bodyEditor(container: HTMLElement): HTMLElement {
 describe("CardPanel", () => {
   it("starts title editing when the read-only title is clicked", () => {
     const onStartEditing = vi.fn();
-    renderPanel({ onStartEditing });
+    // `embedded`: the drawer draws the title in its own header, so a surface that
+    // stands alone is the one that owns a title row.
+    renderPanel({ variant: "embedded", onStartEditing });
 
     fireEvent.click(screen.getByTestId("card-panel-title"));
 
@@ -141,7 +143,7 @@ describe("CardPanel", () => {
   });
 
   it("keeps the body read-only while the title owns the surface", () => {
-    const { container } = renderPanel({ editing: "title", bodyEmpty: true });
+    const { container } = renderPanel({ variant: "embedded", editing: "title", bodyEmpty: true });
 
     expect(bodyEditor(container)).toHaveAttribute("contenteditable", "false");
     expect(container.querySelector(".card-title-editor")).toHaveAttribute(
@@ -169,7 +171,7 @@ describe("CardPanel", () => {
 
   it("commits the title on Enter", () => {
     const onEditEnd = vi.fn();
-    const { container } = renderPanel({ editing: "title", onEditEnd });
+    const { container } = renderPanel({ variant: "embedded", editing: "title", onEditEnd });
 
     const title = container.querySelector(".card-title-editor");
     if (!title) throw new Error("title editor not mounted");
@@ -641,6 +643,7 @@ describe("CardPanel read-only (share viewer)", () => {
     const onStartEditing = vi.fn();
     const onRemoveFromBoard = vi.fn();
     const { container } = renderPanel({
+      variant: "embedded",
       readOnly: true,
       bodyEmpty: true,
       onStartEditing,

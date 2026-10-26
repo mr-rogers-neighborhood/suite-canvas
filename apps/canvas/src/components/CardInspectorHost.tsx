@@ -46,6 +46,7 @@ export function CardInspectorHost() {
   const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const navigateTo = useNavigateTarget();
+  const linking = useUiStore((state) => state.linkingInProgress);
 
   /**
    * Escape closes the panel before anything under it reacts, and leaves the card
@@ -59,6 +60,25 @@ export function CardInspectorHost() {
   useEscapeLayer(closeInspector, inspectorNodeId !== null && !editingInsidePanel);
   // A container that vanished (deleted in another tab, trashed) closes the drawer
   // rather than leaving a panel describing something that is not there.
+  /**
+   * The drawer is one surface in three shapes, and a drawn link crosses it: the
+   * preview runs under the panel and the destination is usually what the panel
+   * covers. The fade is paint only — no pointer-events change, so a release over
+   * the panel still lands on the panel and the press-on-canvas dismissal rule is
+   * untouched. It rides a root attribute because the three panels do not share a
+   * wrapper: they are early returns, and `display: contents` frames cost more than
+   * the rule they would enable.
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!linking) {
+      root.removeAttribute("data-inspector-linking");
+      return;
+    }
+    root.setAttribute("data-inspector-linking", "true");
+    return () => root.removeAttribute("data-inspector-linking");
+  }, [linking]);
+
   const containerMissing = containerTarget !== null && container === null;
   useEffect(() => {
     if (containerMissing) closeContainerInspector();

@@ -85,3 +85,48 @@ proof.**
   a market we are not selling into yet. The issuer's shape keeps the door open at no cost.
 - **Let `@better-auth/stripe` also mint the licence.** It would put our signing key inside a third-party
   plugin's hook path, and couple the relay's proof to a library's internals.
+
+## Amendment — 2026-10-25: one control plane, so DynamoDB goes
+
+The decision above removes the billing store's reason to exist, and that is worth stating rather than
+discovering during the migration.
+
+**What DynamoDB does today, and nothing else does.** `services/billing/store-dynamodb.ts` is the only
+DynamoDB code in the repository. It holds two things: event-claim rows (webhook idempotency) and the
+`LicenceRecord` per customer. The relay does **not** use it — its licence claims live in SQLite
+(`SUITE_LICENCE_DB`, `:memory:` by default) — and documents never touch it.
+
+**What replaces both jobs.**
+
+- *Event claims* were idempotency for our webhook. The webhook is deleted; the plugin's is the only
+  one, and it keeps its own state.
+- *Subscription state* moves into the auth database (item 1 above).
+- *A record of issued licences* remains genuinely useful — an audit of who was signed what and until
+  when — and it belongs beside the subscription it derives from, in one transaction:
+  `INSERT ... ON CONFLICT DO NOTHING` gives the same conditional-write guarantee DynamoDB was used for,
+  in the same transaction that reads the subscription.
+
+**Decision: one Postgres control plane** holds accounts, organizations, memberships, invitations,
+subscriptions, licence records and workspace rows. `store-dynamodb.ts` and the
+`SUITE_BILLING_STORE=dynamodb` switch are deleted with our webhook.
+
+Reasons, in the order they matter:
+
+1. **No dual write.** Issuing a licence is read-subscription-then-write-record; in one database that is
+   one transaction. Across two stores it is a failure mode where the customer paid and holds nothing.
+2. **Joins that ops will ask for.** "Which organizations are over their workspace ceiling", "who is on
+   a trial that expired" — one query, not an export.
+3. **One thing to run.** One backup, one restore drill, one migration story, one connection budget.
+   A second managed service for two tables is a second incident surface.
+4. **The gate stops lying.** "Real money needs the durable store" currently means "set an env var". It
+   becomes "Postgres is reachable and backed up", which is a property of the deployment rather than a
+   flag someone can forget.
+
+Accepted costs, stated plainly: a Lambda holding a `pg` pool needs module-scope reuse and a small
+`max` (or RDS Proxy) to avoid cold-start connection storms, and Postgres has to be reachable from the
+billing function at all — a network boundary DynamoDB did not have. Both are ordinary operational
+concerns with known answers; two sources of truth for entitlement is not.
+
+**What still may not move:** if the relay is ever deployed as a stateless edge with no database, its
+licence claims stay local (SQLite now, a key-value store then). That is a relay decision, and it does
+not need billing's cooperation because the token is verified offline.

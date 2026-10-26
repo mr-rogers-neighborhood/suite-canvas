@@ -88,7 +88,24 @@ share link.
     deleted, so they stay until it is. Adopting a plugin is not a reason to bring passwords back.
 11. **Sign-in methods are passkeys, magic link and Google**, with `last-login-method` remembering the
     last one used so the screen can offer *"continue with your passkey"* instead of four equal buttons.
-    `2fa` is available to operators and org owners, not to everyone.
+
+    **Second factors are offered to everyone, and nudged by method rather than by role** (amended
+    2026-10-25: the first cut restricted `2fa` to operators, which mistook a role for a risk model):
+
+    - A **passkey is already multi-factor** — possession of the device plus a biometric or PIN — so for
+      a passkey-only account a TOTP code is close to theatre. It still earns its place against *synced*
+      passkeys (iCloud Keychain, Google Password Manager), where one compromised cloud account yields
+      the key, which is a narrow but real threat.
+    - A **magic link is one factor, and the mailbox is the entire account** — there is no password to
+      reset, so the link *is* the reset path. An attacker with the mailbox takes the account unless a
+      second factor stands in front of sign-in. This is where MFA earns its keep.
+    - **Google** brings Google's own MFA, so ours adds little.
+
+    So: the plugin is available to every account; the Security panel shows passkeys, one-time codes and
+    live sessions in one place; the *nudge* is strongest for accounts whose only method is email, absent
+    for Google-only, and neutral for passkey users. Operators are the one group where it is **required**
+    rather than recommended, because they can impersonate (`admin`) and spend the organization's money
+    (`authorizeReference`). Requirement is scoped by capability, never by "we think everyone should".
 
 ## Consequences
 

@@ -104,11 +104,21 @@ credential until the browser side sends one: guessing a seat count there would b
 refusing.
 
 **New material to protect.** The control-plane database holds accounts, sessions, passkeys,
-organizations, members, invitations and invite-key **hashes** — no document bytes, ever. Invite keys
-and magic-link tokens are bearer capabilities for as long as they last: an invite key is a SHA-256
-hash at rest, single-purpose (it grants admin or member, never ownership), expiring and revocable, and
-redeeming it writes one `member` row. A leaked key is fixed by revoking the row, the same way a leaked
-link is fixed by revoking the share.
+organizations, members, invitations and invitation **hashes** (plus password hashes, for the accounts
+described below) — no document bytes, ever. Invitations and magic-link tokens are bearer capabilities
+for as long as they last: an invitation token is a SHA-256 hash at rest, single-purpose (it grants an
+organization role, never ownership), expiring and revocable, and redeeming it writes one `member` row.
+A leaked token is fixed by revoking the row, the same way a leaked link is fixed by revoking the share.
+
+**A password exists only where an invitation created it.** Self-serve password sign-up is closed, so
+there is no form anywhere that turns an email address into an account with a password; the one path
+that sets one is redeeming an invitation an owner sent (`better-enrollment`'s private invite), which is
+the invited-colleague case in [ADR-0067](decisions/0067-the-account-is-the-identity.md) §11. Passkeys,
+magic links and Google sign-in remain open to everyone. Because a password is the only credential here
+that can be guessed as well as stolen, `/sign-in/email` is the one route with a named rate-limit rule
+(the limiter's memory storage is per instance, so a multi-instance deployment must give it a shared
+store), and an account whose last sign-in used one is told a second factor is *recommended* — the same
+advice a magic-link-only account gets.
 
 ## What the relay can see
 

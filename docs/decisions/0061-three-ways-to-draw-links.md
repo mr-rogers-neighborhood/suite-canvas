@@ -220,3 +220,15 @@ ends are the same card — and it belongs with the rest of the geometry, not in 
 
 Recorded as a todo rather than implemented here, because it changes how every self-loop looks and
 deserves its own tests next to `pairOffset`'s.
+
+### Shipped: the loop goes around
+
+`selfLoopRoute` in `edgeRoute.ts` now handles the shape the paragraph above named as missing. It bows
+the loop out on the side its anchors already sit — dots on the right edge loop further right, dots on the
+left edge loop further left — so the line never crosses the card to reach its own bow. The axis the
+anchors span is the axis it leaves by, and the bow grows on the other one. `drawRoute` takes the card's
+rect from the document's placement rather than React Flow's measurement, so the loop is correct before
+the card has painted and does not jump on the first frame.
+
+Two identical anchors answer `null`: clicking the armed connector disarms instead of drawing, so that
+shape only exists in a hand-edited document, and a degenerate loop would be worse than none.

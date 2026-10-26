@@ -86,8 +86,38 @@ share link.
     sign-ups") is the path that may not need one, because the person signs up with a passkey or magic
     link first and redemption only grants membership. That must be proven before `invite_keys` are
     deleted, so they stay until it is. Adopting a plugin is not a reason to bring passwords back.
+
+    **Resolved 2026-10-25: §11 is amended instead, and the keys are deleted.** The author took the
+    other branch — an invited account may set a password (§11 amendment) — so the constraint above is
+    no longer a blocker and `invite_keys`, `redeem_invite_key()` and the bespoke route are gone.
+
+    Four things the adoption found that this item could not know, recorded because they change what
+    "keep `beforeAddMember` as the only seat gate" means in practice:
+
+    1. **The open-mode hypothesis was unnecessary, and would have been wrong.** In the plugin's
+       `invite-only` mode, `invite/redeem` already routes a *shareable* invite presented by a
+       signed-in person to `activate` — the mode's own `activate` endpoint is not the only door to
+       it. Choosing `mode: "open"` would have removed the password path entirely (every redemption
+       becomes a membership grant to an existing account), which is the opposite of what §11 now
+       allows. So the configuration is `mode: "invite-only"` with `allowOpenSignup: true`: the
+       per-email guarantee the plugin can keep, without the app-wide closure that §7 forbids.
+    2. **`beforeAddMember` cannot see a redemption.** The plugin inserts its `member` row through
+       the adapter, so no organization hook fires for it. `beforeAddMember` remains the only seat
+       gate for member rows the *organization* plugin writes; the same licence decision reaches the
+       plugin as `organization.resolveSeatLimit` (`seatCeiling` in `seats.ts`, which
+       `checkSeatAllowance` also reads). One policy, two call sites — not a second policy.
+    3. **A private invite pre-creates the account.** In `invite-only` mode the plugin writes a
+       `user` row with `emailVerified: false` when the invitation is minted, and refuses to let that
+       shell sign in by magic link. This is what makes "the invitation creates the account" true; it
+       also means an invitation exists as a user row before anybody accepts it.
+    4. **Redemption is rate-limited by the plugin** (5 attempts per minute per path), and by Better
+       Auth's own limiter for `/sign-in/*` — both only when Better Auth's limiter is enabled, which
+       is production by default. See the §11 amendment for why the password route is pinned
+       explicitly.
 11. **Sign-in methods are passkeys, magic link and Google**, with `last-login-method` remembering the
     last one used so the screen can offer *"continue with your passkey"* instead of four equal buttons.
+    *Amended 2026-10-25: an account created by an invitation may also sign in with a password — see
+    the amendment at the end of this item.*
 
     **Second factors are offered to everyone, and nudged by method rather than by role** (amended
     2026-10-25: the first cut restricted `2fa` to operators, which mistook a role for a risk model):
@@ -107,6 +137,45 @@ share link.
     rather than recommended, because they can impersonate (`admin`) and spend the organization's money
     (`authorizeReference`). Requirement is scoped by capability, never by "we think everyone should".
 
+    **Amendment (2026-10-25): an invited account may set a password.** Adopting `better-enrollment`
+    (§10) made "no passwords" cost more than it bought: the plugin's private invites *are* the
+    email-bound invitation path, and their redemption sets a password. Rather than keep a parallel
+    invite implementation to avoid one credential, the author reversed this item for one case.
+
+    *The reasoning, because "just add a password" is how a security model rots.* The two cases are not
+    the same shape. A **self-serve** account is a person signing themselves up for a product they have
+    not been let into yet; a passkey is the right default there, because there is no prior relationship
+    to lend trust and nothing to hand them. An **invited** account is a colleague joining somebody
+    else's tenant: a person already exists outside the product, an owner inside it decided to add them,
+    and the invitation link is how the two facts meet. Such a person may have no device that can hold a
+    passkey, is often on a borrowed machine for the first hour, and was *told a password is how you get
+    in* — asking them to enrol a passkey before they have ever seen the product is friction in the one
+    flow where the product has already decided to trust them. So: self-serve sign-up stays closed
+    (`emailAndPassword.disableSignUp`), and a password is reachable **only** by redeeming an
+    invitation. The passwordless doors stay open to everyone.
+
+    *Consequences, stated as obligations rather than reassurances:*
+
+    - **Password sign-in is the one route here that can be brute-forced.** A magic link is useless
+      after one use and a passkey cannot be guessed; a password can be sprayed. Rate limiting must
+      therefore apply **to that route specifically**, not merely "somewhere in the stack". Better
+      Auth already throttles `/sign-in/*` (3 attempts per 10 s) and `better-enrollment` throttles its
+      redemption endpoints (5 per minute), both effective when Better Auth's limiter is on — which is
+      the production default. The `/sign-in/email` rule is therefore pinned explicitly in
+      `authOptions`, so a framework default changing cannot silently widen it. The limiter's storage
+      is in-memory per instance; a deployment running more than one instance must point it at a
+      shared store, or the throttle is per instance rather than per attacker.
+    - **`SignInMethod` gains `"password"`,** and `mfaAdvice` treats it like a magic link —
+      *recommended*, one factor — because the realistic attacks are the same shape: a secret that is
+      one thing, repeated elsewhere, phishable, and now guessable too. It is not "required": the
+      requirement stays scoped to capability (impersonation, spending), as above.
+    - **A password can be reset, and a magic link cannot be un-sent.** Password reset becomes a real
+      path for these accounts, so the reset flow inherits the same obligation: rate limited, and never
+      a way to bypass admission.
+    - **Nothing about the identity model changes.** The password is one more way to prove the same
+      account; it is not a second account, and it does not touch the owner key, the organization or
+      the capability matrix.
+
 ## Consequences
 
 - **The confusing artifact set disappears.** One credential a person never sees, one recovery path that
@@ -122,6 +191,10 @@ share link.
   licensed cohort, and it is one field plus one hook rather than a queue product.
 - **Risk: `better-enrollment` is community code** with a role-string footgun. Mitigated by the pin, the
   wrapper and a single role reader, not by optimism.
+- **Risk: passwords are now a credential this product holds**, for exactly the accounts an invitation
+  created (see the §11 amendment). The cost is a brute-forceable route that must stay rate-limited and
+  a reset path that must never bypass admission; the alternative was a second invitation
+  implementation whose maintenance cost fell on us.
 
 ## Rejected alternatives
 

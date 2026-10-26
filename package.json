@@ -58,7 +58,10 @@
     "clean": "rm -rf apps/*/dist apps/*/storybook-static packages/*/dist .turbo apps/*/.turbo packages/*/.turbo",
     "prepare": "husky",
     "scratchpad": "node scripts/scratchpad.mjs",
-    "docs:index": "node scripts/generate-doc-indexes.mjs"
+    "docs:index": "node scripts/generate-doc-indexes.mjs",
+    "dev:db": "docker compose -f compose.yaml -f compose.dev.yaml up -d --wait postgres",
+    "dev:db:stop": "docker compose -f compose.yaml -f compose.dev.yaml stop postgres",
+    "dev:env": "node scripts/dev-env.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

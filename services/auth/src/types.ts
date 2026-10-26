@@ -156,6 +156,8 @@ export interface AuthEnvironment {
    * the shape a test run should have (ADR-0067 §9).
    */
   SUITE_TURNSTILE_SECRET: string | undefined;
+  /** `SUITE_AUTH_REQUIRE_VERIFICATION`; unset means required. */
+  SUITE_AUTH_REQUIRE_VERIFICATION?: string | undefined;
   /**
    * `1` or `true` makes every new account wait for admission
    * (ADR-0067 §7).

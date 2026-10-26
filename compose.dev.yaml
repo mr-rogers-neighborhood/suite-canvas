@@ -1,0 +1,17 @@
+# Development only: publishes the control plane's database so the three dev
+# processes on the host can reach it.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
+#   pnpm dev
+#
+# The base file keeps Postgres on the compose network, which is right for a
+# deployment and useless for `tsx watch` running on the host. This override adds
+# the published port and nothing else, so a production `docker compose up` is
+# unaffected and never exposes a database port.
+#
+# 5433, not 5432: a Postgres already installed on the machine should not collide
+# with the one this stack runs.
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"

@@ -15,11 +15,17 @@ tested, and no process mounts it. The Beta exit gates are not all closed.
 
 ```sh
 pnpm install
+pnpm dev:env   # accounts on, session secret generated
+pnpm dev:db    # Postgres for accounts and billing
 pnpm dev
 ```
 
-Open <http://localhost:5173>. The canvas runs on 5173 and the Loro relay on 1234. A second window at
-the same URL shows live edits, titles and presence.
+Open <http://localhost:5173>. The canvas runs on 5173, the Loro relay on 1234, and the control plane
+that owns accounts and billing on 1236. A second window at the same URL shows live edits, titles and
+presence.
+
+`pnpm dev:env` writes a `.env` and never overwrites one. `pnpm dev` alone still works: with no
+control plane the app is local-only, and the account surface says so instead of failing.
 
 Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. [Run Suite
 locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.

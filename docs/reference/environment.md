@@ -147,6 +147,7 @@ every account path answers `503 auth-not-configured`.
 | `SUITE_GOOGLE_CLIENT_SECRET` | none | one half of the pair without the other refuses to boot |
 | `SUITE_TURNSTILE_SECRET` | none | set it to require invisible Turnstile in front of sign-up; unset means no challenge |
 | `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create` |
+| `SUITE_AUTH_REQUIRE_VERIFICATION` | on | `0` or `false` issues a session before the address is confirmed. For a local run with no mailbox; a deployment that sets it has an open sign-up |
 
 Sign-up is open, and an account cannot sign in until its address is verified. There is no mail-provider
 variable: the service takes a `MailTransport`, and the control plane passes the console transport, which

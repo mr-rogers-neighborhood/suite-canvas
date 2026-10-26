@@ -9,6 +9,23 @@ import wasm from "vite-plugin-wasm";
 export default defineConfig({
   plugins: [react(), tailwindcss(), wasm()],
   server: {
+    // The dev server stands in for the reverse proxy a deployment has in front of
+    // it, so the page, the account API, the relay's HTTP API and the socket all
+    // answer on one origin. Without this a browser on :5173 cannot read the
+    // session cookie the control plane sets, and the account surface reports
+    // itself unavailable in every local run.
+    //
+    // Order is the contract: Vite proxies by the first matching prefix, so the
+    // control plane's mounts come before the relay's general `/api`.
+    proxy: {
+      "/api/auth": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/api/billing": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/api/workspaces": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/api/invites": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/stripe": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/api": { target: "http://127.0.0.1:1235", changeOrigin: false },
+      "/ws": { target: "ws://127.0.0.1:1234", ws: true, changeOrigin: false },
+    },
     watch: {
       // Test output lives under the canvas root (storybook-static) or one level
       // up (test-results, relay SQLite). A running dev server that reloads on

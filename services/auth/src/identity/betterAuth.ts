@@ -203,6 +203,17 @@ async function seatRefusal(
 }
 
 /**
+ * Whether an address must be confirmed before a session is issued.
+ *
+ * Required unless a deployment opts out explicitly, and only `0` and `false` are
+ * opt-outs, so a typo leaves the safe default in place.
+ */
+function verificationRequired(env: AuthEnvironment): boolean {
+  const raw = env.SUITE_AUTH_REQUIRE_VERIFICATION?.trim().toLowerCase();
+  return !(raw === "0" || raw === "false");
+}
+
+/**
  * Builds the Better Auth instance.
  *
  * Throws `auth-not-configured` rather than constructing a half-working instance:
@@ -253,11 +264,16 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
      * farm: the row exists, but no session is issued until the mailbox answers. It
      * does not replace the seat check — a verified account still cannot join an
      * organization with no seat for it.
+     *
+     * `SUITE_AUTH_REQUIRE_VERIFICATION=0` turns it off, for one reason: a local run
+     * has no mailbox, and the console transport redacts the token it prints, so a
+     * developer cannot complete a sign-up to reach anything behind it. A deployment
+     * that sets it is running an open door, and the reference says so.
      */
     emailAndPassword: {
       enabled: true,
       disableSignUp: false,
-      requireEmailVerification: true,
+      requireEmailVerification: verificationRequired(env),
     },
     emailVerification: {
       sendOnSignUp: true,

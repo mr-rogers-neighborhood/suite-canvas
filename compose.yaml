@@ -191,18 +191,11 @@ services:
       SUITE_AUTH_MAX_ORGS_PER_USER: ${SUITE_AUTH_MAX_ORGS_PER_USER:-}
       SUITE_TURNSTILE_SECRET: ${SUITE_TURNSTILE_SECRET:-}
       SUITE_ADMISSION_REQUIRED: ${SUITE_ADMISSION_REQUIRED:-}
-      # Billing, as `services/billing/src/handler/env.ts` reads it.
+      # Billing, as `services/billing/src/stripe/plugin.ts` reads it.
       SUITE_BILLING_ENABLED: ${SUITE_BILLING_ENABLED:-0}
-      SUITE_BILLING_STORE: ${SUITE_BILLING_STORE:-}
-      SUITE_BILLING_DATABASE_URL: ${SUITE_BILLING_DATABASE_URL:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_TIERS: ${STRIPE_PRICE_TIERS:-}
-      SUITE_LICENCE_PRIVATE_KEY: ${SUITE_LICENCE_PRIVATE_KEY:-}
-      SUITE_APP_ORIGIN: ${SUITE_APP_ORIGIN:-}
-      SUITE_SELF_HOST_URL: ${SUITE_SELF_HOST_URL:-}
-      SES_FROM_ADDRESS: ${SES_FROM_ADDRESS:-}
-      SUITE_SES_REGION: ${SUITE_SES_REGION:-}
       # Account deletion reaches the relay's own delete route with this pair.
       # Empty leaves documents, shares and attachments in place and reports them
       # as not-configured, which is the self-host answer.

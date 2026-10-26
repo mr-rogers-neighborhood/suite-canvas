@@ -217,8 +217,9 @@ export function CardInspector({
             ) : editContent ? (
               <button
                 type="button"
-                aria-label="Edit card title"
-                title={title}
+                // The visible title *is* the name: an aria-label would have to
+                // contain it anyway, and a name that repeats the text is noise.
+                title="Edit card title"
                 data-testid="inspector-title-edit"
                 className="block w-full cursor-text truncate text-left text-[13px] font-semibold text-[var(--ink)]"
                 onClick={(event) => {

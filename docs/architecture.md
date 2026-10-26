@@ -455,7 +455,6 @@ neither is a special board kind.
 | `EdgeStyle` | a value of `SurfaceStyle.sides` | `paint`, `width`, `colour`, `flow`, `speed` |
 | Link route | `edges.<id>.bends` + `edges.<id>.layer` | a polyline of flow points relative to the source anchor; `below` or `above` |
 | Tour step | a block in a tutorial card's body | `targets` (at least one, first is primary), `viewport`, `caption`, `advance` |
-| Card strips | `cards.<id>.strips` (planned) | at most one per side — `top`, `right`, `bottom`, `left` — ordered within the side ([ADR-0060](./decisions/0060-shape-strip-and-rollup.md)) |
 | Rolled up | `collapsed` on a card or a section (planned) | document state, so a collaborator sees the same board; a collapsed section keeps its cards' placements and membership |
 | Custom outline | a route whose two ends are one connector (planned) | bends are the outline; rendered as paint on an underlay, never as a clip on content |
 

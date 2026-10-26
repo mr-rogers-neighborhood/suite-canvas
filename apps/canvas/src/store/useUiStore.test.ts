@@ -368,6 +368,30 @@ describe("useUiStore purpose", () => {
     expect(useUiStore.getState().tour?.presenting).toBe(false);
   });
 
+  it("leaves present when the tour it was presenting closes", () => {
+    useUiStore.setState({
+      tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
+    });
+    useUiStore.getState().setPurpose("present");
+
+    useUiStore.getState().closeTour();
+
+    // `present` without a tour is refused on the way in, so it cannot be left
+    // behind on the way out: the axis and the thing it describes end together.
+    expect(useUiStore.getState().purpose).toBe("explore");
+  });
+
+  it("keeps the other purposes when a tour closes under them", () => {
+    useUiStore.setState({
+      tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
+    });
+    useUiStore.getState().setPurpose("run");
+
+    useUiStore.getState().closeTour();
+
+    expect(useUiStore.getState().purpose).toBe("run");
+  });
+
   it("ends a live run when the purpose leaves run", () => {
     usePlacementRunStore.getState().start(["a", "b"]);
     useUiStore.getState().setPurpose("run");

@@ -52,9 +52,11 @@
 .tour-overlay__caption {
   position: absolute;
   z-index: 3;
-  left: 16px;
+  /* Right of the widget stack, which owns the bottom-left corner: the purpose
+     control there is how a presentation is left, so it stays reachable. */
+  left: var(--canvas-gutter);
   bottom: 16px;
-  width: min(340px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 72px));
   display: flex;
   flex-direction: column;
   gap: 6px;

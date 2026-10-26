@@ -14,6 +14,10 @@
   /* Off-lens cards recede but keep their text legible enough to scan. */
   --lens-dim-opacity: 0.34;
   --canvas-bg: #f5f5f7;
+  /* The column the canvas widget stack occupies (purpose, gesture, zoom). Any
+     surface anchored to the bottom-left corner starts to its right; keep in step
+     with `CAPTION_GUTTER` in TourOverlayHost.tsx. */
+  --canvas-gutter: 56px;
   --rf-dot: #d6d6db;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px -18px rgba(0, 0, 0, 0.25);
   --sheen: radial-gradient(120% 90% at 50% -20%, rgba(255, 255, 255, 0.9), transparent 55%);

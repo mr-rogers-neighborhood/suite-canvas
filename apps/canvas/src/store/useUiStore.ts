@@ -618,7 +618,15 @@ export const useUiStore = create<UiState>((set, get) => ({
     ),
   setTourPanelOpen: (panelOpen) =>
     set((state) => (state.tour ? { tour: { ...state.tour, panelOpen } } : state)),
-  closeTour: () => set({ tour: null }),
+  // Closing the tour drops the purpose that required it: `present` without a
+  // tour is the one state `setPurpose` refuses to enter, so leaving it behind
+  // would be a state the user cannot reach intentionally and cannot leave by
+  // choosing it again.
+  closeTour: () =>
+    set((state) => ({
+      tour: null,
+      purpose: state.purpose === "present" ? "explore" : state.purpose,
+    })),
   requestPortalOpen: (cardId, boardId) =>
     set({ portalOpenRequest: { cardId, boardId, at: performance.now() } }),
   clearPortalOpenRequest: () => set({ portalOpenRequest: null }),

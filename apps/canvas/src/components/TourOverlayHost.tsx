@@ -41,6 +41,13 @@ interface Box {
 
 const SAME_BOX = 0.5;
 
+/**
+ * The column the canvas widget stack occupies on the left (purpose control at
+ * `left: 15px`, gesture control and zoom pill above it). Anything anchored to the
+ * bottom-left corner starts to its right.
+ */
+const CAPTION_GUTTER = 56;
+
 function sameBox(left: Box | null, right: Box | null): boolean {
   if (left === null || right === null) return left === right;
   return (
@@ -227,7 +234,9 @@ function TourOverlay({ tutorialId }: { tutorialId: string }) {
   const captionStyle =
     box && captionTop !== null
       ? {
-          left: Math.max(12, Math.min(box.left, window.innerWidth - 360)),
+          // Never left of the widget gutter: the purpose control sits there and
+          // it is the way out of a presentation, so the caption must not cover it.
+          left: Math.max(CAPTION_GUTTER, Math.min(box.left, window.innerWidth - 360)),
           top: Math.min(captionTop, window.innerHeight - 180),
         }
       : undefined;

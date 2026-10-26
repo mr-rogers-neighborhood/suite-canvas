@@ -28,7 +28,9 @@ export const GESTURE_GLYPHS: Record<CanvasMode, string> = {
  */
 export const PURPOSE_GLYPHS: Record<CanvasPurpose, string | null> = {
   explore: null,
-  run: "\u25b8",
+  // A queue, not a play triangle: `run` places a list, it does not play anything
+  // back, and beside `record` a triangle reads as media transport (ADR-0064 §11).
+  run: "\u2261",
   record: "\u25c9",
   present: "\u25a3",
 };

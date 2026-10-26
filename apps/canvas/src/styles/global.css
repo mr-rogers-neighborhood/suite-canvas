@@ -2581,8 +2581,9 @@ body {
   }
 }
 
-/* The link tool is the pill's bottom segment: same width, same border, and the
-   only rounded corners are the pill's own bottom two. */
+/* The link tool is the pill's middle segment: same width, same border, square at
+   both ends. The purpose control below it owns the pill's bottom corners, so this
+   one only continues the column (ADR-0064 §11). */
 .link-mode-control {
   position: absolute;
   left: 15px;
@@ -2598,9 +2599,8 @@ body {
   padding: 0;
   border: 1px solid var(--hairline);
   border-top: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0;
   background: var(--surface);
-  box-shadow: var(--card-shadow);
   color: var(--ink-muted);
   font-size: 15px;
   line-height: 1;

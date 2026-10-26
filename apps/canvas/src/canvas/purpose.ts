@@ -19,10 +19,24 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
   present: "present",
 };
 
-/** The cycle the purpose control walks: explore → run → record → present → explore. */
+/**
+ * The purposes a reader *chooses*, in the order the control walks them.
+ *
+ * `present` is deliberately missing. A presentation is scoped to a tour: the tour
+ * puts the reader in it, and only a tour can, because a mode button that offered
+ * "present" would be offering to present nothing — and would be a second, worse
+ * way to pick a tour. The axis still *carries* `present`, because the widget, the
+ * cursor and presence all have to say it; it just cannot be walked into.
+ */
+export const choosablePurposes = ["explore", "run", "record"] as const;
+
+/** The cycle the purpose control walks: explore → run → record → explore. */
 export function nextPurpose(purpose: CanvasPurpose): CanvasPurpose {
-  const index = canvasPurposes.indexOf(purpose);
-  return canvasPurposes[(index + 1) % canvasPurposes.length] ?? "explore";
+  // Leaving a presentation is the only move available from it, and it goes to the
+  // resting state rather than continuing a cycle the tour never started.
+  if (purpose === "present") return "explore";
+  const index = choosablePurposes.indexOf(purpose);
+  return choosablePurposes[(index + 1) % choosablePurposes.length] ?? "explore";
 }
 
 /**

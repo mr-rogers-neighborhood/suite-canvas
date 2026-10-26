@@ -1,9 +1,14 @@
 import {
+  type Card,
+  type CardType,
+  isTutorialCard,
   isTutorialType,
   markTourRead,
   type Target,
   type TargetExistence,
   type TourStepViewport,
+  TUTORIAL_TYPE_ID,
+  TUTORIAL_TYPE_NAME,
   tourStepsInContent,
   type WorkspaceDocument,
 } from "@suite/graph";
@@ -29,6 +34,57 @@ export function isTutorialPrimaryType(
   primaryTypeId: string,
 ): boolean {
   return isTutorialType(types.find((type) => type.id === primaryTypeId));
+}
+
+/**
+ * The tutorial type is minted on demand, the way the sketch type is
+ * (`ensureWhiteboardType`): a workspace only grows it when someone records a
+ * tour, and an existing tutorial type — renamed or extended by its author — is
+ * never rewritten (ADR-0054 §1, ADR-0064 §9).
+ */
+export function ensureTutorialType(workspace: WorkspaceDocument): CardType {
+  return (
+    workspace.getType(TUTORIAL_TYPE_ID) ??
+    workspace.createType({
+      id: TUTORIAL_TYPE_ID,
+      name: TUTORIAL_TYPE_NAME,
+      glyph: "\u25a4",
+    })
+  );
+}
+
+/**
+ * This board's own tutorial card, if it already has one.
+ *
+ * Entering `record` creates the tour it is about to fill, and entering it again
+ * must focus that tour rather than mint a second card per entry (ADR-0064 §9).
+ * `prefer` is the tour the author already has open: a board may hold more than
+ * one tutorial, and the one in front of them wins over document order. A card
+ * counts by type *name*, because the type is an ordinary workspace type the
+ * author may have minted themselves.
+ */
+export function tutorialCardOnBoard(
+  workspace: WorkspaceDocument,
+  boardId: string | null,
+  prefer: string | null = null,
+): string | null {
+  if (!boardId) return null;
+  const types = workspace.listTypes();
+  const placed = new Set(workspace.listBoardPlacements(boardId).map((entry) => entry.cardId));
+  const isHere = (candidate: Card) =>
+    candidate.deletedAt == null && placed.has(candidate.id) && isTutorialCard(candidate, types);
+  const cards = workspace.listCards();
+  const open = prefer === null ? undefined : cards.find((card) => card.id === prefer);
+  if (open && isHere(open)) return open.id;
+  // Several tours on one board is legal, so the fallback has to be a *rule* and not
+  // whatever order the CRDT happens to materialise: the newest is the one the
+  // reader most likely just made, and re-entering record keeps finding it.
+  let newest: Card | null = null;
+  for (const card of cards) {
+    if (!isHere(card)) continue;
+    if (newest === null || card.createdAt > newest.createdAt) newest = card;
+  }
+  return newest?.id ?? null;
 }
 
 /** What still exists, in the one shape every dead-target check reads. */

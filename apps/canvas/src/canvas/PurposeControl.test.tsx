@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../store/useUiStore";
 import { PurposeControl } from "./PurposeControl";
@@ -17,9 +17,7 @@ beforeEach(() => {
 });
 
 describe("PurposeControl cycle", () => {
-  it("walks explore → run → record → present → explore on repeated clicks", () => {
-    // A tour is what makes `present` reachable; the store refuses it otherwise.
-    useUiStore.setState({ tour });
+  it("walks explore → run → record → explore on repeated clicks", () => {
     render(<PurposeControl />);
 
     expect(toggle()).toHaveAttribute("data-purpose", "explore");
@@ -29,54 +27,40 @@ describe("PurposeControl cycle", () => {
     fireEvent.click(toggle());
     expect(toggle()).toHaveAttribute("data-purpose", "record");
     fireEvent.click(toggle());
-    expect(toggle()).toHaveAttribute("data-purpose", "present");
-    fireEvent.click(toggle());
 
     expect(toggle()).toHaveAttribute("data-purpose", "explore");
     expect(toggle()).toHaveAttribute("aria-pressed", "false");
     expect(useUiStore.getState().purpose).toBe("explore");
   });
-});
 
-describe("PurposeControl refuses a tour that does not exist", () => {
-  it("looks disabled and says why when present is next, and skips it on click", () => {
-    useUiStore.setState({ purpose: "record", tour: null });
+  it("never walks into present, even with a tour open and ready", () => {
+    useUiStore.setState({ tour });
     render(<PurposeControl />);
 
-    expect(toggle()).toHaveAttribute("data-purpose", "record");
-    expect(toggle()).toHaveAttribute("aria-disabled", "true");
-    expect(toggle()).toHaveAttribute("title", expect.stringContaining("Nothing to present yet"));
+    // Three clicks is a full lap of the cycle. A presentation is scoped to a tour
+    // and only a tour can start one (§11), so the widget must not offer it however
+    // available it looks.
+    for (let click = 0; click < 3; click += 1) {
+      expect(toggle()).not.toHaveAttribute("data-purpose", "present");
+      fireEvent.click(toggle());
+    }
 
-    fireEvent.click(toggle());
-
-    // The unavailable value is passed over rather than stalled on: leaving the
-    // purpose that claimed the clicks is the exit ADR-0064 §10 requires.
-    expect(useUiStore.getState().purpose).toBe("explore");
-    expect(toggle()).not.toHaveAttribute("aria-disabled");
+    expect(toggle()).toHaveAttribute("data-purpose", "explore");
   });
 
-  it("enters present once a tour exists", () => {
-    useUiStore.setState({ purpose: "record", tour });
+  it("leaves a presentation when a tour puts it there, without closing the tour", () => {
+    useUiStore.setState({ tour: { ...tour, presenting: true }, purpose: "present" });
     render(<PurposeControl />);
-
-    expect(toggle()).not.toHaveAttribute("aria-disabled");
-    fireEvent.click(toggle());
 
     expect(toggle()).toHaveAttribute("data-purpose", "present");
-    expect(useUiStore.getState().purpose).toBe("present");
-  });
-
-  it("says the tour has ended when presenting outlives its tour", () => {
-    useUiStore.setState({ purpose: "present", tour: null });
-    render(<PurposeControl />);
-
-    // The reader is on a value with nothing behind it, so leaving is the one move
-    // left — and the control must not swallow it.
-    expect(toggle()).not.toHaveAttribute("aria-disabled");
-    expect(toggle()).toHaveAttribute("title", expect.stringContaining("The tour has ended"));
+    expect(toggle()).toHaveAttribute("title", expect.stringContaining("Stop presenting"));
 
     fireEvent.click(toggle());
+
+    // Back to editing, but the tour is still open: Escape is the way to close it.
     expect(useUiStore.getState().purpose).toBe("explore");
+    expect(useUiStore.getState().tour).not.toBeNull();
+    expect(useUiStore.getState().tour?.presenting).toBe(false);
   });
 });
 
@@ -94,25 +78,24 @@ describe("PurposeControl labels", () => {
     );
   });
 
-  it("keeps the glyph and the label for every state", () => {
-    const labels = [
-      "Explore mode: edit the canvas",
-      "Run mode: place a sequence of cards",
-      "Record mode: capture steps into a tour",
-      "Present mode: show the tour",
-    ];
-    useUiStore.setState({ tour });
+  it("keeps a glyph for every state, and none of them is a play triangle", () => {
+    useUiStore.setState({ tour: { ...tour, presenting: true }, purpose: "record" });
     render(<PurposeControl />);
 
     const glyphs = new Set<string>();
-    for (const label of labels) {
-      expect(toggle().getAttribute("aria-label")).toContain(label);
-      // Hue is never the only signal: every state carries a glyph of its own.
+    for (let state = 0; state < 3; state += 1) {
       glyphs.add(toggle().textContent ?? "");
       fireEvent.click(toggle());
     }
 
-    expect(glyphs.size).toBe(4);
+    // Ray is a queue of cards, not media playback: a triangle beside a record dot
+    // reads as transport controls, and §11 is why it is gone.
+    expect([...glyphs]).not.toContain("\u25b6");
+    expect(glyphs.size).toBe(3);
+
+    // Presenting has its own glyph, shown when a tour is up.
+    act(() => useUiStore.setState({ purpose: "present" }));
+    expect(toggle().textContent).toBe("\u25a3");
   });
 });
 

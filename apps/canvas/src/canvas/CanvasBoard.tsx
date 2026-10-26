@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type CardMeta, cardMeta } from "../cards/cardMeta";
 import { resolveCardType, typesById } from "../cards/cardTypes";
 import { isPortalCard, portalTargetId } from "../cards/portal";
+import { targetAtElement } from "../cards/tour";
 import { ensureWhiteboardType, isWhiteboardCard } from "../cards/whiteboard";
 import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
@@ -90,6 +91,7 @@ import { PresenceLayer } from "./PresenceLayer";
 import { PurposeControl } from "./PurposeControl";
 import { usePlacementRunStore } from "./placementRun";
 import { boardBounds } from "./portalMiniature";
+import { isRecording, useRecordRunStore } from "./recordRun";
 import { SectionLayer } from "./SectionLayer";
 import { type SectionLink, SectionLinkLayer } from "./SectionLinkLayer";
 import { cardSectionOffsets, sectionOffsets, sectionsExpandPlan } from "./sectionLayout";
@@ -97,6 +99,7 @@ import { linkStroke } from "./surfacePaint";
 import { useCanvasLens, useLensReferenceRepair } from "./useCanvasLens";
 import { useConnectorRevealState, useLinkDraftStore } from "./useNodeConnectorWiring";
 import { usePlacementEngine } from "./usePlacementEngine";
+import { useRecordEngine } from "./useRecordEngine";
 import { WhiteboardNode } from "./WhiteboardNode";
 import { ZOOM_MAX, ZOOM_MIN } from "./zoomRange";
 
@@ -106,6 +109,14 @@ const SMOOTHING = 0.22;
 const CONNECTOR_DROP_RADIUS = 14;
 const POINTER_THROTTLE_MS = 60;
 const DRAG_THROTTLE_MS = 40;
+/**
+ * What a click still means while recording: a control inside a card keeps its
+ * own behaviour, so the step intercept stays as narrow as the purpose that
+ * armed it. Only the card's own chrome is listed — a press on its body, or on
+ * the title overlay that sits over it, *is* the step.
+ */
+const RECORD_CLICK_THROUGH =
+  "button[data-testid], a, input, select, textarea, [role='button'], [role='menuitem'], [role='checkbox']";
 /** How long a focus request waits for React Flow to register the card's node. */
 const FOCUS_POLL_TIMEOUT_MS = 1500;
 /** Card box assumed until React Flow has measured it. */
@@ -374,6 +385,8 @@ export function CanvasBoard() {
   const startEditing = useUiStore((state) => state.startEditing);
   const setSelectedConnector = useUiStore((state) => state.setSelectedConnector);
   const mode = useUiStore((state) => state.mode);
+  /** The record lane's one engine, beside the placement run's (ADR-0064 §9). */
+  const recordEngine = useRecordEngine();
   /**
    * When the last thread step happened. React Flow reports a connector release as
    * a *node click* too, and clearing the thread there would disarm it in the same
@@ -3046,6 +3059,31 @@ export function CanvasBoard() {
       // all — which silently made every box start from "no section".
       onPointerDownCapture={(event) => {
         marqueePress.current = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      }}
+      // Recording claims the click (ADR-0064 §9): while it is live, a press on a
+      // card is a step rather than a selection or an inspector. Capture, because
+      // the card and React Flow both act on the bubble phase, and the purpose —
+      // not the gesture — has to decide the click first.
+      onClickCapture={(event) => {
+        if (!isRecording()) return;
+        const element = event.target instanceof Element ? event.target : null;
+        const target = targetAtElement(element);
+        if (!target) return;
+        // The tour's own card is where the steps land, not a stop on the tour:
+        // pressing it opens the Steps panel instead of recording a step that
+        // points at itself.
+        if (target.kind === "card" && target.id === useRecordRunStore.getState().tutorialId) {
+          return;
+        }
+        // A control *inside* the card keeps its own meaning; the card's body is
+        // the step. The card is compared, not just the match, so a wrapper that
+        // happens to carry a role cannot swallow every press.
+        const card = element?.closest("[data-node-id]") ?? null;
+        const control = element?.closest(RECORD_CLICK_THROUGH) ?? null;
+        if (card && control && control !== card && card.contains(control)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        recordEngine.record(target);
       }}
       onPointerMove={(event) => {
         const now = performance.now();

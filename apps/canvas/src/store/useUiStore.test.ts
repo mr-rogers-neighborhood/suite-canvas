@@ -354,17 +354,41 @@ describe("useUiStore purpose", () => {
     expect(useUiStore.getState().purpose).toBe("explore");
   });
 
-  it("mirrors the tour's own presenting flag rather than duplicating it", () => {
+  it("is put into present by the tour, which is the only thing that may", () => {
     useUiStore.setState({
       tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
     });
 
-    useUiStore.getState().setPurpose("present");
+    useUiStore.getState().presentTour("t1");
+
     expect(useUiStore.getState().purpose).toBe("present");
     expect(useUiStore.getState().tour?.presenting).toBe(true);
+  });
 
-    // Leaving the purpose closes the overlay: one source of truth, two readings.
+  it("refuses present from the axis, because a mode button presents nothing", () => {
+    useUiStore.setState({
+      tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
+      purpose: "explore",
+    });
+
+    // Even with a tour open and ready: offering "present" here would be offering
+    // to present nothing and then asking which tour (§11).
+    useUiStore.getState().setPurpose("present");
+
+    expect(useUiStore.getState().purpose).toBe("explore");
+    expect(useUiStore.getState().tour?.presenting).toBe(false);
+  });
+
+  it("stops the takeover without closing the tour when the axis leaves present", () => {
+    useUiStore.setState({
+      tour: { tutorialId: "t1", stepIndex: 0, presenting: true, panelOpen: true },
+      purpose: "present",
+    });
+
     useUiStore.getState().setPurpose("explore");
+
+    // Back to editing with the steps still open: Escape is the way to close it.
+    expect(useUiStore.getState().tour).not.toBeNull();
     expect(useUiStore.getState().tour?.presenting).toBe(false);
   });
 
@@ -372,12 +396,12 @@ describe("useUiStore purpose", () => {
     useUiStore.setState({
       tour: { tutorialId: "t1", stepIndex: 0, presenting: false, panelOpen: true },
     });
-    useUiStore.getState().setPurpose("present");
+    useUiStore.getState().presentTour("t1");
 
     useUiStore.getState().closeTour();
 
-    // `present` without a tour is refused on the way in, so it cannot be left
-    // behind on the way out: the axis and the thing it describes end together.
+    // The axis cannot outlive the thing it describes: a presentation with no tour
+    // is a state a reader could neither enter deliberately nor leave by choosing it.
     expect(useUiStore.getState().purpose).toBe("explore");
   });
 

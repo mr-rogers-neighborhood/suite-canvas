@@ -1,7 +1,8 @@
-import type { Card, CardType, Placement } from "@suite/graph";
+import { type Card, type CardType, isTutorialType, type Placement } from "@suite/graph";
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
+import { hasTourSteps } from "../cards/tour";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { NodeCard } from "../components/NodeCard";
@@ -230,6 +231,16 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           : {})}
         linkCount={linkCount}
         onOpenInfo={() => openInspector(id)}
+        // A tour is the way into a presentation: double-click it to play it
+        // (ADR-0064 §11). Reading the store here matches `openCardFocus` beside it.
+        onDoubleClickPresent={() => {
+          // Two ways a card is a tour (ADR-0054 §1): it is typed Tutorial, or its
+          // body already holds step blocks. Asked at click time, not render time,
+          // so a step typed a second ago already counts.
+          if (!isTutorialType(type) && !hasTourSteps(workspace.doc, contentId)) return false;
+          useUiStore.getState().presentTour(id);
+          return true;
+        }}
         onFocusCard={() => useUiStore.getState().openCardFocus(id)}
         {...(canCreateContent ? { onDuplicate: duplicate } : {})}
         {...(canEditLayout ? { moveTargets, onMoveToBoard: moveToBoard } : {})}

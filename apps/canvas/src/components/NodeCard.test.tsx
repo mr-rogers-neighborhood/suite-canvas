@@ -101,6 +101,32 @@ describe("NodeCard", () => {
     expect(onStartEditing).toHaveBeenCalledWith("body");
   });
 
+  it("presents a tour instead of editing it, from anywhere on the card", () => {
+    const onDoubleClickPresent = vi.fn(() => true);
+    const onStartEditing = vi.fn();
+    renderCard({ onDoubleClickPresent, onStartEditing });
+
+    // A tour has nothing to edit by double-clicking: the gesture means "show me
+    // this" (ADR-0064 §11), and the body must not swallow it as "edit".
+    fireEvent.doubleClick(screen.getByTestId("card-body"));
+    fireEvent.doubleClick(screen.getByTestId("node-card"));
+
+    expect(onDoubleClickPresent).toHaveBeenCalledTimes(2);
+    expect(onStartEditing).not.toHaveBeenCalled();
+  });
+
+  it("lets a card that is not a tour keep its double-click for editing", () => {
+    const onStartEditing = vi.fn();
+    const onDoubleClickPresent = vi.fn(() => false);
+    renderCard({ onDoubleClickPresent, onStartEditing });
+
+    // The owner said no, so the ordinary gesture stands: a note edits its body.
+    fireEvent.doubleClick(screen.getByTestId("card-body"));
+
+    expect(onDoubleClickPresent).toHaveBeenCalledOnce();
+    expect(onStartEditing).toHaveBeenCalledWith("body");
+  });
+
   it("ignores shift, ctrl and meta clicks so multi-select owns them", () => {
     const onOpenInfo = vi.fn();
     renderCard({ onOpenInfo });

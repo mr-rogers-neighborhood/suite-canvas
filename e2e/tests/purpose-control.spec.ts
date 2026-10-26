@@ -41,8 +41,7 @@ async function clickCard(page: Page, card: Locator): Promise<void> {
 
 /**
  * Gives a card one step pointing at another. A tour is presentable only once it
- * has a step with a live target, and `present` is refused until a tour exists, so
- * the cycle needs one before it can be walked to the end.
+ * has a step with a live target, so a spec that presents one needs this first.
  */
 async function authorStep(page: Page, tourCard: Locator, targetTitle: string): Promise<void> {
   await startBodyEdit(page, tourCard);
@@ -58,7 +57,7 @@ async function authorStep(page: Page, tourCard: Locator, targetTitle: string): P
   await page.keyboard.press("Escape");
 }
 
-test("walks explore → run → record → present → explore", async ({ page }) => {
+test("walks explore → run → record → explore, and never into present", async ({ page }) => {
   await page.goto(workspaceUrl("cycle"));
   await expect(cards(page)).toHaveCount(2);
 
@@ -84,24 +83,34 @@ test("walks explore → run → record → present → explore", async ({ page }
   await purpose(page).click();
   await expect(purpose(page)).toHaveAttribute("data-purpose", "record");
   await expect(page.getByRole("button", { name: "Card type: Tutorial" })).toHaveCount(1);
-  await page.keyboard.press("Escape");
 
-  // A tour has to exist before the purpose can be entered, so the author opens it.
-  await tourCard.getByTestId("card-type").click();
-  await page.getByTestId("card-panel-tab-content").click();
-  await expect(page.getByTestId("tutorial-steps")).toBeVisible();
-  await page.getByTestId("tutorial-present").click();
-  await expect(overlay(page)).toHaveCount(1);
-
-  // The caption sits in the corner too, so this click is also the assertion that
-  // it clears the widget stack: covering the control would trap a presentation.
+  // A tour now exists and is open, and the widget still refuses to be the way in:
+  // a presentation belongs to the tour (ADR-0064 §11).
   await purpose(page).click();
+  await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+});
+
+test("presents from the tour card, and the widget is only the exit", async ({ page }) => {
+  await page.goto(workspaceUrl("present"));
+  await expect(cards(page)).toHaveCount(2);
+
+  const tourCardId = await cards(page).nth(1).getAttribute("data-node-id");
+  const tourCard = page.locator(`[data-testid="node-card"][data-node-id="${tourCardId}"]`);
+  await createNote(page, "Anchor card");
+  await authorStep(page, tourCard, "Anchor card");
+
+  // Double-clicking the tour is the way in: the gesture names a tour by pointing
+  // at it, which no mode button can do. Aimed at the card's header, because the
+  // body is a live editor that swallows synthetic pointer events.
+  await tourCard.dblclick({ position: { x: 8, y: 6 } });
+  await expect(overlay(page)).toHaveCount(1);
   await expect(purpose(page)).toHaveAttribute("data-purpose", "present");
 
-  // Escape is the reader's way out of a takeover, and the purpose follows it:
-  // presenting with no tour left is refused on the way in, so it cannot be a
-  // state left behind on the way out either.
-  await page.keyboard.press("Escape");
-  await expect(overlay(page)).toHaveCount(0);
+  // The widget is the exit, and it stays reachable while presenting: the caption
+  // sits right of the widget stack, so covering the control would trap the takeover.
+  await purpose(page).click();
   await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+  await expect(overlay(page)).toHaveCount(0);
+  // Stopped, not closed: the steps panel is still there, so the reader can carry on.
+  await expect(page.getByTestId("tutorial-steps")).toHaveCount(1);
 });

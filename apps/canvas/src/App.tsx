@@ -6,8 +6,6 @@ import {
   type SurfaceStyle,
   sectionForCard,
   sectionMembership,
-  TUTORIAL_TYPE_ID,
-  TUTORIAL_TYPE_NAME,
   type WorkspaceDocument,
 } from "@suite/graph";
 import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
@@ -39,7 +37,9 @@ import {
 } from "./canvas/rules";
 import { surfacePaintVars } from "./canvas/surfacePaint";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
+import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
+import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
 import { ensureWhiteboardType } from "./cards/whiteboard";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
@@ -83,22 +83,6 @@ import { initTheme, useThemeStore } from "./theme/useThemeStore";
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
 const CARD_HALF_HEIGHT = 60;
-
-/**
- * The tutorial type is minted on demand, the way the sketch type is: a workspace
- * only grows it when someone records a tour, and an existing one (renamed or
- * extended by its author) is never rewritten.
- */
-function ensureTutorialType(workspace: WorkspaceDocument) {
-  return (
-    workspace.getType(TUTORIAL_TYPE_ID) ??
-    workspace.createType({
-      id: TUTORIAL_TYPE_ID,
-      name: TUTORIAL_TYPE_NAME,
-      glyph: "\u25a4",
-    })
-  );
-}
 
 /** What the app bar calls this document. A share never names its owner's workspace. */
 function documentLabel(share: ShareSession, workspaceId: string): string {
@@ -542,26 +526,50 @@ function WorkspaceShell({
     [activeBoardId, canvasPoint, workspace],
   );
 
+  /** Returns the new card's id, so a caller can open what it just made. */
   const createCard = useCallback(
     (typeId: string, point?: { x: number; y: number }) => {
-      if (!activeBoardId) return;
+      if (!activeBoardId) return undefined;
       const position = point ? canvasPoint(point) : canvasPoint();
       const card = workspace.createCard({ typeId, boardId: activeBoardId, position });
       startEditing(card.id, "title");
+      return card.id;
     },
     [activeBoardId, canvasPoint, workspace, startEditing],
   );
 
+  /** Clicks become steps, so recording has one engine beside the placement one. */
+  const recordEngine = useRecordEngine();
+
   /**
-   * Recording starts with the tour itself (ADR-0064 §9): entering `record` drops
-   * a tutorial card on the board and opens its title, because a tour with no name
-   * is a tour the reader cannot find again. The steps are the record lane's work,
-   * not this callback's.
+   * Recording starts with the tour itself (ADR-0064 §9): entering `record` opens
+   * the tutorial the clicks will be captured into, and arms the capture. A second
+   * entry focuses the tour already on this board instead of minting a second card
+   * (ADR-0064 §9), because the steps belong to one timeline.
+   *
+   * The panel is opened too, not just the tour flag: the Steps list is where the
+   * captured steps appear, and a record with no destination is a label.
    */
   const startRecording = useCallback(() => {
-    if (!canCreateContent) return;
-    createCard(ensureTutorialType(workspace).id);
-  }, [canCreateContent, createCard, workspace]);
+    if (!canCreateContent || !canEditContent) return;
+    // The tour already in front of the author is the destination; only when
+    // there is none does the board's own tutorial (or a new card) take over.
+    const open = useUiStore.getState().tour?.tutorialId ?? null;
+    const existing = tutorialCardOnBoard(workspace, activeBoardId, open);
+    const tutorialId = existing ?? createCard(ensureTutorialType(workspace).id);
+    if (!tutorialId) return;
+    openInspector(tutorialId);
+    useUiStore.getState().openTour(tutorialId);
+    recordEngine.start(tutorialId);
+  }, [
+    activeBoardId,
+    canCreateContent,
+    canEditContent,
+    createCard,
+    openInspector,
+    recordEngine,
+    workspace,
+  ]);
 
   /**
    * What a purpose opens when it is entered: a run starts from a selection made in

@@ -41,9 +41,14 @@ export function planRecordClick(gesture: CanvasMode, stepCount: number): RecordC
 interface RecordRunState {
   /** The tutorial being recorded, or null when nothing is being captured. */
   tutorialId: string | null;
-  /** Steps captured in this recording, for the control's count. */
+  /** Steps in the tour being recorded, for the control's count. */
   steps: number;
-  start: (tutorialId: string) => void;
+  /**
+   * Arm recording into one tutorial. `steps` seeds the count with what the tour
+   * already holds, because re-entering `record` continues a timeline rather than
+   * starting one (ADR-0064 §9).
+   */
+  start: (tutorialId: string, steps?: number) => void;
   /** One captured click, so the count follows the author. */
   captured: (plan: RecordClickPlan) => void;
   stop: () => void;
@@ -57,7 +62,7 @@ interface RecordRunState {
 export const useRecordRunStore = create<RecordRunState>((set, get) => ({
   tutorialId: null,
   steps: 0,
-  start: (tutorialId) => set({ tutorialId, steps: 0 }),
+  start: (tutorialId, steps = 0) => set({ tutorialId, steps }),
   captured: (plan) =>
     set((state) =>
       plan.action === "newStep" ? { steps: state.steps + 1 } : { steps: state.steps },

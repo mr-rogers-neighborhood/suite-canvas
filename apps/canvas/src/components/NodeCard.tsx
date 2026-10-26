@@ -76,6 +76,16 @@ export interface NodeCardProps {
   linkCount?: number;
   /** Opens the inspector for this card. */
   onOpenInfo?: () => void;
+  /**
+   * Double-clicking the card presents it, when the card is a tour — the owner
+   * answers that, because only it can read the body for step blocks, and it must
+   * answer at click time so a step typed a second ago counts.
+   *
+   * Returns true when it took the gesture; false leaves the double-click to
+   * editing, which is what every non-tour card does
+   * ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md) §11).
+   */
+  onDoubleClickPresent?: () => boolean;
   /** Double-clicking the card opens the full-canvas focus surface. */
   onFocusCard?: () => void;
   onTrash?: () => void;
@@ -142,6 +152,7 @@ export function NodeCard({
   onConnectorMoveEnd,
   onConnectorContextMenu,
   onStartEditing,
+  onDoubleClickPresent,
   onEditEnd,
   onRemoveFromBoard,
   linkCount = 0,
@@ -316,6 +327,12 @@ export function NodeCard({
         if (moved > 4) return;
         onOpenInfo?.();
       }}
+      onDoubleClick={(event) => {
+        // A tour has nothing to edit by double-clicking: the gesture means "show me
+        // this", and the body handler below defers to the same reading.
+        if (onDoubleClickPresent?.() !== true) return;
+        event.stopPropagation();
+      }}
     >
       <div className="card-header flex shrink-0 items-center gap-1.5 rounded-t-md px-2 py-2">
         {hasMeta ? (
@@ -467,6 +484,10 @@ export function NodeCard({
         }`}
         data-testid="card-body"
         onDoubleClick={(event) => {
+          if (onDoubleClickPresent?.() === true) {
+            event.stopPropagation();
+            return;
+          }
           if (!editContent || editing === "body") return;
           event.stopPropagation();
           onStartEditing?.("body");

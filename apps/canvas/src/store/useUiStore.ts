@@ -4,6 +4,7 @@ import type { CanvasMode } from "../canvas/linkGesture";
 import { usePlacementRunStore } from "../canvas/placementRun";
 import { DEFAULT_PLACEMENT_OPTIONS, type PlacementOptions } from "../canvas/placeRun";
 import type { CanvasPurpose } from "../canvas/purpose";
+import { useRecordRunStore } from "../canvas/recordRun";
 import { getSession, type SessionCapabilities, sessionCapabilities } from "../session/session";
 import type { ShareScope } from "../session/shares";
 
@@ -223,9 +224,12 @@ interface UiState extends SessionCapabilities {
    */
   purpose: CanvasPurpose;
   /**
-   * Set the purpose, and carry out what it implies: leaving `run` ends the run,
-   * leaving `record` stops recording, and `present` mirrors the tour's own flag so
-   * there is one source of truth for the overlay.
+   * Choose a purpose the reader may choose, and carry out what it implies:
+   * leaving `run` ends the run, and leaving `present` stops the takeover.
+   *
+   * `present` is refused, always. A presentation is scoped to a tour, so only a
+   * tour can put the reader in one — the widget can show the state and get out of
+   * it, never select it (ADR-0064 §11).
    */
   setPurpose: (purpose: CanvasPurpose) => void;
   /**
@@ -604,6 +608,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     ),
   presentTour: (tutorialId, stepIndex = 0) =>
     set((state) => ({
+      // The tour writes the axis: a presentation is scoped to a tour, so starting
+      // one is the only way into `present` (ADR-0064 §11). The widget reads it and
+      // can leave it; it can never set it.
+      purpose: "present",
       tour: {
         tutorialId,
         stepIndex:
@@ -678,18 +686,22 @@ export const useUiStore = create<UiState>((set, get) => ({
   setPurpose: (purpose) =>
     set((state) => {
       if (state.purpose === purpose) return state;
-      // A purpose that claims clicks cannot share them. `present` is the one
-      // purpose that requires something to present: without a tour there is
-      // nothing to show, so it is refused rather than entered empty.
-      if (purpose === "present" && state.tour === null) return state;
+      // Never a purpose a reader chooses. A control that offered "present" would
+      // be offering to present nothing, then asking which tour — a worse way to
+      // pick one than opening the tour itself (ADR-0064 §11).
+      if (purpose === "present") return state;
       // Leaving these purposes ends what they started, which is the same rule as
       // Escape ending an arm (ADR-0063 §9).
       if (state.purpose === "run") usePlacementRunStore.getState().finish();
+      // A recording ends with the purpose that armed it (ADR-0064 §10): the
+      // tutorial card keeps the steps it has, but no further click is a step.
+      if (state.purpose === "record") useRecordRunStore.getState().stop();
       return {
         purpose,
-        // The overlay reads the tour's own flag, so the purpose writes it rather
-        // than duplicating it: `present` is the axis, `presenting` is the overlay.
-        ...(state.tour ? { tour: { ...state.tour, presenting: purpose === "present" } } : {}),
+        // Leaving a presentation stops the takeover but keeps the tour, so the
+        // reader lands back on its steps. Escape closes it entirely; the widget is
+        // the gentler exit.
+        ...(state.tour?.presenting ? { tour: { ...state.tour, presenting: false } } : {}),
       };
     }),
   toggleLibraryGroupBySection: () =>

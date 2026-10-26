@@ -7,6 +7,10 @@ import { type CanvasPurpose, nextPurpose } from "./purpose";
  * purpose, and the glyph carries the state: a ring that differed only by hue
  * would disappear in a monochrome screenshot and for a reader who cannot tell the
  * hues apart.
+ *
+ * `run` is a queue, not a transport control. A play triangle beside a record dot
+ * reads as media playback — "play this tour back" — and a run is the opposite of
+ * playback: a list of cards being placed one click at a time (ADR-0064 §11).
  */
 const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
   explore: {
@@ -15,89 +19,64 @@ const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
   },
   run: {
     label: "Run mode: place a sequence of cards",
-    glyph: "\u25b6",
+    glyph: "\u2261",
   },
   record: {
     label: "Record mode: capture steps into a tour",
     glyph: "\u25cf",
   },
+  // Not a mode the reader picks, so it is named as a state rather than offered.
   present: {
-    label: "Present mode: show the tour",
+    label: "Presenting a tour",
     glyph: "\u25a3",
   },
 };
 
 /** "Switch to record mode: capture steps into a tour". */
 function switchLabel(purpose: CanvasPurpose): string {
-  const target = nextPurpose(purpose);
-  return `Switch to ${PURPOSES[target].label.charAt(0).toLowerCase()}${PURPOSES[target].label.slice(1)}`;
-}
-
-interface PresentState {
-  /** `present` is the next value and there is nothing to show, so it is refused. */
-  refused: boolean;
-  /** What the title says about the missing tour, or null when there is nothing to say. */
-  note: string | null;
-}
-
-/**
- * What the control can say about `present`, which is the one value the store will
- * refuse (`setPurpose` needs a tour).
- *
- * A refused value is passed over rather than stalled on: a cycle that could not
- * leave `record` would be the purpose equivalent of a run with no stop
- * (ADR-0064 §10). A `present` whose tour has ended is not refused — it is the
- * value the reader is already on, and leaving it is the only move left.
- */
-function presentState(purpose: CanvasPurpose, hasTour: boolean): PresentState {
-  if (hasTour) return { refused: false, note: null };
-  if (purpose === "present") {
-    return { refused: false, note: "The tour has ended — a click returns to explore." };
-  }
-  if (nextPurpose(purpose) === "present") {
-    return {
-      refused: true,
-      note: "Nothing to present yet — open a tutorial's Steps panel to make a tour. A click returns to explore.",
-    };
-  }
-  return { refused: false, note: null };
+  // Presenting is a tour's state, so leaving it is not "switching mode": it is
+  // stepping out of the takeover, which is the only thing this control can do here.
+  if (purpose === "present") return "Stop presenting and return to the canvas";
+  const target = PURPOSES[nextPurpose(purpose)];
+  return `Switch to ${target.label.charAt(0).toLowerCase()}${target.label.slice(1)}`;
 }
 
 /**
  * The purpose control, stacked with the zoom and gesture controls.
  *
  * It cycles rather than segments, for the same reason the gesture control does:
- * the four values are one question with four readings, and four buttons would
- * offer "exploring and recording at once" — the one thing the two axes cannot
- * mean.
+ * the values are one question, and buttons side by side would offer "exploring
+ * and recording at once" — the one thing the two axes cannot mean.
+ *
+ * It is the pill's bottom segment rather than a separate button: one column with
+ * the purpose at the floor and the link mode above it, sharing the pill's corners
+ * so the stack reads as one object.
+ *
+ * `present` is displayed but never cycled into — a presentation is scoped to a
+ * tour, which is the only thing that can start one (ADR-0064 §11). From there this
+ * control is the exit.
  */
 export function PurposeControl() {
   const purpose = useUiStore((state) => state.purpose);
   const setPurpose = useUiStore((state) => state.setPurpose);
-  const hasTour = useUiStore((state) => state.tour !== null);
 
   const current = PURPOSES[purpose];
-  const target = nextPurpose(purpose);
-  const present = presentState(purpose, hasTour);
-  const destination = present.refused ? nextPurpose(target) : target;
   const label = `${current.label}. ${switchLabel(purpose)}`;
-  const title = present.note === null ? label : `${label} ${present.note}`;
 
   return (
     <button
       type="button"
       className="purpose-control"
       aria-pressed={purpose !== "explore"}
-      aria-disabled={present.refused || undefined}
       aria-label={label}
-      title={title}
+      title={label}
       data-testid="purpose-toggle"
       data-purpose={purpose}
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
-      onClick={() => setPurpose(destination)}
+      onClick={() => setPurpose(nextPurpose(purpose))}
     >
       <span aria-hidden="true">{current.glyph}</span>
     </button>

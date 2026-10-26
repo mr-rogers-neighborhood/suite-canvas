@@ -116,3 +116,34 @@ change the rule.
   placing; the count belongs where the eye already is (the widget bar keeps it too, as the reset point).
 - **A cursor that is pure presence** (a pointer and a name, as today). It answers "who" and leaves "what"
   to twelve separate channels that the reader has to interpret.
+
+## Amendment — 2026-10-25: a presentation belongs to its tour, and run is not playback
+
+Two corrections from use, both about the same thing: the widget was describing states it could not
+actually mean.
+
+1. **`present` is not a value the reader can choose.** The cycle is `explore → run → record → explore`.
+   Item 1's "the widget cycles, so exactly one is on" still holds for the axis, but `present` is not one
+   of the values the cycle visits. A mode button that offered "present" would be offering to present
+   nothing, and then asking *which* tour — a dialog in the middle of a one-click control, and a worse way
+   to pick a tour than opening the tour itself. The axis still *carries* `present`, because the widget, the
+   cursor and presence all have to say it; it just cannot be walked into.
+2. **The tour writes the axis; the widget only leaves it.** Starting a presentation (`presentTour`, or
+   double-clicking the tour card) sets `purpose: present`. From there the widget is the exit, and its label
+   says so: *"Stop presenting and return to the canvas"*. `setPurpose("present")` is refused
+   unconditionally — not merely when no tour exists, as the first cut had it. Leaving stops the takeover and
+   returns to `explore` **keeping the tour open**, so the reader lands back on its steps; Escape is the way
+   to close it entirely. This supersedes item 10's "leaving `present` closes the overlay".
+3. **Double-clicking a tour card presents it.** A tour has nothing to edit by double-clicking: the gesture
+   means "show me this", so on a tutorial card it presents instead of starting body editing. That is the
+   entry point a reader is most likely to try, and it is the only one that names a tour by pointing at it.
+   The Steps panel's Present button remains, because previewing while authoring is a different job.
+4. **`run` gets a queue, not a play triangle.** A triangle beside a record dot reads as media transport —
+   "play this tour back" — and a run is the *opposite* of playback: a list of cards placed one click at a
+   time. The glyph is three stacked lines (`≡`), on the widget and on the cursor's ring, and the rule from
+   item 5 is unchanged: hue is never the only signal, and neither is a shape borrowed from another medium.
+5. **The two controls are one pill.** Item 3 said "stacked under the zoom widget", and the first cut drew
+   the purpose button as a second floating pill below the link mode: two rounded shapes meeting, which reads
+   as a button stuck under a widget. It is now the pill's **bottom segment** — same width, same left edge,
+   no seam, the pill's own bottom corners, and the link mode above it as a middle segment. The pill's
+   shadow comes from its bottom-most segment, so the column casts one shadow instead of three.

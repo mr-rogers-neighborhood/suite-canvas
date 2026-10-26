@@ -82,7 +82,15 @@ describe("memberships", () => {
 describe("licences", () => {
   it("reads the row into a licence the seat check understands", async () => {
     const client = fake(() => [
-      { licence_id: "lic-1", tier: "team", workspaces: 5, seats: 4, expires_at: "1800086400000" },
+      {
+        licence_id: "lic-1",
+        tier: "team",
+        workspaces: 5,
+        seats: 4,
+        document_bytes: "268435456",
+        attachment_bytes: "1073741824",
+        expires_at: new Date(1_800_086_400_000),
+      },
     ]);
 
     const licence = await postgresLicences(client).forOrganization("org-1");
@@ -91,6 +99,31 @@ describe("licences", () => {
     expect(licence?.seats).toBe(4);
     expect(licence?.claims.workspaces).toBe(5);
     expect(licence?.claims.expiresAt).toBe(1_800_086_400_000);
+    // The ceilings are projected by 0004_licence_limits.sql, so a bigint string is
+    // read as the number the claims type carries rather than replaced by infinity.
+    expect(licence?.claims.documentBytes).toBe(268_435_456);
+    expect(licence?.claims.attachmentBytes).toBe(1_073_741_824);
+  });
+
+  it("says it imposes no byte ceiling for a row that predates the columns", async () => {
+    // A NULL ceiling is "never recorded", not zero (no bytes) and not an error. The
+    // relay enforces the signed cap from the token; nothing here reads the field.
+    const client = fake(() => [
+      {
+        licence_id: "lic-1",
+        tier: "team",
+        workspaces: 5,
+        seats: 4,
+        document_bytes: null,
+        attachment_bytes: null,
+        expires_at: "1800086400000",
+      },
+    ]);
+
+    const licence = await postgresLicences(client).forOrganization("org-1");
+
+    expect(licence?.claims.documentBytes).toBe(Number.POSITIVE_INFINITY);
+    expect(licence?.claims.attachmentBytes).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("answers null when the organization has no licence, so the seat check fails closed", async () => {
@@ -126,6 +159,11 @@ describe("workspaces", () => {
     // The conflict clause *is* the claim promise: an owned row must not be stolen.
     expect(claimCall?.text).toContain("ON CONFLICT (id) DO UPDATE");
     expect(claimCall?.text).toContain("WHERE workspaces.organization_id IS NULL");
+    // `created_at` is a `timestamptz`: binding the millisecond number is what Postgres
+    // rejects with "date/time field value out of range", so the boundary hands it a Date.
+    const bound = claimCall?.values?.[3];
+    expect(bound).toBeInstanceOf(Date);
+    expect((bound as Date).getTime()).toBe(1_800_000_000_000);
     expect(claimed?.workspaceId).toBe("ws-1");
     expect(claimed?.name).toBe("Client A");
   });

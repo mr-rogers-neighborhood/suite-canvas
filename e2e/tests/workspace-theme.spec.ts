@@ -83,3 +83,48 @@ test("a share renders the author's palette in the visitor's own mode", async ({
     await context.close();
   }
 });
+
+/**
+ * A palette is not only the canvas: every surface wearing `surface` takes it, in
+ * both modes. The menu and the board chooser are the two that were added or moved
+ * while this was being built, so they are the two worth checking by eye.
+ */
+test("the menu and the chooser read the palette in both modes", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(`/?workspace=e2e-theme-shell-${Date.now()}`);
+  await expect(page.locator('[data-testid="node-card"]')).toHaveCount(2);
+
+  await page.getByTestId("workspace-menu").click();
+  await page.getByTestId("workspace-styles").click();
+  await page.getByTestId("styles-workspace-theme").click();
+  await page.getByTestId("workspace-theme-light-surface").fill(LIGHT_SURFACE);
+  await page.getByTestId("workspace-theme-dark-surface").fill(DARK_SURFACE);
+  await page.getByTestId("styles-close").click();
+
+  const menuColour = async () => {
+    await page.getByTestId("workspace-menu").click();
+    const colour = await page
+      .getByTestId("workspace-menu-list")
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    await page.keyboard.press("Escape");
+    return colour;
+  };
+  const chooserColour = async () => {
+    await page.getByTestId("board-create").click();
+    const colour = await page
+      .getByTestId("board-chooser")
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    await page.keyboard.press("Escape");
+    return colour;
+  };
+
+  expect(await menuColour()).toBe(rgbOf(LIGHT_SURFACE));
+  expect(await chooserColour()).toBe(rgbOf(LIGHT_SURFACE));
+
+  // The reader's own mode picks which map applies; the author's palette picks the value.
+  await page.getByTestId("theme-toggle").click();
+  await page.getByTestId("theme-dark").click();
+
+  expect(await menuColour()).toBe(rgbOf(DARK_SURFACE));
+  expect(await chooserColour()).toBe(rgbOf(DARK_SURFACE));
+});

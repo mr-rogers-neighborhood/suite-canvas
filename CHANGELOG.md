@@ -9,6 +9,52 @@ A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
 
+## [1.1.0] - 2026-10-26
+
+The interface after a period of building. Nothing here is a new capability except
+folding and personal organizations; the rest is work that had been built and given
+a home in the wrong place.
+
+### Added
+
+- A card folds to its header line and a section folds to its own header. Both are
+  reader state, so two people on one board can fold different things away.
+- Signing up creates a personal organization named after you and makes it active, so
+  the first board joins the relay without a second step.
+
+### Changed
+
+- The navigation lives in one row beside the board tabs: home, undo, redo, version
+  history, the outline, and search. Undo and redo left the bottom dock; history left
+  the top-right corner.
+- The sync control is the only place that answers whether the work is safe: the
+  connection, unsent changes, this device's copy, the relay's room name, the storage
+  warning and the storage surface are rows in it.
+- Signed out reads as `Local`, not as `No access`.
+- The outline is hidden while a board has no sections.
+- Camera controls are React Flow's own pill plus zoom-to-selection. The zoom readout,
+  the outline button and the dot grid switch are gone, and the grid is always drawn.
+
+### Removed
+
+- The rollup rail and everything behind it. It existed because neither a card nor a
+  section could collapse; both can now.
+- Better Auth anonymous sessions, the transfer hook that moved their workspaces on
+  sign-up, the prompt that announced it, and the adoption of anonymous organizations.
+  A browser with no session has no session, which is what it means to be local.
+- The connection pill, the save pill and the storage warning banner that floated over
+  every board.
+
+### Fixed
+
+- A local board reported "this workspace refused this browser's access" on every
+  run. The relay refuses a token with no organization, and the app booted an
+  anonymous session that could never have one. Local storage was working the whole
+  time.
+- An account held an organization it never acted in. Better Auth's
+  `createOrganization` leaves `activeOrganizationId` null, so every join was refused
+  for a signed-in account too.
+
 ## [1.0.2] - 2026-10-26
 
 Making the local stack explain itself. Four defects, all of the same kind: something

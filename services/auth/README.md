@@ -127,15 +127,24 @@ const auth = createAuthEntry(authEnvironment(process.env), {
 ```
 
 `postgresDatabase()` builds the pool Better Auth takes directly (no ORM, no query
-builder). The **repositories are still injected**, because they are our SQL and a
-service that built its own could not be tested against a memory store — the Postgres
-implementations of `LicenceStore`, `MembershipReader` and `WorkspaceRepository` are the
-remaining piece of this workstream.
+builder), and `postgresRepositories(client)` returns the three repositories over the
+same pool — `LicenceStore`, `MembershipReader` and `WorkspaceRepository`
+([ADR-0070](../docs/decisions/0070-one-postgres-control-plane.md)). They stay
+*injected* rather than built by the service, because the memory implementations are
+what makes the rules testable without a database; a deployment passes the Postgres
+ones.
+
+```ts
+const { database, close } = postgresDatabase({ connectionString });
+const repos = postgresRepositories(database as never);
+const auth = createAuthEntry(env, { ...repos, sendMagicLink, close });
+```
 
 ## Migrations
 
 `sql/0001_control_plane.sql` creates the control plane; `sql/0002_plugins.sql` adds what
-the plugin set contributes. Neither is applied automatically: there is no boot-time
+the plugin set contributes; `sql/0003_billing.sql` adds the billing tables that ADR-0069
+moved here from DynamoDB. Neither is applied automatically: there is no boot-time
 migration, so a deployment runs them deliberately. The column names in 0002 are asserted
 against Better Auth's own table output in `src/pluginSchema.test.ts`, which is what makes
 a hand-written migration safe to trust after a dependency bump.

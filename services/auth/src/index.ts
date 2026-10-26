@@ -29,6 +29,7 @@ export {
   capabilitiesForRole,
   type WorkspaceCapabilities,
 } from "./capabilities.js";
+export { type AuthEntry, type AuthEntryDeps, createAuthEntry } from "./entry.js";
 export { authConfigProblems, authEnabled, authEnvironment, googleConfigured } from "./env.js";
 export { AuthError, type AuthErrorCode, authErrorCodes, isAuthError } from "./errors.js";
 export {
@@ -42,6 +43,13 @@ export { generateInviteKey, hashInviteKey, looksLikeInviteKey } from "./keys.js"
 export { type LicenceStore, licenceStateFor, type MembershipReader } from "./licences.js";
 export { memoryControlPlane } from "./memory.js";
 export { MFA_COPY, type MfaAdvice, mfaAdvice, type SignInMethod } from "./mfa.js";
+export { databaseUrlProblem, postgresDatabase, type Queryable } from "./postgres.js";
+export {
+  postgresLicences,
+  postgresMemberships,
+  postgresRepositories,
+  postgresWorkspaces,
+} from "./postgresRepositories.js";
 export { principalPrecedence, resolvePrincipal } from "./principal.js";
 export {
   canAddWorkspace,

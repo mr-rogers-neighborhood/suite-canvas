@@ -13,6 +13,11 @@ import type { AuthDatabase } from "./betterAuth.js";
  * memberships, invitations, licences and workspace *rows* — never a `.loro` snapshot.
  */
 
+/** The one method the repositories use from a pool or client. */
+export interface Queryable {
+  query: (text: string, values?: readonly unknown[]) => Promise<{ rows: unknown[] }>;
+}
+
 export interface PostgresOptions {
   connectionString: string;
   /** Connections to keep. Better Auth issues a handful of queries per request. */

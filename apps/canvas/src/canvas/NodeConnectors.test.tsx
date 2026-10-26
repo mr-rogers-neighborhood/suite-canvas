@@ -7,6 +7,7 @@ import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
 import { useLinkThreadStore } from "./linkThread";
 import { NodeConnectors, revealConnectors } from "./NodeConnectors";
+import { usePlacementRunStore } from "./placementRun";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";
 
 // React Flow measures its container; jsdom has no layout engine.
@@ -562,6 +563,75 @@ describe("thread mode", () => {
     );
 
     expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "false");
+  });
+});
+
+describe("the proposed dot", () => {
+  const connectors = [
+    { id: "p-top", x: 0.5, y: 0 },
+    { id: "p-bottom", x: 0.5, y: 1 },
+  ];
+
+  afterEach(() => {
+    act(() => usePlacementRunStore.setState({ proposal: null }));
+  });
+
+  it("reveals the layer of the node a held card would leave from", () => {
+    render(
+      <ReactFlowProvider>
+        <NodeConnectors nodeId="held-anchor" connectors={connectors} />
+      </ReactFlowProvider>,
+    );
+    expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "false");
+
+    act(() =>
+      usePlacementRunStore.setState({
+        proposal: { anchorId: "held-anchor", source: "p-top", target: null },
+      }),
+    );
+
+    // Aiming is a reason to show the dot: a ring on an invisible dot is not a preview.
+    expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "true");
+  });
+
+  it("marks only the proposed dot, not every dot on the node", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <NodeConnectors nodeId="held-anchor" connectors={connectors} />
+      </ReactFlowProvider>,
+    );
+
+    act(() =>
+      usePlacementRunStore.setState({
+        proposal: { anchorId: "held-anchor", source: "p-bottom", target: null },
+      }),
+    );
+
+    const shells = [...container.querySelectorAll('[data-testid="connector"]')];
+    const marked = shells.filter((shell) => shell.getAttribute("data-proposed") === "true");
+    expect(marked).toHaveLength(1);
+    expect(marked[0]).toHaveAttribute("data-connector-id", "p-bottom");
+  });
+
+  it("ignores a proposal made about another node", () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <NodeConnectors nodeId="someone-else" connectors={connectors} />
+      </ReactFlowProvider>,
+    );
+
+    act(() =>
+      usePlacementRunStore.setState({
+        proposal: { anchorId: "held-anchor", source: "p-top", target: null },
+      }),
+    );
+
+    expect(screen.getByTestId("node-connectors")).toHaveAttribute("data-revealed", "false");
+    expect(
+      [...container.querySelectorAll("[data-proposed]")].filter(
+        (node) => node.getAttribute("data-proposed") === "true",
+      ),
+    ).toEqual([]);
   });
 });
 

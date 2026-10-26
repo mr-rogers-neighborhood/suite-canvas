@@ -3,6 +3,7 @@ import { useUpdateNodeInternals } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { Connector, type Point } from "../components/Connector";
+import { usePlacementRunStore } from "./placementRun";
 
 /** Everyone dragging one connector, plus where the first of them is holding it. */
 export interface ConnectorPeerState {
@@ -29,6 +30,12 @@ export interface ConnectorRevealInput {
    * invisible to anyone who is not hovering the card.
    */
   peerActive?: boolean | undefined;
+  /**
+   * A held card would leave from one of this node's dots, so the proposal must be
+   * visible even though nothing is selected and no mode is chaining: the reader is
+   * aiming, and a ring on a hidden dot is not a preview.
+   */
+  proposed?: boolean | undefined;
 }
 
 /** The single reveal rule for every connector layer, cards and sections alike. */
@@ -39,8 +46,9 @@ export function revealConnectors({
   hovered = false,
   armed = false,
   peerActive = false,
+  proposed = false,
 }: ConnectorRevealInput): boolean {
-  return selected || chaining || draftActive || hovered || armed || peerActive;
+  return selected || chaining || draftActive || hovered || armed || peerActive || proposed;
 }
 
 export interface NodeConnectorsProps {
@@ -134,7 +142,11 @@ export function NodeConnectors({
     };
   }, []);
   const hovered = hoveredProp ?? hoveredSelf;
+  // The proposal is read here rather than passed in, so every node kind that mounts
+  // this layer gets the preview without a new prop at five call sites.
+  const proposed = usePlacementRunStore((state) => state.proposal?.anchorId === nodeId);
   const revealed = revealConnectors({
+    proposed,
     selected,
     chaining,
     draftActive,

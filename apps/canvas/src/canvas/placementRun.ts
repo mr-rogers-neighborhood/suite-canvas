@@ -44,6 +44,13 @@ export function cardStep(cardId: string): RunStep {
   return { ids: [cardId] };
 }
 
+/** The dots a held card would leave and arrive on, before it is dropped. */
+export interface ProposedLink {
+  anchorId: string;
+  source: string | null;
+  target: string | null;
+}
+
 export interface PlacementRun {
   /** Steps still to place, in the order the user can see. */
   queue: RunStep[];
@@ -94,6 +101,21 @@ interface PlacementRunState {
   enqueue: (ids: readonly string[]) => void;
   /** The run's own frame, once the engine has created it. */
   setSection: (sectionId: string | null) => void;
+  /**
+   * Record which dot the reader picked for the step at the top of the queue.
+   *
+   * The geometry proposes; this is how the reader disposes before the card is
+   * dropped, per step and per end, without a preference that would outlive it.
+   */
+  setOverrides: (overrides: { source?: string | null; target?: string | null }) => void;
+  /**
+   * The dots the held card would use if it landed where the pointer is now.
+   *
+   * UI state, never document state: it exists so the canvas can highlight the dot
+   * the commit would choose, and it is cleared the moment nothing is held.
+   */
+  proposal: ProposedLink | null;
+  setProposal: (proposal: ProposedLink | null) => void;
   setWrap: (wrap: boolean) => void;
   /**
    * End the run. Every exit goes through here, so no stale queue survives — and
@@ -113,6 +135,7 @@ const GUARD = 200;
  */
 export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
   run: null,
+  proposal: null,
   suspended: [],
   start: (queue, options = {}) => {
     get().startSteps(queue.map(cardStep), options);
@@ -182,6 +205,30 @@ export const usePlacementRunStore = create<PlacementRunState>((set, get) => ({
     if (fresh.length === 0) return;
     set({ run: { ...run, queue: [...run.queue, ...fresh.map(cardStep)] } });
   },
+  setOverrides: (overrides) => {
+    const run = get().run;
+    const next = run?.queue[0];
+    if (!run || !next) return;
+    // Onto the *head* only: a later step keeps its own geometry rather than
+    // inheriting a choice made about a different card.
+    const queue = [
+      { ...next, overrides: { ...next.overrides, ...overrides } },
+      ...run.queue.slice(1),
+    ];
+    set({ run: { ...run, queue } });
+  },
+
+  setProposal: (proposal) => {
+    const current = get().proposal;
+    const same =
+      current?.anchorId === proposal?.anchorId &&
+      current?.source === proposal?.source &&
+      current?.target === proposal?.target;
+    // Dots are marked from this, so an identical proposal must not re-render them.
+    if (same) return;
+    set({ proposal });
+  },
+
   setSection: (sectionId) => {
     const run = get().run;
     if (!run) return;

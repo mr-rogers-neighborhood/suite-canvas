@@ -119,6 +119,21 @@ async function roomyPoint(page: Page): Promise<{ x: number; y: number } | null> 
   );
 }
 
+/**
+ * Collapse the Outline panel, which is chrome over the canvas rather than part of it.
+ *
+ * The panel appears the moment a board has a section — and the fixture creates one —
+ * so it covers the top-left corner *after* the portal has been placed there. Its row
+ * count chip then sits exactly over a connector dot, and the press lands on the
+ * outline instead of the dot. A reader would collapse the panel; so does the fixture,
+ * so that what fails here is link drawing and never chrome stacking.
+ */
+async function hideOutline(page: Page): Promise<void> {
+  if ((await page.getByTestId("outline-panel").count()) === 0) return;
+  await page.getByTestId("outline-toggle").click();
+  await expect(page.getByTestId("outline-panel")).toHaveCount(0);
+}
+
 async function ensureRoom(page: Page): Promise<{ x: number; y: number }> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const point = await roomyPoint(page);
@@ -176,6 +191,7 @@ async function kinds(page: Page): Promise<Entity[]> {
   // leftover selection.
   await page.mouse.click(4, 4);
   await page.mouse.move(4, 4);
+  await hideOutline(page);
 
   return [
     { name: "note", dots: cards(page).first().locator(dotSelector), surface: cards(page).first() },

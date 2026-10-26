@@ -1,6 +1,7 @@
 import { CONNECTOR_ANCHORS, type Connector as ConnectorModel } from "@suite/graph";
 import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePlacementRunStore } from "../canvas/placementRun";
 import type { PresenceUser } from "../collab/presence";
 import { PeerNameTag } from "./PeerNameTag";
 
@@ -150,6 +151,11 @@ export function Connector({
   onMoveStart,
   onMoveFinished,
 }: ConnectorProps) {
+  // Which dot a held card would use. Read from the run store so every dot asks the
+  // same question and only one of them answers yes.
+  const proposed = usePlacementRunStore(
+    (state) => state.proposal?.anchorId === nodeId && state.proposal.source === connector.id,
+  );
   const [dragging, setDragging] = useState(false);
   const [livePosition, setLivePosition] = useState<Point | null>(null);
   const [peerLive, setPeerLive] = useState<Point | null>(null);
@@ -290,6 +296,9 @@ export function Connector({
       data-armed={armed ? "true" : undefined}
       data-dragging={dragging ? "true" : undefined}
       data-anchored={isAnchor(position) ? "true" : "false"}
+      // The dot a held card would leave from if it landed where the pointer is: the
+      // preview of a choice, so a reader can aim without committing (ADR-0061).
+      data-proposed={proposed ? "true" : undefined}
       data-side={SIDE_NAME[side]}
       data-peer={movingPeer ? "true" : undefined}
       data-peer-selected={peerIndicator ? "true" : undefined}

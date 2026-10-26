@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { usePlacementRunStore } from "./placementRun";
 import type { PlacementEngine } from "./usePlacementEngine";
@@ -18,9 +18,11 @@ import type { PlacementEngine } from "./usePlacementEngine";
  */
 export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
   const run = usePlacementRunStore((state) => state.run);
+  const setProposal = usePlacementRunStore((state) => state.setProposal);
   const workspace = useCanvasStore((state) => state.workspace);
   const { screenToFlowPosition } = useReactFlow();
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const frame = useRef<number | null>(null);
 
   const held = run?.queue[0]?.ids[0] ?? null;
   const waiting = run !== null && run.queue.length === 0;
@@ -32,10 +34,24 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
     }
     const move = (event: PointerEvent) => {
       setPointer({ x: event.clientX, y: event.clientY });
+      // One proposal per frame: the inference is pure but the pointer fires far more
+      // often than the canvas paints, and a highlight that lags a frame is invisible.
+      if (frame.current !== null) return;
+      frame.current = window.requestAnimationFrame(() => {
+        frame.current = null;
+        const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        setProposal(engine.proposeAt(at));
+      });
     };
     window.addEventListener("pointermove", move);
-    return () => window.removeEventListener("pointermove", move);
-  }, [held]);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      if (frame.current !== null) window.cancelAnimationFrame(frame.current);
+      // Nothing is held, so nothing is proposed: leaving a highlight behind would
+      // claim the next drop goes somewhere it does not.
+      setProposal(null);
+    };
+  }, [engine, held, screenToFlowPosition, setProposal]);
 
   // The click that puts a card down is the canvas's own press, so it is caught in
   // the capture phase before React Flow claims it for panning or selection.
@@ -47,6 +63,17 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
       // A control keeps its own press: the stack must never swallow a button.
       if (target?.closest("button, a, input, textarea, select, [contenteditable='true']")) return;
       if (!target?.closest('[data-testid="canvas-board"]')) return;
+      // A dot is a choice, not a place: pressing one while holding a card names the
+      // connector this step should use, and the card stays in hand so the reader can
+      // aim it knowing which side it will leave from.
+      const dot = target.closest("[data-connector-id]");
+      const connectorId = dot?.getAttribute("data-connector-id");
+      if (connectorId) {
+        event.preventDefault();
+        event.stopPropagation();
+        usePlacementRunStore.getState().setOverrides({ source: connectorId });
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       engine.placeAt(screenToFlowPosition({ x: event.clientX, y: event.clientY }));

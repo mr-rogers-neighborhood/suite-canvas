@@ -1,6 +1,6 @@
 # ADR-0071: Style is derived, not configured
 
-- **Status:** proposed — a concept record, deliberately not implemented
+- **Status:** accepted — the rules are settled; the surface is being built in slices
 - **Date:** 2026-10-25
 - **Related:** [ADR-0051](./0051-one-style-vocabulary-over-edges.md) (one style vocabulary over edges), [ADR-0056](./0056-card-settings-owns-defaults.md) (card settings own defaults), [ADR-0064](./0064-two-axes-and-a-cursor-that-says-so.md) (the value palette), [ADR-0068](./0068-a-system-workspace-authors-what-workspaces-start-with.md) (the system workspace), [ADR-0043](./0043-a-view-is-a-lens-a-database-or-a-render.md) (a view is a lens)
 
@@ -153,6 +153,19 @@ CSS.
 4. **Does density belong to style at all?** It changes layout rather than paint, and layout is the
    document's business (positions are stored). Density would have to be a *render* preference, which puts
    it on the reader rung rather than the document ladder.
+
+## Acceptance (2026-10-25)
+
+Accepted by the author with the decisions this ADR needed:
+
+- **All four rungs are real**, and the first slice builds the whole ladder: the Control vocabulary, colour as a
+  Control, the utility index with owner **and** fallback, and the appearance entry point — not a demo of one piece.
+- **The derivation direction is settled**: document → palette → chrome, with semantic hues fixed by the build.
+- **The appearance surface is reader preferences only** (density, card radius, canvas background, reduced motion).
+  Authoring type- and workspace-level style in the UI comes later; the index documents those rungs now so the
+  editors have something to write into.
+- **Authoring CSS stays refused**, and so do per-breakpoint matrices. Those are the two things most likely to be
+  re-proposed once a styling surface exists; the record says no, and why.
 
 ## Amendment — what the page-builder frameworks teach, and what they do not
 

@@ -3,7 +3,12 @@ import { useCallback } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
-import { type PlacementSource, type RunStep, usePlacementRunStore } from "./placementRun";
+import {
+  type PlacementSource,
+  type ProposedLink,
+  type RunStep,
+  usePlacementRunStore,
+} from "./placementRun";
 import {
   type FacingBox,
   inferConnectors,
@@ -34,6 +39,15 @@ export interface PlacementEngine {
   placeAt: (point: { x: number; y: number }) => void;
   /** The card at the top of the stack, or null when nothing is held. */
   held: string | null;
+  /**
+   * The connectors the *next* placement would use if the card landed here.
+   *
+   * The same inference the commit runs, given the pointer instead of the planner's
+   * position, so the dot the reader sees highlighted is the dot that gets written
+   * ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md) third amendment).
+   * `null` when there is nothing to propose: no run, no link, or no anchor.
+   */
+  proposeAt: (point: { x: number; y: number }) => ProposedLink | null;
   /** Place everything left, as one undo step. */
   placeAll: () => void;
   /** End the run wherever it is. */
@@ -134,6 +148,40 @@ export function usePlacementEngine(): PlacementEngine {
       return { planned, boxes, linkFrom, head };
     },
     [activeBoardId, canvasPoint, workspace],
+  );
+
+  const proposeAt = useCallback(
+    (point: { x: number; y: number }): ProposedLink | null => {
+      const run = usePlacementRunStore.getState().run;
+      const next = run?.queue[0];
+      if (!run || !next || !activeBoardId) return null;
+      const plan = planStep(next, run, point);
+      if (!plan?.planned.link || !plan.linkFrom) return null;
+      const headBox = plan.boxes[0];
+      if (!headBox) return null;
+      const anchorBox: FacingBox = {
+        x: plan.linkFrom.x,
+        y: plan.linkFrom.y,
+        width: plan.linkFrom.width ?? DEFAULT_CARD_WIDTH,
+        height: plan.linkFrom.height ?? DEFAULT_CARD_HEIGHT,
+      };
+      const dots = inferConnectors({
+        sourceDots: workspace.getCard(plan.linkFrom.cardId)?.connectors ?? [],
+        targetDots: workspace.getCard(plan.head)?.connectors ?? [],
+        sourceBox: anchorBox,
+        targetBox: headBox,
+        overrides: {
+          source: next.overrides?.source ?? null,
+          target: next.overrides?.target ?? null,
+        },
+      });
+      return {
+        anchorId: plan.linkFrom.cardId,
+        source: dots.source?.id ?? null,
+        target: dots.target?.id ?? null,
+      };
+    },
+    [activeBoardId, planStep, workspace],
   );
 
   const placeStep = useCallback(
@@ -285,5 +333,5 @@ export function usePlacementEngine(): PlacementEngine {
 
   const held = usePlacementRunStore((state) => state.run?.queue[0]?.ids[0] ?? null);
 
-  return { step, placeAt, placeAll, stop, start, held };
+  return { step, placeAt, placeAll, stop, start, held, proposeAt };
 }

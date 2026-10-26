@@ -2869,3 +2869,18 @@ body {
   --value-fill: var(--value-explain-fill);
   --value-ink: var(--value-explain-ink);
 }
+
+/*
+ * The dot a held card would leave from (ADR-0061 third amendment).
+ *
+ * The geometry proposes a connector the moment a card is in hand, and the reader can
+ * see which one before dropping it — or press another dot to overrule it. Ringed in the
+ * value palette's ink rather than a new colour, because this is a *proposal*, not a
+ * state: the dashed edge the mode controls use for their previews is the same idea.
+ */
+[data-proposed="true"] .connector-dot {
+  border-color: var(--ink);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 5px color-mix(in srgb, var(--ink) 45%, transparent);
+}

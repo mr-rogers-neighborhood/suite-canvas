@@ -205,3 +205,31 @@ that is a chip that darkens and a glyph that disappears, which is what the autho
 bottom segment and not the top. Mixing a value's own hue fixes the class of bug as well as the instance:
 `run`'s fill *is* its hue, so an engaged purpose looks untouched by the pointer, which is the state
 outranking it without a second rule to say so.
+
+## Open question — does the reader need their own cursor to say all this?
+
+The author's note, verbatim: *"the presence cursor has all of the elements we want to indicate, but it is
+indeed cluttered/ugly. Lets consider ways to simplify its appearance… I'm also skeptical on giving the
+local user the full cursor indication, as it may overwhelm the interface especially with the advanced
+mode switchers/toggle ui we have built making it largely redundant for the local user."*
+
+That is a fair hit. The status cursor was designed to make the two axes **visible** — which mattered
+while the axes were new and the widget was smaller. Now the pill states both axes continuously, in the
+same colours, at rest, so a ring that repeats them under the pointer is saying the same sentence twice.
+It is redundant for the reader who owns it and load-bearing only for **peers**, who cannot see the pill.
+
+Options, none chosen yet:
+
+1. **Peers only.** The local reader keeps the pointer they already have; the ring is published, not
+   drawn locally. Smallest change, and it removes the redundancy outright — at the cost of the local
+   reader losing the one place that names the *current* mode in words.
+2. **Local, on demand.** Draw the ring while a modifier is held (the preview is exactly the moment the
+   reader needs confirmation) and hide it at rest. Keeps the confirmation where it is load-bearing.
+3. **Local, reduced.** Keep the ring but drop the purpose glyph and the gesture slot, leaving shape and
+   colour — one glance, no reading.
+4. **Keep it as it is** and reduce the clutter by drawing it smaller and fading it after a gesture.
+
+The question to settle with the author: **is the local ring a redundancy or a reminder?** If the pill is
+always on screen (it is), the honest answer is redundancy, and option 1 or 2 follows. Both keep the
+published state intact, so a peer's cursor is unaffected — this is a decision about what we draw for
+ourselves, not about what we tell each other.

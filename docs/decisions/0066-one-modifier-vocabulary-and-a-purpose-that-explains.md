@@ -73,8 +73,11 @@ The keyboard half is built; `explain` is not, and its gate is why.
 - **A click while previewing commits the previewed value**, so the modifier is a shortcut and not only a
   decoration: shift-click the purpose control means `run`. The label names that value, so the control
   never says one thing and does another.
-- **An empty slot is empty.** A three-value family returns `null` for `alt` rather than clamping to the
-  last value; a clamp would make alt a synonym for ctrl, which is worse than a key that does nothing.
+- **An empty slot is empty.** A family shorter than the key map returns `null` for the extra key rather
+  than clamping to the last value; a clamp would make alt a synonym for ctrl, which is worse than a key
+  that does nothing. No live family is short a value now that `explain` is cyclable — the rule is kept
+  because the map is positional, and `modifierPreview.test.ts` asserts it on a literal list rather than
+  on the purposes, so the rule survives the family changing size again.
 - **Typing is not a gesture.** Both listeners ignore events whose target is inside a text field, so
   holding shift for a capital letter no longer repaints the tool — a small bug the shared module fixed
   on the way in.

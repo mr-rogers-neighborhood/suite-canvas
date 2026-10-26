@@ -12,6 +12,11 @@
  * Historical documents are exempt by path: an ADR that records a decision taken
  * with Yjs keeps saying Yjs, and the roadmaps own their own drift ledger.
  *
+ * A link to a **gitignored** file is not drift: `docs/scratchpad.md` is the author's
+ * per-machine queue, created on demand by `scripts/scratchpad.mjs`, and a clean clone
+ * does not have it. The list below is explicit rather than parsed from `.gitignore`,
+ * so adding to it is a decision someone made.
+ *
  * Usage: node scripts/docs-check.mjs
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -163,7 +168,8 @@ function checkLinks(path, text) {
       if (/^[a-z]+:/i.test(href) || href.startsWith("#") || href.startsWith("//")) continue;
       const [target, anchor] = href.split("#");
       const resolved = target === "" ? path : resolve(dirname(path), decodeURI(target));
-      if (!existsSync(resolved)) {
+      const perMachine = new Set(["docs/scratchpad.md"]);
+      if (!existsSync(resolved) && !perMachine.has(href.replace(/^\.\//, ""))) {
         problems.push(`${name}:${index + 1} link target does not exist: ${href}`);
         continue;
       }

@@ -36,5 +36,7 @@ stryker.log
 # Isolated checkouts for parallel workstreams.
 .worktrees/
 
-# The scratchpad's last-read marker: per-machine, so a note is new once per reader.
+# The scratchpad and its last-read marker: the author's own queue between passes, so
+# both are per-machine. `pnpm scratchpad` creates the file from a template on demand.
+docs/scratchpad.md
 .scratchpad-seen

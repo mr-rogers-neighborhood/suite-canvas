@@ -18,12 +18,44 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const SCRATCHPAD = "docs/scratchpad.md";
 const MARKER = ".scratchpad-seen";
 
+/**
+ * The template, because the file itself is gitignored: it is the author's own queue
+ * and nobody else's, and committing it would clutter the repository with notes that
+ * mean nothing to a reader who was not in the conversation. The instructions still
+ * point at the path, so this script has to be able to make it.
+ */
+const TEMPLATE = `# Scratchpad
+
+Notes to the agent, written between passes. Append here instead of interrupting a turn:
+the agent reads this file with \`pnpm scratchpad\`, which runs as part of \`pnpm verify\` and
+is the first thing read at the start of a pass.
+
+**This file is gitignored.** It is a queue, not a document: nothing here is permanent,
+and it never becomes a second source of truth. Each entry gets promoted, then struck
+through:
+
+| an entry that is… | becomes |
+| --- | --- |
+| a decision with a reason | an amendment on the ADR in \`docs/decisions/\` that owns it |
+| a piece of work | a todo in the session list, or a phase in \`plan.md\` |
+| a fact about what shipped | the "what implementing settled" section of that ADR |
+| a question with two answers | the ADR's open questions, so it is asked once, not twice |
+| noise | deleted |
+
+If something is urgent or blocking, put \`#PRIORITY\` on the line and the agent will take
+it as the next thing to do rather than something to triage later.
+
+## Notes
+
+<!-- write below this line; newest at the bottom is fine -->
+`;
+
 const quiet = process.argv.includes("--quiet");
 const peek = process.argv.includes("--peek");
 
 if (!existsSync(SCRATCHPAD)) {
-  if (!quiet) console.log(`[scratchpad] no ${SCRATCHPAD}`);
-  process.exit(0);
+  writeFileSync(SCRATCHPAD, TEMPLATE);
+  if (!quiet) console.log(`[scratchpad] created ${SCRATCHPAD} from the template`);
 }
 
 const text = readFileSync(SCRATCHPAD, "utf8");

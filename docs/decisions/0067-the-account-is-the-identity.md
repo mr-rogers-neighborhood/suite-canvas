@@ -210,3 +210,35 @@ share link.
 - **Block the whole app while pending.** Local-first is not a privilege; the gate goes where value
   leaves the device — organizations, claims, sync.
 - **A bespoke waitlist product** (forms, emails, a second database). One field, one hook, one queue.
+
+## Open question — a development posture for identity, and where local-only sits
+
+The author's note, verbatim: *"Lets get the dev/testing workflows and token management established so
+that we can test better auth integration thoroughly in our development environment and catch any issues
+early before they reach production. I'm not sure if we should hide 'Local Only Mode' behind a feature flag
+or make it more prominent for developers to easily toggle it during testing, probably the latter. This can
+be tied to billing, as-in to enable billing you need to also not have local only mode enabled."*
+
+Three things are tangled here and are worth separating:
+
+1. **A local identity loop that does not need the outside world.** `services/auth` runs against a local
+   Postgres (`pnpm db:verify` already stands up a throwaway cluster), and Better Auth's email flows need
+   somewhere to send mail. The development answer is a **mail sink** (a file or a local SMTP catcher)
+   rather than a real provider, so a sign-in, a magic link, an invite and a password reset can be walked
+   end to end on a laptop. That is a piece of work with a clear test: one scripted pass covering sign-up →
+   verify → sign-in → MFA → invite → claim, against the local stack.
+2. **Token management in development.** Sessions, bearer tokens for the API, and the claim handshake each
+   have a different lifetime. Development needs a way to *see* them (a dev-only inspector) and to mint
+   one deliberately (a seed script), not to hand-copy cookies. This is the same shape as
+   `better-auth-devtools` from the plugin survey and can be built or adopted.
+3. **Local-only mode as a posture, not a hidden flag.** The author's instinct — prominent for developers,
+   not buried — is right, and it lines up with billing: an organization cannot hold a paid subscription
+   while the workspace it points at is local-only, because a licence needs a control plane to be issued
+   and enforced. So local-only is a **visible switch with a stated consequence**, not a mystery flag:
+   turning it on says what it costs (no sync, no billing, this device only), and enabling billing
+   refuses while it is on, with the reason.
+
+The open question for the next planning pass: **does local-only live as a workspace-level choice or an
+app-level mode?** Workspace-level is honest (one workspace, one answer, one licence) and matches the
+document model; app-level is easier to demonstrate. The proposal here is workspace-level, with the
+account's default posture setting what a *new* workspace starts as.

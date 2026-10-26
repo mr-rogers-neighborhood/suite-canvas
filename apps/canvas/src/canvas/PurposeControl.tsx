@@ -86,10 +86,9 @@ function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
  * control is the exit.
  *
  * The modifiers preview the same way the link tool's do ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)):
- * shift points at `run`, ctrl at `record`, and holding one both repaints the
- * button and changes what a click commits, so the label never lies about it. Alt
- * is reserved: a three-value family has no fourth, and the slot belongs to
- * `explain` when it lands.
+ * shift points at `run`, ctrl at `record`, alt at `explain`. A held key repaints the
+ * button and refuses the click — the key *is* the override, and releasing ends it — so
+ * the button never promises a switch it would not perform.
  */
 export function PurposeControl() {
   const purpose = useUiStore((state) => state.purpose);

@@ -97,3 +97,40 @@ network has gone away.
   are harder to recover from than a clear "reload needs the network" rule.
 - **A modal dialog on quota exhaustion.** Rejected: it interrupts the one thing
   that still works — editing — and can be dismissed without reading it.
+
+## Open question — "Saved temporarily" is a hedge, and readers hear a threat
+
+The author's note, verbatim: *"'Saved Temporarily' is still a bit confusing and instils uncertainty…
+it is not clear whether the changes are permanent or if they might be lost… Most people are not "Local
+only" users and will expect their changes to be saved permanently unless explicitly stated otherwise."*
+
+**What is actually happening, in plain terms.** The work *is* saved — written to this browser's own
+storage on every edit, and reload-safe. What the browser has not promised is that it will keep that data
+forever: without durable storage, a browser may clear a site's data when the device runs low on space (or
+after long inactivity, in some browsers). Safari is the strictest; Chrome grants durability to installed
+apps and to sites the reader has engaged with; a plain tab in a fresh profile usually declines until the
+site is bookmarked or installed. So it is **not** "your browser is being weird" — it is the standard
+best-effort behaviour of origin storage, and it is exactly what an account (or an install) fixes.
+
+**Why the label misfires.** "Saved temporarily" states a *limitation* where the reader expects a
+*status*. It leaves them unable to answer "am I safe?" and invites the worst reading — that the next
+reload may be empty. Two separate things are being collapsed into one phrase: *where* the work is saved
+(here, in this browser) and *how firmly* the browser promises to keep it. The second is a footnote for
+most readers and a real risk for a few.
+
+**Options, to choose with the author:**
+
+1. **Say where, not how firm.** Pill: "Saved on this device" always; the durability caveat becomes a
+   detail in the panel, not a pill. The claim stays true in every case, and the difference between
+   durable and best-effort is explained once, on demand.
+2. **Ask for durability at a moment of intent.** The ladder already tries on first edit; retry when the
+   reader presses the action button ("Keep a copy on this device"), because a user gesture is what
+   browsers weigh. Granting turns the caveat into a fact rather than a warning.
+3. **Make the account the answer, once.** Keep the caveat visible only for a reader who is *not* signed
+   in and *not* installed, and phrase the action, not the risk: "Sign in to keep this workspace
+   anywhere." That is what the banner already does; the pill is the part that hedges.
+4. **Do not mention it at all** for signed-in readers — already true: `signedIn` renders "Saved", and
+   that is the state every hosted reader is in. The hedge is exclusive to anonymous, local-only use.
+
+The open question: **is the pill a status or a warning?** If status, option 1 plus option 2. If warning,
+it belongs in the panel where there is room to say what to do about it.

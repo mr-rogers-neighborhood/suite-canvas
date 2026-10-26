@@ -10,6 +10,7 @@ import {
   organization,
   twoFactor,
 } from "better-auth/plugins";
+import { emailHarmony } from "better-auth-harmony";
 import {
   ADMISSION_PENDING_CODE,
   ADMISSION_PENDING_MESSAGE,
@@ -255,6 +256,11 @@ export function createAuthService(deps: AuthServiceDeps): AuthInstance {
       // `admin` supplies the user role field and the management endpoints the admin
       // panel's people/ops half is built on (ADR-0068 §7).
       admin(),
+      // Normalization before anything else touches an address: `foo+temp@gmail.com`
+      // and `foo@gmail.com` are one person, and per-seat billing makes a duplicate
+      // account a duplicate seat. It also blocks 55k disposable domains, which keeps
+      // the admission queue short (ADR-0067 §9).
+      emailHarmony(),
       // Invisible challenge in front of sign-up, only where a deployment opted in.
       ...(turnstile === "" || turnstile === undefined
         ? []

@@ -12,6 +12,19 @@
  */
 
 export {
+  ADMISSION_PENDING_CODE,
+  ADMISSION_PENDING_MESSAGE,
+  admissionRequired,
+  admitted,
+  isAdmissionGatedPath,
+} from "./admission.js";
+export {
+  type AdoptionInput,
+  type AdoptionOutcome,
+  type AdoptionStore,
+  adoptAnonymousOrganizations,
+} from "./adoption.js";
+export {
   capabilitiesForPrincipal,
   capabilitiesForRole,
   type WorkspaceCapabilities,

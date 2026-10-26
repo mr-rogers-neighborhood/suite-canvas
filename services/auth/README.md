@@ -98,11 +98,22 @@ reason ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md)):
 | `twoFactor` | available to operators and org owners |
 | `admin` | the user-management half of the admin panel: role field, ban, impersonation |
 | `captcha` | invisible Turnstile, only where `SUITE_TURNSTILE_SECRET` is set |
+| `emailHarmony` | normalizes addresses (`foo+temp@gmail.com` = `foo@gmail.com`) and blocks 55k disposable domains — under per-seat billing a duplicate account is a duplicate seat |
 
 Admission is **ours**, not a plugin: `admittedAt` on the user plus one global hook that refuses
 `/organization/create` (and, later, claim and sync) while it is null. It is a licensing gate, never an
 authentication one — local editing, import and export are never refused
 ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md) §7).
+
+When an anonymous account signs up, `adoptAnonymousOrganizations` runs in the
+`onLinkAccount` window: it gives the new account ownership of every organization the
+anonymous one *owned* (not ones it merely belonged to) and drops the anonymous
+membership, so the work survives the anonymous user's deletion without any workspace
+row — or any id, URL or share link — moving.
+
+**Not wired yet:** there is no production entry that calls `createAuthService` — no
+Postgres adapter instance, no HTTP route. Every claim above is proven against Better
+Auth's memory adapter; the deployment seam is the next piece of this workstream.
 
 ## Tests
 

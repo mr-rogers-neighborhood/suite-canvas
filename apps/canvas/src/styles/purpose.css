@@ -1,1 +1,81 @@
-/* The purpose control (ADR-0064). */
+/*
+ * The purpose control (ADR-0064). Two slots, not one segmented row: the purpose
+ * button is its own pill below the gesture control, because "what the canvas is
+ * for" and "what the next click does" are two questions even when they share a
+ * corner. The four `--state-*` tokens are the purpose's hue in either theme; a
+ * theme may change the hues, never the rule that hue means purpose and contrast
+ * means engaged.
+ */
+:root {
+  --state-idle: var(--ink-muted);
+  --state-active: var(--ink);
+  --state-recording: var(--danger);
+  --state-presenting: var(--success);
+}
+
+.purpose-control {
+  position: absolute;
+  left: 15px;
+  /* Under the gesture control: the zoom pill ends 57px above the floor and the
+     gesture button fills 31–57px, so this is the only slot in the stack that
+     overlaps neither. */
+  bottom: 5px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 27.33px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--purpose-state) 40%, var(--hairline));
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--purpose-state);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.purpose-control[data-purpose="explore"] {
+  --purpose-state: var(--state-idle);
+}
+
+/* Run is engaged rather than "selected": the contrast step is what says so. */
+.purpose-control[data-purpose="run"] {
+  --purpose-state: var(--state-active);
+
+  border-color: var(--state-active);
+  background: var(--state-active);
+  color: var(--surface);
+}
+
+/* A capture in progress is the one state that fills: it should feel live. */
+.purpose-control[data-purpose="record"] {
+  --purpose-state: var(--state-recording);
+
+  border-color: var(--state-recording);
+  background: var(--state-recording);
+  color: var(--surface);
+}
+
+/* Presenting is "you are in something", not "you are doing something": a ring. */
+.purpose-control[data-purpose="present"] {
+  --purpose-state: var(--state-presenting);
+
+  border-color: var(--state-presenting);
+  background: color-mix(in srgb, var(--state-presenting) 14%, var(--surface));
+  color: var(--state-presenting);
+}
+
+.purpose-control:hover:not([aria-disabled="true"]) {
+  border-color: var(--purpose-state);
+}
+
+/* Refused, not unreachable: the button stays focusable so its title can say why. */
+.purpose-control[aria-disabled="true"] {
+  cursor: not-allowed;
+  border-style: dashed;
+}

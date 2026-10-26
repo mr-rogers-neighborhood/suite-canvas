@@ -325,6 +325,14 @@ export function LibraryDrawer({
   const exitView = useUiStore((state) => state.exitView);
   const setLibraryQuery = useUiStore((state) => state.setLibraryQuery);
   const setLibraryDrag = useUiStore((state) => state.setLibraryDrag);
+  /**
+   * A run is "I am about to place a set", and the set comes from here, so the
+   * purpose opens the drawer already selecting (ADR-0064 §8). Read from the store
+   * rather than taken as a prop: the drawer already reads the library's own state
+   * from it, and the purpose can change while the drawer is open, so a prop would
+   * leave the caller keeping two states in sync.
+   */
+  const running = useUiStore((state) => state.purpose === "run");
   const views = useSavedViews(workspace);
   const activeView = views.find((view) => view.id === activeViewId);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
@@ -350,6 +358,12 @@ export function LibraryDrawer({
    * from a modifier, and the mode says so in the header while it is on.
    */
   const [selecting, setSelecting] = useState(false);
+  useEffect(() => {
+    // Leaving a run leaves selection mode with it: a selection made for a run
+    // means nothing once the run has ended (ADR-0064 §10). Only a purpose change
+    // runs this, so a reader who turned the mode on themselves keeps it.
+    setSelecting(running);
+  }, [running]);
   const [rowMenu, setRowMenu] = useState<{
     id: string;
     label: string;

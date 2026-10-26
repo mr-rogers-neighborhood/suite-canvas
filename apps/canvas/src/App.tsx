@@ -6,6 +6,8 @@ import {
   type SurfaceStyle,
   sectionForCard,
   sectionMembership,
+  TUTORIAL_TYPE_ID,
+  TUTORIAL_TYPE_NAME,
   type WorkspaceDocument,
 } from "@suite/graph";
 import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
@@ -28,6 +30,7 @@ import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
+import type { CanvasPurpose } from "./canvas/purpose";
 import {
   readPalette,
   type SurfacePalette,
@@ -80,6 +83,22 @@ import { initTheme, useThemeStore } from "./theme/useThemeStore";
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
 const CARD_HALF_HEIGHT = 60;
+
+/**
+ * The tutorial type is minted on demand, the way the sketch type is: a workspace
+ * only grows it when someone records a tour, and an existing one (renamed or
+ * extended by its author) is never rewritten.
+ */
+function ensureTutorialType(workspace: WorkspaceDocument) {
+  return (
+    workspace.getType(TUTORIAL_TYPE_ID) ??
+    workspace.createType({
+      id: TUTORIAL_TYPE_ID,
+      name: TUTORIAL_TYPE_NAME,
+      glyph: "\u25a4",
+    })
+  );
+}
 
 /** What the app bar calls this document. A share never names its owner's workspace. */
 function documentLabel(share: ShareSession, workspaceId: string): string {
@@ -236,6 +255,8 @@ function WorkspaceShell({
   const clearLibraryFilters = useUiStore((state) => state.clearLibraryFilters);
   const setLibraryScope = useUiStore((state) => state.setLibraryScope);
   const setMode = useUiStore((state) => state.setMode);
+  /** What the canvas is for (ADR-0064); the control owns the click, this owns the effect. */
+  const purpose = useUiStore((state) => state.purpose);
   const libraryFull = useUiStore((state) => state.libraryFull);
   const setLibraryFull = useUiStore((state) => state.setLibraryFull);
   const toggleLibraryGroupBySection = useUiStore((state) => state.toggleLibraryGroupBySection);
@@ -530,6 +551,31 @@ function WorkspaceShell({
     },
     [activeBoardId, canvasPoint, workspace, startEditing],
   );
+
+  /**
+   * Recording starts with the tour itself (ADR-0064 §9): entering `record` drops
+   * a tutorial card on the board and opens its title, because a tour with no name
+   * is a tour the reader cannot find again. The steps are the record lane's work,
+   * not this callback's.
+   */
+  const startRecording = useCallback(() => {
+    if (!canCreateContent) return;
+    createCard(ensureTutorialType(workspace).id);
+  }, [canCreateContent, createCard, workspace]);
+
+  /**
+   * What a purpose opens when it is entered: a run starts from a selection made in
+   * the library (ADR-0064 §8), a record starts from its tutorial card. The
+   * previous value is a ref so a callback that changes identity cannot hand the
+   * reader a second library or a second card; the purpose itself is the trigger.
+   */
+  const previousPurpose = useRef<CanvasPurpose>(purpose);
+  useEffect(() => {
+    if (previousPurpose.current === purpose) return;
+    previousPurpose.current = purpose;
+    if (purpose === "run") setLibraryOpen(true);
+    if (purpose === "record") startRecording();
+  }, [purpose, setLibraryOpen, startRecording]);
 
   /** A run is carried out by one engine, shared with the canvas and the library. */
   const placementRun = usePlacementEngine();

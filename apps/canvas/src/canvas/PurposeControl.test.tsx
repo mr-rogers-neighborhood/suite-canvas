@@ -99,6 +99,57 @@ describe("PurposeControl labels", () => {
   });
 });
 
+describe("PurposeControl modifier preview", () => {
+  it("previews run on shift and record on ctrl, without storing either", () => {
+    render(<PurposeControl />);
+
+    fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
+    expect(toggle()).toHaveAttribute("data-preview", "run");
+    expect(toggle()).not.toHaveAttribute("data-purpose", "run");
+    expect(toggle()).toHaveAttribute("title", expect.stringContaining("run mode"));
+
+    fireEvent.keyDown(window, { key: "Control", shiftKey: false, ctrlKey: true });
+    expect(toggle()).toHaveAttribute("data-preview", "record");
+
+    fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
+    expect(toggle()).not.toHaveAttribute("data-preview");
+    // Nothing was stored: a preview is paint, and the axis is where it was.
+    expect(useUiStore.getState().purpose).toBe("explore");
+  });
+
+  it("commits the previewed value when the control is clicked with the modifier held", () => {
+    render(<PurposeControl />);
+
+    fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
+    fireEvent.click(toggle());
+
+    // A shortcut, not a cycle step: holding shift and clicking means run.
+    expect(useUiStore.getState().purpose).toBe("run");
+  });
+
+  it("leaves alt alone, because a presentation uses no modifiers and explain has no slot", () => {
+    render(<PurposeControl />);
+
+    fireEvent.keyDown(window, { key: "Alt", altKey: true });
+
+    expect(toggle()).not.toHaveAttribute("data-preview");
+    fireEvent.keyUp(window, { key: "Alt", altKey: false });
+  });
+
+  it("is not previewed while the reader is typing in a card", () => {
+    render(<PurposeControl />);
+    const field = document.createElement("div");
+    field.className = "ProseMirror";
+    document.body.append(field);
+
+    fireEvent.keyDown(field, { key: "Shift", shiftKey: true, bubbles: true });
+
+    // A capital letter is not a mode.
+    expect(toggle()).not.toHaveAttribute("data-preview");
+    field.remove();
+  });
+});
+
 describe("PurposeControl pointer events", () => {
   it("does not let pointerdown reach the canvas beneath it", () => {
     const onPointerDown = vi.fn();

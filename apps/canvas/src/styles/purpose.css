@@ -79,6 +79,13 @@
   background: color-mix(in srgb, var(--ink) 6%, var(--surface));
 }
 
+/* A modifier is showing what the click would choose. Dashed, not filled: a
+   preview is not a state, so it must not look like one (ADR-0066). */
+.purpose-control[data-preview] {
+  border-style: dashed;
+  border-color: var(--ink-muted);
+}
+
 /* An engaged purpose keeps its fill on hover: the state outranks the pointer. */
 .purpose-control[data-purpose="run"]:hover,
 .purpose-control[data-purpose="record"]:hover {

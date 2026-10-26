@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useUiStore } from "../store/useUiStore";
-import { type CanvasMode, nextMode } from "./linkGesture";
+import { type CanvasMode, canvasModes, nextMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
+import {
+  isTextEntry,
+  type ModifierState,
+  modifiersOf,
+  NO_MODIFIERS,
+  previewedValue,
+} from "./modifierPreview";
 import { usePlacementRunStore } from "./placementRun";
 import type { PlacementEngine } from "./usePlacementEngine";
 
@@ -63,14 +70,15 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   const button = useRef<HTMLButtonElement | null>(null);
   const glyph = useRef<HTMLSpanElement | null>(null);
   /**
-   * Whether Shift is held right now. Shift is the one gesture that chains links
-   * without the thread tool, so holding it shows what the toggle would do. A ref
-   * painted onto the DOM, never state: a re-render mid-gesture is exactly what
-   * the hint must not cause.
+   * The modifiers held right now, as one value both controls can read
+   * ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+   * Shift chains links without the thread tool, ctrl previews the web, and alt
+   * previews the pattern — the fourth mode, which had no key before.
+   *
+   * A ref painted onto the DOM, never state: a re-render mid-gesture is exactly
+   * what the hint must not cause.
    */
-  const shiftHeld = useRef(false);
-  /** Control (or Command) held: the same preview, for the third mode. */
-  const ctrlHeld = useRef(false);
+  const held = useRef<ModifierState>(NO_MODIFIERS);
 
   /**
    * Paints the *displayed* mode on the button. `data-mode` and the click path
@@ -81,9 +89,9 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   const paintHint = useCallback(() => {
     const node = button.current;
     if (!node) return;
-    // Ctrl wins over Shift when both are down: it is the more specific gesture,
-    // and a web from a fixed origin is what the reader is about to draw.
-    const displayed = ctrlHeld.current ? "web" : shiftHeld.current ? "thread" : mode;
+    // The family's own order decides which modifier is which; `null` means the
+    // resting state, so the stored mode shows and nothing is hinted.
+    const displayed = previewedValue(canvasModes, held.current) ?? mode;
     node.dataset.hintMode = displayed;
     node.dataset.hint = displayed === mode ? "false" : "true";
     node.classList.toggle("is-thread", displayed === "thread");
@@ -101,15 +109,19 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
 
   useEffect(() => {
     const sync = (event: KeyboardEvent) => {
-      if (event.shiftKey === shiftHeld.current && event.ctrlKey === ctrlHeld.current) return;
-      shiftHeld.current = event.shiftKey;
-      ctrlHeld.current = event.ctrlKey;
+      // Typing is not a gesture: holding shift for a capital letter must not
+      // repaint the tool.
+      const next = isTextEntry(event) ? NO_MODIFIERS : modifiersOf(event);
+      const current = held.current;
+      if (next.shift === current.shift && next.ctrl === current.ctrl && next.alt === current.alt) {
+        return;
+      }
+      held.current = next;
       paintHint();
     };
     const release = () => {
-      if (!shiftHeld.current && !ctrlHeld.current) return;
-      shiftHeld.current = false;
-      ctrlHeld.current = false;
+      if (held.current === NO_MODIFIERS) return;
+      held.current = NO_MODIFIERS;
       paintHint();
     };
     window.addEventListener("keydown", sync);

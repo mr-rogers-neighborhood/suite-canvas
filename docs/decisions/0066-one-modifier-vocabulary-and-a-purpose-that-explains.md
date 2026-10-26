@@ -60,6 +60,28 @@ purpose.**
    cards — `explain` reads that same selection — and the gesture reads them only while a link drag is
    in flight. A modifier's meaning is decided by what has the pointer, not globally by the keyboard.
 
+## What implementing the map settled
+
+The keyboard half is built; `explain` is not, and its gate is why.
+
+- **One module, two controls.** `apps/canvas/src/canvas/modifierPreview.ts` owns the positional rule
+  (`modifierOffset`, `previewedValue`) and `useModifierState.ts` exposes it to a control that re-renders.
+  The link tool keeps painting its hint from a ref — a re-render mid-gesture is the one thing that hint
+  must not cause — but it now *asks* the same function, so the two widgets cannot disagree.
+- **`alt` reaches `pattern` end to end**, which is what makes the map complete rather than
+  three-quarters of a rule.
+- **A click while previewing commits the previewed value**, so the modifier is a shortcut and not only a
+  decoration: shift-click the purpose control means `run`. The label names that value, so the control
+  never says one thing and does another.
+- **An empty slot is empty.** A three-value family returns `null` for `alt` rather than clamping to the
+  last value; a clamp would make alt a synonym for ctrl, which is worse than a key that does nothing.
+- **Typing is not a gesture.** Both listeners ignore events whose target is inside a text field, so
+  holding shift for a capital letter no longer repaints the tool — a small bug the shared module fixed
+  on the way in.
+- **`explain` waits for its gate.** Adding a fourth purpose value now would put a mode on the widget
+  that does nothing when clicked, which is exactly the shape `record` had before it was wired. The alt
+  slot and the value are specified here; the behaviour is A41's work.
+
 ## Consequences
 
 - **The gesture family becomes fully keyboard-reachable**, and the purpose family gains a fourth value

@@ -1,4 +1,4 @@
-import { anonymousClient, magicLinkClient, organizationClient } from "better-auth/client/plugins";
+import { magicLinkClient, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { forgetCredential } from "./credential";
 import { authClientBase } from "./endpoints";
@@ -20,10 +20,8 @@ import {
  * deliberately small.
  *
  * The plugins are the ones this surface uses: `magicLinkClient` for
- * `signIn.magicLink`, `organizationClient` for members and invitations, and
- * `anonymousClient` because an account-less device now gets a real (anonymous)
- * session — the server's `onLinkAccount` is what later hands its workspaces to the
- * account somebody signs up for (ADR-0076). `lastLoginMethod` needs no client
+ * `signIn.magicLink` and `organizationClient` for the tenant, its members and its
+ * invitations. `lastLoginMethod` needs no client
  * plugin: the server records the method in a readable cookie, and
  * `readLastLoginMethod` parses that cookie directly.
  *
@@ -43,7 +41,7 @@ function clientBase(): string {
 
 export const authClient = createAuthClient({
   baseURL: clientBase(),
-  plugins: [magicLinkClient(), organizationClient(), anonymousClient()],
+  plugins: [magicLinkClient(), organizationClient()],
   // A self-hosted auth service is another origin; the session cookie has to travel.
   fetchOptions: { credentials: "include" },
 });
@@ -191,32 +189,30 @@ export async function signOut(): Promise<void> {
   }
 }
 
-export type AnonymousSignIn = { ok: true } | { ok: false; code: string };
-
-/**
- * Gives this browser an anonymous session, which is what lets a workspace made
- * without an account be linked to one later (ADR-0076).
- *
- * It is not a sign-in the reader sees: no email, no name, no prompt. A deployment
- * that has the plugin off answers `ANONYMOUS_USERS_NOT_FOUND` or a 404, and that
- * is "unavailable" rather than an error — local use never depends on it.
- */
-export async function signInAnonymously(): Promise<AnonymousSignIn> {
-  try {
-    const { error } = await authClient.signIn.anonymous();
-    if (error) return { ok: false, code: codeOf(error) };
-    return { ok: true };
-  } catch {
-    return { ok: false, code: "unreachable" };
-  }
+/** What this page needs from the session: who it is, and the tenant it acts in. */
+export interface SessionSnapshot {
+  user: unknown;
+  /** The organization every request and the relay token act in, when one is set. */
+  activeOrganizationId: string | null;
 }
 
-/** The session as the server states it, or `null` when there is none. Never throws. */
-export async function readSessionUser(): Promise<unknown> {
+/**
+ * The session as the server states it, or `null` when there is none. Never throws.
+ *
+ * A browser that has never signed in has no session at all. That is the normal
+ * state of a local-first session, not an error, so it resolves rather than rejects.
+ */
+export async function readSession(): Promise<SessionSnapshot | null> {
   try {
     const { data } = await authClient.getSession();
-    if (data === null) return null;
-    return (data as { user?: unknown } | undefined)?.user ?? null;
+    if (data === null || data === undefined) return null;
+    const snapshot = data as { user?: unknown; session?: { activeOrganizationId?: unknown } };
+    if (snapshot.user === null || snapshot.user === undefined) return null;
+    const active = snapshot.session?.activeOrganizationId;
+    return {
+      user: snapshot.user,
+      activeOrganizationId: typeof active === "string" && active.length > 0 ? active : null,
+    };
   } catch {
     return null;
   }

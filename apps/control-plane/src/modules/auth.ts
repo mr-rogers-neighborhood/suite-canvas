@@ -429,10 +429,6 @@ export function relayWorkspaceData(
 /**
  * The deployment composition: migrate, then serve, with the console mail transport.
  *
- * `transferAnonymousWorkspaces` is deliberately absent: it needs an `AdoptionStore`
- * over `member` and `organization`, and no repository for it exists yet. An anonymous
- * account's organizations therefore stay with the anonymous user until that lands.
- *
  * Billing is composed here rather than imported by `@suite/auth`, which takes the
  * plugin and the entitlement reader as ports.
  */

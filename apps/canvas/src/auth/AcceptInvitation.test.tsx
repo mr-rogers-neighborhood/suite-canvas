@@ -13,7 +13,7 @@ beforeEach(() => {
 
 describe("accepting an invitation", () => {
   it("asks for a sign-in first, because the invitation is bound to an address", () => {
-    useAccountStore.setState({ phase: "anonymous", account: null });
+    useAccountStore.setState({ phase: "signed-out", account: null });
     render(<AcceptInvitation invitationId="inv-1" accept={vi.fn()} />);
 
     expect(screen.getByTestId("accept-invitation")).toHaveTextContent(

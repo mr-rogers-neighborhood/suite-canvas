@@ -157,6 +157,9 @@ export async function authorize(
   if (!verified.ok) return null;
 
   const claims = verified.claims;
+  // A workspace belongs to a tenant. A token that names none comes from an
+  // account with no organization, and there is nothing for the room to belong
+  // to, so it is refused rather than treated as a personal workspace.
   if (claims.organizationId === null) return null;
 
   const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);

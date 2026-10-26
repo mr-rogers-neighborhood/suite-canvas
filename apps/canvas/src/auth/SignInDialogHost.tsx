@@ -3,7 +3,6 @@ import { AccountPanel } from "./AccountPanel";
 import { AdmissionPanel } from "./AdmissionPanel";
 import { bootstrapAccount, lastUsedMethod, refreshAccount, signOutAccount } from "./account";
 import { signInActions } from "./client";
-import { LinkNotice } from "./LinkNotice";
 import { SignInDialog } from "./SignInDialog";
 import type { SignInMethod } from "./signIn";
 import { UpgradePrompt } from "./UpgradePrompt";
@@ -75,7 +74,6 @@ export function SignInDialogHost({ initialMode = "sign-in" }: SignInDialogHostPr
         />
       ) : null}
       <AccountPanel />
-      <LinkNotice />
       <UpgradePrompt />
     </>
   );

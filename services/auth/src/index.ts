@@ -134,10 +134,6 @@ export {
   mailSenders,
 } from "./mail/index.js";
 export {
-  type AdoptionInput,
-  type AdoptionOutcome,
-  type AdoptionStore,
-  adoptAnonymousOrganizations,
   CLAIM_WORKSPACE_SQL,
   canAddWorkspace,
   checkSeat,

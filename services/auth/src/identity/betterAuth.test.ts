@@ -40,7 +40,7 @@ const modelNames = [
   "invitation",
   "passkey",
   // `twoFactor` is the only table `twoFactor` adds; admin adds fields to
-  // `user`/`session`, anonymous and last-login-method add fields, captcha adds none.
+  // `user`/`session`, last-login-method adds a field, captcha adds none.
   "twoFactor",
   // `better-enrollment`: the invitation row and its append-only use log.
   "invite",
@@ -150,8 +150,6 @@ interface Harness {
   addUser: (email: string) => string;
   /** Stamp a user as admitted, the way the admin panel's queue does. */
   admit: (userId: string) => void;
-  /** What `onLinkAccount` asked to move, in call order. */
-  transfers: Array<{ fromUserId: string; toUserId: string }>;
   /** Private invitations handed to the sender, in order. */
   invitations: InvitationEmail[];
   /** The magic link the plugin asked us to deliver, if any. */
@@ -215,7 +213,6 @@ function harness(
   let link: string | null = null;
   let verification: string | null = null;
   const verified: string[] = [];
-  const transfers: Array<{ fromUserId: string; toUserId: string }> = [];
   const invitations: InvitationEmail[] = [];
   const organizationInvitations: OrganizationInvitation[] = [];
 
@@ -234,9 +231,6 @@ function harness(
     },
     sendOrganizationInvitation: async (invitation) => {
       organizationInvitations.push(invitation);
-    },
-    transferAnonymousWorkspaces: async (input) => {
-      transfers.push(input);
     },
     sendInvitation: async (invitation) => {
       invitations.push(invitation);
@@ -294,7 +288,6 @@ function harness(
       if (row === undefined) throw new Error(`${userId} is not a stored user`);
       row.admittedAt = NOW;
     },
-    transfers,
     invitations,
     lastLink: () => link,
     lastVerification: () => verification,
@@ -967,42 +960,5 @@ describe("admission", () => {
     // Read from the user row on every session: admitting takes effect without
     // asking the reader to sign in again.
     expect((await reader.sessionFor({ cookie }))?.admittedAt).toBe(NOW);
-  });
-});
-
-describe("an anonymous account that signs up", () => {
-  const anonymousSignIn = async (auth: TestAuth): Promise<{ cookie: string; userId: string }> => {
-    const response = await auth.handler(
-      new Request(`${BASE_URL}/api/auth/sign-in/anonymous`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: BASE_URL },
-        body: "{}",
-      }),
-    );
-    const cookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
-    if (cookie.length === 0) throw new Error("no anonymous session cookie");
-    const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
-    if (session === null) throw new Error("the anonymous cookie resolved to no session");
-    return { cookie, userId: session.user.id };
-  };
-
-  it("hands its workspaces to the real account before the anonymous user is deleted", async () => {
-    const { auth, transfers, lastLink, signIn } = harness();
-    const anonymous = await anonymousSignIn(auth);
-
-    // The anonymous cookie rides the sign-in, which is how the plugin knows there is
-    // something to link: without it this is an ordinary first sign-in.
-    await auth.api.signInMagicLink({
-      body: { email: "founder@example.com" },
-      headers: new Headers({ origin: BASE_URL, cookie: anonymous.cookie }),
-    });
-    const link = lastLink();
-    if (link === null) throw new Error("the plugin never asked for a magic link");
-    await auth.handler(
-      new Request(link, { redirect: "manual", headers: { cookie: anonymous.cookie } }),
-    );
-
-    const real = await signIn("founder@example.com");
-    expect(transfers).toEqual([{ fromUserId: anonymous.userId, toUserId: real.userId }]);
   });
 });

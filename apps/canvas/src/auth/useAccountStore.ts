@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import type { LinkPrompt } from "./anonymous";
 import type { AuthAvailability } from "./availability";
 
 /**
@@ -18,7 +17,7 @@ export interface AccountSummary {
   admittedAt: number | null;
 }
 
-export type AccountPhase = "unknown" | "anonymous" | "signed-in";
+export type AccountPhase = "unknown" | "signed-out" | "signed-in";
 
 /** The four surfaces the account panel opens on. */
 export type AccountTab = "account" | "members" | "devices" | "plan";
@@ -39,8 +38,8 @@ export interface AccountState {
   /** Whether the account panel is open, and on which surface. */
   panelOpen: boolean;
   panelTab: AccountTab;
-  /** The one prompt after an anonymous device signs up (ADR-0076). */
-  linked: LinkPrompt | null;
+  /** The organization this session acts in, or `null` while it has none. */
+  organizationId: string | null;
   /** A refusal that a higher plan would clear; cleared when dismissed. */
   upgrade: UpgradePrompt | null;
   /** Whether the admission panel is on screen: true only on the server's answer. */
@@ -52,9 +51,11 @@ export interface AccountState {
   closePanel: () => void;
   setPanelTab: (tab: AccountTab) => void;
   /** Sets the deployment's answer and the session it implies. */
-  applySession: (input: { availability: AuthAvailability; account: AccountSummary | null }) => void;
-  noteLinked: (prompt: LinkPrompt | null) => void;
-  dismissLinked: () => void;
+  applySession: (input: {
+    availability: AuthAvailability;
+    account: AccountSummary | null;
+    organizationId?: string | null;
+  }) => void;
   noteUpgrade: (prompt: UpgradePrompt) => void;
   dismissUpgrade: () => void;
   openAdmission: () => void;
@@ -71,7 +72,7 @@ const INITIAL = {
   dialogMode: "sign-in" as "sign-in" | "sign-up",
   panelOpen: false,
   panelTab: "account" as AccountTab,
-  linked: null,
+  organizationId: null,
   upgrade: null,
   admissionOpen: false,
 };
@@ -83,15 +84,14 @@ export const useAccountStore = create<AccountState>((set) => ({
   openPanel: (tab = "account") => set({ panelOpen: true, panelTab: tab }),
   closePanel: () => set({ panelOpen: false }),
   setPanelTab: (tab) => set({ panelTab: tab }),
-  applySession: ({ availability, account }) =>
+  applySession: ({ availability, account, organizationId }) =>
     set({
       availability,
       account,
-      phase: account === null ? "anonymous" : "signed-in",
+      organizationId: organizationId ?? null,
+      phase: account === null ? "signed-out" : "signed-in",
       admissionOpen: false,
     }),
-  noteLinked: (prompt) => set({ linked: prompt }),
-  dismissLinked: () => set({ linked: null }),
   noteUpgrade: (prompt) => set({ upgrade: prompt }),
   dismissUpgrade: () => set({ upgrade: null }),
   openAdmission: () => set({ admissionOpen: true }),

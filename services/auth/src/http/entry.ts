@@ -54,8 +54,6 @@ export interface AuthEntryDeps
   database?: AuthDatabase;
   /** Promise resolved on shutdown; absent when the caller owns the pool. */
   close?: () => Promise<void>;
-  /** Slack for `onLinkAccount`. */
-  transferAnonymousWorkspaces?: AuthServiceDeps["transferAnonymousWorkspaces"];
   now?: AuthServiceDeps["now"];
   /**
    * The account store, when the caller owns it. `createPostgresAuthEntry` builds one
@@ -101,12 +99,7 @@ export interface AuthEntry {
 function optionalDeps(
   deps: Pick<
     AuthEntryDeps,
-    | "sendInvitation"
-    | "onPublicInvitation"
-    | "transferAnonymousWorkspaces"
-    | "entitlements"
-    | "billingPlugin"
-    | "now"
+    "sendInvitation" | "onPublicInvitation" | "entitlements" | "billingPlugin" | "now"
   >,
 ): Partial<AuthServiceDeps> {
   return {
@@ -114,9 +107,6 @@ function optionalDeps(
     ...(deps.onPublicInvitation === undefined
       ? {}
       : { onPublicInvitation: deps.onPublicInvitation }),
-    ...(deps.transferAnonymousWorkspaces === undefined
-      ? {}
-      : { transferAnonymousWorkspaces: deps.transferAnonymousWorkspaces }),
     ...(deps.entitlements === undefined ? {} : { entitlements: deps.entitlements }),
     ...(deps.billingPlugin === undefined ? {} : { billingPlugin: deps.billingPlugin }),
     ...(deps.now === undefined ? {} : { now: deps.now }),
@@ -201,7 +191,7 @@ export interface PostgresAuthEntryDeps
       | "entitlements"
       | "billingPlugin"
     >,
-    Pick<AuthEntryDeps, "transferAnonymousWorkspaces" | "now" | "workspaceData"> {
+    Pick<AuthEntryDeps, "now" | "workspaceData"> {
   /** Raw SQL over a pool or client the caller owns. */
   queryable?: Queryable;
   /** Better Auth's adapter over that same pool. Required with `queryable`. */

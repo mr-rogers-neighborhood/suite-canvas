@@ -1,6 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { LinkNotice } from "./LinkNotice";
 import { UpgradePrompt } from "./UpgradePrompt";
 import { useAccountStore } from "./useAccountStore";
 
@@ -42,23 +41,5 @@ describe("the upgrade prompt", () => {
     fireEvent.click(screen.getByTestId("upgrade-dismiss"));
     expect(useAccountStore.getState().upgrade).toBeNull();
     expect(useAccountStore.getState().panelOpen).toBe(false);
-  });
-});
-
-describe("the link prompt", () => {
-  it("says what moved, once", () => {
-    useAccountStore
-      .getState()
-      .noteLinked({ count: 1, message: "1 local workspace now belongs to you." });
-    render(<LinkNotice />);
-    expect(screen.getByTestId("link-notice-message")).toHaveTextContent("now belongs to you");
-
-    fireEvent.click(screen.getByTestId("link-notice-dismiss"));
-    expect(useAccountStore.getState().linked).toBeNull();
-  });
-
-  it("is absent when nothing was handed over", () => {
-    render(<LinkNotice />);
-    expect(screen.queryByTestId("link-notice")).not.toBeInTheDocument();
   });
 });

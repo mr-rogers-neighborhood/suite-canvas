@@ -6,7 +6,7 @@ import { useAccountStore } from "./useAccountStore";
 describe("the header's account slot", () => {
   beforeEach(() => {
     useAccountStore.getState().clear();
-    useAccountStore.setState({ availability: "available", phase: "anonymous", account: null });
+    useAccountStore.setState({ availability: "available", phase: "signed-out", account: null });
   });
 
   it("offers one findable way in before there is an account", () => {
@@ -75,7 +75,7 @@ describe("the header's account slot", () => {
   });
 
   it("is a plain 'Sign in' on a deployment with no accounts, rather than nothing", () => {
-    useAccountStore.setState({ availability: "unavailable", phase: "anonymous", account: null });
+    useAccountStore.setState({ availability: "unavailable", phase: "signed-out", account: null });
     render(<SignInEntry onSignOut={() => {}} />);
     // The entry stays, because clicking it is how someone learns *why* there is
     // no account here — the dialog explains instead of the app staying silent.

@@ -3,7 +3,6 @@ import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "bette
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import {
   admin,
-  anonymous,
   captcha,
   jwt,
   lastLoginMethod,
@@ -104,16 +103,6 @@ export interface AuthServiceDeps {
    * nobody ever receives and have no way to tell.
    */
   sendOrganizationInvitation: (invitation: OrganizationInvitation) => Promise<void>;
-  /**
-   * Hand everything an anonymous account owned to the account that just signed up.
-   *
-   * Better Auth calls this from `anonymous`'s `onLinkAccount` **before** it deletes
-   * the anonymous user, which is the only window in which the rows still name
-   * someone. It is injected so this service never depends on the workspace
-   * repository: the callback moves *ownership*, and a bug in it must be testable
-   * without a database.
-   */
-  transferAnonymousWorkspaces?: (input: { fromUserId: string; toUserId: string }) => Promise<void>;
   /**
    * What the subscription buys, for the `tier` and `limits` claims (ADR-0075).
    *
@@ -218,7 +207,7 @@ function verificationRequired(env: AuthEnvironment): boolean {
  *
  * Throws `auth-not-configured` rather than constructing a half-working instance:
  * a session that cannot be verified is worse than an obvious outage, because the
- * relay would then treat an account request as anonymous.
+ * relay would then refuse every account request.
  */
 /**
  * The Better Auth options, built from the environment and the injected repositories.
@@ -414,17 +403,6 @@ export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
         },
       }),
       passkey({ rpID, rpName: env.SUITE_AUTH_RP_NAME?.trim() || "Suite" }),
-      // A session with no PII, so a first launch can be a real user from minute one.
-      // `onLinkAccount` is the whole point: it fires on the first real sign-in, and
-      // it runs before Better Auth deletes the anonymous user.
-      anonymous({
-        onLinkAccount: async ({ anonymousUser, newUser }) => {
-          await deps.transferAnonymousWorkspaces?.({
-            fromUserId: anonymousUser.user.id,
-            toUserId: newUser.user.id,
-          });
-        },
-      }),
       // Remembers the method that worked, so the sign-in screen can offer it first
       // instead of presenting four equal doors (ADR-0067 §11).
       lastLoginMethod(),

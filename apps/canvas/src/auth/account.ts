@@ -1,22 +1,22 @@
-import {
-  forgetAnonymousSession,
-  hadAnonymousSession,
-  linkPrompt,
-  localWorkspaceIds,
-  rememberAnonymousSession,
-} from "./anonymous";
 import { probeAuth } from "./availability";
-import { lastUsedMethod, readSessionUser, signInAnonymously, signOut } from "./client";
+import { lastUsedMethod, readSession, signOut } from "./client";
 import { forgetCredential } from "./credential";
+import { ensureOrganization, ORGANIZATION_NAME, setActiveOrganization } from "./organization";
 import { type AccountSummary, useAccountStore } from "./useAccountStore";
 
 /**
- * The session, and the one thing that happens after it appears.
+ * The session, and the tenant it acts in.
  *
- * The order is: **probe, read the session, give an anonymous session if there is
- * none, then let the screen decide**. No claim route runs here — a device that
- * worked without an account is linked by the server's `onLinkAccount` on the
- * first real sign-in (ADR-0076), and all this side does is say so once.
+ * The order is: probe, read the session, make sure the account has an
+ * organization, then let the screen decide. A browser with no session stops at
+ * step two and stays local: no identity is created for it, and the relay is never
+ * asked about it.
+ *
+ * The organization step is not cosmetic. A workspace belongs to an organization,
+ * and the relay's token carries the organization it acts in. Better Auth's
+ * `createOrganization` does not make the new organization active, so an account
+ * without that second call holds an organization it never acts in and every join
+ * is refused. Both calls are idempotent, so this is safe to run on every boot.
  */
 
 /** The session user, narrowed from whatever the server returned. */
@@ -32,72 +32,100 @@ export function accountFromUser(user: unknown): AccountSummary | null {
   };
 }
 
+/**
+ * What an account's first organization is called.
+ *
+ * Named after the person, because it is their space and the name shows in the plan
+ * and member panels. `name` is what they typed at sign-up; the part before the
+ * `@` is the fallback for a method that never asked for one.
+ */
+export function personalOrganizationName(account: AccountSummary): string {
+  const named = account.name?.trim();
+  if (named !== undefined && named.length > 0) return named;
+  const local = account.email?.split("@")[0]?.trim();
+  if (local !== undefined && local.length > 0) return local;
+  return ORGANIZATION_NAME;
+}
+
+/**
+ * The organization this session acts in, made and selected when the account has
+ * none. Returns the id, or `null` when the account service refused, which leaves
+ * the account signed in and the board local.
+ */
+export async function ensureActiveOrganization(
+  account: AccountSummary,
+  activeOrganizationId: string | null,
+  deps: { ensure?: typeof ensureOrganization; activate?: typeof setActiveOrganization } = {},
+): Promise<string | null> {
+  if (activeOrganizationId !== null) return activeOrganizationId;
+  const ensure = deps.ensure ?? ensureOrganization;
+  const activate = deps.activate ?? setActiveOrganization;
+  const answer = await ensure(personalOrganizationName(account));
+  if (!answer.ok) return null;
+  const activated = await activate(answer.organizationId);
+  return activated ? answer.organizationId : null;
+}
+
+/** Applies "no session", which is a normal state and not a failure. */
+function applySignedOut(availability: "available" | "unavailable"): void {
+  useAccountStore.getState().applySession({ availability, account: null, organizationId: null });
+}
+
 let bootstrapped: Promise<void> | null = null;
 
 /**
  * Reads the deployment and the session once per page. Idempotent: `App` and the
  * dialog host both want the answer, and the answer costs one request.
  *
- * With no session and accounts available, this browser is given an anonymous one.
- * That is what makes "sign up later and keep your work" real: the server has a
- * user id to move the workspaces from.
+ * A browser with no session is left alone. It keeps working entirely from
+ * IndexedDB, and the board says so in its own words rather than reporting a
+ * refusal from a server it never held a credential for.
  */
 export function bootstrapAccount(): Promise<void> {
   bootstrapped ??= (async () => {
     const availability = await probeAuth();
     if (availability === "unavailable") {
-      useAccountStore.getState().applySession({ availability, account: null });
+      applySignedOut("unavailable");
       return;
     }
-    const user = await readSessionUser();
-    const account = accountFromUser(user);
-    if (account !== null) {
-      useAccountStore.getState().applySession({ availability, account });
-      announceLink(account);
+    const session = await readSession();
+    const account = accountFromUser(session?.user);
+    if (account === null) {
+      applySignedOut("available");
       return;
     }
-    // No session: mint an anonymous one, which is also the flag that says this
-    // device may have work to hand over at sign-up.
-    const anonymous = await signInAnonymously();
-    const created = accountFromUser(await readSessionUser());
-    if (anonymous.ok && created !== null) rememberAnonymousSession();
-    useAccountStore.getState().applySession({ availability, account: created });
+    const organizationId = await ensureActiveOrganization(
+      account,
+      session?.activeOrganizationId ?? null,
+    );
+    useAccountStore.getState().applySession({ availability, account, organizationId });
   })().catch(() => {
     // A probe that failed for an unforeseen reason is "no accounts here", not a crash.
-    useAccountStore.getState().applySession({ availability: "unavailable", account: null });
+    applySignedOut("unavailable");
   });
   return bootstrapped;
-}
-
-/**
- * The one prompt, once: this device worked anonymously and now belongs to an
- * account. The server already moved the rows (`onLinkAccount`), so this is a
- * sentence rather than a protocol — nothing here retries or reconciles.
- */
-function announceLink(account: AccountSummary): void {
-  if (!hadAnonymousSession()) return;
-  const prompt = linkPrompt({
-    email: account.email,
-    workspaceIds: localWorkspaceIds(),
-    wasAnonymous: true,
-  });
-  forgetAnonymousSession();
-  useAccountStore.getState().noteLinked(prompt);
 }
 
 /** Re-reads the session after an action that may have created one (sign-in). */
 export async function refreshAccount(): Promise<void> {
   const availability = await probeAuth();
   if (availability === "unavailable") {
-    useAccountStore.getState().applySession({ availability, account: null });
+    applySignedOut("unavailable");
     return;
   }
-  const account = accountFromUser(await readSessionUser());
-  useAccountStore.getState().applySession({ availability, account });
+  const session = await readSession();
+  const account = accountFromUser(session?.user);
   // A fresh sign-in invalidates any token minted for the previous session.
   forgetCredential();
-  if (account === null) return;
-  announceLink(account);
+  if (account === null) {
+    applySignedOut("available");
+    return;
+  }
+  const organizationId = await ensureActiveOrganization(
+    account,
+    session?.activeOrganizationId ?? null,
+  );
+  useAccountStore.getState().applySession({ availability, account, organizationId });
   // A room refused at boot because there was no credential is joinable now, and
   // the provider re-mints on join. Loaded on demand: the account module must not
   // pull the document store in at import time.
@@ -108,7 +136,6 @@ export async function refreshAccount(): Promise<void> {
 /** Ends the session locally and forgets the account, leaving the workspace alone. */
 export async function signOutAccount(): Promise<void> {
   await signOut();
-  forgetAnonymousSession();
   bootstrapped = null;
   useAccountStore.getState().clear();
 }

@@ -185,6 +185,61 @@ export function shiftRoute(points: readonly RoutePoint[], offset: RoutePoint): R
   ];
 }
 
+/** A card's box in flow units: what a self-loop has to travel around. */
+export interface LoopRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** How far outside the card a self-loop bows. Wide enough to clear a card's shadow. */
+export const SELF_LOOP_MARGIN = 28;
+
+/**
+ * A link that leaves a card and comes back to it
+ * ([ADR-0061](./0061-three-ways-to-draw-links.md) amendment).
+ *
+ * Threading is a route *through* a card, so `A.top → A.bottom` is a real edge —
+ * `addEdge` accepts it and the reference index counts it. The plain route between
+ * those two anchors, however, is a line straight across the card face: it reads as
+ * a stripe painted on the card, not as a line that left and returned.
+ *
+ * So the loop bows out to one side and comes back. The side is decided by the
+ * anchors: it bows outward on the side they already sit, so the line never has to
+ * cross the card to reach its own bow. A vertical pair (top and bottom) bows right
+ * or left depending on where the dots are; a horizontal pair bows down or up. The
+ * axis the anchors span is the axis the loop *leaves* by, and the bow grows on the
+ * other one.
+ *
+ * Returns `null` when the two anchors are the same point, which a thread never
+ * produces (clicking the armed connector disarms instead) but a hand-edited
+ * document could.
+ */
+export function selfLoopRoute(
+  source: RoutePoint,
+  target: RoutePoint,
+  rect: LoopRect,
+  margin: number = SELF_LOOP_MARGIN,
+): RoutePoint[] | null {
+  if (source.x === target.x && source.y === target.y) return null;
+
+  const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  // Which way the anchors lie from the centre tells us the axis they span; the loop
+  // bulges on the other one.
+  const spansVertically = Math.abs(source.y - target.y) >= Math.abs(source.x - target.x);
+  if (spansVertically) {
+    // Bow outward on the side the anchors already sit, so the loop never crosses the
+    // card to reach its own bow: dots on the right edge loop further right.
+    const outward = (source.x + target.x) / 2 >= centre.x ? 1 : -1;
+    const lane = outward >= 0 ? rect.x + rect.width + margin : rect.x - margin;
+    return [source, { x: lane, y: source.y }, { x: lane, y: target.y }, target];
+  }
+  const outward = (source.y + target.y) / 2 >= centre.y ? 1 : -1;
+  const lane = outward >= 0 ? rect.y + rect.height + margin : rect.y - margin;
+  return [source, { x: source.x, y: lane }, { x: target.x, y: lane }, target];
+}
+
 /** One end of a link as the pair rule compares it: kind, entity and dot. */
 function endKey(edge: GraphEdge, end: "source" | "target"): string {
   const kind = end === "source" ? edge.sourceKind : edge.targetKind;

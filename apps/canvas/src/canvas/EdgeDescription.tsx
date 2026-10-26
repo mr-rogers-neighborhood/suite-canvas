@@ -20,6 +20,7 @@ import {
   asRouteMode,
   avoidRoute,
   isAvoidMode,
+  type LoopRect,
   pairOffset,
   type RouteMode,
   type RoutePoint,
@@ -27,6 +28,7 @@ import {
   reversePartnerOf,
   routePath,
   routePoints,
+  selfLoopRoute,
   shiftRoute,
 } from "./edgeRoute";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
@@ -146,8 +148,20 @@ function drawRoute(input: {
   /** The perpendicular nudge that separates a reverse pair, or null. */
   shift: RoutePoint | null;
   obstacles: readonly RouteRect[];
+  /** The card's box when both ends are on the same card, so the loop can go around it. */
+  selfLoopRect: LoopRect | null;
 }): RouteDraw {
   const { source, target, sourcePosition, targetPosition, mode, bends, shift, obstacles } = input;
+
+  // A card linked to itself is a route through a card, and a route through a card has
+  // to leave it: bows around the edge instead of cutting across the face.
+  if (input.selfLoopRect) {
+    const loop = selfLoopRoute(source, target, input.selfLoopRect);
+    if (loop) {
+      const box = { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 };
+      return { path: routePath(loop, mode), mid: box, bends: [] };
+    }
+  }
   const helpers = {
     sourceX: source.x,
     sourceY: source.y,
@@ -329,6 +343,20 @@ export function EdgeWithDescription({
     () => (paired ? pairOffset(id, source, target) : null),
     [paired, id, source, target],
   );
+  // A self-loop's two anchors sit on one card, so the route needs that card's box to
+  // travel around it (ADR-0061 amendment). Read from the document, not from React
+  // Flow's measured nodes, so it is right before the card has painted.
+  const selfLoopRect = useMemo((): LoopRect | null => {
+    if (!edge || edge.source !== edge.target) return null;
+    const placement = workspace.getPlacement(edge.boardId, edge.source);
+    if (!placement) return null;
+    return {
+      x: placement.x,
+      y: placement.y,
+      width: placement.width ?? DEFAULT_CARD_WIDTH,
+      height: placement.height ?? DEFAULT_CARD_HEIGHT,
+    };
+  }, [edge, workspace]);
 
   const bends = useMemo(() => {
     if (!liveBend) return storedBends;
@@ -351,8 +379,20 @@ export function EdgeWithDescription({
         bends,
         shift,
         obstacles,
+        selfLoopRect,
       }),
-    [id, source, target, sourcePosition, targetPosition, mode, bends, shift, obstacles],
+    [
+      id,
+      source,
+      target,
+      sourcePosition,
+      targetPosition,
+      mode,
+      bends,
+      shift,
+      obstacles,
+      selfLoopRect,
+    ],
   );
   const edgePath = route.path;
 

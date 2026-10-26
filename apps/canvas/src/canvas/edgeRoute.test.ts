@@ -10,6 +10,7 @@ import {
   reversePartnerOf,
   routePath,
   routePoints,
+  selfLoopRoute,
   shiftRoute,
 } from "./edgeRoute";
 
@@ -472,5 +473,58 @@ describe("shifting a route sideways", () => {
     expect(Math.hypot(outMid.x - backMid.x, outMid.y - backMid.y)).toBeGreaterThan(8);
     expect(out[0]).toEqual(a);
     expect(back[2]).toEqual(b);
+  });
+});
+
+describe("selfLoopRoute: a link that comes back to its own card", () => {
+  const rect = { x: 100, y: 100, width: 240, height: 120 };
+
+  it("bows around the edge instead of cutting across the face", () => {
+    // A thread can enter at the top and leave at the bottom — that is what having
+    // ports is for — and the plain route between those anchors is a stripe painted
+    // on the card. Every point must clear the card.
+    const points = selfLoopRoute({ x: 220, y: 100 }, { x: 220, y: 220 }, rect);
+
+    expect(points).not.toBeNull();
+    for (const point of points ?? []) {
+      const insideX = point.x > rect.x && point.x < rect.x + rect.width;
+      const insideY = point.y > rect.y && point.y < rect.y + rect.height;
+      expect(insideX && insideY).toBe(false);
+    }
+  });
+
+  it("bows outward on whichever side the anchors already sit", () => {
+    // Centre-line anchors take the open right side, so the loop reads as a loop
+    // rather than a line drawn over the card.
+    const centreLine = selfLoopRoute({ x: 220, y: 100 }, { x: 220, y: 220 }, rect);
+    expect(centreLine?.some((point) => point.x >= rect.x + rect.width)).toBe(true);
+
+    // Dots already on the left edge bow further left, never across the card: a loop
+    // that crossed its own card to reach its bow would be the stripe it replaced.
+    const leftEdge = selfLoopRoute({ x: 110, y: 120 }, { x: 110, y: 200 }, rect);
+    expect(leftEdge?.some((point) => point.x <= rect.x)).toBe(true);
+    // And the right-edge case bows right, further out.
+    const rightEdge = selfLoopRoute({ x: 330, y: 120 }, { x: 330, y: 200 }, rect);
+    expect(rightEdge?.some((point) => point.x >= rect.x + rect.width)).toBe(true);
+  });
+
+  it("bows downward for a horizontal pair, on the other axis", () => {
+    const points = selfLoopRoute({ x: 100, y: 160 }, { x: 340, y: 160 }, rect);
+    expect(points?.some((point) => point.y >= rect.y + rect.height)).toBe(true);
+  });
+
+  it("starts and ends exactly on the anchors, so the link still touches its dots", () => {
+    const source = { x: 220, y: 100 };
+    const target = { x: 220, y: 220 };
+    const points = selfLoopRoute(source, target, rect);
+
+    expect(points?.[0]).toEqual(source);
+    expect(points?.[points.length - 1]).toEqual(target);
+  });
+
+  it("answers null for two identical anchors, which a thread never produces", () => {
+    // Clicking the armed connector disarms rather than drawing, so this is a
+    // hand-edited document only; drawing a degenerate loop would be worse than none.
+    expect(selfLoopRoute({ x: 220, y: 100 }, { x: 220, y: 100 }, rect)).toBeNull();
   });
 });

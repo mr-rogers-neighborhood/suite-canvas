@@ -1,5 +1,5 @@
 import type { StyleRule, StyleRuleScope, WorkspaceDocument } from "@suite/graph";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { StyledSurfaceKind } from "../canvas/styleTargets";
 import {
@@ -10,6 +10,7 @@ import {
   surfacesUnderRule,
   withoutRule,
 } from "../canvas/styleTargets";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { StyleTab } from "./surface/StyleTab";
@@ -78,14 +79,7 @@ export function StylesDialog({ open, canEdit, onClose, workspace = null }: Style
   const rules = useStyleRules(workspace);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscapeLayer(onClose, open);
 
   if (!open) return null;
 

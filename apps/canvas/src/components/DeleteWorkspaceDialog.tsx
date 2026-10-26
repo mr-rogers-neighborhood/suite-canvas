@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { deleteWorkspaceEverywhere, type WorkspaceDeleteProfile } from "../session/workspaceDelete";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 
 export interface DeleteWorkspaceDialogProps {
@@ -47,18 +48,10 @@ export function DeleteWorkspaceDialog({
 
   const name = title.trim() || workspaceId;
 
+  useEscapeLayer(onClose);
   useEffect(() => {
     input.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    // Capture: the canvas behind this dialog also listens for Escape.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, []);
 
   const confirmed = typed.trim() === name || typed.trim() === workspaceId.trim();
 

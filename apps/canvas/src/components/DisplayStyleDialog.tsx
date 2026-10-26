@@ -6,8 +6,9 @@ import {
   presetOf,
   type TemplateContext,
 } from "@suite/graph";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { ValueTemplate } from "./ValueTemplate";
 
 export type DisplayScope = "field" | "instance";
@@ -67,17 +68,7 @@ export function DisplayStyleDialog({
   const [draft, setDraft] = useState(template || DEFAULT_DISPLAY_TEMPLATE);
   const [scope, setScope] = useState<DisplayScope>(allowFieldScope ? "field" : "instance");
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    // Capture: the editors behind this dialog also listen for Escape.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   const preset = presetOf(draft);
   // Preview with the context's real value, so an empty field reads as it will.

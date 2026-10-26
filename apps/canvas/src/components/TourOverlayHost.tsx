@@ -8,6 +8,7 @@ import {
 } from "@suite/graph";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { completeTour, targetExistence, useLoroVersion } from "../cards/tour";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -218,16 +219,7 @@ function TourOverlay({ tutorialId }: { tutorialId: string }) {
     };
   }, [primary, index, dead]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        exit();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [exit]);
+  useEscapeLayer(exit);
 
   const clickToAdvance = step?.advance === "click" && !dead;
   const captionTop = box ? box.top + box.height + 12 : null;

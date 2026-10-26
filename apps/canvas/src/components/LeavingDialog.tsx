@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 /**
  * The in-app leave interstitial ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md)
@@ -32,14 +33,10 @@ export function LeavingDialog({
   const panel = useRef<HTMLDivElement | null>(null);
   const [exported, setExported] = useState<"idle" | "done" | "failed">("idle");
 
+  useEscapeLayer(onDismiss);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onDismiss();
-    };
-    window.addEventListener("keydown", onKey);
     panel.current?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  }, []);
 
   // The same backup File → Export backup writes: a leave prompt is not the place
   // to invent a second export format.

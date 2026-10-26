@@ -1,7 +1,8 @@
 import type { CardType, CreateFieldInput, FieldDefinition, SubField } from "@suite/graph";
 import { displayTemplate, fieldKinds, subFieldKinds, typePluralName } from "@suite/graph";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { DisplayStyleDialog } from "./DisplayStyleDialog";
 
 export interface TypeSettingsDialogProps {
@@ -140,13 +141,7 @@ export function TypeSettingsDialog({
     [types, selectedId],
   );
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   const createField = () => {
     if (!selected) return;

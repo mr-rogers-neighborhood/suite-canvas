@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import type { CanvasMode } from "../canvas/linkGesture";
 import { usePlacementRunStore } from "../canvas/placementRun";
 import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrarySearch";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
@@ -456,22 +457,14 @@ export function LibraryDrawer({
     updateQuery(workspace?.getView(activeViewId)?.query.text ?? "");
   }, [activeViewId, workspace, updateQuery]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      // The first Escape clears the query; only the next one closes the drawer.
-      if (query.trim().length > 0) {
-        event.preventDefault();
-        event.stopPropagation();
-        updateQuery("");
-        return;
-      }
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, query, updateQuery]);
+  useEscapeLayer(() => {
+    // The first Escape clears the query; only the next one closes the drawer.
+    if (query.trim().length > 0) {
+      updateQuery("");
+      return;
+    }
+    onClose();
+  }, open);
 
   /**
    * A press on the canvas closes the drawer: the canvas is what "outside" means here,

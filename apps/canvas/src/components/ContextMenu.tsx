@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 export interface ContextMenuItem {
   label: string;
@@ -35,13 +36,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   // it to the left of its parent when the menu was opened near the right edge.
   const flipSubmenu = x + 360 > viewportWidth;
 
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   // Portalled: a `position: fixed` menu inside the canvas viewport (or an
   // editor) would be positioned against that transformed ancestor instead of

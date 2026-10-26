@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
 import { type PaletteItem, paletteGroups, rankPaletteItems } from "./paletteRank";
 
@@ -41,6 +42,8 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
     input.current?.focus();
   }, []);
 
+  useEscapeLayer(onClose);
+
   const run = (item: PaletteItem) => {
     onClose();
     // The row's work may open a dialog or move the camera; running after the
@@ -49,11 +52,6 @@ export function CommandPalette({ items, onClose }: CommandPaletteProps) {
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (ranked.length === 0) return;

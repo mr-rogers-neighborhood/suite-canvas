@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 export interface DialogAction {
   label: string;
@@ -20,14 +21,10 @@ export interface DialogProps {
 export function Dialog({ title, description, actions, onClose }: DialogProps) {
   const panel = useRef<HTMLDivElement | null>(null);
 
+  useEscapeLayer(onClose);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
     panel.current?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center">

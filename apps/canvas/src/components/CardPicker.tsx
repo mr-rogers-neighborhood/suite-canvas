@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef, useState } from "react";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** The slice of a card a picker needs: an id and the title it searches. */
 export interface CardPickerOption {
@@ -55,6 +56,10 @@ export function CardPicker({ cards, value, label, onChange, onClear }: CardPicke
     setOpen(false);
   };
 
+  // Only while the list is showing: an Escape over a closed picker belongs to the
+  // editor the picker is embedded in.
+  useEscapeLayer(close, open);
+
   return (
     <div className="space-y-1" data-testid="card-picker">
       {value ? (
@@ -106,10 +111,6 @@ export function CardPicker({ cards, value, label, onChange, onClear }: CardPicke
           if (event.key === "Enter" && activeCard) {
             event.preventDefault();
             choose(activeCard);
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            close();
           }
         }}
       />

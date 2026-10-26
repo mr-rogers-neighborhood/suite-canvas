@@ -11,6 +11,7 @@ import {
   sharePublishErrorMessage,
   shareStatus,
 } from "../session/shares";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 
@@ -248,16 +249,7 @@ function ConflictDialog({
   const onlyUnsupported = blocked && conflict.conflicts.length === 0;
   const groups = groupConflicts(conflict.conflicts);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   const toggle = (key: string) => {
     setSelected((previous) => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigateTarget } from "../canvas/navigateTarget";
 import { isShareSession } from "../session/session";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CardInspector } from "./CardInspector";
@@ -45,6 +46,17 @@ export function CardInspectorHost() {
   const cancelLinkEndMove = useUiStore((state) => state.cancelLinkEndMove);
   const setSelectedEdgeIds = useUiStore((state) => state.setSelectedEdgeIds);
   const navigateTo = useNavigateTarget();
+
+  /**
+   * Escape closes the panel before anything under it reacts, and leaves the card
+   * selected — its own × does the same, so the key and the button agree. While a
+   * field inside the panel is being edited the panel steps out of the layer stack,
+   * because a text entry clears before its container closes and the canvas chain
+   * already ends that edit.
+   */
+  const editingInsidePanel =
+    inspectorNodeId !== null && editingSurface === "panel" && editingNodeId === inspectorNodeId;
+  useEscapeLayer(closeInspector, inspectorNodeId !== null && !editingInsidePanel);
   // A container that vanished (deleted in another tab, trashed) closes the drawer
   // rather than leaving a panel describing something that is not there.
   const containerMissing = containerTarget !== null && container === null;

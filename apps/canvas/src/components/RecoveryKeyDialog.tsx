@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
   generateOwnerKey,
@@ -16,6 +16,7 @@ import {
 import { encodeKey, recoveryWordsDocument } from "../session/recoveryWords";
 import { revokeAllShares } from "../session/shares";
 import { downloadText, fileStem, workspaceUrl } from "../session/workspaceTransfer";
+import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 
 export type RecoveryKeyMode = "manage" | "backup-prompt";
@@ -95,17 +96,7 @@ export function RecoveryKeyDialog({
 
   const activeKey = newKey ?? ownerKey;
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    // Capture: the canvas behind this dialog also listens for Escape.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   const save = () => {
     setError(null);

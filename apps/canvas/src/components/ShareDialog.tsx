@@ -11,6 +11,7 @@ import type {
 } from "../session/shares";
 import * as sharesApi from "../session/shares";
 import { shareErrorMessage } from "../session/shares";
+import { useEscapeLayer } from "../shell/escapeLayers";
 
 /** The slice of the share API the dialog needs; stories and tests may replace it. */
 export interface ShareClient {
@@ -160,17 +161,7 @@ export function ShareDialog({
   // editors change it, then publish back to the workspace. Selection links are
   // the exception for now: they are always read-only.
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    // Capture: the canvas behind this dialog also listens for Escape.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  useEscapeLayer(onClose);
 
   useEffect(
     () => () => {

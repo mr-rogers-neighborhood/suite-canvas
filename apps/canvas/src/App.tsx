@@ -151,6 +151,10 @@ function WorkspaceShell({
   const libraryOpen = useUiStore((state) => state.libraryOpen);
   const libraryTab = useUiStore((state) => state.libraryTab);
   const setLibraryOpen = useUiStore((state) => state.setLibraryOpen);
+  const historyOpen = useUiStore((state) => state.historyOpen);
+  const toggleHistory = useUiStore((state) => state.toggleHistory);
+  const outlineOpen = useUiStore((state) => state.outlineOpen);
+  const toggleOutline = useUiStore((state) => state.toggleOutline);
   const requestShare = useUiStore((state) => state.requestShare);
   const setPaletteOpen = useUiStore((state) => state.setPaletteOpen);
   const openCardFocus = useUiStore((state) => state.openCardFocus);
@@ -809,6 +813,10 @@ function WorkspaceShell({
       canManageTrash={canManageTrash}
       setLibraryOpen={setLibraryOpen}
       libraryOpen={libraryOpen}
+      historyOpen={historyOpen}
+      toggleHistory={toggleHistory}
+      outlineOpen={outlineOpen}
+      toggleOutline={toggleOutline}
       libraryTab={libraryTab}
       snapshot={snapshot}
       openBoards={openBoards}

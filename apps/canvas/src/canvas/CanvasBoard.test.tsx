@@ -5,7 +5,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
-import { useCameraPrefs } from "./cameraPrefs";
 import { NUDGE_LARGE_STEP, NUDGE_STEP } from "./nudge";
 
 // React Flow measures its container; jsdom has no layout engine.
@@ -629,24 +628,17 @@ describe("CanvasBoard pane double-click", () => {
 });
 
 describe("CanvasBoard camera controls", () => {
-  it("shows a zoom readout, zoom to selection, the outline and the grid", async () => {
+  it("keeps the camera controls inside the pill React Flow already draws", async () => {
     const { container, getByTestId } = mount(false);
     await waitFor(() => expect(container.querySelector(".react-flow__node")).not.toBeNull());
 
-    expect(getByTestId("zoom-readout")).toHaveTextContent("%");
-    expect(getByTestId("zoom-to-selection")).toBeEnabled();
-    expect(getByTestId("outline-control")).toBeInTheDocument();
-    expect(getByTestId("grid-control")).toBeInTheDocument();
+    // Zoom in, zoom out and fit stay on React Flow's own `<Controls>`; the one
+    // addition is zoom-to-selection, which has no built-in equivalent.
+    const pill = container.querySelector(".react-flow__controls");
+    expect(pill).not.toBeNull();
+    expect(pill?.contains(getByTestId("zoom-to-selection"))).toBe(true);
+
+    // The dot grid is not a switch any more, so it is always painted.
     expect(container.querySelector(".react-flow__background")).not.toBeNull();
-  });
-
-  it("removes the grid when the reader switches it off", async () => {
-    const { container, getByTestId } = mount(false);
-    await waitFor(() => expect(container.querySelector(".react-flow__background")).not.toBeNull());
-
-    fireEvent.click(getByTestId("grid-control"));
-
-    await waitFor(() => expect(container.querySelector(".react-flow__background")).toBeNull());
-    useCameraPrefs.setState({ gridVisible: true });
   });
 });

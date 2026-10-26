@@ -60,45 +60,6 @@
   height: 1px;
 }
 
-/* Camera controls: their own stack, because the built-in pill is a row of
-   uniform 26px cells and a percentage does not fit one (ADR-0071). */
-.board-camera-controls {
-  position: absolute;
-  z-index: 6;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  width: 42px;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--card-shadow);
-}
-
-.board-camera-controls .react-flow__controls-button {
-  width: 100%;
-  border-bottom: 1px solid var(--hairline);
-  background: transparent;
-  color: var(--ink);
-}
-
-.board-camera-controls .react-flow__controls-button:last-child {
-  border-bottom: none;
-}
-
-.board-camera-controls .react-flow__controls-button:hover {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-}
-
-.board-zoom-readout {
-  height: 22px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
 .bulk-style-bar {
   position: absolute;
   z-index: 16;

@@ -2,15 +2,16 @@ import { WorkspaceDocument } from "@suite/graph";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useCanvasStore } from "../store/useCanvasStore";
+import { useUiStore } from "../store/useUiStore";
 import { HistoryPanelHost } from "./HistoryPanelHost";
 
 /**
  * The history panel in the shell.
  *
- * Two things have to hold: the panel is reachable from a control on the board,
- * and a document change reaches the list while it is open — a list that only
- * re-reads when it is re-opened would show a restore target that is already
- * behind the document.
+ * Two things have to hold: the panel opens from the navigation row beside the
+ * board tabs, and a document change reaches the list while it is open. A list
+ * that only re-reads when it is re-opened would show a restore target that is
+ * already behind the document.
  */
 
 function seeded(): WorkspaceDocument {
@@ -28,16 +29,17 @@ function points(): HTMLElement[] {
 
 beforeEach(() => {
   useCanvasStore.setState({ workspace: new WorkspaceDocument() });
+  useUiStore.setState({ historyOpen: false });
 });
 
 describe("HistoryPanelHost", () => {
-  it("stays closed until its toggle is pressed, and closes again", () => {
+  it("stays closed until the navigation row opens it, and closes again", () => {
     const workspace = seeded();
     useCanvasStore.setState({ workspace });
     render(<HistoryPanelHost workspace={workspace} />);
 
     expect(screen.queryByTestId("history-panel")).toBeNull();
-    fireEvent.click(screen.getByTestId("history-toggle"));
+    act(() => useUiStore.getState().toggleHistory());
     expect(screen.getByTestId("history-panel")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("history-close"));
@@ -48,7 +50,7 @@ describe("HistoryPanelHost", () => {
     const workspace = seeded();
     useCanvasStore.setState({ workspace });
     render(<HistoryPanelHost workspace={workspace} />);
-    fireEvent.click(screen.getByTestId("history-toggle"));
+    act(() => useUiStore.getState().toggleHistory());
 
     const before = points().length;
     act(() => {

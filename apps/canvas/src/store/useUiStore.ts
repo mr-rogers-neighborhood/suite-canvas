@@ -280,6 +280,8 @@ interface UiState extends SessionCapabilities {
   exitView: () => void;
   /** Whether the board outline rail is expanded. */
   outlineOpen: boolean;
+  /** Whether the version-history panel is open beside the board. */
+  historyOpen: boolean;
   /**
    * Whether the rollup rail is open (ADR-0060): the card in focus reduced to its
    * header line and the count it hides. Reader state, like `outlineOpen` — two
@@ -382,6 +384,8 @@ interface UiState extends SessionCapabilities {
   setLibraryScope: (scope: LibraryScope) => void;
   toggleLibraryGroupBySection: () => void;
   toggleOutline: () => void;
+  toggleHistory: () => void;
+  closeHistory: () => void;
   toggleRollup: () => void;
   openBlueprintInstall: (cardId: string) => void;
   closeBlueprintInstall: () => void;
@@ -436,6 +440,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   activeViewId: null,
   libraryQuery: "",
   outlineOpen: true,
+  historyOpen: false,
   rollupOpen: false,
   blueprintCardId: null,
   contextMenu: null,
@@ -778,6 +783,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       libraryGroupBySection: false,
     }),
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
+  toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
+  closeHistory: () => set({ historyOpen: false }),
   toggleRollup: () => set((state) => ({ rollupOpen: !state.rollupOpen })),
   openBlueprintInstall: (blueprintCardId) => set({ blueprintCardId }),
   closeBlueprintInstall: () => set({ blueprintCardId: null }),

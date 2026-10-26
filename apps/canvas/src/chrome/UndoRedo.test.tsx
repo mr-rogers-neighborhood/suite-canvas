@@ -17,8 +17,8 @@ describe("the undo pair", () => {
   it("offers both controls, disabled until there is something to step", () => {
     render(<UndoRedo />);
 
-    expect(screen.getByTestId("dock-undo")).toBeDisabled();
-    expect(screen.getByTestId("dock-redo")).toBeDisabled();
+    expect(screen.getByTestId("nav-undo")).toBeDisabled();
+    expect(screen.getByTestId("nav-redo")).toBeDisabled();
   });
 
   it("undoes the last document change and redoes it", async () => {
@@ -28,13 +28,13 @@ describe("the undo pair", () => {
 
     render(<UndoRedo />);
 
-    await waitFor(() => expect(screen.getByTestId("dock-undo")).toBeEnabled());
-    fireEvent.click(screen.getByTestId("dock-undo"));
+    await waitFor(() => expect(screen.getByTestId("nav-undo")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("nav-undo"));
 
     expect(workspace.getCard(card.id)).toBeUndefined();
 
-    await waitFor(() => expect(screen.getByTestId("dock-redo")).toBeEnabled());
-    fireEvent.click(screen.getByTestId("dock-redo"));
+    await waitFor(() => expect(screen.getByTestId("nav-redo")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("nav-redo"));
 
     expect(workspace.getCard(card.id)).toBeDefined();
   });

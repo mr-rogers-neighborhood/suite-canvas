@@ -1065,6 +1065,32 @@ body {
   backdrop-filter: blur(14px) saturate(1.2);
 }
 
+/* The navigation row beside the board tabs: the same hit target as a tab, with
+   no background until it is hovered or pressed. */
+.board-nav-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: var(--ink);
+  transition: background-color 120ms ease;
+}
+
+.board-nav-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.board-nav-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.board-nav-button:disabled {
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
 .dock-button {
   display: flex;
   align-items: center;
@@ -3075,6 +3101,7 @@ html[data-inspector-linking] .card-inspector {
 .app-bar button:focus-visible,
 .app-bar a:focus-visible,
 .board-tabs button:focus-visible,
+.board-nav-button:focus-visible,
 .dock-button:focus-visible,
 .library-tab:focus-visible,
 .library-action:focus-visible,

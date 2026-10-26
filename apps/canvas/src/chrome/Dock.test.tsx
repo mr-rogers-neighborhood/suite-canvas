@@ -139,12 +139,14 @@ describe("Dock menus", () => {
 });
 
 describe("Dock controls", () => {
-  it("offers undo, redo and the shortcut sheet beside the create menu", () => {
+  it("holds the library, the create menu and the shortcut sheet, and nothing else", () => {
     mount();
 
-    expect(screen.getByTestId("dock-undo")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-redo")).toBeInTheDocument();
     expect(screen.getByTestId("dock-shortcuts")).toBeInTheDocument();
+    // Undo and redo belong to the navigation row beside the board tabs: one dock
+    // for content, one row for navigation.
+    expect(screen.queryByTestId("nav-undo")).toBeNull();
+    expect(screen.queryByTestId("nav-redo")).toBeNull();
   });
 
   it("opens the shortcut sheet from the dock", async () => {

@@ -3,12 +3,12 @@ import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 
 /**
- * Undo and redo as buttons, not only as keys.
+ * Undo and redo beside the board tabs, where the rest of the navigation lives.
  *
- * Structure undo lived on `Mod+Z` alone, which meant it existed only for a
- * reader who already knew it existed. The pair reads the document's own undo
- * manager, so the disabled state is the truth rather than a guess, and it
- * subscribes to the snapshot so a change anywhere repaints the pair.
+ * Structure undo lived on `Mod+Z` alone, which meant it existed only for a reader
+ * who already knew it existed. The pair reads the document's own undo manager, so
+ * the disabled state is the truth rather than a guess, and it subscribes to the
+ * snapshot so a change anywhere repaints the pair.
  */
 export function UndoRedo() {
   const workspace = useCanvasStore((state) => state.workspace);
@@ -26,13 +26,13 @@ export function UndoRedo() {
   };
 
   return (
-    <span className="flex items-center" data-testid="dock-history">
+    <span className="flex shrink-0 items-center" data-testid="nav-history">
       <button
         type="button"
-        data-testid="dock-undo"
+        data-testid="nav-undo"
         aria-label="Undo"
         title="Undo (⌘Z)"
-        className="dock-button"
+        className="board-nav-button"
         disabled={!workspace.canUndo()}
         onClick={() => step("undo")}
       >
@@ -42,10 +42,10 @@ export function UndoRedo() {
       </button>
       <button
         type="button"
-        data-testid="dock-redo"
+        data-testid="nav-redo"
         aria-label="Redo"
         title="Redo (⌘⇧Z)"
-        className="dock-button"
+        className="board-nav-button"
         disabled={!workspace.canRedo()}
         onClick={() => step("redo")}
       >

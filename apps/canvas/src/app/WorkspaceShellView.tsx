@@ -14,6 +14,7 @@ import { TourOverlayHost } from "../cards/TourOverlayHost";
 import { type BoardPresence, BoardTabs } from "../chrome/BoardTabs";
 import { Dock } from "../chrome/Dock";
 import { TitleBar } from "../chrome/TitleBar";
+import { UndoRedo } from "../chrome/UndoRedo";
 import { ViewsBar } from "../chrome/ViewsBar";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
@@ -103,6 +104,10 @@ export interface WorkspaceShellViewProps {
   canManageTrash: boolean;
   setLibraryOpen: UiState["setLibraryOpen"];
   libraryOpen: boolean;
+  historyOpen: boolean;
+  toggleHistory: () => void;
+  outlineOpen: boolean;
+  toggleOutline: () => void;
   libraryTab: LibraryTab;
   snapshot: WorkspaceSnapshot;
   openBoards: WorkspaceSnapshot["boards"];
@@ -203,6 +208,10 @@ export function WorkspaceShellView({
   canManageTrash,
   setLibraryOpen,
   libraryOpen,
+  historyOpen,
+  toggleHistory,
+  outlineOpen,
+  toggleOutline,
   libraryTab,
   snapshot,
   openBoards,
@@ -404,6 +413,43 @@ export function WorkspaceShellView({
                 onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
                 onClose={closeBoardTab}
               />
+              {/*
+                The rest of the navigation sits in the same row as the tabs: undo
+                and redo of the document, the history drawer, and the outline. They
+                were spread across a corner stack and the bottom dock, which put one
+                group of controls in four places.
+              */}
+              {workspaceSurface && !readOnly ? (
+                <span className="flex shrink-0 items-center gap-0.5" data-testid="board-nav">
+                  <UndoRedo />
+                  <button
+                    type="button"
+                    data-testid="history-toggle"
+                    aria-label="Version history"
+                    aria-pressed={historyOpen}
+                    title="Version history"
+                    className="board-nav-button"
+                    onClick={toggleHistory}
+                  >
+                    <span aria-hidden="true" className="text-[13px] leading-none">
+                      {"\u25f4"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="outline-control"
+                    aria-label="Board outline"
+                    aria-pressed={outlineOpen}
+                    title="Board outline ([)"
+                    className="board-nav-button"
+                    onClick={toggleOutline}
+                  >
+                    <span aria-hidden="true" className="text-[13px] leading-none">
+                      {"\u2630"}
+                    </span>
+                  </button>
+                </span>
+              ) : null}
             </>
           ) : null}
         </TitleBar>

@@ -1,11 +1,17 @@
 import { sectionsAt } from "@suite/graph";
 import type { Node, NodeChange, NodePositionChange } from "@xyflow/react";
-import { Background, ConnectionMode, Controls, ReactFlow, SelectionMode } from "@xyflow/react";
+import {
+  Background,
+  ConnectionMode,
+  ControlButton,
+  Controls,
+  ReactFlow,
+  SelectionMode,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useRef, useState } from "react";
 import { portalTargetId } from "../../cards/portal";
 import { useUiStore } from "../../store/useUiStore";
-import { BoardCameraControls } from "../BoardCameraControls";
 import { edgeTypes } from "../EdgeDescription";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../interactions/multiSelect";
 import { AboveLinkLayer } from "../links/AboveLinkLayer";
@@ -101,9 +107,6 @@ export function BoardSurface({
     recordBoardViewport,
     openCardFocus,
     selectedNodeIds,
-    gridVisible,
-    outlineOpen,
-    toggleOutline,
   } = ui;
   const {
     locallyDraggingIds,
@@ -643,17 +646,23 @@ export function BoardSurface({
         toFlow={(client) => screenToFlowPosition(client)}
       />
       <SnapGuideLayer guides={snapGuides} />
-      {gridVisible ? <Background color="var(--rf-dot)" /> : null}
+      <Background color="var(--rf-dot)" />
       <Controls showInteractive={false}>
         <ModeControl engine={placementEngine} />
         <PurposeControl />
+        {/* Zoom to what is selected, inside the pill React Flow already draws:
+            a readout and a grid switch in a second corner stack were a control
+            bar of their own. */}
+        <ControlButton
+          data-testid="zoom-to-selection"
+          aria-label="Zoom to selection"
+          title="Zoom to selection"
+          disabled={selectedNodeIds.length === 0}
+          onClick={zoomToSelection}
+        >
+          {"\u26f6"}
+        </ControlButton>
       </Controls>
-      <BoardCameraControls
-        hasSelection={selectedNodeIds.length > 0}
-        onZoomToSelection={zoomToSelection}
-        outlineOpen={outlineOpen}
-        onToggleOutline={toggleOutline}
-      />
       <PresenceLayer />
       <PeerReconnectLayer />
       <PeerLibraryDragLayer />

@@ -15,7 +15,6 @@ import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "../hooks/useLibrarySearch";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
-import { UndoRedo } from "./UndoRedo";
 
 export interface DockProps {
   inboxCount: number;
@@ -370,10 +369,6 @@ export function Dock({
           </div>
         ) : null}
       </div>
-
-      <span className="dock-separator" aria-hidden="true" />
-
-      <UndoRedo />
 
       <span className="dock-separator" aria-hidden="true" />
 

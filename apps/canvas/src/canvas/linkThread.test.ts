@@ -47,6 +47,28 @@ describe("stepThread", () => {
     expect(stepThread(a, a)).toEqual({ armed: null, link: null });
   });
 
+  it("links a card to itself when a different port is clicked", () => {
+    // A thread is a route through a card and a route has ports, so top -> bottom on
+    // one card is one step, not a cancel. Only the *same* connector disarms.
+    const top = { kind: "card" as const, id: "a", connectorId: "a-top" };
+    const bottom = { kind: "card" as const, id: "a", connectorId: "a-bottom" };
+
+    const step = stepThread(top, bottom);
+
+    expect(step.link).toEqual({ from: top, to: bottom });
+    // The thread keeps the port it just entered, so it can leave by another.
+    expect(step.armed).toEqual(bottom);
+  });
+
+  it("ignores where the cards are, because the reader chose the ports", () => {
+    // The same two ports in the opposite order produce the opposite route: no
+    // bounding box decides this, which is the whole difference from fan and branch.
+    const top = { kind: "card" as const, id: "a", connectorId: "a-top" };
+    const bottom = { kind: "card" as const, id: "a", connectorId: "a-bottom" };
+
+    expect(stepThread(bottom, top).link).toEqual({ from: bottom, to: top });
+  });
+
   it("links across kinds, so a thread can leave a card for a section", () => {
     expect(stepThread(a, c).link).toEqual({ from: a, to: c });
   });

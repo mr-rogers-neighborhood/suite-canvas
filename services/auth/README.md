@@ -111,9 +111,34 @@ anonymous one *owned* (not ones it merely belonged to) and drops the anonymous
 membership, so the work survives the anonymous user's deletion without any workspace
 row — or any id, URL or share link — moving.
 
-**Not wired yet:** there is no production entry that calls `createAuthService` — no
-Postgres adapter instance, no HTTP route. Every claim above is proven against Better
-Auth's memory adapter; the deployment seam is the next piece of this workstream.
+## Deployment seam
+
+`createAuthEntry(env, deps)` is the one function a deployment calls. Its order is the
+point: switch, then connection string, then pool, then Better Auth, then the handler —
+so a misconfigured deployment refuses at start-up instead of producing a session that
+silently does not exist (which the relay would read as anonymous).
+
+```ts
+const auth = createAuthEntry(authEnvironment(process.env), {
+  licences, memberships, sendMagicLink, transferAnonymousWorkspaces: adopt,
+});
+// auth.handler(request)  — Better Auth's own Request -> Response
+// await auth.close()     — closes the pool it opened, and only that
+```
+
+`postgresDatabase()` builds the pool Better Auth takes directly (no ORM, no query
+builder). The **repositories are still injected**, because they are our SQL and a
+service that built its own could not be tested against a memory store — the Postgres
+implementations of `LicenceStore`, `MembershipReader` and `WorkspaceRepository` are the
+remaining piece of this workstream.
+
+## Migrations
+
+`sql/0001_control_plane.sql` creates the control plane; `sql/0002_plugins.sql` adds what
+the plugin set contributes. Neither is applied automatically: there is no boot-time
+migration, so a deployment runs them deliberately. The column names in 0002 are asserted
+against Better Auth's own table output in `src/pluginSchema.test.ts`, which is what makes
+a hand-written migration safe to trust after a dependency bump.
 
 ## Tests
 

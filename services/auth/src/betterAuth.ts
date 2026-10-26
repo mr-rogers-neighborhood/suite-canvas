@@ -1,5 +1,5 @@
 import { passkey } from "@better-auth/passkey";
-import { betterAuth } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import {
   admin,
@@ -136,7 +136,14 @@ async function seatRefusal(
  * a session that cannot be verified is worse than an obvious outage, because the
  * relay would then treat an account request as anonymous.
  */
-export function createAuthService(deps: AuthServiceDeps): AuthInstance {
+/**
+ * The Better Auth options, built from the environment and the injected repositories.
+ *
+ * Exported because the *schema* is a property of this object, not of the instance:
+ * a test can ask Better Auth what tables and fields these plugins contribute, which
+ * is the only way to know that a plugin is really wired rather than merely imported.
+ */
+export function authOptions(deps: AuthServiceDeps): BetterAuthOptions {
   const { env } = deps;
   if (!authEnabled(env)) {
     throw new AuthError("auth-not-configured", "SUITE_AUTH_ENABLED is not 1");
@@ -154,7 +161,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthInstance {
   const needsAdmission = admissionRequired(env);
   const turnstile = env.SUITE_TURNSTILE_SECRET?.trim();
 
-  const instance = betterAuth({
+  return {
     baseURL: env.SUITE_AUTH_URL?.trim(),
     secret: env.SUITE_AUTH_SECRET?.trim(),
     database: deps.database,
@@ -271,8 +278,12 @@ export function createAuthService(deps: AuthServiceDeps): AuthInstance {
             }),
           ]),
     ],
-  });
+  };
+}
 
+/** Builds the Better Auth instance from {@link authOptions}. */
+export function createAuthService(deps: AuthServiceDeps): AuthInstance {
+  const instance = betterAuth(authOptions(deps));
   return instance as unknown as AuthInstance;
 }
 

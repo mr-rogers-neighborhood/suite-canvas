@@ -21,7 +21,12 @@ test("opens the command palette from the app bar and jumps to an action", async 
 
   // "New board" runs and the palette closes; the new tab is proof it ran.
   await expect(palette).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Board 2/ })).toBeVisible();
+  // Scoped and exact: "Close Board 2" is also a button whose name contains "Board 2".
+  await expect(
+    page
+      .getByRole("navigation", { name: "Boards" })
+      .getByRole("button", { name: "Board 2", exact: true }),
+  ).toBeVisible();
 });
 
 test("opens the palette with Cmd+K and closes it with Escape", async ({ page }) => {

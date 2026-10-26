@@ -24,8 +24,9 @@ Open <http://localhost:5173>. The canvas runs on 5173, the Loro relay on 1234, a
 that owns accounts and billing on 1236. A second window at the same URL shows live edits, titles and
 presence.
 
-`pnpm dev:env` writes a `.env` and never overwrites one. `pnpm dev` alone still works: with no
-control plane the app is local-only, and the account surface says so instead of failing.
+`pnpm dev:env` writes a `.env` and never overwrites one. Without it, `pnpm dev` still serves the
+canvas and the relay, so the app is local-only. The control plane refuses to start and names the
+variable it needs, rather than pretending accounts work.
 
 Node 22 or newer and pnpm 12.13.0, both pinned in `package.json`. [Run Suite
 locally](docs/tutorials/run-locally.md) covers the standalone bundle and custom ports.

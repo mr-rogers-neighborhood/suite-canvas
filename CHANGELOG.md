@@ -9,6 +9,33 @@ A release is the commit a `v*` tag points at. The image built for that tag is
 `ghcr.io/<owner>/suite:v<version>`; the digest recorded in the release notes is
 the artifact to roll back to. See [docs/how-to/release.md](docs/how-to/release.md).
 
+## [1.0.1] - 2026-10-26
+
+A local run can sign in and pay in test mode. `pnpm dev` started three processes
+that could not see each other, and the account surface reported itself
+unavailable in every development session.
+
+### Added
+
+- A dev proxy in `apps/canvas/vite.config.ts` that forwards the account mounts,
+  billing, the relay's HTTP API and the socket to their own processes, so the
+  page, the API and the socket answer on one origin. The session cookie is
+  first-party, which is the same shape Caddy provides in a deployment.
+- `pnpm dev:env`, which writes a `.env` with accounts on and a generated session
+  secret, and refuses to overwrite an existing one.
+- `pnpm dev:db`, which publishes Postgres on port 5433 through
+  `compose.dev.yaml`. The base compose file still keeps it off the network.
+- `SUITE_AUTH_REQUIRE_VERIFICATION`. Verification is required and the console
+  mail transport redacts the token it prints, so without this a local sign-up
+  cannot be completed. It defaults on; only `0` or `false` turns it off.
+- Both server processes read the repo `.env` through `--env-file-if-exists`.
+
+### Fixed
+
+- The billing block in `.env.example` documented seven variables nothing reads:
+  the stored-event and DynamoDB switches, the licence private key, the app
+  origin, and the SES pair. They went with the hand-written webhook.
+
 ## [1.0.0] - 2026-10-26
 
 The first release with accounts. Two processes, one identity, and a payment path

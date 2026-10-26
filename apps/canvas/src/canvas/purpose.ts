@@ -1,7 +1,7 @@
-import type { CanvasMode } from "./linkGesture";
+import type { CanvasMode } from "./links/linkGesture";
 
 /**
- * What the canvas is *for* ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+ * What the canvas is *for* (ADR-0064).
  *
  * The second axis. `mode` (place · thread · fan · branch) says what the next click
  * does; purpose says what the reader is doing with the canvas at all. They are

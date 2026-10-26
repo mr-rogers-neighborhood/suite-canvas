@@ -38,7 +38,7 @@ export const viewQuerySchema = z.object({
   typeIds: z.array(entityIdSchema),
   /**
    * A card answers for its own tags and for the tags of the section it sits in
-   * ([ADR-0053 §6](../../../docs/decisions/0053-supertags-are-multi-type.md)):
+   * (ADR-0053 §6):
    * a section tag is a queryable grouping, never a membership rule.
    */
   tagIds: z.array(entityIdSchema),

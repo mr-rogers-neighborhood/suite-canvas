@@ -3,7 +3,7 @@ import { type ResolvedSurfaceStyle, resolveSurfaceStyle } from "@suite/graph";
 import { matchingRules, mergeSurfaceStyle } from "./rules";
 
 /**
- * The style utilities ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The style utilities (ADR-0071).
  *
  * A *utility* is one editable property of a surface, named once and reachable from
  * several surfaces: the Style tab, the inspector's style rows, the library row menu and

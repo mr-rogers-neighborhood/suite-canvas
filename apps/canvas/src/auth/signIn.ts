@@ -2,7 +2,7 @@ import type { PasskeyResult } from "./passkey";
 
 /**
  * The three ways in, and the one thing the screen remembers about them
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §11).
+ * (ADR-0067 §11).
  *
  * There are no passwords: a password is a secret people reuse, and this product
  * already has one thing people lose. Better Auth's `lastLoginMethod` plugin

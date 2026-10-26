@@ -1,6 +1,6 @@
 import { mergeAttributes, Node, ReactNodeViewRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionOptions } from "@tiptap/suggestion";
-import { MentionChipNodeView } from "../components/MentionChip";
+import { MentionChipNodeView } from "./MentionChip";
 import { MentionGhost } from "./mentionGhost";
 import {
   fieldNameForId,

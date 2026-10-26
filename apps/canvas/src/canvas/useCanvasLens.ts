@@ -1,6 +1,6 @@
 import { runViewQuery, type SavedView, type ViewQuery } from "@suite/graph";
 import { useEffect, useMemo } from "react";
-import { useSavedViews } from "../components/ViewsBar";
+import { useSavedViews } from "../chrome/ViewsBar";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";

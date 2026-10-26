@@ -2,7 +2,7 @@ import type { LoroDoc } from "loro-crdt";
 import type { StorageLadder, StorageRung } from "./storageLadder";
 
 /**
- * The leave guard ([ADR-0025](../../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * The leave guard (ADR-0025
  * amendment).
  *
  * A reader whose workspace sits on the `banner` rung is one click from leaving the only copy behind —

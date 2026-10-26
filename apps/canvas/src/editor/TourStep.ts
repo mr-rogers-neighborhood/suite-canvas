@@ -52,7 +52,7 @@ export function stepOfAttributes(attributes: unknown) {
 
 /**
  * One stop of a tour, as a block in the tutorial card's body
- * ([ADR-0054](../../../../docs/decisions/0054-a-tutorial-is-a-card.md)).
+ * (ADR-0054).
  *
  * The block is an atom: a step is a value, not a container, so the caption is
  * authored prose the block owns and the target is a reference rather than a

@@ -1,7 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 /**
- * The one modifier map both mode families read ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+ * The one modifier map both mode families read (ADR-0066).
  *
  * A family lists its values in order, resting first: `place · thread · fan ·
  * branch` and `explore · run · record` (with `explain` reserved for alt). No

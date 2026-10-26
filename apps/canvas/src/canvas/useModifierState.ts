@@ -11,7 +11,7 @@ import { isTextEntry, type ModifierState, modifiersOf, NO_MODIFIERS } from "./mo
  *
  * Events that belong to a text field are ignored — typing a capital letter is not
  * a mode — and a window blur clears everything, because a key released while the
- * window was in the background never arrives ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+ * window was in the background never arrives (ADR-0066).
  */
 export function useModifierState(): ModifierState {
   const [held, setHeld] = useState<ModifierState>(NO_MODIFIERS);

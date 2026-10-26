@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * The value palette ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)
+ * The value palette (ADR-0064
  * fifth amendment).
  *
  * The rule is one palette, eight values, named by role. Three things can silently rot

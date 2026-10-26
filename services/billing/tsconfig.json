@@ -10,5 +10,5 @@
     // extension when importing the shared licence module.
     "allowImportingTsExtensions": true
   },
-  "include": ["*.ts"]
+  "include": ["src"]
 }

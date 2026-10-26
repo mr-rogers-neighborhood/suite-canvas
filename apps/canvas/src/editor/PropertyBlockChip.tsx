@@ -2,10 +2,10 @@ import type { Card, CardPresence, CardType, FieldDefinition, PropertyValue } fro
 import { displayTemplate, readPropertyValue } from "@suite/graph";
 import { type NodeViewProps, NodeViewWrapper } from "@tiptap/react";
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
-import { ContextMenu } from "../components/ContextMenu";
-import { DisplayStyleDialog } from "../components/DisplayStyleDialog";
-import { FieldValueInput } from "../components/PropertyField";
-import { ValueTemplate } from "../components/ValueTemplate";
+import { FieldValueInput } from "../cards/PropertyField";
+import { ValueTemplate } from "../cards/ValueTemplate";
+import { ContextMenu } from "../dialogs/ContextMenu";
+import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
 import { useCardPresence, useCardTitle } from "../hooks/useCardContainers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";

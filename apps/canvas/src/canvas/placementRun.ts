@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { CanvasMode } from "./linkGesture";
+import type { CanvasMode } from "./links/linkGesture";
 
 /**
  * A placement run: an ordered queue of cards being placed one at a time
- * ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)).
+ * (ADR-0063).
  *
  * It is **UI state, never document data**. Nothing here is written to the CRDT, so
  * a run needs no schema, no migration and no merge story: what lands in the

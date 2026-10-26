@@ -8,7 +8,7 @@ import { StatusCursorLayer } from "./StatusCursorLayer";
 
 /**
  * The status cursor is peers-only
- * ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md) amendment).
+ * (ADR-0064 amendment).
  *
  * The reader's own bubble repeated what the pill already says, permanently, under the
  * pointer. What must survive the removal is the part that was not decoration: the peers,

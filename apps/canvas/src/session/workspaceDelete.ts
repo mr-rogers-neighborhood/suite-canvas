@@ -9,7 +9,7 @@
  * workspace is gone. `purgeWorkspaceLocally` clears everything *this* browser
  * holds; another device keeps its offline copy until it opens the workspace
  * again, and then finds the relay empty. That limit is stated in the dialog and
- * in `docs/security-model.md`.
+ * in `docs/reference/security-model.md`.
  */
 
 import { deleteWorkspaceDocument } from "../collab/loroPersistence";

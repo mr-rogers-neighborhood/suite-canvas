@@ -2,10 +2,10 @@ import { type Card, type CardType, isTutorialType, type Placement } from "@suite
 import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { CardMeta } from "../cards/cardMeta";
+import { NodeCard } from "../cards/NodeCard";
 import { hasTourSteps } from "../cards/tour";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { NodeCard } from "../components/NodeCard";
 import { countRender } from "../dev/perf";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useCardContainers } from "../hooks/useCardContainers";
@@ -14,7 +14,7 @@ import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useBoards } from "../store/workspaceStore";
-import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
 /**

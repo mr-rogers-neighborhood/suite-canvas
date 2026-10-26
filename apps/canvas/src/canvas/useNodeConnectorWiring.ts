@@ -3,11 +3,11 @@ import { useCallback, useMemo } from "react";
 import { create } from "zustand";
 import type { PresenceUser } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import type { Point } from "../components/Connector";
 import { useBoardPeers } from "../hooks/useBoardPeers";
+import type { Point } from "../presence/Connector";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "./linkThread";
+import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "./links/linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
 
 /**
@@ -177,7 +177,7 @@ export function useNodeConnectorWiring(
       }
 
       // The mode decides what the next click means: a thread moves its armed end,
-      // a fan keeps it ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md)).
+      // a fan keeps it (ADR-0061).
       const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
       // A gesture started by a modifier ends when the modifier is released; only a
       // mode chosen in the control survives the key.

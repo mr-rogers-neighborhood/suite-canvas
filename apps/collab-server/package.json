@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "admin": "tsx src/admin.ts",
+    "admin": "tsx src/ops/admin.ts",
     "licence": "tsx src/licenceCli.ts"
   },
   "dependencies": {
@@ -17,7 +17,9 @@
     "loro-adaptors": "^0.6.1",
     "loro-crdt": "^1.16.4",
     "loro-protocol": "^0.3.0",
-    "loro-websocket": "0.6.2"
+    "loro-websocket": "0.6.2",
+    "neverthrow": "^8.2.0",
+    "remeda": "^2.54.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

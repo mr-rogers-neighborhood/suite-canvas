@@ -2,7 +2,7 @@ import type { Card, CardType, FieldDefinition, PropertyValue } from "@suite/grap
 import type { ComponentType } from "react";
 
 /**
- * One place a field kind plugs in ([ADR-0057](../../docs/decisions/0057-fields-can-compose.md)).
+ * One place a field kind plugs in (ADR-0057).
  *
  * A kind has to render in four places — the canvas node, the card body, the
  * inspector and a database cell — and a kind that renders in three of them is a

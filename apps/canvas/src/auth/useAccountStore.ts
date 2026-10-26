@@ -79,7 +79,7 @@ export const useAccountStore = create<AccountState>((set) => ({
 
 /**
  * Registered but not admitted
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §7).
+ * (ADR-0067 §7).
  *
  * `admittedAt === null` alone is not proof: a deployment with the queue off
  * admits everyone and leaves the field null, so the client asks the server by

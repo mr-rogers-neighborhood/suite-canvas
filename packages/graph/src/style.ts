@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The paint system's vocabulary ([ADR-0051](../../../docs/decisions/0051-one-style-vocabulary-over-edges.md)).
+ * The paint system's vocabulary (ADR-0051).
  *
  * Every paintable thing is a *surface* with four edges, and one optional
  * `SurfaceStyle` record styles them all. A style names roles, never values: the
@@ -188,7 +188,7 @@ export function sideEdgeStyle(
 }
 
 /**
- * A workspace's own palette ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * A workspace's own palette (ADR-0071
  * Q2–Q3): the value each role resolves to, per mode.
  *
  * Per *mode*, not one flat map, because a workspace has to look like itself at

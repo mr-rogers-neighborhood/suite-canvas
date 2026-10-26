@@ -10,7 +10,7 @@ import { createContext, useContext } from "react";
 import { colourRoleVar, surfacePaintVars } from "./surfacePaint";
 
 /**
- * Named rules over roles ([ADR-0046 §3–4](../../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+ * Named rules over roles (ADR-0046 §3–4).
  *
  * A rule says *where* it applies (a scope) and *what* it assigns (a
  * `SurfaceStyle`). Rules never name surfaces and never store a value: the
@@ -23,7 +23,7 @@ import { colourRoleVar, surfacePaintVars } from "./surfacePaint";
  */
 
 /**
- * The readability floor ([ADR-0046 §6](../../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+ * The readability floor (ADR-0046 §6).
  * WCAG's ratio for large text and graphical objects. A rule below it is
  * corrected and reported, never applied silently. It lives here rather than in
  * `@suite/graph` because only the resolver reads it.
@@ -378,7 +378,7 @@ export function useSurfaceRules(): SurfaceRules {
 }
 
 /**
- * The shell resolved **per region** ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * The shell resolved **per region** (ADR-0071
  * amendment).
  *
  * A rule scoped to `shell` names a region — the app bar, the board tabs, the dock or the library — and until

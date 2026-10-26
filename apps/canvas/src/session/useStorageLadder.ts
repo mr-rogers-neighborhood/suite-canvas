@@ -6,7 +6,7 @@ import { type StorageLadder, storageLadder } from "./storageLadder";
  * The ladder bound to the live durability state.
  *
  * One hook so the status panel and the leave guard both answer from the same `storageLadder()` call
- * with the same inputs ([ADR-0025](../../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * with the same inputs (ADR-0025
  * amendment). Assembling the inputs separately per surface is how a second rule gets invented.
  */
 export function useStorageLadder(signedIn: boolean, synced: boolean): StorageLadder {

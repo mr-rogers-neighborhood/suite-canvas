@@ -1,5 +1,5 @@
 /**
- * Claim on sign-in ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §2).
+ * Claim on sign-in (ADR-0067 §2).
  *
  * A device that has been working without an account holds workspaces nobody owns.
  * The moment a session exists, those workspaces are handed to the session's

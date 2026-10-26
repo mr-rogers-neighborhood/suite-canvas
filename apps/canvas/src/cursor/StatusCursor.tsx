@@ -1,10 +1,10 @@
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import type { PresenceUser } from "../collab/presence";
-import { presenceChipInk } from "../components/PeerNameTag";
+import { presenceChipInk } from "../presence/PeerNameTag";
 
 /**
- * The status cursor ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+ * The status cursor (ADR-0064).
  *
  * One renderer for the reader's pointer and for every peer's: a bubble with a
  * corner pointer so it reads as a cursor rather than an avatar, a ring whose

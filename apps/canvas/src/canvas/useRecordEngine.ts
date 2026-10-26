@@ -7,8 +7,8 @@ import { planRecordClick, useRecordRunStore } from "./recordRun";
 
 /**
  * The engine that turns clicks into tour steps
- * ([ADR-0058](../../../docs/decisions/0058-a-tour-is-one-document-on-three-surfaces.md)
- * amendment, [ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md) §9).
+ * (ADR-0058
+ * amendment, ADR-0064 §9).
  *
  * The sibling of `usePlacementEngine`: a hook, because the canvas captures the
  * click while the control and the Steps panel read the same run, and it reads the

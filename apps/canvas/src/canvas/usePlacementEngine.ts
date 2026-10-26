@@ -2,7 +2,7 @@ import { useReactFlow } from "@xyflow/react";
 import { useCallback } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import {
   type PlacementSource,
   type ProposedLink,
@@ -19,7 +19,7 @@ import {
 
 /**
  * The engine that carries out a placement run
- * ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)).
+ * (ADR-0063).
  *
  * A hook rather than a prop, because three surfaces need it and they are not in
  * one tree: the library and the dock start a run, the mode control reports and
@@ -44,7 +44,7 @@ export interface PlacementEngine {
    *
    * The same inference the commit runs, given the pointer instead of the planner's
    * position, so the dot the reader sees highlighted is the dot that gets written
-   * ([ADR-0061](../../../docs/decisions/0061-three-ways-to-draw-links.md) third amendment).
+   * (ADR-0061 third amendment).
    * `null` when there is nothing to propose: no run, no link, or no anchor.
    */
   proposeAt: (point: { x: number; y: number }) => ProposedLink | null;

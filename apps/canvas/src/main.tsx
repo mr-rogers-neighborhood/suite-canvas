@@ -1,7 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ShareUnavailable } from "./components/ShareUnavailable";
 import { crashReportingWanted } from "./crash/consent";
 import { startCrashReporting } from "./crash/report";
 import {
@@ -18,6 +17,7 @@ import {
   sessionForShare,
   standaloneSession,
 } from "./session/session";
+import { ShareUnavailable } from "./sharing/ShareUnavailable";
 import { installErrorRecorder, safeRoute } from "./shell/diagnostics";
 import { CanvasErrorBoundary } from "./shell/ErrorBoundary";
 import {
@@ -145,7 +145,7 @@ async function bootRelay(plan: BootPlan): Promise<boolean> {
     },
   });
   if (claim === "conflict") {
-    const { WorkspaceProtected } = await import("./components/WorkspaceProtected");
+    const { WorkspaceProtected } = await import("./sharing/WorkspaceProtected");
     render(<WorkspaceProtected workspaceId={workspaceId} />);
     return false;
   }

@@ -1,7 +1,7 @@
 import type { Card, GraphEdge, Section } from "@suite/graph";
 
 /**
- * What `explain` gathers ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md) §4).
+ * What `explain` gathers (ADR-0066 §4).
  *
  * The purpose turns a selection into a question: the entities, their types, and the
  * links between them. This module is only the *gathering* half — turning three stores
@@ -9,7 +9,7 @@ import type { Card, GraphEdge, Section } from "@suite/graph";
  * the answering half (the handbook, gate A41) will consume it rather than replace it.
  *
  * Nothing here writes. The context is UI state until the reader saves it, at which
- * point it becomes a view ([ADR-0043](../../../docs/decisions/0043-a-view-is-a-lens-a-database-or-a-render.md)),
+ * point it becomes a view (ADR-0043),
  * which is why there is no `save` in this shape: a view is not a fourth kind of object
  * the context has to learn about.
  */

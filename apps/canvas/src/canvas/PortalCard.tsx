@@ -2,7 +2,7 @@ import type { SurfaceStyle } from "@suite/graph";
 import { resolveSurfaceStyle } from "@suite/graph";
 import { type CSSProperties, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
-import { PresenceAvatars } from "../components/PresenceAvatars";
+import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
 import { surfacePaintVars } from "./surfacePaint";

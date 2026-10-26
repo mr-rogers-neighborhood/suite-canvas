@@ -1,0 +1,167 @@
+import { applyProjection, planPublish, projectWorkspace, WorkspaceDocument } from "@suite/graph";
+import { LoroDoc } from "loro-crdt";
+import type { DocumentStore } from "../store/persistence.js";
+import type { ProjectionTarget, ProjectionWorkerShares, RoomState, SourceRoom } from "./model.js";
+import { message, publishTarget, versionJson } from "./model.js";
+import { loadLoroDocument } from "./rooms.js";
+
+/**
+ * The rebuild step: turning a saved or live workspace into the bytes a share
+ * room serves. Everything here is a function of the source, the room and the
+ * stores, so a rebuild can be reasoned about without the worker's timers.
+ */
+
+export interface SnapshotDeps {
+  documents: Pick<DocumentStore, "load">;
+  shares: ProjectionWorkerShares;
+  /** Live writer connections, keyed by workspace. */
+  sources: ReadonlyMap<string, SourceRoom>;
+  touch(room: RoomState): void;
+  warn(text: string): void;
+}
+
+/**
+ * Seeds the room document from what the server last saved. Its history gives
+ * the worker's first rebuild a lamport clock above every earlier projection,
+ * so the rewrite wins instead of losing to a stale op.
+ */
+export function seedRoomDocument(
+  doc: LoroDoc,
+  roomId: string,
+  deps: Pick<SnapshotDeps, "documents" | "warn">,
+): number {
+  const state = loadLoroDocument(deps.documents, roomId);
+  if (!state) return 0;
+  try {
+    doc.import(state);
+    return state.length;
+  } catch (error) {
+    deps.warn(`ignoring unreadable projection state for ${roomId}: ${message(error)}`);
+    return 0;
+  }
+}
+
+export function documentFromSnapshot(
+  snapshot: Uint8Array,
+  deps: Pick<SnapshotDeps, "warn">,
+): WorkspaceDocument | null {
+  const doc = new LoroDoc();
+  try {
+    doc.import(snapshot);
+  } catch (error) {
+    deps.warn(`ignoring unreadable snapshot: ${message(error)}`);
+    return null;
+  }
+  return new WorkspaceDocument(doc);
+}
+
+export function readBaseline(shareId: string, deps: SnapshotDeps): WorkspaceDocument | null {
+  let snapshot: Uint8Array | null = null;
+  try {
+    snapshot = deps.shares.getBaseline(shareId);
+  } catch (error) {
+    deps.warn(`could not read the baseline for ${shareId}: ${message(error)}`);
+    return null;
+  }
+  return snapshot ? documentFromSnapshot(snapshot, deps) : null;
+}
+
+/** Persists the projection just written and makes it the draft's base. */
+export function persistBaseline(room: RoomState, deps: SnapshotDeps): void {
+  const snapshot = room.doc.export({ mode: "snapshot" });
+  try {
+    deps.shares.setBaseline(room.shareId, snapshot);
+  } catch (error) {
+    deps.warn(`could not persist the baseline for ${room.shareId}: ${message(error)}`);
+  }
+  room.baseline = documentFromSnapshot(snapshot, deps);
+  room.baselineVersion = versionJson(room.doc);
+  room.dirty = false;
+  // The snapshot is the document, so it is the exact byte figure; nothing is
+  // left to measure on the delta path for this room.
+  room.bytes = snapshot.length;
+  room.measured = room.doc.version();
+}
+
+/**
+ * Loads a workspace for projection: the live source room when the workspace
+ * has editor shares, otherwise the last saved bytes.
+ */
+export function loadSourceDocument(
+  workspaceId: string,
+  deps: SnapshotDeps,
+): WorkspaceDocument | null {
+  const live = deps.sources.get(workspaceId);
+  if (live) return live.workspace;
+
+  const state = loadLoroDocument(deps.documents, workspaceId);
+  if (!state) return null;
+  return documentFromSnapshot(state, deps);
+}
+
+export function projectInto(source: WorkspaceDocument, room: RoomState, deps: SnapshotDeps): void {
+  // An owner save is activity even when the rebuild is held back: the room is
+  // still the one this workspace projects into.
+  deps.touch(room);
+  // A dirty draft belongs to the editor: an owner save must not overwrite it.
+  if (room.dirty) return;
+  try {
+    reprojectInto(source, room, deps);
+  } catch (error) {
+    // A trashed or deleted card has nothing to publish; keep the last good
+    // projection rather than emptying a share the viewer may be reading.
+    deps.warn(`projection for ${room.shareId} skipped: ${message(error)}`);
+  }
+}
+
+/** Rebuilds the projection and resets the draft's baseline. */
+export function reprojectInto(
+  source: WorkspaceDocument,
+  room: RoomState,
+  deps: SnapshotDeps,
+): void {
+  const projection = projectWorkspace(source, room.target);
+  applyProjection(room.workspace, projection.workspace);
+  // Viewers never publish; only an editor draft needs a baseline snapshot.
+  // That snapshot also re-measures the room, so only viewers measure here.
+  if (room.role === "editor") persistBaseline(room, deps);
+  else measureRoom(room, deps.warn);
+}
+
+/**
+ * Adds the bytes written since the last measurement to the room's size, so
+ * the admin status can attribute resident memory to projection documents.
+ *
+ * The delta, never the whole document: a snapshot export per save would cost
+ * as much as the save itself. Measurement is observability, so a failure here
+ * is logged and never allowed to cost a projection.
+ */
+export function measureRoom(room: RoomState, warn: (text: string) => void): void {
+  try {
+    room.bytes += room.doc.export({ mode: "update", from: room.measured }).length;
+    room.measured = room.doc.version();
+  } catch (error) {
+    warn(`could not measure the projection of ${room.shareId}: ${message(error)}`);
+  }
+}
+
+/**
+ * Whether the draft's allowed content differs from the baseline. A restarted
+ * worker cannot use the version vector for this: the server may have applied a
+ * projection after the baseline was persisted, which advances the history
+ * without changing a value. Only real draft edits should pause projection.
+ */
+export function draftHasChanges(
+  draft: WorkspaceDocument,
+  baseline: WorkspaceDocument,
+  target: ProjectionTarget,
+  warn: (text: string) => void,
+): boolean {
+  try {
+    return planPublish(draft, baseline, baseline, publishTarget(target)).changes.length > 0;
+  } catch (error) {
+    // Comparing must never freeze a room; a broken comparison reads as clean.
+    warn(`could not compare a draft with its baseline: ${message(error)}`);
+    return false;
+  }
+}

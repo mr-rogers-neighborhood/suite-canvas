@@ -7,7 +7,7 @@ import { useCardTitle } from "../hooks/useCardContainers";
 import { useDrawing } from "../hooks/useDrawing";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";

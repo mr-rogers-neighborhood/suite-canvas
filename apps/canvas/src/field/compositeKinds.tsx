@@ -1,12 +1,12 @@
 import type { Card, FieldDefinition, PropertyValue } from "@suite/graph";
 import type { KeyboardEvent } from "react";
-import type { CardPickerOption } from "../components/CardPicker";
-import { FieldValueInput } from "../components/PropertyField";
+import type { CardPickerOption } from "../cards/CardPicker";
+import { FieldValueInput } from "../cards/PropertyField";
 import type { FieldEditorProps } from "./fieldKindRegistry";
 import { registerFieldKind } from "./fieldKindRegistry";
 
 /**
- * The composing kinds ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)):
+ * The composing kinds (ADR-0057):
  * `rating` is a number with a presentation, `group` is a record of sub-values,
  * `list` is an ordered repeatable. Importing this module registers all three, so
  * the panel renders them without knowing they exist — that is the four-place

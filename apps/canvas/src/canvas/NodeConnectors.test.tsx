@@ -5,7 +5,7 @@ import { ensureWhiteboardType, WHITEBOARD_TYPE_ID } from "../cards/whiteboard";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { CanvasBoard } from "./CanvasBoard";
-import { useLinkThreadStore } from "./linkThread";
+import { useLinkThreadStore } from "./links/linkThread";
 import { NodeConnectors, revealConnectors } from "./NodeConnectors";
 import { usePlacementRunStore } from "./placementRun";
 import { useLinkDraftStore } from "./useNodeConnectorWiring";

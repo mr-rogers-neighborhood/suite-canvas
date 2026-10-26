@@ -6,9 +6,9 @@
   "description": "Control plane for owned workspaces: Better Auth organizations, invite keys, claim-workspace and the server-side seat check. A workspace package so `turbo run typecheck` and `turbo run test` gate the identity path.",
   "exports": {
     ".": "./src/index.ts",
-    "./seats": "./src/seats.ts",
-    "./principals": "./src/principal.ts",
-    "./repository": "./src/repository.ts"
+    "./seats": "./src/organizations/seats.ts",
+    "./principals": "./src/identity/principal.ts",
+    "./repository": "./src/store/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -25,6 +25,8 @@
     "@octopi-ai/better-enrollment": "0.7.0",
     "better-auth": "^1.7.12",
     "better-auth-harmony": "^1.3.2",
-    "pg": "^8.23.1"
+    "neverthrow": "^8.2.0",
+    "pg": "^8.23.1",
+    "remeda": "^2.54.1"
   }
 }

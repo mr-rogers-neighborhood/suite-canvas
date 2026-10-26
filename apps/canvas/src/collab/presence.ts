@@ -1,4 +1,4 @@
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 
 export interface PresenceUser {
@@ -152,7 +152,7 @@ export const AWARENESS_FIELDS = {
   libraryDrag: "libraryDrag",
   /**
    * What the canvas is *for*, so a peer's cursor can say "recording a tour" and not
-   * only "here" ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+   * only "here" (ADR-0064).
    * The two-axis state is small and changes when a reader clicks, so it rides the
    * existing beat instead of opening a channel of its own.
    */

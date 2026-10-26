@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MentionGhost, mentionGhostKey } from "./mentionGhost";
 
 // The chip and the picker need a live workspace; the plugin does not.
-vi.mock("../components/MentionChip", () => ({ MentionChipNodeView: () => null }));
+vi.mock("./MentionChip", () => ({ MentionChipNodeView: () => null }));
 vi.mock("./SuggestionList", () => ({ mentionSuggestion: {}, titleForCardId: () => "" }));
 
 let editor: Editor | null = null;

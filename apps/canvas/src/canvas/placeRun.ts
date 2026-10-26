@@ -1,9 +1,9 @@
 import type { Connector } from "@suite/graph";
-import type { CanvasMode } from "./linkGesture";
+import type { CanvasMode } from "./links/linkGesture";
 
 /**
  * Where the next card in a placement run goes, and what it links to
- * ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)).
+ * (ADR-0063).
  *
  * Pure on purpose, like `arrangeCommand.ts`: geometry in, a plan out, no Loro and
  * no React. A run's shape can therefore be unit-tested without a renderer, and a

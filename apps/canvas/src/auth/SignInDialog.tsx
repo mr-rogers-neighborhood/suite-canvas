@@ -5,7 +5,7 @@ import { emailProblem, type SignInActions, type SignInMethod, signInOffers } fro
 
 /**
  * The front door: passkey, magic link, Google
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §11).
+ * (ADR-0067 §11).
  *
  * Three honest states, and the honesty is the feature:
  *

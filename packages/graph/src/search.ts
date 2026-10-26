@@ -1,3 +1,4 @@
+import { unique } from "remeda";
 import type { WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 import { loroTreeToJson, type PortableNode } from "./portable.js";
 
@@ -31,7 +32,7 @@ export function normalizeSearchText(text: string): string {
 export function searchTerms(query: string): string[] {
   const normalized = normalizeSearchText(query);
   if (normalized.length === 0) return [];
-  return [...new Set(normalized.split(" ").filter((term) => term.length > 0))];
+  return unique(normalized.split(" ").filter((term) => term.length > 0));
 }
 
 /**

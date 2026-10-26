@@ -2,7 +2,7 @@ import type { StyleRule, StyleRuleScope, StyleScopeKind, SurfaceStyle } from "@s
 import { isEmptyStyle } from "@suite/graph";
 
 /**
- * Where a style edit is going ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * Where a style edit is going (ADR-0071
  * amendment, "the ladder is writable").
  *
  * The inspector's Style tab edits a *surface*; the same controls edit a *rule* when the scope picker says

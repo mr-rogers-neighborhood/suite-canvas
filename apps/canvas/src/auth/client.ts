@@ -20,7 +20,7 @@ import {
  * `signIn.magicLink` and `organizationClient` to find (or create) the tenant a
  * claim lands in. `anonymousClient` is *not* wired here: minting an anonymous
  * session on every local device would change the anonymous path this lane must
- * leave exactly as it is ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §8),
+ * leave exactly as it is (ADR-0067 §8),
  * and the claim route already carries the work an anonymous account would.
  * `lastLoginMethod` needs no client plugin either: the server plugin records the
  * method in a readable cookie, and `readLastLoginMethod` parses that cookie

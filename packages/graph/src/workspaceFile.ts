@@ -1,4 +1,5 @@
 import { LoroDoc } from "loro-crdt";
+import { err, ok, Result } from "neverthrow";
 import { z } from "zod";
 import { SCHEMA_VERSION, WorkspaceDocument } from "./loro/WorkspaceDocument.js";
 
@@ -129,73 +130,114 @@ export function createWorkspaceFile(
   return { file, json: JSON.stringify(file, null, 2) };
 }
 
-function assertCompatible(file: WorkspaceFile): void {
-  if (file.version > WORKSPACE_FILE_VERSION) {
-    throw new Error(
-      `This backup was made by a newer Suite (file version ${file.version}); this build supports ${WORKSPACE_FILE_VERSION}.`,
-    );
-  }
-  if (file.schemaVersion > SCHEMA_VERSION) {
-    throw new Error(
-      `This backup uses schema ${file.schemaVersion}; this build supports ${SCHEMA_VERSION}.`,
-    );
-  }
+/** What a fresh document plus its envelope looks like once a file has been read. */
+export interface ParsedWorkspaceFile {
+  file: WorkspaceFile;
+  workspace: WorkspaceDocument;
+  attachments: WorkspaceFileAttachmentBytes[];
 }
 
 /**
- * Validates the envelope and returns a fresh document. Import is deliberately
- * never merged into an open document: the caller gives it a new workspace id.
+ * Why a file could not be read. `kind` is for code that branches, `message` is
+ * the sentence a reader is shown — the two must agree.
+ */
+export interface WorkspaceFileError {
+  kind: "not-a-backup" | "invalid-json" | "newer-file" | "newer-schema" | "corrupt";
+  message: string;
+}
+
+/** The version checks a backup has to pass before its document is opened. */
+function incompatibility(file: WorkspaceFile): WorkspaceFileError | null {
+  if (file.version > WORKSPACE_FILE_VERSION) {
+    return {
+      kind: "newer-file",
+      message: `This backup was made by a newer Suite (file version ${file.version}); this build supports ${WORKSPACE_FILE_VERSION}.`,
+    };
+  }
+  if (file.schemaVersion > SCHEMA_VERSION) {
+    return {
+      kind: "newer-schema",
+      message: `This backup uses schema ${file.schemaVersion}; this build supports ${SCHEMA_VERSION}.`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Validates the envelope and returns a fresh document, or why it could not.
+ * Import is deliberately never merged into an open document: the caller gives
+ * it a new workspace id.
  *
  * `attachments` are the envelope's images, decoded. An entry whose base64 is
  * unreadable is skipped rather than failing the whole backup: losing one image
  * must not cost the user the text that came with it.
  */
-export function parseWorkspaceFile(input: unknown): {
-  file: WorkspaceFile;
-  workspace: WorkspaceDocument;
-  attachments: WorkspaceFileAttachmentBytes[];
-} {
+export function tryParseWorkspaceFile(
+  input: unknown,
+): Result<ParsedWorkspaceFile, WorkspaceFileError> {
   const parsed = workspaceFileSchema.safeParse(input);
   if (!parsed.success) {
-    throw new Error("This is not a Suite workspace backup. Choose a file exported from Suite.");
+    return err({
+      kind: "not-a-backup",
+      message: "This is not a Suite workspace backup. Choose a file exported from Suite.",
+    });
   }
-  assertCompatible(parsed.data);
+  const problem = incompatibility(parsed.data);
+  if (problem) return err(problem);
+
   const doc = new LoroDoc();
-  try {
-    doc.import(base64ToBytes(parsed.data.document));
-  } catch {
-    throw new Error("This Suite backup is corrupt and could not be read.");
-  }
+  const imported = Result.fromThrowable(
+    () => doc.import(base64ToBytes(parsed.data.document)),
+    (): WorkspaceFileError => ({
+      kind: "corrupt",
+      message: "This Suite backup is corrupt and could not be read.",
+    }),
+  )();
+  if (imported.isErr()) return err(imported.error);
+
   const attachments: WorkspaceFileAttachmentBytes[] = [];
   for (const [id, entry] of Object.entries(parsed.data.attachments)) {
-    let bytes: Uint8Array;
-    try {
-      bytes = base64ToBytes(entry.data);
-    } catch {
-      continue;
-    }
+    const bytes = Result.fromThrowable(() => base64ToBytes(entry.data))();
+    if (bytes.isErr()) continue;
     attachments.push({
       id,
       mime: entry.mime,
       name: entry.name,
       width: entry.width,
       height: entry.height,
-      bytes,
+      bytes: bytes.value,
     });
   }
-  return { file: parsed.data, workspace: new WorkspaceDocument(doc), attachments };
+  return ok({ file: parsed.data, workspace: new WorkspaceDocument(doc), attachments });
 }
 
-export function readWorkspaceFile(text: string): {
-  file: WorkspaceFile;
-  workspace: WorkspaceDocument;
-  attachments: WorkspaceFileAttachmentBytes[];
-} {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new Error("This file is not valid JSON, so it is not a Suite backup.");
-  }
-  return parseWorkspaceFile(value);
+/** Reads the JSON a backup file holds, or why it is not JSON. */
+export function tryReadWorkspaceFile(
+  text: string,
+): Result<ParsedWorkspaceFile, WorkspaceFileError> {
+  return Result.fromThrowable(
+    () => JSON.parse(text) as unknown,
+    (): WorkspaceFileError => ({
+      kind: "invalid-json",
+      message: "This file is not valid JSON, so it is not a Suite backup.",
+    }),
+  )().andThen(tryParseWorkspaceFile);
+}
+
+/**
+ * Throwing form of `tryParseWorkspaceFile`, for callers that treat an unreadable
+ * backup as exceptional. The message is the error's own sentence.
+ */
+export function parseWorkspaceFile(input: unknown): ParsedWorkspaceFile {
+  return unwrapFile(tryParseWorkspaceFile(input));
+}
+
+/** Throwing form of `tryReadWorkspaceFile`. */
+export function readWorkspaceFile(text: string): ParsedWorkspaceFile {
+  return unwrapFile(tryReadWorkspaceFile(text));
+}
+
+function unwrapFile(result: Result<ParsedWorkspaceFile, WorkspaceFileError>): ParsedWorkspaceFile {
+  if (result.isErr()) throw new Error(result.error.message);
+  return result.value;
 }

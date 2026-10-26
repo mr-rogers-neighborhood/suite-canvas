@@ -1,8 +1,8 @@
 /**
  * A tutorial is a card and a tour is its timeline
- * ([ADR-0054](../../../docs/decisions/0054-a-tutorial-is-a-card.md)); the step
+ * (ADR-0054); the step
  * block, the card's own panel and the overlay are the three surfaces that read
- * it ([ADR-0058](../../../docs/decisions/0058-a-tour-is-one-document-on-three-surfaces.md)).
+ * it (ADR-0058).
  *
  * This module is the single source of truth for what a step *is*: the shape the
  * `tourStep` block stores in a card body, the parsing and repair every surface

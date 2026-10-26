@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canvasModes } from "./linkGesture";
+import { canvasModes } from "./links/linkGesture";
 import { modifierOffset, NO_MODIFIERS, previewedValue } from "./modifierPreview";
 import { choosablePurposes, previewablePurposes } from "./purpose";
 
 /**
- * The one modifier map ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
+ * The one modifier map (ADR-0066).
  *
  * What is worth pinning is the *positional* rule: both families read the same
  * offsets, the resting modifier never names a value, and an empty slot is empty

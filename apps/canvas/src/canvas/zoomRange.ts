@@ -1,6 +1,6 @@
 /**
  * The camera's usable range and the content breakpoints that go with it
- * ([ADR-0051](../../../../docs/decisions/0051-one-style-vocabulary-over-edges.md),
+ * (ADR-0051,
  * "A bigger canvas becomes possible").
  *
  * A wider range is only useful if a surface stops drawing detail before that

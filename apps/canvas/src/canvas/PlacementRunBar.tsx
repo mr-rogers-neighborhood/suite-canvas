@@ -1,10 +1,10 @@
 import { useUiStore } from "../store/useUiStore";
-import { MODES, shortLabel } from "./ModeControl";
+import { MODES, shortLabel } from "./links/ModeControl";
 import { usePlacementRunStore } from "./placementRun";
 import type { PlacementEngine } from "./usePlacementEngine";
 
 /**
- * The bar that steers a placement run ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md)
+ * The bar that steers a placement run (ADR-0063
  * third amendment).
  *
  * It used to be rendered *by* the mode control, in the mode control's own slot, with its own

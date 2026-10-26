@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { storageLadder } from "./storageLadder";
 
 /**
- * The storage ladder ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §6).
+ * The storage ladder (ADR-0067 §6).
  *
  * Two properties matter and neither is cosmetic: the rung decides *whether a reader is interrupted*,
  * so the calm cases must stay calm; and the banner's sentence must be written in words a person uses,

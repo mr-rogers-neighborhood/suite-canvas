@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Stripe webhook that issues hosted-sync licences. Deployed as a Lambda; a workspace package so `turbo run typecheck` and `turbo run test` gate the payment path. Its SES dependency is optional, so the main install stays AWS-free; the durable store is the control-plane Postgres.",
   "scripts": {
-    "test": "node --test \"*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dry-run": "node dev.ts --dry-run"
+    "dry-run": "node src/ops/dev.ts --dry-run"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -17,6 +17,8 @@
     "@aws-sdk/client-ses": "^3.0.0"
   },
   "dependencies": {
-    "pg": "^8.23.1"
+    "neverthrow": "^8.2.0",
+    "pg": "^8.23.1",
+    "remeda": "^2.54.1"
   }
 }

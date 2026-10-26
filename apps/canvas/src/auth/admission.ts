@@ -1,6 +1,6 @@
 /**
  * The admission state, in the server's own words
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §7).
+ * (ADR-0067 §7).
  *
  * Admission is a licensing gate, not an authentication one: it refuses exactly
  * three things — creating an organization, claiming a workspace, opening a sync

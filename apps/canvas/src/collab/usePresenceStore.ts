@@ -1,6 +1,6 @@
 import type { EphemeralStore, Value } from "loro-crdt";
 import { create } from "zustand";
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { getOrCreateIdentity, type Identity } from "./identity";

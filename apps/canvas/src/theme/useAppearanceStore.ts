@@ -26,7 +26,7 @@ const initial = readStoredAppearance(
 );
 
 /**
- * Reader appearance ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * Reader appearance (ADR-0071).
  *
  * Zustand because it is UI state and only UI state — a preference, not a paint on any
  * record. `set` writes through to local storage on every change: a reader who moves the

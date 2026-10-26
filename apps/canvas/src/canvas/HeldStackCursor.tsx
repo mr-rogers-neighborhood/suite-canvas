@@ -6,7 +6,7 @@ import type { PlacementEngine } from "./usePlacementEngine";
 
 /**
  * The stack a held run carries
- * ([ADR-0063](../../../docs/decisions/0063-placement-is-a-mode-too.md) third amendment).
+ * (ADR-0063 third amendment).
  *
  * A `thread` or a `fan` draws relationships, so the user places each card; the run
  * therefore has to be *visible* in their hand — the next card's title, layered over

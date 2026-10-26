@@ -233,7 +233,7 @@ describe("the shell's own paint", () => {
 });
 
 /**
- * Shell regions ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md) amendment).
+ * Shell regions (ADR-0071 amendment).
  *
  * A `shell` scope used to match no subject at all, so it was the same read-only fiction an unwritable `type`
  * rule was. The property that matters now: a region rule paints that region and leaves the others to the

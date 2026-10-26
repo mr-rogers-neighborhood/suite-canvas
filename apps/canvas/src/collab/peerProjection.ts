@@ -1,4 +1,4 @@
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import {
   AWARENESS_FIELDS,

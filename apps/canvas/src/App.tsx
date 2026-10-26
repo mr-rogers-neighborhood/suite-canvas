@@ -24,9 +24,9 @@ import { SignInEntry } from "./auth/SignInEntry";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import { BoardOutlineHost } from "./canvas/BoardOutline";
 import { CanvasBoard } from "./canvas/CanvasBoard";
-import type { CanvasMode } from "./canvas/linkGesture";
+import { DEFAULT_CARD_WIDTH } from "./canvas/interactions/multiSelect";
+import type { CanvasMode } from "./canvas/links/linkGesture";
 import { prefersReducedMotion } from "./canvas/localEasing";
-import { DEFAULT_CARD_WIDTH } from "./canvas/multiSelect";
 import { outlineRows } from "./canvas/outlineTree";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
@@ -42,35 +42,33 @@ import { surfacePaintVars } from "./canvas/surfacePaint";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
+import { CardFocusHost } from "./cards/CardFocusHost";
+import { CardInspectorHost } from "./cards/CardInspectorHost";
+import { sectionPath } from "./cards/cardWhere";
+import { TourOverlayHost } from "./cards/TourOverlayHost";
 import { ensureTutorialType, tutorialCardOnBoard } from "./cards/tour";
 import { ensureWhiteboardType } from "./cards/whiteboard";
+import { type BoardPresence, BoardTabs } from "./chrome/BoardTabs";
+import { BootSkeleton } from "./chrome/BootSkeleton";
+import { Dock } from "./chrome/Dock";
+import { TitleBar } from "./chrome/TitleBar";
+import { useSavedViews, ViewsBar } from "./chrome/ViewsBar";
 import { TAB_ID } from "./collab/tabId";
 import { usePresenceStore } from "./collab/usePresenceStore";
-import { type BoardPresence, BoardTabs } from "./components/BoardTabs";
-import { BootSkeleton } from "./components/BootSkeleton";
-import { CardFocusHost } from "./components/CardFocusHost";
-import { CardInspectorHost } from "./components/CardInspectorHost";
-import { CommandPaletteHost } from "./components/CommandPalette";
-import { sectionPath } from "./components/cardWhere";
-import type { Capability } from "./components/commandRegistry";
-import { Dock } from "./components/Dock";
-import { LeavingDialog } from "./components/LeavingDialog";
-import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "./components/LibraryDrawer";
-import { UNSORTED_SECTION } from "./components/libraryFilters";
-import { buildPaletteItems } from "./components/paletteProviders";
-import { SharePublishButton } from "./components/SharePublishButton";
-import { StoragePanel } from "./components/StoragePanel";
-import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./components/TemplateGallery";
-import { TitleBar } from "./components/TitleBar";
-import { TourOverlayHost } from "./components/TourOverlayHost";
-import { TypeSettingsHost } from "./components/TypeSettingsHost";
-import { useSavedViews, ViewsBar } from "./components/ViewsBar";
+import { CommandPaletteHost } from "./command/CommandPalette";
+import type { Capability } from "./command/commandRegistry";
+import { buildPaletteItems } from "./command/paletteProviders";
 import { markBoot, measureBoot } from "./dev/bootTiming";
 import { PerfOverlay } from "./dev/PerfOverlay";
 import { countRender } from "./dev/perf";
+import { LeavingDialog } from "./dialogs/LeavingDialog";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
+import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "./library/LibraryDrawer";
+import { UNSORTED_SECTION } from "./library/libraryFilters";
+import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./library/TemplateGallery";
+import { TypeSettingsHost } from "./panels/TypeSettingsHost";
 import {
   createLeavingGuard,
   documentVersion,
@@ -87,6 +85,8 @@ import {
   rememberWorkspaceName,
 } from "./session/workspaceName";
 import { rememberWorkspace } from "./session/workspaceTransfer";
+import { SharePublishButton } from "./sharing/SharePublishButton";
+import { StoragePanel } from "./sharing/StoragePanel";
 import { resolveBoardId, useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
@@ -190,12 +190,12 @@ function useSurfacePalette(root: RefObject<HTMLElement | null>, themeMode: strin
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
 const StylesDialog = lazy(async () => {
-  const module = await import("./components/StylesDialog");
+  const module = await import("./styles/StylesDialog");
   return { default: module.StylesDialog };
 });
 
 const WorkspaceActions = lazy(async () => {
-  const module = await import("./components/WorkspaceActions");
+  const module = await import("./chrome/WorkspaceActions");
   return { default: module.WorkspaceActions };
 });
 
@@ -500,7 +500,7 @@ function WorkspaceShell({
     document.title = `${workspaceName} — Suite`;
   }, [workspaceName]);
 
-  // The leave guard ([ADR-0025](../../docs/decisions/0025-client-durability-and-offline-scope.md)
+  // The leave guard (ADR-0025
   // amendment). `banner` is the ladder's own answer — anonymous, and no promise
   // that this browser will keep the copy — so it is the only condition here.
   // Whether *another* device is in the room right now, which is what lets the ladder
@@ -952,7 +952,7 @@ function WorkspaceShell({
         editCard: (cardId) => openCardFocus(cardId),
         // "Set type" means "make this the primary": a card that carries several
         // types must not lose the others because a palette row was picked
-        // ([ADR-0053](../../docs/decisions/0053-supertags-are-multi-type.md)).
+        // (ADR-0053).
         setCardType: (cardId, typeId) => workspace.setPrimaryType(cardId, typeId),
         trashCard: (cardId) => workspace.trashCard(cardId),
         restoreCard: (cardId) => workspace.restoreCard(cardId),

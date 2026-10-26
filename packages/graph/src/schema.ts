@@ -6,7 +6,7 @@ export const edgeKinds = ["references", "relates-to", "tagged"] as const;
  * `avoid` routes around the cards and sections a link would cross. It is one more
  * value of the path, so it is stored per link and syncs like any other; a link
  * with bends keeps its bends and the router is not consulted
- * ([ADR-0052 §6](../../../docs/decisions/0052-a-link-is-a-route.md)).
+ * (ADR-0052 §6).
  */
 export const edgePaths = ["bezier", "straight", "step", "smoothstep", "avoid"] as const;
 export const fieldKinds = [
@@ -18,7 +18,7 @@ export const fieldKinds = [
   "checkbox",
   "card",
   "board",
-  // Composing kinds ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)):
+  // Composing kinds (ADR-0057):
   // a number with a presentation, a record, and an ordered repeatable.
   "rating",
   "group",
@@ -63,12 +63,12 @@ export const boardSchema = z.object({
    */
   template: z.boolean().optional(),
   /**
-   * Freeform labels, like a card's ([ADR-0053 §6](../../../docs/decisions/0053-supertags-are-multi-type.md)).
+   * Freeform labels, like a card's (ADR-0053 §6).
    * A tag never implies membership and never carries fields; the reader always
    * supplies a list, so callers never see `undefined`.
    */
   tags: z.array(entityIdSchema),
-  /** Paint for the board's canvas ([ADR-0051](../../../docs/decisions/0051-one-style-vocabulary-over-edges.md)). */
+  /** Paint for the board's canvas (ADR-0051). */
   style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
@@ -84,7 +84,7 @@ export const selectOptionSchema = z.object({
 });
 
 /**
- * A rating's presentation ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md) §1):
+ * A rating's presentation (ADR-0057 §1):
  * the value stays a number, so sorting, filtering and arithmetic keep working;
  * the scale top, the half steps and the icon set change only how it is drawn.
  */
@@ -108,7 +108,7 @@ export const subFieldKindSchema = z.enum(subFieldKinds);
 
 /**
  * One named member of a `group`, or the item shape of a `list`
- * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md) §2–4).
+ * (ADR-0057 §2–4).
  * Deliberately shallow: nesting stops at one level, so a sub-field has no
  * children of its own.
  */
@@ -195,7 +195,7 @@ export const tagSchema = z.object({
  * select/card/board are strings, number and rating are numbers, checkbox is a
  * boolean, multi-select is the list of selected option ids, a `group` is a
  * record keyed by sub-field id and a `list` is an array of its item kind
- * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)). A `card`
+ * (ADR-0057). A `card`
  * value is a card id that may point at a card that no longer exists; it renders
  * as unavailable rather than failing validation. A `board` value is likewise a
  * board id: the same soft rule applies, so a deleted board leaves the card
@@ -314,7 +314,7 @@ export const graphEdgeSchema = z.object({
   /**
    * Manual route, in flow coordinates **relative to the source anchor**, so a
    * moved endpoint translates the whole route instead of stranding the bends.
-   * Every path style renders these ([ADR-0052](../../../docs/decisions/0052-a-link-is-a-route.md)).
+   * Every path style renders these (ADR-0052).
    */
   bends: z.array(positionSchema).max(24).optional(),
   /** Paint order against the cards. Absent means beneath, the safe default (ADR-0048). */
@@ -326,7 +326,7 @@ export const graphEdgeSchema = z.object({
 });
 
 /**
- * What a named rule can target ([ADR-0046 §3–4](../../../docs/decisions/0046-the-shell-derives-its-colour.md)).
+ * What a named rule can target (ADR-0046 §3–4).
  * `global` applies everywhere, `type` to every card of one type, `kind` to every
  * surface of one kind, `shell` to one shell region. Absent `id` is only legal for
  * `global`; the resolver in the app checks that.

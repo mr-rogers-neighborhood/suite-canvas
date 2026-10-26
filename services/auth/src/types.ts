@@ -154,7 +154,7 @@ export interface AuthEnvironment {
   SUITE_TURNSTILE_SECRET: string | undefined;
   /**
    * `1` or `true` makes every new account wait for admission
-   * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §7).
+   * (ADR-0067 §7).
    * Off by default: a self-host with one user does not need a queue, and the
    * gate must never surprise a deployment that did not ask for it.
    */

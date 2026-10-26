@@ -10,7 +10,7 @@ import {
 import { storageLadder } from "./storageLadder";
 
 /**
- * The leave guard ([ADR-0025](../../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * The leave guard (ADR-0025
  * amendment).
  *
  * Two properties carry the feature: the dialog is shown for exactly one rung of the ladder — the

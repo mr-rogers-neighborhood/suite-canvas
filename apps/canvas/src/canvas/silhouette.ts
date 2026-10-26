@@ -1,5 +1,5 @@
 /**
- * The silhouette contract ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * The silhouette contract (ADR-0071
  * amendment, "the silhouette is published, not restated").
  *
  * A card is a rounded box, and three different things need to agree about where its

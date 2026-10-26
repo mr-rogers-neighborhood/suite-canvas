@@ -1,9 +1,29 @@
 # `@suite/auth` — the control plane for owned workspaces
 
-The account service from [ADR-0065](../../docs/decisions/0065-accounts-own-workspaces.md). It owns
+The account service from ADR-0065. It owns
 identity, tenants, members, invitations and licence bookkeeping. **It never touches a document** —
 there is no Loro dependency, no graph dependency and no document store in this package, which is the
 structural version of "an invitation never touches the document".
+
+## Layout
+
+Folder by feature, with one `index.ts` per folder as its public surface. `src/index.ts`
+re-exports those surfaces and nothing reaches past them:
+
+| Folder | What lives there |
+| --- | --- |
+| `identity/` | `betterAuth.ts` (the only module that knows Better Auth exists), `principal.ts`, `capabilities.ts`, `mfa.ts` |
+| `organizations/` | `workspaces.ts` (claim), `adoption.ts` (anonymous → account), `seats.ts` (the licence allowances) |
+| `invitations/` | `enrollment.ts` (the invitation engine and its redemption port), `admission.ts` (the review queue's gate) |
+| `licensing/` | `licences.ts` — the licence port and the three-way licence state a seat check reads |
+| `store/` | `memory.ts`, `postgres.ts`, `postgresRepositories.ts` — the ports' two implementations |
+| `http/` | `handler.ts`, `routes.ts`, `response.ts`, `entry.ts`, `env.ts`, `errors.ts` — the shell |
+| `types.ts` | the shared vocabulary every folder speaks (roles, records, sessions, environment) |
+
+Refusals are values at the boundaries: `admissionGate`, `redemptionResult` and every route
+return a `Result`, and `http/response.ts` holds the single code → status mapping. The domain
+modules (`claimWorkspace`, the issuing functions) still throw their own tagged error for an
+invariant, and `http/routes.ts` converts that once, at the seam.
 
 ## What is actually wired today
 
@@ -12,13 +32,13 @@ Blunt, because a half-wired identity service is the kind of thing that looks fin
 | Piece | State |
 | --- | --- |
 | `better-auth` (1.7.12) | **Installed and constructed.** `createAuthService` builds a real instance with the **organization** plugin, **magic link** and **passkeys** (`@better-auth/passkey`), plus **Google** when `SUITE_GOOGLE_CLIENT_ID`/`_SECRET` are set. |
-| Plugin hooks | **Real and tested.** `beforeCreateOrganization` (tenant ceiling), `beforeAddMember` and `beforeAcceptInvitation` (licence seats) run inside Better Auth, through its in-memory adapter, in `betterAuth.test.ts`. |
+| Plugin hooks | **Real and tested.** `beforeCreateOrganization` (tenant ceiling), `beforeAddMember` and `beforeAcceptInvitation` (licence seats) run inside Better Auth, through its in-memory adapter, in `identity/betterAuth.test.ts`. |
 | Magic-link sign-in | **Real and tested end to end** (no network): the plugin asks for a link, the test opens it, and the returned `set-cookie` session resolves through `sessionReader`. |
 | Postgres adapter | **Not wired.** No `pg`/Kysely driver is installed, so `createAuthService` takes a `database` adapter and production has nothing to pass yet. The SQL that adapter must satisfy is `sql/0001_control_plane.sql`. |
 | Sessions at the relay | **Not wired.** A websocket join carries an owner key or a share token, not a cookie, so `apps/collab-server/src/seatGate.ts` refuses an *account* principal with `account-check-unavailable` instead of guessing a seat count. |
 | Membership writes | Two writers, one table: Better Auth writes `member` for the organization plugin's invitations and `addMember`, and `better-enrollment` writes it during a redemption (a redeemer is not yet a member, so it cannot pass the organization plugin's own permission check). Both obey the same unique constraint. |
-| Invitations | **Installed and exercised end to end.** `@octopi-ai/better-enrollment` (pinned `0.7.0`) owns private and public invites; `src/enrollment.ts` holds its configuration and wraps redemption in our error codes. See below. |
-| Password sign-in | **Real and tested**, for invited accounts only: `emailAndPassword: { enabled: true, disableSignUp: true }`, so a password is reachable only by redeeming an invite ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md) §11 amendment). |
+| Invitations | **Installed and exercised end to end.** `@octopi-ai/better-enrollment` (pinned `0.7.0`) owns private and public invites; `src/invitations/enrollment.ts` holds its configuration and wraps redemption in our error codes. See below. |
+| Password sign-in | **Real and tested**, for invited accounts only: `emailAndPassword: { enabled: true, disableSignUp: true }`, so a password is reachable only by redeeming an invite (ADR-0067 §11 amendment). |
 
 If you need the Postgres adapter installed, add `pg` and `kysely` here and pass
 `new Kysely({ dialect: new PostgresDialect({ pool }) })` as `database`; nothing else in this package
@@ -38,7 +58,7 @@ organization (Better Auth)  ── the tenant: people, roles, seats, subscriptio
 
 - **Claiming** an anonymous workspace is one conditional write on `workspaces`, and it can only set
   `organization_id`. The primary key is the document id, so there is nothing to rename and no share
-  link to reissue. `CLAIM_WORKSPACE_SQL` in `src/workspaces.ts` is the exact statement, duplicated as
+  link to reissue. `CLAIM_WORKSPACE_SQL` in `src/organizations/workspaces.ts` is the exact statement, duplicated as
   `claim_workspace()` in the migration so a second writer must obey the same rule.
 - **Roles** become the app's nine capability flags in `capabilitiesForRole` — the only place the
   mapping exists. `owner` and `admin` differ in *ownership* (deleting the workspace, holding the
@@ -51,7 +71,7 @@ organization (Better Auth)  ── the tenant: people, roles, seats, subscriptio
 ## Invitations: the plugin, and one thin wrapper
 
 `@octopi-ai/better-enrollment` is the invitation engine
-([ADR-0067](../../docs/decisions/0067-the-account-is-the-identity.md) §10). Two kinds exist and they
+(ADR-0067 §10). Two kinds exist and they
 answer different questions:
 
 - **private** — bound to one email, single use, delivered by mail. Redeeming it **sets a password**,
@@ -61,7 +81,7 @@ answer different questions:
   email. It grants membership to whoever presents it *and is already signed in*; the plugin answers
   `SIGN_IN_REQUIRED` otherwise, and nothing is written.
 
-`src/enrollment.ts` does two jobs, and the second is the guardrail:
+`src/invitations/enrollment.ts` does two jobs, and the second is the guardrail:
 
 1. `enrollmentOptions` — `mode: "invite-only"` with `allowOpenSignup: true` (the per-email guarantee
    the plugin can keep, without the app-wide sign-up closure §7 forbids), `passwordless: false`, and
@@ -100,7 +120,7 @@ All four are `createAuthHandler(deps)` — one event in, one JSON response out, 
 ## Plugins
 
 Better Auth is composed of plugins rather than hand-rolled routes, and each one is here for a stated
-reason ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md)):
+reason (ADR-0067):
 
 | Plugin | Why |
 | --- | --- |
@@ -118,7 +138,7 @@ reason ([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md)):
 Admission is **ours**, not a plugin: `admittedAt` on the user plus one global hook that refuses
 `/organization/create` (and, later, claim and sync) while it is null. It is a licensing gate, never an
 authentication one — local editing, import and export are never refused
-([ADR-0067](../docs/decisions/0067-the-account-is-the-identity.md) §7).
+(ADR-0067 §7).
 
 When an anonymous account signs up, `adoptAnonymousOrganizations` runs in the
 `onLinkAccount` window: it gives the new account ownership of every organization the
@@ -144,7 +164,7 @@ const auth = createAuthEntry(authEnvironment(process.env), {
 `postgresDatabase()` builds the pool Better Auth takes directly (no ORM, no query
 builder), and `postgresRepositories(client)` returns the three repositories over the
 same pool — `LicenceStore`, `MembershipReader` and `WorkspaceRepository`
-([ADR-0070](../docs/decisions/0070-one-postgres-control-plane.md)). They stay
+(ADR-0070). They stay
 *injected* rather than built by the service, because the memory implementations are
 what makes the rules testable without a database; a deployment passes the Postgres
 ones.
@@ -166,7 +186,7 @@ lookup are the same database, so they cannot disagree.
 the plugin set contributes; `sql/0003_billing.sql` adds the billing tables that ADR-0069
 moved here from DynamoDB. Neither is applied automatically: there is no boot-time
 migration, so a deployment runs them deliberately. The column names in 0002 are asserted
-against Better Auth's own table output in `src/pluginSchema.test.ts`, which is what makes
+against Better Auth's own table output in `src/identity/pluginSchema.test.ts`, which is what makes
 a hand-written migration safe to trust after a dependency bump.
 
 ## Tests

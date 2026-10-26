@@ -31,8 +31,10 @@
     "loro-prosemirror": "0.4.4",
     "loro-protocol": "^0.3.0",
     "loro-websocket": "0.6.2",
+    "neverthrow": "^8.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "remeda": "^2.54.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

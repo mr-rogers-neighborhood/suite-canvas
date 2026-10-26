@@ -1,14 +1,14 @@
 import { useReactFlow, useStoreApi, useViewport } from "@xyflow/react";
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { CanvasPurpose } from "../canvas/purpose";
 import type { PeerPresence } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { presenceChipInk } from "../components/PeerNameTag";
+import { presenceChipInk } from "../presence/PeerNameTag";
 import { useUiStore } from "../store/useUiStore";
 import { StatusCursor } from "./StatusCursor";
 
 /**
- * The status cursor ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)):
+ * The status cursor (ADR-0064):
  * the bubble with a corner pointer that carries the purpose, the gesture, the run and the
  * people — **for peers only**.
  *

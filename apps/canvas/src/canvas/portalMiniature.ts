@@ -1,6 +1,6 @@
 import type { Card, GraphEdge, Placement, Section } from "@suite/graph";
 import { edgeEndpoints, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
-import { type LinkScene, linkAnchors } from "./linkGeometry";
+import { type LinkScene, linkAnchors } from "./links/linkGeometry";
 
 /** Card box assumed when a placement has never been resized. */
 export const MINIATURE_CARD_SIZE = { width: 224, height: 160 } as const;

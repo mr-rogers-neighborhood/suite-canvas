@@ -2,7 +2,7 @@ import type { StyleColourRole, WorkspaceTheme, WorkspaceThemeMode } from "@suite
 import { themeColours } from "@suite/graph";
 
 /**
- * Where a workspace's own palette lands ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)
+ * Where a workspace's own palette lands (ADR-0071
  * Q2–Q3).
  *
  * The document names a *role*, never a token: `surface` is "the card's face", so

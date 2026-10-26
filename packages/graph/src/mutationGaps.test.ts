@@ -10,7 +10,7 @@ import { emptyViewQuery } from "./views.js";
 /**
  * Tests written from surviving mutants in the Stryker report. Each one pins a
  * behaviour the suite only exercised indirectly, so it is listed with the
- * mutation it kills. See "Mutation testing" in docs/testing.md.
+ * mutation it kills. See "Mutation testing" in docs/how-to/test-and-verify.md.
  */
 
 describe("search snippet windows", () => {

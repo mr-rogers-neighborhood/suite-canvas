@@ -14,7 +14,7 @@ import {
 } from "./styleTargets";
 
 /**
- * The ladder being writable ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The ladder being writable (ADR-0071).
  *
  * These are the properties the editor leans on: browsing a rung writes nothing, the first edit creates
  * exactly one rule at the end of the order, an edit cannot disturb a rule's identity, and the confirm

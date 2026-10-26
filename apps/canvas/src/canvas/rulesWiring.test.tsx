@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import { NodeCard } from "../components/NodeCard";
+import { NodeCard } from "../cards/NodeCard";
 import { type SurfaceRules, SurfaceRulesContext } from "./rules";
 
 /**

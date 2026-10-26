@@ -1,6 +1,6 @@
 import type { ViewQuery } from "@suite/graph";
 import { create } from "zustand";
-import type { CanvasMode } from "../canvas/linkGesture";
+import type { CanvasMode } from "../canvas/links/linkGesture";
 import { usePlacementRunStore } from "../canvas/placementRun";
 import { DEFAULT_PLACEMENT_OPTIONS, type PlacementOptions } from "../canvas/placeRun";
 import type { CanvasPurpose } from "../canvas/purpose";
@@ -50,7 +50,7 @@ export interface ContainerInspectorTarget {
 }
 
 /**
- * A tour being read or authored ([ADR-0058](../../../docs/decisions/0058-a-tour-is-one-document-on-three-surfaces.md)).
+ * A tour being read or authored (ADR-0058).
  *
  * The steps themselves are content on the tutorial card; this is only what one
  * reader is looking at — the same split as `containerInspector` or a selection.
@@ -237,7 +237,7 @@ interface UiState extends SessionCapabilities {
   libraryFull: boolean;
   setLibraryFull: (full: boolean) => void;
   /**
-   * What the canvas is for ([ADR-0064](../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)).
+   * What the canvas is for (ADR-0064).
    * The second axis, beside `mode`: `mode` says what the next click does, `purpose`
    * says what the reader is doing at all. Always exactly one, because the control
    * cycles and because two purposes both claiming the next click is how a canvas
@@ -255,7 +255,7 @@ interface UiState extends SessionCapabilities {
   setPurpose: (purpose: CanvasPurpose) => void;
   /**
    * The numbers a placement run reads: gap, columns, ring radius, section padding
-   * ([ADR-0056](../../docs/decisions/0056-card-settings-owns-defaults.md) amendment).
+   * (ADR-0056 amendment).
    * They live in UI state because Card Settings — the surface that will own them —
    * is A33; when it lands it writes these same fields rather than a second copy.
    */

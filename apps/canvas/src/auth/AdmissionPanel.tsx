@@ -3,7 +3,7 @@ import { ADMISSION_PENDING_MESSAGE } from "./admission";
 
 /**
  * One honest panel for a session that is registered but not yet admitted
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §7).
+ * (ADR-0067 §7).
  *
  * It is not a wall. Everything local is unaffected, and saying that is the point:
  * a person who signs up and meets a locked screen learns the wrong thing about

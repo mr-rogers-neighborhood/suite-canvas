@@ -3,7 +3,7 @@ import path from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceActions } from "../components/WorkspaceActions";
+import { WorkspaceActions } from "../chrome/WorkspaceActions";
 import { useUiStore } from "../store/useUiStore";
 import {
   bootPlan,
@@ -221,7 +221,7 @@ describe("standalone guard rails", () => {
    */
   const RELAY_MODULES: Readonly<Record<string, readonly string[]>> = {
     "session/ownerKey.ts": ["main.tsx"],
-    "session/shares.ts": ["main.tsx", "App.tsx", "components/WorkspaceActions.tsx"],
+    "session/shares.ts": ["main.tsx", "App.tsx", "chrome/WorkspaceActions.tsx"],
     // The Better Auth client. `App.tsx` reaches it only through a lazy chunk that
     // the standalone branch never renders, so a standalone build has no auth code.
     "auth/client.ts": ["App.tsx"],

@@ -9,7 +9,7 @@ import {
 } from "./silhouette";
 
 /**
- * The silhouette contract ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The silhouette contract (ADR-0071).
  *
  * Three properties carry it, and each fails loudly if the maths drifts:
  * the common case (a side midpoint) never moves, a corner lands *on* the arc, and a

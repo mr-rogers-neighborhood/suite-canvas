@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * The native tab-close prompt ([ADR-0025](../../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * The native tab-close prompt (ADR-0025
  * amendment).
  *
  * The in-app dialog can only catch a return to the launcher; closing the tab has no such moment, so

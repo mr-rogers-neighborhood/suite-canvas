@@ -13,7 +13,7 @@
 import { createPublicKey, generateKeyPairSync, randomUUID, verify } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { LICENCE_FORMAT_VERSION, type LicenceClaims, signLicence } from "./licence.js";
+import { LICENCE_FORMAT_VERSION, type LicenceClaims, signLicence } from "./store/licence.js";
 
 const DEFAULT_KEY_FILE = "licence-private.pem";
 

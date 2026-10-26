@@ -408,10 +408,12 @@ export {
   viewSortKeys,
 } from "./views.js";
 export type {
+  ParsedWorkspaceFile,
   WorkspaceFile,
   WorkspaceFileAttachmentBytes,
   WorkspaceFileAttachmentInput,
   WorkspaceFileAttachmentInputs,
+  WorkspaceFileError,
   WorkspaceFileExport,
   WorkspaceFileManifest,
 } from "./workspaceFile.js";
@@ -419,6 +421,8 @@ export {
   createWorkspaceFile,
   parseWorkspaceFile,
   readWorkspaceFile,
+  tryParseWorkspaceFile,
+  tryReadWorkspaceFile,
   WORKSPACE_FILE_KIND,
   WORKSPACE_FILE_VERSION,
   workspaceFileManifestSchema,

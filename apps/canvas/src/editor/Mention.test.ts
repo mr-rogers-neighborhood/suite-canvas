@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Mention } from "./Mention";
 
 // The chip and the picker need a live workspace; serialisation does not.
-vi.mock("../components/MentionChip", () => ({ MentionChipNodeView: () => null }));
+vi.mock("./MentionChip", () => ({ MentionChipNodeView: () => null }));
 vi.mock("./SuggestionList", () => ({
   mentionSuggestion: {},
   titleForCardId: (cardId: string) => (cardId === "card-1" ? "Design doc" : ""),

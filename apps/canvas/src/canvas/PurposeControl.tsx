@@ -9,7 +9,7 @@ import {
 import { useModifierState } from "./useModifierState";
 
 /**
- * The purpose family ([ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md)):
+ * The purpose family (ADR-0064):
  * what the canvas is *for*, as opposed to what the next click does. One glyph per
  * purpose, and the glyph carries the state: a ring that differed only by hue
  * would disappear in a monochrome screenshot and for a reader who cannot tell the
@@ -85,7 +85,7 @@ function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
  * tour, which is the only thing that can start one (ADR-0064 §11). From there this
  * control is the exit.
  *
- * The modifiers preview the same way the link tool's do ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)):
+ * The modifiers preview the same way the link tool's do (ADR-0066):
  * shift points at `run`, ctrl at `record`, alt at `explain`. A held key repaints the
  * button and refuses the click — the key *is* the override, and releasing ends it — so
  * the button never promises a switch it would not perform.

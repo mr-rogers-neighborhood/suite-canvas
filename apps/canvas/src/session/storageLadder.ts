@@ -1,7 +1,7 @@
 import type { PersistState } from "../storage/durability";
 
 /**
- * What to say about local storage ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §6).
+ * What to say about local storage (ADR-0067 §6).
  *
  * The panel used to report the browser's answer in our words — "Best-effort", "Persisted",
  * "durable storage", "eviction" — which is our internal model leaking into a header pill. A reader

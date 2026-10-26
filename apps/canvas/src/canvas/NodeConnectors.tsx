@@ -2,7 +2,7 @@ import type { Connector as ConnectorModel } from "@suite/graph";
 import { useUpdateNodeInternals } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
-import { Connector, type Point } from "../components/Connector";
+import { Connector, type Point } from "../presence/Connector";
 import { usePlacementRunStore } from "./placementRun";
 import { edgePoint, readSilhouette, type Silhouette } from "./silhouette";
 

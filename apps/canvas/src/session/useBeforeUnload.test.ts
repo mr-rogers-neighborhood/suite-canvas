@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useBeforeUnload } from "./useBeforeUnload";
 
 /**
- * The native tab-close prompt ([ADR-0025](../../../docs/decisions/0025-client-durability-and-offline-scope.md)
+ * The native tab-close prompt (ADR-0025
  * amendment).
  *
  * The listener is the whole feature: registered only while the rung is `banner`, gone the moment it

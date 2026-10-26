@@ -6,7 +6,7 @@ import { WorkspaceDocument } from "./WorkspaceDocument.js";
 
 /**
  * Composing fields — `rating`, `group` and `list`
- * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)).
+ * (ADR-0057).
  *
  * The acceptance tests here are the storage ones: sub-values merge like
  * top-level values (§5) and one level of nesting is the rule (§4).

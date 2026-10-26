@@ -2,7 +2,7 @@ import type { FieldDefinition, PropertyValue, SubField, SubFieldKind } from "./s
 
 /**
  * Helpers for composing field kinds — `rating`, `group` and `list`
- * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)).
+ * (ADR-0057).
  *
  * The rules live here rather than in the writer so every surface agrees: the
  * Loro writer validates with `compositeValueError`, the publish validator
@@ -24,7 +24,7 @@ export const LIST_ITEM_SUB_FIELD_ID = "item";
 /**
  * A reserved key a stored group always carries, so the value is readable as a
  * group even after its field (or type) is removed: a dormant value revives,
- * exactly like a dormant scalar ([ADR-0016](../../../docs/decisions/0016-semantic-core.md) §6).
+ * exactly like a dormant scalar (ADR-0016 §6).
  * Sub-field ids are generated ids, so they can never collide with it.
  */
 export const GROUP_VALUE_TAG = "@suite:group";
@@ -301,7 +301,7 @@ export function groupFilledCount(
 /**
  * The read-only reading of a composite value, for a chip, a database cell and a
  * canvas summary. A view counts rather than edits composite fields
- * ([ADR-0057](../../../docs/decisions/0057-fields-can-compose.md)), so a group
+ * (ADR-0057), so a group
  * reads as how much of it is filled and a list as how many items it holds;
  * editing happens in the inspector.
  */

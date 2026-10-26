@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { CanvasMode } from "./linkGesture";
+import type { CanvasMode } from "./links/linkGesture";
 
 /**
- * Recording a tour ([ADR-0058](../../../docs/decisions/0058-a-tour-is-one-document-on-three-surfaces.md)
- * amendment, [ADR-0064](../../../docs/decisions/0064-two-axes-and-a-cursor-that-says-so.md) §9).
+ * Recording a tour (ADR-0058
+ * amendment, ADR-0064 §9).
  *
  * Recording is a *purpose*, and the gesture axis becomes the step verb: `place` and
  * `thread` append a step per click, `fan` accumulates several targets into one step.

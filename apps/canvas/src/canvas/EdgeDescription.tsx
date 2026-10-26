@@ -11,10 +11,11 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { PeerNameTag } from "../components/PeerNameTag";
+import { PeerNameTag } from "../presence/PeerNameTag";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceStore } from "../store/workspaceStore";
+import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./interactions/multiSelect";
 import {
   absoluteBends,
   asRouteMode,
@@ -30,8 +31,7 @@ import {
   routePoints,
   selfLoopRoute,
   shiftRoute,
-} from "./edgeRoute";
-import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./multiSelect";
+} from "./links/edgeRoute";
 import { useIsolatedEdgeId } from "./routeIsolation";
 
 /** Routing and label placement carried in `data`, so one component renders every style. */

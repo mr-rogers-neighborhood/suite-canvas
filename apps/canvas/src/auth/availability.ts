@@ -2,7 +2,7 @@ import { authClientBase } from "./endpoints";
 
 /**
  * Whether this deployment has accounts at all
- * ([ADR-0067](../../../docs/decisions/0067-the-account-is-the-identity.md) §8).
+ * (ADR-0067 §8).
  *
  * A local-only install has no server, so it has no session and no sign-in
  * surface worth showing. The distinction that matters to a person is *"you are

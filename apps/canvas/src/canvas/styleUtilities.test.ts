@@ -9,7 +9,7 @@ import {
 } from "./styleUtilities";
 
 /**
- * The style utilities ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * The style utilities (ADR-0071).
  *
  * Two properties matter more than any single value: **every utility declares a
  * fallback**, and **inheritance reports where it came from**. The first is what makes a

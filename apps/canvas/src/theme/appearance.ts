@@ -1,5 +1,5 @@
 /**
- * Reader appearance preferences ([ADR-0071](../../../docs/decisions/0071-style-is-derived-not-configured.md)).
+ * Reader appearance preferences (ADR-0071).
  *
  * These four knobs are the *only* styling a reader owns alone, and they are device
  * preferences rather than document data: density and canvas treatment change how this

@@ -60,12 +60,12 @@ function labelRecent(
  * ordinary canvas route.
  */
 const RecoveryKeyDialog = lazy(async () => {
-  const module = await import("../components/RecoveryKeyDialog");
+  const module = await import("../sharing/RecoveryKeyDialog");
   return { default: module.RecoveryKeyDialog };
 });
 
 const DeleteWorkspaceDialog = lazy(async () => {
-  const module = await import("../components/DeleteWorkspaceDialog");
+  const module = await import("../dialogs/DeleteWorkspaceDialog");
   return { default: module.DeleteWorkspaceDialog };
 });
 

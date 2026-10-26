@@ -2,12 +2,12 @@ import { type NodeProps, NodeResizer, type NodeTypes, type ResizeParams } from "
 import { useCallback, useMemo, useRef, useState } from "react";
 import { portalTargetId } from "../cards/portal";
 import { usePresenceStore } from "../collab/usePresenceStore";
-import { useAttachmentSource } from "../components/useBoardCover";
 import { useBoardPeers } from "../hooks/useBoardPeers";
 import { useSmoothedSize } from "../hooks/useSmoothedSize";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { useAttachmentSource } from "../styles/useBoardCover";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
 import { DEFAULT_PORTAL_SIZE, PortalCard } from "./PortalCard";

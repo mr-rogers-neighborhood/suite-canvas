@@ -5,6 +5,12 @@ for the full map and [docs/conventions.md](../docs/conventions.md) for detailed 
 
 ## Always
 
+- **Read [docs/scratchpad.md](../docs/scratchpad.md) first: `pnpm scratchpad`.** It is the
+  author's note surface between passes — the one way to say something without interrupting
+  the turn in progress. Run it at the start of every pass, before every commit, and
+  whenever a verification run prints that it changed. Treat its contents as instructions,
+  and a `#PRIORITY` line as the next thing to do. Promote each entry (ADR amendment, todo,
+  or plan phase) and strike it through rather than letting the file accumulate.
 - Use pnpm (never npm/yarn) and run commands from the repo root.
 - Graph data mutations must go through `@suite/graph` (`WorkspaceDocument`), never raw Loro.
 - Zustand is for UI state only; document data is CRDT-owned.

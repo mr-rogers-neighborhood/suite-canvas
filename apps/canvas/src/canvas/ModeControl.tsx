@@ -3,6 +3,8 @@ import { useUiStore } from "../store/useUiStore";
 import { type CanvasMode, canvasModes, nextMode } from "./linkGesture";
 import { useLinkThreadStore } from "./linkThread";
 import {
+  heldKey,
+  isHeld,
   isTextEntry,
   type ModifierState,
   modifiersOf,
@@ -43,6 +45,11 @@ function switchLabel(mode: CanvasMode): string {
   return `Switch to ${MODES[target].label.charAt(0).toLowerCase()}${MODES[target].label.slice(1)}`;
 }
 
+/** "Thread mode", the name without the clause after the colon, for a label that embeds it. */
+function shortLabel(mode: CanvasMode): string {
+  return MODES[mode].label.split(":")[0] ?? MODES[mode].label;
+}
+
 /**
  * The link tool in the viewport widget bar, beside zoom and fit. Thread mode
  * lets a plain click chain links; shift-click does the same in connect mode,
@@ -81,23 +88,39 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
   const held = useRef<ModifierState>(NO_MODIFIERS);
 
   /**
-   * Paints the *displayed* mode on the button. `data-mode` and the click path
-   * stay the stored mode; `data-hint-mode`, the `is-thread` look and the glyph
-   * follow what the reader is doing, so holding Shift flips the indicator and
-   * releasing it flips it back.
+   * Paints the *displayed* mode on the button. `data-mode` and the click path stay the
+   * stored mode; `data-preview` and the glyph follow what the reader is doing, so
+   * holding a key flips the indicator and releasing it flips it back.
+   *
+   * `data-preview` and not a hint class: a class can only *add* a look, and previewing
+   * the resting `place` from `thread` has to remove one. With classes the stored
+   * mode's mapping kept winning and the chip stayed inverted over a dark glyph.
    */
   const paintHint = useCallback(() => {
     const node = button.current;
     if (!node) return;
     // The family's own order decides which modifier is which; `null` means the
     // resting state, so the stored mode shows and nothing is hinted.
-    const displayed = previewedValue(canvasModes, held.current) ?? mode;
+    const displayed = previewedValue(canvasModes, held.current, mode) ?? mode;
+    const hinting = displayed !== mode;
     node.dataset.hintMode = displayed;
-    node.dataset.hint = displayed === mode ? "false" : "true";
-    node.classList.toggle("is-thread", displayed === "thread");
-    node.classList.toggle("is-fan", displayed === "fan");
-    node.classList.toggle("is-branch", displayed === "branch");
+    node.dataset.hint = hinting ? "true" : "false";
+    if (hinting) node.dataset.preview = displayed;
+    else delete node.dataset.preview;
     if (glyph.current) glyph.current.textContent = MODES[displayed].glyph;
+
+    // A held modifier is a momentary override, so a click during one changes nothing
+    // (see the guard below). The label has to say so, or it would keep promising the
+    // switch that the click no longer performs.
+    // A key whose value is already stored steps back to the one it displaced, so a
+    // held key always shows something other than the stored mode: the label can say
+    // "release to return" without a case for "you are already there".
+    const key = heldKey(held.current);
+    const label = key
+      ? `${shortLabel(displayed)} while ${key} is held. Release ${key} to return to ${shortLabel(mode)}`
+      : `${MODES[mode].label}. ${switchLabel(mode)}`;
+    node.title = label;
+    node.setAttribute("aria-label", label);
   }, [mode]);
 
   // A commit restores the stored class and glyph from JSX, so the hint is
@@ -192,9 +215,7 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
     <button
       ref={button}
       type="button"
-      className={`link-mode-control${mode === "thread" ? " is-thread" : ""}${
-        mode === "fan" ? " is-fan" : ""
-      }${mode === "branch" ? " is-branch" : ""}`}
+      className="link-mode-control"
       aria-pressed={active}
       aria-label={`${current.label}. ${switchLabel(mode)}`}
       title={`${current.label}. ${switchLabel(mode)}`}
@@ -207,6 +228,12 @@ export function ModeControl({ engine }: ModeControlProps = {}) {
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
+        // A held modifier is a momentary override: the canvas is already behaving as
+        // the previewed mode, and releasing the key is what ends it. Committing on a
+        // click too would have two endings for one gesture — and the stored mode it
+        // would cycle from is not the one on screen, so the click would appear to
+        // pick an unrelated mode. Refuse, and let go of the key instead.
+        if (isHeld(held.current)) return;
         // Changing mode must also disarm whatever the old mode armed: an origin
         // from a fan means something different once the mode is thread.
         useLinkThreadStore.getState().clear();

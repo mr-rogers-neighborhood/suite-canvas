@@ -24,6 +24,13 @@ export interface ModifierState {
 export const NO_MODIFIERS: ModifierState = { shift: false, ctrl: false, alt: false };
 
 /**
+ * The slots the keys own, in family order. Slot 0 is the resting value, which is why
+ * the baseline stays reachable by a key: no key claims it, so it is always the one
+ * value a held key can offer that nothing else is offering.
+ */
+const KEY_SLOTS = [1, 2, 3] as const;
+
+/**
  * Which value the held modifiers point at: `0` is resting, so a caller falls back
  * to what is stored.
  *
@@ -38,18 +45,57 @@ export function modifierOffset(state: ModifierState): 0 | 1 | 2 | 3 {
   return 0;
 }
 
+/** Whether a modifier is down at all, i.e. whether the stored value is being overridden. */
+export function isHeld(state: ModifierState): boolean {
+  return modifierOffset(state) !== 0;
+}
+
+/**
+ * The modifier a preview is riding on, named the way a key cap prints it, so a label
+ * can say which key to release. The most specific one wins, exactly as in
+ * `modifierOffset`, or the label would name a key that is not deciding anything.
+ */
+export function heldKey(state: ModifierState): string | null {
+  if (state.alt) return "Alt";
+  if (state.ctrl) return "Ctrl";
+  if (state.shift) return "Shift";
+  return null;
+}
+
 /**
  * The value a family would show for the modifiers held, or `null` for none — which
  * includes the resting modifier, because "resting" means "whatever is stored" and
  * not "the first value".
  *
+ * A key means its own slot, with one exception: when the stored value is already in
+ * that slot, the key hands back the value the map would otherwise leave out. The
+ * invariant is that **the stored value plus the three keys show every value of the
+ * family exactly once**, so no key is ever a no-op and no value is ever unreachable.
+ * In a family of four that missing value is always the resting one — `values[0]` —
+ * because the keys cover slots 1–3 between them; it is derived rather than assumed so
+ * that a family of a different size still closes.
+ *
  * A family with three values and no fourth gets `null` for alt rather than a
  * clamp: an empty slot is a reservation, and showing the last value instead would
  * make `alt` silently mean `ctrl`.
  */
-export function previewedValue<T>(values: readonly T[], state: ModifierState): T | null {
+export function previewedValue<T>(
+  values: readonly T[],
+  state: ModifierState,
+  stored?: T,
+): T | null {
   const offset = modifierOffset(state);
-  return offset === 0 ? null : (values[offset] ?? null);
+  if (offset === 0) return null;
+  const storedIndex = stored === undefined ? -1 : values.indexOf(stored);
+  // No collision: the key means its own slot, whatever the reader has stored.
+  if (storedIndex !== offset) return values[offset] ?? null;
+
+  // What the map would otherwise leave out: the stored value and the other keys'
+  // slots are already spoken for, so hand back the one that is not.
+  const slots = KEY_SLOTS.filter((slot) => slot < values.length);
+  const covered = new Set<number>([storedIndex, ...slots.filter((slot) => slot !== offset)]);
+  const missing = [...slots, 0].find((index) => !covered.has(index));
+  return missing === undefined ? null : (values[missing] ?? null);
 }
 
 /** Read the modifiers off any keyboard event, so a listener has no opinion of its own. */

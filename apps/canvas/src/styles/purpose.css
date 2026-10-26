@@ -66,9 +66,17 @@
   border-color: var(--value-hue);
 }
 
+/*
+ * Hover is the same rule the link tool uses, on purpose: these are two segments of one
+ * bar, so pointing at either should tint it by its own value by the same amount. It
+ * used to mix the ink in instead, which in a light theme greyed a white chip and in a
+ * dark one lifted the bar's own segment — a change of *state* for what is only a
+ * pointer. Mixing the value's own hue keeps a chip a chip: `run`'s fill is its hue, so
+ * an engaged purpose looks untouched, which is the state outranking the pointer.
+ */
 .purpose-control:hover {
-  border-color: var(--purpose-state);
-  background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  border-color: var(--value-hue);
+  background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
 /* A modifier is showing what the click would choose. Dashed, not filled: a
@@ -78,9 +86,138 @@
   border-color: var(--ink-muted);
 }
 
-/* An engaged purpose keeps its fill on hover: the state outranks the pointer. */
-.purpose-control[data-purpose="run"]:hover,
-.purpose-control[data-purpose="record"]:hover {
-  border-color: var(--purpose-state);
-  background: var(--purpose-state);
+/*
+ * The explain surface (ADR-0066 §4): what the selection *is*, gathered in one place.
+ *
+ * Anchored bottom-left, immediately right of the widget column — the one region no
+ * other surface claims. The bottom-right corner is the inspector's (`z-index: 25`), so
+ * a panel there is a panel behind the inspector the moment a card is selected, which is
+ * exactly when explain has something to say. The tour caption uses the gutter itself,
+ * and a tour cannot be running while explain is the purpose.
+ */
+.explain-panel {
+  position: absolute;
+  left: calc(var(--canvas-gutter) + 8px);
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(60vh, 420px);
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--value-explain-hue) 40%, var(--hairline));
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.explain-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The same glyph the purpose control shows, so the panel is plainly that mode's. */
+.explain-panel__glyph {
+  color: var(--value-explain-hue);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.explain-panel__count {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.explain-panel__empty,
+.explain-panel__note {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.4;
+}
+
+.explain-panel__entities,
+.explain-panel__links {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+}
+
+.explain-panel__entity {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--segmented-bg);
+}
+
+.explain-panel__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The kind is a category, not a value: muted and small so the titles read first. */
+.explain-panel__kind {
+  color: var(--ink-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.explain-panel__fields {
+  display: flex;
+  margin: 0;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.explain-panel__field {
+  display: flex;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.explain-panel__field dt {
+  min-width: 64px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explain-panel__field dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explain-panel__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--value-explain-hue) 55%, transparent);
+  color: var(--ink-muted);
+}
+
+.explain-panel__link-ends {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

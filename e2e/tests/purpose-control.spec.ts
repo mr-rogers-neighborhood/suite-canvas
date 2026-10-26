@@ -57,7 +57,9 @@ async function authorStep(page: Page, tourCard: Locator, targetTitle: string): P
   await page.keyboard.press("Escape");
 }
 
-test("walks explore → run → record → explore, and never into present", async ({ page }) => {
+test("walks explore → run → record → explain → explore, and never into present", async ({
+  page,
+}) => {
   await page.goto(workspaceUrl("cycle"));
   await expect(cards(page)).toHaveCount(2);
 
@@ -84,10 +86,16 @@ test("walks explore → run → record → explore, and never into present", asy
   await expect(purpose(page)).toHaveAttribute("data-purpose", "record");
   await expect(page.getByRole("button", { name: "Card type: Tutorial" })).toHaveCount(1);
 
+  // Explain gathers the selection into a context instead of writing anything.
+  await purpose(page).click();
+  await expect(purpose(page)).toHaveAttribute("data-purpose", "explain");
+  await expect(page.getByTestId("explain-panel")).toBeVisible();
+
   // A tour now exists and is open, and the widget still refuses to be the way in:
-  // a presentation belongs to the tour (ADR-0064 §11).
+  // a presentation belongs to the tour (ADR-0064 §11), so the lap ends at explore.
   await purpose(page).click();
   await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+  await expect(page.getByTestId("explain-panel")).toHaveCount(0);
 });
 
 test("presents from the tour card, and the widget is only the exit", async ({ page }) => {

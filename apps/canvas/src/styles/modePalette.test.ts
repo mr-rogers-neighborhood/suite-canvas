@@ -10,7 +10,10 @@ import { describe, expect, it } from "vitest";
  *
  * - a component naming a colour instead of a role, which is how two surfaces drift;
  * - a value losing one of its three tokens, which paints half a control;
- * - a retired token (`--state-*`) surviving in a file that still reads it.
+ * - a retired token (`--state-*`) surviving in a file that still reads it, which is
+ *   worse than it looks: an undefined custom property makes its whole declaration
+ *   invalid at computed-value time, so `background: var(--gone)` is not "ignored" but
+ *   *transparent*. That is how the purpose chip lost its fill on hover.
  */
 
 /**
@@ -72,6 +75,42 @@ describe("the value palette", () => {
     }
   });
 
+  it("reads no custom property that nothing defines", () => {
+    // The general form of the rule above, because `--purpose-state` was undefined and
+    // the token check above did not know its name. Every `var(--x)` in a mode sheet
+    // has to resolve to a declaration somewhere in the styles directory.
+    const defined = new Set<string>();
+    for (const name of [
+      "global.css",
+      "purpose.css",
+      "cursor.css",
+      "canvas.css",
+      "editor.css",
+      "library.css",
+      "panels.css",
+      "tour.css",
+    ]) {
+      let sheet: string;
+      try {
+        sheet = read(name);
+      } catch {
+        continue;
+      }
+      for (const match of sheet.matchAll(/(--[a-z0-9-]+)\s*:/g)) defined.add(match[1] as string);
+    }
+
+    for (const [name, sheet] of [
+      ["purpose.css", purpose],
+      ["cursor.css", cursor],
+    ] as const) {
+      const used = new Set(
+        Array.from(sheet.matchAll(/var\((--[a-z0-9-]+)/g), (m) => m[1] as string),
+      );
+      const missing = [...used].filter((token) => !defined.has(token));
+      expect(missing, `${name} reads ${missing.join(", ")}`).toEqual([]);
+    }
+  });
+
   it("leaves no colour literal in the mode stylesheets except as a documented fallback", () => {
     for (const sheet of [purpose, cursor]) {
       // A hex in these files means a value that a theme cannot reach.
@@ -79,15 +118,34 @@ describe("the value palette", () => {
     }
   });
 
-  it("lets a held modifier paint the value it proposes", () => {
-    // Preview and commit are the same painting: the preview wins over the stored value
-    // by source order, and it reads the same tokens rather than its own colours.
-    for (const value of ["explore", "run", "record", "explain"] as const) {
+  it("maps a preview for every value, not only the ones that first had one", () => {
+    // Previewing `place` from `thread` has to *remove* the stored mode's painting, and
+    // `branch` + ctrl has to draw fan's blue rather than branch's green: both need a
+    // mapping of their own.
+    for (const value of VALUES) {
       expect(global).toContain(`[data-preview="${value}"]`);
     }
-    // The tie-break block is last, so a preview cannot silently fail to paint.
-    const last = global.lastIndexOf('[data-preview="run"]');
-    expect(last).toBeGreaterThan(global.indexOf('[data-purpose="record"]'));
+  });
+
+  it("puts every preview below every committed rule, because the two collide", () => {
+    /*
+     * A control carries `data-mode` and `data-preview` on the same element, so the two
+     * rule sets tie on specificity and source order decides. When a value's preview
+     * shared a block with its committed form, the stored mode won wherever its block
+     * came later — `branch` + ctrl painted fan's glyph in branch's green. This asserts
+     * the ordering that makes the preview win by construction: no `[data-preview]`
+     * selector may appear above any `[data-mode]` / `[data-purpose]` one.
+     */
+    const firstPreview = global.search(/\[data-preview="/);
+    expect(firstPreview).toBeGreaterThan(-1);
+
+    const committedAfter = [...global.matchAll(/\[data-(mode|purpose)="[a-z]+"\]/g)].filter(
+      (match) => (match.index ?? 0) > firstPreview,
+    );
+    expect(
+      committedAfter.map((match) => match[0]),
+      "a committed selector sits below the preview block",
+    ).toEqual([]);
   });
 
   it("lets the resting value blend with the bar it sits in", () => {

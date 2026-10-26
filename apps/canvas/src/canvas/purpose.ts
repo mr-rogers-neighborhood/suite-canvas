@@ -8,7 +8,7 @@ import type { CanvasMode } from "./linkGesture";
  * separate because they are orthogonal: a run threads as often as an exploration
  * does, and "recording" is not a shape.
  */
-export const canvasPurposes = ["explore", "run", "record", "present"] as const;
+export const canvasPurposes = ["explore", "run", "record", "explain", "present"] as const;
 export type CanvasPurpose = (typeof canvasPurposes)[number];
 
 /** Human name of each purpose, for menus, labels and the cursor's `title`. */
@@ -16,6 +16,7 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
   explore: "explore",
   run: "run",
   record: "record",
+  explain: "explain",
   present: "present",
 };
 
@@ -28,22 +29,21 @@ export const PURPOSE_NAMES: Record<CanvasPurpose, string> = {
  * way to pick a tour. The axis still *carries* `present`, because the widget, the
  * cursor and presence all have to say it; it just cannot be walked into.
  */
-export const choosablePurposes = ["explore", "run", "record"] as const;
+export const choosablePurposes = ["explore", "run", "record", "explain"] as const;
 
 /**
- * The values the modifier map can *preview* on the purpose axis, including one that
- * cannot be chosen yet.
+ * The values the modifier map can *preview* on the purpose axis.
  *
- * `explain` is gate A41: it is specified (a selection becomes a scoped context answered
- * from the handbook) and not built. It appears here so the palette can show the fourth
- * colour the author assigned — purple under alt — without also shipping a mode that
- * does nothing when clicked. Choosing it is refused, with a title that says why, so the
- * preview never becomes a lie.
+ * The same list as `choosablePurposes`, and it stays a separate name because the two
+ * answer different questions: one is what the control cycles, the other is what a key
+ * can point at. They were different while `explain` was preview-only; the author asked
+ * for it to be cycled, so they are the same list and the gate that kept them apart is
+ * closed (ADR-0066 amendment).
  */
-export const previewablePurposes = ["explore", "run", "record", "explain"] as const;
+export const previewablePurposes = choosablePurposes;
 export type PreviewablePurpose = (typeof previewablePurposes)[number];
 
-/** The cycle the purpose control walks: explore → run → record → explore. */
+/** The cycle the purpose control walks: explore → run → record → explain → explore. */
 export function nextPurpose(purpose: CanvasPurpose): CanvasPurpose {
   // Leaving a presentation is the only move available from it, and it goes to the
   // resting state rather than continuing a cycle the tour never started.
@@ -71,7 +71,9 @@ export function purposeReadsGesture(purpose: CanvasPurpose): boolean {
  * two-axis model needs, and it is stated here rather than in a component.
  */
 export function purposeClaimsClicks(purpose: CanvasPurpose): boolean {
-  return purpose === "run" || purpose === "record";
+  // `explain` claims the click too: what it gathers is what the reader selected, and a
+  // click is how the selection is made (ADR-0066 §4).
+  return purpose === "run" || purpose === "record" || purpose === "explain";
 }
 
 /** The gesture a purpose starts with, when a purpose has a natural one. */
@@ -83,6 +85,9 @@ export function initialGestureFor(purpose: CanvasPurpose): CanvasMode | null {
     case "record":
       // Recording appends a step per click (ADR-0058 amendment).
       return "thread";
+    // `explain` reads the gesture axis and ignores it, the way `present` does: the
+    // gesture describes what a link would do, and explain draws nothing.
+    case "explain":
     case "explore":
     case "present":
       return null;

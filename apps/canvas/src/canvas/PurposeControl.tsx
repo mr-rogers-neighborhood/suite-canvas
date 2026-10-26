@@ -1,5 +1,5 @@
 import { useUiStore } from "../store/useUiStore";
-import { previewedValue } from "./modifierPreview";
+import { heldKey, isHeld, previewedValue } from "./modifierPreview";
 import {
   type CanvasPurpose,
   nextPurpose,
@@ -20,11 +20,11 @@ import { useModifierState } from "./useModifierState";
  * playback: a list of cards being placed one click at a time (ADR-0064 §11).
  */
 /**
- * Display for the four previewable values. `explain` is here but not in
- * `CanvasPurpose`: it has a glyph and a colour (gate A41 specified it), and not yet a
- * behaviour, so it is shown and refused rather than hidden and forgotten.
+ * Display for every value the control can show, including the one that is only ever a
+ * previewed state (`present`) — the glyph and label a value carries do not depend on
+ * whether it can be clicked.
  */
-const PREVIEW_DISPLAY: Record<CanvasPurpose | "explain", { label: string; glyph: string }> = {
+const PREVIEW_DISPLAY: Record<CanvasPurpose, { label: string; glyph: string }> = {
   explore: { label: "Explore mode: edit the canvas", glyph: "\u25cb" },
   run: { label: "Run mode: place a sequence of cards", glyph: "\u2261" },
   record: { label: "Record mode: capture steps into a tour", glyph: "\u25cf" },
@@ -45,12 +45,21 @@ const PURPOSES: Record<CanvasPurpose, { label: string; glyph: string }> = {
     label: "Record mode: capture steps into a tour",
     glyph: "\u25cf",
   },
+  explain: {
+    label: "Explain mode: gather this selection into a context",
+    glyph: "\u25c8",
+  },
   // Not a mode the reader picks, so it is named as a state rather than offered.
   present: {
     label: "Presenting a tour",
     glyph: "\u25a3",
   },
 };
+
+/** "Record mode", the name without the clause after the colon, for a label that embeds it. */
+function shortPurposeLabel(purpose: CanvasPurpose | "explain"): string {
+  return PREVIEW_DISPLAY[purpose].label.split(":")[0] ?? PREVIEW_DISPLAY[purpose].label;
+}
 
 /** "Switch to record mode: capture steps into a tour". */
 function switchLabel(purpose: CanvasPurpose, target: CanvasPurpose): string {
@@ -88,18 +97,23 @@ export function PurposeControl() {
   const modifiers = useModifierState();
 
   // What a click would choose: the previewed value when a modifier points at one,
-  // otherwise the next value in the cycle. Previewed against the four-value list so
-  // `alt` reaches `explain`'s purple, which the cycle can never enter.
+  // otherwise the next value in the cycle.
   const previewed =
     purpose === "present"
       ? null
-      : previewedValue<PreviewablePurpose>(previewablePurposes, modifiers);
-  const unbuilt = previewed === "explain";
-  const target = unbuilt ? purpose : (previewed ?? nextPurpose(purpose));
+      : previewedValue<PreviewablePurpose>(previewablePurposes, modifiers, purpose);
+  const target = previewed ?? nextPurpose(purpose);
+
+  /**
+   * A held modifier is a momentary override, and a click during one changes nothing
+   * (the guard below). It is the same rule as the link tool's, because the two axes
+   * share one modifier vocabulary (ADR-0066) and a gesture cannot mean two things.
+   */
+  const held = isHeld(modifiers) ? heldKey(modifiers) : null;
 
   const current = PURPOSES[purpose];
-  const label = unbuilt
-    ? `${current.label}. Explain mode is not built yet`
+  const label = held
+    ? `${shortPurposeLabel(previewed ?? purpose)} while ${held} is held. Release ${held} to return to ${shortPurposeLabel(purpose)}`
     : `${current.label}. ${switchLabel(purpose, target)}`;
   // The previewed value is shown, not stored: the ring stays on what the reader is
   // actually doing, and the glyph says what the modifier would make it.
@@ -115,15 +129,13 @@ export function PurposeControl() {
       data-testid="purpose-toggle"
       data-purpose={purpose}
       data-preview={previewed ?? undefined}
-      aria-disabled={unbuilt || undefined}
       // The canvas claims pointerdown for panning and selection and prevents the
       // default, which suppresses the click a nested control would otherwise get.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={() => {
-        // A preview of an unbuilt mode is paint, not a promise: refusing the click is
-        // what keeps `alt` honest until gate A41 lands.
-        if (unbuilt) return;
+        // Held, the preview is momentary and the key release is what ends it.
+        if (held) return;
         setPurpose(target);
       }}
     >

@@ -2723,29 +2723,12 @@ body {
   background: color-mix(in srgb, var(--value-hue) 10%, var(--value-fill));
 }
 
-/*
- * A held modifier previews the value it would choose, so the *hint* classes re-point
- * the palette rather than naming a colour: one source, and the preview is by
- * construction the same painting as the committed mode. `data-mode` keeps the stored
- * value; these classes win on specificity only while a modifier is down.
- */
-.link-mode-control.is-thread {
-  --value-hue: var(--value-thread-hue);
-  --value-fill: var(--value-thread-fill);
-  --value-ink: var(--value-thread-ink);
-  border-color: var(--value-hue);
-}
-
-.link-mode-control.is-fan {
-  --value-hue: var(--value-fan-hue);
-  --value-fill: var(--value-fan-fill);
-  --value-ink: var(--value-fan-ink);
-}
-
-.link-mode-control.is-branch {
-  --value-hue: var(--value-branch-hue);
-  --value-fill: var(--value-branch-fill);
-  --value-ink: var(--value-branch-ink);
+/* A held modifier previews on this axis too, with the same dashed edge the purpose
+   control uses: one glance says the key is doing this and a click will not. After
+   `:hover` because the two tie on specificity and the preview must win. */
+.link-mode-control[data-hint="true"] {
+  border-style: dashed;
+  border-color: var(--ink-muted);
 }
 
 /* The armed end of a thread reads as "the next click goes here". */
@@ -2766,50 +2749,42 @@ body {
   height: 100%;
 }
 
-/* Value -> palette. One place, so the widget bar, the connector menu, the library's
-   run verbs and a peer's cursor cannot disagree about what `fan` looks like.
-   `data-preview` is included for the same reason on the other axis: a held modifier
-   paints the value it would choose, so the preview of `run` *is* the committed `run`
-   rather than a second guess at it. */
+/* Value -> palette, part one: the value an element *is*. One place, so the widget bar,
+   the connector menu, the library's run verbs and a peer's cursor cannot disagree about
+   what `fan` looks like. */
 [data-mode="place"],
-[data-purpose="explore"],
-[data-preview="explore"] {
+[data-purpose="explore"] {
   --value-hue: var(--value-place-hue);
   --value-fill: var(--value-place-fill);
   --value-ink: var(--value-place-ink);
 }
 
 [data-mode="thread"],
-[data-purpose="run"],
-[data-preview="run"] {
+[data-purpose="run"] {
   --value-hue: var(--value-thread-hue);
   --value-fill: var(--value-thread-fill);
   --value-ink: var(--value-thread-ink);
 }
 
-[data-mode="fan"],
-[data-preview="fan"] {
+[data-mode="fan"] {
   --value-hue: var(--value-fan-hue);
   --value-fill: var(--value-fan-fill);
   --value-ink: var(--value-fan-ink);
 }
 
-[data-mode="branch"],
-[data-preview="branch"] {
+[data-mode="branch"] {
   --value-hue: var(--value-branch-hue);
   --value-fill: var(--value-branch-fill);
   --value-ink: var(--value-branch-ink);
 }
 
-[data-purpose="record"],
-[data-preview="record"] {
+[data-purpose="record"] {
   --value-hue: var(--value-record-hue);
   --value-fill: var(--value-record-fill);
   --value-ink: var(--value-record-ink);
 }
 
-[data-purpose="explain"],
-[data-preview="explain"] {
+[data-purpose="explain"] {
   --value-hue: var(--value-explain-hue);
   --value-fill: var(--value-explain-fill);
   --value-ink: var(--value-explain-ink);
@@ -2825,26 +2800,60 @@ body {
 }
 
 /*
- * A held modifier outranks the stored value. The two attributes share an element, so
- * this rule exists only to settle the tie: without it, `data-purpose="record"` and
- * `data-preview="run"` are equal specificity and source order would decide — meaning a
- * preview could silently fail to paint depending on where a block sits in the file.
+ * Value -> palette, part two: the value a held modifier *proposes*.
+ *
+ * A separate, later block for all eight values, and it has to be exactly that. A
+ * control carries both attributes at once — the stored value and the proposed one — so
+ * these rules collide with part one at equal specificity and source order decides.
+ * When a value's preview shared a block with its committed form, the *stored* value won
+ * wherever its block came later: `branch` + ctrl drew `fan`'s glyph in `branch`'s green,
+ * because `[data-mode="branch"]` sat below `[data-preview="fan"]`. Keeping every
+ * preview below every committed rule makes the preview win by construction rather than
+ * by luck of ordering, and `modePalette.test.ts` asserts that no preview selector
+ * appears above the last committed one.
  */
+[data-preview="place"] {
+  --value-hue: var(--value-place-hue);
+  --value-fill: var(--value-place-fill);
+  --value-ink: var(--value-place-ink);
+}
+
+[data-preview="thread"] {
+  --value-hue: var(--value-thread-hue);
+  --value-fill: var(--value-thread-fill);
+  --value-ink: var(--value-thread-ink);
+}
+
+[data-preview="fan"] {
+  --value-hue: var(--value-fan-hue);
+  --value-fill: var(--value-fan-fill);
+  --value-ink: var(--value-fan-ink);
+}
+
+[data-preview="branch"] {
+  --value-hue: var(--value-branch-hue);
+  --value-fill: var(--value-branch-fill);
+  --value-ink: var(--value-branch-ink);
+}
+
 [data-preview="explore"] {
   --value-hue: var(--value-explore-hue);
   --value-fill: var(--value-explore-fill);
   --value-ink: var(--value-explore-ink);
 }
+
 [data-preview="run"] {
   --value-hue: var(--value-run-hue);
   --value-fill: var(--value-run-fill);
   --value-ink: var(--value-run-ink);
 }
+
 [data-preview="record"] {
   --value-hue: var(--value-record-hue);
   --value-fill: var(--value-record-fill);
   --value-ink: var(--value-record-ink);
 }
+
 [data-preview="explain"] {
   --value-hue: var(--value-explain-hue);
   --value-fill: var(--value-explain-fill);

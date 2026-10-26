@@ -18,7 +18,7 @@ import {
  */
 
 describe("the purpose cycle", () => {
-  it("walks explore → run → record → explore", () => {
+  it("walks explore → run → record → explain → explore", () => {
     const walked: string[] = [];
     let purpose: CanvasPurpose = choosablePurposes[0];
     for (let index = 0; index < choosablePurposes.length; index += 1) {
@@ -26,8 +26,8 @@ describe("the purpose cycle", () => {
       purpose = nextPurpose(purpose);
     }
 
-    expect(walked).toEqual(["explore", "run", "record"]);
-    // One full cycle returns to the start rather than to a fourth value.
+    expect(walked).toEqual(["explore", "run", "record", "explain"]);
+    // One full cycle returns to the start.
     expect(purpose).toBe("explore");
   });
 
@@ -41,7 +41,7 @@ describe("the purpose cycle", () => {
     }
 
     expect(reachable.has("present")).toBe(false);
-    expect([...reachable].sort()).toEqual(["explore", "record", "run"]);
+    expect([...reachable].sort()).toEqual(["explain", "explore", "record", "run"]);
   });
 
   it("leaves present for the resting state, the one move a tour allows", () => {

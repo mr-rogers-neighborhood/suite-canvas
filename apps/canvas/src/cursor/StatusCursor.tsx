@@ -32,6 +32,7 @@ export const PURPOSE_GLYPHS: Record<CanvasPurpose, string | null> = {
   // back, and beside `record` a triangle reads as media transport (ADR-0064 §11).
   run: "\u2261",
   record: "\u25c9",
+  explain: "\u25c8",
   present: "\u25a3",
 };
 
@@ -42,6 +43,9 @@ export const RING_SHAPES: Record<CanvasPurpose, RingShape> = {
   explore: "solid",
   run: "double",
   record: "dashed",
+  // Solid, like exploring: explain is a way of *looking*, and the ring's shape has to
+  // stay free to mark the states that change what a click will write.
+  explain: "solid",
   present: "halo",
 };
 
@@ -49,6 +53,7 @@ const PURPOSE_LABELS: Record<CanvasPurpose, string> = {
   explore: "exploring",
   run: "running a sequence",
   record: "recording a tour",
+  explain: "gathering a context",
   present: "presenting",
 };
 

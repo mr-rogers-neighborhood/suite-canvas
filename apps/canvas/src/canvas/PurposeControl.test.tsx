@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 describe("PurposeControl cycle", () => {
-  it("walks explore → run → record → explore on repeated clicks", () => {
+  it("walks explore → run → record → explain → explore on repeated clicks", () => {
     render(<PurposeControl />);
 
     expect(toggle()).toHaveAttribute("data-purpose", "explore");
@@ -26,6 +26,10 @@ describe("PurposeControl cycle", () => {
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle());
     expect(toggle()).toHaveAttribute("data-purpose", "record");
+    fireEvent.click(toggle());
+    // The fourth value is a mode the reader picks, not only a key they hold.
+    expect(toggle()).toHaveAttribute("data-purpose", "explain");
+    expect(toggle()).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle());
 
     expect(toggle()).toHaveAttribute("data-purpose", "explore");
@@ -37,10 +41,10 @@ describe("PurposeControl cycle", () => {
     useUiStore.setState({ tour });
     render(<PurposeControl />);
 
-    // Three clicks is a full lap of the cycle. A presentation is scoped to a tour
-    // and only a tour can start one (§11), so the widget must not offer it however
-    // available it looks.
-    for (let click = 0; click < 3; click += 1) {
+    // Four clicks is a full lap of the cycle. A presentation is scoped to a tour and
+    // only a tour can start one (§11), so the widget must not offer it however
+    // available it looks — `explain` replaced it as the fourth clickable value.
+    for (let click = 0; click < 4; click += 1) {
       expect(toggle()).not.toHaveAttribute("data-purpose", "present");
       fireEvent.click(toggle());
     }
@@ -106,7 +110,7 @@ describe("PurposeControl modifier preview", () => {
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
     expect(toggle()).toHaveAttribute("data-preview", "run");
     expect(toggle()).not.toHaveAttribute("data-purpose", "run");
-    expect(toggle()).toHaveAttribute("title", expect.stringContaining("run mode"));
+    expect(toggle()).toHaveAttribute("title", expect.stringContaining("Release Shift"));
 
     fireEvent.keyDown(window, { key: "Control", shiftKey: false, ctrlKey: true });
     expect(toggle()).toHaveAttribute("data-preview", "record");
@@ -117,32 +121,50 @@ describe("PurposeControl modifier preview", () => {
     expect(useUiStore.getState().purpose).toBe("explore");
   });
 
-  it("commits the previewed value when the control is clicked with the modifier held", () => {
+  it("refuses the click while a modifier is held, so a click cannot commit under the key", () => {
     render(<PurposeControl />);
 
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
     fireEvent.click(toggle());
+    expect(useUiStore.getState().purpose).toBe("explore");
 
-    // A shortcut, not a cycle step: holding shift and clicking means run.
+    // Releasing the key ends the override and leaves the stored purpose where the
+    // reader last clicked, which is the whole point of a momentary modifier.
+    fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
+    expect(toggle()).not.toHaveAttribute("data-preview");
+    expect(useUiStore.getState().purpose).toBe("explore");
+  });
+
+  it("lets the click through again once the key is released", () => {
+    render(<PurposeControl />);
+
+    fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
+    fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
+    fireEvent.click(toggle());
+
     expect(useUiStore.getState().purpose).toBe("run");
   });
 
-  it("previews explain on alt, and refuses the click because that mode is not built", () => {
+  it("previews explain on alt, and no longer refuses it: the mode exists", () => {
     render(<PurposeControl />);
 
     fireEvent.keyDown(window, { key: "Alt", altKey: true });
 
-    // The fourth colour exists (purple, gate A41) and the preview shows it...
+    // From explore, alt is its own slot: the fourth valuable, purple under the key.
     expect(toggle()).toHaveAttribute("data-preview", "explain");
-    expect(toggle()).toHaveAttribute("aria-disabled", "true");
-    expect(toggle()).toHaveAttribute("title", expect.stringContaining("not built"));
+    expect(toggle()).not.toHaveAttribute("aria-disabled");
+    expect(toggle()).toHaveAttribute("title", expect.stringContaining("Release Alt"));
 
-    // ...but a click does not commit a mode that does nothing, which is what keeps
-    // the preview paint rather than a promise.
+    // The key is a moment, so a click during one is refused — the same rule as the
+    // link tool's. Releasing and clicking does reach the mode, and so does the cycle.
     fireEvent.click(toggle());
     expect(useUiStore.getState().purpose).toBe("explore");
 
     fireEvent.keyUp(window, { key: "Alt", altKey: false });
+    fireEvent.click(toggle());
+    fireEvent.click(toggle());
+    fireEvent.click(toggle());
+    expect(toggle()).toHaveAttribute("data-purpose", "explain");
   });
 
   it("is not previewed while the reader is typing in a card", () => {

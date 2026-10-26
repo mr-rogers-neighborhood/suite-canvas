@@ -14,6 +14,10 @@ Claude Code, …). Read it first; keep it high-signal.
   persistence, `loro-websocket` for sync (client provider + [apps/collab-server](apps/collab-server))
 - **Typed object graph:** [packages/graph](packages/graph) (`@suite/graph`) — Zod schemas +
   a typed Loro wrapper (`WorkspaceDocument`)
+- **Notes between passes:** [docs/scratchpad.md](docs/scratchpad.md) is a queue, not a
+  document. `pnpm scratchpad` prints it (and `pnpm verify` runs it first). Read it at the
+  start of every pass and before every commit; promote entries to an ADR amendment, a
+  todo, or a plan phase, then strike them through.
 - **Quality:** Biome (lint + format), Vitest + React Testing Library, Playwright e2e,
   Storybook, commitlint (conventional commits)
 

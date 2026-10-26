@@ -19,13 +19,13 @@ describe("ModeControl shift hint", () => {
     const toggle = screen.getByTestId("link-mode-toggle");
     expect(toggle).toHaveAttribute("data-mode", "place");
     expect(toggle).toHaveAttribute("data-hint-mode", "place");
-    expect(toggle).not.toHaveClass("is-thread");
+    expect(toggle).not.toHaveAttribute("data-preview");
 
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
 
     // The indicator mirrors the gesture the reader is making...
     expect(toggle).toHaveAttribute("data-hint-mode", "thread");
-    expect(toggle).toHaveClass("is-thread");
+    expect(toggle).toHaveAttribute("data-preview", "thread");
     // ...while the stored mode, and so what a click does, is untouched.
     expect(toggle).toHaveAttribute("data-mode", "place");
     expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -34,21 +34,49 @@ describe("ModeControl shift hint", () => {
     fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
 
     expect(toggle).toHaveAttribute("data-hint-mode", "place");
-    expect(toggle).not.toHaveClass("is-thread");
+    expect(toggle).not.toHaveAttribute("data-preview");
     expect(toggle).toHaveAttribute("data-mode", "place");
   });
 
-  it("stays in thread mode when Shift is released in thread mode", () => {
+  it("hands back the mode a key displaced, and returns to it on release", () => {
     useUiStore.setState({ mode: "thread" });
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
 
+    // Shift is what put the reader in thread, so holding it cannot mean "thread"
+    // again: it shows what thread replaced, which is the only non-redundant answer.
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
-    expect(toggle).toHaveAttribute("data-hint-mode", "thread");
+    expect(toggle).toHaveAttribute("data-hint-mode", "place");
+    expect(toggle).toHaveAttribute("title", expect.stringContaining("to return to Thread"));
 
     fireEvent.keyUp(window, { key: "Shift", shiftKey: false });
     expect(toggle).toHaveAttribute("data-hint-mode", "thread");
     expect(toggle).toHaveAttribute("data-mode", "thread");
+  });
+
+  it("hands back the baseline for every key whose value is already stored", () => {
+    // The baseline and not the previous value: stepping back made ctrl show `thread`
+    // from `fan`, which shift was already showing, leaving `place` unreachable. The
+    // full matrix lives in `modifierPreview.test.ts`; this asserts the control paints
+    // what the map says for the collision case in each slot.
+    const cases = [
+      { mode: "thread", key: "Shift", shiftKey: true, expect: "place" },
+      { mode: "fan", key: "Control", ctrlKey: true, expect: "place" },
+      { mode: "branch", key: "Alt", altKey: true, expect: "place" },
+    ] as const;
+
+    for (const { mode, key, expect: previewed, ...held } of cases) {
+      useUiStore.setState({ mode });
+      const { unmount } = render(<ModeControl />);
+      const toggle = screen.getByTestId("link-mode-toggle");
+
+      fireEvent.keyDown(window, { key, ...held });
+      expect(toggle).toHaveAttribute("data-hint-mode", previewed);
+
+      fireEvent.keyUp(window, { key, shiftKey: false, ctrlKey: false, altKey: false });
+      expect(toggle).toHaveAttribute("data-hint-mode", mode);
+      unmount();
+    }
   });
 
   it("keeps the stored mode while another key is pressed with Shift", () => {
@@ -78,6 +106,27 @@ describe("ModeControl shift hint", () => {
     expect(toggle).toHaveAttribute("data-hint-mode", "place");
   });
 
+  it("refuses the click while a modifier is held, and says so instead of promising a switch", () => {
+    render(<ModeControl />);
+    const toggle = screen.getByTestId("link-mode-toggle");
+
+    // Ctrl from place shows fan. Clicking used to cycle *from place* — committing
+    // thread while the button showed fan — so the guard is what keeps the glyph and
+    // the stored mode from disagreeing.
+    fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
+    expect(toggle).toHaveAttribute("data-hint-mode", "fan");
+    expect(toggle).toHaveAttribute("title", expect.stringContaining("Release Ctrl"));
+
+    fireEvent.click(toggle);
+    expect(useUiStore.getState().mode).toBe("place");
+
+    // Release ends the override at the mode the reader last clicked.
+    fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
+    expect(toggle).toHaveAttribute("data-mode", "place");
+    expect(toggle).toHaveAttribute("data-hint-mode", "place");
+    expect(toggle).toHaveAttribute("title", expect.stringContaining("Switch to thread mode"));
+  });
+
   it("still toggles the stored mode on click", () => {
     render(<ModeControl />);
     const toggle = screen.getByTestId("link-mode-toggle");
@@ -98,17 +147,16 @@ describe("ModeControl three-state cycle", () => {
     expect(toggle).toHaveAttribute("data-mode", "place");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "thread");
-    expect(toggle).toHaveClass("is-thread");
-    expect(toggle).not.toHaveClass("is-fan");
+    // A committed mode is `data-mode`; `data-preview` exists only while a key is held,
+    // so the two can never disagree about which value is painted.
+    expect(toggle).not.toHaveAttribute("data-preview");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "fan");
-    expect(toggle).toHaveClass("is-fan");
-    expect(toggle).not.toHaveClass("is-thread");
+    expect(toggle).not.toHaveAttribute("data-preview");
     fireEvent.click(toggle);
     // The fourth shape: a chain that branches. See ADR-0063.
     expect(toggle).toHaveAttribute("data-mode", "branch");
-    expect(toggle).toHaveClass("is-branch");
-    expect(toggle).not.toHaveClass("is-fan");
+    expect(toggle).not.toHaveAttribute("data-preview");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("data-mode", "place");
 
@@ -122,12 +170,12 @@ describe("ModeControl three-state cycle", () => {
     fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
     expect(toggle).toHaveAttribute("data-hint-mode", "fan");
     expect(toggle).toHaveAttribute("data-hint", "true");
-    expect(toggle).toHaveClass("is-fan");
+    expect(toggle).toHaveAttribute("data-preview", "fan");
     expect(toggle).toHaveAttribute("data-mode", "place");
 
     fireEvent.keyUp(window, { key: "Control", ctrlKey: false });
     expect(toggle).toHaveAttribute("data-hint-mode", "place");
-    expect(toggle).not.toHaveClass("is-fan");
+    expect(toggle).not.toHaveAttribute("data-preview");
   });
 
   it("prefers fan over thread when Control and Shift are both held", () => {
@@ -136,8 +184,7 @@ describe("ModeControl three-state cycle", () => {
 
     fireEvent.keyDown(window, { key: "Shift", shiftKey: true, ctrlKey: true });
     expect(toggle).toHaveAttribute("data-hint-mode", "fan");
-    expect(toggle).toHaveClass("is-fan");
-    expect(toggle).not.toHaveClass("is-thread");
+    expect(toggle).toHaveAttribute("data-preview", "fan");
   });
 
   it("disarms a pending origin when the mode changes", () => {

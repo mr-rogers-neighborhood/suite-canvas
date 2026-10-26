@@ -35,3 +35,6 @@ stryker.log
 
 # Isolated checkouts for parallel workstreams.
 .worktrees/
+
+# The scratchpad's last-read marker: per-machine, so a note is new once per reader.
+.scratchpad-seen

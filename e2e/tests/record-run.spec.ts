@@ -48,6 +48,20 @@ async function enterRecord(page: Page): Promise<void> {
   await expect(purpose(page)).toHaveAttribute("data-purpose", "record");
 }
 
+/**
+ * Walk the purpose control back to the resting state.
+ *
+ * The cycle is four values wide now (explore → run → record → explain → explore), so
+ * leaving record takes two clicks and passes through `explain` on the way. The steps
+ * that follow need explore: a click there is a selection, not a captured step.
+ */
+async function leaveToExplore(page: Page): Promise<void> {
+  await purpose(page).click();
+  await expect(purpose(page)).toHaveAttribute("data-purpose", "explain");
+  await purpose(page).click();
+  await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+}
+
 /** The Steps list of the tour recording fills, opened through its own card. */
 async function openSteps(page: Page, tourCard: Locator): Promise<void> {
   await tourCard.getByTestId("card-type").click();
@@ -94,10 +108,9 @@ test("a click while recording is a step of the tour it opened", async ({ page })
   await expect(stepRows(page).nth(1)).toContainText("Beta");
 
   // Leaving the purpose ends the capture but keeps what it wrote: the cycle goes
-  // record → explore, and it never passes through `present`, which belongs to a
-  // tour and to the reader who opens one (ADR-0064 §10, §11).
-  await purpose(page).click();
-  await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+  // record → explain → explore, and it never passes through `present`, which belongs
+  // to a tour and to the reader who opens one (ADR-0064 §10, §11).
+  await leaveToExplore(page);
   await expect(overlay(page)).toHaveCount(0);
 
   // Explore means a click is a selection again, and the tour is untouched.
@@ -118,8 +131,7 @@ test("a second entry opens the tour it already has instead of a second card", as
 
   // Out of record and back in: the board keeps one tutorial, because the steps
   // of one timeline cannot be split across two cards.
-  await purpose(page).click();
-  await expect(purpose(page)).toHaveAttribute("data-purpose", "explore");
+  await leaveToExplore(page);
 
   await enterRecord(page);
   await expect(cards(page)).toHaveCount(3);

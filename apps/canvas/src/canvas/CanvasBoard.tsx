@@ -42,6 +42,7 @@ import type { ConnectState } from "../collab/presence";
 import { usePresenceStore } from "../collab/usePresenceStore";
 import { usePublishAxes } from "../collab/usePublishAxes";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import { ExplainPanel } from "../components/ExplainPanel";
 import { StatusCursorLayer } from "../cursor/StatusCursorLayer";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import { countRender } from "../dev/perf";
@@ -3444,6 +3445,7 @@ export function CanvasBoard() {
       ) : null}
       <ModeControl engine={placementEngine} />
       <PurposeControl />
+      <ExplainPanel />
       <StatusCursorLayer />
       <HeldStackCursor engine={placementEngine} />
       <LibraryDropPreview />

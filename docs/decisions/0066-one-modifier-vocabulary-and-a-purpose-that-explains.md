@@ -138,3 +138,125 @@ section — none of them is load-bearing for the others.
   click into a selection, which is the entire gesture.
 - **Saving the context as a new object type.** A saved context *is* a view; a second object would
   duplicate queries, sharing and export for the sake of a different name.
+
+## Amendment — a held modifier is a moment, not a pending click
+
+The rule above says a held modifier previews and a click commits the previewed value. Shipped and
+scrutinised, that gave one gesture two endings, and on the link tool the two disagreed outright.
+
+**What was wrong.** The link tool's click cycled from the *stored* mode, not from the one on screen.
+With ctrl down from `place` the chip showed `fan`; clicking committed `thread`, because `nextMode`
+started at `place`. The button then displayed `fan`'s glyph over a stored `thread`, and releasing the
+key repainted to `thread` — a mode the reader never picked. The purpose control committed its preview,
+so the two controls behaved differently under the same key, which is the drift this ADR exists to stop.
+
+**The rule now.** A held modifier is a **momentary override**, and it ends only when the key does.
+
+- While a modifier is held, both controls **refuse the click**. The override is already in force and
+  the canvas is already behaving accordingly; a click would try to make permanent something whose
+  whole design is that it is temporary.
+- Releasing returns to **the value the reader last clicked**, never to the preview. A held key cannot
+  move the stored value by any route.
+- A preview of the *stored* value (`ctrl` while already in `fan`) is not a preview at all. The label
+  says "Release Ctrl to switch" rather than promising a switch the click will not perform, and no
+  dashed edge is drawn, because there is nothing to distinguish.
+- Both controls paint the held state with the same **dashed** edge, so one glance says the key is doing
+  this and a click will not.
+
+The cost is a shortcut: `shift` + click no longer means "set run". That is cheaper than the alternative
+— a control that says one thing and does another — and the cycle still reaches every value in one to
+three clicks, with the modifier naming what each click will pick before it is made.
+
+**Why not the reverse** (honouring the preview on click in *both* controls)? It is coherent, and it was
+the other candidate. It loses because these keys are already spoken for: ctrl-click is a context menu,
+shift-click extends a selection, and alt-click is a window-manager grab on some Linux desktops. A click
+arriving with a modifier down is more often one of those gestures landing on the widget than a request
+for a specific mode, so the safe reading is the one that does nothing.
+
+## Amendment — a key hands back what it displaced
+
+Four values, three keys. Once the reader chose the second value in either family, every key pointed at
+a value already on screen and the whole map went quiet: `shift` from `thread` previewed `thread`.
+
+**The rule.** A modifier still means its own slot. When the stored value already *is* that slot's
+value, the modifier hands back **the value it displaced** — the one before it:
+
+| stored | shift | ctrl | alt |
+| --- | --- | --- | --- |
+| `place` | `thread` | `fan` | `branch` |
+| `thread` | `place` | `fan` | `branch` |
+| `fan` | `thread` | `thread` | `branch` |
+| `branch` | `thread` | `fan` | `fan` |
+
+Stepping back rather than stepping forward keeps the key's identity: `shift` never stops meaning "the
+second value". Because the control is a forward cycle, the value before the current one is also the one
+the reader last left, so "previous" reads correctly in both directions.
+
+The cost is that from `branch` no key reaches `place` and from `fan` none reaches `place`; one click on
+the cycle does. The gain is that no key is ever a no-op, which is the property that matters for a bar
+you glance at mid-gesture.
+
+**Companion fix: preview by attribute, not by class.** The link tool painted its hint by adding
+`is-thread` / `is-fan` / `is-branch`. A class can only *add* a look, so previewing the resting `place`
+from `thread` removed the class, nothing replaced the stored mode's `[data-mode="thread"]` mapping, and
+the chip stayed inverted over a dark glyph while the purpose chip beside it correctly went to the
+baseline. Both controls now paint the same way: `data-mode` / `data-purpose` is the committed value,
+`data-preview` is the held one, and the tie-break block in `global.css` decides the collision. The link
+tool still writes it from a ref rather than a re-render, so nothing about the no-re-render-mid-gesture
+rule changes — it writes `node.dataset.preview` instead of `classList.toggle`.
+
+`modePalette.test.ts` now asserts a `[data-preview]` mapping for **all eight** values rather than the
+four purposes: the missing `place`/`thread` mappings are exactly what let the stored mode keep winning.
+
+## Amendment — explain is a mode, not only a key
+
+§4 specified `explain` and gate A41 held it back, so the value existed as a colour and a preview
+while the cycle stayed at three. The author asked for it as a mode the reader can walk into: "its own
+mode that can be cycled instead of only alted into."
+
+**What changed.** `explain` is in `canvasPurposes`, in `choosablePurposes`, and therefore in the cycle:
+explore → run → record → explain → explore. `previewablePurposes` is now the same list — the two names
+survive because they answer different questions (what the control cycles, what a key can point at),
+and the gate that made them differ is closed. The refusal in `PurposeControl` is gone with it.
+
+**Why this is not the dead mode the ADR refused.** The refusal was about a value that does nothing when
+clicked. Two things close that gap without pretending the handbook is built:
+
+- **It gathers.** Entering explain mounts a context panel over the canvas: the selected entities, their
+  types, the fields they carry, and the links between them. `canvas/explainContext.ts` is that
+  gathering as a pure function, and `components/ExplainPanel.tsx` is its surface. It reads
+  `selectedNodeIds` and the snapshot and writes nothing.
+- **It says what it does not do.** The panel's footer states that the context is read-only and that
+  saving it as a view is its own gate, because a panel with no Save button otherwise reads as
+  unfinished.
+
+So the purpose now has a verb — *gather this selection* — and the remaining half, answering the
+context from the handbook articles ([ADR-0045](./0045-handbook-articles-are-cards.md)), is still A41's
+work and still labelled as such.
+
+**What entering it does not do.** It ignores the gesture axis the way `present` does (`initialGestureFor`
+returns `null`): the gesture describes what a link would do, and explain draws nothing. It claims clicks
+(`purposeClaimsClicks`), because selecting is how the context is assembled — and selection is shared with
+everything else, so no key changes meaning.
+
+**Placement of the surface.** Bottom-left, immediately right of the widget column. The bottom-right
+corner belongs to the inspector (`z-index: 25`), so a panel there is *behind* the inspector exactly when
+explain has something to say; the tour caption owns the gutter itself, and a tour cannot be presenting
+while explain is the purpose.
+
+**The modifier matrix survives the fourth value**, and is now exhaustive: four stored purposes × three
+keys name all four purposes exactly once, and the e2e matrix (`e2e/tests/modifier-matrix.spec.ts`)
+asserts the glyph *and* the painted colour of every cell in both themes. That matrix is what caught
+`branch` + ctrl painting fan's glyph in branch's green.
+
+**Correction to the amendment above — the collision answer is the baseline, not the previous
+value.** The first implementation stepped a colliding key back one slot. From `thread` that gave
+`place`, which satisfied the case the author reported; from `fan` it gave `thread`, which shift was
+already showing, leaving `place` reachable from nowhere. The author hit exactly that: "both show thread
+mode, leaving a mode unaccounted for/unreachable."
+
+The answer is the **resting value**: it is the one slot no key claims, so "the stored value plus the
+three keys name the whole family exactly once" holds from every state. The implementation derives the
+missing slot rather than hard-coding index 0, so a family of a different size still closes. Both
+matrices assert the property, not the table: `modifierPreview.test.ts` for the values,
+`e2e/tests/modifier-matrix.spec.ts` for the values *and* their colours.

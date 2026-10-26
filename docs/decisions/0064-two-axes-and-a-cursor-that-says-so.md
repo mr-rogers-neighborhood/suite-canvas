@@ -195,3 +195,13 @@ everywhere or nowhere.
 `--state-*` is retired. `modePalette.test.ts` asserts the palette stays whole: every value has all three
 tokens, every attribute has a mapping, `present` names no hue, the retired tokens are gone, and no mode
 stylesheet contains a hex.
+
+**Hover is a pointer, not a state.** Both segments of the bar hover the same way: the branch's own hue
+mixed 10% into the value's fill, plus a hairline in that hue. `purpose.css` was still mixing the *ink* in
+and still naming `--purpose-state`, a token the retirement above deleted — an undefined custom property
+makes its declaration invalid at computed-value time, so `background: var(--purpose-state)` resolved to
+transparent and the chip **lost its fill** on hover while its glyph kept the surface ink. In a dark theme
+that is a chip that darkens and a glyph that disappears, which is what the author reported seeing on the
+bottom segment and not the top. Mixing a value's own hue fixes the class of bug as well as the instance:
+`run`'s fill *is* its hue, so an engaged purpose looks untouched by the pointer, which is the state
+outranking it without a second rule to say so.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canvasModes } from "./linkGesture";
 import { modifierOffset, NO_MODIFIERS, previewedValue } from "./modifierPreview";
-import { choosablePurposes } from "./purpose";
+import { choosablePurposes, previewablePurposes } from "./purpose";
 
 /**
  * The one modifier map ([ADR-0066](../../../docs/decisions/0066-one-modifier-vocabulary-and-a-purpose-that-explains.md)).
@@ -41,9 +41,98 @@ describe("the modifier map", () => {
     );
   });
 
-  it("leaves alt empty on a three-value family instead of clamping", () => {
-    // The slot is reserved for `explain`; clamping would make alt a synonym for
-    // ctrl, which is worse than a key that does nothing yet.
-    expect(previewedValue(choosablePurposes, { shift: false, ctrl: false, alt: true })).toBeNull();
+  it("hands back the value the map would otherwise leave out", () => {
+    // The author's case: the second value in both families, so every key pointed at a
+    // value already on screen and previewed nothing.
+    expect(previewedValue(canvasModes, { shift: true, ctrl: false, alt: false }, "thread")).toBe(
+      "place",
+    );
+    // The case that broke a "step back one" rule: from fan, stepping back made ctrl and
+    // shift both show thread, and place was unreachable from the bar.
+    expect(previewedValue(canvasModes, { shift: true, ctrl: false, alt: false }, "fan")).toBe(
+      "thread",
+    );
+    expect(previewedValue(canvasModes, { shift: false, ctrl: true, alt: false }, "fan")).toBe(
+      "place",
+    );
+    expect(previewedValue(canvasModes, { shift: false, ctrl: false, alt: true }, "fan")).toBe(
+      "branch",
+    );
+
+    expect(previewedValue(choosablePurposes, { shift: true, ctrl: false, alt: false }, "run")).toBe(
+      "explore",
+    );
+    expect(
+      previewedValue(previewablePurposes, { shift: false, ctrl: false, alt: true }, "record"),
+    ).toBe("explain");
+  });
+
+  it("keeps a key pointing at its own slot when the stored value is elsewhere", () => {
+    // The exception is only for the collision: a key must still mean its own value
+    // from any other starting point, or the map would drift with the selection.
+    expect(previewedValue(canvasModes, { shift: true, ctrl: false, alt: false }, "branch")).toBe(
+      "thread",
+    );
+    expect(previewedValue(canvasModes, { shift: false, ctrl: true, alt: false }, "thread")).toBe(
+      "fan",
+    );
+    expect(previewedValue(canvasModes, NO_MODIFIERS, "fan")).toBeNull();
+  });
+
+  /**
+   * The property the map exists for, checked as a matrix rather than case by case:
+   * whatever the reader has stored, the bar shows the stored value plus three keys,
+   * and between them they name every value of the family exactly once. A "step back
+   * one" rule passed the two hand-written cases above and still failed this: from
+   * `fan` it showed `thread` twice and left `place` unaccounted for.
+   */
+  const KEYS = [
+    { shift: true, ctrl: false, alt: false },
+    { shift: false, ctrl: true, alt: false },
+    { shift: false, ctrl: false, alt: true },
+  ] as const;
+
+  it("shows every mode exactly once across the stored one and the three keys", () => {
+    for (const stored of canvasModes) {
+      const shown = [stored, ...KEYS.map((state) => previewedValue(canvasModes, state, stored))];
+
+      expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(canvasModes.length);
+      expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual([...canvasModes].sort());
+    }
+  });
+
+  it("shows every purpose exactly once, counting the reserved explain", () => {
+    for (const stored of choosablePurposes) {
+      const shown = [
+        stored,
+        ...KEYS.map((state) => previewedValue(previewablePurposes, state, stored)),
+      ];
+
+      expect(new Set(shown).size, `${stored}: ${shown.join(", ")}`).toBe(
+        previewablePurposes.length,
+      );
+      expect([...shown].sort(), `${stored}: ${shown.join(", ")}`).toEqual(
+        [...previewablePurposes].sort(),
+      );
+    }
+  });
+
+  it("never shows a key's own value as the collision answer", () => {
+    // The failure the matrix above catches, stated directly so the reason survives a
+    // refactor that keeps the counts but changes which value is handed back.
+    for (const stored of canvasModes) {
+      for (const [index, state] of KEYS.entries()) {
+        const previewed = previewedValue(canvasModes, state, stored);
+        expect(previewed, `${stored} with key ${index + 1}`).not.toBe(stored);
+      }
+    }
+  });
+
+  it("leaves a slot empty on a family with fewer values than keys, instead of clamping", () => {
+    // No live family is short a value now that `explain` is cyclable, so the rule is
+    // asserted on a literal one: clamping would make alt a synonym for ctrl, which is
+    // worse than a key that does nothing.
+    expect(previewedValue(["a", "b", "c"], { shift: false, ctrl: false, alt: true })).toBeNull();
+    expect(previewedValue(["a", "b", "c"], { shift: false, ctrl: true, alt: false })).toBe("c");
   });
 });

@@ -648,13 +648,20 @@ function WorkspaceShell({
    * the library (ADR-0064 §8), a record starts from its tutorial card. The
    * previous value is a ref so a callback that changes identity cannot hand the
    * reader a second library or a second card; the purpose itself is the trigger.
+   *
+   * Leaving the mode puts back what entering it added, and only if the mode added
+   * it: a drawer opened by hand is the reader's, so a mode change must not close it.
    */
   const previousPurpose = useRef<CanvasPurpose>(purpose);
   useEffect(() => {
     if (previousPurpose.current === purpose) return;
+    const left = previousPurpose.current;
     previousPurpose.current = purpose;
-    if (purpose === "run") setLibraryOpen(true);
+    // Only when the drawer was not already there: a library the reader had open is
+    // the reader's, not the new mode's.
+    if (purpose === "run" && !useUiStore.getState().libraryOpen) setLibraryOpen(true, "mode");
     if (purpose === "record") startRecording();
+    if (left === "run" && useUiStore.getState().libraryReason === "mode") setLibraryOpen(false);
   }, [purpose, setLibraryOpen, startRecording]);
 
   /** A run is carried out by one engine, shared with the canvas and the library. */

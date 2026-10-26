@@ -26,6 +26,13 @@ export interface SelectedConnector {
 
 export type LibraryTab = "inbox" | "cards" | "boards" | "trash";
 
+/**
+ * Who asked for the library. `mode` means a mode opened it as its own starting
+ * point, so leaving that mode closes it again; `reader` is a drawer the person
+ * opened and only the person closes.
+ */
+export type LibraryReason = "reader" | "mode";
+
 /** Adds a board to the tab strip unless it is already there. */
 function withOpenBoard(openBoardIds: string[], boardId: string): string[] {
   return openBoardIds.includes(boardId) ? openBoardIds : [...openBoardIds, boardId];
@@ -157,6 +164,12 @@ interface UiState extends SessionCapabilities {
   /** Tests and stories override the capability matrix derived from the session. */
   setCapabilities: (capabilities: Partial<SessionCapabilities>) => void;
   libraryOpen: boolean;
+  /**
+   * Who asked for the drawer. A library the *mode* opened (`run` needs a queue) is
+   * the mode's to close; one the reader opened is theirs, and leaving a mode must
+   * not shut a drawer they asked for.
+   */
+  libraryReason: LibraryReason;
   libraryTab: LibraryTab;
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
@@ -297,7 +310,7 @@ interface UiState extends SessionCapabilities {
   clearPortalEntry: () => void;
   openCardFocus: (cardId: string) => void;
   closeCardFocus: () => void;
-  setLibraryOpen: (open: boolean) => void;
+  setLibraryOpen: (open: boolean, reason?: LibraryReason) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   setSelectedNodeIds: (ids: string[]) => void;
   setSelectedEdgeIds: (ids: string[]) => void;
@@ -362,6 +375,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   setReadOnly: (readOnly) => set({ readOnly }),
   setCapabilities: (capabilities) => set(capabilities),
   libraryOpen: false,
+  libraryReason: "reader",
   libraryTab: "inbox",
   selectedNodeIds: [],
   selectedEdgeIds: [],
@@ -525,7 +539,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         ? { editingNodeId: null, editingSurface: "canvas" as EditingSurface }
         : {}),
     })),
-  setLibraryOpen: (libraryOpen) => set({ libraryOpen }),
+  setLibraryOpen: (libraryOpen, libraryReason = "reader") => set({ libraryOpen, libraryReason }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   setSelectedNodeIds: (selectedNodeIds) => set({ selectedNodeIds }),
   setSelectedEdgeIds: (selectedEdgeIds) => set({ selectedEdgeIds }),
@@ -718,6 +732,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       libraryGroupBySection: query.groupBySection,
       libraryTab: "cards",
       libraryOpen: true,
+      libraryReason: "reader",
     }),
   exitView: () =>
     set({

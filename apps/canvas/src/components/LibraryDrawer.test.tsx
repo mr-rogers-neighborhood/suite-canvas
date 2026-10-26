@@ -4,9 +4,10 @@ import {
   PORTAL_BOARD_FIELD_ID,
   sectionMembership,
 } from "@suite/graph";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { usePlacementRunStore } from "../canvas/placementRun";
 import { useUiStore } from "../store/useUiStore";
 import { Dock } from "./Dock";
 import {
@@ -314,8 +315,94 @@ describe("LibraryDrawer search", () => {
   });
 });
 
+describe("LibraryDrawer dismissal", () => {
+  afterEach(() => {
+    usePlacementRunStore.setState({ run: null, proposal: null, suspended: [] });
+  });
+
+  it("should close when a press lands outside it", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    fireEvent.pointerDown(document.body);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep its own presses", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    fireEvent.pointerDown(screen.getByTestId("library-search"));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("should leave a press alone while a card is in hand", () => {
+    // The drawer is where the next card of a run comes from, so the canvas press
+    // that puts the held one down must not shut it (ADR-0063 third amendment).
+    const { workspace, items } = fixture();
+    usePlacementRunStore.getState().start(["c1"], { source: "selection" });
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    fireEvent.pointerDown(document.body);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("should take a press on the pane as the dismissal, not as a placement", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+    const pane = document.createElement("div");
+    pane.className = "react-flow__pane";
+    document.body.append(pane);
+
+    const kept = fireEvent.pointerDown(pane);
+
+    expect(kept).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    pane.remove();
+  });
+
+  it("should dismiss without swallowing a press on chrome", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+    const chip = document.createElement("button");
+    document.body.append(chip);
+
+    const kept = fireEvent.pointerDown(chip);
+
+    expect(kept).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    chip.remove();
+  });
+
+  it("should offer a close button that reads as its own control", () => {
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderDrawer(workspace, items, { onClose });
+
+    const close = screen.getByTestId("library-close");
+    expect(close).toHaveAccessibleName("Close library");
+    expect(close).toHaveClass("library-close");
+
+    fireEvent.click(close);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("Library shortcut", () => {
-  function renderShell(workspace: WorkspaceDocument, items: LibraryItem[]): void {
+  function renderShell(
+    workspace: WorkspaceDocument,
+    items: LibraryItem[],
+    onClose: () => void = () => {},
+  ): void {
     function Shell() {
       const open = useUiStore((state) => state.libraryOpen);
       const tab = useUiStore((state) => state.libraryTab);
@@ -337,7 +424,7 @@ describe("Library shortcut", () => {
             cards={items}
             trash={[]}
             onTab={() => {}}
-            onClose={() => {}}
+            onClose={onClose}
             onPlace={() => {}}
             onCreateInInbox={() => {}}
             onTrash={() => {}}
@@ -394,6 +481,21 @@ describe("Library shortcut", () => {
 
     expect(useUiStore.getState().paletteOpen).toBe(true);
     expect(useUiStore.getState().libraryOpen).toBe(false);
+  });
+
+  it("should leave the dock trigger to toggle rather than dismiss", () => {
+    // The trigger is the one press outside the drawer that is about the drawer: a
+    // dismissal followed by its own toggle would reopen what it just closed.
+    const { workspace, items } = fixture();
+    const onClose = vi.fn();
+    renderShell(workspace, items, onClose);
+    act(() => {
+      useUiStore.getState().setLibraryOpen(true);
+    });
+
+    fireEvent.pointerDown(screen.getByTestId("dock-library"));
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

@@ -16,6 +16,25 @@ import type { PlacementEngine } from "./usePlacementEngine";
  * A click on the board puts the top of the stack down. The mode decides only what
  * that placement links to, which is the part the user already declared.
  */
+/**
+ * Where a card in hand lands when nothing has moved it yet: the pointer, when the
+ * canvas is what is under it, and the middle of the pane otherwise — a run begun in
+ * the library leaves the pointer over the drawer, not the board.
+ */
+function armScreenPoint(last: { x: number; y: number } | null): { x: number; y: number } {
+  const rect = document
+    .querySelector<HTMLElement>('[data-testid="canvas-board"]')
+    ?.getBoundingClientRect();
+  const centre = {
+    x: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+    y: rect ? rect.top + rect.height / 2 : window.innerHeight / 2,
+  };
+  if (!last) return centre;
+  return document.elementFromPoint(last.x, last.y)?.closest('[data-testid="canvas-board"]')
+    ? last
+    : centre;
+}
+
 export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
   const run = usePlacementRunStore((state) => state.run);
   const setProposal = usePlacementRunStore((state) => state.setProposal);
@@ -26,13 +45,39 @@ export function HeldStackCursor({ engine }: { engine: PlacementEngine }) {
 
   const held = run?.queue[0]?.ids[0] ?? null;
   const waiting = run !== null && run.queue.length === 0;
+  /** Where the cursor last was; seeded once per run so the stack is never invisible. */
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  /** Whether the run in hand has been put somewhere yet. */
+  const armed = useRef(false);
+
+  // Where the pointer is, even with nothing in hand: a run that starts while the
+  // cursor is already over the board arms under it rather than at the middle.
+  useEffect(() => {
+    const track = (event: PointerEvent) => {
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointermove", track);
+    return () => window.removeEventListener("pointermove", track);
+  }, []);
 
   useEffect(() => {
     if (!held) {
+      armed.current = false;
       setPointer(null);
       return;
     }
+    // A run arms itself: the card in hand appears the moment the run starts, with
+    // its dot already proposed. Waiting for a `pointermove` made a run look like
+    // nothing had happened.
+    if (!armed.current) {
+      armed.current = true;
+      const seed = armScreenPoint(lastPointer.current);
+      lastPointer.current = seed;
+      setPointer(seed);
+      setProposal(engine.proposeAt(screenToFlowPosition(seed)));
+    }
     const move = (event: PointerEvent) => {
+      lastPointer.current = { x: event.clientX, y: event.clientY };
       setPointer({ x: event.clientX, y: event.clientY });
       // One proposal per frame: the inference is pure but the pointer fires far more
       // often than the canvas paints, and a highlight that lags a frame is invisible.

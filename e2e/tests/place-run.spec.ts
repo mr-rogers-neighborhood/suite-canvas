@@ -79,6 +79,24 @@ async function placeHeld(page: Page, offset: { dx: number; dy: number }): Promis
   );
 }
 
+test("a run arms itself: the stack is on the board before the pointer moves", async ({ page }) => {
+  await page.goto(workspaceUrl("armed"));
+  await expect(cards(page)).toHaveCount(2);
+  await unplaceEverything(page, 1);
+  await openSelection(page, "inbox");
+  await page.getByTestId("library-selection-all").click();
+  // The pointer is over the drawer, not the board: the run has to put the stack
+  // somewhere visible itself, or starting a run looks like nothing happened.
+  await page.getByTestId("library-run-thread").click();
+
+  const board = await page.getByTestId("canvas-board").boundingBox();
+  const stack = await page.getByTestId("held-stack").boundingBox();
+  if (!board || !stack) throw new Error("the stack was not armed");
+
+  expect(Math.abs(stack.x + stack.width / 2 - (board.x + board.width / 2))).toBeLessThan(4);
+  expect(Math.abs(stack.y + stack.height / 2 - (board.y + board.height / 2))).toBeLessThan(4);
+});
+
 test("a thread is held as a stack and placed one card per click", async ({ page }) => {
   await page.goto(workspaceUrl("thread"));
   await expect(cards(page)).toHaveCount(2);

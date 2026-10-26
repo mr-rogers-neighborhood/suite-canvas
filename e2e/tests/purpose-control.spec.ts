@@ -98,6 +98,26 @@ test("walks explore → run → record → explain → explore, and never into p
   await expect(page.getByTestId("explain-panel")).toHaveCount(0);
 });
 
+test("dismisses the drawer a mode opened without acting on the board behind it", async ({
+  page,
+}) => {
+  await page.goto(workspaceUrl("drawer-dismiss"));
+  await expect(cards(page)).toHaveCount(2);
+
+  // Run opens the drawer because the set it places comes from there.
+  await purpose(page).click();
+  await expect(purpose(page)).toHaveAttribute("data-purpose", "run");
+  await expect(library(page)).toBeVisible();
+
+  const board = await page.getByTestId("canvas-board").boundingBox();
+  if (!board) throw new Error("board not visible");
+  // A corner with no card in it: the press is the dismissal, not a placement.
+  await page.mouse.click(board.x + 80, board.y + 80);
+
+  await expect(library(page)).toHaveCount(0);
+  await expect(cards(page)).toHaveCount(2);
+});
+
 test("presents from the tour card, and the widget is only the exit", async ({ page }) => {
   await page.goto(workspaceUrl("present"));
   await expect(cards(page)).toHaveCount(2);

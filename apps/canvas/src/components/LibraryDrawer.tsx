@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { CanvasMode } from "../canvas/linkGesture";
+import { usePlacementRunStore } from "../canvas/placementRun";
 import { LIBRARY_SEARCH_FOCUS_EVENT, useLibrarySearch } from "../hooks/useLibrarySearch";
 import { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryScope, LibraryTab } from "../store/useUiStore";
@@ -333,6 +334,11 @@ export function LibraryDrawer({
    * leave the caller keeping two states in sync.
    */
   const running = useUiStore((state) => state.purpose === "run");
+  /**
+   * A card in hand makes the canvas press the run's, not a dismissal: the drawer
+   * stays open behind a run because it is where the next card comes from.
+   */
+  const holdingCard = usePlacementRunStore((state) => state.run !== null);
   const views = useSavedViews(workspace);
   const activeView = views.find((view) => view.id === activeViewId);
   const [hold, setHold] = useState<{ item: LibraryItem; x: number; y: number } | null>(null);
@@ -457,6 +463,28 @@ export function LibraryDrawer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, query, updateQuery]);
+
+  /**
+   * A press outside the drawer closes it. On the board's own pane the press *is* the
+   * dismissal — it must not also place a card behind the drawer — while chrome and
+   * cards keep their press, because a control you aimed at is one you meant to click.
+   * The trigger is exempt entirely: it toggles, and a dismissal followed by a toggle
+   * would reopen what the press just closed.
+   */
+  useEffect(() => {
+    if (!open || holdingCard) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.('[data-testid="library-drawer"], [data-testid="dock-library"]')) return;
+      if (target?.closest?.(".react-flow__pane")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      onClose();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open, holdingCard, onClose]);
 
   useEffect(() => {
     const focus = () => {
@@ -1028,7 +1056,8 @@ export function LibraryDrawer({
           <button
             type="button"
             aria-label="Close library"
-            className="library-action"
+            data-testid="library-close"
+            className="library-action library-close"
             onClick={onClose}
           >
             {"\u00d7"}

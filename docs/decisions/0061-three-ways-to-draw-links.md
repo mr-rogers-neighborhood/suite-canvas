@@ -132,3 +132,27 @@ would need a precedence rule:
 - **Auto-grouping webbed links into a web record.** It duplicates what the edges say and creates a second
   selection semantics for the same lines.
 - **Keeping the origin forever.** An origin with no exit turns a mode into a mode you are stuck in.
+
+## Amendment — 2026-10-25: `web` is `fan`
+
+The fourth family member is still the one that links every click from a fixed origin; only its name
+changed, because the name promised something the feature does not do.
+
+**"Web" implies a mesh** — many cards wired to many — which is precisely what this mode is not. It
+creates spokes from one hub: A→B, A→C, A→D, with nothing between B and C. A reader who hears "web" and
+gets a star has been misled about the shape, and the mode that *would* imply interconnections is not one
+we offer at all.
+
+**"Branch" was the obvious alternative and it is already taken.** `pattern`'s own label reads "each
+placement branches from the one before it", and ADR-0049 defines a pattern as the recipe that branches.
+Naming the hub "branch" would have left two of four modes claiming to branch, with the distinction the
+names exist to carry — *fan from one* versus *branch from the last* — collapsed into a synonym.
+
+So: **`fan`**, kept as the family's third value, with its existing ✻ glyph (which already draws a fan)
+and a verb that works in the cursor's status text — "fanning out", where "branching" belongs to pattern
+and "starring" reads as staring.
+
+The rename is thorough rather than cosmetic: the stored value (`canvasModes`, `MODE_NAMES`), the step
+function (`stepFan`), the CSS class (`is-fan`), every label, test and the e2e spec. Mode is UI state and
+is not persisted, so no stored session can carry the old value. If `pattern` is ever renamed, **`branch`
+is the word for it** — with ⋔ as the glyph, because that is what a pattern does.

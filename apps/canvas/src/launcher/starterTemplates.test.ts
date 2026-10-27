@@ -132,12 +132,32 @@ describe("the starter template cache", () => {
   });
 
   it("falls back when the server answers with something that is not a list", async () => {
-    expect(await loadStarterTemplates({ fetch: answer({ ok: true }) })).toBe(STARTER_TEMPLATES);
-    expect(await loadStarterTemplates({ fetch: answer({ ok: true, templates: [1, 2] }) })).toBe(
-      STARTER_TEMPLATES,
+    const ids = (templates: readonly WorkspaceTemplate[]) =>
+      templates.map((template) => template.id);
+    expect(ids(await loadStarterTemplates({ fetch: answer({ ok: true }) }))).toEqual(
+      ids(STARTER_TEMPLATES),
     );
-    expect(await loadStarterTemplates({ fetch: answer({ ok: false }, 500) })).toBe(
-      STARTER_TEMPLATES,
+    expect(
+      ids(await loadStarterTemplates({ fetch: answer({ ok: true, templates: [1, 2] }) })),
+    ).toEqual(ids(STARTER_TEMPLATES));
+    expect(ids(await loadStarterTemplates({ fetch: answer({ ok: false }, 500) }))).toEqual(
+      ids(STARTER_TEMPLATES),
+    );
+  });
+
+  /**
+   * An empty list is an answer. Otherwise the last template an operator deleted
+   * would sit in this browser forever, because "nothing served" was read as
+   * "nothing heard".
+   */
+  it("treats an empty server list as an answer, so a deletion lands", async () => {
+    const templates = await loadStarterTemplates({ fetch: answer({ ok: true, templates: [] }) });
+
+    expect(templates.map((template) => template.id)).toEqual(
+      STARTER_TEMPLATES.map((template) => template.id),
+    );
+    expect(readCachedStarterTemplates()?.map((template) => template.id)).toEqual(
+      STARTER_TEMPLATES.map((template) => template.id),
     );
   });
 

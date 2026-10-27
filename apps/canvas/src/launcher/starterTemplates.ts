@@ -136,10 +136,11 @@ export async function fetchStarterTemplates(
     if (typeof body !== "object" || body === null) return null;
     const { templates } = body as { templates?: unknown };
     if (!Array.isArray(templates)) return null;
-    const parsed = templates
+    // An empty list is an answer, not a failure: an operator deleting the last
+    // server template must not leave this browser showing it forever.
+    return templates
       .map(templateFromRow)
       .filter((template): template is WorkspaceTemplate => template !== null);
-    return parsed.length > 0 ? parsed : null;
   } catch {
     return null;
   } finally {

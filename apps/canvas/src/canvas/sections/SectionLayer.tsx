@@ -40,7 +40,10 @@ function paintStyle(paint: Record<string, string>): CSSProperties {
  * frame's ink, radius and edges are the theme's.
  */
 export function sectionPaint(section: Section): Record<string, string> {
-  return { "--paint-surface": FILL[section.color ?? "slate"] };
+  // A section that never picked a colour writes nothing, so it keeps the frame's
+  // own default rather than being marked painted for a wash it already had.
+  if (section.color === undefined) return {};
+  return { "--paint-surface": FILL[section.color] };
 }
 
 /** What a link dragged out of a section connector landed on. */

@@ -34,8 +34,10 @@ describe("sectionPaint", () => {
     });
   });
 
-  it("falls back to slate for a section that never picked one", () => {
-    expect(sectionPaint(section())).toEqual({ "--paint-surface": SECTION_FILL.slate });
+  it("writes nothing for a section that never picked a colour", () => {
+    // The frame's own default is already the answer; marking it painted would
+    // repaint a section nobody styled.
+    expect(sectionPaint(section())).toEqual({});
   });
 
   it("carries nothing else, because nothing else is a section's to decide", () => {

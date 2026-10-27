@@ -109,7 +109,7 @@ describe("createPortalCard", () => {
     expect(portal.properties[PORTAL_BOARD_FIELD_ID]).toBe(target.id);
   });
 
-  it("should leave the portal readable but marked unavailable when the board is deleted", () => {
+  it("should clear the portal's board field when its target is deleted", () => {
     const { workspace, home, target } = setup();
     const portal = workspace.createPortalCard({ boardId: home.id, targetBoardId: target.id });
     const field = workspace.getType(PORTAL_TYPE_ID)?.fields[0];
@@ -118,18 +118,40 @@ describe("createPortalCard", () => {
 
     workspace.deleteBoard(target.id);
 
+    // The card survives where it was, as a portal that names no board: there is no
+    // empty frame and nothing is left pointing at a board that is gone.
     const stored = workspace.getCard(portal.id);
     expect(stored?.deletedAt).toBeNull();
-    expect(stored?.properties[PORTAL_BOARD_FIELD_ID]).toBe(target.id);
+    expect(stored?.typeIds).toEqual([PORTAL_TYPE_ID]);
+    expect(stored?.properties[PORTAL_BOARD_FIELD_ID]).toBeUndefined();
     expect(workspace.getPlacement(home.id, portal.id)).toBeDefined();
+    expect(workspace.getBoard(target.id)).toBeUndefined();
 
-    const board = workspace.getBoard(target.id);
+    // A cleared board field reads as empty, not as a board that went missing.
     expect(
       readPropertyValue(field, stored?.properties[PORTAL_BOARD_FIELD_ID], {
-        boardName: board?.name,
-        boardPresence: board ? "board" : "missing",
+        boardPresence: "missing",
       }),
-    ).toEqual({ text: "Unavailable board", notShared: false });
+    ).toEqual({ text: "\u2014", notShared: false });
+  });
+
+  it("should clear every portal that named the board, in the board's own commit", () => {
+    const { workspace, home, target } = setup();
+    const third = workspace.createBoard({ name: "Third" });
+    const here = workspace.createPortalCard({ boardId: home.id, targetBoardId: target.id });
+    const there = workspace.createPortalCard({ boardId: third.id, targetBoardId: target.id });
+
+    workspace.deleteBoard(target.id);
+
+    expect(workspace.getCard(here.id)?.properties[PORTAL_BOARD_FIELD_ID]).toBeUndefined();
+    expect(workspace.getCard(there.id)?.properties[PORTAL_BOARD_FIELD_ID]).toBeUndefined();
+    expect(workspace.getPlacement(third.id, there.id)).toBeDefined();
+
+    // One undo puts the board back with both portals pointing at it again.
+    workspace.undo();
+    expect(workspace.getBoard(target.id)).toBeDefined();
+    expect(workspace.getCard(here.id)?.properties[PORTAL_BOARD_FIELD_ID]).toBe(target.id);
+    expect(workspace.getCard(there.id)?.properties[PORTAL_BOARD_FIELD_ID]).toBe(target.id);
   });
 });
 

@@ -4,10 +4,18 @@
  * so closing the tab ends the session.
  */
 
+import { authServiceBase } from "../auth/endpoints";
 import { collabHttpBase } from "../session/endpoints";
 
 const TOKEN_KEY = "suite.admin.token";
 const BASE = `${collabHttpBase()}/api/admin`;
+
+/**
+ * Templates are rows in the control plane's database, not the relay's stores:
+ * the account service owns the starter list because the launcher reads it
+ * before anybody signs in. Everything else here talks to the relay.
+ */
+const TEMPLATES_BASE = `${authServiceBase()}/admin/templates`;
 
 export class AdminApiError extends Error {
   constructor(
@@ -62,14 +70,18 @@ async function messageFor(response: Response): Promise<string> {
 }
 
 async function request<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  return requestUrl<T>(`${BASE}${path}`, token, init);
+}
+
+async function requestUrl<T>(url: string, token: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (init.body !== undefined) headers["content-type"] = "application/json";
 
   let response: Response;
   try {
-    response = await fetch(`${BASE}${path}`, { ...init, headers });
+    response = await fetch(url, { ...init, headers });
   } catch {
-    throw new AdminApiError(0, "Could not reach the collab server.");
+    throw new AdminApiError(0, "Could not reach the server.");
   }
 
   if (!response.ok) {
@@ -194,6 +206,41 @@ export interface MutationResult {
 }
 
 /**
+ * A starter template as the admin routes exchange it. `data` is deliberately
+ * `unknown`: the control plane stores the object the client captured without
+ * validating it, so the panel has to render whatever comes back.
+ */
+export interface AdminTemplate {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  data: unknown;
+}
+
+export interface TemplateList {
+  ok: boolean;
+  templates: AdminTemplate[];
+}
+
+/** The fields a replace carries. `version` is optional so a rename keeps the stored one. */
+export interface TemplateDraft {
+  name: string;
+  description: string;
+  data: unknown;
+  version?: number;
+}
+
+export interface NewTemplate extends TemplateDraft {
+  id: string;
+}
+
+export interface TemplateResult {
+  ok: boolean;
+  template: AdminTemplate;
+}
+
+/**
  * The public readiness probe, with no token. `/health` answers `200 {"ok":true}`
  * on the relay's API port and needs no credential, which is exactly why the
  * support screen may show it: a status statement that required an operator token
@@ -265,6 +312,32 @@ export function disconnectRoom(token: string, roomId: string): Promise<MutationR
 
 export function createFixtures(token: string, input: FixtureRequest): Promise<FixtureResult> {
   return request("/fixtures", token, { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listTemplates(token: string): Promise<TemplateList> {
+  return requestUrl<TemplateList>(TEMPLATES_BASE, token);
+}
+
+export function createTemplate(token: string, input: NewTemplate): Promise<TemplateResult> {
+  return requestUrl<TemplateResult>(TEMPLATES_BASE, token, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateTemplate(
+  token: string,
+  id: string,
+  input: TemplateDraft,
+): Promise<TemplateResult> {
+  return requestUrl<TemplateResult>(`${TEMPLATES_BASE}/${encode(id)}`, token, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteTemplate(token: string, id: string): Promise<{ ok: boolean; deleted: true }> {
+  return requestUrl(`${TEMPLATES_BASE}/${encode(id)}`, token, { method: "DELETE" });
 }
 
 /** Fetches the export with the bearer header, then saves it through a blob URL. */

@@ -5,6 +5,7 @@ import {
   templateDetail,
   uniqueBoardName,
   type WorkspaceDocument,
+  type WorkspaceTemplate,
 } from "@suite/graph";
 import type { LibraryBoard } from "./LibraryDrawer";
 
@@ -17,10 +18,10 @@ export interface BoardStarter {
 }
 
 /**
- * The built-in shapes: gathering research, planning a piece of writing, and
- * running a meeting. The shapes themselves are data in `@suite/graph`, so a test
- * can assert what they hold and a release can version them (ADR-0068: a starter
- * is a copy of authored records, never a code path of its own).
+ * The built-in shapes: the notebook every workspace starts as, and one example of
+ * nested boards. The shapes themselves are data in `@suite/graph`, so a test can
+ * assert what they hold and a release can version them (ADR-0068: a starter is a
+ * copy of authored records, never a code path of its own).
  */
 export const BOARD_STARTERS: readonly BoardStarter[] = STARTER_TEMPLATES.map((template) => ({
   id: template.id,
@@ -30,16 +31,19 @@ export const BOARD_STARTERS: readonly BoardStarter[] = STARTER_TEMPLATES.map((te
 
 /**
  * Copies one starter into the workspace as a new board, in a single batch, so one
- * undo removes it whole. Returns null for an unknown id, which is a programming
- * error rather than a document one: the caller has nothing to open.
+ * undo removes it whole. Takes the template itself as well as its id, because a
+ * starter that came from the server has no entry in the bundle to look an id up
+ * in. Returns null for an unknown id, which is a programming error rather than a
+ * document one: the caller has nothing to open.
  */
 export function createStarterBoard(
   workspace: WorkspaceDocument,
-  starterId: string,
+  starter: string | WorkspaceTemplate,
   existingNames: readonly string[],
 ): string | null {
-  const applied = applyWorkspaceTemplate(workspace, starterId, {
-    origin: `template:starter:${starterId}`,
+  const id = typeof starter === "string" ? starter : starter.id;
+  const applied = applyWorkspaceTemplate(workspace, starter, {
+    origin: `template:starter:${id}`,
     takenNames: existingNames,
   });
   return applied?.boardIds[0] ?? null;

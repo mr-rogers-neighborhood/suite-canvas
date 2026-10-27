@@ -30,7 +30,18 @@ test("starts on the workspace launcher", { tag: "@smoke" }, async ({ page }) => 
   await expect(page.getByTestId("workspace-launcher")).toContainText("Recent workspaces");
 });
 
+test("starts a new workspace as a notebook", { tag: "@smoke" }, async ({ page }) => {
+  // Notebook rather than Blank: a new workspace opens with somewhere to write.
+  await expect(page.getByTestId("launcher-template")).toHaveValue("notebook");
+  await page.getByTestId("launcher-new").click();
+  await expect(page).toHaveURL(/workspace=/);
+  await expect(cards(page)).toHaveCount(3);
+  await expect(cards(page).filter({ hasText: "A note" })).toHaveCount(1);
+});
+
 test("creates an empty workspace from the launcher", { tag: "@smoke" }, async ({ page }) => {
+  // Blank is still the way to start with nothing at all.
+  await page.getByTestId("launcher-template").selectOption("");
   await page.getByTestId("launcher-new").click();
   // Creating a workspace opens it directly: there is no first-run dialog.
   await expect(page).toHaveURL(/workspace=/);

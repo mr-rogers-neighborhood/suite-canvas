@@ -1,4 +1,4 @@
-import { STARTER_TEMPLATES } from "@suite/graph";
+import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
@@ -30,6 +30,12 @@ import {
   rememberWorkspace,
   workspaceUrl,
 } from "../session/workspaceTransfer";
+import {
+  DEFAULT_STARTER_TEMPLATE_ID,
+  loadStarterTemplates,
+  rememberChosenTemplate,
+  starterTemplateById,
+} from "./starterTemplates";
 import { importVaultIntoWorkspace, vaultName } from "./vaultImport";
 
 /** A recents row with the workspace name resolved for display. */
@@ -106,7 +112,17 @@ export function WorkspaceLauncher() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
-  const [template, setTemplate] = useState("");
+  /**
+   * The shape a new workspace starts as. Notebook is preselected because a new
+   * workspace should open with somewhere to write; Blank is still one choice away.
+   */
+  const [template, setTemplate] = useState(DEFAULT_STARTER_TEMPLATE_ID);
+  /**
+   * The starters on offer, built in until the deployment answers. The built-ins
+   * render on the first frame so the select is never empty, and a cached or
+   * fetched list replaces them a moment later.
+   */
+  const [templates, setTemplates] = useState<readonly WorkspaceTemplate[]>(STARTER_TEMPLATES);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const renameCancelled = useRef(false);
@@ -129,6 +145,22 @@ export function WorkspaceLauncher() {
     let live = true;
     void readAccountWorkspaces().then((result) => {
       if (live) setAccount(result);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Cache, then server, then the built-ins; `loadStarterTemplates` never throws.
+    let live = true;
+    void loadStarterTemplates().then((loaded) => {
+      if (!live) return;
+      setTemplates(loaded);
+      // A deployment whose list does not carry the preselected starter can still
+      // open a blank workspace, so the select is never left on a value it does not
+      // offer.
+      setTemplate((current) => (starterTemplateById(loaded, current) === undefined ? "" : current));
     });
     return () => {
       live = false;
@@ -178,10 +210,15 @@ export function WorkspaceLauncher() {
 
   const startNew = () => {
     const workspaceId = newWorkspaceId();
+    const chosen = starterTemplateById(templates, template);
+    // `?template=` carries an id, and an id only resolves a starter this bundle was
+    // built with. The chosen template therefore travels as itself as well, which is
+    // the only way a starter that came from the server can be applied at all.
+    if (chosen !== undefined) rememberChosenTemplate(workspaceId, chosen);
     rememberWorkspace({ id: workspaceId, title: friendlyWorkspaceName() });
     const url = new URL(workspaceUrl(workspaceId, null));
     url.searchParams.set("fresh", "1");
-    if (template) url.searchParams.set("template", template);
+    if (chosen !== undefined) url.searchParams.set("template", chosen.id);
     navigateTo(url.toString());
   };
 
@@ -354,9 +391,10 @@ export function WorkspaceLauncher() {
                 event.target.value = "";
               }}
             />
-            {/* Blank is the default: a template is a choice, and an empty
-                document is still the shortest way to start. The template is
-                applied by the editor's boot, right after the document exists. */}
+            {/* Notebook is the default rather than Blank: a new workspace should
+                open with somewhere to write, and an empty document is still one
+                choice away. The template is applied by the editor's boot, right
+                after the document exists, so it never has to be written twice. */}
             <label className="ml-1 flex items-center gap-2 text-[12px] text-[var(--ink-muted)]">
               <span>Start from</span>
               <select
@@ -368,7 +406,7 @@ export function WorkspaceLauncher() {
                 className="rounded-lg border border-[var(--hairline)] bg-[var(--surface)] px-2 py-1 text-[12px] text-[var(--ink)]"
               >
                 <option value="">Blank</option>
-                {STARTER_TEMPLATES.map((starter) => (
+                {templates.map((starter) => (
                   <option key={starter.id} value={starter.id}>
                     {starter.name} — {starter.description}
                   </option>

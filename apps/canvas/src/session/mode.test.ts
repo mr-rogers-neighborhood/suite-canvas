@@ -238,6 +238,12 @@ describe("standalone guard rails", () => {
    */
   const PROFILE_BRANCHED_MODULES: Readonly<Record<string, RegExp>> = {
     "session/workspaceDelete.ts": /input\.profile === "relay"/u,
+    // Capturing a starter template reads pictures and posts to the control plane;
+    // a browser-only build has no control plane, so it refuses before reading.
+    "templates/captureClient.ts": /isStandalone\(\)/u,
+    // The launcher's starter list is asked for over HTTP, but a standalone build has
+    // no control plane: it keeps the built-ins the bundle carries instead.
+    "launcher/starterTemplates.ts": /isStandalone\(\)/u,
   };
 
   function sourceFiles(directory: string): string[] {

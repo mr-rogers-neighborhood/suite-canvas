@@ -331,6 +331,11 @@ export {
   templateSegments,
 } from "./template.js";
 export type {
+  CaptureTemplateOptions,
+  TemplateAssetLoader,
+} from "./templateCapture.js";
+export { captureWorkspaceTemplate } from "./templateCapture.js";
+export type {
   StoredTourStep,
   TargetExistence,
   TourBodyWorkspace,
@@ -453,9 +458,12 @@ export {
 } from "./workspaceFile.js";
 export type {
   ApplyTemplateOptions,
+  TemplateAppliedAsset,
   TemplateApplyResult,
+  TemplateAsset,
   TemplateBoard,
   TemplateCard,
+  TemplateEdge,
   TemplateSection,
   WorkspaceTemplate,
 } from "./workspaceTemplate.js";
@@ -463,6 +471,7 @@ export {
   applyWorkspaceTemplate,
   findWorkspaceTemplate,
   STARTER_TEMPLATES,
+  TEMPLATE_ASSET_MAX_BYTES,
   templateCopyName,
   templateDetail,
   templateSummary,

@@ -219,6 +219,24 @@ export function boardsMethods(ctx: DocContext) {
       for (const key of ["homeBoardId", "newTabBoardId"] as const) {
         if (ctx.meta.get(key) === id) ctx.meta.delete(key);
       }
+      // A portal naming this board would draw an empty frame that opens nothing, so
+      // the property is cleared in the same commit: one undo puts the board and its
+      // portals back together, and the card survives as a plain card where it sits.
+      // A trashed card is left as it is; nothing renders it, and its placement may
+      // already be gone.
+      for (const card of ctx.api.cards.listCards()) {
+        if (card.deletedAt || card.properties[PORTAL_BOARD_FIELD_ID] !== id) continue;
+        ctx.api.cards.mutateCard(
+          card.id,
+          (fields) => {
+            const properties = fields.ensureMergeableMap("properties");
+            if (properties.get(PORTAL_BOARD_FIELD_ID) !== undefined) {
+              properties.delete(PORTAL_BOARD_FIELD_ID);
+            }
+          },
+          false,
+        );
+      }
 
       if (cardsOption === "trash") {
         const now = Date.now();

@@ -30,6 +30,20 @@ export function collabHttpBase(location: PageLocation | null = pageLocation()): 
 }
 
 /**
+ * Base URL for the account service's own routes: `/api/templates`,
+ * `/api/account/*` and the operator's `/admin/templates`.
+ *
+ * Empty, which means "the page's origin". A deployment's reverse proxy and the
+ * dev server's proxy both route these paths, and unlike the relay's own routes
+ * they are not on the relay port: in development the relay base is
+ * `localhost:1235`, which answers none of them.
+ */
+export function accountHttpBase(): string {
+  const configured = envValue(import.meta.env.VITE_ACCOUNT_HTTP_URL);
+  return configured === null ? "" : configured.replace(/\/+$/u, "");
+}
+
+/**
  * WebSocket URL for the Loro sync server. In production the reverse proxy
  * terminates TLS and routes `/ws` to the sync port on the same origin.
  */

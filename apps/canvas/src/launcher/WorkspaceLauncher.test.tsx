@@ -12,6 +12,7 @@ import {
   navigateTo,
   readRecentWorkspaces,
 } from "../session/workspaceTransfer";
+import { takeChosenTemplate } from "./starterTemplates";
 import { importVaultIntoWorkspace } from "./vaultImport";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
 
@@ -35,6 +36,16 @@ vi.mock("./vaultImport", async (importOriginal) => {
 });
 
 const importVault = vi.mocked(importVaultIntoWorkspace);
+
+// The starters usually come from the cache or the server. What this file is about
+// is the select, so the list is the built-in one and no request is made.
+vi.mock("./starterTemplates", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./starterTemplates")>();
+  return {
+    ...actual,
+    loadStarterTemplates: vi.fn(async () => (await import("@suite/graph")).STARTER_TEMPLATES),
+  };
+});
 
 vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceTransfer")>();
@@ -310,26 +321,52 @@ describe("WorkspaceLauncher workspace names", () => {
 });
 
 describe("WorkspaceLauncher templates", () => {
-  it("starts blank unless a template is chosen", () => {
+  it("preselects the notebook, so a new workspace opens with somewhere to write", () => {
     render(<WorkspaceLauncher />);
 
-    expect(screen.getByTestId("launcher-template")).toHaveValue("");
+    expect(screen.getByTestId("launcher-template")).toHaveValue("notebook");
     fireEvent.click(screen.getByTestId("launcher-new"));
 
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    // Blank means no template parameter at all: the editor applies nothing.
-    expect(url.searchParams.get("template")).toBeNull();
+    expect(url.searchParams.get("template")).toBe("notebook");
+    expect(url.searchParams.get("fresh")).toBe("1");
   });
 
   it("carries the chosen template to the editor that writes the document", () => {
     render(<WorkspaceLauncher />);
 
-    fireEvent.change(screen.getByTestId("launcher-template"), { target: { value: "research" } });
+    fireEvent.change(screen.getByTestId("launcher-template"), { target: { value: "discworld" } });
     fireEvent.click(screen.getByTestId("launcher-new"));
 
     const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
-    expect(url.searchParams.get("template")).toBe("research");
-    expect(url.searchParams.get("fresh")).toBe("1");
+    expect(url.searchParams.get("template")).toBe("discworld");
+  });
+
+  it("still offers a blank workspace, which sends no template at all", () => {
+    render(<WorkspaceLauncher />);
+
+    const select = screen.getByTestId("launcher-template");
+    expect(within(select).getByRole("option", { name: "Blank" })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
+    expect(url.searchParams.get("template")).toBeNull();
+  });
+
+  it("hands the chosen template to the boot as an object, not only as an id", () => {
+    render(<WorkspaceLauncher />);
+
+    fireEvent.change(screen.getByTestId("launcher-template"), { target: { value: "discworld" } });
+    fireEvent.click(screen.getByTestId("launcher-new"));
+
+    const url = new URL(String(navigate.mock.calls[0]?.[0] ?? ""));
+    const handed = takeChosenTemplate(url.searchParams.get("workspace") ?? "");
+    // An id only resolves a starter the bundle was built with, so the object is
+    // what the boot has to apply.
+    expect(handed?.id).toBe("discworld");
+    expect(handed?.name).toBe("Discworld Reading Guide");
+    expect(handed?.boards).toHaveLength(3);
   });
 });
 

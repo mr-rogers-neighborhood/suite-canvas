@@ -15,6 +15,8 @@ import { ShareDialog } from "../sharing/ShareDialog";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
+import { operatorToken } from "../templates/operatorToken";
+import { SaveTemplateDialog } from "./SaveTemplateDialog";
 
 /**
  * Share management needs the relay. Every branch below tests
@@ -66,10 +68,19 @@ export function WorkspaceActions({
   const [shareOpen, setShareOpen] = useState(false);
   const [shareScope, setShareScope] = useState<ShareScope>("workspace");
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
+  // Read at render, not stored: the token is the operator panel's, written in
+  // this tab's `sessionStorage`, and this menu is only drawn when it is opened.
+  // Without one the action is not offered at all — "save a template" is not a
+  // thing a person who cannot write templates should be invited to attempt. The
+  // literal keeps the branch foldable in a standalone build, which has no
+  // control plane for a template to land in.
+  const canSaveTemplate =
+    import.meta.env.VITE_SUITE_MODE !== "standalone" && operatorToken() !== null;
   // One delete entry per profile: an account session can delete the relay copy,
   // and a standalone build can delete the only copy there is. A share session
   // returns null above, so neither ever renders for a link holder.
@@ -212,6 +223,27 @@ export function WorkspaceActions({
             >
               Export Markdown…
             </button>
+            {canSaveTemplate ? (
+              <>
+                <hr className="my-1 border-[var(--hairline)]" />
+                {/* Authoring, not exporting: the workspace's own boards and
+                    pictures become the thing a new workspace starts from. Only
+                    an operator can write a template, so the row follows the
+                    token rather than a build profile. */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="workspace-save-template"
+                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setTemplateOpen(true);
+                  }}
+                >
+                  Save as starter template…
+                </button>
+              </>
+            ) : null}
             <hr className="my-1 border-[var(--hairline)]" />
             {onOpenStyles ? (
               <button
@@ -308,6 +340,14 @@ export function WorkspaceActions({
         >
           {notice}
         </span>
+      ) : null}
+      {canSaveTemplate && templateOpen ? (
+        <SaveTemplateDialog
+          workspace={workspace}
+          title={title}
+          onClose={() => setTemplateOpen(false)}
+          onSaved={(message) => setNotice(message)}
+        />
       ) : null}
       {canDeleteWorkspace && deleteOpen ? (
         <DeleteWorkspaceDialog

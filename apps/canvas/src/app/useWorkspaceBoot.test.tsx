@@ -52,10 +52,10 @@ afterEach(() => {
 describe("useWorkspaceBoot templates", () => {
   it("copies the chosen template into the document it just created", () => {
     const workspace = new WorkspaceDocument();
-    bootIn("/?workspace=ws-1&fresh=1&template=research", workspace);
+    bootIn("/?workspace=ws-1&fresh=1&template=notebook", workspace);
 
     const names = workspace.listBoards().map((board) => board.name);
-    expect(names).toContain("Research board");
+    expect(names).toContain("Notebook");
     // The template's own cards arrived with it, not just the board name.
     expect(workspace.listCards().length).toBeGreaterThan(0);
     expect(workspace.hasSeeded()).toBe(true);
@@ -63,12 +63,12 @@ describe("useWorkspaceBoot templates", () => {
 
   it("applies a template once, so a reload cannot double it", () => {
     const workspace = new WorkspaceDocument();
-    const first = bootIn("/?workspace=ws-1&fresh=1&template=research", workspace);
+    const first = bootIn("/?workspace=ws-1&fresh=1&template=notebook", workspace);
     const boards = workspace.listBoards().length;
     const cards = workspace.listCards().length;
 
     first.unmount();
-    bootIn("/?workspace=ws-1&fresh=1&template=research", workspace);
+    bootIn("/?workspace=ws-1&fresh=1&template=notebook", workspace);
 
     expect(workspace.listBoards().length).toBe(boards);
     expect(workspace.listCards().length).toBe(cards);
@@ -78,7 +78,7 @@ describe("useWorkspaceBoot templates", () => {
     const workspace = new WorkspaceDocument();
     bootIn("/?workspace=ws-1&fresh=1", workspace);
 
-    expect(workspace.listBoards().map((board) => board.name)).not.toContain("Research board");
+    expect(workspace.listBoards().map((board) => board.name)).not.toContain("Notebook");
     expect(workspace.listCards()).toHaveLength(0);
   });
 

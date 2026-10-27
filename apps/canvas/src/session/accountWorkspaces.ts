@@ -11,7 +11,7 @@
  */
 
 import { credentialAuthorization } from "../auth/credential";
-import { collabHttpBase } from "./endpoints";
+import { accountHttpBase } from "./endpoints";
 import { isStandalone } from "./mode";
 
 /** One workspace the account can open, as the service reports it. */
@@ -55,7 +55,7 @@ export async function readAccountWorkspaces(
     // signed-out launcher is the normal case, not a fault to report.
     const headers = await authorization();
     if (Object.keys(headers).length === 0) return null;
-    const response = await call(`${options.base ?? collabHttpBase()}${ACCOUNT_WORKSPACES_PATH}`, {
+    const response = await call(`${options.base ?? accountHttpBase()}${ACCOUNT_WORKSPACES_PATH}`, {
       method: "GET",
       headers: { ...headers, accept: "application/json" },
       credentials: "include",

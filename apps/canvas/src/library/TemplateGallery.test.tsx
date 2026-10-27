@@ -26,43 +26,54 @@ describe("BOARD_STARTERS", () => {
     }
   });
 
-  it("keeps the three shapes the product is used for", () => {
-    expect(BOARD_STARTERS.map((starter) => starter.id)).toEqual(["research", "outline", "meeting"]);
+  it("keeps the two shapes the product is used for", () => {
+    expect(BOARD_STARTERS.map((starter) => starter.id)).toEqual(["notebook", "discworld"]);
   });
 });
 
 describe("createStarterBoard", () => {
   it("copies the shape into a new board and returns its id", () => {
     const document = workspace();
-    const boardId = createStarterBoard(document, "research", []);
+    const boardId = createStarterBoard(document, "notebook", []);
     expect(boardId).not.toBeNull();
-    expect(document.getBoard(boardId ?? "")?.name).toBe("Research board");
+    expect(document.getBoard(boardId ?? "")?.name).toBe("Notebook");
     const titles = document
       .listBoardCards(boardId ?? "")
       .map((card) => document.displayTitle(card.id));
-    expect(titles).toContain("What are we trying to learn?");
-    expect(titles).toHaveLength(6);
-    expect(document.listSections(boardId ?? "")).toHaveLength(3);
+    expect(titles).toContain("A note");
+    expect(titles).toHaveLength(3);
+    expect(document.listSections(boardId ?? "")).toHaveLength(1);
+  });
+
+  it("takes a template it is handed directly, so a server starter needs no id lookup", () => {
+    const document = workspace();
+    const template = STARTER_TEMPLATES.find((entry) => entry.id === "discworld");
+    if (!template) throw new Error("fixture");
+
+    const boardId = createStarterBoard(document, { ...template, id: "only-on-the-server" }, []);
+
+    expect(document.getBoard(boardId ?? "")?.name).toBe("Discworld Reading Guide");
+    expect(document.listSections(boardId ?? "")).toHaveLength(1);
   });
 
   it("numbers the board when the name is taken", () => {
     const document = workspace();
-    const first = createStarterBoard(document, "outline", []);
-    const second = createStarterBoard(document, "outline", ["Outline board"]);
-    expect(document.getBoard(first ?? "")?.name).toBe("Outline board");
-    expect(document.getBoard(second ?? "")?.name).toBe("Outline board 2");
+    const first = createStarterBoard(document, "notebook", []);
+    const second = createStarterBoard(document, "notebook", ["Notebook"]);
+    expect(document.getBoard(first ?? "")?.name).toBe("Notebook");
+    expect(document.getBoard(second ?? "")?.name).toBe("Notebook 2");
   });
 
   it("still numbers a copy whose name the caller's list does not have yet", () => {
     const document = workspace();
-    createStarterBoard(document, "meeting", []);
-    const second = createStarterBoard(document, "meeting", []);
-    expect(document.getBoard(second ?? "")?.name).toBe("Meeting board 2");
+    createStarterBoard(document, "notebook", []);
+    const second = createStarterBoard(document, "notebook", []);
+    expect(document.getBoard(second ?? "")?.name).toBe("Notebook 2");
   });
 
   it("is one change, so one undo removes the whole starter", () => {
     const document = workspace();
-    createStarterBoard(document, "research", []);
+    createStarterBoard(document, "notebook", []);
     document.undo();
     expect(document.listBoards()).toHaveLength(0);
     expect(document.listCards()).toHaveLength(0);
@@ -98,8 +109,8 @@ describe("TemplateGallery", () => {
     );
     expect(screen.getByTestId("library-template-t1")).toBeInTheDocument();
     expect(screen.getByTestId("library-templates-divider")).toBeInTheDocument();
-    expect(screen.getByTestId("library-starter-research")).toBeInTheDocument();
-    expect(within(screen.getByTestId("library-templates")).getAllByRole("button")).toHaveLength(5);
+    expect(screen.getByTestId("library-starter-notebook")).toBeInTheDocument();
+    expect(within(screen.getByTestId("library-templates")).getAllByRole("button")).toHaveLength(4);
   });
 
   it("reports which starter was picked", () => {
@@ -113,8 +124,8 @@ describe("TemplateGallery", () => {
         onEditTemplate={() => {}}
       />,
     );
-    fireEvent.click(screen.getByTestId("library-starter-use-outline"));
-    expect(onUseStarter).toHaveBeenCalledWith("outline");
+    fireEvent.click(screen.getByTestId("library-starter-use-discworld"));
+    expect(onUseStarter).toHaveBeenCalledWith("discworld");
   });
 
   it("hides the starter half when the host offers none", () => {
@@ -122,6 +133,6 @@ describe("TemplateGallery", () => {
       <TemplateGallery templates={templates} onUseTemplate={() => {}} onEditTemplate={() => {}} />,
     );
     expect(screen.queryByTestId("library-templates-divider")).toBeNull();
-    expect(screen.queryByTestId("library-starter-research")).toBeNull();
+    expect(screen.queryByTestId("library-starter-notebook")).toBeNull();
   });
 });

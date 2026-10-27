@@ -106,34 +106,33 @@ test("uses a saved board template as a new board and undoes it whole", async ({ 
  * The built-in starters: offered in the same group, but generated in code only
  * when picked, so a workspace that ignores them never grows sample cards.
  */
-test("generates a built-in starter board with its sections", async ({ page }) => {
+test("generates a built-in starter board with its region", async ({ page }) => {
   await page.goto(workspaceUrl("starter"));
   await expect(cards(page)).toHaveCount(2);
 
   await openLibrary(page, "boards");
   await expect(page.getByTestId("library-templates")).toBeVisible();
-  await expect(page.getByTestId("library-starter-title-research")).toHaveText("Research board");
-  await expect(page.getByTestId("library-starter-use-research")).toBeVisible();
+  await expect(page.getByTestId("library-starter-title-notebook")).toHaveText("Notebook");
+  await expect(page.getByTestId("library-starter-use-notebook")).toBeVisible();
 
-  await page.getByTestId("library-starter-use-research").click();
+  await page.getByTestId("library-starter-use-notebook").click();
   await expect(page.getByTestId("library-drawer")).toHaveCount(0);
   await expect(
     page
       .getByRole("navigation", { name: "Boards" })
-      .getByRole("button", { name: "Research board", exact: true }),
+      .getByRole("button", { name: "Notebook", exact: true }),
   ).toHaveAttribute("aria-current", "page");
 
-  // Three regions, six titled cards, spread across the columns.
-  await expect(sectionHeaders(page)).toHaveCount(3);
-  await expect(cards(page)).toHaveCount(6);
-  await expect(sectionHeaders(page).filter({ hasText: "Questions" })).toHaveCount(1);
-  await expect(sectionHeaders(page).filter({ hasText: "Sources" })).toHaveCount(1);
-  await expect(sectionHeaders(page).filter({ hasText: "Findings" })).toHaveCount(1);
-  await expect(page.getByText("What are we trying to learn?")).toBeVisible();
-  await expect(page.getByText("Open threads")).toBeVisible();
+  // One region, three titled cards: one of each built-in type.
+  await expect(sectionHeaders(page)).toHaveCount(1);
+  await expect(cards(page)).toHaveCount(3);
+  await expect(sectionHeaders(page).filter({ hasText: "Start here" })).toHaveCount(1);
+  await expect(cards(page).filter({ hasText: "A note" })).toHaveCount(1);
+  await expect(cards(page).filter({ hasText: "A concept" })).toHaveCount(1);
+  await expect(cards(page).filter({ hasText: "A source" })).toHaveCount(1);
 
   // A board like any other: it persists.
   await page.reload();
-  await expect(sectionHeaders(page)).toHaveCount(3);
-  await expect(cards(page)).toHaveCount(6);
+  await expect(sectionHeaders(page)).toHaveCount(1);
+  await expect(cards(page)).toHaveCount(3);
 });

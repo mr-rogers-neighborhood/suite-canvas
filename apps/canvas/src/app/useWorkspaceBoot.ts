@@ -6,6 +6,7 @@ import type { FocusState } from "../collab/presence";
 import { TAB_ID } from "../collab/tabId";
 import { markBoot, measureBoot } from "../dev/bootTiming";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
+import { takeChosenTemplate } from "../launcher/starterTemplates";
 import type { ShareSession } from "../session/session";
 import { friendlyWorkspaceName, readWorkspaceNames } from "../session/workspaceName";
 import { rememberWorkspace } from "../session/workspaceTransfer";
@@ -135,17 +136,25 @@ export function useWorkspaceBoot(args: {
       // the document is first written: one board (and its regions and cards)
       // lands as a single undoable change, and the reader opens on it. A blank
       // workspace has no template, which is why the picker's default is empty.
+      //
+      // The object is preferred over the id: a template the launcher fetched from
+      // the account service has no built-in id to look up, so the id alone would
+      // open the workspace empty and say nothing about why.
+      const chosen = takeChosenTemplate(workspaceId);
       const templateId = new URLSearchParams(window.location.search).get("template");
-      if (templateId) {
-        const applied = applyWorkspaceTemplate(workspace, templateId);
-        templatedBoardId.current = applied?.boardIds[0] ?? null;
-      }
+      const applied =
+        chosen === null
+          ? templateId
+            ? applyWorkspaceTemplate(workspace, templateId)
+            : null
+          : applyWorkspaceTemplate(workspace, chosen);
+      templatedBoardId.current = applied?.boardIds[0] ?? null;
       workspace.markSeeded();
     }
     // The reference index is derived, so repairing it is safe and idempotent. It
     // runs after the first sync so mentions that arrived offline are indexed too.
     workspace.ensureReferences();
-  }, [ready, synced, workspace, readOnly, share, setWorkspaceName]);
+  }, [ready, synced, workspace, workspaceId, readOnly, share, setWorkspaceName]);
 
   useEffect(() => {
     document.title = `${workspaceName} — Suite`;

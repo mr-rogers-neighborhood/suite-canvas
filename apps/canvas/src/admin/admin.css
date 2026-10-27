@@ -422,6 +422,42 @@ code {
   width: 240px;
 }
 
+/* A cell that turns into an input: the value and its action are one row. */
+.admin-inline-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-inline-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.admin-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.admin-wrap {
+  white-space: normal;
+  min-width: 220px;
+}
+
+.admin-field-full {
+  width: 100%;
+}
+
+.admin-textarea {
+  min-height: 150px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .admin-badge {
   display: inline-block;
   padding: 0 5px;

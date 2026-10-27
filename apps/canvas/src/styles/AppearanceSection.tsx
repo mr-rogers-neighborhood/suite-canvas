@@ -14,6 +14,41 @@ import { PaletteEditor } from "./PaletteEditor";
  * do with how the work looks to anyone else. Every change is applied immediately,
  * so the preview is the canvas behind the panel rather than a mock inside it.
  */
+/** An enumerated choice as chips; the panel uses one shape for every choice. */
+function ChipRow({
+  label,
+  testId,
+  value,
+  options,
+  onSelect,
+}: {
+  label: string;
+  testId: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="appearance-dialog__row" data-testid={testId}>
+      <span>{label}</span>
+      <div className="style-tab__chips">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="style-chip"
+            data-testid={`${testId}-${option.value}`}
+            data-checked={value === option.value ? "true" : undefined}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AppearanceSection() {
   const appearance = useAppearanceStore((state) => state.appearance);
   const workspace = useCanvasStore((state) => state.workspace);
@@ -35,17 +70,16 @@ export function AppearanceSection() {
 
       <PaletteEditor workspace={workspace} />
 
-      <label className="appearance-dialog__row">
-        <span>Density</span>
-        <select
-          data-testid="appearance-density"
-          value={appearance.density}
-          onChange={(event) => change({ density: event.target.value as Appearance["density"] })}
-        >
-          <option value="comfortable">Comfortable</option>
-          <option value="compact">Compact</option>
-        </select>
-      </label>
+      <ChipRow
+        label="Density"
+        testId="appearance-density"
+        value={appearance.density}
+        options={[
+          { value: "comfortable", label: "Comfortable" },
+          { value: "compact", label: "Compact" },
+        ]}
+        onSelect={(density) => change({ density: density as Appearance["density"] })}
+      />
 
       <label className="appearance-dialog__row">
         <span>Corners</span>
@@ -65,31 +99,29 @@ export function AppearanceSection() {
         </span>
       </label>
 
-      <label className="appearance-dialog__row">
-        <span>Canvas</span>
-        <select
-          data-testid="appearance-canvas"
-          value={appearance.canvasBackground}
-          onChange={(event) =>
-            change({ canvasBackground: event.target.value as Appearance["canvasBackground"] })
-          }
-        >
-          <option value="dots">Dot grid</option>
-          <option value="plain">Plain</option>
-        </select>
-      </label>
+      <ChipRow
+        label="Canvas"
+        testId="appearance-canvas"
+        value={appearance.canvasBackground}
+        options={[
+          { value: "dots", label: "Dot grid" },
+          { value: "plain", label: "Plain" },
+        ]}
+        onSelect={(canvasBackground) =>
+          change({ canvasBackground: canvasBackground as Appearance["canvasBackground"] })
+        }
+      />
 
-      <label className="appearance-dialog__row">
-        <span>Motion</span>
-        <select
-          data-testid="appearance-motion"
-          value={appearance.motion}
-          onChange={(event) => change({ motion: event.target.value as Appearance["motion"] })}
-        >
-          <option value="full">Full</option>
-          <option value="reduced">Reduced</option>
-        </select>
-      </label>
+      <ChipRow
+        label="Motion"
+        testId="appearance-motion"
+        value={appearance.motion}
+        options={[
+          { value: "full", label: "Full" },
+          { value: "reduced", label: "Reduced" },
+        ]}
+        onSelect={(motion) => change({ motion: motion as Appearance["motion"] })}
+      />
 
       <button
         type="button"

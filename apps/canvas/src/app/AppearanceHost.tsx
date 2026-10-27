@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
+import { openSettings } from "../styles/settingsEvents";
 import { StyleTab } from "../styles/surface/StyleTab";
 
 /**
@@ -72,6 +73,22 @@ export function AppearanceHost() {
         </button>
       </div>
       <StyleTab kind={target.kind} id={target.id} canEdit={canEditLayout} typeName={typeName} />
+      {/*
+        A colour the palette does not have is the one thing this panel cannot
+        change itself, so it says where the palette lives rather than leaving the
+        reader to find Settings.
+      */}
+      <button
+        type="button"
+        data-testid="appearance-edit-palette"
+        className="mt-2 w-full rounded-md border border-[var(--hairline)] px-2 py-1 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+        onClick={() => {
+          close();
+          openSettings();
+        }}
+      >
+        Edit palette\u2026
+      </button>
     </div>
   );
 }

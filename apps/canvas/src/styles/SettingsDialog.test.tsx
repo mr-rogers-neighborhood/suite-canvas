@@ -90,7 +90,7 @@ describe("settings", () => {
   it("applies a change to the root immediately, so the canvas behind it is the preview", () => {
     render(<SettingsDialog onClose={() => {}} />);
 
-    fireEvent.change(screen.getByTestId("appearance-density"), { target: { value: "compact" } });
+    fireEvent.click(screen.getByTestId("appearance-density-compact"));
     expect(document.documentElement.dataset.density).toBe("compact");
     expect(useAppearanceStore.getState().appearance.density).toBe("compact");
 
@@ -98,7 +98,7 @@ describe("settings", () => {
     expect(screen.getByTestId("appearance-radius-value")).toHaveTextContent("4px");
     expect(document.documentElement.style.getPropertyValue("--reader-card-radius")).toBe("4px");
 
-    fireEvent.change(screen.getByTestId("appearance-motion"), { target: { value: "reduced" } });
+    fireEvent.click(screen.getByTestId("appearance-motion-reduced"));
     expect(document.documentElement.dataset.motion).toBe("reduced");
   });
 

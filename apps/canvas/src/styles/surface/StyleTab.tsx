@@ -57,6 +57,50 @@ function roleLabel(role: StyleColourRole): string {
     .join(" ");
 }
 
+/**
+ * An enumerated choice as chips, which is the only shape this editor uses for one.
+ *
+ * A select hides its options behind a press and renders as a different control
+ * from the shape and fill rows beside it; chips make the whole panel read as one
+ * vocabulary.
+ */
+function ChipRow<T extends string>({
+  label,
+  testId,
+  value,
+  options,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  testId: string;
+  value: T | undefined;
+  options: readonly { value: T | undefined; label: string }[];
+  disabled: boolean;
+  onSelect: (value: T | undefined) => void;
+}) {
+  return (
+    <div className="style-tab__row" data-testid={testId}>
+      <span>{label}</span>
+      <div className="style-tab__chips">
+        {options.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            className="style-chip"
+            data-testid={`${testId}-${option.value ?? "default"}`}
+            data-checked={value === option.value ? "true" : undefined}
+            disabled={disabled}
+            onClick={() => onSelect(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export interface StyleTabProps {
   kind: StyleSurfaceKind;
   id: string;
@@ -219,46 +263,34 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             </div>
           </div>
         )}
-        <label className="style-tab__row">
-          <span>{isLink ? "Stroke" : "Text"}</span>
-          <select
-            data-testid="style-ink"
-            value={current.ink ?? ""}
-            disabled={!canEdit}
-            onChange={(event) => {
-              const value = event.target.value;
-              update({ ...current, ink: value === "" ? undefined : (value as StyleColourRole) });
-            }}
-          >
-            <option value="">Default</option>
-            {styleColourRoles.map((role) => (
-              <option key={role} value={role}>
-                {roleLabel(role)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ChipRow
+          label={isLink ? "Stroke" : "Text"}
+          testId="style-ink"
+          value={current.ink}
+          disabled={!canEdit}
+          options={[
+            { value: undefined, label: "Default" },
+            ...styleColourRoles.map((role) => ({ value: role, label: roleLabel(role) })),
+          ]}
+          onSelect={(ink) => update({ ...current, ink })}
+        />
       </section>
 
       <section className="style-tab__group">
         <h3 className="style-tab__heading">{isLink ? "Line" : "Edges"}</h3>
         {isLink ? (
           <>
-            <label className="style-tab__row">
-              <span>Style</span>
-              <select
-                data-testid="style-line-paint"
-                value={current.sides?.top?.paint ?? "solid"}
-                disabled={!canEdit}
-                onChange={(event) => setLinePaint(event.target.value as StyleEdgePaint)}
-              >
-                {styleEdgePaints.map((paint) => (
-                  <option key={paint} value={paint}>
-                    {PAINT_LABELS[paint]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <ChipRow
+              label="Style"
+              testId="style-line-paint"
+              value={current.sides?.top?.paint ?? "solid"}
+              disabled={!canEdit}
+              options={styleEdgePaints.map((paint) => ({
+                value: paint,
+                label: PAINT_LABELS[paint],
+              }))}
+              onSelect={(paint) => setLinePaint(paint ?? "solid")}
+            />
             <label className="style-tab__row">
               <span>Width</span>
               <input
@@ -285,63 +317,45 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
                 {(current.sides?.top?.width ?? 1.6).toFixed(1)}
               </span>
             </label>
-            <label className="style-tab__row">
-              <span>Flow</span>
-              <select
-                data-testid="style-line-flow"
-                value={current.sides?.top?.flow ?? ""}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const stroke = current.sides?.top;
-                  const flow = value === "" ? undefined : (value as StyleEdgeFlow);
-                  update({
-                    ...current,
-                    sides: {
-                      ...(current.sides ?? {}),
-                      top: { paint: stroke?.paint ?? "solid", ...stroke, flow },
-                    },
-                  });
-                }}
-              >
-                <option value="">Along the link</option>
-                {styleEdgeFlows
+            <ChipRow
+              label="Flow"
+              testId="style-line-flow"
+              value={current.sides?.top?.flow ?? undefined}
+              disabled={!canEdit}
+              options={[
+                { value: undefined, label: "Along the link" },
+                ...styleEdgeFlows
                   .filter((flow) => flow !== "forward")
-                  .map((flow) => (
-                    <option key={flow} value={flow}>
-                      {FLOW_LABELS[flow]}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <p className="style-tab__hint">
-              A link has one stroke, so there is one line style rather than four. A dashed line
-              travels from its source to its target unless it is reversed.
-            </p>
+                  .map((flow) => ({ value: flow, label: FLOW_LABELS[flow] })),
+              ]}
+              onSelect={(flow) => {
+                const stroke = current.sides?.top;
+                update({
+                  ...current,
+                  sides: {
+                    ...(current.sides ?? {}),
+                    top: { paint: stroke?.paint ?? "solid", ...stroke, flow },
+                  },
+                });
+              }}
+            />
           </>
         ) : (
           <>
             {styleSides.map((side) => (
-              <label key={side} className="style-tab__row">
-                <span>{SIDE_LABELS[side]}</span>
-                <select
-                  data-testid={`style-side-${side}`}
-                  value={current.sides?.[side]?.paint ?? "solid"}
-                  disabled={!canEdit}
-                  onChange={(event) => setSide(side, event.target.value as StyleEdgePaint)}
-                >
-                  {styleEdgePaints.map((paint) => (
-                    <option key={paint} value={paint}>
-                      {PAINT_LABELS[paint]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ChipRow
+                key={side}
+                label={SIDE_LABELS[side]}
+                testId={`style-side-${side}`}
+                value={current.sides?.[side]?.paint ?? "solid"}
+                disabled={!canEdit}
+                options={styleEdgePaints.map((paint) => ({
+                  value: paint,
+                  label: PAINT_LABELS[paint],
+                }))}
+                onSelect={(paint) => setSide(side, paint ?? "solid")}
+              />
             ))}
-            <p className="style-tab__hint">
-              A dashed edge runs with the shape: clockwise from the top. Its direction is the
-              shape's, so two sides never disagree by accident.
-            </p>
           </>
         )}
       </section>

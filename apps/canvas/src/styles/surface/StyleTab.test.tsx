@@ -57,10 +57,10 @@ describe("StyleTab for a card", () => {
     const { doc, card } = seed();
     render(<StyleTab kind="card" id={card.id} canEdit />);
 
-    fireEvent.change(screen.getByTestId("style-side-left"), { target: { value: "dashed" } });
+    fireEvent.click(screen.getByTestId("style-side-left-dashed"));
     expect(doc.getCard(card.id)?.style?.sides?.left?.paint).toBe("dashed");
 
-    fireEvent.change(screen.getByTestId("style-side-left"), { target: { value: "solid" } });
+    fireEvent.click(screen.getByTestId("style-side-left-solid"));
     expect(doc.getCard(card.id)?.style?.sides?.left).toBeUndefined();
   });
 
@@ -150,9 +150,12 @@ describe("StyleTab for a link", () => {
     render(<StyleTab kind="edge" id={edge.id} canEdit />);
 
     expect(screen.queryByTestId("style-shapes")).toBeNull();
+    // A link has one stroke, so the four per-side rows are not there; the line
+    // style row is.
     expect(screen.queryByTestId("style-side-top")).toBeNull();
+    expect(screen.getByTestId("style-line-paint")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByTestId("style-line-paint"), { target: { value: "dotted" } });
+    fireEvent.click(screen.getByTestId("style-line-paint-dotted"));
 
     expect(doc.getEdge(edge.id)?.style?.sides?.top?.paint).toBe("dotted");
   });

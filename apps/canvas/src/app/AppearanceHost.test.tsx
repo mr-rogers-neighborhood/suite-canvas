@@ -54,6 +54,13 @@ describe("the appearance panel", () => {
     expect(screen.getByTestId("style-inherits")).toHaveTextContent("wears");
   });
 
+  it("offers a way to the palette a colour is missing from", () => {
+    render(<AppearanceHost />);
+    open();
+
+    expect(screen.getByTestId("appearance-edit-palette")).toHaveTextContent("Edit palette");
+  });
+
   it("closes without touching the document", () => {
     render(<AppearanceHost />);
     open();

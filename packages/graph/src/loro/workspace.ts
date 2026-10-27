@@ -1,20 +1,10 @@
-import { readSurfaceStyleValue, readWorkspaceThemeValue } from "../records/values.js";
-import { type StyleRule, styleRuleSchema } from "../schema.js";
-import {
-  isEmptyStyle,
-  isEmptyTheme,
-  type SurfaceStyle,
-  surfaceStyleSchema,
-  type WorkspaceTheme,
-  workspaceThemeSchema,
-} from "../style.js";
 import { cleanWorkspaceName, DEFAULT_WORKSPACE_NAME, STRUCT_ORIGIN } from "./constants.js";
 import type { DocContext } from "./context.js";
 
 /**
- * Owns the workspace's own meta: name, seeding, home and new-tab board, shell paint,
- * palette and style rules. These live in the `meta` map, not in a snapshot section, so
- * they are not part of what a board shows.
+ * Owns the workspace's own meta: name, seeding, and the home and new-tab board. These
+ * live in the `meta` map, not in a snapshot section, so they are not part of what a
+ * board shows.
  *
  * Plain functions over the shared DocContext: the facade delegates here,
  * and modules reach each other through `ctx.api`.
@@ -99,85 +89,6 @@ export function workspaceMethods(ctx: DocContext) {
       if (next === null) ctx.meta.delete(key);
       else ctx.meta.set(key, next);
       ctx.commit(`${STRUCT_ORIGIN}set-${key}`);
-    },
-
-    /**
-     * The workspace's own paint (ADR-0046):
-     * the shell regions read it, and it stores roles rather than values, so the
-     * shell still derives every colour from the theme.
-     */
-    shellStyle(): SurfaceStyle | undefined {
-      return readSurfaceStyleValue(ctx.meta.get("shellStyle"));
-    },
-
-    /**
-     * The workspace's own palette, per mode (ADR-0071
-     * Q2–Q3). Document data on purpose: a share renders the author's colours, and a
-     * visitor's light/dark choice still works inside them.
-     */
-    workspaceTheme(): WorkspaceTheme | undefined {
-      return readWorkspaceThemeValue(ctx.meta.get("theme"));
-    },
-
-    /** Writes the workspace palette, or clears it when it names no colour. */
-    setWorkspaceTheme(theme: WorkspaceTheme | null): void {
-      if (!theme) {
-        ctx.meta.delete("theme");
-        ctx.commit(`${STRUCT_ORIGIN}set-workspace-theme`);
-        return;
-      }
-      const parsed = workspaceThemeSchema.parse(theme);
-      if (isEmptyTheme(parsed)) ctx.meta.delete("theme");
-      else ctx.meta.set("theme", parsed);
-      ctx.commit(`${STRUCT_ORIGIN}set-workspace-theme`);
-    },
-
-    /** Writes the shell's style, or removes it when the style says nothing. */
-    setShellStyle(style: SurfaceStyle | null): void {
-      if (!style) {
-        ctx.meta.delete("shellStyle");
-        ctx.commit(`${STRUCT_ORIGIN}set-shell-style`);
-        return;
-      }
-      const parsed = surfaceStyleSchema.parse(style);
-      if (isEmptyStyle(parsed)) ctx.meta.delete("shellStyle");
-      else ctx.meta.set("shellStyle", parsed);
-      ctx.commit(`${STRUCT_ORIGIN}set-shell-style`);
-    },
-
-    /**
-     * The named rules over roles (ADR-0046 §3–4).
-     * A rule is a scope plus assignments; the app resolves them per surface.
-     */
-    styleRules(): StyleRule[] {
-      const value = ctx.meta.get("rules");
-      if (!Array.isArray(value)) return [];
-      const rules: StyleRule[] = [];
-      for (const entry of value) {
-        const parsed = styleRuleSchema.safeParse(entry);
-        if (parsed.success) rules.push(parsed.data);
-      }
-      return rules.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-    },
-
-    /**
-     * Notifies when the workspace's own paint changes (ADR-0046).
-     * A meta edit is not a snapshot section, so the shell — the one reader — takes
-     * its own subscription rather than a second snapshot field.
-     */
-    observeWorkspacePaint(listener: () => void): () => void {
-      ctx.paintListeners.add(listener);
-      return () => {
-        ctx.paintListeners.delete(listener);
-      };
-    },
-
-    /** Replaces the whole rule list; an empty list removes the stored key. */
-    setStyleRules(rules: readonly StyleRule[]): void {
-      const parsed = rules.map((rule) => styleRuleSchema.parse(rule));
-      if (parsed.length === 0) ctx.meta.delete("rules");
-      else ctx.meta.set("rules", parsed);
-      ctx.commit(`${STRUCT_ORIGIN}set-style-rules`);
     },
   };
 }

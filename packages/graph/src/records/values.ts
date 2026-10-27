@@ -6,13 +6,7 @@ import {
   type LoroMovableList,
   type LoroText,
 } from "loro-crdt";
-import {
-  isEmptyStyle,
-  type SurfaceStyle,
-  surfaceStyleSchema,
-  type WorkspaceTheme,
-  workspaceThemeSchema,
-} from "../style.js";
+import { isEmptyStyle, type SurfaceStyle, surfaceStyleSchema } from "../style.js";
 
 /**
  * Owns the Loro value seam: the guards that narrow a raw container to a typed one, and
@@ -116,12 +110,6 @@ export function readSurfaceStyleValue(value: unknown): SurfaceStyle | undefined 
 }
 
 /** A workspace palette from a raw value; a hand-edited one that half parses is dropped. */
-export function readWorkspaceThemeValue(value: unknown): WorkspaceTheme | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const parsed = workspaceThemeSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
 export function readBoolean(map: LoroMap, key: string): boolean | undefined {
   const value = map.get(key);
   return typeof value === "boolean" ? value : undefined;

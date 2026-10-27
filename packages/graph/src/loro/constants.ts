@@ -12,7 +12,7 @@ export const PORTAL_TYPE_ID = "portal";
 export const PORTAL_BOARD_FIELD_ID = "portal-board";
 
 /** Spatial sections start at version 4. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** Shown for a workspace that has never been named and has no board to borrow from. */
 export const DEFAULT_WORKSPACE_NAME = "Untitled workspace";

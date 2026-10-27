@@ -68,8 +68,6 @@ export const boardSchema = z.object({
    * supplies a list, so callers never see `undefined`.
    */
   tags: z.array(entityIdSchema),
-  /** Paint for the board's canvas (ADR-0051). */
-  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -136,8 +134,6 @@ export const fieldDefinitionSchema = z.object({
    * value alone; it is presentation only and never changes the stored value.
    */
   display: z.string().min(1).max(160).optional(),
-  /** Paint for the field block; styling a field is styling a surface (ADR-0051). */
-  style: surfaceStyleSchema.optional(),
   /**
    * A `group`'s members, or a `list`'s item shape (ADR-0057 §6). For a list of
    * scalars it holds exactly one entry — the item's own kind, id `"item"` —
@@ -158,6 +154,12 @@ export const cardTypeSchema = z.object({
   pluralName: z.string().min(1).optional(),
   glyph: z.string().min(1),
   color: z.string().optional(),
+  /**
+   * The default paint for every card of this type. A card's own style wins over
+   * it, and those two are the only levels: there are no rules, no scopes and no
+   * shell paint.
+   */
+  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   fields: z.array(fieldDefinitionSchema),
@@ -285,8 +287,6 @@ export const sectionSchema = z.object({
   connectors: z.array(connectorSchema).optional(),
   /** Freeform labels (ADR-0053 §6); a queryable grouping, never a membership rule. */
   tags: z.array(entityIdSchema),
-  /** Paint for the section's frame (ADR-0051). */
-  style: surfaceStyleSchema.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -325,37 +325,7 @@ export const graphEdgeSchema = z.object({
   updatedAt: z.number().int().nonnegative(),
 });
 
-/**
- * What a named rule can target (ADR-0046 §3–4).
- * `global` applies everywhere, `type` to every card of one type, `kind` to every
- * surface of one kind, `shell` to one shell region. Absent `id` is only legal for
- * `global`; the resolver in the app checks that.
- */
-export const styleScopeKinds = ["global", "type", "kind", "shell"] as const;
-
-export const styleRuleScopeSchema = z.object({
-  kind: z.enum(styleScopeKinds),
-  /** Type id, surface kind or shell region name; absent for `global`. */
-  id: z.string().min(1).max(120).optional(),
-});
-
-/**
- * One named rule over roles: a scope plus the assignments it makes. A rule never
- * stores a value the token layer does not define, so a theme swap keeps working.
- */
-export const styleRuleSchema = z.object({
-  id: entityIdSchema,
-  name: z.string().min(1).max(80),
-  /** Ordering among equally specific rules; later wins. */
-  order: z.number().int(),
-  scope: styleRuleScopeSchema,
-  style: surfaceStyleSchema,
-});
-
 export type Connector = z.infer<typeof connectorSchema>;
-export type StyleRule = z.infer<typeof styleRuleSchema>;
-export type StyleRuleScope = z.infer<typeof styleRuleScopeSchema>;
-export type StyleScopeKind = (typeof styleScopeKinds)[number];
 export type Board = z.infer<typeof boardSchema>;
 export type Card = z.infer<typeof cardSchema>;
 export type CardType = z.infer<typeof cardTypeSchema>;

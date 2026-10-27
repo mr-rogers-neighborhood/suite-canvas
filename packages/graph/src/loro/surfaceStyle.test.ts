@@ -46,9 +46,8 @@ describe("surface styles", () => {
     expect(doc.getCard(card.id)?.style).toBeUndefined();
   });
 
-  it("styles a section, a board and a link independently", () => {
+  it("styles a link independently of the cards it joins", () => {
     const { doc, board } = workspace();
-    const section = doc.createSection({ boardId: board.id, title: "Region", x: 0, y: 0 });
     const from = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const to = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
     const edge = doc.addEdge({
@@ -59,13 +58,11 @@ describe("surface styles", () => {
     });
     if (!edge) throw new Error("a link between two placed cards is drawable");
 
-    doc.setSectionStyle(section.id, { shape: "diamond", sides: { top: { paint: "dashed" } } });
-    doc.setBoardStyle(board.id, { surface: "canvas" });
     doc.setEdgeStyle(edge.id, { ink: "accent", sides: { top: { paint: "dotted" } } });
 
-    expect(doc.getSection(section.id)?.style?.shape).toBe("diamond");
-    expect(doc.getBoard(board.id)?.style?.surface).toBe("canvas");
+    // A section and a board carry no style at all: they read the theme.
     expect(doc.getEdge(edge.id)?.style?.ink).toBe("accent");
+    expect(doc.getCard(from.id)?.style).toBeUndefined();
   });
 
   it("keeps a link's bends and layer, and clears them again", () => {
@@ -124,5 +121,43 @@ describe("primary type under supertags", () => {
     const after = doc.getCard(card.id);
     expect(after?.primaryTypeId).toBe(source.id);
     expect(after?.typeIds.slice().sort()).toEqual([concept.id, source.id].sort());
+  });
+});
+
+describe("a type's own paint", () => {
+  it("carries the default for every card of the type, and clears again", () => {
+    const { doc, board } = workspace();
+    const type = doc.createType({ name: "Source", glyph: "\u25a4" });
+    const card = doc.createCard({
+      boardId: board.id,
+      position: { x: 0, y: 0 },
+      primaryTypeId: type.id,
+    });
+
+    doc.updateType(type.id, { style: { surface: "accent", shape: "pill" } });
+
+    // The default lives on the type, not on each card: a card created after the
+    // change reads it without anything being written to the card.
+    expect(doc.getType(type.id)?.style).toEqual({ surface: "accent", shape: "pill" });
+    expect(doc.getCard(card.id)?.style).toBeUndefined();
+
+    doc.updateType(type.id, { style: null });
+    expect(doc.getType(type.id)?.style).toBeUndefined();
+  });
+
+  it("drops a style that names nothing rather than storing an empty record", () => {
+    const { doc } = workspace();
+    const type = doc.createType({ name: "Source", glyph: "\u25a4" });
+
+    doc.updateType(type.id, { style: {} });
+
+    expect(doc.getType(type.id)?.style).toBeUndefined();
+  });
+
+  it("refuses a colour value where a role belongs, the same as a card", () => {
+    const { doc } = workspace();
+    const type = doc.createType({ name: "Source", glyph: "\u25a4" });
+
+    expect(() => doc.updateType(type.id, { style: { surface: "#ff0000" as never } })).toThrow();
   });
 });

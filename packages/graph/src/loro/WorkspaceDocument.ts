@@ -13,10 +13,9 @@ import type {
   Placement,
   Section,
   SelectOption,
-  StyleRule,
   Tag,
 } from "../schema.js";
-import type { SurfaceStyle, WorkspaceTheme } from "../style.js";
+import type { SurfaceStyle } from "../style.js";
 import type { SavedView, ViewQuery } from "../views.js";
 import type { DocApi } from "./api.js";
 import { createDocApi } from "./api.js";
@@ -262,34 +261,6 @@ export class WorkspaceDocument extends CardsFacade {
     this.workspaceApi.setNewTabBoardId(boardId);
   }
 
-  shellStyle(): SurfaceStyle | undefined {
-    return this.workspaceApi.shellStyle();
-  }
-
-  workspaceTheme(): WorkspaceTheme | undefined {
-    return this.workspaceApi.workspaceTheme();
-  }
-
-  setWorkspaceTheme(theme: WorkspaceTheme | null): void {
-    this.workspaceApi.setWorkspaceTheme(theme);
-  }
-
-  setShellStyle(style: SurfaceStyle | null): void {
-    this.workspaceApi.setShellStyle(style);
-  }
-
-  styleRules(): StyleRule[] {
-    return this.workspaceApi.styleRules();
-  }
-
-  observeWorkspacePaint(listener: () => void): () => void {
-    return this.workspaceApi.observeWorkspacePaint(listener);
-  }
-
-  setStyleRules(rules: readonly StyleRule[]): void {
-    this.workspaceApi.setStyleRules(rules);
-  }
-
   listBoards(): Board[] {
     return this.boardsApi.listBoards();
   }
@@ -308,10 +279,6 @@ export class WorkspaceDocument extends CardsFacade {
 
   setBoardColor(id: string, color: Board["color"] | null): void {
     this.boardsApi.setBoardColor(id, color);
-  }
-
-  setBoardStyle(id: string, style: SurfaceStyle | null): void {
-    this.boardsApi.setBoardStyle(id, style);
   }
 
   setBoardTemplate(id: string, template: boolean): void {
@@ -401,6 +368,8 @@ export class WorkspaceDocument extends CardsFacade {
       pluralName?: string | null;
       glyph?: string;
       color?: string | null;
+      /** The default paint for every card of this type; `null` clears it. */
+      style?: SurfaceStyle | null;
       /** `null` clears the template; a card id points at the template card. */
       templateCardId?: string | null;
     },
@@ -515,10 +484,6 @@ export class WorkspaceDocument extends CardsFacade {
 
   removeSectionTag(id: string, tagId: string): void {
     this.sectionsApi.removeSectionTag(id, tagId);
-  }
-
-  setSectionStyle(id: string, style: SurfaceStyle | null): void {
-    this.sectionsApi.setSectionStyle(id, style);
   }
 
   updateSectionGeometry(id: string, rect: Pick<Section, "x" | "y" | "width" | "height">): void {

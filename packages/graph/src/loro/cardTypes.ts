@@ -9,6 +9,7 @@ import {
   type FieldDefinition,
   type SelectOption,
 } from "../schema.js";
+import { isEmptyStyle, type SurfaceStyle, surfaceStyleSchema } from "../style.js";
 import { normalizeTemplate } from "../template.js";
 import {
   PORTAL_BOARD_FIELD_ID,
@@ -99,6 +100,8 @@ export function cardTypesMethods(ctx: DocContext) {
         pluralName?: string | null;
         glyph?: string;
         color?: string | null;
+        /** `null` clears the type's paint, so its cards read the theme. */
+        style?: SurfaceStyle | null;
         /** `null` clears the template; a card id points at the template card. */
         templateCardId?: string | null;
       },
@@ -117,6 +120,15 @@ export function cardTypesMethods(ctx: DocContext) {
       if (patch.color !== undefined) {
         if (patch.color) fields.set("color", patch.color);
         else if (fields.get("color") !== undefined) fields.delete("color");
+      }
+      if (patch.style !== undefined) {
+        if (patch.style === null) {
+          if (fields.get("style") !== undefined) fields.delete("style");
+        } else {
+          const parsed = surfaceStyleSchema.parse(patch.style);
+          if (isEmptyStyle(parsed)) fields.delete("style");
+          else fields.set("style", parsed);
+        }
       }
       if (patch.templateCardId !== undefined) {
         const template = patch.templateCardId?.trim();

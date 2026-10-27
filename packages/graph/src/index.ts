@@ -218,9 +218,6 @@ export type {
   Section,
   SectionColor,
   SelectOption,
-  StyleRule,
-  StyleRuleScope,
-  StyleScopeKind,
   SubField,
   Tag,
 } from "./schema.js";
@@ -248,9 +245,6 @@ export {
   sectionColors,
   sectionSchema,
   selectOptionSchema,
-  styleRuleSchema,
-  styleRuleScopeSchema,
-  styleScopeKinds,
   subFieldKinds,
   tagSchema,
   typePluralName,
@@ -288,15 +282,12 @@ export type {
   StyleSide,
   SurfaceSides,
   SurfaceStyle,
-  WorkspaceTheme,
-  WorkspaceThemeMode,
 } from "./style.js";
 export {
   clampStyle,
   defaultEdgeFlow,
   edgeStyleSchema,
   isEmptyStyle,
-  isEmptyTheme,
   OPACITY_FLOOR,
   resolveSurfaceStyle,
   sideEdgeStyle,
@@ -308,8 +299,6 @@ export {
   surfaceStyleSchema,
   TEXT_SCALE_MAX,
   TEXT_SCALE_MIN,
-  themeColours,
-  workspaceThemeSchema,
 } from "./style.js";
 export type { Target } from "./target.js";
 export { sameTarget, targetKey, targetKindSchema, targetKinds, targetSchema } from "./target.js";

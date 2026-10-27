@@ -32,6 +32,7 @@ import {
   readNumber,
   readString,
   readSurfaceStyle,
+  readSurfaceStyleValue,
 } from "./values.js";
 
 /**
@@ -148,6 +149,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
   const color = readString(fields, "color");
   const pluralName = readString(fields, "pluralName")?.trim();
   const templateCardId = readString(fields, "templateCardId")?.trim();
+  const style = readSurfaceStyleValue(fields.get("style"));
   return cardTypeSchema.parse({
     id,
     name: readString(fields, "name") ?? "Type",
@@ -158,6 +160,7 @@ export function cardTypeFromMap(id: string, fields: LoroMap): CardType {
     ...(templateCardId ? { templateCardId } : {}),
     ...(color ? { color } : {}),
     ...(pluralName ? { pluralName } : {}),
+    ...(style ? { style } : {}),
   });
 }
 

@@ -117,9 +117,13 @@ Two confirmations ask for more than a press. `DeleteWorkspaceDialog` requires th
 
 ## Styles and appearance
 
-Workspace style is document data. `apps/canvas/src/styles/StylesDialog.tsx` lists style rules, ordered by rung, and `StyleTab` edits one surface or one rule. Rules are stored in the document, resolved through `resolveSurfaceStyle`, and painted as variables, so a collaborator sees the same colours (ADR-0071). A rule that does not exist yet is created on its first edit, never on selection.
+Style is document data, at two levels and no more. `apps/canvas/src/styles/surface/StyleTab.tsx` edits a card, a link or a type; a card wears its type's style and then its own, and everything else wears the theme. `apps/canvas/src/canvas/surfaceContext.ts` resolves the two levels and hands the result to `surfacePaintVars`, so a collaborator sees the same colours.
 
-Device appearance is local, and it lives in Settings. `apps/canvas/src/styles/SettingsDialog.tsx` is a modal dialog with a focus trap, Escape through the escape stack, and one section for now: `AppearanceSection` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`) plus a `--reader-card-radius` variable. Nothing about it is synced, because it changes how this screen draws and never what a peer sees.
+The same editor is mounted in three places: the inspector, the type editor in `apps/canvas/src/panels/TypeSettingsDialog.tsx`, and `apps/canvas/src/app/AppearanceHost.tsx`, which opens where a reader right-clicks. `apps/canvas/src/canvas/board/menu/appearanceMenu.ts` adds the palette quick-picks to the same menu, so one colour is one click.
+
+Colours come from the workspace palette: `PaletteEditor` in Settings edits it as one list, each swatch carrying a light and a dark value, and both travel in the document.
+
+Device appearance is local, and it lives in Settings. `apps/canvas/src/styles/SettingsDialog.tsx` is a modal dialog with a focus trap and Escape through the escape stack. One section is document data and one is not: `PaletteEditor` writes the workspace palette, and `AppearanceSection` sets density, card radius, canvas background and a motion preference, written by `apps/canvas/src/theme/appearance.ts` as attributes on `<html>` (`data-density`, `data-canvas`, `data-motion`) plus a `--reader-card-radius` variable. Nothing about it is synced, because it changes how this screen draws and never what a peer sees.
 
 The dialog opens from the theme menu (`theme-appearance`, which reads "Settings…") and from the palette's `system.settings` row. Both go through `openSettings` in `apps/canvas/src/styles/settingsEvents.ts`, a window event, so neither surface has to own the other's state. The appearance controls keep their `appearance-*` test ids.
 

@@ -150,9 +150,13 @@ export function floorInk(
   surface: StyleColourRole | "none",
   ink: StyleColourRole,
   palette: SurfacePalette,
+  swatch: string | null = null,
 ): { ink: StyleColourRole; ratio: number; corrected: boolean } | null {
   if (surface === "none") return null;
-  const background = palette[surface];
+  // A swatch is a colour the reader chose, so it is what the ink has to be read
+  // against. The role is the fallback, and neither being readable means there is
+  // nothing to measure.
+  const background = swatch ?? palette[surface];
   if (!background) return null;
   // The pair itself first, so an already-legible combination is left untouched.
   const currentRatio = palette[ink] ? contrastRatio(background, palette[ink]) : null;
@@ -183,12 +187,13 @@ export function resolveSurfaceStyleFor(
   inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
   palette: SurfacePalette = {},
+  swatch: string | null = null,
 ): RuleResolution {
   const combined = mergeSurfaceStyle(inherited ?? {}, own ?? {});
 
   const resolved = resolveSurfaceStyle(combined, subject.surface);
   const corrections: ContrastCorrection[] = [];
-  const floored = floorInk(resolved.surface, resolved.ink, palette);
+  const floored = floorInk(resolved.surface, resolved.ink, palette, swatch);
   const finalStyle: ResolvedSurfaceStyle = floored?.corrected
     ? { ...resolved, ink: floored.ink }
     : resolved;
@@ -220,11 +225,12 @@ export function surfacePaintFor(
   inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
   palette: SurfacePalette,
+  swatch: string | null = null,
 ): { paint: Record<string, string>; corrections: ContrastCorrection[] } {
   if (!own && !inherited) return { paint: {}, corrections: [] };
-  const resolved = resolveSurfaceStyleFor(own, inherited, subject, palette);
+  const resolved = resolveSurfaceStyleFor(own, inherited, subject, palette, swatch);
   if (!resolved.applied) return { paint: {}, corrections: [] };
-  return { paint: surfacePaintVars(resolved.style), corrections: resolved.corrections };
+  return { paint: surfacePaintVars(resolved.style, swatch), corrections: resolved.corrections };
 }
 
 /** `rgb(…)` or `rgba(…)` as `#rrggbb`, or null when it is neither or translucent. */

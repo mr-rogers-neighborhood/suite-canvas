@@ -24,6 +24,9 @@ export interface BoardMenuContext {
   canManageStructure: boolean;
   canManageLinks: boolean;
   requestShare: ReturnType<typeof useBoardUi>["requestShare"];
+  /** The workspace palette, for the colour quick-picks. */
+  palette: ReturnType<typeof useBoardUi>["palette"];
+  openAppearance: ReturnType<typeof useBoardUi>["openAppearance"];
   createNoteAt: (position: { x: number; y: number }) => void;
   createWhiteboardAt: (position: { x: number; y: number }) => void;
   createSectionAt: (position: { x: number; y: number }, wrapSelection?: boolean) => void;

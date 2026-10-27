@@ -100,13 +100,17 @@ export function sideAnimation(style: ResolvedSurfaceStyle, side: StyleSide): str
  * The inline paint for a surface. Applied only when the surface actually has a
  * style, so an unstyled card renders exactly as it did before the paint system.
  */
-export function surfacePaintVars(style: ResolvedSurfaceStyle | undefined): Record<string, string> {
+export function surfacePaintVars(
+  style: ResolvedSurfaceStyle | undefined,
+  swatch: string | null = null,
+): Record<string, string> {
   if (!style) return {};
   // Keys are real custom properties: React only passes a style entry through to
   // the element when the name starts with `--`, and a name without the prefix
   // fails silently, which is how a painted card renders as nothing at all.
   const paint: Record<string, string> = {
-    "--paint-surface": style.surface === "none" ? "transparent" : colourRoleVar(style.surface),
+    "--paint-surface":
+      swatch ?? (style.surface === "none" ? "transparent" : colourRoleVar(style.surface)),
     "--paint-ink": colourRoleVar(style.ink),
     "--paint-opacity": String(style.opacity),
     "--paint-text-scale": String(style.textScale),

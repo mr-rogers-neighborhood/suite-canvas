@@ -7,7 +7,11 @@ import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useLeaveGuard } from "./app/useLeaveGuard";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
-import { useSurfacePalette, useWorkspaceNavigation } from "./app/workspacePaint";
+import {
+  useSurfacePalette,
+  useWorkspaceNavigation,
+  useWorkspacePalette,
+} from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import type { CanvasMode } from "./canvas/links/linkGesture";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
@@ -78,7 +82,10 @@ function WorkspaceShell({
   const shellRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLElement>(null);
   const navigation = useWorkspaceNavigation(workspace);
+  const workspacePalette = useWorkspacePalette(workspace);
   const themeMode = useThemeStore((state) => state.mode);
+  // The resolved brightness, which is what a swatch resolves against.
+  const theme = useThemeStore((state) => state.theme);
   const palette = useSurfacePalette(shellRef, themeMode);
 
   // Content breakpoints (ADR-0051): the band rides the board root as an
@@ -733,7 +740,9 @@ function WorkspaceShell({
       synced={synced}
       leaving={leaving}
       leavingPrompt={leavingPrompt}
-      palette={palette}
+      palette={workspacePalette}
+      roles={palette}
+      mode={theme}
       requestLeave={requestLeave}
       setPaletteOpen={setPaletteOpen}
       standalone={standalone}

@@ -2,25 +2,21 @@ import { useId } from "react";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { type Appearance, RADIUS_RANGE } from "../theme/appearance";
 import { useAppearanceStore } from "../theme/useAppearanceStore";
-import { useThemeStore } from "../theme/useThemeStore";
-import { useWorkspaceTheme } from "../theme/useWorkspaceTheme";
-import { themedRoles } from "../theme/workspaceTheme";
+import { PaletteEditor } from "./PaletteEditor";
 
 /**
- * The appearance controls (ADR-0071): density, corner rounding, the canvas
- * treatment and motion.
+ * The appearance controls (ADR-0071): the palette, density, corner rounding, the
+ * canvas treatment and motion.
  *
- * It offers the four things a reader owns alone. Nothing here can restyle a card
- * for anybody else, which is the line the ADR draws: what a reader controls is
- * how *their* screen draws; what the document controls is how the work looks to
- * everyone. Every change is applied immediately, so the preview is the canvas
- * behind the panel rather than a mock inside it.
+ * Two scopes, clearly apart. The palette belongs to the document: a swatch a
+ * reader defines here is a colour their collaborators can pick. Everything below
+ * it is this device only, because how bright somebody's screen is has nothing to
+ * do with how the work looks to anyone else. Every change is applied immediately,
+ * so the preview is the canvas behind the panel rather than a mock inside it.
  */
 export function AppearanceSection() {
   const appearance = useAppearanceStore((state) => state.appearance);
   const workspace = useCanvasStore((state) => state.workspace);
-  const mode = useThemeStore((state) => state.theme);
-  const themed = themedRoles(useWorkspaceTheme(workspace), mode);
   const set = useAppearanceStore((state) => state.set);
   const reset = useAppearanceStore((state) => state.reset);
   const noteId = useId();
@@ -37,20 +33,7 @@ export function AppearanceSection() {
         set them.
       </p>
 
-      {/*
-        The mirror, not a second editor: a palette belongs to the document and is
-        written in the Styles list, so this names the scope and the roles it speaks
-        for and says no more. Two editors for one value is how the save pill
-        happened.
-      */}
-      <p className="appearance-dialog__row" data-testid="appearance-workspace-theme">
-        <span>Workspace colours</span>
-        <span className="appearance-dialog__value">
-          {themed.length === 0
-            ? "Built-in palette"
-            : `${themed.length} role(s) set here, ${mode === "dark" ? "dark" : "light"} mode`}
-        </span>
-      </p>
+      <PaletteEditor workspace={workspace} />
 
       <label className="appearance-dialog__row">
         <span>Density</span>

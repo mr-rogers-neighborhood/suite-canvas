@@ -27,6 +27,27 @@ import type { CreateFieldInput, CreateTypeInput } from "./model.js";
  * Plain functions over the shared DocContext: the facade delegates here,
  * and modules reach each other through `ctx.api`.
  */
+/** The built-in types, which every workspace has whether or not it stored them. */
+const BUILT_IN_TYPES: readonly CreateTypeInput[] = [
+  { id: DEFAULT_TYPE_ID, name: "Note", glyph: "\u25a1" },
+  { id: "concept", name: "Concept", glyph: "\u25c6" },
+  { id: "source", name: "Source", glyph: "\u25a4" },
+];
+
+function builtInType(id: string): CardType | undefined {
+  const definition = BUILT_IN_TYPES.find((entry) => entry.id === id);
+  if (!definition) return undefined;
+  const now = Date.now();
+  return {
+    id,
+    name: definition.name ?? id,
+    glyph: definition.glyph ?? "\u25c7",
+    createdAt: now,
+    updatedAt: now,
+    fields: [],
+  };
+}
+
 export function cardTypesMethods(ctx: DocContext) {
   return {
     cachedType(id: string): CardType | undefined {
@@ -106,10 +127,20 @@ export function cardTypesMethods(ctx: DocContext) {
         templateCardId?: string | null;
       },
     ): void {
-      const type = ctx.api.cardTypes.getType(id);
+      // A built-in type is virtual until something edits it: a card names `note`
+      // and no record exists. Editing it is the moment the record is made, which
+      // is also what makes "make this the default for Note cards" land.
+      const existing = ctx.api.cardTypes.getType(id);
+      const type = existing ?? builtInType(id);
       if (!type) return;
-      const fields = ctx.types.get(id);
-      if (!isMap(fields)) return;
+      const fields = ctx.types.ensureMergeableMap(id);
+      if (existing === undefined) {
+        fields.set("name", type.name);
+        fields.set("glyph", type.glyph);
+        fields.set("createdAt", Date.now());
+        fields.set("updatedAt", Date.now());
+        fields.ensureMergeableMap("fields");
+      }
       if (patch.name !== undefined) fields.set("name", patch.name.trim() || type.name);
       if (patch.pluralName !== undefined) {
         const pluralName = patch.pluralName?.trim();
@@ -186,13 +217,8 @@ export function cardTypesMethods(ctx: DocContext) {
 
     /** Idempotent: the starter types, including the built-in portal, exist in every workspace. */
     ensureDefaultTypes(): void {
-      const defaults: CreateTypeInput[] = [
-        { id: DEFAULT_TYPE_ID, name: "Note", glyph: "\u25a1" },
-        { id: "concept", name: "Concept", glyph: "\u25c6" },
-        { id: "source", name: "Source", glyph: "\u25a4" },
-      ];
       let changed = false;
-      for (const definition of defaults) {
+      for (const definition of BUILT_IN_TYPES) {
         if (ctx.api.cardTypes.getType(definition.id ?? "")) continue;
         ctx.api.cardTypes.createTypeInternal(definition, false);
         changed = true;

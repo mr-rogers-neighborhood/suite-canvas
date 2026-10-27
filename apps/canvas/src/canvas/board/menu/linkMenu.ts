@@ -1,5 +1,6 @@
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
 import { MODE_NAMES, nextMode } from "../../links/linkGesture";
+import { appearanceBranch } from "./appearanceMenu";
 import type { BoardMenuContext } from "./types";
 
 export function edgeMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null {
@@ -10,6 +11,19 @@ export function edgeMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null 
   if (!canEditLayout) return [];
   const edge = workspace.getEdge(edgeId);
   return [
+    ...appearanceBranch({
+      palette: ctx.palette,
+      style: edge?.style,
+      at: { x: menu.x, y: menu.y },
+      canEdit: canEditLayout,
+      target: { kind: "edge", id: edgeId },
+      onSetSwatch: (swatch) =>
+        workspace.setEdgeStyle(edgeId, {
+          ...(edge?.style ?? {}),
+          ...(swatch === null ? { swatch: undefined } : { swatch }),
+        }),
+      onOpenPanel: ctx.openAppearance,
+    }),
     {
       label: edge?.label ? "Edit description…" : "Add description…",
       onSelect: () => startEdgeDescription(edgeId, { x: menu.x, y: menu.y }),

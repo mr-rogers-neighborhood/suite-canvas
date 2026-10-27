@@ -1,4 +1,4 @@
-import type { WorkspaceDocument } from "@suite/graph";
+import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { readPalette, type SurfacePalette } from "../canvas/rules";
 import type { ShareSession } from "../session/session";
@@ -59,5 +59,28 @@ export function useSurfacePalette(
     const node = root.current;
     if (node) setPalette(readPalette(node));
   }, [root, themeMode]);
+  return palette;
+}
+
+/**
+ * The workspace palette. Meta, like the navigation, so it takes its own
+ * subscription; a swatch edit must reach every card without repainting the shell
+ * for an unrelated write.
+ */
+export function useWorkspacePalette(workspace: WorkspaceDocument): PaletteSwatch[] {
+  const read = useCallback(() => workspace.palette(), [workspace]);
+  const [palette, setPalette] = useState(read);
+  const signature = useRef(JSON.stringify(palette));
+  useEffect(() => {
+    const sync = () => {
+      const next = read();
+      const key = JSON.stringify(next);
+      if (key === signature.current) return;
+      signature.current = key;
+      setPalette(next);
+    };
+    sync();
+    return workspace.observeWorkspaceMeta(sync);
+  }, [read, workspace]);
   return palette;
 }

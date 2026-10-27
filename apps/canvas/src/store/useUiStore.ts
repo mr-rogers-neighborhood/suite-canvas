@@ -283,6 +283,17 @@ interface UiState extends SessionCapabilities {
   /** Whether the version-history panel is open beside the board. */
   historyOpen: boolean;
   /**
+   * The surface whose appearance panel is open on the board, and where it opened.
+   *
+   * The same editor the inspector mounts, placed where the reader right-clicked,
+   * so "change how this looks" never means "find the panel first".
+   */
+  appearanceTarget: {
+    kind: "card" | "edge";
+    id: string;
+    at: { x: number; y: number };
+  } | null;
+  /**
    * Cards reduced to their header line, and sections whose members are hidden.
    *
    * Reader state, never document data. Two people looking at one board may want
@@ -388,6 +399,12 @@ interface UiState extends SessionCapabilities {
   toggleOutline: () => void;
   toggleHistory: () => void;
   closeHistory: () => void;
+  openAppearance: (target: {
+    kind: "card" | "edge";
+    id: string;
+    at: { x: number; y: number };
+  }) => void;
+  closeAppearance: () => void;
   toggleCardCollapsed: (cardId: string) => void;
   toggleSectionCollapsed: (sectionId: string) => void;
   openBlueprintInstall: (cardId: string) => void;
@@ -452,6 +469,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   libraryQuery: "",
   outlineOpen: true,
   historyOpen: false,
+  appearanceTarget: null,
   collapsedCards: {},
   collapsedSections: {},
   blueprintCardId: null,
@@ -797,6 +815,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleOutline: () => set((state) => ({ outlineOpen: !state.outlineOpen })),
   toggleHistory: () => set((state) => ({ historyOpen: !state.historyOpen })),
   closeHistory: () => set({ historyOpen: false }),
+  openAppearance: (appearanceTarget) => set({ appearanceTarget, contextMenu: null }),
+  closeAppearance: () => set({ appearanceTarget: null }),
   toggleCardCollapsed: (cardId) =>
     set((state) => ({ collapsedCards: toggled(state.collapsedCards, cardId) })),
   toggleSectionCollapsed: (sectionId) =>

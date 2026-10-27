@@ -11,7 +11,6 @@ import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
-import { useUiStore } from "../store/useUiStore";
 import { StyleTab } from "../styles/surface/StyleTab";
 import { CardBodySurface } from "./CardBodySurface";
 import { CardLinksSection } from "./CardLinksSection";
@@ -258,9 +257,6 @@ export function CardPanel({
   };
 
   const typesById = new Map(types.map((type) => [type.id, type]));
-  // Opening the rule list from "Applies to" is the same door the File menu opens, so the panel does not
-  // need a second dialog or a prop threaded from the shell.
-  const setStylesOpen = useUiStore((state) => state.setStylesOpen);
   // Fields union in type order with the primary first (ADR-0053 §2). The order
   // is presentation only: nothing below asks how many types there are.
   const cardTypeIds =
@@ -435,9 +431,7 @@ export function CardPanel({
             kind="card"
             id={card.id}
             canEdit={editLayout}
-            typeId={card.primaryTypeId}
             typeName={typesById.get(card.primaryTypeId)?.name ?? null}
-            {...(setStylesOpen ? { onManageRules: () => setStylesOpen(true) } : {})}
           />
         </div>
       ) : null}

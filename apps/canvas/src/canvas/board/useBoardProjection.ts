@@ -2,11 +2,11 @@ import type { Card, EdgeEndpointKind, GraphEdge, Placement } from "@suite/graph"
 import { edgeEndpoints, sectionMembership } from "@suite/graph";
 import { useCallback, useMemo } from "react";
 import { type CardMeta, cardMeta } from "../../cards/cardMeta";
-import { typesById } from "../../cards/cardTypes";
+import { resolveCardType, typesById } from "../../cards/cardTypes";
 import { portalTargetId } from "../../cards/portal";
 import { type LinkScene, linkAnchors } from "../links/linkGeometry";
 import type { SectionLink } from "../links/SectionLinkLayer";
-import { surfacePaintFor } from "../rules";
+import { paintSurface } from "../surfaceContext";
 import type { useBoardUi } from "./useBoardUi";
 
 /** A link React Flow draws between two of this board's nodes. */
@@ -23,7 +23,8 @@ export interface FlowLink {
  * writes to the document.
  */
 export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
-  const { snapshot, activeBoardId, lens, surfaceRules, readerRadius } = ui;
+  const { snapshot, activeBoardId, lens, surfacePaint, readerRadius } = ui;
+  const typeMap = useMemo(() => typesById(snapshot.types), [snapshot.types]);
 
   const boardPlacements = useMemo(() => {
     const map = new Map<string, Placement>();
@@ -95,16 +96,13 @@ export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
    */
   const cardRadiusPx = useCallback(
     (card: Pick<Card, "style" | "primaryTypeId">) => {
-      const paint = surfacePaintFor(
-        card.style,
-        { surface: "card", typeId: card.primaryTypeId },
-        surfaceRules,
-      ).paint;
+      const type = resolveCardType(typeMap, card.primaryTypeId);
+      const paint = paintSurface(card.style, type?.style, { surface: "card" }, surfacePaint).paint;
       const declared = Number.parseFloat(paint["--paint-radius"] ?? "");
       if (Number.isFinite(declared)) return declared;
       return readerRadius;
     },
-    [surfaceRules, readerRadius],
+    [surfacePaint, typeMap, readerRadius],
   );
 
   /**
@@ -120,7 +118,7 @@ export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
         id: card.id,
         connectors: card.connectors,
         // The radius the card paints, so an anchor lands on the arc its dot is drawn on.
-        // Resolved by `surfacePaintFor`, the same call the card face makes, so this is the
+        // Resolved by `paintSurface`, the same call the card face makes, so this is the
         // one ladder rather than a second reading of it.
         radius: cardRadiusPx(card),
       })),
@@ -197,7 +195,6 @@ export function useBoardProjection(ui: ReturnType<typeof useBoardUi>) {
     [boardPlacementList, boardSections],
   );
 
-  const typeMap = useMemo(() => typesById(snapshot.types), [snapshot.types]);
   const tagMap = useMemo(() => new Map(snapshot.tags.map((tag) => [tag.id, tag])), [snapshot.tags]);
   const metaByCard = useMemo(() => {
     const map = new Map<string, CardMeta>();

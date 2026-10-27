@@ -204,12 +204,21 @@ export function ContainerPanel({
 
       {tab === "style" ? (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-style">
-          <StyleTab
-            kind={portal ? "card" : "section"}
-            id={model.id}
-            canEdit={canEdit && !(portal && model.orphan)}
-            workspace={workspace}
-          />
+          {portal ? (
+            <StyleTab
+              kind="card"
+              id={model.id}
+              canEdit={canEdit && !model.orphan}
+              workspace={workspace}
+            />
+          ) : (
+            <p
+              className="text-[12px] leading-5 text-[var(--ink-muted)]"
+              data-testid="section-paint"
+            >
+              A section is painted by its own colour, and everything else about it is the theme.
+            </p>
+          )}
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5">

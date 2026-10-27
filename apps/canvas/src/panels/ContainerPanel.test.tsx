@@ -183,9 +183,10 @@ describe("ContainerPanel tabs", () => {
     expect(screen.getByTestId("container-tags")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("container-tab-style"));
-    fireEvent.click(screen.getByTestId("style-shape-diamond"));
 
-    expect(workspace.getSection(section.id)?.style?.shape).toBe("diamond");
+    // A section is painted by its colour and the theme, so its Style tab says so
+    // rather than offering a second set of paint controls.
+    expect(screen.getByTestId("section-paint")).toBeInTheDocument();
     // Details steps out of the way rather than stacking under the editor.
     expect(screen.queryByTestId("container-tags")).toBeNull();
   });
@@ -196,12 +197,12 @@ describe("ContainerPanel tabs", () => {
 
     renderPanel(portalModel(workspace, opened.id, { id: portal.id }), workspace);
     fireEvent.click(screen.getByTestId("container-tab-style"));
-    fireEvent.change(screen.getByTestId("style-surface"), { target: { value: "surface-strong" } });
+    fireEvent.click(screen.getByTestId("style-swatch-green"));
 
-    // The card is the surface on this board; the board behind it keeps its own
-    // paint, so opening the portal never repaints the board it opens.
-    expect(workspace.getCard(portal.id)?.style?.surface).toBe("surface-strong");
-    expect(workspace.getBoard(opened.id)?.style?.surface).toBeUndefined();
+    // The card is the surface on this board; the board behind it has no paint of
+    // its own, so opening the portal never repaints the board it opens.
+    expect(workspace.getCard(portal.id)?.style?.swatch).toBe("green");
+    expect(workspace.getBoard(opened.id)).not.toHaveProperty("style");
   });
 
   it("keeps a portal's outline behind its Contents tab", () => {

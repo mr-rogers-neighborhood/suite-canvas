@@ -8,7 +8,6 @@ import type {
   WorkspaceDocument,
 } from "@suite/graph";
 import {
-  isEmptyStyle,
   styleColourRoles,
   styleEdgeFlows,
   styleEdgePaints,
@@ -17,26 +16,8 @@ import {
   TEXT_SCALE_MAX,
   TEXT_SCALE_MIN,
 } from "@suite/graph";
-import { useState } from "react";
-import { cardsChangedByPromotion, upsertScopedRule } from "../../canvas/styleTargets";
-import { Dialog } from "../../dialogs/Dialog";
-import { useCanvasStore } from "../../store/useCanvasStore";
-import { useWorkspaceSnapshot } from "../../store/workspaceStore";
-import { type StyleScopeChoice, StyleScopePicker, scopeOfChoice } from "./StyleScopePicker";
-import { useStyleRules } from "./useStyleRules";
-import {
-  type StyledSurfaceKind,
-  type StyleTarget,
-  useSurfaceStyleDraft,
-} from "./useSurfaceStyleDraft";
-
-/** The plural a create-on-first-edit rule is named with. */
-const KIND_WORDS: Record<StyledSurfaceKind, string> = {
-  card: "card",
-  section: "section",
-  board: "board",
-  edge: "link",
-};
+import { useSurfacePaint } from "../../canvas/surfaceContext";
+import { type StyleSurfaceKind, useStyleDraft } from "./useStyleDraft";
 
 const SHAPE_LABELS: Record<StyleShape, string> = {
   rect: "Rectangle",
@@ -77,107 +58,34 @@ function roleLabel(role: StyleColourRole): string {
 }
 
 export interface StyleTabProps {
-  kind: StyledSurfaceKind;
+  kind: StyleSurfaceKind;
   id: string;
   canEdit: boolean;
   /** The document to write through; defaults to the live one. */
   workspace?: WorkspaceDocument | null;
-  /** The card's primary type, so the picker can offer "every Concept". */
-  typeId?: string | null | undefined;
-  /** The type's name, for the same option's label. */
+  /** The type's name, so the promote control can say what it writes to. */
   typeName?: string | null | undefined;
-  /** Opens the rule list. Absent when the host has no dialog to offer. */
-  onManageRules?: (() => void) | undefined;
-  /**
-   * Edit this rule rather than a surface. The rule list sets it: it has already said which scope the
-   * reader chose, so the picker would be a second place to change it.
-   */
-  ruleId?: string | undefined;
 }
 
 /**
- * The Style tab: the one editor for the paint of any surface
- * (ADR-0051).
+ * The Style tab: the one editor for the paint of a card, a link or a type.
  *
- * Every control writes a *role* or a number, never a colour value, and writes
- * through the typed document layer — so a collaborator sees the same paint and a
- * theme change still moves it. A field left alone is absent from the record, so
- * "reset" and "never set" are the same state.
+ * Every control writes a palette swatch, a role or a number, never a raw colour
+ * value, and writes through the typed document layer — so a collaborator sees the
+ * same paint and a theme change still moves it. A field left alone is absent from
+ * the record, so "reset" and "never set" are the same state.
+ *
+ * The same component is mounted by the inspector, by the type editor and by the
+ * board's right-click Appearance submenu. There is one editor, so the three cannot
+ * drift.
  */
-export function StyleTab({
-  kind,
-  id,
-  canEdit,
-  workspace = null,
-  typeId = null,
-  typeName = null,
-  onManageRules,
-  ruleId,
-}: StyleTabProps) {
-  /**
-   * Where this edit is going. The picker changes the *target*, not the controls: "this card" writes the
-   * surface's own style and "every Concept" writes a rule, and everything between them is the same editor
-   * (ADR-0071 amendment).
-   */
-  const [choice, setChoice] = useState<StyleScopeChoice>({ rung: "surface" });
-  /**
-   * The id a not-yet-created rule will be written under. Generated when the scope is chosen so the draft
-   * has a target to edit; the rule itself only appears on the first change, so browsing costs nothing.
-   */
-  const [pendingRuleId, setPendingRuleId] = useState(() => `rule-${crypto.randomUUID()}`);
-  const scope = scopeOfChoice(choice);
-
-  const onScope = (next: StyleScopeChoice) => {
-    setChoice(next);
-    // A fresh id per scope: two rules must never be created under one identity because the reader
-    // looked at two rungs before deciding.
-    setPendingRuleId(`rule-${crypto.randomUUID()}`);
-  };
-
-  const rules = useStyleRules(workspace);
-  const scopedRule = scope
-    ? rules.find(
-        (rule) => rule.scope.kind === scope.kind && (rule.scope.id ?? "") === (scope.id ?? ""),
-      )
-    : null;
-
-  const target: StyleTarget = ruleId
-    ? { rung: "rule", ruleId }
-    : scope === null
-      ? { rung: "surface", kind, id }
-      : { rung: "rule", ruleId: scopedRule?.id ?? pendingRuleId };
-
-  const createAs =
-    scope && !ruleId
-      ? {
-          scope,
-          name:
-            scope.kind === "type"
-              ? `Every ${typeName ?? "card of this type"}`
-              : scope.kind === "global"
-                ? "Everywhere"
-                : scope.kind === "shell"
-                  ? `Every ${scope.id}`
-                  : `Every ${KIND_WORDS[kind]}`,
-        }
-      : null;
-
-  const { style, resolved, inherited, patch, reset } = useSurfaceStyleDraft(
-    target,
+export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null }: StyleTabProps) {
+  const { style, resolved, typeId, typeStyle, patch, reset, makeTypeDefault } = useStyleDraft(
+    { kind, id },
     workspace,
-    createAs,
   );
+  const { palette, mode } = useSurfacePaint();
   const current = style ?? {};
-
-  /**
-   * "Inherit" says where it inherits from once a rule names it — "Inherit from Concept"
-   * rather than a word with no object (ADR-0071). When nothing wider has an opinion it
-   * stays plain, because "Inherit from the default" is longer and says no more.
-   */
-  const inheritLabel = (utilityId: string): string => {
-    const source = inherited(utilityId);
-    return source && source.label !== "the default" ? `Inherit from ${source.label}` : "Inherit";
-  };
 
   // A link is one stroke rather than a box with four sides (ADR-0051 §1), so its
   // editor shows the line and hides what a line cannot have: a silhouette, a
@@ -185,41 +93,6 @@ export function StyleTab({
   const isLink = kind === "edge";
   const hasShape = !isLink;
   const hasText = !isLink;
-
-  /**
-   * Promoting a card's own style into a rule (ADR-0071
-   * amendment).
-   *
-   * "Make every Concept look like this" is the gesture that makes the ladder discoverable, and it is a
-   * document-wide write behind one press. The confirm counts the cards that will *actually* change: a card's
-   * own style wins over any rule, so a card that already has one is not affected, and promising the type's
-   * whole population would be a number the write does not deliver.
-   */
-  const snapshot = useWorkspaceSnapshot();
-  const storeWorkspace = useCanvasStore((state) => state.workspace);
-  const [promoteOpen, setPromoteOpen] = useState(false);
-  const promotable =
-    kind === "card" &&
-    typeId !== null &&
-    typeId !== undefined &&
-    style !== undefined &&
-    !isEmptyStyle(style);
-  const promotionCount = promotable && typeId ? cardsChangedByPromotion(snapshot.cards, typeId) : 0;
-
-  const promote = () => {
-    if (!canEdit || !typeId || !style) return;
-    const doc = workspace ?? storeWorkspace;
-    doc.setStyleRules(
-      upsertScopedRule(rules, {
-        scope: { kind: "type", id: typeId },
-        style,
-        name: `Every ${typeName ?? "card of this type"}`,
-        id: `rule-${crypto.randomUUID()}`,
-      }),
-    );
-    // Nobody's own style is stripped: promotion states the rule and leaves every card as it is, so undo is
-    // one step and a reader who liked their exception keeps it.
-  };
 
   const update = (next: SurfaceStyle) => {
     if (!canEdit) return;
@@ -246,20 +119,19 @@ export function StyleTab({
     update({ ...current, sides });
   };
 
+  const inherits =
+    kind === "card" &&
+    typeStyle !== undefined &&
+    Object.keys(typeStyle).length > 0 &&
+    style === undefined;
+
   return (
     <div className="style-tab" data-testid="style-tab">
-      {ruleId ? null : (
-        <StyleScopePicker
-          kind={kind}
-          typeId={typeId}
-          typeName={typeName}
-          choice={choice}
-          rules={rules}
-          canEdit={canEdit}
-          onChange={onScope}
-          onManageRules={onManageRules}
-        />
-      )}
+      {inherits ? (
+        <p className="style-tab__hint" data-testid="style-inherits">
+          This card wears {typeName ?? "its type"}'s style. Anything set here wins over it.
+        </p>
+      ) : null}
 
       {hasShape ? (
         <section className="style-tab__group">
@@ -297,29 +169,55 @@ export function StyleTab({
         {/* A stroke has no fill, so the background row would be a control that
             cannot do anything (ADR-0051 §1). */}
         {isLink ? null : (
-          <label className="style-tab__row">
-            <span>Background</span>
-            <select
-              data-testid="style-surface"
-              value={current.surface ?? ""}
-              disabled={!canEdit}
-              onChange={(event) => {
-                const value = event.target.value;
-                update({
-                  ...current,
-                  surface: value === "" ? undefined : (value as StyleColourRole | "none"),
-                });
-              }}
-            >
-              <option value="">{inheritLabel("colour")}</option>
-              <option value="none">Seamless</option>
-              {styleColourRoles.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabel(role)}
-                </option>
+          <div className="style-tab__row" data-testid="style-swatches">
+            <span>Fill</span>
+            <div className="style-tab__swatches">
+              <button
+                type="button"
+                className="style-swatch"
+                data-testid="style-swatch-default"
+                data-checked={
+                  current.swatch === undefined && current.surface === undefined ? "true" : undefined
+                }
+                disabled={!canEdit}
+                title="Theme default"
+                onClick={() => update({ ...current, swatch: undefined, surface: undefined })}
+              >
+                Default
+              </button>
+              <button
+                type="button"
+                className="style-swatch"
+                data-testid="style-swatch-none"
+                data-checked={current.surface === "none" ? "true" : undefined}
+                disabled={!canEdit}
+                title="No fill"
+                onClick={() => update({ ...current, swatch: undefined, surface: "none" })}
+              >
+                None
+              </button>
+              {palette.map((swatch) => (
+                <button
+                  key={swatch.id}
+                  type="button"
+                  className="style-swatch"
+                  data-testid={`style-swatch-${swatch.id}`}
+                  data-checked={current.swatch === swatch.id ? "true" : undefined}
+                  disabled={!canEdit}
+                  title={swatch.name}
+                  aria-label={swatch.name}
+                  onClick={() => update({ ...current, swatch: swatch.id })}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="style-swatch__dot"
+                    style={{ backgroundColor: swatch[mode] }}
+                  />
+                  {swatch.name}
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
         )}
         <label className="style-tab__row">
           <span>{isLink ? "Stroke" : "Text"}</span>
@@ -332,7 +230,7 @@ export function StyleTab({
               update({ ...current, ink: value === "" ? undefined : (value as StyleColourRole) });
             }}
           >
-            <option value="">{inheritLabel("ink")}</option>
+            <option value="">Default</option>
             {styleColourRoles.map((role) => (
               <option key={role} value={role}>
                 {roleLabel(role)}
@@ -484,15 +382,22 @@ export function StyleTab({
         </label>
       </section>
 
-      {promotable ? (
+      {kind === "card" && typeId !== null ? (
         <button
           type="button"
           className="style-tab__promote"
-          data-testid="style-promote"
-          disabled={!canEdit}
-          onClick={() => setPromoteOpen(true)}
+          data-testid="style-make-default"
+          disabled={!canEdit || style === undefined}
+          title={
+            typeStyle === undefined
+              ? "New cards of this type will start with this style."
+              : "New cards of this type will start with this style. Cards with their own style keep it."
+          }
+          onClick={makeTypeDefault}
         >
-          Apply to every {typeName ?? "card of this type"}…
+          {typeStyle === undefined
+            ? `Make this the default for ${typeName ?? "this type"} cards`
+            : `Replace the default for ${typeName ?? "this type"} cards`}
         </button>
       ) : null}
 
@@ -505,21 +410,6 @@ export function StyleTab({
       >
         Reset style
       </button>
-
-      {promoteOpen ? (
-        <Dialog
-          title={`Apply to every ${typeName ?? "card of this type"}?`}
-          description={
-            promotionCount === 0
-              ? "Every card of this type already has a style of its own, so this rule would change none of them. It still records the intent for new cards."
-              : `This sets a rule for ${promotionCount} ${
-                  promotionCount === 1 ? "card" : "cards"
-                } of this type. Cards with a style of their own keep it — a card beats a rule.`
-          }
-          onClose={() => setPromoteOpen(false)}
-          actions={[{ label: "Apply", primary: true, onSelect: promote }]}
-        />
-      ) : null}
     </div>
   );
 }

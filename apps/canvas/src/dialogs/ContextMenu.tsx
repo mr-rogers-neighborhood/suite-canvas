@@ -9,6 +9,10 @@ export interface ContextMenuItem {
   danger?: boolean;
   /** Nested menu, e.g. the "Position" submenu. */
   items?: ContextMenuItem[];
+  /** A colour dot beside the label, for the palette quick-picks. */
+  swatch?: { light: string; dark: string } | undefined;
+  /** Marks the swatch this surface already wears. */
+  swatchSelected?: boolean | undefined;
 }
 
 export interface ContextMenuProps {
@@ -101,7 +105,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
                         onClose();
                       }}
                     >
-                      {subItem.label}
+                      <SwatchLabel item={subItem} />
                     </button>
                   ))}
                 </div>
@@ -113,17 +117,49 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               type="button"
               role="menuitem"
               className={itemClass(item.danger)}
+              data-swatch-selected={item.swatchSelected ? "true" : undefined}
               onClick={() => {
                 item.onSelect?.();
                 onClose();
               }}
             >
-              {item.label}
+              <SwatchLabel item={item} />
             </button>
           ),
         )}
       </div>
     </>,
     document.body,
+  );
+}
+
+/**
+ * A palette quick-pick: the colour, then its name.
+ *
+ * The dot carries both modes as a custom property so the same item reads
+ * correctly in light and dark without the menu having to know which is on.
+ */
+function SwatchLabel({ item }: { item: ContextMenuItem }) {
+  if (!item.swatch) return <>{item.label}</>;
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="h-3 w-3 shrink-0 rounded-full border border-[var(--hairline)]"
+          style={
+            {
+              "--swatch-light": item.swatch.light,
+              "--swatch-dark": item.swatch.dark,
+              backgroundColor: "var(--swatch-light)",
+            } as React.CSSProperties
+          }
+        />
+        <span className="truncate">{item.label}</span>
+      </span>
+      <span aria-hidden="true" className="text-xs opacity-60">
+        {item.swatchSelected ? "\u2713" : ""}
+      </span>
+    </>
   );
 }

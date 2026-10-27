@@ -4,7 +4,7 @@ import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/interactions/multiSelect";
 import { NodeConnectors } from "../canvas/NodeConnectors";
-import { surfacePaintFor, useSurfaceRules } from "../canvas/rules";
+import { paintSurface, useSurfacePaint } from "../canvas/surfaceContext";
 import type { PresenceUser } from "../collab/presence";
 import { countRender } from "../dev/perf";
 import { ContextMenu, type ContextMenuItem } from "../dialogs/ContextMenu";
@@ -244,15 +244,14 @@ export function NodeCard({
           : {};
 
   /**
-   * The card's paint: its own style over the rules that match its type, resolved
-   * with the contrast floor (ADR-0046 §3–6). A card nothing names passes nothing
-   * here, so the default chrome is unchanged.
+   * The card's paint: its type's style, then its own over that, then the contrast
+   * floor. Those two levels are the whole ladder. A card nothing names passes
+   * nothing here, so the default chrome is unchanged.
    */
-  const surfaceRules = useSurfaceRules();
+  const surfacePaint = useSurfacePaint();
   const cardPaint = useMemo(
-    () =>
-      surfacePaintFor(card.style, { surface: "card", typeId: card.primaryTypeId }, surfaceRules),
-    [card.style, card.primaryTypeId, surfaceRules],
+    () => paintSurface(card.style, type.style, { surface: "card" }, surfacePaint),
+    [card.style, type.style, surfacePaint],
   );
   const { paint, corrections } = cardPaint;
   const painted = Object.keys(paint).length > 0;

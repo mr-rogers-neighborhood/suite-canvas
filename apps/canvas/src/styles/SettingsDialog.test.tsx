@@ -123,21 +123,25 @@ describe("settings", () => {
   });
 });
 
-describe("the workspace palette mirror", () => {
-  it("names the scope and the roles rather than offering a second editor", () => {
+describe("the workspace palette", () => {
+  it("edits the colours every surface can wear, in one list", () => {
+    render(<SettingsDialog onClose={() => {}} />);
+
+    expect(screen.getByTestId("palette-editor")).toHaveTextContent("Palette");
+    // The defaults are there before anyone has written one.
+    expect(screen.getAllByTestId("palette-row").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("palette-light-slate")).toHaveValue("#64748b");
+    expect(screen.getByTestId("palette-dark-slate")).toHaveValue("#94a3b8");
+  });
+
+  it("writes a colour to the document, so collaborators get it", () => {
     const workspace = useCanvasStore.getState().workspace;
-    workspace.setWorkspaceTheme(null);
     render(<SettingsDialog onClose={() => {}} />);
 
-    expect(screen.getByTestId("appearance-workspace-theme")).toHaveTextContent("Built-in palette");
-    expect(screen.queryByTestId("workspace-theme-light-surface")).toBeNull();
+    fireEvent.change(screen.getByTestId("palette-light-slate"), {
+      target: { value: "#123456" },
+    });
 
-    workspace.setWorkspaceTheme({ light: { surface: "#fdf6e3", ink: "#201c14" }, dark: {} });
-    cleanup();
-    render(<SettingsDialog onClose={() => {}} />);
-    expect(screen.getByTestId("appearance-workspace-theme")).toHaveTextContent(
-      "2 role(s) set here, light mode",
-    );
-    workspace.setWorkspaceTheme(null);
+    expect(workspace.palette().find((entry) => entry.id === "slate")?.light).toBe("#123456");
   });
 });

@@ -1,7 +1,6 @@
-import { resolveSurfaceStyle, sectionForCard, sectionMembership } from "@suite/graph";
+import { sectionForCard, sectionMembership } from "@suite/graph";
 import { useCallback, useMemo } from "react";
 import { outlineRows } from "../canvas/outlineTree";
-import { surfacePaintVars } from "../canvas/surfacePaint";
 import { sectionPath } from "../cards/cardWhere";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { UNSORTED_SECTION } from "../library/libraryFilters";
@@ -13,16 +12,10 @@ export function useBoardDerivations(args: {
 }) {
   const { snapshot, activeBoardId } = args;
   const activeBoardName = snapshot.boards.find((board) => board.id === activeBoardId)?.name ?? null;
-  // The canvas behind the cards is a surface of its own (ADR-0051 §1), so the
-  // board's style paints it. React Flow's own layer reads --xy-background-color,
-  // which is what lets the paint reach it without the canvas knowing about styles.
-  const boardPaint = useMemo((): Record<string, string> => {
-    const board = snapshot.boards.find((entry) => entry.id === activeBoardId);
-    if (!board?.style) return {};
-    const paint = surfacePaintVars(resolveSurfaceStyle(board.style, "board"));
-    return { ...paint, "--xy-background-color": "var(--paint-surface)" };
-  }, [snapshot.boards, activeBoardId]);
-  const boardPainted = Object.keys(boardPaint).length > 0;
+  // A board is painted by the theme. It used to carry a SurfaceStyle of its own,
+  // which was one more place to say "this canvas is dark".
+  const boardPaint: Record<string, string> = {};
+  const boardPainted = false;
   const boardSections = useMemo(
     () =>
       activeBoardId ? snapshot.sections.filter((section) => section.boardId === activeBoardId) : [],

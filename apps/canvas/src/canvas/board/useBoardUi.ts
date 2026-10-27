@@ -6,7 +6,7 @@ import { useCanvasStore } from "../../store/useCanvasStore";
 import { useUiStore } from "../../store/useUiStore";
 import { useWorkspaceSnapshot } from "../../store/workspaceStore";
 import { useAppearanceStore } from "../../theme/useAppearanceStore";
-import { useSurfaceRules } from "../rules";
+import { useSurfacePaint } from "../surfaceContext";
 import { useCanvasLens, useLensReferenceRepair } from "../useCanvasLens";
 
 /**
@@ -53,11 +53,12 @@ export function useBoardUi() {
   const stopEditing = useUiStore((state) => state.stopEditing);
   const contextMenu = useUiStore((state) => state.contextMenu);
 
-  // The reader's default radius, the rung a card falls back to when its own style and the
-  // workspace rules name none. Read here so a link anchor can resolve the same number the
-  // card face paints with.
+  // The reader's default radius, the rung a card falls back to when neither its type
+  // nor its own style names one. Read here so a link anchor resolves the same number
+  // the card face paints with.
   const readerRadius = useAppearanceStore((state) => state.appearance.radius);
-  const surfaceRules = useSurfaceRules();
+  const surfacePaint = useSurfacePaint();
+  const openAppearance = useUiStore((state) => state.openAppearance);
   const canEditContent = useUiStore((state) => state.canEditContent);
   const canEditLayout = useUiStore((state) => state.canEditLayout);
   const canCreateContent = useUiStore((state) => state.canCreateContent);
@@ -121,7 +122,9 @@ export function useBoardUi() {
     stopEditing,
     contextMenu,
     readerRadius,
-    surfaceRules,
+    surfacePaint,
+    palette: surfacePaint.palette,
+    openAppearance,
     canEditContent,
     canEditLayout,
     canCreateContent,

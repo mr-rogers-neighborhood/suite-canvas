@@ -1,4 +1,4 @@
-import type { StyleRule, WorkspaceDocument } from "@suite/graph";
+import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
 import { lazy, Suspense } from "react";
 import { SignInEntry } from "../auth/SignInEntry";
@@ -7,7 +7,8 @@ import { CanvasBoard } from "../canvas/CanvasBoard";
 import type { CanvasMode } from "../canvas/links/linkGesture";
 import type { PlacementSource } from "../canvas/placementRun";
 import { usePlacementRunStore } from "../canvas/placementRun";
-import { type SurfacePalette, SurfaceRulesContext } from "../canvas/rules";
+import type { SurfacePalette } from "../canvas/rules";
+import { SurfacePaintProvider } from "../canvas/surfaceContext";
 import { CardFocusHost } from "../cards/CardFocusHost";
 import { CardInspectorHost } from "../cards/CardInspectorHost";
 import { TourOverlayHost } from "../cards/TourOverlayHost";
@@ -33,6 +34,7 @@ import { LoadingPlaceholder } from "../shell/LoadingPlaceholder";
 import type { useCanvasStore } from "../store/useCanvasStore";
 import type { LibraryTab } from "../store/useUiStore";
 import { useUiStore } from "../store/useUiStore";
+import { AppearanceHost } from "./AppearanceHost";
 import { BlueprintInstallHost } from "./BlueprintInstallHost";
 import { HistoryPanelHost } from "./HistoryPanelHost";
 import { documentLabel } from "./workspacePaint";
@@ -45,11 +47,6 @@ type CanvasState = ReturnType<typeof useCanvasStore.getState>;
  * relay clients. Loading them on demand keeps `/api` out of the standalone
  * build's app chunk entirely, rather than relying on a runtime guard.
  */
-const StylesDialog = lazy(async () => {
-  const module = await import("../styles/StylesDialog");
-  return { default: module.StylesDialog };
-});
-
 const WorkspaceActions = lazy(async () => {
   const module = await import("../chrome/WorkspaceActions");
   return { default: module.WorkspaceActions };
@@ -73,10 +70,10 @@ export interface WorkspaceShellViewProps {
   synced: boolean;
   leaving: boolean;
   leavingPrompt: boolean;
-  shellPaint: { fields: string; vars: Record<string, string> };
-  shellRegionVars: Record<string, string>;
-  paintedShellRegions: string;
-  surfaceRules: { rules: StyleRule[]; palette: SurfacePalette };
+  /** The workspace palette and the live role colours, for every surface painter. */
+  palette: readonly PaletteSwatch[];
+  roles: SurfacePalette;
+  mode: "light" | "dark";
   requestLeave: () => void;
   setPaletteOpen: UiState["setPaletteOpen"];
   standalone: boolean;
@@ -177,10 +174,9 @@ export function WorkspaceShellView({
   synced,
   leaving,
   leavingPrompt,
-  shellPaint,
-  shellRegionVars,
-  paintedShellRegions,
-  surfaceRules,
+  palette,
+  roles,
+  mode,
   requestLeave,
   setPaletteOpen,
   standalone,
@@ -233,7 +229,6 @@ export function WorkspaceShellView({
   createSection,
   createBoardPortal,
   openTypeSettings,
-  stylesOpen,
   paletteItems,
   unplaced,
   trashed,
@@ -274,17 +269,12 @@ export function WorkspaceShellView({
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
   return (
-    <SurfaceRulesContext.Provider value={surfaceRules}>
+    <SurfacePaintProvider.Provider value={{ palette, roles, mode }}>
       <div
         ref={shellRef}
         className="app-canvas flex h-screen w-screen flex-col"
         data-ready={ready && synced}
         data-leaving={leaving ? "true" : undefined}
-        // The shell's own paint: present only when the workspace names a style,
-        // so an unstyled workspace renders exactly as it did before the rules.
-        data-shell-paint={shellPaint.fields || undefined}
-        data-shell-regions={paintedShellRegions || undefined}
-        style={{ ...shellPaint.vars, ...shellRegionVars } as CSSProperties}
       >
         <TitleBar
           onNavigateHome={requestLeave}
@@ -494,6 +484,7 @@ export function WorkspaceShellView({
           ) : null}
           <BoardOutlineHost />
           <CardInspectorHost />
+          <AppearanceHost />
           <CardFocusHost />
           <TourOverlayHost />
           {/* Restoring writes a change, so history belongs to a session that may
@@ -522,16 +513,6 @@ export function WorkspaceShellView({
         ) : null}
 
         {workspaceSurface && canManageSchema ? <TypeSettingsHost /> : null}
-
-        {/*
-          The rule list is a view of the document, not a mode: it opens over the board and closes on
-          Escape, like the type settings it sits beside.
-        */}
-        {workspaceSurface && canManageSchema && stylesOpen ? (
-          <Suspense fallback={<LoadingPlaceholder label="Loading the rule editor" />}>
-            <StylesDialog open canEdit onClose={() => setStylesOpen(false)} />
-          </Suspense>
-        ) : null}
 
         {workspaceSurface ? <CommandPaletteHost items={paletteItems} /> : null}
 
@@ -631,6 +612,6 @@ export function WorkspaceShellView({
         <FeedbackHost />
         <PerfOverlay />
       </div>
-    </SurfaceRulesContext.Provider>
+    </SurfacePaintProvider.Provider>
   );
 }

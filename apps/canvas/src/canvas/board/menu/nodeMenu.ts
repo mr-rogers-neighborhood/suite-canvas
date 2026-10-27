@@ -1,6 +1,7 @@
 import { portalTargetId } from "../../../cards/portal";
 import type { ContextMenuItem } from "../../../dialogs/ContextMenu";
 import { selectionSummary } from "../../interactions/multiSelect";
+import { appearanceBranch } from "./appearanceMenu";
 import type { BoardMenuContext } from "./types";
 
 export function selectionMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null {
@@ -149,7 +150,23 @@ export function nodeMenuBranch(ctx: BoardMenuContext): ContextMenuItem[] | null 
   const nodeId = menu.nodeId;
   const moveTargets = otherBoards(activeBoardId);
   const portalTarget = nodeId ? portalTargetId(cardsById.get(nodeId)) : null;
+  const card = nodeId ? cardsById.get(nodeId) : undefined;
   return [
+    ...(nodeId
+      ? appearanceBranch({
+          palette: ctx.palette,
+          style: card?.style,
+          at: { x: menu.x, y: menu.y },
+          canEdit: canEditLayout,
+          target: { kind: "card", id: nodeId },
+          onSetSwatch: (swatch) =>
+            workspace.setCardStyle(nodeId, {
+              ...(card?.style ?? {}),
+              ...(swatch === null ? { swatch: undefined } : { swatch }),
+            }),
+          onOpenPanel: ctx.openAppearance,
+        })
+      : []),
     ...(nodeId && portalTarget
       ? [
           {

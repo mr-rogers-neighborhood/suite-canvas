@@ -7,6 +7,7 @@ import { DisplayStyleDialog } from "../dialogs/DisplayStyleDialog";
 import { useFocusTrap } from "../dialogs/useFocusTrap";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useCards } from "../store/workspaceStore";
+import { StyleTab } from "../styles/surface/StyleTab";
 
 export interface TypeSettingsDialogProps {
   types: CardType[];
@@ -394,6 +395,18 @@ export function TypeSettingsDialog({
                     The template is a card: edit it like any other, with the slash menu for
                     properties. Use {"{{Field}}"} in a plain title to fill a value in.
                   </p>
+                </div>
+
+                {/*
+                  The type is where a card's look starts. The same editor the
+                  inspector mounts, so "every Concept is a pill" is one place to
+                  say it and it stays true for cards made later.
+                */}
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+                  Appearance
+                </p>
+                <div className="mb-4 rounded-lg border border-[var(--hairline)] p-2">
+                  <StyleTab kind="type" id={selected.id} canEdit typeName={selected.name} />
                 </div>
 
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">

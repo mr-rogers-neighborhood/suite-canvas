@@ -1,10 +1,18 @@
-import { DEFAULT_PALETTE, type PaletteSwatch, type SurfaceStyle, swatchColour } from "@suite/graph";
+import {
+  DEFAULT_PALETTE,
+  type PaletteSwatch,
+  type StyleColourRole,
+  type SurfaceStyle,
+  swatchColour,
+  swatchInk,
+} from "@suite/graph";
 import { createContext, useContext } from "react";
 import {
   type ContrastCorrection,
   readPalette,
   type SurfacePalette,
   type SurfaceSubject,
+  type SwatchPaint,
   surfacePaintFor,
 } from "./rules";
 
@@ -35,14 +43,21 @@ export function useSurfacePaint(): SurfacePaintContextValue {
 }
 
 /**
- * The colour a style's swatch resolves to on this screen, or null when the style
- * names no swatch, or names one the palette no longer holds.
+ * The swatch a style names, resolved for this screen: its colour and the ink that
+ * was chosen to read on it.
+ *
+ * Both come from the palette rather than from the style, because the ink is a
+ * property of the colour, not of the thing wearing it. A style that names an ink
+ * of its own still wins.
  */
-export function swatchColourOf(
+export function swatchOf(
   style: SurfaceStyle | undefined,
   context: SurfacePaintContextValue,
-): string | null {
-  return swatchColour(context.palette, style?.swatch, context.mode);
+): SwatchPaint | null {
+  const colour = swatchColour(context.palette, style?.swatch, context.mode);
+  if (colour === null) return null;
+  const ink: StyleColourRole = swatchInk(context.palette, style?.swatch, context.mode) ?? "ink";
+  return { colour, ink };
 }
 
 export interface SurfacePainted {
@@ -61,7 +76,7 @@ export function paintSurface(
   subject: SurfaceSubject,
   context: SurfacePaintContextValue,
 ): SurfacePainted {
-  const swatch = swatchColourOf(own, context) ?? swatchColourOf(inherited, context);
+  const swatch = swatchOf(own, context) ?? swatchOf(inherited, context);
   return surfacePaintFor(own, inherited, subject, context.roles, swatch);
 }
 

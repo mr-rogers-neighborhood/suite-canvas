@@ -58,9 +58,33 @@ describe("two levels", () => {
   });
 
   it("should paint a swatch with the colour the reader chose, not the role", () => {
-    const painted = surfacePaintFor({ swatch: "blue" }, typeStyle, card, {}, "#3b82f6");
+    const painted = surfacePaintFor(
+      { swatch: "blue" },
+      typeStyle,
+      card,
+      {},
+      {
+        colour: "#3b82f6",
+        ink: "ink",
+      },
+    );
 
     expect(painted.paint["--paint-surface"]).toBe("#3b82f6");
+  });
+
+  it("should take the swatch's ink, and leave a style that names its own alone", () => {
+    const palette: SurfacePalette = { ink: "#1d1d1f", "surface-strong": "#ffffff" };
+    const inherited = surfacePaintFor({}, undefined, card, palette, {
+      colour: "#3b82f6",
+      ink: "surface-strong",
+    });
+    expect(inherited.paint["--paint-ink"]).toBe("var(--surface-strong)");
+
+    const own = surfacePaintFor({ ink: "ink" }, undefined, card, palette, {
+      colour: "#3b82f6",
+      ink: "surface-strong",
+    });
+    expect(own.paint["--paint-ink"]).toBe("var(--ink)");
   });
 });
 
@@ -117,7 +141,7 @@ describe("the contrast floor", () => {
       undefined,
       card,
       palette,
-      "#fefefe",
+      { colour: "#fefefe", ink: "surface-strong" },
     );
 
     expect(resolved.corrections).toHaveLength(1);

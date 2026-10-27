@@ -285,13 +285,17 @@ export type {
   SurfaceStyle,
 } from "./style.js";
 export {
+  CONTRAST_FLOOR,
   clampStyle,
+  contrastRatio,
   DEFAULT_PALETTE,
   defaultEdgeFlow,
   edgeStyleSchema,
+  INK_CANDIDATES,
   isEmptyStyle,
   OPACITY_FLOOR,
   paletteSwatchSchema,
+  pickInk,
   resolveSurfaceStyle,
   sideEdgeStyle,
   styleColourRoles,
@@ -301,6 +305,7 @@ export {
   styleSides,
   surfaceStyleSchema,
   swatchColour,
+  swatchInk,
   TEXT_SCALE_MAX,
   TEXT_SCALE_MIN,
 } from "./style.js";

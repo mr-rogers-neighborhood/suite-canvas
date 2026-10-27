@@ -82,6 +82,77 @@ export interface SurfaceSides {
 }
 
 /**
+ * WCAG relative luminance for a hex colour, or null when it is not one the eye can
+ * be measured against (an `rgba()`, a `color-mix()`).
+ */
+function luminance(colour: string): number | null {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim());
+  const digits = match?.[1];
+  if (!digits) return null;
+  const full =
+    digits.length === 3
+      ? digits
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : digits;
+  const channel = (offset: number): number => {
+    const value = Number.parseInt(full.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+/** The contrast between two colours, or null when either is not a hex value. */
+export function contrastRatio(background: string, ink: string): number | null {
+  const a = luminance(background);
+  const b = luminance(ink);
+  if (a === null || b === null) return null;
+  const [high, low] = a >= b ? [a, b] : [b, a];
+  return (high + 0.05) / (low + 0.05);
+}
+
+/**
+ * The ratio every painted pair has to clear: WCAG's for large text and graphical
+ * objects. Below it a reader is being asked to read something they cannot.
+ */
+export const CONTRAST_FLOOR = 3;
+
+/**
+ * The ink a colour can carry, from the roles a theme defines.
+ *
+ * Preference order, not highest ratio: a reader expects text to be `ink`, so the
+ * first candidate that clears the floor wins and a 19:1 pairing the theme never
+ * intends does not beat a sensible one. When nothing clears it, the best
+ * available is returned with its ratio, so the caller can say so rather than
+ * pretend.
+ */
+export const INK_CANDIDATES: readonly StyleColourRole[] = [
+  "ink",
+  "surface-strong",
+  "canvas",
+  "surface",
+  "ink-muted",
+  "accent",
+];
+
+export function pickInk(
+  colour: string,
+  roles: Readonly<Partial<Record<StyleColourRole, string>>>,
+): { ink: StyleColourRole; ratio: number } | null {
+  let best: { ink: StyleColourRole; ratio: number } | null = null;
+  for (const candidate of INK_CANDIDATES) {
+    const value = roles[candidate];
+    if (!value) continue;
+    const ratio = contrastRatio(colour, value);
+    if (ratio === null) continue;
+    if (ratio >= CONTRAST_FLOOR) return { ink: candidate, ratio };
+    if (best === null || ratio > best.ratio) best = { ink: candidate, ratio };
+  }
+  return best;
+}
+
+/**
  * One entry in the workspace palette: a name the reader wrote, and the colour it
  * resolves to in each mode.
  *
@@ -95,6 +166,13 @@ export const paletteSwatchSchema = z.object({
   name: z.string().min(1).max(40),
   light: z.string().min(1).max(120),
   dark: z.string().min(1).max(120),
+  /**
+   * The ink that reads on this colour, per mode. Stored beside the colour rather
+   * than derived at paint time: the theme's values can move, and a swatch whose
+   * ink was chosen against last year's palette is still the ink its author saw.
+   */
+  inkLight: z.enum(styleColourRoles),
+  inkDark: z.enum(styleColourRoles),
 });
 export type PaletteSwatch = z.infer<typeof paletteSwatchSchema>;
 
@@ -104,12 +182,54 @@ export type PaletteSwatch = z.infer<typeof paletteSwatchSchema>;
  * Settings still has something to click.
  */
 export const DEFAULT_PALETTE: readonly PaletteSwatch[] = [
-  { id: "slate", name: "Slate", light: "#64748b", dark: "#94a3b8" },
-  { id: "blue", name: "Blue", light: "#3b82f6", dark: "#60a5fa" },
-  { id: "green", name: "Green", light: "#10b981", dark: "#34d399" },
-  { id: "amber", name: "Amber", light: "#f59e0b", dark: "#fbbf24" },
-  { id: "rose", name: "Rose", light: "#f43f5e", dark: "#fb7185" },
-  { id: "violet", name: "Violet", light: "#8b5cf6", dark: "#a78bfa" },
+  {
+    id: "slate",
+    name: "Slate",
+    light: "#64748b",
+    dark: "#94a3b8",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
+  {
+    id: "blue",
+    name: "Blue",
+    light: "#3b82f6",
+    dark: "#60a5fa",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
+  {
+    id: "green",
+    name: "Green",
+    light: "#10b981",
+    dark: "#34d399",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
+  {
+    id: "amber",
+    name: "Amber",
+    light: "#f59e0b",
+    dark: "#fbbf24",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
+  {
+    id: "rose",
+    name: "Rose",
+    light: "#f43f5e",
+    dark: "#fb7185",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
+  {
+    id: "violet",
+    name: "Violet",
+    light: "#8b5cf6",
+    dark: "#a78bfa",
+    inkLight: "ink",
+    inkDark: "surface-strong",
+  },
 ];
 
 /** The colour a swatch resolves to in one mode, or null when the id names nothing. */
@@ -121,6 +241,17 @@ export function swatchColour(
   if (!id) return null;
   const swatch = palette.find((entry) => entry.id === id);
   return swatch ? swatch[mode] : null;
+}
+
+/** The ink that reads on a swatch in one mode, or null when the id names nothing. */
+export function swatchInk(
+  palette: readonly PaletteSwatch[],
+  id: string | undefined,
+  mode: "light" | "dark",
+): StyleColourRole | null {
+  if (!id) return null;
+  const swatch = palette.find((entry) => entry.id === id);
+  return swatch ? (mode === "dark" ? swatch.inkDark : swatch.inkLight) : null;
 }
 
 export const surfaceStyleSchema = z.object({

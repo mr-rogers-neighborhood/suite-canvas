@@ -183,10 +183,26 @@ describe("the workspace palette", () => {
 
   it("stores a swatch with a value for each mode, and restores defaults when cleared", () => {
     const { doc } = workspace();
-    doc.setPalette([{ id: "ink-blue", name: "Ink blue", light: "#1d4ed8", dark: "#93c5fd" }]);
+    doc.setPalette([
+      {
+        id: "ink-blue",
+        name: "Ink blue",
+        light: "#1d4ed8",
+        dark: "#93c5fd",
+        inkLight: "surface-strong",
+        inkDark: "surface-strong",
+      },
+    ]);
 
     expect(doc.palette()).toEqual([
-      { id: "ink-blue", name: "Ink blue", light: "#1d4ed8", dark: "#93c5fd" },
+      {
+        id: "ink-blue",
+        name: "Ink blue",
+        light: "#1d4ed8",
+        dark: "#93c5fd",
+        inkLight: "surface-strong",
+        inkDark: "surface-strong",
+      },
     ]);
 
     doc.setPalette([]);
@@ -196,6 +212,13 @@ describe("the workspace palette", () => {
   it("refuses a swatch with no dark value, rather than inventing one", () => {
     const { doc } = workspace();
     expect(() => doc.setPalette([{ id: "a", name: "A", light: "#ffffff" } as never])).toThrow();
+  });
+
+  it("refuses a swatch with no ink, so a colour can never arrive unreadable", () => {
+    const { doc } = workspace();
+    expect(() =>
+      doc.setPalette([{ id: "a", name: "A", light: "#ffffff", dark: "#000000" } as never]),
+    ).toThrow();
   });
 
   it("carries the swatch on a card and on a type", () => {

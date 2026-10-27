@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTRAST_FLOOR,
   clampStyle,
   defaultEdgeFlow,
   isEmptyStyle,
   OPACITY_FLOOR,
+  pickInk,
   resolveSurfaceStyle,
   surfaceStyleSchema,
   TEXT_SCALE_MAX,
@@ -64,5 +66,39 @@ describe("surface styles", () => {
     );
     expect(resolved.sides.top?.paint).toBe("dotted");
     expect(resolved.sides.left).toBeUndefined();
+  });
+});
+
+describe("the ink a colour can carry", () => {
+  const LIGHT = {
+    canvas: "#f5f5f7",
+    surface: "#ffffff",
+    "surface-strong": "#ffffff",
+    ink: "#1d1d1f",
+    "ink-muted": "#68686d",
+    accent: "#0a84ff",
+  };
+
+  it("picks the first candidate that clears the floor", () => {
+    // A saturated blue carries the theme's own ink comfortably.
+    expect(pickInk("#3b82f6", LIGHT)).toEqual({ ink: "ink", ratio: expect.any(Number) });
+    expect(pickInk("#3b82f6", LIGHT)?.ratio).toBeGreaterThanOrEqual(CONTRAST_FLOOR);
+  });
+
+  it("reaches past the ink when the colour is too dark for it", () => {
+    // Near-black on near-black: the first readable candidate is a light one.
+    const picked = pickInk("#141414", LIGHT);
+    expect(picked?.ratio).toBeGreaterThanOrEqual(CONTRAST_FLOOR);
+    expect(picked?.ink).not.toBe("ink");
+  });
+
+  it("reports the best it can find when nothing clears the floor", () => {
+    const grey = pickInk("#808080", { ink: "#7d7d7d", "ink-muted": "#828282" });
+    expect(grey?.ratio).toBeLessThan(CONTRAST_FLOOR);
+  });
+
+  it("says nothing at all when there is no palette to measure", () => {
+    expect(pickInk("#3b82f6", {})).toBeNull();
+    expect(pickInk("rgba(0, 0, 0, 0.2)", LIGHT)).toBeNull();
   });
 });

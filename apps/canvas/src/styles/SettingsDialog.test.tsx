@@ -129,16 +129,20 @@ describe("the workspace palette", () => {
 
     expect(screen.getByTestId("palette-editor")).toHaveTextContent("Palette");
     // The defaults are there before anyone has written one.
-    expect(screen.getAllByTestId("palette-row").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("palette-light-slate")).toHaveValue("#64748b");
-    expect(screen.getByTestId("palette-dark-slate")).toHaveValue("#94a3b8");
+    expect(screen.getByTestId("palette-name-slate")).toHaveValue("Slate");
+    expect(screen.getByTestId("palette-hex-light-slate")).toHaveValue("#64748b");
+    expect(screen.getByTestId("palette-hex-dark-slate")).toHaveValue("#94a3b8");
+    // The ink was chosen with the colour and travels with it. A test document
+    // has no token layer to measure against, so the ratio is absent here; the
+    // ratio itself is covered by `pickInk` in the graph package.
+    expect(screen.getByTestId("palette-ink-light-slate")).toHaveTextContent("ink");
   });
 
   it("writes a colour to the document, so collaborators get it", () => {
     const workspace = useCanvasStore.getState().workspace;
     render(<SettingsDialog onClose={() => {}} />);
 
-    fireEvent.change(screen.getByTestId("palette-light-slate"), {
+    fireEvent.change(screen.getByTestId("palette-hex-light-slate"), {
       target: { value: "#123456" },
     });
 

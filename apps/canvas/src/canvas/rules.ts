@@ -1,4 +1,7 @@
 import {
+  CONTRAST_FLOOR,
+  contrastRatio,
+  INK_CANDIDATES,
   type ResolvedSurfaceStyle,
   resolveSurfaceStyle,
   type StyleColourRole,
@@ -18,13 +21,7 @@ import { colourRoleVar, surfacePaintVars } from "./surfacePaint";
  * the same: this card, or every card of this type.
  */
 
-/**
- * The readability floor (ADR-0046 §6).
- * WCAG's ratio for large text and graphical objects. A pair below it is corrected
- * and reported, never applied silently. It lives here rather than in `@suite/graph`
- * because only the resolver reads it.
- */
-export const CONTRAST_FLOOR = 3;
+export { CONTRAST_FLOOR, contrastRatio };
 
 /** The surface a style is resolved for. */
 export interface SurfaceSubject {
@@ -87,83 +84,30 @@ export function mergeSurfaceStyle(base: SurfaceStyle, override: SurfaceStyle): S
   return merged;
 }
 
-function parseHex(colour: string): [number, number, number] | null {
-  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim());
-  const digits = match?.[1];
-  if (!digits) return null;
-  const full =
-    digits.length === 3
-      ? digits
-          .split("")
-          .map((digit) => digit + digit)
-          .join("")
-      : digits;
-  return [
-    Number.parseInt(full.slice(0, 2), 16),
-    Number.parseInt(full.slice(2, 4), 16),
-    Number.parseInt(full.slice(4, 6), 16),
-  ];
-}
-
-function channelLuminance(channel: number): number {
-  const value = channel / 255;
-  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-}
-
-function relativeLuminance([red, green, blue]: [number, number, number]): number {
-  return (
-    0.2126 * channelLuminance(red) +
-    0.7152 * channelLuminance(green) +
-    0.0722 * channelLuminance(blue)
-  );
+/** A swatch resolved for one mode: the colour, and the ink chosen when it was saved. */
+export interface SwatchPaint {
+  colour: string;
+  ink: StyleColourRole;
 }
 
 /**
- * WCAG contrast between two hex colours, or null when either is not a hex value
- * the guard can read (a token may be an `rgba()` or a `color-mix()`).
- */
-export function contrastRatio(background: string, ink: string): number | null {
-  const backgroundRgb = parseHex(background);
-  const inkRgb = parseHex(ink);
-  if (!backgroundRgb || !inkRgb) return null;
-  const light = relativeLuminance(backgroundRgb);
-  const dark = relativeLuminance(inkRgb);
-  const [high, low] = light >= dark ? [light, dark] : [dark, light];
-  return (high + 0.05) / (low + 0.05);
-}
-
-/** Ink candidates in the order the floor prefers them. */
-const INK_CANDIDATES: readonly StyleColourRole[] = [
-  "ink",
-  "ink-muted",
-  "surface-strong",
-  "accent",
-  "canvas",
-  "surface",
-];
-
-/**
- * The ink that clears the floor on this surface, or the best available when no
- * role does (a theme can be low-contrast on purpose; the guard still reports it).
+ * The ink that clears the floor on this background, or the best available when no
+ * role does. A swatch that carried its own ink never reaches the correction path:
+ * the pair was chosen against this colour when the reader saved it.
  */
 export function floorInk(
   surface: StyleColourRole | "none",
   ink: StyleColourRole,
   palette: SurfacePalette,
-  swatch: string | null = null,
+  swatch: SwatchPaint | null = null,
 ): { ink: StyleColourRole; ratio: number; corrected: boolean } | null {
-  if (surface === "none") return null;
-  // A swatch is a colour the reader chose, so it is what the ink has to be read
-  // against. The role is the fallback, and neither being readable means there is
-  // nothing to measure.
-  const background = swatch ?? palette[surface];
+  if (surface === "none" && swatch === null) return null;
+  const background = swatch?.colour ?? (surface === "none" ? undefined : palette[surface]);
   if (!background) return null;
   // The pair itself first, so an already-legible combination is left untouched.
-  const currentRatio = palette[ink] ? contrastRatio(background, palette[ink]) : null;
-  if (currentRatio === null) return null;
-  if (currentRatio >= CONTRAST_FLOOR) {
-    return { ink, ratio: currentRatio, corrected: false };
-  }
+  const current = palette[ink] ? contrastRatio(background, palette[ink]) : null;
+  if (current === null) return null;
+  if (current >= CONTRAST_FLOOR) return { ink, ratio: current, corrected: false };
   let best: { ink: StyleColourRole; ratio: number } | null = null;
   for (const candidate of INK_CANDIDATES) {
     const colour = palette[candidate];
@@ -187,11 +131,14 @@ export function resolveSurfaceStyleFor(
   inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
   palette: SurfacePalette = {},
-  swatch: string | null = null,
+  swatch: SwatchPaint | null = null,
 ): RuleResolution {
   const combined = mergeSurfaceStyle(inherited ?? {}, own ?? {});
-
-  const resolved = resolveSurfaceStyle(combined, subject.surface);
+  const declared = resolveSurfaceStyle(combined, subject.surface);
+  // A swatch brings its own ink. A style that names an ink still wins, because a
+  // reader who overrode it meant to.
+  const resolved: ResolvedSurfaceStyle =
+    swatch !== null && combined.ink === undefined ? { ...declared, ink: swatch.ink } : declared;
   const corrections: ContrastCorrection[] = [];
   const floored = floorInk(resolved.surface, resolved.ink, palette, swatch);
   const finalStyle: ResolvedSurfaceStyle = floored?.corrected
@@ -225,12 +172,15 @@ export function surfacePaintFor(
   inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
   palette: SurfacePalette,
-  swatch: string | null = null,
+  swatch: SwatchPaint | null = null,
 ): { paint: Record<string, string>; corrections: ContrastCorrection[] } {
   if (!own && !inherited) return { paint: {}, corrections: [] };
   const resolved = resolveSurfaceStyleFor(own, inherited, subject, palette, swatch);
   if (!resolved.applied) return { paint: {}, corrections: [] };
-  return { paint: surfacePaintVars(resolved.style, swatch), corrections: resolved.corrections };
+  return {
+    paint: surfacePaintVars(resolved.style, swatch?.colour ?? null),
+    corrections: resolved.corrections,
+  };
 }
 
 /** `rgb(…)` or `rgba(…)` as `#rrggbb`, or null when it is neither or translucent. */

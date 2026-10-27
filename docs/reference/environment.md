@@ -153,6 +153,7 @@ every account path answers `503 auth-not-configured`.
 | `RESEND_API_KEY` | none | required by `SUITE_MAIL_TRANSPORT=resend` |
 | `SUITE_SMTP_URL` | none | required by `SUITE_MAIL_TRANSPORT=smtp`: `smtp://user:pass@host:587` or `smtps://host:465` |
 | `SUITE_SMTP_REQUIRE_TLS` | `1` | `0` accepts a relay with no StartTLS; only for a loopback or private network |
+| `SUITE_FEEDBACK_TO` | none | where the in-app feedback bubble sends; unset hides the bubble, because a form that cannot send is worse than none |
 | `SUITE_AUTH_REQUIRE_VERIFICATION` | on | `0` or `false` issues a session before the address is confirmed. For a local run with no mailbox; a deployment that sets it has an open sign-up |
 
 Sign-up is open, and an account cannot sign in until its address is verified. The service takes a

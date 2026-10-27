@@ -93,13 +93,44 @@ function baseRoomOf(roomId: string): string {
  *   token or as an anonymous join.
  * - Empty auth is a mismatched credential: a room id alone is not a secret.
  */
-export async function authorize(
+/**
+ * Why a connection was refused, so the same decision can be explained.
+ *
+ * The socket only carries "authentication failed", which is why a person whose
+ * plan does not cover the workspace, and a person whose session expired, used to
+ * read the same alarming sentence. The names here are the relay's own; mapping
+ * them to something a reader can act on happens on the client, where the copy
+ * lives.
+ */
+export type AccessRefusal =
+  | "no-credential"
+  | "session-invalid"
+  | "organization-required"
+  | "licence-unprovisioned"
+  | "licence-missing"
+  | "licence-expired"
+  | "workspace-owned-elsewhere"
+  | "not-a-capability";
+
+export type AccessDecision =
+  | { ok: true; permission: Permission }
+  | { ok: false; reason: AccessRefusal };
+
+/**
+ * The whole decision, with its reason.
+ *
+ * `authorize` is the socket's view of this and discards the reason; the access
+ * route keeps it. One implementation, so the two cannot disagree about whether a
+ * connection would be allowed.
+ */
+export async function decideAccess(
   roomId: string,
   auth: Uint8Array,
   deps: AuthorizeDeps,
-): Promise<Permission | null> {
+  options: { claim?: boolean } = {},
+): Promise<AccessDecision> {
   const token = decoder.decode(auth ?? new Uint8Array());
-  if (token.length === 0) return null;
+  if (token.length === 0) return { ok: false, reason: "no-credential" };
 
   /**
    * The credential check decides *what* this connection may do; the seat gate
@@ -110,10 +141,22 @@ export async function authorize(
   const gated = (
     permission: Permission | null,
     principal: ConnectionPrincipal | null,
-  ): Permission | null => {
-    if (permission === null) return null;
-    if (principal === null || deps.seats === undefined) return permission;
-    return deps.seats.allow(principal).ok ? permission : null;
+  ): AccessDecision => {
+    if (permission === null) return { ok: false, reason: "not-a-capability" };
+    if (principal === null || deps.seats === undefined) return { ok: true, permission };
+    const seat = deps.seats.allow(principal);
+    if (seat.ok) return { ok: true, permission };
+    // The seat gate's own vocabulary, passed through rather than reinterpreted:
+    // "licence-expired" and "workspace-owned-elsewhere" are different problems.
+    const reason = seat.reason;
+    if (
+      reason === "licence-unprovisioned" ||
+      reason === "licence-missing" ||
+      reason === "licence-expired"
+    ) {
+      return { ok: false, reason };
+    }
+    return { ok: false, reason: reason === "organization-required" ? reason : "not-a-capability" };
   };
 
   if (
@@ -121,15 +164,15 @@ export async function authorize(
     constantTimeEqual(token, deps.projectionToken) &&
     baseRoomOf(roomId).startsWith(SHARE_ROOM_PREFIX)
   ) {
-    return "write";
+    return { ok: true, permission: "write" };
   }
 
   if (deps.sourceToken.length > 0 && constantTimeEqual(token, deps.sourceToken)) {
     const workspaceRoom = baseRoomOf(roomId);
     if (!workspaceRoom.startsWith(SHARE_ROOM_PREFIX) && deps.shares.hasEditorShare(workspaceRoom)) {
-      return "write";
+      return { ok: true, permission: "write" };
     }
-    return null;
+    return { ok: false, reason: "not-a-capability" };
   }
 
   const share = deps.shares.resolve(token) ?? deps.shares.resolveSession(token);
@@ -141,29 +184,44 @@ export async function authorize(
     if (roomId === share.roomId) {
       return gated(share.role === "editor" ? "write" : "read", principal);
     }
-    return baseRoomOf(roomId) === share.roomId ? gated("write", principal) : null;
+    return baseRoomOf(roomId) === share.roomId
+      ? gated("write", principal)
+      : { ok: false, reason: "not-a-capability" };
   }
 
   const baseRoom = baseRoomOf(roomId);
   // Projection rooms belong to a share, never to a session: opening one with an
   // account would let any session write a projection it holds no link for.
-  if (baseRoom.startsWith(SHARE_ROOM_PREFIX)) return null;
+  if (baseRoom.startsWith(SHARE_ROOM_PREFIX)) return { ok: false, reason: "not-a-capability" };
 
-  if (deps.sessions === undefined || deps.workspaces === undefined) return null;
+  if (deps.sessions === undefined || deps.workspaces === undefined) {
+    return { ok: false, reason: "no-credential" };
+  }
 
   // Verification failure is a refusal. There is no fallback credential here and
   // no "anonymous" answer, so a forged or expired token reaches no room.
   const verified = await deps.sessions.verify(token);
-  if (!verified.ok) return null;
+  if (!verified.ok) return { ok: false, reason: "session-invalid" };
 
   const claims = verified.claims;
   // A workspace belongs to a tenant. A token that names none comes from an
   // account with no organization, and there is nothing for the room to belong
   // to, so it is refused rather than treated as a personal workspace.
-  if (claims.organizationId === null) return null;
+  if (claims.organizationId === null) return { ok: false, reason: "organization-required" };
 
-  const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);
-  if (outcome === "conflict" || outcome === "organization-required") return null;
+  if (options.claim === false) {
+    // A question about access must not change the answer. The recorded owner is
+    // read, never written: an unclaimed workspace is one a join would claim, so
+    // it is allowed here for the same reason it is allowed there.
+    const recorded = deps.workspaces.orgs.get(baseRoom);
+    if (recorded !== null && recorded.organizationId !== claims.organizationId) {
+      return { ok: false, reason: "workspace-owned-elsewhere" };
+    }
+  } else {
+    const outcome = claimWorkspaceForSession(deps.workspaces, baseRoom, claims);
+    if (outcome === "conflict") return { ok: false, reason: "workspace-owned-elsewhere" };
+    if (outcome === "organization-required") return { ok: false, reason: "organization-required" };
+  }
 
   return gated("write", {
     kind: "account",
@@ -174,4 +232,14 @@ export async function authorize(
     tier: claims.tier,
     limits: claims.limits,
   });
+}
+
+/** The socket's answer: allowed, or refused without saying why. */
+export async function authorize(
+  roomId: string,
+  auth: Uint8Array,
+  deps: AuthorizeDeps,
+): Promise<Permission | null> {
+  const decision = await decideAccess(roomId, auth, deps);
+  return decision.ok ? decision.permission : null;
 }

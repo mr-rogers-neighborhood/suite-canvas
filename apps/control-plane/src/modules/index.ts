@@ -17,7 +17,7 @@ import { isRouteModule, type RouteModule } from "../routes.js";
  */
 
 /** The module files this package expects, in mount order. */
-export const MODULE_NAMES = ["auth", "billing", "admin"] as const;
+export const MODULE_NAMES = ["auth", "billing", "admin", "feedback"] as const;
 export type ModuleName = (typeof MODULE_NAMES)[number];
 
 /** What `/health` reports for one name. */

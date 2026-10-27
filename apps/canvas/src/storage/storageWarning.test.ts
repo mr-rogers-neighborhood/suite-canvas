@@ -82,10 +82,13 @@ describe("the storage warning", () => {
     expect(storageWarningState({ persist: "persisted", quota: null }).visible).toBe(false);
     expect(storageWarningState({ persist: "unknown", quota: null }).visible).toBe(false);
     expect(storageWarningState({ persist: "persisted", quota }).message).toBe(quota.message);
-    // The ladder's quiet rungs stay quiet here too: an account or a peer in the
-    // room means this browser's copy is not the only one.
+    // The ladder's quiet rungs stay quiet here too — but only once there really is
+    // another copy. An account with no synced workspace has not made one.
+    expect(
+      storageWarningState({ persist: "denied", quota: null, signedIn: true, synced: true }).visible,
+    ).toBe(false);
     expect(storageWarningState({ persist: "denied", quota: null, signedIn: true }).visible).toBe(
-      false,
+      true,
     );
     expect(storageWarningState({ persist: "denied", quota: null, synced: true }).visible).toBe(
       false,

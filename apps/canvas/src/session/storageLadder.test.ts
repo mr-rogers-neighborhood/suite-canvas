@@ -64,7 +64,28 @@ describe("the storage ladder", () => {
     expect(anonymous("persisted").pill).toBe("Saved on this device");
   });
 
-  it("does not nag a signed-in reader about a non-durable browser", () => {
+  it("keeps quiet about a non-durable browser once the workspace is synced", () => {
+    const rung = storageLadder({
+      persist: "denied",
+      signedIn: true,
+      synced: true,
+      failing: false,
+    });
+
+    // The other copy is the account's, so this is a footnote, not a warning.
+    expect(rung.rung).toBe("quiet");
+    expect(rung.headline).toContain("synced");
+    expect(rung.alarm).toBe(false);
+    expect(rung.action).toBe("none");
+  });
+
+  /**
+   * The panel used to say "your workspace is synced" while signed in and *not*
+   * synced — a plan that did not cover it, or a session that ended — and then
+   * print the opposite underneath. Signed in without a synced copy is the case
+   * where the account is no help at all.
+   */
+  it("asks for an export when the account has no synced copy yet", () => {
     const rung = storageLadder({
       persist: "denied",
       signedIn: true,
@@ -72,10 +93,10 @@ describe("the storage ladder", () => {
       failing: false,
     });
 
-    // The account is the other copy, so this is a footnote, not a warning.
-    expect(rung.rung).toBe("quiet");
-    expect(rung.alarm).toBe(false);
-    expect(rung.action).toBe("none");
+    expect(rung.rung).toBe("banner");
+    expect(rung.headline).not.toContain("is synced");
+    expect(rung.headline).toContain("export");
+    expect(rung.action).toBe("export");
   });
 
   it("stays quiet for an anonymous reader while another device is in the room", () => {

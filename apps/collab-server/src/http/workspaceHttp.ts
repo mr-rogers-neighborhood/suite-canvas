@@ -4,6 +4,7 @@ import { createLogger } from "../logging.js";
 import { type AdminPaths, adminPaths, deleteWorkspace } from "../ops/admin.js";
 import type { LicenceClaimStore } from "../store/licenceClaims.js";
 import type { WorkspaceAccess } from "./access.js";
+import type { AccessDecision } from "./auth.js";
 import { HttpError, toProblem } from "./errors.js";
 import { clientAddress, rotateLimiter } from "./rateLimit.js";
 import { bearerToken, readJsonBody } from "./request.js";
@@ -81,12 +82,54 @@ export interface WorkspaceRequestDeps extends WorkspaceRequestHooks {
   /** The session credential and the organization the workspace belongs to. */
   access: WorkspaceAccess;
   /**
+   * The socket's own credential decision for a workspace, reason included.
+   *
+   * Omitted, the access route answers 404: a deployment that never wired the
+   * decision has nothing to explain, and inventing an answer would be worse than
+   * saying nothing.
+   */
+  decide?: (workspaceId: string, token: string) => Promise<AccessDecision>;
+  /**
    * Whether the relay holds anything for this workspace, for a readable 404.
    * Omitted, the delete is attempted and reports the zero rows it removed.
    */
   exists?: (workspaceId: string) => boolean;
   /** Drops the workspace's recorded organization, so a re-claim starts clean. */
   forgetWorkspace?: (workspaceId: string) => void;
+}
+
+/**
+ * `GET /api/workspaces/:id/access` — may this credential sync here, and if not,
+ * why not.
+ *
+ * The socket answers a refusal with "authentication failed" and nothing else,
+ * which is how a plan that does not cover a workspace and a session that expired
+ * came to read as the same sentence. This route runs the same decision and
+ * returns the reason, so the client can say something true and actionable.
+ *
+ * A missing credential is `no-credential` rather than a 401: the caller asked a
+ * question about a workspace, not for access to one, and the answer is the point.
+ */
+async function explain(
+  request: IncomingMessage,
+  response: ServerResponse,
+  deps: WorkspaceRequestDeps,
+  workspaceId: string,
+): Promise<void> {
+  const decide = deps.decide;
+  if (decide === undefined) throw HttpError.notFound("Not found.");
+  if (workspaceId.trim().length === 0)
+    throw HttpError.badRequest("The workspace identifier is empty.");
+  const decision = await decide(workspaceId.trim(), bearerToken(request) ?? "");
+  // Always 200: the caller asked what the answer is, and a refusal is an answer
+  // with a reason in it, not an HTTP failure.
+  sendJson(
+    response,
+    200,
+    decision.ok
+      ? { ok: true, permission: decision.permission }
+      : { ok: false, reason: decision.reason },
+  );
 }
 
 function decodeSegment(segment: string): string {
@@ -240,8 +283,17 @@ export async function handleWorkspaceRequest(
   try {
     const segment = url.pathname.slice(WORKSPACE_API_PATH.length).replace(/^\//, "");
     const parts = segment.split("/");
+    // `GET /api/workspaces/:id/access` explains a refused connection;
     // `DELETE /api/workspaces/:id` is the account's own delete. Every other
     // method and shape is a 404: the routes that used to live here are gone.
+    if (parts.length === 2 && parts[1] === "access") {
+      if (method !== "GET") {
+        methodNotAllowed(response, "GET, OPTIONS");
+        return true;
+      }
+      await explain(request, response, deps, decodeSegment(parts[0] ?? ""));
+      return true;
+    }
     if (parts.length !== 1 || (parts[0]?.length ?? 0) === 0) {
       throw HttpError.notFound("Not found.");
     }

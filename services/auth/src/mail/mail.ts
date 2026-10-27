@@ -68,6 +68,17 @@ export interface MailLink {
   token: string;
 }
 
+/** What the feedback bubble sends: the words, and enough context to reproduce it. */
+export interface FeedbackMessage {
+  text: string;
+  /** Where it was written: the board, the launcher. */
+  surface: string;
+  /** The release, so a report can be matched to a build. */
+  buildId: string;
+  /** Whether the sender had an account, which changes what they could reach. */
+  signedIn: boolean;
+}
+
 export interface MailSenders {
   sendMagicLink: (link: MailLink) => Promise<void>;
   sendVerificationEmail: (link: MailLink) => Promise<void>;
@@ -75,9 +86,19 @@ export interface MailSenders {
   sendAdmissionGranted: (recipient: { email: string; appUrl: string }) => Promise<void>;
   sendInvitation: (invitation: InvitationEmail) => Promise<void>;
   sendOrganizationInvitation: (invitation: OrganizationInvitation) => Promise<void>;
+  /** A message from the feedback bubble, to the operator's desk. */
+  sendFeedback: (message: FeedbackMessage) => Promise<void>;
 }
 
-export function mailSenders(transport: MailTransport): MailSenders {
+/** Where the operator wants feedback to arrive; absent, the sender refuses. */
+export interface MailSenderOptions {
+  feedbackTo?: string | undefined;
+}
+
+export function mailSenders(
+  transport: MailTransport,
+  options: MailSenderOptions = {},
+): MailSenders {
   return {
     sendMagicLink: async ({ email, url }) => {
       await transport.send({
@@ -117,6 +138,24 @@ export function mailSenders(transport: MailTransport): MailSenders {
           "",
           "Anything you wrote before signing up is still on the device you wrote it on.",
           "Sign in there to bring it with you.",
+        ].join("\n"),
+      });
+    },
+    sendFeedback: async (message) => {
+      const to = options.feedbackTo?.trim();
+      // No desk, no message: silently dropping it would tell the sender their
+      // words arrived when nothing left the process.
+      if (to === undefined || to.length === 0) {
+        throw new Error("SUITE_FEEDBACK_TO is not set, so there is nowhere to send feedback");
+      }
+      await transport.send({
+        to,
+        subject: `Suite feedback (${message.buildId})`,
+        text: [
+          message.text,
+          "",
+          `— from the ${message.surface}, build ${message.buildId},`,
+          message.signedIn ? "signed in" : "not signed in",
         ].join("\n"),
       });
     },

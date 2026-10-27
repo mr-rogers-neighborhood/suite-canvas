@@ -93,17 +93,37 @@ export function storageLadder(input: StorageLadderInput): StorageLadder {
   const durable = persist === "persisted";
 
   if (signedIn) {
-    // An account means the local copy is not the only copy, so a non-durable browser is a
-    // footnote rather than a warning — and a durable one needs no sentence at all.
-    return durable
-      ? { rung: "nothing", pill: "Saved", alarm: false, headline: null, detail, action: "none" }
-      : {
+    // An account only makes this copy a footnote *once it is synced*. Signed in
+    // and not synced is the one combination where the account is no help at all —
+    // a plan that does not cover the workspace, a session that ended — and saying
+    // "your workspace is synced" over a copy that is the only one was the panel
+    // arguing with itself.
+    if (durable) {
+      return {
+        rung: "nothing",
+        pill: "Saved",
+        alarm: false,
+        headline: null,
+        detail,
+        action: "none",
+      };
+    }
+    return synced
+      ? {
           rung: "quiet",
           pill: "Saved",
           alarm: false,
-          headline: "Your workspace is synced, so this browser can clear its copy safely.",
+          headline: "This workspace is synced, so this browser can clear its copy safely.",
           detail,
           action: "none",
+        }
+      : {
+          rung: "banner",
+          pill: "Saved on this device",
+          alarm: false,
+          headline: "This account has no synced copy of this workspace, so export one.",
+          detail,
+          action: "export",
         };
   }
 

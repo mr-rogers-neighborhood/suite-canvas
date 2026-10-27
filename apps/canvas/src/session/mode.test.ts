@@ -228,6 +228,12 @@ describe("standalone guard rails", () => {
     // The launcher's sync badges. `readAccountWorkspaces` returns immediately in a
     // standalone build, so no request is ever built there.
     "session/accountWorkspaces.ts": ["launcher/WorkspaceLauncher.tsx"],
+    // The relay's own explanation of a refusal, asked only after a join was
+    // already refused, which a standalone build never attempts.
+    "session/syncAccess.ts": ["App.tsx"],
+    // The claim goes to the account service, and only with a session; a
+    // standalone build has neither.
+    "session/workspaceClaim.ts": ["App.tsx"],
   };
 
   /**

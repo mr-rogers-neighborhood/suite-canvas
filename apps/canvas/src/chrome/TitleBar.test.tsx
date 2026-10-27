@@ -5,7 +5,8 @@ import { TitleBar } from "./TitleBar";
 // `role` is this component's own prop (who is reading the share), not an ARIA
 // role, so the a11y rule is reading the JSX too literally here. Signed in by
 // default: a signed-out browser is its own case, below.
-const bar = (props: Parameters<typeof TitleBar>[0]) => render(<TitleBar signedIn {...props} />);
+const bar = (props: Parameters<typeof TitleBar>[0]) =>
+  render(<TitleBar phase="signed-in" {...props} />);
 
 describe("TitleBar", () => {
   it("says Synced, and puts what the share allows in the panel", () => {
@@ -23,7 +24,7 @@ describe("TitleBar", () => {
     expect(screen.getByTestId("sync-room")).toHaveTextContent("editing this workspace");
   });
 
-  it("names the connection in one word each: Synced, Syncing, Offline, No access", () => {
+  it("names the connection in one word each: Synced, Syncing, Offline", () => {
     bar({ status: "connecting", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Syncing");
 
@@ -34,30 +35,42 @@ describe("TitleBar", () => {
     cleanup();
     bar({ status: "disconnected", role: "viewer" });
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Offline");
-
-    cleanup();
-    bar({ status: "unauthorized", role: "viewer" });
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("No access");
   });
 
   /**
-   * A refused credential and a lost connection are not the same problem. The
-   * indicator said "Offline" for both, so a reader whose access was revoked was
-   * told to check a connection that was working.
+   * A refusal is not advice to check a connection, and it is not an accusation
+   * either. What it says depends on why the relay said no.
    */
-  it("says access is the problem when the relay refused this browser", () => {
-    bar({ status: "unauthorized" });
+  it("sends an ended session to sign in", () => {
+    bar({ status: "unauthorized", reason: "session" });
 
     const status = screen.getByTestId("sync-status");
     expect(status).toHaveAttribute("data-status", "unauthorized");
-    expect(status).not.toHaveTextContent("Offline");
+    expect(status).toHaveTextContent("Sign in");
 
     fireEvent.click(status);
 
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("session ended");
+    expect(screen.getByTestId("sync-sign-in")).toBeInTheDocument();
+  });
+
+  it("says the workspace is saved here when the refusal has no name", () => {
+    bar({ status: "unauthorized" });
+
+    fireEvent.click(screen.getByTestId("sync-status"));
+
     const sentence = screen.getByTestId("sync-room");
-    expect(sentence).toHaveTextContent("refused this browser's access");
-    expect(sentence).toHaveTextContent("Sign in again");
-    expect(sentence).not.toHaveTextContent(/connection/i);
+    expect(sentence).toHaveTextContent("saved here");
+    expect(sentence).not.toHaveTextContent(/refused this browser/i);
+  });
+
+  it("reads a plan that does not cover this workspace as local, and offers the plan", () => {
+    bar({ status: "unauthorized", claim: "capped" });
+
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Local");
+    fireEvent.click(screen.getByTestId("sync-status"));
+    expect(screen.getByTestId("sync-room")).toHaveTextContent("plan does not cover");
+    expect(screen.getByTestId("sync-see-plans")).toBeInTheDocument();
   });
 
   it("still says Offline for a lost connection", () => {
@@ -73,16 +86,16 @@ describe("TitleBar", () => {
    * had rejected it.
    */
   it("reads a signed-out browser as local, not refused", () => {
-    bar({ status: "unauthorized", signedIn: false });
+    bar({ status: "unauthorized", phase: "signed-out" });
 
-    expect(screen.getByTestId("sync-status")).toHaveTextContent("Local");
-    expect(screen.getByTestId("sync-status")).not.toHaveTextContent("No access");
+    expect(screen.getByTestId("sync-status")).toHaveTextContent("Saved");
+    expect(screen.getByTestId("sync-status")).not.toHaveTextContent("Needs attention");
 
     fireEvent.click(screen.getByTestId("sync-status"));
 
     const sentence = screen.getByTestId("sync-room");
-    expect(sentence).toHaveTextContent("Local only");
-    expect(sentence).toHaveTextContent("Sign in to sync");
+    expect(sentence).toHaveTextContent("Saved on this device");
+    expect(sentence).toHaveTextContent("Sign in to use it on your other devices");
     expect(sentence).not.toHaveTextContent(/refused/i);
     expect(screen.getByTestId("sync-sign-in")).toBeInTheDocument();
   });
@@ -98,10 +111,17 @@ describe("TitleBar", () => {
     expect(screen.getByTestId("sync-status")).toHaveTextContent("Synced");
   });
 
-  it("names the room the relay holds", () => {
+  it("keeps the room id behind the details", () => {
     bar({ status: "connected", workspaceId: "ws-42" });
     fireEvent.click(screen.getByTestId("sync-status"));
-    expect(screen.getByTestId("sync-facts")).toHaveTextContent("ws-42");
+
+    // A UUID is not something a reader is asked to act on, so it is not on the
+    // surface they see first.
+    expect(screen.queryByText("ws-42")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("sync-details"));
+
+    expect(screen.getByTestId("sync-details-body")).toHaveTextContent("ws-42");
   });
 
   it("counts the people in the room", () => {
@@ -113,13 +133,17 @@ describe("TitleBar", () => {
     expect(screen.getByTestId("sync-room")).toHaveTextContent("3 here, including you");
   });
 
-  it("keeps everything about this device under the same control", () => {
+  it("keeps everything about this device under the same control, behind Details", () => {
     bar({ status: "connected", storage: <p data-testid="device-copy">device</p> });
 
     // One status, one press: there is no second pill beside this one.
     expect(screen.queryByTestId("device-copy")).toBeNull();
 
     fireEvent.click(screen.getByTestId("sync-status"));
+    // And the panel answers the question first; the machinery is one press further.
+    expect(screen.queryByTestId("device-copy")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("sync-details"));
 
     expect(screen.getByTestId("device-copy")).toBeInTheDocument();
   });

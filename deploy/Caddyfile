@@ -175,6 +175,12 @@
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 
+	# The feedback bubble. Public by design; the service caps its own body and
+	# rate, and forwards to whatever mail transport the deployment configured.
+	handle /api/feedback {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
 	handle /admin/templates* {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}

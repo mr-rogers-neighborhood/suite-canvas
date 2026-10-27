@@ -75,17 +75,27 @@ describe("the leave guard", () => {
       rung: "quiet",
     },
     {
+      // Signed in with no synced copy: the account is not a second copy, so this
+      // is the same risk as never having signed in.
       persist: "unknown",
       signedIn: true,
       synced: false,
       failing: false,
-      warn: false,
-      rung: "quiet",
+      warn: true,
+      rung: "banner",
     },
     {
       persist: "denied",
       signedIn: true,
       synced: false,
+      failing: false,
+      warn: true,
+      rung: "banner",
+    },
+    {
+      persist: "denied",
+      signedIn: true,
+      synced: true,
       failing: false,
       warn: false,
       rung: "quiet",

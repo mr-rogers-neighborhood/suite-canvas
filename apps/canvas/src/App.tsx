@@ -6,6 +6,7 @@ import { useBoardDerivations } from "./app/useBoardDerivations";
 import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useLeaveGuard } from "./app/useLeaveGuard";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
+import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import {
   useSurfacePalette,
@@ -217,6 +218,14 @@ function WorkspaceShell({
   // ladder only consume the answer. A device with no account is signed out, which
   // is where it already was — nothing about the local path changes (ADR-0067 §6).
   const signedIn = useAccountStore(accountSignedIn);
+  const accountPhase = useAccountStore((state) => state.phase);
+  const openPanel = useAccountStore((state) => state.openPanel);
+  const syncFacts = useWorkspaceSyncFacts({
+    workspaceId: workspaceId ?? "",
+    phase: accountPhase,
+    status,
+    workspaceName,
+  });
   const openSignIn = useAccountStore((state) => state.openSignIn);
   const { leaving, leavingPrompt, inRoom, requestLeave, dismissLeavePrompt, leaveAnyway } =
     useLeaveGuard({ standalone, peerCount, signedIn, share, workspace });
@@ -753,7 +762,10 @@ function WorkspaceShell({
       workspace={workspace}
       workspaceName={workspaceName}
       setWorkspaceName={setWorkspaceName}
-      signedIn={signedIn}
+      phase={accountPhase}
+      claim={syncFacts.claim}
+      reason={syncFacts.reason}
+      onSeePlans={() => openPanel("plan")}
       inRoom={inRoom}
       openSignIn={openSignIn}
       readOnly={readOnly}

@@ -2,6 +2,7 @@ import type { PaletteSwatch, WorkspaceDocument } from "@suite/graph";
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from "react";
 import { lazy, Suspense } from "react";
 import { SignInEntry } from "../auth/SignInEntry";
+import type { AccountPhase } from "../auth/useAccountStore";
 import { BoardOutlineHost } from "../canvas/BoardOutline";
 import { CanvasBoard } from "../canvas/CanvasBoard";
 import type { CanvasMode } from "../canvas/links/linkGesture";
@@ -22,6 +23,8 @@ import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
 import { LeavingDialog } from "../dialogs/LeavingDialog";
 import { FeedbackHost } from "../feedback/FeedbackHost";
+import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
+import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
 import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
@@ -84,7 +87,14 @@ export interface WorkspaceShellViewProps {
   workspace: WorkspaceDocument;
   workspaceName: string;
   setWorkspaceName: Dispatch<SetStateAction<string>>;
-  signedIn: boolean;
+  /** Who is behind this browser, as the account store knows it. */
+  phase: AccountPhase;
+  /** What the account says about this workspace, when it has been asked. */
+  claim?: SyncClaim;
+  /** Why the relay refused, when it said. */
+  reason?: SyncRefusal | null;
+  /** Opens the plan surface from a workspace the plan does not cover. */
+  onSeePlans?: (() => void) | undefined;
   inRoom: boolean;
   openSignIn: () => void;
   readOnly: boolean;
@@ -187,7 +197,10 @@ export function WorkspaceShellView({
   workspace,
   workspaceName,
   setWorkspaceName,
-  signedIn,
+  phase,
+  claim,
+  reason,
+  onSeePlans,
   inRoom,
   openSignIn,
   readOnly,
@@ -284,15 +297,18 @@ export function WorkspaceShellView({
           status={standalone ? "disconnected" : status}
           {...(share ? { role: share.role } : {})}
           peerCount={standalone ? 0 : peerCount}
-          signedIn={signedIn}
+          phase={phase}
+          {...(claim === undefined ? {} : { claim })}
+          reason={reason ?? null}
           workspaceId={workspaceId}
           onSignIn={openSignIn}
+          {...(onSeePlans === undefined ? {} : { onSeePlans })}
           // Everything about *this* device's copy lives under the same control that
           // says who else is here (ADR-0064 amendment): one status, one press.
           storage={
             <StoragePanel
               workspaceId={workspaceId}
-              signedIn={signedIn}
+              signedIn={phase === "signed-in"}
               synced={inRoom}
               onSignIn={openSignIn}
             />
@@ -610,6 +626,7 @@ export function WorkspaceShellView({
 
         {/* Toasts, the live regions and the failure routing, once for the shell. */}
         <FeedbackHost />
+        {share === null ? <SendFeedbackBubble signedIn={phase === "signed-in"} /> : null}
         <PerfOverlay />
       </div>
     </SurfacePaintProvider.Provider>

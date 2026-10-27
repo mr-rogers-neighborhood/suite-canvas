@@ -433,3 +433,22 @@ relay, but the snapshot that contains the deleted rows is kept until its retenti
 `find … -mtime +14` cron entry in [deploy.md](../how-to/deploy.md). So a deleted workspace or account can
 remain recoverable from backup for up to 35 days, and from a Postgres dump on the same schedule for the
 identity rows. That is the honest answer to "when is it really gone": after the window, not on the click.
+
+## The feedback endpoint
+
+`POST /api/feedback` is the one route in the control plane that spends money for an
+unauthenticated caller: it sends an email, and anyone can reach it. It is capped rather
+than closed, because the most useful message comes from somebody stuck before they have an
+account. Three limits hold it:
+
+- a fixed window per address (five messages an hour), keyed on the address the proxy
+  reports, so one caller cannot turn the box into a relay;
+- an 8 KB body and a 4000-character message, refused before the transport is touched;
+- no storage. The message, the surface and the build id go out through the same transport
+  the account mail uses, and nothing is written down. No workspace id, no document content
+  and no IP address travel with it.
+
+`SUITE_FEEDBACK_TO` unset means the route answers `503` and the client hides the bubble: a
+form that cannot send is worse than no form. A transport failure answers `502` rather than
+reporting success, because a false thank-you for a message that never left is the one
+outcome worth being noisy about.

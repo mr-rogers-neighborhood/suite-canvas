@@ -13,7 +13,7 @@ import {
 import { createWorkspaceAccess, type WorkspaceClaimDeps } from "../http/access.js";
 import { handleAdminRequest } from "../http/admin/index.js";
 import { handleAttachmentRequest } from "../http/attachmentHttp.js";
-import { authorize, resolveWorkerTokens } from "../http/auth.js";
+import { type AuthorizeDeps, decideAccess, resolveWorkerTokens } from "../http/auth.js";
 import { handleReportRequest } from "../http/report.js";
 import {
   createSessionVerifier,
@@ -197,6 +197,21 @@ const access = createWorkspaceAccess({
 });
 const { projectionToken, sourceToken } = resolveWorkerTokens();
 
+/**
+ * Everything the socket's credential decision needs, in one object.
+ *
+ * Both the connection and the `/access` route read it, so "may this connection
+ * join" and "why did you say no" cannot drift apart.
+ */
+const accessDeps: AuthorizeDeps = {
+  shares: countedShares,
+  ...(sessions === undefined ? {} : { sessions }),
+  workspaces: workspaceClaims,
+  projectionToken,
+  sourceToken,
+  seats: seatGate,
+};
+
 // Board and card shares read a projection room kept up to date by this worker.
 const worker = new ProjectionWorker({
   url: `ws://localhost:${port}`,
@@ -310,14 +325,8 @@ const server = fragmentOutboundFrames(
     },
 
     async authenticate(roomId, _crdtType, auth) {
-      const permission = await authorize(roomId, auth, {
-        shares: countedShares,
-        ...(sessions === undefined ? {} : { sessions }),
-        workspaces: workspaceClaims,
-        projectionToken,
-        sourceToken,
-        seats: seatGate,
-      });
+      const decision = await decideAccess(roomId, auth, accessDeps);
+      const permission = decision.ok ? decision.permission : null;
       if (permission === null) return null;
       // A credential is not an answer to "is this room too big to serve". The
       // ceiling is per room, checked before the session exists, so a refusal
@@ -420,6 +429,10 @@ const health = createServer((request, response) => {
       if (request.method === "DELETE") store.flush();
       return handleWorkspaceRequest(request, response, {
         access,
+        // The socket's own decision, so the explanation this route gives and the
+        // answer the connection gets are the same computation.
+        decide: (workspaceId, token) =>
+          decideAccess(workspaceId, new TextEncoder().encode(token), accessDeps, { claim: false }),
         licences: licenceClaims,
         // The same store the attachment route serves from: a deleted workspace
         // takes its image bytes with it, not just the rows that point at them.

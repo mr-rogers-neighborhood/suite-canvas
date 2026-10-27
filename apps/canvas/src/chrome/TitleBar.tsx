@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { syncPresentation } from "../feedback/syncState";
+import type { AccountPhase } from "../auth/useAccountStore";
+import { type SyncClaim, type SyncRefusal, syncPresentation } from "../feedback/syncState";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import type { ConnectionStatus } from "../store/useCanvasStore";
 import { ThemeToggle } from "../styles/ThemeToggle";
@@ -16,11 +17,16 @@ export interface TitleBarProps {
   role?: TitleBarRole;
   peerCount?: number;
   /**
-   * Whether an account stands behind this browser. A signed-out browser is local,
-   * not refused, and the status control says so.
+   * Who is behind this browser. A signed-out browser is local, not refused, and
+   * the status control says so; `unknown` renders no action at all, so the first
+   * paint cannot offer "Sign in" to someone who already is.
    */
-  signedIn?: boolean;
-  /** The relay's name for this workspace, shown inside the status panel. */
+  phase?: AccountPhase;
+  /** What the account says about this workspace's membership in it. */
+  claim?: SyncClaim;
+  /** Why the relay refused, when it said. */
+  reason?: SyncRefusal | null;
+  /** The relay's name for this workspace, shown inside the storage details. */
   workspaceId?: string;
   /** Opens the sign-in dialog from the status panel's local reading. */
   onSignIn?: (() => void) | undefined;
@@ -52,7 +58,9 @@ export function TitleBar({
   status,
   role,
   peerCount = 0,
-  signedIn = false,
+  phase = "unknown",
+  claim = "unknown",
+  reason = null,
   workspaceId,
   onSignIn,
   storage,
@@ -84,13 +92,7 @@ export function TitleBar({
   useEscapeLayer(() => setStatusOpen(false), statusOpen);
 
   // The button and the panel read one decision, so they cannot disagree.
-  const presentation = syncPresentation({
-    status,
-    signedIn,
-    peerCount,
-    role,
-    pending: 0,
-  });
+  const presentation = syncPresentation({ phase, status, peerCount, role, claim, reason });
 
   return (
     <header className="app-bar relative z-20 flex h-11 shrink-0 items-center gap-3 px-4">
@@ -214,7 +216,9 @@ export function TitleBar({
           {statusOpen ? (
             <SyncPanel
               status={status}
-              signedIn={signedIn}
+              phase={phase}
+              claim={claim}
+              reason={reason}
               peerCount={peerCount}
               {...(role === undefined ? {} : { role })}
               {...(workspaceId === undefined ? {} : { workspaceId })}

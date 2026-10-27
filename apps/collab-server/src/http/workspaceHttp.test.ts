@@ -9,7 +9,9 @@ import { createLicenceClaimStore, type LicenceClaimStore } from "../store/licenc
 import { createDocumentStore } from "../store/persistence.js";
 import { createShareStore } from "../store/shares.js";
 import { createWorkspaceOrgStore, type WorkspaceOrgStore } from "../store/workspaceOrgs.js";
+import { relaySeatGate } from "../sync/seatGate.js";
 import { createWorkspaceAccess } from "./access.js";
+import { decideAccess } from "./auth.js";
 import { resetRateLimits } from "./rateLimit.js";
 import { createSessionFixture, type SessionFixture } from "./sessionFixture.js";
 import { handleWorkspaceRequest } from "./workspaceHttp.js";
@@ -84,6 +86,22 @@ beforeEach(async () => {
         deletions.push(workspaceId);
       },
       storage: paths,
+      // The route's answer is the socket's own decision, read-only: asking must
+      // not record a claim.
+      decide: (workspaceId, token) =>
+        decideAccess(
+          workspaceId,
+          new TextEncoder().encode(token),
+          {
+            shares,
+            sessions: sessions.verifier,
+            workspaces: { orgs, licences: licenceClaims },
+            projectionToken: "",
+            sourceToken: "",
+            seats: relaySeatGate(false),
+          },
+          { claim: false },
+        ),
     }).then((handled) => {
       if (handled) return;
       response.writeHead(404, { "content-type": "text/plain" });
@@ -354,6 +372,22 @@ describe("the control plane's purge credential", () => {
         // Unset, so a token nobody configured cannot purge a workspace.
         purgeToken: "",
         storage: paths,
+        // The route's answer is the socket's own decision, read-only: asking must
+        // not record a claim.
+        decide: (workspaceId, token) =>
+          decideAccess(
+            workspaceId,
+            new TextEncoder().encode(token),
+            {
+              shares,
+              sessions: sessions.verifier,
+              workspaces: { orgs, licences: licenceClaims },
+              projectionToken: "",
+              sourceToken: "",
+              seats: relaySeatGate(false),
+            },
+            { claim: false },
+          ),
       }).then((handled) => {
         if (!handled) response.writeHead(404);
       });
@@ -389,6 +423,22 @@ describe("the control plane's purge credential", () => {
           licences: licenceClaims,
         }),
         storage: paths,
+        // The route's answer is the socket's own decision, read-only: asking must
+        // not record a claim.
+        decide: (workspaceId, token) =>
+          decideAccess(
+            workspaceId,
+            new TextEncoder().encode(token),
+            {
+              shares,
+              sessions: sessions.verifier,
+              workspaces: { orgs, licences: licenceClaims },
+              projectionToken: "",
+              sourceToken: "",
+              seats: relaySeatGate(false),
+            },
+            { claim: false },
+          ),
         attachments,
       }).then((handled) => {
         if (!handled) response.writeHead(404);
@@ -458,5 +508,47 @@ describe("the routes the owner key took with it", () => {
     const response = await fetch(`${baseUrl}/health`);
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("not found");
+  });
+});
+
+describe("the access explanation", () => {
+  it("says which credential a sync would present, without claiming anything", async () => {
+    const workspaceId = "ws-access-1";
+    const token = await session("access-1");
+
+    const response = await fetch(`${baseUrl}/api/workspaces/${workspaceId}/access`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, permission: "write" });
+    // A question about access must not change the answer: no claim row.
+    expect(orgs.get(workspaceId)).toBeNull();
+  });
+
+  it("names a workspace another organization already holds", async () => {
+    const workspaceId = "ws-access-2";
+    orgs.claim(workspaceId, "org-other", Date.now());
+    const token = await session("access-2");
+
+    const response = await fetch(`${baseUrl}/api/workspaces/${workspaceId}/access`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(await response.json()).toEqual({ ok: false, reason: "workspace-owned-elsewhere" });
+  });
+
+  it("says a request with no credential presented none", async () => {
+    const response = await fetch(`${baseUrl}/api/workspaces/ws-access-3/access`, {
+      method: "POST",
+      headers: { authorization: "" },
+    });
+    // The method is wrong before the credential is read.
+    expect(response.status).toBe(405);
+  });
+
+  it("names a missing credential rather than failing", async () => {
+    const response = await fetch(`${baseUrl}/api/workspaces/ws-access-4/access`);
+    expect(await response.json()).toEqual({ ok: false, reason: "no-credential" });
   });
 });

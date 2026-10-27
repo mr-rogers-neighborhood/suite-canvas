@@ -52,6 +52,19 @@ describe("reading the account's workspaces", () => {
     expect(called).toBe(false);
   });
 
+  it("is null when minting a credential throws, which is a signed-out visit", async () => {
+    const fetch = (async () => new Response("{}", { status: 200 })) as typeof globalThis.fetch;
+
+    const result = await readAccountWorkspaces({
+      fetch,
+      authorization: async () => {
+        throw new Error("This browser has no account session");
+      },
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("is null when the answer is a refusal", async () => {
     const result = await readAccountWorkspaces({
       fetch: answer(401, { ok: false }),

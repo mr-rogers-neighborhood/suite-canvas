@@ -158,6 +158,33 @@
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
 	}
 
+	# The account surface: the workspace list the launcher reads, export, erase,
+	# claiming a workspace, redeeming an invitation, and the members of one.
+	# These are the control plane's, and the relay answers none of them.
+	handle /api/account/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	handle /api/invites/* {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	handle /api/workspaces/claim {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	@members path_regexp members ^/api/workspaces/[^/]+/members$
+	handle @members {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
+	# The operator admission queue. Declared before the `/admin` panel rewrite
+	# below, which would otherwise serve it an HTML page. It answers only to a
+	# bearer token, and 503 when `SUITE_ADMIN_TOKEN` is unset.
+	handle /admin/admissions {
+		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}
+	}
+
 	# Stripe posts here. The signature is verified by the service, not here.
 	handle /stripe/* {
 		reverse_proxy {$SUITE_CONTROL_PLANE_UPSTREAM:control-plane:1236}

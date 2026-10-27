@@ -50,9 +50,11 @@ export async function readAccountWorkspaces(
   if (options.fetch === undefined && isStandalone()) return null;
   const call = options.fetch ?? globalThis.fetch;
   const authorization = options.authorization ?? credentialAuthorization;
-  const headers = await authorization();
-  if (Object.keys(headers).length === 0) return null;
   try {
+    // Mints a session credential, which throws when nobody is signed in. A
+    // signed-out launcher is the normal case, not a fault to report.
+    const headers = await authorization();
+    if (Object.keys(headers).length === 0) return null;
     const response = await call(`${options.base ?? collabHttpBase()}${ACCOUNT_WORKSPACES_PATH}`, {
       method: "GET",
       headers: { ...headers, accept: "application/json" },

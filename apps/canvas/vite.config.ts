@@ -20,6 +20,7 @@ export default defineConfig({
     proxy: {
       "/api/auth": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/billing": { target: "http://127.0.0.1:1236", changeOrigin: false },
+      "/api/account": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/workspaces": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/api/invites": { target: "http://127.0.0.1:1236", changeOrigin: false },
       "/stripe": { target: "http://127.0.0.1:1236", changeOrigin: false },

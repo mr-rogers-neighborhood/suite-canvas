@@ -58,6 +58,12 @@ const OVERRIDES = {
   // values that turn it on, and starting the control plane without them is a 503
   // on every billing route rather than a boot failure.
   SUITE_BILLING_ENABLED: "0",
+  // The operator admission queue. Generated rather than left empty so a local run
+  // can admit an account by hand and read the list back; `SUITE_ADMISSION_REQUIRED`
+  // stays off, so nothing is held unless someone turns the queue on.
+  SUITE_ADMIN_TOKEN: randomBytes(32).toString("base64url"),
+  SUITE_APP_URL: APP_ORIGIN,
+  SUITE_MAIL_TRANSPORT: "console",
 };
 
 /** A commented `KEY=` line becomes a live one; a live line keeps its comment. */

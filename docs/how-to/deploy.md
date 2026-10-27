@@ -310,12 +310,14 @@ Four variables decide whether a person who signs up can ever get in:
 | `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_TOKEN` (16+ characters) or the boot refuses: the queue would have no door. |
 | `STRIPE_WEBHOOK_SECRET` | Without it every delivery fails verification, so no payment is recorded. `pnpm stripe --listen` prints it locally; on the host it comes from the Stripe dashboard endpoint. |
 
-Admitting the first users, once mail and the queue are live:
+Admitting the first users, once mail and the queue are live. `deploy/Caddyfile` sends
+`/admin/admissions` to the control plane ahead of the operator panel, so the app origin is the right
+host:
 
 ```sh
-curl -fsS "$SUITE_AUTH_URL/admin/admissions" \
+curl -fsS "https://app.suite.run/admin/admissions" \
   -H "authorization: Bearer $SUITE_ADMIN_TOKEN"          # who is waiting
-curl -fsS -X POST "$SUITE_AUTH_URL/admin/admissions" \
+curl -fsS -X POST "https://app.suite.run/admin/admissions" \
   -H "authorization: Bearer $SUITE_ADMIN_TOKEN" \
   -H "content-type: application/json" \
   -d '{"emails":["them@example.com"]}'                   # admit, and tell them

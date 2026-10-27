@@ -128,7 +128,7 @@ function databaseUrlOf(
       value: null,
       problem: {
         variable: DATABASE_URL_VARIABLE,
-        message: `${DATABASE_URL_VARIABLE} is not set; the ${needy.join(" and ")} module stores accounts and licences in Postgres.`,
+        message: `${DATABASE_URL_VARIABLE} is not set; the ${listOf(needy)} modules store accounts and licences in Postgres.`,
       },
     };
   }
@@ -142,6 +142,12 @@ function databaseUrlOf(
     };
   }
   return { value: configured, problem: null };
+}
+
+/** `a`, `a and b`, `a, b and c` — a list an operator reads rather than parses. */
+function listOf(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function logLevelOf(env: ConfigEnv): { value: LogLevel; problem: ConfigProblem | null } {

@@ -1,7 +1,9 @@
 import type { Board } from "@suite/graph";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useEscapeLayer } from "../shell/escapeLayers";
+import type { BoardVisit } from "../store/useUiStore";
+import { BoardTrail } from "./BoardTrail";
 
 /** Peers whose active board is this one, named for the tab's tooltip. */
 export interface BoardPresence {
@@ -36,6 +38,11 @@ export interface BoardTabsProps {
   canManageBoards?: boolean;
   /** Cross-board presence, keyed by board id; no transport of its own. */
   peersByBoard?: Record<string, BoardPresence>;
+  /**
+   * The trail beside the tabs, ordering oldest first. Defaults to the shell's
+   * `boardHistory`; stories and tests name one directly.
+   */
+  history?: readonly BoardVisit[];
 }
 
 /** Board switcher in the app bar: one tab per open board, plus create. */
@@ -52,12 +59,16 @@ export function BoardTabs({
   canCreateBoards = true,
   canManageBoards = true,
   peersByBoard,
+  history,
 }: BoardTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [chooserOpen, setChooserOpen] = useState(false);
   const chooser = useRef<HTMLDivElement | null>(null);
   useEscapeLayer(() => setChooserOpen(false), chooserOpen);
+  // The trail names boards that need not have a tab any more, so it reads the
+  // open ones and the rest together.
+  const trailBoards = useMemo(() => [...boards, ...openableBoards], [boards, openableBoards]);
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -74,172 +85,180 @@ export function BoardTabs({
   };
 
   return (
-    /*
-     * A navigation, not a tablist.
-     *
-     * These were `role="tablist"` / `role="tab"` siblings of a close button and a rename
-     * field, which axe reports as `aria-required-children`: the tablist's children have to
-     * be tabs, and a per-tab close control cannot be one. The strict-tablist fix would
-     * have moved closing out of the tab strip entirely, losing an affordance every reader
-     * expects; the honest mapping is this one — switching a board replaces the canvas, it
-     * does not reveal a panel on the same page, so `aria-current` is the right word for
-     * "you are here" and the strip is free to hold what it needs (ADR-0064 amendment).
-     */
-    <div className="group flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-      {homeBoardId && homeBoardId !== activeBoardId ? (
-        <button
-          type="button"
-          aria-label="Open the home board"
-          data-testid="board-home"
-          title="Home board"
-          className="shrink-0 rounded px-1.5 py-1 text-[12px] leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
-          onClick={() => onSelect(homeBoardId)}
-        >
-          {"\u2302"}
-        </button>
-      ) : null}
-      <nav className="board-tabs flex min-w-0 items-center gap-1" aria-label="Boards">
-        {boards.map((board) => {
-          const active = board.id === activeBoardId;
-          const presence = peersByBoard?.[board.id];
-          if (renamingId === board.id) {
-            return (
-              <input
-                key={board.id}
-                // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
-                autoFocus
-                value={draft}
-                aria-label={`Rename ${board.name}`}
-                className="w-28 rounded px-2 py-1 text-[12px] outline-none ring-1 ring-blue-400"
-                onChange={(event) => setDraft(event.target.value)}
-                onBlur={commit}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") commit();
-                  if (event.key === "Escape") setRenamingId(null);
-                }}
-              />
-            );
-          }
-          return (
-            <span key={board.id} className="inline-flex min-w-0 items-center">
-              <button
-                type="button"
-                aria-current={active ? "page" : undefined}
-                data-testid={`board-tab-${board.id}`}
-                data-active={active ? "true" : undefined}
-                title={canManageBoards ? "Double-click to rename" : board.name}
-                className={`board-tab inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
-                  active
-                    ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
-                    : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
-                }`}
-                onClick={() => onSelect(board.id)}
-                onDoubleClick={() => {
-                  if (!canManageBoards) return;
-                  setRenamingId(board.id);
-                  setDraft(board.name);
-                }}
-              >
-                <span className="min-w-0 truncate">{board.name}</span>
-                {presence ? (
-                  <span
-                    data-testid="board-tab-peer-dot"
-                    className="board-tab-peer-dot"
-                    role="img"
-                    aria-label={`${presence.label} here now`}
-                    title={`${presence.label} here now`}
-                    style={{ backgroundColor: presence.color }}
-                  />
-                ) : null}
-              </button>
-              <button
-                type="button"
-                aria-label={`Close ${board.name}`}
-                data-testid={`board-close-${board.id}`}
-                title={`Close the ${board.name} tab`}
-                className="-ml-0.5 shrink-0 rounded px-1 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/[0.06] hover:text-[var(--ink)] dark:hover:bg-white/15"
-                onClick={() => onClose(board.id)}
-              >
-                {"\u00d7"}
-              </button>
-            </span>
-          );
-        })}
-      </nav>
+    <div className="flex min-w-0 items-center gap-2">
+      <BoardTrail
+        boards={trailBoards}
+        activeBoardId={activeBoardId}
+        onSelect={onSelect}
+        {...(history ? { history } : {})}
+      />
+      {/*
+        A navigation, not a tablist.
 
-      {canCreateBoards ? (
-        <div className="relative shrink-0" ref={chooser}>
-          {/*
+        These were `role="tablist"` / `role="tab"` siblings of a close button and a rename
+        field, which axe reports as `aria-required-children`: the tablist's children have to
+        be tabs, and a per-tab close control cannot be one. The strict-tablist fix would
+        have moved closing out of the tab strip entirely, losing an affordance every reader
+        expects; the honest mapping is this one — switching a board replaces the canvas, it
+        does not reveal a panel on the same page, so `aria-current` is the right word for
+        "you are here" and the strip is free to hold what it needs (ADR-0064 amendment).
+      */}
+      <div className="group flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+        {homeBoardId && homeBoardId !== activeBoardId ? (
+          <button
+            type="button"
+            aria-label="Open the home board"
+            data-testid="board-home"
+            title="Home board"
+            className="shrink-0 rounded px-1.5 py-1 text-[12px] leading-none text-[var(--ink-muted)] hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/10"
+            onClick={() => onSelect(homeBoardId)}
+          >
+            {"\u2302"}
+          </button>
+        ) : null}
+        <nav className="board-tabs flex min-w-0 items-center gap-1" aria-label="Boards">
+          {boards.map((board) => {
+            const active = board.id === activeBoardId;
+            const presence = peersByBoard?.[board.id];
+            if (renamingId === board.id) {
+              return (
+                <input
+                  key={board.id}
+                  // biome-ignore lint/a11y/noAutofocus: inline rename is an explicit gesture
+                  autoFocus
+                  value={draft}
+                  aria-label={`Rename ${board.name}`}
+                  className="w-28 rounded px-2 py-1 text-[12px] outline-none ring-1 ring-blue-400"
+                  onChange={(event) => setDraft(event.target.value)}
+                  onBlur={commit}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") commit();
+                    if (event.key === "Escape") setRenamingId(null);
+                  }}
+                />
+              );
+            }
+            return (
+              <span key={board.id} className="inline-flex min-w-0 items-center">
+                <button
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  data-testid={`board-tab-${board.id}`}
+                  data-active={active ? "true" : undefined}
+                  title={canManageBoards ? "Double-click to rename" : board.name}
+                  className={`board-tab inline-flex max-w-[140px] items-center gap-1 rounded px-2 py-1 text-[12px] transition-colors ${
+                    active
+                      ? "bg-black/[0.07] font-medium text-[var(--ink)] dark:bg-white/15"
+                      : "text-[var(--ink-muted)] hover:bg-black/[0.04] dark:hover:bg-white/10"
+                  }`}
+                  onClick={() => onSelect(board.id)}
+                  onDoubleClick={() => {
+                    if (!canManageBoards) return;
+                    setRenamingId(board.id);
+                    setDraft(board.name);
+                  }}
+                >
+                  <span className="min-w-0 truncate">{board.name}</span>
+                  {presence ? (
+                    <span
+                      data-testid="board-tab-peer-dot"
+                      className="board-tab-peer-dot"
+                      role="img"
+                      aria-label={`${presence.label} here now`}
+                      title={`${presence.label} here now`}
+                      style={{ backgroundColor: presence.color }}
+                    />
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Close ${board.name}`}
+                  data-testid={`board-close-${board.id}`}
+                  title={`Close the ${board.name} tab`}
+                  className="-ml-0.5 shrink-0 rounded px-1 text-[11px] leading-none text-[var(--ink-muted)] transition-colors hover:bg-black/[0.06] hover:text-[var(--ink)] dark:hover:bg-white/15"
+                  onClick={() => onClose(board.id)}
+                >
+                  {"\u00d7"}
+                </button>
+              </span>
+            );
+          })}
+        </nav>
+
+        {canCreateBoards ? (
+          <div className="relative shrink-0" ref={chooser}>
+            {/*
             `+` asks which board, because "a new tab" and "a new board" were the
             same button and only one of them was ever the reader's intent. A
             workspace may name the board it always wants (`newTabBoardId`), and
             then the button opens it without asking.
           */}
-          <button
-            type="button"
-            aria-label={newTabBoardId ? "Open the board new tabs open" : "New board or open one"}
-            aria-haspopup={newTabBoardId ? undefined : "menu"}
-            aria-expanded={newTabBoardId ? undefined : chooserOpen}
-            data-testid="board-create"
-            className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
-            onClick={() => {
-              if (newTabBoardId) {
-                onSelect(newTabBoardId);
-                return;
-              }
-              setChooserOpen((open) => !open);
-            }}
-          >
-            +
-          </button>
-          {chooserOpen && !newTabBoardId ? (
-            <div
-              ref={focusFirstMenuItem}
-              role="menu"
-              aria-label="Open or create a board"
-              data-testid="board-chooser"
-              onKeyDown={menuKeyDown}
-              className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
+            <button
+              type="button"
+              aria-label={newTabBoardId ? "Open the board new tabs open" : "New board or open one"}
+              aria-haspopup={newTabBoardId ? undefined : "menu"}
+              aria-expanded={newTabBoardId ? undefined : chooserOpen}
+              data-testid="board-create"
+              className="rounded px-2 py-1 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={() => {
+                if (newTabBoardId) {
+                  onSelect(newTabBoardId);
+                  return;
+                }
+                setChooserOpen((open) => !open);
+              }}
             >
-              {openableBoards.length > 0 ? (
-                <>
-                  <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
-                    Open
-                  </p>
-                  {openableBoards.map((board) => (
-                    <button
-                      key={board.id}
-                      type="button"
-                      role="menuitem"
-                      data-testid={`board-chooser-open-${board.id}`}
-                      className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
-                      onClick={() => {
-                        setChooserOpen(false);
-                        onSelect(board.id);
-                      }}
-                    >
-                      <span className="min-w-0 truncate">{board.name}</span>
-                    </button>
-                  ))}
-                  <hr className="my-1 border-[var(--hairline)]" />
-                </>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                data-testid="board-chooser-new"
-                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
-                onClick={() => {
-                  setChooserOpen(false);
-                  onCreate();
-                }}
+              +
+            </button>
+            {chooserOpen && !newTabBoardId ? (
+              <div
+                ref={focusFirstMenuItem}
+                role="menu"
+                aria-label="Open or create a board"
+                data-testid="board-chooser"
+                onKeyDown={menuKeyDown}
+                className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl"
               >
-                New board
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                {openableBoards.length > 0 ? (
+                  <>
+                    <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--ink-muted)]">
+                      Open
+                    </p>
+                    {openableBoards.map((board) => (
+                      <button
+                        key={board.id}
+                        type="button"
+                        role="menuitem"
+                        data-testid={`board-chooser-open-${board.id}`}
+                        className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                        onClick={() => {
+                          setChooserOpen(false);
+                          onSelect(board.id);
+                        }}
+                      >
+                        <span className="min-w-0 truncate">{board.name}</span>
+                      </button>
+                    ))}
+                    <hr className="my-1 border-[var(--hairline)]" />
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="board-chooser-new"
+                  className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 dark:hover:bg-white/10"
+                  onClick={() => {
+                    setChooserOpen(false);
+                    onCreate();
+                  }}
+                >
+                  New board
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

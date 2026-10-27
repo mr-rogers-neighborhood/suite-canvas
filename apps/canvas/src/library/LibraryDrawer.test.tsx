@@ -561,6 +561,47 @@ describe("LibraryDrawer boards", () => {
     expect(screen.getByTestId(`library-board-state-${second.id}`)).toHaveTextContent("Open");
   });
 
+  /** The drawer's `cards` prop is the workspace's live cards, as the shell builds it. */
+  const cardItems = (workspace: WorkspaceDocument): LibraryItem[] =>
+    workspace
+      .listCards()
+      .filter((card) => !card.deletedAt)
+      .map((card) => ({
+        id: card.id,
+        title: workspace.displayTitle(card.id),
+        boards: [],
+        typeIds: card.typeIds,
+        tagIds: card.tags,
+        sectionIds: [],
+        properties: card.properties,
+      }));
+
+  it("should say when nothing opens a board", () => {
+    const { workspace, first, second, entries } = boardFixture();
+    workspace.setWorkspaceHomeBoardId(first.id);
+    renderDrawer(workspace, [], { tab: "boards", boards: entries() });
+
+    // Research is the home board, so it needs no portal; Drafts has nothing
+    // pointing at it and is only reachable from this list.
+    expect(screen.queryByTestId(`library-board-unopened-${first.id}`)).toBeNull();
+    expect(screen.getByTestId(`library-board-unopened-${second.id}`)).toHaveTextContent(
+      "Nothing opens this",
+    );
+  });
+
+  it("should stop saying a board is unopened once a portal names it", () => {
+    const { workspace, first, second, entries } = boardFixture();
+    workspace.setWorkspaceHomeBoardId(first.id);
+    workspace.createPortalCard({
+      boardId: first.id,
+      targetBoardId: second.id,
+      position: { x: 0, y: 0 },
+    });
+    renderDrawer(workspace, cardItems(workspace), { tab: "boards", boards: entries() });
+
+    expect(screen.queryByTestId(`library-board-unopened-${second.id}`)).toBeNull();
+  });
+
   it("should place a board without moving or removing its row", () => {
     const { workspace, first, second, entries } = boardFixture();
     const view = renderDrawer(workspace, [], {
@@ -882,45 +923,37 @@ describe("LibraryDrawer board blueprints", () => {
     });
 
     // The starter is offered before anything exists for it.
-    expect(screen.getByTestId("library-starter-title-research")).toHaveTextContent(
-      "Research board",
-    );
+    expect(screen.getByTestId("library-starter-title-notebook")).toHaveTextContent("Notebook");
     // Nothing is written until the row is used.
     expect(workspace.listBoards()).toHaveLength(2);
 
-    fireEvent.click(screen.getByTestId("library-starter-use-research"));
+    fireEvent.click(screen.getByTestId("library-starter-use-notebook"));
 
-    const board = workspace.listBoards().find((candidate) => candidate.name === "Research board");
+    const board = workspace.listBoards().find((candidate) => candidate.name === "Notebook");
     expect(board).toBeDefined();
     if (!board) return;
     expect(workspace.listSections(board.id).map((section) => section.title)).toEqual([
-      "Questions",
-      "Sources",
-      "Findings",
+      "Start here",
     ]);
     const onBoard = workspace.listBoardCards(board.id);
-    expect(onBoard).toHaveLength(6);
-    expect(onBoard.map((card) => workspace.displayTitle(card.id))).toContain(
-      "What are we trying to learn?",
-    );
-    // Every card sits inside its own region, which is what membership means.
+    expect(onBoard).toHaveLength(3);
+    expect(onBoard.map((card) => workspace.displayTitle(card.id))).toContain("A note");
+    // Every card sits inside the region, which is what membership means.
     const sections = workspace.listSections(board.id);
     const membership = sectionMembership(workspace.listBoardPlacements(board.id), sections);
-    expect(membership.size).toBe(6);
+    expect(membership.size).toBe(3);
     const byTitle = new Map(sections.map((section) => [section.id, section.title]));
     expect(
       onBoard
         .map((card) => byTitle.get(membership.get(card.id) ?? ""))
         .filter((title): title is string => title !== undefined)
         .sort(),
-    ).toEqual(["Findings", "Findings", "Questions", "Questions", "Sources", "Sources"]);
+    ).toEqual(["Start here", "Start here", "Start here"]);
     expect(useUiStore.getState().activeBoardId).toBe(board.id);
 
     // A starter is one batch, so a single undo takes the whole board away.
     workspace.undo();
-    expect(workspace.listBoards().map((candidate) => candidate.name)).not.toContain(
-      "Research board",
-    );
+    expect(workspace.listBoards().map((candidate) => candidate.name)).not.toContain("Notebook");
   });
 });
 

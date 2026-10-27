@@ -303,6 +303,17 @@ export function LibraryBoardRow({
             {board.template === true ? (
               <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 blueprint"}</span>
             ) : null}
+            {/* A board no portal names and the workspace does not open by default:
+                the list is the only way in, which is worth saying while a guide is
+                still being built. */}
+            {board.unopened === true ? (
+              <span
+                data-testid={`library-board-unopened-${board.id}`}
+                title="No portal opens this board, and it is not the board the workspace opens"
+              >
+                {" \u00b7 Nothing opens this"}
+              </span>
+            ) : null}
           </span>
         </div>
 

@@ -29,6 +29,11 @@ export interface LibraryBoard {
   cardCount: number;
   /** Offered in the Boards tab's Templates group; using one copies the board. */
   template?: boolean;
+  /**
+   * No portal names this board and it is not the entry board, so the list is the
+   * only way in. Computed from the snapshot with the list, never stored.
+   */
+  unopened?: boolean;
 }
 
 /** What a drawer row can be. Boards are global: they never leave this list. */

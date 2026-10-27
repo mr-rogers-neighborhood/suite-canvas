@@ -24,6 +24,14 @@ A projection that changes something is an explicit command with a name and a rep
 
 Splitting the workspace into one index document plus a document per card would buy isolated loading and per-card access control, and it would cost cross-document atomicity. Loro has no multi-document transaction, so creation order, trash retention and purge tombstones become a convergent sequence, and undo splits by scope. The split waits for a benchmark that asks for it and stays behind the `WorkspaceDocument` seam until then (ADR-0021).
 
+## Nested boards
+
+A portal is a card whose primary type is the portal type and whose board property names another board. It is a card like any other: it is placed, tagged, searched and trashed by the same code, and the one thing it adds is a second board. On the board that holds it, a portal draws a live outline of the board it names, built from that board's placements and links. When the named board has a cover picture, the picture is drawn in place of the outline.
+
+Opening a portal is a camera gesture: zoom into the card until it covers most of the canvas and its board replaces the one on screen. A board entered that way is left by zooming back out. The trail beside the tab strip lists the boards the reader passed through, and every step on it switches to that board with the viewport it had. The trail records history rather than ancestry: it is the order boards were left in, so a board reached from a tab and a board reached from a portal both appear on it, and the same board may appear more than once.
+
+One board can be named by portals on several boards, and by more than one portal on the same board, so the shape is a directed acyclic graph rather than a tree. No board has a parent. Deleting a board does not delete the portals that name it: each portal's board property is cleared in the same commit, and the card stays on its board as a card that names no board.
+
 ## What is settled
 
 | Question | Decision | Record |

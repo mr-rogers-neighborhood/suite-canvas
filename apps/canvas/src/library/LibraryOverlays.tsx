@@ -52,7 +52,7 @@ export function LibraryOverlays({
           title="Delete board?"
           description={`${pendingDelete.title} has ${pendingDelete.cardCount} ${
             pendingDelete.cardCount === 1 ? "card" : "cards"
-          } on it. Unplacing keeps the cards in the library; trashing sends this board's cards to the trash with it.`}
+          } on it. Unplacing keeps the cards in the library; trashing sends this board's cards to the trash with it. Portals to this board stay where they are and become plain cards.`}
           onClose={onDismissDelete}
           actions={[
             {

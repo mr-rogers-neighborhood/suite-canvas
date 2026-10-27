@@ -2,57 +2,45 @@ import {
   type ResolvedSurfaceStyle,
   resolveSurfaceStyle,
   type StyleColourRole,
-  type StyleRule,
   type SurfaceStyle,
   styleColourRoles,
 } from "@suite/graph";
-import { createContext, useContext } from "react";
 import { colourRoleVar, surfacePaintVars } from "./surfacePaint";
 
 /**
- * Named rules over roles (ADR-0046 §3–4).
+ * A surface's paint, from two levels and no more.
  *
- * A rule says *where* it applies (a scope) and *what* it assigns (a
- * `SurfaceStyle`). Rules never name surfaces and never store a value: the
- * resolver merges the rules that match a surface, then lets that surface's own
- * style win, so a per-card override stays the exception it was meant to be.
+ * A card wears its type's style, then its own over that. A link wears its own. A
+ * section, a board and a field wear the theme, which is what the theme is for.
  *
- * Cards are wired to this resolver today; sections, boards, fields, links and
- * the shell regions follow from the same function, which is why the subject
- * names the region and the type rather than just a surface kind.
+ * There are no rules, no scopes and no shell paint. Every one of those was a way
+ * to say "paint that thing over there", and the thing a reader wanted was always
+ * the same: this card, or every card of this type.
  */
 
 /**
  * The readability floor (ADR-0046 §6).
- * WCAG's ratio for large text and graphical objects. A rule below it is
- * corrected and reported, never applied silently. It lives here rather than in
- * `@suite/graph` because only the resolver reads it.
+ * WCAG's ratio for large text and graphical objects. A pair below it is corrected
+ * and reported, never applied silently. It lives here rather than in `@suite/graph`
+ * because only the resolver reads it.
  */
 export const CONTRAST_FLOOR = 3;
 
-/** Shell regions a rule can target (ADR-0051 §1). */
-export const shellRegions = ["app-bar", "tabs", "dock", "drawer"] as const;
-export type ShellRegion = (typeof shellRegions)[number];
-
-/** The surface a rule is resolved for. */
+/** The surface a style is resolved for. */
 export interface SurfaceSubject {
   surface: "card" | "section" | "board" | "field" | "link" | "shell";
-  /** A card's type, so a type rule can match it. */
-  typeId?: string | undefined;
-  /** The shell region, so a region rule can match it. */
-  region?: ShellRegion | undefined;
 }
 
 /**
- * Role → the colour the token layer resolves it to, as `#rrggbb`. The guard
- * needs numbers, and the app reads this from the live token layer rather than
- * keeping a second palette (ADR-0046 §1).
+ * Role → the colour the token layer resolves it to, as `#rrggbb`. The guard needs
+ * numbers, and the app reads this from the live token layer rather than keeping a
+ * second palette (ADR-0046 §1).
  */
 export type SurfacePalette = Partial<Record<StyleColourRole, string>>;
 
-/** A rule that would have been unreadable, and the ink the floor chose instead. */
+/** A pair that would have been unreadable, and the ink the floor chose instead. */
 export interface ContrastCorrection {
-  /** The rule whose assignment was corrected, or null for the surface's own style. */
+  /** Always null now: only a surface's own style can be corrected. */
   ruleId: string | null;
   surface: StyleColourRole | "none";
   ink: StyleColourRole;
@@ -63,50 +51,12 @@ export interface ContrastCorrection {
 
 export interface RuleResolution {
   style: ResolvedSurfaceStyle;
-  /** The style as written (rules merged, own style last), before the defaults. */
+  /** The style as written, the two levels merged, before the defaults. */
   declared: SurfaceStyle;
-  /** True when the surface style or at least one rule painted this surface. */
+  /** True when either level named this surface. */
   applied: boolean;
   /** Non-empty when the floor had to correct a pair. Show it; do not drop it. */
   corrections: ContrastCorrection[];
-}
-
-/**
- * How specific a scope is. A global rule is the floor; a kind rule narrows to one
- * surface kind; a type rule and a shell-region rule both name one concrete group
- * and so rank above it (ADR-0046 §4).
- */
-const SCOPE_SPECIFICITY: Record<StyleRule["scope"]["kind"], number> = {
-  global: 0,
-  kind: 1,
-  type: 2,
-  shell: 2,
-};
-
-function scopeMatches(rule: StyleRule, subject: SurfaceSubject): boolean {
-  const { scope } = rule;
-  switch (scope.kind) {
-    case "global":
-      return true;
-    case "kind":
-      return scope.id === subject.surface;
-    case "type":
-      return subject.surface === "card" && scope.id === subject.typeId;
-    case "shell":
-      return subject.surface === "shell" && scope.id === subject.region;
-  }
-}
-
-/** The rules that apply to a surface, least specific first, ties in rule order. */
-export function matchingRules(subject: SurfaceSubject, rules: readonly StyleRule[]): StyleRule[] {
-  return rules
-    .filter((rule) => scopeMatches(rule, subject))
-    .sort(
-      (a, b) =>
-        SCOPE_SPECIFICITY[a.scope.kind] - SCOPE_SPECIFICITY[b.scope.kind] ||
-        a.order - b.order ||
-        a.id.localeCompare(b.id),
-    );
 }
 
 /** One style laid over another; per-side edges merge per field, not per side. */
@@ -224,26 +174,17 @@ export function floorInk(
 }
 
 /**
- * The paint a surface actually wears: the rules that match it, then its own
- * style, then the contrast floor. `applied` is false when nothing named this
- * surface, so an unpainted one keeps rendering exactly as it did before.
+ * The paint a surface actually wears: its type's style, its own over that, then the
+ * contrast floor. `applied` is false when neither level named this surface, so an
+ * unstyled one keeps rendering exactly as the theme paints it.
  */
-export function resolveSurfaceStyleWithRules(
-  style: SurfaceStyle | undefined,
+export function resolveSurfaceStyleFor(
+  own: SurfaceStyle | undefined,
+  inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
-  rules: readonly StyleRule[],
   palette: SurfacePalette = {},
 ): RuleResolution {
-  const matched = matchingRules(subject, rules);
-  let merged: SurfaceStyle = {};
-  let ruleId: string | null = null;
-  for (const rule of matched) {
-    merged = mergeSurfaceStyle(merged, rule.style);
-    if (rule.style.surface !== undefined || rule.style.ink !== undefined) ruleId = rule.id;
-  }
-  const own = style ?? {};
-  const combined = mergeSurfaceStyle(merged, own);
-  if (own.surface !== undefined || own.ink !== undefined) ruleId = null;
+  const combined = mergeSurfaceStyle(inherited ?? {}, own ?? {});
 
   const resolved = resolveSurfaceStyle(combined, subject.surface);
   const corrections: ContrastCorrection[] = [];
@@ -253,7 +194,7 @@ export function resolveSurfaceStyleWithRules(
     : resolved;
   if (floored?.corrected) {
     corrections.push({
-      ruleId,
+      ruleId: null,
       surface: resolved.surface,
       ink: resolved.ink,
       corrected: floored.ink,
@@ -265,57 +206,28 @@ export function resolveSurfaceStyleWithRules(
   return {
     style: finalStyle,
     declared: combined,
-    applied: style !== undefined || matched.length > 0,
+    applied: own !== undefined || inherited !== undefined,
     corrections,
   };
 }
 
 /**
- * The inline paint for one surface, rules included. Returns nothing at all when
- * no rule and no style name it, which is what keeps an unpainted surface byte
- * identical to the pre-rule rendering.
+ * The inline paint for one surface. Returns nothing at all when neither level names
+ * it, which is what keeps an unstyled surface byte identical to the theme.
  */
 export function surfacePaintFor(
-  style: SurfaceStyle | undefined,
+  own: SurfaceStyle | undefined,
+  inherited: SurfaceStyle | undefined,
   subject: SurfaceSubject,
-  context: SurfaceRules,
+  palette: SurfacePalette,
 ): { paint: Record<string, string>; corrections: ContrastCorrection[] } {
-  if (!style && context.rules.length === 0) return { paint: {}, corrections: [] };
-  const resolved = resolveSurfaceStyleWithRules(style, subject, context.rules, context.palette);
+  if (!own && !inherited) return { paint: {}, corrections: [] };
+  const resolved = resolveSurfaceStyleFor(own, inherited, subject, palette);
   if (!resolved.applied) return { paint: {}, corrections: [] };
   return { paint: surfacePaintVars(resolved.style), corrections: resolved.corrections };
 }
 
-/** The shell style fields the shell's CSS has a rule for. */
-export const SHELL_PAINT_FIELDS = ["surface", "ink", "sides", "shape", "radius"] as const;
-
-/**
- * The shell's paint: the workspace's shell style resolved with the named rules,
- * then written as `--shell-paint-*` on the shell root.
- *
- * The prefix is deliberate. The shell root is an ancestor of the board, and an
- * unprefixed `--paint-*` would be inherited by a card that never named that
- * edge, so a shell border would appear on every card. `fields` names only what
- * the style actually says, so a shell style that names an ink does not also
- * repaint the app bar's translucency.
- *
- * This is the shell-wide answer, which every region falls back to.
- */
-export function shellPaintFor(
-  style: SurfaceStyle | undefined,
-  rules: readonly StyleRule[],
-  palette: SurfacePalette,
-): { vars: Record<string, string>; fields: string } {
-  const resolved = resolveSurfaceStyleWithRules(style, { surface: "shell" }, rules, palette);
-  if (!resolved.applied) return { vars: {}, fields: "" };
-  const vars: Record<string, string> = {};
-  for (const [name, value] of Object.entries(surfacePaintVars(resolved.style))) {
-    vars[name.replace("--paint-", "--shell-paint-")] = value;
-  }
-  const fields = SHELL_PAINT_FIELDS.filter((field) => resolved.declared[field] !== undefined);
-  return { vars, fields: fields.join(" ") };
-}
-
+/** `rgb(…)` or `rgba(…)` as `#rrggbb`, or null when it is neither or translucent. */
 function rgbToHex(colour: string): string | null {
   const match =
     /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i.exec(
@@ -333,10 +245,10 @@ function rgbToHex(colour: string): string | null {
 /**
  * The live palette: each role's token, resolved by the browser on the shell root.
  *
- * The guard needs colours, and the tokens are a theme's values — reading them
- * here keeps one palette in the app (ADR-0046 §1) and means a theme swap moves
- * the floor with it. A theme the browser cannot measure (a `color-mix()`, a
- * translucent surface) simply contributes nothing and is never "corrected".
+ * The guard needs colours, and the tokens are a theme's values — reading them here
+ * keeps one palette in the app (ADR-0046 §1) and means a theme swap moves the floor
+ * with it. A theme the browser cannot measure (a `color-mix()`, a translucent
+ * surface) simply contributes nothing and is never "corrected".
  */
 export function readPalette(root: HTMLElement): SurfacePalette {
   const doc = root.ownerDocument;
@@ -360,58 +272,4 @@ export function readPalette(root: HTMLElement): SurfacePalette {
     probe.remove();
   }
   return palette;
-}
-
-/** The rules and the live palette, provided once at the shell root. */
-export interface SurfaceRules {
-  rules: readonly StyleRule[];
-  palette: SurfacePalette;
-}
-
-export const NO_SURFACE_RULES: SurfaceRules = { rules: [], palette: {} };
-
-export const SurfaceRulesContext = createContext<SurfaceRules>(NO_SURFACE_RULES);
-
-/** Cards read this; without a provider the answer is "no rules", which is today. */
-export function useSurfaceRules(): SurfaceRules {
-  return useContext(SurfaceRulesContext);
-}
-
-/**
- * The shell resolved **per region** (ADR-0071
- * amendment).
- *
- * A rule scoped to `shell` names a region — the app bar, the board tabs, the dock or the library — and until
- * this existed no subject ever carried a region, so the scope matched nothing and was read-only fiction in
- * the same way an unwritable `type` rule was.
- *
- * The workspace's own shell style is the base for every region: a reader who painted "the shell" meant all of
- * it. A region rule then overrides that region alone, which is why the answer has two halves — the region's
- * own paint, and whether it has one at all.
- */
-export function shellRegionPaintFor(
-  style: SurfaceStyle | undefined,
-  rules: readonly StyleRule[],
-  palette: SurfacePalette,
-): Record<string, { vars: Record<string, string>; fields: string }> {
-  const regions: Record<string, { vars: Record<string, string>; fields: string }> = {};
-  for (const region of shellRegions) {
-    const resolved = resolveSurfaceStyleWithRules(
-      style,
-      { surface: "shell", region },
-      rules,
-      palette,
-    );
-    if (!resolved.applied) {
-      regions[region] = { vars: {}, fields: "" };
-      continue;
-    }
-    const vars: Record<string, string> = {};
-    for (const [name, value] of Object.entries(surfacePaintVars(resolved.style))) {
-      vars[name.replace("--paint-", `--shell-${region}-paint-`)] = value;
-    }
-    const fields = SHELL_PAINT_FIELDS.filter((field) => resolved.declared[field] !== undefined);
-    regions[region] = { vars, fields: fields.join(" ") };
-  }
-  return regions;
 }

@@ -274,6 +274,7 @@ export {
 } from "./sections.js";
 export type {
   EdgeStyle,
+  PaletteSwatch,
   ResolvedSurfaceStyle,
   StyleColourRole,
   StyleEdgeFlow,
@@ -285,10 +286,12 @@ export type {
 } from "./style.js";
 export {
   clampStyle,
+  DEFAULT_PALETTE,
   defaultEdgeFlow,
   edgeStyleSchema,
   isEmptyStyle,
   OPACITY_FLOOR,
+  paletteSwatchSchema,
   resolveSurfaceStyle,
   sideEdgeStyle,
   styleColourRoles,
@@ -297,6 +300,7 @@ export {
   styleShapes,
   styleSides,
   surfaceStyleSchema,
+  swatchColour,
   TEXT_SCALE_MAX,
   TEXT_SCALE_MIN,
 } from "./style.js";

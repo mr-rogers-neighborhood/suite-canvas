@@ -1,4 +1,4 @@
-import type { StyleRule, SurfaceStyle, WorkspaceDocument } from "@suite/graph";
+import type { WorkspaceDocument } from "@suite/graph";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { readPalette, type SurfacePalette } from "../canvas/rules";
 import type { ShareSession } from "../session/session";
@@ -9,37 +9,6 @@ export function documentLabel(share: ShareSession, workspaceId: string): string 
   if (share.scope === "card") return "Card share";
   if (share.scope === "selection") return "Selection share";
   return workspaceId;
-}
-
-/**
- * The workspace's own paint, the shell's style and the named rules, read from
- * the document meta. It re-renders only when that paint actually changes, so a
- * keystroke in a card never repaints the shell (ADR-0046 §3).
- */
-export function useWorkspacePaint(workspace: WorkspaceDocument): {
-  shellStyle: SurfaceStyle | undefined;
-  rules: StyleRule[];
-} {
-  const read = useCallback(
-    () => ({ shellStyle: workspace.shellStyle(), rules: workspace.styleRules() }),
-    [workspace],
-  );
-  const [paint, setPaint] = useState(read);
-  const signature = useRef(JSON.stringify(paint));
-  useEffect(() => {
-    const sync = () => {
-      const next = read();
-      const key = JSON.stringify(next);
-      if (key === signature.current) return;
-      signature.current = key;
-      setPaint(next);
-    };
-    sync();
-    // The workspace's own paint is meta, not a snapshot section, so it has its
-    // own subscription; the snapshot would never mention it.
-    return workspace.observeWorkspacePaint(sync);
-  }, [read, workspace]);
-  return paint;
 }
 
 /**
@@ -70,7 +39,7 @@ export function useWorkspaceNavigation(workspace: WorkspaceDocument): {
       setNavigation(next);
     };
     sync();
-    return workspace.observeWorkspacePaint(sync);
+    return workspace.observeWorkspaceMeta(sync);
   }, [read, workspace]);
   return navigation;
 }

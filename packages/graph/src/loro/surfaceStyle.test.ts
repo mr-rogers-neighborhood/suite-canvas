@@ -131,7 +131,7 @@ describe("a type's own paint", () => {
     const card = doc.createCard({
       boardId: board.id,
       position: { x: 0, y: 0 },
-      primaryTypeId: type.id,
+      typeId: type.id,
     });
 
     doc.updateType(type.id, { style: { surface: "accent", shape: "pill" } });
@@ -159,5 +159,54 @@ describe("a type's own paint", () => {
     const type = doc.createType({ name: "Source", glyph: "\u25a4" });
 
     expect(() => doc.updateType(type.id, { style: { surface: "#ff0000" as never } })).toThrow();
+  });
+});
+
+describe("the workspace palette", () => {
+  it("answers with defaults before anyone has edited it", () => {
+    const { doc } = workspace();
+
+    // A reader who never opens Settings still has swatches to click.
+    expect(doc.palette().map((entry) => entry.id)).toEqual([
+      "slate",
+      "blue",
+      "green",
+      "amber",
+      "rose",
+      "violet",
+    ]);
+    for (const swatch of doc.palette()) {
+      expect(swatch.light).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(swatch.dark).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+
+  it("stores a swatch with a value for each mode, and restores defaults when cleared", () => {
+    const { doc } = workspace();
+    doc.setPalette([{ id: "ink-blue", name: "Ink blue", light: "#1d4ed8", dark: "#93c5fd" }]);
+
+    expect(doc.palette()).toEqual([
+      { id: "ink-blue", name: "Ink blue", light: "#1d4ed8", dark: "#93c5fd" },
+    ]);
+
+    doc.setPalette([]);
+    expect(doc.palette()).toHaveLength(6);
+  });
+
+  it("refuses a swatch with no dark value, rather than inventing one", () => {
+    const { doc } = workspace();
+    expect(() => doc.setPalette([{ id: "a", name: "A", light: "#ffffff" } as never])).toThrow();
+  });
+
+  it("carries the swatch on a card and on a type", () => {
+    const { doc, board } = workspace();
+    const type = doc.createType({ name: "Source", glyph: "\u25a4" });
+    const card = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 }, typeId: type.id });
+
+    doc.updateType(type.id, { style: { swatch: "blue" } });
+    doc.setCardStyle(card.id, { swatch: "rose" });
+
+    expect(doc.getType(type.id)?.style?.swatch).toBe("blue");
+    expect(doc.getCard(card.id)?.style?.swatch).toBe("rose");
   });
 });

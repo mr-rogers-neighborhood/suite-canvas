@@ -15,7 +15,7 @@ import type {
   SelectOption,
   Tag,
 } from "../schema.js";
-import type { SurfaceStyle } from "../style.js";
+import type { PaletteSwatch, SurfaceStyle } from "../style.js";
 import type { SavedView, ViewQuery } from "../views.js";
 import type { DocApi } from "./api.js";
 import { createDocApi } from "./api.js";
@@ -259,6 +259,18 @@ export class WorkspaceDocument extends CardsFacade {
 
   setNewTabBoardId(boardId: string | null): void {
     this.workspaceApi.setNewTabBoardId(boardId);
+  }
+
+  palette(): PaletteSwatch[] {
+    return this.workspaceApi.palette();
+  }
+
+  setPalette(palette: readonly PaletteSwatch[]): void {
+    this.workspaceApi.setPalette(palette);
+  }
+
+  observeWorkspaceMeta(listener: () => void): () => void {
+    return this.workspaceApi.observeWorkspaceMeta(listener);
   }
 
   listBoards(): Board[] {

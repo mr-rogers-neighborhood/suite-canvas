@@ -7,13 +7,12 @@ import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useLeaveGuard } from "./app/useLeaveGuard";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
-import { useSurfacePalette, useWorkspaceNavigation, useWorkspacePaint } from "./app/workspacePaint";
+import { useSurfacePalette, useWorkspaceNavigation } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import type { CanvasMode } from "./canvas/links/linkGesture";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
 import { type PlacementSource, usePlacementRunStore } from "./canvas/placementRun";
 import type { CanvasPurpose } from "./canvas/purpose";
-import { shellPaintFor, shellRegionPaintFor } from "./canvas/rules";
 import { usePlacementEngine } from "./canvas/usePlacementEngine";
 import { useRecordEngine } from "./canvas/useRecordEngine";
 import { zoomBand } from "./canvas/zoomRange";
@@ -35,8 +34,6 @@ import { useCanvasStore } from "./store/useCanvasStore";
 import { useUiStore } from "./store/useUiStore";
 import { useWorkspaceSnapshot } from "./store/workspaceStore";
 import { initTheme, useThemeStore } from "./theme/useThemeStore";
-import { useWorkspaceTheme } from "./theme/useWorkspaceTheme";
-import { applyWorkspaceTheme } from "./theme/workspaceTheme";
 
 /** Half of the default card box (`w-72`), so a dropped card lands under the pointer. */
 const CARD_HALF_WIDTH = 144;
@@ -76,60 +73,13 @@ function WorkspaceShell({
   const snapshot = useWorkspaceSnapshot();
   countRender("shell");
 
-  // The shell paints from the workspace's own style, resolved with the named
-  // rules (ADR-0046 §3–4). The variables are prefixed here because the shell
-  // root is an ancestor of the board: an unprefixed `--paint-*` would be
-  // inherited by cards that never named that edge.
+  // The shell paints from the token layer and nothing else: a workspace has no
+  // shell style, no palette and no rules.
   const shellRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLElement>(null);
-  const workspacePaint = useWorkspacePaint(workspace);
   const navigation = useWorkspaceNavigation(workspace);
-  const workspaceTheme = useWorkspaceTheme(workspace);
   const themeMode = useThemeStore((state) => state.mode);
-  const resolvedTheme = useThemeStore((state) => state.theme);
-  // The theme's colours are painted onto the shell root, which is where every
-  // token is read, and taken back when the mode or the palette changes.
-  const appliedThemeTokens = useRef(new Set<string>());
-  useEffect(() => {
-    applyWorkspaceTheme(
-      document.documentElement,
-      workspaceTheme,
-      resolvedTheme,
-      appliedThemeTokens.current,
-    );
-  }, [workspaceTheme, resolvedTheme]);
   const palette = useSurfacePalette(shellRef, themeMode);
-  const shellPaint = useMemo(
-    () => shellPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),
-    [workspacePaint, palette],
-  );
-
-  /**
-   * The shell per region (ADR-0071 amendment): a rule scoped to the app bar paints the app bar and nothing
-   * else. Only the regions that have their own paint are named on the root, so an untouched shell renders
-   * byte-identically — the property `shellPaintFor` was careful about.
-   */
-  const shellRegionsPaint = useMemo(
-    () => shellRegionPaintFor(workspacePaint.shellStyle, workspacePaint.rules, palette),
-    [workspacePaint, palette],
-  );
-  const shellRegionVars = useMemo(() => {
-    const vars: Record<string, string> = {};
-    for (const region of Object.values(shellRegionsPaint)) Object.assign(vars, region.vars);
-    return vars;
-  }, [shellRegionsPaint]);
-  const paintedShellRegions = useMemo(
-    () =>
-      Object.entries(shellRegionsPaint)
-        .filter(([, paint]) => paint.fields !== "")
-        .map(([region]) => region)
-        .join(" "),
-    [shellRegionsPaint],
-  );
-  const surfaceRules = useMemo(
-    () => ({ rules: workspacePaint.rules, palette }),
-    [workspacePaint.rules, palette],
-  );
 
   // Content breakpoints (ADR-0051): the band rides the board root as an
   // attribute, written straight to the element so a zoom gesture does not
@@ -783,10 +733,7 @@ function WorkspaceShell({
       synced={synced}
       leaving={leaving}
       leavingPrompt={leavingPrompt}
-      shellPaint={shellPaint}
-      shellRegionVars={shellRegionVars}
-      paintedShellRegions={paintedShellRegions}
-      surfaceRules={surfaceRules}
+      palette={palette}
       requestLeave={requestLeave}
       setPaletteOpen={setPaletteOpen}
       standalone={standalone}

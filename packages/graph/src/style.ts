@@ -81,7 +81,54 @@ export interface SurfaceSides {
   left?: EdgeStyle | undefined;
 }
 
+/**
+ * One entry in the workspace palette: a name the reader wrote, and the colour it
+ * resolves to in each mode.
+ *
+ * Per mode rather than one value, because a workspace has to look like itself at
+ * both brightnesses. The two are stored together so a swatch cannot be defined in
+ * light and undefined in dark, which is what one value plus a "same as light"
+ * fallback eventually produces.
+ */
+export const paletteSwatchSchema = z.object({
+  id: z.string().min(1).max(80),
+  name: z.string().min(1).max(40),
+  light: z.string().min(1).max(120),
+  dark: z.string().min(1).max(120),
+});
+export type PaletteSwatch = z.infer<typeof paletteSwatchSchema>;
+
+/**
+ * The palette a workspace starts with. Six colours, the same six a section can be,
+ * so "blue" means one blue across the product and a reader who has never opened
+ * Settings still has something to click.
+ */
+export const DEFAULT_PALETTE: readonly PaletteSwatch[] = [
+  { id: "slate", name: "Slate", light: "#64748b", dark: "#94a3b8" },
+  { id: "blue", name: "Blue", light: "#3b82f6", dark: "#60a5fa" },
+  { id: "green", name: "Green", light: "#10b981", dark: "#34d399" },
+  { id: "amber", name: "Amber", light: "#f59e0b", dark: "#fbbf24" },
+  { id: "rose", name: "Rose", light: "#f43f5e", dark: "#fb7185" },
+  { id: "violet", name: "Violet", light: "#8b5cf6", dark: "#a78bfa" },
+];
+
+/** The colour a swatch resolves to in one mode, or null when the id names nothing. */
+export function swatchColour(
+  palette: readonly PaletteSwatch[],
+  id: string | undefined,
+  mode: "light" | "dark",
+): string | null {
+  if (!id) return null;
+  const swatch = palette.find((entry) => entry.id === id);
+  return swatch ? swatch[mode] : null;
+}
+
 export const surfaceStyleSchema = z.object({
+  /**
+   * A palette swatch, by id. This is the fill a reader chooses, and it wins over
+   * `surface` when both are present.
+   */
+  swatch: z.string().min(1).max(80).optional(),
   /** A role, or `none` for a seamless surface: bare content on the canvas. */
   surface: z.union([z.enum(styleColourRoles), z.literal("none")]).optional(),
   ink: z.enum(styleColourRoles).optional(),
@@ -191,6 +238,7 @@ export function sideEdgeStyle(
 export function isEmptyStyle(style: SurfaceStyle | undefined): boolean {
   if (!style) return true;
   return (
+    style.swatch === undefined &&
     style.surface === undefined &&
     style.ink === undefined &&
     style.shape === undefined &&

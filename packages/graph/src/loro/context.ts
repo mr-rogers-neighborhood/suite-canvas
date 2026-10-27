@@ -57,7 +57,7 @@ export class DocContext {
   readonly undoManager: UndoManager;
   readonly known: Record<WorkspaceSection, Set<string>>;
   readonly listeners = new Set<(change: WorkspaceChange) => void>();
-  readonly paintListeners = new Set<() => void>();
+  readonly metaListeners = new Set<() => void>();
   readonly viewListeners = new Set<() => void>();
   viewRevision = 0;
   readonly containerCache = new Map<string, CardContainers>();
@@ -187,7 +187,7 @@ export class DocContext {
 /** Fans doc events out to the caches, listeners and derived indexes. */
 function attachDocSubscription(ctx: DocContext): void {
   ctx.doc.subscribe((batch) => {
-    let paintTouched = false;
+    let metaTouched = false;
     const touched = new Map<WorkspaceSection, Set<string>>();
     const containers = new Set<string>();
     const savedViews = new Set<string>();
@@ -202,9 +202,9 @@ function attachDocSubscription(ctx: DocContext): void {
         continue;
       }
       if (root === STRUCT_KEYS.meta) {
-        // The workspace's own name, style and rules live here. They are not a
+        // The workspace's own name and navigation live here. They are not a
         // snapshot section, so readers of them subscribe separately.
-        paintTouched = true;
+        metaTouched = true;
         continue;
       }
       if (root === STRUCT_KEYS.views) {
@@ -261,7 +261,7 @@ function attachDocSubscription(ctx: DocContext): void {
       ctx.viewRevision += 1;
       for (const listener of ctx.viewListeners) listener();
     }
-    if (paintTouched) for (const listener of ctx.paintListeners) listener();
+    if (metaTouched) for (const listener of ctx.metaListeners) listener();
     if (touched.size === 0) return;
     for (const [section, keys] of touched) {
       for (const key of keys) {

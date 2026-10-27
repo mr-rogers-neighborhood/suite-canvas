@@ -1,3 +1,4 @@
+import { DEFAULT_PALETTE, type PaletteSwatch, paletteSwatchSchema } from "../style.js";
 import { cleanWorkspaceName, DEFAULT_WORKSPACE_NAME, STRUCT_ORIGIN } from "./constants.js";
 import type { DocContext } from "./context.js";
 
@@ -89,6 +90,51 @@ export function workspaceMethods(ctx: DocContext) {
       if (next === null) ctx.meta.delete(key);
       else ctx.meta.set(key, next);
       ctx.commit(`${STRUCT_ORIGIN}set-${key}`);
+    },
+
+    /**
+     * The workspace palette. Document data: a share renders the author's colours,
+     * and every swatch carries both modes, so a visitor's light/dark choice still
+     * works inside somebody else's colours.
+     *
+     * A workspace that has never been edited answers with the defaults rather than
+     * an empty list, so the first swatch a reader clicks already exists.
+     */
+    palette(): PaletteSwatch[] {
+      const stored = ctx.meta.get("palette");
+      if (!Array.isArray(stored)) return [...DEFAULT_PALETTE];
+      const palette: PaletteSwatch[] = [];
+      for (const entry of stored) {
+        const parsed = paletteSwatchSchema.safeParse(entry);
+        if (parsed.success) palette.push(parsed.data);
+      }
+      return palette.length > 0 ? palette : [...DEFAULT_PALETTE];
+    },
+
+    /** Replaces the whole palette; an empty list restores the defaults. */
+    setPalette(palette: readonly PaletteSwatch[]): void {
+      if (palette.length === 0) {
+        if (ctx.meta.get("palette") !== undefined) ctx.meta.delete("palette");
+        ctx.commit(`${STRUCT_ORIGIN}set-palette`);
+        return;
+      }
+      ctx.meta.set(
+        "palette",
+        palette.map((entry) => paletteSwatchSchema.parse(entry)),
+      );
+      ctx.commit(`${STRUCT_ORIGIN}set-palette`);
+    },
+
+    /**
+     * Notifies when the workspace's own meta changes.
+     * Meta is not a snapshot section, so its readers take their own subscription
+     * rather than a second snapshot field.
+     */
+    observeWorkspaceMeta(listener: () => void): () => void {
+      ctx.metaListeners.add(listener);
+      return () => {
+        ctx.metaListeners.delete(listener);
+      };
     },
   };
 }

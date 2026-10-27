@@ -87,8 +87,10 @@ describe("the current boot path opens an N−1 document store", () => {
         "Legacy card two",
       ]);
 
-      // The stamp is an explicit step of opening, not a silent data rewrite.
-      expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(SCHEMA_VERSION - 1);
+      // The stamp is an explicit step of opening, not a silent data rewrite. The
+      // fixture was captured at schema 3, so it is an older store rather than
+      // exactly one behind; what matters is that reading leaves it alone.
+      expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(3);
       workspace.ensureDefaultTypes();
       expect(doc.getMap(WorkspaceDocument.META_KEY).get("schemaVersion")).toBe(SCHEMA_VERSION);
     } finally {

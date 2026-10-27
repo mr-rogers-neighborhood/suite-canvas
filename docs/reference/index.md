@@ -6,10 +6,10 @@ Facts to look up: the data model, the commands, the quotas, the security boundar
 
 | Article | What it covers | Updated |
 | --- | --- | --- |
+| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-26 |
 | [Glossary](glossary.md) | One definition per term, in the sense this repository uses it. The model behind them is architecture.md, and the code identifiers are listed beside ea… | 2026-10-26 |
 | [Architecture](architecture.md) | Suite is a local-first collaborative canvas. One Loro document per workspace is the source of truth, @suite/graph validates every write, and the React… | 2026-10-26 |
 | [Canvas](canvas.md) | apps/canvas/src/canvas turns the workspace document into a board you can point at: placements become nodes, edges become routes, and every gesture end… | 2026-10-26 |
-| [Interface](ui.md) | How the shell, the library, the panels, the styling surfaces and the command palette are assembled, and the focus, keyboard and theme rules they share… | 2026-10-26 |
 | [Runtime](runtime.md) | The browser process: boot order, persistence, the relay, sharing, and the diagnostics an operator can read. It does not cover the document model (data… | 2026-10-26 |
 | [Security model](security-model.md) | Two credentials open a room: a session JWT for an account and a share token for a link. The owner key that used to be the third was deleted (ADR-0076)… | 2026-10-26 |
 | [Environment](environment.md) | Every variable the relay reads, its default, and what it changes. apps/collab-server/src/config/config.ts parses them once at boot and refuses to star… | 2026-10-26 |

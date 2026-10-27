@@ -37,6 +37,8 @@ One definition per term, in the sense this repository uses it. The model behind 
 | layer rank | The fractional `z` value ordering cards within one board | `placements.<id>.z`, `moveLayer` |
 | claim | Recording the organization that owns a workspace, which happens on the first signed-in join | `workspace_orgs`, `claimWorkspaceForSession` |
 | fold | A card or a section reduced to its header. Reader state, never a document write | `collapsedCards`, `collapsedSections` |
+| swatch | One colour in the workspace palette: a name and a value for each mode | `palette`, `PaletteSwatch` |
+| type style | The default paint for every card of a type. A card's own style wins over it | `cardTypeSchema.style` |
 
 ## Words we do not use
 

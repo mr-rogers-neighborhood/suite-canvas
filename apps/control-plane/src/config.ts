@@ -37,7 +37,7 @@ export const AUTH_VARIABLE_PREFIX = "SUITE_AUTH_";
  * licence records live in that one database (ADR-0069), so a deployment that
  * mounts either one cannot start without a connection string.
  */
-export const DATABASE_MODULES: readonly string[] = ["auth", "billing"];
+export const DATABASE_MODULES: readonly string[] = ["auth", "billing", "admin"];
 
 export interface ControlPlaneConfig {
   /** TCP port the listener binds; `PORT`, default 1236. */
@@ -171,6 +171,25 @@ function authPassthrough(env: ConfigEnv): Readonly<Record<string, string>> {
 }
 
 /**
+ * The one pairing that would otherwise boot into a state nobody can leave.
+ *
+ * `SUITE_ADMISSION_REQUIRED` holds every new account, and only the operator route
+ * releases one. With no token for that route the queue is a one-way door, so it is
+ * reported at startup rather than discovered by the first person who signs up.
+ */
+function admissionProblemOf(env: ConfigEnv): ConfigProblem | null {
+  const required = (env.SUITE_ADMISSION_REQUIRED ?? "").trim().toLowerCase();
+  const queueOn = required === "1" || required === "true";
+  const token = (env.SUITE_ADMIN_TOKEN ?? "").trim();
+  if (!queueOn || token.length >= 16) return null;
+  return {
+    variable: "SUITE_ADMIN_TOKEN",
+    message:
+      "SUITE_ADMISSION_REQUIRED is on and SUITE_ADMIN_TOKEN is missing or too short, so nobody could be admitted",
+  };
+}
+
+/**
  * `moduleNames` is what `loadModules` found, so "the database is required"
  * follows from what is actually mounted rather than from configuration alone:
  * today's empty module set boots with no Postgres at all.
@@ -179,7 +198,8 @@ export function validateConfig(env: ConfigEnv, moduleNames: readonly string[] = 
   const port = portOf(env);
   const database = databaseUrlOf(env, moduleNames);
   const level = logLevelOf(env);
-  const problems = [port.problem, database.problem, level.problem].filter(
+  const admission = admissionProblemOf(env);
+  const problems = [port.problem, database.problem, level.problem, admission].filter(
     (problem): problem is ConfigProblem => problem !== null,
   );
   return {

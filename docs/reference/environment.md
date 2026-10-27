@@ -146,12 +146,21 @@ every account path answers `503 auth-not-configured`.
 | `SUITE_GOOGLE_CLIENT_ID` | none | with the secret, registers the Google provider |
 | `SUITE_GOOGLE_CLIENT_SECRET` | none | one half of the pair without the other refuses to boot |
 | `SUITE_TURNSTILE_SECRET` | none | set it to require invisible Turnstile in front of sign-up; unset means no challenge |
-| `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create` |
+| `SUITE_ADMISSION_REQUIRED` | `0` | `1` holds a new account until an operator admits it, gating `/organization/create`. Refused at startup unless `SUITE_ADMIN_TOKEN` is at least 16 characters, because the queue would have no door |
+| `SUITE_APP_URL` | none | where the admission notice sends someone; unset admits without sending one |
+| `SUITE_MAIL_TRANSPORT` | `console` | `console`, `resend` or `smtp`. Anything else refuses to boot |
+| `SUITE_MAIL_FROM` | none | sending address, e.g. `Suite <hello@example.com>`; required by `resend` and `smtp` |
+| `RESEND_API_KEY` | none | required by `SUITE_MAIL_TRANSPORT=resend` |
+| `SUITE_SMTP_URL` | none | required by `SUITE_MAIL_TRANSPORT=smtp`: `smtp://user:pass@host:587` or `smtps://host:465` |
+| `SUITE_SMTP_REQUIRE_TLS` | `1` | `0` accepts a relay with no StartTLS; only for a loopback or private network |
 | `SUITE_AUTH_REQUIRE_VERIFICATION` | on | `0` or `false` issues a session before the address is confirmed. For a local run with no mailbox; a deployment that sets it has an open sign-up |
 
-Sign-up is open, and an account cannot sign in until its address is verified. There is no mail-provider
-variable: the service takes a `MailTransport`, and the control plane passes the console transport, which
-writes the link to the process log. The meanings are in [security-model.md](security-model.md).
+Sign-up is open, and an account cannot sign in until its address is verified. The service takes a
+`MailTransport` and the control plane chooses one from `SUITE_MAIL_TRANSPORT`: `console` writes the link
+to the process log with the token redacted, `resend` posts to the Resend API, and `smtp` speaks
+submission SMTP with StartTLS and `AUTH PLAIN` or `AUTH LOGIN`. A vendor transport missing its key or its
+sender refuses to boot rather than falling back to `console`, which would look healthy while every
+verification email went to a log file. The meanings are in [security-model.md](security-model.md).
 
 Billing owns `SUITE_BILLING_ENABLED`, `SUITE_BILLING_STORE`, `SUITE_BILLING_DATABASE_URL`,
 `SUITE_APP_ORIGIN`, `SUITE_LICENCE_PRIVATE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,

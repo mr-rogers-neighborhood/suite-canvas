@@ -5,10 +5,10 @@ import {
   type AuthHttpEvent,
   authEnabled,
   authEnvironment,
-  consoleTransport,
   createAuthHandler,
   createMigratedAuthEntry,
   mailSenders,
+  mailTransportFromEnv,
   type WorkspaceDataErasure,
   type WorkspaceDataStore,
 } from "@suite/auth";
@@ -427,10 +427,11 @@ export function relayWorkspaceData(
 }
 
 /**
- * The deployment composition: migrate, then serve, with the console mail transport.
+ * The deployment composition: migrate, then serve.
  *
  * Billing is composed here rather than imported by `@suite/auth`, which takes the
- * plugin and the entitlement reader as ports.
+ * plugin and the entitlement reader as ports. The mail transport is chosen the same
+ * way: the service names four senders and never decides how a message travels.
  */
 function defaultBoot(logger: Logger, source: Readonly<Record<string, string | undefined>>) {
   return async (env: AuthEnvironment): Promise<AuthEntry> => {
@@ -442,7 +443,7 @@ function defaultBoot(logger: Logger, source: Readonly<Record<string, string | un
     const workspaceData = relayWorkspaceData(source);
     const entry = await createMigratedAuthEntry(env, {
       ...mailSenders(
-        consoleTransport({
+        mailTransportFromEnv(source, {
           write: (line) => logger.info("auth mail", { line }),
         }),
       ),

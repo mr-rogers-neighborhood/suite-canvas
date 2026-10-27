@@ -44,7 +44,7 @@ describe("control plane database", () => {
 
     expect(result.ok).toBe(true);
     expect(result.config.databaseUrl).toBeNull();
-    expect(DATABASE_MODULES).toEqual(["auth", "billing"]);
+    expect(DATABASE_MODULES).toEqual(["auth", "billing", "admin"]);
   });
 
   it("should refuse to start when a Postgres module is mounted without a URL", () => {

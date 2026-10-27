@@ -127,11 +127,17 @@ export {
 export {
   type ConsoleTransportOptions,
   consoleTransport,
+  type MailEnv,
   type MailLink,
   type MailMessage,
   type MailSenders,
   type MailTransport,
   mailSenders,
+  mailTransportFromEnv,
+  type ResendTransportOptions,
+  resendTransport,
+  type SmtpTransportOptions,
+  smtpTransport,
 } from "./mail/index.js";
 export {
   CLAIM_WORKSPACE_SQL,

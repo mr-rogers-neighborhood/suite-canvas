@@ -71,6 +71,8 @@ export interface MailLink {
 export interface MailSenders {
   sendMagicLink: (link: MailLink) => Promise<void>;
   sendVerificationEmail: (link: MailLink) => Promise<void>;
+  /** An operator let this address in. Sent once, when the queue moves (ADR-0067 §7). */
+  sendAdmissionGranted: (recipient: { email: string; appUrl: string }) => Promise<void>;
   sendInvitation: (invitation: InvitationEmail) => Promise<void>;
   sendOrganizationInvitation: (invitation: OrganizationInvitation) => Promise<void>;
 }
@@ -101,6 +103,20 @@ export function mailSenders(transport: MailTransport): MailSenders {
           url,
           "",
           "If you did not create an account, ignore this message and nothing happens.",
+        ].join("\n"),
+      });
+    },
+    sendAdmissionGranted: async ({ email, appUrl }) => {
+      await transport.send({
+        to: email,
+        subject: "Your Suite workspace is ready",
+        text: [
+          "Your account has been approved. Sign in and your workspace is ready to sync.",
+          "",
+          appUrl,
+          "",
+          "Anything you wrote before signing up is still on the device you wrote it on.",
+          "Sign in there to bring it with you.",
         ].join("\n"),
       });
     },

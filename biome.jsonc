@@ -56,10 +56,48 @@
         // `a ? true : false` is `Boolean(a)`; the ternary only adds a branch to
         // read past.
         "noUselessTernary": "error"
+      },
+      // The security group: DOM sinks that execute strings, and the credential
+      // check. `noSecrets` is `error` so a key in the tree fails `pnpm lint`;
+      // gitleaks in the pre-commit hook covers history, which a lint of the
+      // working tree cannot see.
+      "security": {
+        "noBlankTarget": "error",
+        "noDangerouslySetInnerHtml": "error",
+        "noDangerouslySetInnerHtmlWithChildren": "error",
+        "noGlobalEval": "error",
+        "noScriptUrl": "error",
+        // Biome's default entropy threshold is 41 (4.1 bits per character),
+        // which flags 111 camelCase identifiers in this tree
+        // (`MigrationChecksumError`, `getCheckoutSessionParams`, …) and none of
+        // them is a credential. At 50 the entropy pass reports nothing, while
+        // the rule's fixed patterns — JWTs, AWS keys, private-key blocks,
+        // provider tokens — still match regardless of the threshold.
+        "noSecrets": {
+          "level": "error",
+          "options": { "entropyThreshold": 50 }
+        }
       }
     }
   },
   "overrides": [
+    {
+      // Test fixtures hold credentials on purpose: a crash-report scrubber needs
+      // a JWT to remove, a diagnostics test needs a share token to redact, a
+      // config test needs a database URL with a password in it. Biome reads
+      // those as leaks (ten sites today, all fake), and an inline disable on
+      // each would be a longer allowlist than `.gitleaks.toml` already keeps.
+      // gitleaks still scans these files with the same value-level allowlist, so
+      // a real key in a test fails the pre-commit hook and `pnpm security:secrets`.
+      "includes": ["**/*.{test,spec}.{ts,tsx}", "scripts/dev-env.mjs"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noSecrets": "off"
+          }
+        }
+      }
+    },
     {
       // Biome has no Astro template parser: it reads an `.astro` frontmatter
       // block as a module of its own, so every name the template uses looks

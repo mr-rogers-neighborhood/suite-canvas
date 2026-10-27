@@ -21,7 +21,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { cpus, totalmem } from "node:os";
+import { cpus, freemem, loadavg, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -58,11 +58,29 @@ function flag(name, fallback) {
   return Math.floor(value);
 }
 
+/** A positive number that is not a count, so `--rate=0.5` is legal. */
+function rateFlag(name, fallback) {
+  const prefix = `--${name}=`;
+  const found = process.argv.find((value) => value.startsWith(prefix));
+  if (found === undefined) return fallback;
+  const value = Number(found.slice(prefix.length));
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`--${name} must be a number > 0`);
+  return value;
+}
+
 const options = {
   cards: flag("cards", 2000),
   rooms: flag("rooms", 8),
   peers: flag("peers", 8),
   edits: flag("edits", 20),
+  /** Edits per second, fired without waiting for a peer; null keeps the serial loop. */
+  rate: rateFlag("rate", null),
+  /** Quiet time after the last edit, so the last rebuild lands before sampling. */
+  settle: flag("settle", 3_000),
+  /** Scrapes taken once settled; the median of them is the steady state. */
+  steadySamples: flag("steady-samples", 3),
+  /** How long the rate mode waits for the last edit to reach every peer. */
+  deliveryMs: flag("delivery-ms", 30_000),
   writeJson: process.argv.includes("--json"),
   keep: process.argv.includes("--keep"),
   verbose: process.argv.includes("--verbose"),
@@ -113,6 +131,15 @@ function histogramPercentile(buckets, quantile) {
   return null;
 }
 
+/** Samples at or above `seconds`, from the cumulative buckets. */
+function histogramAtOrAbove(buckets, seconds) {
+  const index = buckets.findIndex((bucket) => bucket.bound >= seconds);
+  if (index < 0) return 0;
+  const total = buckets.at(-1)?.count ?? 0;
+  const below = index === 0 ? 0 : (buckets[index - 1]?.count ?? 0);
+  return total - below;
+}
+
 function parseHistogram(text, name) {
   const buckets = [];
   const pattern = new RegExp(`^${name}_bucket\\{le="([^"]+)"\\} (\\d+)$`, "u");
@@ -130,6 +157,77 @@ function parseHistogram(text, name) {
 function parseGauge(text, name) {
   const match = new RegExp(`^${name} (\\d+(?:\\.\\d+)?)$`, "mu").exec(text);
   return match === null ? null : Number(match[1]);
+}
+
+/** One series of a labelled gauge family, by label value; `null` when absent. */
+function parseLabelledGauge(text, name, labelName, labelValue) {
+  const pattern = new RegExp(
+    `^${name}\\{${labelName}="${labelValue}"\\} (\\d+(?:\\.\\d+)?)$`,
+    "mu",
+  );
+  const match = pattern.exec(text);
+  return match === null ? null : Number(match[1]);
+}
+
+/** Median of the numbers present; ignores nulls, `null` if there are none. */
+function median(values) {
+  const present = values.filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (present.length === 0) return null;
+  const sorted = [...present].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[middle] ?? null)
+    : Number((((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2).toFixed(2));
+}
+
+/** Every series one scrape carries that this bench reports. */
+function readScrape(text) {
+  return {
+    rssBytes: parseGauge(text, "suite_rss_bytes"),
+    heapBytes: parseLabelledGauge(text, "suite_memory_split", "segment", "heap"),
+    externalBytes: parseLabelledGauge(text, "suite_memory_split", "segment", "external"),
+    arrayBuffersBytes: parseLabelledGauge(text, "suite_memory_split", "segment", "arrayBuffers"),
+    rssSplitBytes: parseLabelledGauge(text, "suite_memory_split", "segment", "rss"),
+    openRooms: parseGauge(text, "suite_open_rooms"),
+    projectionRooms: parseGauge(text, "suite_projection_rooms"),
+    documents: parseGauge(text, "suite_documents"),
+    documentWritesPending: parseGauge(text, "suite_document_writes_pending"),
+    eventLoopLagMaxSeconds: parseGauge(text, "suite_event_loop_lag_max_seconds"),
+    projectionRebuilds: parseGauge(text, "suite_projection_rebuilds_total"),
+    projectionSkips: parseGauge(text, "suite_projection_skips_total"),
+    projectionCapped: parseGauge(text, "suite_projection_build_capped_total"),
+    projectionFailures: parseGauge(text, "suite_projection_failures_total"),
+    eventLoopLagBreaches: parseGauge(text, "suite_event_loop_lag_breaches_total"),
+    roomBackpressure: parseGauge(text, "suite_room_backpressure_total"),
+    documentWrites: parseGauge(text, "suite_document_writes_total"),
+  };
+}
+
+/**
+ * The series that settle: memory, room counts, the lag high-water mark. Counters
+ * are deliberately excluded — a median of a monotonic counter is not steady
+ * state, it is a number that looks like one.
+ */
+const STEADY_FIELDS = [
+  "rssBytes",
+  "heapBytes",
+  "externalBytes",
+  "arrayBuffersBytes",
+  "rssSplitBytes",
+  "openRooms",
+  "projectionRooms",
+  "documents",
+  "documentWritesPending",
+  "eventLoopLagMaxSeconds",
+];
+
+/** Per-field median of several reads: the steady state, not the worst moment. */
+function medianOf(reads, fields = STEADY_FIELDS) {
+  const result = {};
+  for (const field of fields) {
+    result[field] = median(reads.map((read) => read[field]));
+  }
+  return result;
 }
 
 async function waitForHealth(baseUrl, timeoutMs = 90_000) {
@@ -204,6 +302,23 @@ async function openPeer(url, roomId, token) {
 
 const placementX = (doc) => new WorkspaceDocument(doc).getPlacement(BOARD_ID, "card-0")?.x ?? null;
 
+/**
+ * Fires `options.edits` placements at `options.rate` per second and never waits
+ * for a peer to receive one. The point is the offered rate, not the round trip.
+ */
+async function driveEditsAtRate(writer, perEdit) {
+  const started = performance.now();
+  for (let edit = 0; edit < options.edits; edit += 1) {
+    const due = started + (edit / options.rate) * 1_000;
+    const wait = due - performance.now();
+    if (wait > 0) await delay(wait);
+    new WorkspaceDocument(writer.doc).placeCard(BOARD_ID, "card-0", { x: 1000 + edit, y: 0 });
+    writer.doc.commit({ origin: "bench:rate" });
+    perEdit.push({ edit, firedAtMs: Number((performance.now() - started).toFixed(2)) });
+  }
+  return Number((performance.now() - started).toFixed(2));
+}
+
 async function main() {
   const directory = mkdtempSync(join(here, ".run-"));
   const port = await freePort();
@@ -248,15 +363,20 @@ async function main() {
   relay.stderr.on("data", (chunk) => relayLog.push(String(chunk)));
 
   const metrics = [];
-  const sample = async () => {
+  const fetchMetrics = async () => {
     try {
       const response = await fetch(`${apiUrl}/metrics`, {
         headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
       });
-      if (response.ok) metrics.push(await response.text());
+      return response.ok ? await response.text() : null;
     } catch {
       // The relay is going away; the last sample is the one that counts.
+      return null;
     }
+  };
+  const sample = async () => {
+    const text = await fetchMetrics();
+    if (text !== null) metrics.push(text);
   };
   const sampler = setInterval(() => void sample(), 500);
   sampler.unref();
@@ -267,6 +387,9 @@ async function main() {
   const shareLatency = [];
   const missed = [];
   const perEdit = [];
+  const steadyScrapes = [];
+  let drivingMs = null;
+  let rateDelivery = null;
 
   try {
     await waitForHealth(apiUrl);
@@ -297,35 +420,83 @@ async function main() {
     // Let the first projection land before anything is timed.
     await delay(4000);
 
-    for (let edit = 0; edit < options.edits; edit += 1) {
-      const x = 1000 + edit;
-      const started = performance.now();
-      new WorkspaceDocument(writer.doc).placeCard(BOARD_ID, "card-0", { x, y: 0 });
-      writer.doc.commit({ origin: "bench:edit" });
+    if (options.rate !== null) {
+      drivingMs = await driveEditsAtRate(writer, perEdit);
+    } else {
+      for (let edit = 0; edit < options.edits; edit += 1) {
+        const x = 1000 + edit;
+        const started = performance.now();
+        new WorkspaceDocument(writer.doc).placeCard(BOARD_ID, "card-0", { x, y: 0 });
+        writer.doc.commit({ origin: "bench:edit" });
 
-      const echoDeadline = started + 10_000;
-      while (performance.now() < echoDeadline && placementX(echo.doc) !== x) await delay(2);
-      const socketMs = placementX(echo.doc) === x ? performance.now() - started : null;
-      if (socketMs !== null) socketLatency.push(socketMs);
+        const echoDeadline = started + 10_000;
+        while (performance.now() < echoDeadline && placementX(echo.doc) !== x) await delay(2);
+        const socketMs = placementX(echo.doc) === x ? performance.now() - started : null;
+        if (socketMs !== null) socketLatency.push(socketMs);
 
-      const shareDeadline = started + 60_000;
-      let slowest = null;
-      for (const peer of peers) {
-        while (performance.now() < shareDeadline && placementX(peer.doc) !== x) await delay(4);
-        const arrived = placementX(peer.doc) === x;
-        if (!arrived) {
-          missed.push({ edit, room: peer.room.roomId ?? null });
-          slowest = null;
-          break;
+        const shareDeadline = started + 60_000;
+        let slowest = null;
+        for (const peer of peers) {
+          while (performance.now() < shareDeadline && placementX(peer.doc) !== x) await delay(4);
+          const arrived = placementX(peer.doc) === x;
+          if (!arrived) {
+            missed.push({ edit, room: peer.room.roomId ?? null });
+            slowest = null;
+            break;
+          }
+          slowest = Math.max(slowest ?? 0, performance.now() - started);
         }
-        slowest = Math.max(slowest ?? 0, performance.now() - started);
+        if (slowest !== null) shareLatency.push(slowest);
+        perEdit.push({
+          edit,
+          socketMs: socketMs === null ? null : Number(socketMs.toFixed(2)),
+          shareMs: slowest === null ? null : Number(slowest.toFixed(2)),
+        });
       }
-      if (slowest !== null) shareLatency.push(slowest);
-      perEdit.push({
-        edit,
-        socketMs: socketMs === null ? null : Number(socketMs.toFixed(2)),
-        shareMs: slowest === null ? null : Number(slowest.toFixed(2)),
-      });
+    }
+
+    if (options.rate !== null) {
+      // How long the last edit takes to reach every room. This is the figure the
+      // CPU wall turns on: one save window is 2.2 s, so a pass that cannot finish
+      // inside it shows up here as seconds of delivery tail.
+      const arrived = performance.now();
+      const lastX = 1000 + options.edits - 1;
+      const waiting = new Set(peers);
+      const arrivalMs = [];
+      const deadline = arrived + options.deliveryMs;
+      while (waiting.size > 0 && performance.now() < deadline) {
+        for (const peer of [...waiting]) {
+          if (placementX(peer.doc) === lastX) {
+            waiting.delete(peer);
+            arrivalMs.push(performance.now() - arrived);
+          }
+        }
+        if (waiting.size === 0) break;
+        await delay(100);
+      }
+      for (const peer of waiting) {
+        missed.push({ edit: options.edits - 1, room: peer.room.roomId ?? null });
+      }
+      rateDelivery = {
+        peers: peers.length,
+        delivered: arrivalMs.length,
+        undelivered: waiting.size,
+        p50Ms: percentile(arrivalMs, 0.5),
+        p99Ms: percentile(arrivalMs, 0.99),
+        maxMs: percentile(arrivalMs, 1),
+        deadlineMs: options.deliveryMs,
+      };
+    }
+
+    // Steady state, not the peak: nothing is being driven, every room holds its
+    // projection and no rebuild is in flight. A peak is one allocation burst away
+    // from being unrepresentative; this is what a quiet server keeps.
+    await delay(options.settle);
+
+    for (let index = 0; index < options.steadySamples; index += 1) {
+      const text = await fetchMetrics();
+      if (text !== null) steadyScrapes.push(text);
+      await delay(400);
     }
 
     await sample();
@@ -353,6 +524,8 @@ async function main() {
         cpus: cpus().length,
         cpuModel: cpus()[0]?.model ?? "unknown",
         memoryBytes: totalmem(),
+        freeMemoryBytes: freemem(),
+        loadAverage: loadavg().map((value) => Number(value.toFixed(2))),
         node: process.version,
       },
       profile: {
@@ -361,6 +534,11 @@ async function main() {
         peersPerRoom: options.peers,
         peers: peers.length,
         edits: options.edits,
+        editsPerSecond: options.rate,
+        drivingMs,
+        settleMs: options.settle,
+        steadySamples: steadyScrapes.length,
+        rateDelivery,
         documentBytes: seeded.documentBytes,
       },
       latency: {
@@ -379,8 +557,12 @@ async function main() {
         p50: histogramPercentile(lagBuckets, 0.5),
         p99: histogramPercentile(lagBuckets, 0.99),
         samples: lagSamples,
+        /** Samples of 100 ms or more: the relay's own breach threshold. */
+        atOrAbove100ms: histogramAtOrAbove(lagBuckets, 0.1),
       },
       rssPeakBytes: rssPeak,
+      steady: medianOf(steadyScrapes.map(readScrape)),
+      final: readScrape(last),
       edits: perEdit,
       metricsSamples: metrics.length,
       missedPropagations: missed.length,

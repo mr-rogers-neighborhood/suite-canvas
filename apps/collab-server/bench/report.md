@@ -120,6 +120,32 @@ projection — the steady state a live share runs in.
 A save that moves one card therefore costs one `projectWorkspace` (138 ms) per distinct share target —
 not per room, so four viewer links to one board pay it once — plus ~36 ms per room to mirror it in.
 
+## Cost per room and the CPU wall
+
+`node bench/sweep.mjs` runs `load.mjs` once per point in a fresh process and regresses the relay's own
+`suite_memory_split` against the number of open rooms. The full tables, the arithmetic and the cost per
+instance are in [capacity.md](../../../docs/reference/capacity.md); the raw per-run reports are in
+[`sweep.json`](sweep.json).
+
+At 200 cards and one peer per room, six points from 1 to 128 rooms:
+
+| Series | Intercept | Slope | R² |
+| --- | --- | --- | --- |
+| RSS | 222.6 MiB | 10.04 MiB/room | 0.9996 |
+| arrayBuffers (the Loro documents) | 6.8 MiB | 0.52 MiB/room | 0.9642 |
+| heap | 38.8 MiB | 1.22 MiB/room | 0.9068 |
+
+One pass of the projection worker costs about 138 ms plus 37 ms per room, so one pass per 2.2 s save
+window fits about 57 rooms. Measured, at one edit per save window: the last edit reached every room in
+1.7 s at 16 rooms, 3.1 s at 32, 5.3 s at 64 and 12.2 s at 128, and every edit arrived inside the
+deadline at every point. No rebuild was refused by the 5 s build cap at any room count, because the
+cap applies to one room's build (~40 ms), not to a pass over every room.
+
+Lag p99 crosses the relay's own 100 ms breach threshold at every room count and every edit rate,
+including a quarter of an edit per second: `projectWorkspace` is one synchronous 138 ms block, so a
+single rebuild is already a breach. Median lag is what says whether the relay is saturated (2.6 to
+4.2 ms in these runs); delivery time is what says whether it is behind.
+
 ## A share follows its owner by one save window
 
 `saveInterval` is 2 000 ms and the worker debounces another 200 ms before it reads the source, so a
@@ -136,7 +162,15 @@ pnpm --filter @suite/collab-server bench:load
 pnpm --filter @suite/collab-server bench:load -- --cards=200 --rooms=4 --peers=4 --edits=6 --json
 node apps/collab-server/bench/profile-projection.mjs   # per-stage cost of one rebuild
 node apps/collab-server/bench/rebuild-cost.mjs        # what one rebuild writes per cycle
+node apps/collab-server/bench/sweep.mjs               # cost per room and the CPU wall
 ```
+
+`--settle`, `--steady-samples` and `--delivery-ms` set how long a run waits before it samples, how many
+scrapes it medians, and how long the rate mode waits for the last edit to reach every peer. `--rate`
+fires edits at a fixed rate instead of waiting for each one, which is the mode the CPU wall needs. In
+the JSON, `steady` is that median (memory and room gauges only, because a median of a counter is not a
+steady state), `final` is the last scrape's counters and gauges, and `rssPeakBytes` is still the worst
+moment.
 
 `--json` also writes `bench/report.json` next to this file. The run uses a temporary data directory
 under `bench/` and removes it unless `--keep` is passed. `SUITE_PROJECTION_TRACE=1` (with `--verbose`)

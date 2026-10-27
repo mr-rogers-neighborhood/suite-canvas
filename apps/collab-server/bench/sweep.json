@@ -1,0 +1,1367 @@
+{
+  "measuredAt": "2026-10-27T21:58:35.376Z",
+  "phases": ["edits"],
+  "options": {
+    "cards": 200,
+    "peers": 1,
+    "settle": 3000,
+    "steadySamples": 3,
+    "memoryRooms": [1, 4, 16, 32, 64, 128],
+    "editRooms": 16,
+    "editRates": [0.25, 1, 4, 16],
+    "loadRooms": [16, 32, 64, 128],
+    "loadRate": 0.45,
+    "driveSeconds": 20,
+    "deliveryMs": 30000,
+    "out": "sweep.json"
+  },
+  "results": [
+    {
+      "phase": "memory",
+      "profile": {
+        "cards": 200,
+        "peersPerRoom": 1,
+        "edits": 2,
+        "settleMs": 3000
+      },
+      "runs": [
+        {
+          "rooms": 1,
+          "report": {
+            "measuredAt": "2026-10-27T21:40:47.572Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10708762624,
+              "loadAverage": [8.79, 6.8, 4.17],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 1,
+              "peersPerRoom": 1,
+              "peers": 1,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219103
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 23.54,
+                "p99": 59.86,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 1775.71,
+                "p99": 2349.58,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0026,
+              "p99": 0.6383,
+              "samples": 217,
+              "atOrAbove100ms": 3
+            },
+            "rssPeakBytes": 229691392,
+            "steady": {
+              "rssBytes": 229429248,
+              "heapBytes": 50349680,
+              "externalBytes": 9965264,
+              "arrayBuffersBytes": 5434832,
+              "rssSplitBytes": 229429248,
+              "openRooms": 2,
+              "projectionRooms": 1,
+              "documents": 2,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 0.939
+            },
+            "final": {
+              "rssBytes": 229691392,
+              "heapBytes": 50646608,
+              "externalBytes": 9965264,
+              "arrayBuffersBytes": 5434832,
+              "rssSplitBytes": 229691392,
+              "openRooms": 2,
+              "projectionRooms": 1,
+              "documents": 2,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 0.939,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 3,
+              "roomBackpressure": 0,
+              "documentWrites": 5
+            },
+            "metricsSamples": 27,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [],
+            "editTimesRecorded": 2
+          }
+        },
+        {
+          "rooms": 4,
+          "report": {
+            "measuredAt": "2026-10-27T21:41:04.710Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10635841536,
+              "loadAverage": [7.58, 6.63, 4.16],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 4,
+              "peersPerRoom": 1,
+              "peers": 4,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219176
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 8.63,
+                "p99": 10.64,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 1998.54,
+                "p99": 2367.88,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0026,
+              "p99": 0.424,
+              "samples": 252,
+              "atOrAbove100ms": 6
+            },
+            "rssPeakBytes": 273584128,
+            "steady": {
+              "rssBytes": 273584128,
+              "heapBytes": 53072048,
+              "externalBytes": 12745753,
+              "arrayBuffersBytes": 8215321,
+              "rssSplitBytes": 273584128,
+              "openRooms": 5,
+              "projectionRooms": 4,
+              "documents": 5,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 0.511
+            },
+            "final": {
+              "rssBytes": 273584128,
+              "heapBytes": 53299128,
+              "externalBytes": 12745753,
+              "arrayBuffersBytes": 8215321,
+              "rssSplitBytes": 273584128,
+              "openRooms": 5,
+              "projectionRooms": 4,
+              "documents": 5,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 0.511,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 6,
+              "roomBackpressure": 0,
+              "documentWrites": 14
+            },
+            "metricsSamples": 30,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [],
+            "editTimesRecorded": 2
+          }
+        },
+        {
+          "rooms": 16,
+          "report": {
+            "measuredAt": "2026-10-27T21:41:27.497Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10173194240,
+              "loadAverage": [11.08, 7.48, 4.5],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219158
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 8.04,
+                "p99": 11.97,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 2678.06,
+                "p99": 2763,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0028,
+              "p99": 0.6075,
+              "samples": 257,
+              "atOrAbove100ms": 19
+            },
+            "rssPeakBytes": 419151872,
+            "steady": {
+              "rssBytes": 419151872,
+              "heapBytes": 77479840,
+              "externalBytes": 29027937,
+              "arrayBuffersBytes": 24497505,
+              "rssSplitBytes": 419151872,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.529
+            },
+            "final": {
+              "rssBytes": 419151872,
+              "heapBytes": 77703344,
+              "externalBytes": 29027937,
+              "arrayBuffersBytes": 24497505,
+              "rssSplitBytes": 419151872,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.529,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 19,
+              "roomBackpressure": 0,
+              "documentWrites": 50
+            },
+            "metricsSamples": 41,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:41:12.472Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":276,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":8,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 2
+          }
+        },
+        {
+          "rooms": 32,
+          "report": {
+            "measuredAt": "2026-10-27T21:41:57.850Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10438242304,
+              "loadAverage": [11.99, 8.02, 4.78],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 32,
+              "peersPerRoom": 1,
+              "peers": 32,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219546
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 13.03,
+                "p99": 26.82,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 1978.28,
+                "p99": 1984.95,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0032,
+              "p99": 0.93,
+              "samples": 242,
+              "atOrAbove100ms": 38
+            },
+            "rssPeakBytes": 591892480,
+            "steady": {
+              "rssBytes": 573022208,
+              "heapBytes": 62169072,
+              "externalBytes": 22366355,
+              "arrayBuffersBytes": 17835923,
+              "rssSplitBytes": 573022208,
+              "openRooms": 33,
+              "projectionRooms": 32,
+              "documents": 33,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.568
+            },
+            "final": {
+              "rssBytes": 573022208,
+              "heapBytes": 62391448,
+              "externalBytes": 22366355,
+              "arrayBuffersBytes": 17835923,
+              "rssSplitBytes": 573022208,
+              "openRooms": 33,
+              "projectionRooms": 32,
+              "documents": 33,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.568,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 38,
+              "roomBackpressure": 0,
+              "documentWrites": 98
+            },
+            "metricsSamples": 54,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:41:39.165Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":335,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":11,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:41:41.225Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":271,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":15,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:41:43.087Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":266,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":21,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 2
+          }
+        },
+        {
+          "rooms": 64,
+          "report": {
+            "measuredAt": "2026-10-27T21:43:12.771Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 11935453184,
+              "loadAverage": [24.81, 13.09, 6.81],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 64,
+              "peersPerRoom": 1,
+              "peers": 64,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219094
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 27.74,
+                "p99": 92.35,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 5119.85,
+                "p99": 8731.3,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.004,
+              "p99": 1.52,
+              "samples": 396,
+              "atOrAbove100ms": 100
+            },
+            "rssPeakBytes": 923484160,
+            "steady": {
+              "rssBytes": 905879552,
+              "heapBytes": 92491576,
+              "externalBytes": 48770608,
+              "arrayBuffersBytes": 44251278,
+              "rssSplitBytes": 905879552,
+              "openRooms": 65,
+              "projectionRooms": 64,
+              "documents": 65,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 8.007
+            },
+            "final": {
+              "rssBytes": 905879552,
+              "heapBytes": 92743080,
+              "externalBytes": 48770618,
+              "arrayBuffersBytes": 44251288,
+              "rssSplitBytes": 905879552,
+              "openRooms": 65,
+              "projectionRooms": 64,
+              "documents": 65,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 8.007,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 100,
+              "roomBackpressure": 0,
+              "documentWrites": 194
+            },
+            "metricsSamples": 144,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:42:09.106Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":571,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":5,\"documentWritesPending\":1,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:14.806Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":247,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":17,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:20.235Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":539,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":31,\"documentWritesPending\":1,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:23.403Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":565,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":38,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:26.056Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":919,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":41,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:34.201Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":994,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":50,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:40.864Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":665,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":57,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:42:45.050Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":1440,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":60,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 2
+          }
+        },
+        {
+          "rooms": 128,
+          "report": {
+            "measuredAt": "2026-10-27T21:44:26.561Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 11723300864,
+              "loadAverage": [11.78, 11.77, 6.82],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 128,
+              "peersPerRoom": 1,
+              "peers": 128,
+              "edits": 2,
+              "editsPerSecond": null,
+              "drivingMs": null,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": null,
+              "documentBytes": 219236
+            },
+            "latency": {
+              "socketMs": {
+                "p50": 14.74,
+                "p99": 160.15,
+                "samples": 2
+              },
+              "shareMs": {
+                "p50": 6434.11,
+                "p99": 7504.67,
+                "samples": 2
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0038,
+              "p99": 0.8406,
+              "samples": 455,
+              "atOrAbove100ms": 133
+            },
+            "rssPeakBytes": 1579380736,
+            "steady": {
+              "rssBytes": 1579380736,
+              "heapBytes": 221899592,
+              "externalBytes": 81456323,
+              "arrayBuffersBytes": 76938369,
+              "rssSplitBytes": 1579380736,
+              "openRooms": 129,
+              "projectionRooms": 128,
+              "documents": 129,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 5.492
+            },
+            "final": {
+              "rssBytes": 1579380736,
+              "heapBytes": 222196208,
+              "externalBytes": 81456343,
+              "arrayBuffersBytes": 76938389,
+              "rssSplitBytes": 1579380736,
+              "openRooms": 129,
+              "projectionRooms": 128,
+              "documents": 129,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 5.492,
+              "projectionRebuilds": 2,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 133,
+              "roomBackpressure": 0,
+              "documentWrites": 386
+            },
+            "metricsSamples": 143,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:43:18.148Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":252,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":4,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:21.505Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":232,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":11,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:24.916Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":252,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":25,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:28.959Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":238,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":38,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:39.794Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":227,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":66,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:48.989Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":282,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":86,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:53.422Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":253,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":97,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:43:56.283Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":224,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":104,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:44:00.224Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":263,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":118,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 2
+          }
+        }
+      ],
+      "regression": {
+        "rssBytes": {
+          "points": 6,
+          "intercept": 233429324.6401744,
+          "slope": 10530088.963914096,
+          "r2": 0.999598026140886
+        },
+        "arrayBuffersBytes": {
+          "points": 6,
+          "intercept": 7169156.262808435,
+          "slope": 547584.8588699974,
+          "r2": 0.9641746523958981
+        },
+        "externalBytes": {
+          "points": 6,
+          "intercept": 11700322.832226735,
+          "slope": 547470.6245168963,
+          "r2": 0.964170026818489
+        },
+        "heapBytes": {
+          "points": 6,
+          "intercept": 40705776.011098996,
+          "slope": 1278478.1711567591,
+          "r2": 0.9068212411535597
+        }
+      }
+    },
+    {
+      "phase": "edits",
+      "profile": {
+        "rooms": 16,
+        "cards": 200,
+        "peersPerRoom": 1,
+        "driveSeconds": 20
+      },
+      "runs": [
+        {
+          "rate": 0.25,
+          "edits": 6,
+          "report": {
+            "measuredAt": "2026-10-27T21:55:54.383Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 12721143808,
+              "loadAverage": [10.79, 9.43, 7.63],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 6,
+              "editsPerSecond": 0.25,
+              "drivingMs": 20002.65,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 16,
+                "delivered": 16,
+                "undelivered": 0,
+                "p50Ms": 2489.66,
+                "p99Ms": 2495.99,
+                "maxMs": 2495.99,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219329
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0026,
+              "p99": 0.58,
+              "samples": 520,
+              "atOrAbove100ms": 23
+            },
+            "rssPeakBytes": 507613184,
+            "steady": {
+              "rssBytes": 507482112,
+              "heapBytes": 114438896,
+              "externalBytes": 47745439,
+              "arrayBuffersBytes": 43215007,
+              "rssSplitBytes": 507482112,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.726
+            },
+            "final": {
+              "rssBytes": 507613184,
+              "heapBytes": 114763176,
+              "externalBytes": 47745479,
+              "arrayBuffersBytes": 43215047,
+              "rssSplitBytes": 507613184,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.726,
+              "projectionRebuilds": 6,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 23,
+              "roomBackpressure": 0,
+              "documentWrites": 118
+            },
+            "metricsSamples": 74,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:55:19.714Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":257,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":0,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:55:21.529Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":87,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":5,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 6
+          }
+        },
+        {
+          "rate": 1,
+          "edits": 20,
+          "report": {
+            "measuredAt": "2026-10-27T21:56:42.701Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 8837550080,
+              "loadAverage": [16.54, 11.02, 8.25],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 20,
+              "editsPerSecond": 1,
+              "drivingMs": 19007.14,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 16,
+                "delivered": 16,
+                "undelivered": 0,
+                "p50Ms": 5182.15,
+                "p99Ms": 5329.56,
+                "maxMs": 5329.56,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219034
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0029,
+              "p99": 1.84,
+              "samples": 376,
+              "atOrAbove100ms": 36
+            },
+            "rssPeakBytes": 568598528,
+            "steady": {
+              "rssBytes": 543895552,
+              "heapBytes": 72448464,
+              "externalBytes": 26060908,
+              "arrayBuffersBytes": 21541578,
+              "rssSplitBytes": 543895552,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 2.843
+            },
+            "final": {
+              "rssBytes": 543895552,
+              "heapBytes": 72741248,
+              "externalBytes": 26060908,
+              "arrayBuffersBytes": 21541578,
+              "rssSplitBytes": 543895552,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 2.843,
+              "projectionRebuilds": 11,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 36,
+              "roomBackpressure": 0,
+              "documentWrites": 203
+            },
+            "metricsSamples": 92,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:56:01.088Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":837,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":4,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:56:04.942Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":976,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":7,\"documentWritesPending\":1,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 20
+          }
+        },
+        {
+          "rate": 4,
+          "edits": 80,
+          "report": {
+            "measuredAt": "2026-10-27T21:57:38.631Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 11416346624,
+              "loadAverage": [22.7, 13.9, 9.41],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 80,
+              "editsPerSecond": 4,
+              "drivingMs": 19754.03,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 16,
+                "delivered": 16,
+                "undelivered": 0,
+                "p50Ms": 3066.26,
+                "p99Ms": 3073.84,
+                "maxMs": 3073.84,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219718
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0031,
+              "p99": 3.0313,
+              "samples": 315,
+              "atOrAbove100ms": 35
+            },
+            "rssPeakBytes": 555929600,
+            "steady": {
+              "rssBytes": 555929600,
+              "heapBytes": 141453264,
+              "externalBytes": 54708970,
+              "arrayBuffersBytes": 50178538,
+              "rssSplitBytes": 555929600,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.258
+            },
+            "final": {
+              "rssBytes": 555929600,
+              "heapBytes": 141671728,
+              "externalBytes": 54708970,
+              "arrayBuffersBytes": 50178538,
+              "rssSplitBytes": 555929600,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.258,
+              "projectionRebuilds": 9,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 35,
+              "roomBackpressure": 0,
+              "documentWrites": 169
+            },
+            "metricsSamples": 97,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:56:54.072Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":1309,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":1,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:56:58.578Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":812,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":5,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:57:05.331Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":866,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":10,\"documentWritesPending\":1,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 80
+          }
+        },
+        {
+          "rate": 16,
+          "edits": 320,
+          "report": {
+            "measuredAt": "2026-10-27T21:58:35.337Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10472001536,
+              "loadAverage": [26.88, 16.65, 10.61],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 320,
+              "editsPerSecond": 16,
+              "drivingMs": 19948.58,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 16,
+                "delivered": 16,
+                "undelivered": 0,
+                "p50Ms": 3862.48,
+                "p99Ms": 4006.72,
+                "maxMs": 4006.72,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219683
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0033,
+              "p99": 3.69,
+              "samples": 262,
+              "atOrAbove100ms": 39
+            },
+            "rssPeakBytes": 563322880,
+            "steady": {
+              "rssBytes": 524767232,
+              "heapBytes": 53666416,
+              "externalBytes": 17342474,
+              "arrayBuffersBytes": 12812042,
+              "rssSplitBytes": 524767232,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.204
+            },
+            "final": {
+              "rssBytes": 524767232,
+              "heapBytes": 53968024,
+              "externalBytes": 17342474,
+              "arrayBuffersBytes": 12812042,
+              "rssSplitBytes": 524767232,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.204,
+              "projectionRebuilds": 8,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 39,
+              "roomBackpressure": 0,
+              "documentWrites": 152
+            },
+            "metricsSamples": 102,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:57:48.586Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":800,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":0,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:57:59.027Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":1191,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":11,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 320
+          }
+        }
+      ],
+      "p99CrossingRate": 0.25
+    },
+    {
+      "phase": "load",
+      "profile": {
+        "cards": 200,
+        "peersPerRoom": 1,
+        "editsPerSecond": 0.45,
+        "edits": 9,
+        "driveSeconds": 20
+      },
+      "runs": [
+        {
+          "rooms": 16,
+          "edits": 9,
+          "report": {
+            "measuredAt": "2026-10-27T21:51:35.038Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 12280565760,
+              "loadAverage": [8.75, 8.46, 6.89],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 16,
+              "peersPerRoom": 1,
+              "peers": 16,
+              "edits": 9,
+              "editsPerSecond": 0.45,
+              "drivingMs": 17780.14,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 16,
+                "delivered": 16,
+                "undelivered": 0,
+                "p50Ms": 1691.05,
+                "p99Ms": 1699.14,
+                "maxMs": 1699.14,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219215
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0027,
+              "p99": 1.51,
+              "samples": 396,
+              "atOrAbove100ms": 25
+            },
+            "rssPeakBytes": 555941888,
+            "steady": {
+              "rssBytes": 555941888,
+              "heapBytes": 131809112,
+              "externalBytes": 52361094,
+              "arrayBuffersBytes": 47830662,
+              "rssSplitBytes": 555941888,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.134
+            },
+            "final": {
+              "rssBytes": 555941888,
+              "heapBytes": 132097480,
+              "externalBytes": 52361104,
+              "arrayBuffersBytes": 47830672,
+              "rssSplitBytes": 555941888,
+              "openRooms": 17,
+              "projectionRooms": 16,
+              "documents": 17,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 1.134,
+              "projectionRebuilds": 9,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 25,
+              "roomBackpressure": 0,
+              "documentWrites": 169
+            },
+            "metricsSamples": 68,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:51:04.037Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":281,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":4,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 9
+          }
+        },
+        {
+          "rooms": 32,
+          "edits": 9,
+          "report": {
+            "measuredAt": "2026-10-27T21:52:21.373Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 11866361856,
+              "loadAverage": [8.54, 8.45, 6.96],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 32,
+              "peersPerRoom": 1,
+              "peers": 32,
+              "edits": 9,
+              "editsPerSecond": 0.45,
+              "drivingMs": 17779.36,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 32,
+                "delivered": 32,
+                "undelivered": 0,
+                "p50Ms": 3145.02,
+                "p99Ms": 3264.37,
+                "maxMs": 3264.37,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219071
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.003,
+              "p99": 1.925,
+              "samples": 345,
+              "atOrAbove100ms": 43
+            },
+            "rssPeakBytes": 739962880,
+            "steady": {
+              "rssBytes": 728301568,
+              "heapBytes": 117290640,
+              "externalBytes": 36575618,
+              "arrayBuffersBytes": 32045186,
+              "rssSplitBytes": 728301568,
+              "openRooms": 33,
+              "projectionRooms": 32,
+              "documents": 33,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 2.127
+            },
+            "final": {
+              "rssBytes": 728301568,
+              "heapBytes": 117586072,
+              "externalBytes": 36575628,
+              "arrayBuffersBytes": 32045196,
+              "rssSplitBytes": 728301568,
+              "openRooms": 33,
+              "projectionRooms": 32,
+              "documents": 33,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 2.127,
+              "projectionRebuilds": 9,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 43,
+              "roomBackpressure": 0,
+              "documentWrites": 329
+            },
+            "metricsSamples": 88,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:51:42.473Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":282,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":2,\"documentWritesPending\":1,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:51:47.269Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":286,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":19,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:51:51.256Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":273,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":25,\"documentWritesPending\":1,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 9
+          }
+        },
+        {
+          "rooms": 64,
+          "edits": 9,
+          "report": {
+            "measuredAt": "2026-10-27T21:53:17.786Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 10829045760,
+              "loadAverage": [9.9, 8.68, 7.12],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 64,
+              "peersPerRoom": 1,
+              "peers": 64,
+              "edits": 9,
+              "editsPerSecond": 0.45,
+              "drivingMs": 17779.88,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 64,
+                "delivered": 64,
+                "undelivered": 0,
+                "p50Ms": 5307.12,
+                "p99Ms": 5331.91,
+                "maxMs": 5331.91,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219197
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0035,
+              "p99": 3.8643,
+              "samples": 318,
+              "atOrAbove100ms": 72
+            },
+            "rssPeakBytes": 1081937920,
+            "steady": {
+              "rssBytes": 1036283904,
+              "heapBytes": 94135688,
+              "externalBytes": 36294354,
+              "arrayBuffersBytes": 31776400,
+              "rssSplitBytes": 1036283904,
+              "openRooms": 65,
+              "projectionRooms": 64,
+              "documents": 65,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.358
+            },
+            "final": {
+              "rssBytes": 1036283904,
+              "heapBytes": 94313320,
+              "externalBytes": 36294354,
+              "arrayBuffersBytes": 31776400,
+              "rssSplitBytes": 1036283904,
+              "openRooms": 65,
+              "projectionRooms": 64,
+              "documents": 65,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 3.358,
+              "projectionRebuilds": 7,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 72,
+              "roomBackpressure": 0,
+              "documentWrites": 519
+            },
+            "metricsSamples": 109,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:52:26.109Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":286,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":5,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:52:35.471Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":278,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":30,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 9
+          }
+        },
+        {
+          "rooms": 128,
+          "edits": 9,
+          "report": {
+            "measuredAt": "2026-10-27T21:54:46.436Z",
+            "hardware": {
+              "platform": "linux x64",
+              "cpus": 16,
+              "cpuModel": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+              "memoryBytes": 33328463872,
+              "freeMemoryBytes": 11800440832,
+              "loadAverage": [10.93, 8.97, 7.34],
+              "node": "v26.12.1"
+            },
+            "profile": {
+              "cards": 200,
+              "rooms": 128,
+              "peersPerRoom": 1,
+              "peers": 128,
+              "edits": 9,
+              "editsPerSecond": 0.45,
+              "drivingMs": 17786.67,
+              "settleMs": 3000,
+              "steadySamples": 3,
+              "rateDelivery": {
+                "peers": 128,
+                "delivered": 128,
+                "undelivered": 0,
+                "p50Ms": 12179.04,
+                "p99Ms": 12390.47,
+                "maxMs": 12391.29,
+                "deadlineMs": 30000
+              },
+              "documentBytes": 219262
+            },
+            "latency": {
+              "socketMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              },
+              "shareMs": {
+                "p50": null,
+                "p99": null,
+                "samples": 0
+              }
+            },
+            "eventLoopLagSeconds": {
+              "p50": 0.0042,
+              "p99": 0.4992,
+              "samples": 429,
+              "atOrAbove100ms": 132
+            },
+            "rssPeakBytes": 1603649536,
+            "steady": {
+              "rssBytes": 1571983360,
+              "heapBytes": 251294352,
+              "externalBytes": 92306158,
+              "arrayBuffersBytes": 87788204,
+              "rssSplitBytes": 1571983360,
+              "openRooms": 129,
+              "projectionRooms": 128,
+              "documents": 129,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 8.361
+            },
+            "final": {
+              "rssBytes": 1571983360,
+              "heapBytes": 251668176,
+              "externalBytes": 92306168,
+              "arrayBuffersBytes": 87788214,
+              "rssSplitBytes": 1571983360,
+              "openRooms": 129,
+              "projectionRooms": 128,
+              "documents": 129,
+              "documentWritesPending": 0,
+              "eventLoopLagMaxSeconds": 8.361,
+              "projectionRebuilds": 4,
+              "projectionSkips": 0,
+              "projectionCapped": 0,
+              "projectionFailures": 0,
+              "eventLoopLagBreaches": 132,
+              "roomBackpressure": 0,
+              "documentWrites": 644
+            },
+            "metricsSamples": 169,
+            "missedPropagations": 0,
+            "relayExitCode": 0,
+            "relayLog": [
+              "{\"ts\":\"2026-10-27T21:53:34.742Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":288,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":34,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:53:43.951Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":304,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":64,\"documentWritesPending\":0,\"projectionCapped\":0}",
+              "{\"ts\":\"2026-10-27T21:53:45.988Z\",\"level\":\"warn\",\"msg\":\"event loop lag sustained above its threshold\",\"component\":\"server\",\"code\":\"event-loop-lag\",\"lagMs\":270,\"thresholdMs\":50,\"consecutive\":5,\"sustainedSamples\":5,\"windowMs\":250,\"documentWrites\":70,\"documentWritesPending\":0,\"projectionCapped\":0}"
+            ],
+            "editTimesRecorded": 9
+          }
+        }
+      ],
+      "saturatedRooms": 64
+    }
+  ]
+}

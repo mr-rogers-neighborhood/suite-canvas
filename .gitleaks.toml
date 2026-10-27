@@ -1,0 +1,53 @@
+# gitleaks rules for this checkout.
+#
+# Two callers read this file: `.husky/pre-commit` runs `pnpm security:secrets
+# --staged`, which scans the index a commit is about to record, and
+# `pnpm security:secrets` scans every file in the tree. `pnpm verify` runs the
+# second one.
+#
+# The default rule set is kept: provider token shapes (Stripe, AWS, GitHub,
+# Google), private-key blocks, JWTs and a high-entropy pass. Everything below
+# only narrows where those rules look, and every entry is a path or a value
+# somebody chose, not a whole class of file.
+title = "Suite"
+
+[extend]
+useDefault = true
+
+# Paths a working copy has and git does not. A local `.env` holds the real
+# development credentials by design, and it is gitignored, so it can never
+# become history; `dist/`, `storybook-static/` and `e2e/.artifacts/` are build
+# and test output. Scanning them reports the same third-party noise on every
+# run and teaches the reader to ignore the tool.
+[[allowlists]]
+description = "Gitignored local files and build output"
+paths = [
+  '''(^|/)\.env(\..*)?$''',
+  '''(^|/)\.artifacts/''',
+  '''(^|/)coverage/''',
+  '''(^|/)dist/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)reports/''',
+  '''(^|/)storybook-static/''',
+]
+
+# Fake credentials the tests need, listed by value. A test suite has to hand
+# the scrubber a JWT it must remove, or a share token it must parse; those are
+# fixtures, and each one is named here rather than exempting test files
+# wholesale, so a real key pasted into a test still fails the scan.
+[[allowlists]]
+description = "Deliberate fixture credentials"
+regexTarget = "match"
+regexes = [
+  # `sk_test_…`: a Stripe test key, used to prove the licence parser reads one.
+  '''sk_test_51Nfixture''',
+  # Share tokens and owner keys the session and diagnostics tests compose.
+  '''c2hhcmVUb2tlbjAxMjM0NTY3ODlhYmNkZWZnaGlqa2xtbm9wcXI''',
+  '''sh_9f8e7d6c5b4a39281706f5e4d3c2b1a0''',
+  '''owner-key-0964a30f-2d21-4a5e-9a6e-4b1a6d0d3c11''',
+  # The EdDSA header every fixture JWT in the tree starts with.
+  '''eyJhbGciOiJFZERTQSJ9''',
+  # `0004_licence_limits.sql` in a migration-log assertion: a filename, not a
+  # token, but the generic rule reads the run of digits and letters as one.
+  '''[0-9]{4}_[a-z0-9_]+\.sql''',
+]

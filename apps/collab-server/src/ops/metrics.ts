@@ -24,6 +24,16 @@ export const CLAIM_OUTCOMES = ["claimed", "owned", "conflict"] as const;
 export type ClaimOutcome = (typeof CLAIM_OUTCOMES)[number];
 
 /**
+ * The parts of a process's memory a scrape has to tell apart. A Loro document
+ * is WASM linear memory, which Node reports under `external` and
+ * `arrayBuffers`, never under `heap`: a process holding hundreds of megabytes of
+ * documents can show a heap of a few tens. A closed set, so the family stays
+ * four series however many rooms are open.
+ */
+export const MEMORY_SEGMENTS = ["heap", "external", "arrayBuffers", "rss"] as const;
+export type MemorySegment = (typeof MEMORY_SEGMENTS)[number];
+
+/**
  * Cheap readers for values that change continuously. A source may return
  * `null` when the number is genuinely unknown (for example a disk watermark of
  * "unlimited"), in which case the series is omitted instead of guessed.
@@ -50,6 +60,11 @@ export interface MetricsGauges {
   documentWritesPending?: () => number | null;
   /** Longest event-loop lag sample seen, in seconds. */
   eventLoopLagMaxSeconds?: () => number | null;
+  /**
+   * Memory in bytes by segment; defaults to `readProcessMemory()`. `rss` repeats
+   * `rssBytes` so one query answers what the resident set is made of.
+   */
+  memorySplit?: () => Record<MemorySegment, number> | null;
 }
 
 /**
@@ -103,6 +118,11 @@ export interface MetricsSnapshot {
     documents: number | null;
     documentWritesPending: number | null;
     eventLoopLagMaxSeconds: number | null;
+    /**
+     * Memory by segment, or `null` when the process cannot report it. A segment
+     * whose reading is not a finite number is `null` and its series is absent.
+     */
+    memorySplit: Record<MemorySegment, number | null> | null;
   };
 }
 
@@ -187,7 +207,52 @@ function readRss(source: (() => number | null) | undefined): number | null {
   return value !== null && value > 0 ? value : null;
 }
 
-const GAUGE_HELP: Record<keyof MetricsSnapshot["gauges"], string> = {
+/**
+ * One reading of `process.memoryUsage()`, split into the published segments.
+ * Throws only if Node itself cannot answer, which `readMemorySplit` turns into
+ * an absent family.
+ */
+function readProcessMemory(): Record<MemorySegment, number> {
+  const usage = process.memoryUsage();
+  return {
+    heap: usage.heapUsed,
+    external: usage.external,
+    arrayBuffers: usage.arrayBuffers,
+    rss: usage.rss,
+  };
+}
+
+/**
+ * The split as published. A segment is omitted when its reading is not a finite
+ * number. Zero is published here, unlike RSS: `external` and `arrayBuffers` are
+ * genuinely zero in a process that holds no WASM memory, and reporting that is
+ * the answer a reader wants.
+ */
+function readMemorySplit(
+  source: (() => Record<MemorySegment, number> | null) | undefined,
+): Record<MemorySegment, number | null> | null {
+  let usage: Record<MemorySegment, number> | null;
+  try {
+    usage = source?.() ?? readProcessMemory();
+  } catch {
+    return null;
+  }
+  if (usage === null) return null;
+  const split = {} as Record<MemorySegment, number | null>;
+  let published = 0;
+  for (const segment of MEMORY_SEGMENTS) {
+    const value = usage[segment];
+    const valid = typeof value === "number" && Number.isFinite(value) && value >= 0;
+    split[segment] = valid ? Math.floor(value) : null;
+    if (valid) published += 1;
+  }
+  return published > 0 ? split : null;
+}
+
+/** Every gauge that is one number; `memorySplit` is a family and is rendered separately. */
+type ScalarGaugeKey = Exclude<keyof MetricsSnapshot["gauges"], "memorySplit">;
+
+const GAUGE_HELP: Record<ScalarGaugeKey, string> = {
   rssBytes: "Resident set size of the server process in bytes.",
   uptimeSeconds: "Seconds since the server process started.",
   databaseBytes: "Bytes the document database occupies (page count x page size).",
@@ -200,7 +265,7 @@ const GAUGE_HELP: Record<keyof MetricsSnapshot["gauges"], string> = {
   eventLoopLagMaxSeconds: "Longest event-loop lag sample seen since start, in seconds.",
 };
 
-const GAUGE_NAMES: Record<keyof MetricsSnapshot["gauges"], string> = {
+const GAUGE_NAMES: Record<ScalarGaugeKey, string> = {
   rssBytes: "suite_rss_bytes",
   uptimeSeconds: "suite_uptime_seconds",
   databaseBytes: "suite_database_bytes",
@@ -212,6 +277,9 @@ const GAUGE_NAMES: Record<keyof MetricsSnapshot["gauges"], string> = {
   documentWritesPending: "suite_document_writes_pending",
   eventLoopLagMaxSeconds: "suite_event_loop_lag_max_seconds",
 };
+
+const MEMORY_SPLIT_HELP =
+  "Process memory in bytes by segment; Loro documents live in external/arrayBuffers, not heap.";
 
 /** One counter/gauge collector for a whole process. */
 export class MetricsCollector {
@@ -362,6 +430,7 @@ export class MetricsCollector {
         documents: read(gauges.documents, () => null),
         documentWritesPending: read(gauges.documentWritesPending, () => null),
         eventLoopLagMaxSeconds: read(gauges.eventLoopLagMaxSeconds, () => null),
+        memorySplit: readMemorySplit(gauges.memorySplit),
       },
     };
   }
@@ -474,8 +543,24 @@ export class MetricsCollector {
       `suite_build_info{version="${escapeLabel(snapshot.version)}"} 1`,
     );
 
-    for (const key of Object.keys(GAUGE_NAMES) as (keyof MetricsSnapshot["gauges"])[]) {
+    for (const key of Object.keys(GAUGE_NAMES) as ScalarGaugeKey[]) {
       gauge(GAUGE_NAMES[key], GAUGE_HELP[key], gauges[key]);
+    }
+
+    if (gauges.memorySplit !== null) {
+      const samples = MEMORY_SEGMENTS.flatMap((segment) => {
+        const value = gauges.memorySplit?.[segment] ?? null;
+        return value === null
+          ? []
+          : [`suite_memory_split{segment="${segment}"} ${formatNumber(value)}`];
+      });
+      if (samples.length > 0) {
+        lines.push(
+          `# HELP suite_memory_split ${MEMORY_SPLIT_HELP}`,
+          "# TYPE suite_memory_split gauge",
+          ...samples,
+        );
+      }
     }
 
     return `${lines.join("\n")}\n`;

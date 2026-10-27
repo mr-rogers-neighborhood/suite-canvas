@@ -1,1 +1,8 @@
+#!/usr/bin/env sh
+# A credential in history survives every clone and cannot be deleted, so the
+# staged diff is scanned before anything is recorded. Docker is required here;
+# without it the scan cannot make a claim, so the commit stops.
+pnpm security:secrets --staged
+
+# Format and lint the staged files, then re-stage what `--write` changed.
 lint-staged

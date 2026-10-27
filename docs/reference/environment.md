@@ -168,7 +168,8 @@ Billing owns `SUITE_BILLING_ENABLED`, `SUITE_BILLING_STORE`, `SUITE_BILLING_DATA
 [billing.md](billing.md).
 
 `compose.yaml` adds three variables it consumes itself: `SUITE_DOMAIN` (the hostname Caddy serves),
-`SUITE_ACME_EMAIL` (the ACME account address) and `SUITE_IMAGE` (the image to run, defaulting to `:latest`).
+`SUITE_ACME_EMAIL` (the ACME account address) and `SUITE_IMAGE` (the image to run, defaulting to the image
+the host builds locally, `suite:local`).
 
 ## Generated check
 

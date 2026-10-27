@@ -22,18 +22,20 @@ pnpm --filter @suite/collab-server start     # from the repo root
 | 1235 | `HEALTH_PORT` | HTTP API (`/api/*`), `/health`, `/metrics` |
 
 `docker compose up -d --build` runs the same server behind Caddy, which terminates TLS and proxies
-`/api/*` and `/ws`. A released image needs no Node and no checkout:
+`/api/*` and `/ws`. A deployed host builds the image from its own checkout, so Node is only needed
+inside the container, never on the host:
 
 ```sh
-docker pull ghcr.io/<owner>/suite:v1.0.0
-SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0 docker compose up -d
+deploy/deploy.sh                                              # build, pin SUITE_IMAGE, restart, verify
+SUITE_IMAGE=suite:v1.1.0 docker compose up -d --no-build app  # start a tag that already exists
 ```
 
-`compose.yaml` keeps both `image:` and `build:`, so `--build` builds and tags locally while a deployed
-host pulls. Pin `SUITE_IMAGE` to a release tag; unset follows `:latest`, which moves. The tag is baked
-into the process as `SUITE_VERSION` and reported by `/metrics`, `/api/admin/status` and the
-`server ready` line, so a container names its release without `docker inspect`. The tag flow is
-[release.md](release.md).
+`compose.yaml` keeps both `image:` and `build:`, so the reference compose runs is a name for a local
+image: `suite:<version>` once `deploy/deploy.sh` has written it into `SUITE_IMAGE`, and `suite:local`
+when `.env` names none. Nothing is pulled from a registry. The version is baked into the process as
+`SUITE_VERSION` and reported by `/metrics`, `/api/admin/status` and the `server ready` line, so a
+container names its release without `docker inspect`. Upgrades and rollback are in
+[deploy.md](deploy.md) §9 and [release.md](release.md).
 
 ### Boot-time validation
 
@@ -168,6 +170,7 @@ curl -s -H "authorization: Bearer $SUITE_ADMIN_TOKEN" http://127.0.0.1:1235/metr
 | --- | --- | --- |
 | `suite_build_info{version}` | gauge `1` | The release, for joining with a deploy. |
 | `suite_rss_bytes`, `suite_uptime_seconds` | gauge | Resident set size (absent when unreadable, never `0`) and seconds since start. |
+| `suite_memory_split` | gauge, `segment` | The same process split into `heap`, `external`, `arrayBuffers` and `rss`. Loro documents live in WASM linear memory, so they appear under `arrayBuffers`, not `heap`; this is the gauge that shows what a room actually costs. |
 | `suite_database_bytes` | gauge | Document-store bytes, the number the disk watermarks compare. |
 | `suite_disk_soft_bytes`, `suite_disk_above_soft` | gauge | Watermark in force (absent when unlimited) and whether the store is above it. |
 | `suite_open_rooms`, `suite_projection_rooms`, `suite_documents` | gauge | Rooms the sync server tracks; projections open now, bounded by `SUITE_PROJECTION_ROOMS_MAX`; stored documents. |
@@ -221,7 +224,11 @@ carries every live projection with it.
 a URL or `localStorage`. It lists workspaces with sizes and quota state, links with last-used and
 expiry, open rooms with their `documentBytes`, and the limits with their source (`default`, `env` or
 `override`); mutations are audited as `admin.mutation` lines. `POST /api/admin/fixtures` seeds a
-disposable workspace from a fixture, so a bug can be reproduced without customer data.
+disposable workspace from a fixture, so a bug can be reproduced without customer data. The Templates
+section lists the starter templates the launcher offers, with the boards, edges and cards each one
+holds, and writes the control plane's `templates` rows through `/admin/templates`: a template can be
+renamed, re-described, downloaded as JSON and deleted, and a downloaded file pastes back into the
+panel's "New template…" form.
 
 ### Logs and alerts
 
@@ -347,8 +354,8 @@ A build only reads what it can prove it understands.
   at boot with one piece of advice: upgrade the binary, or restore a backup taken on this build.
 - Reading a document rewrites nothing, so no backfill happens behind your back.
 
-An upgrade is a new image tag, and a rollback after a schema change is a restore. See
-[release.md](release.md).
+An upgrade is a new image built and tagged on the host, and a rollback after a schema change is a
+restore. See [release.md](release.md).
 
 ## Tune it
 

@@ -341,22 +341,20 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             />
           </>
         ) : (
-          <>
-            {styleSides.map((side) => (
-              <ChipRow
-                key={side}
-                label={SIDE_LABELS[side]}
-                testId={`style-side-${side}`}
-                value={current.sides?.[side]?.paint ?? "solid"}
-                disabled={!canEdit}
-                options={styleEdgePaints.map((paint) => ({
-                  value: paint,
-                  label: PAINT_LABELS[paint],
-                }))}
-                onSelect={(paint) => setSide(side, paint ?? "solid")}
-              />
-            ))}
-          </>
+          styleSides.map((side) => (
+            <ChipRow
+              key={side}
+              label={SIDE_LABELS[side]}
+              testId={`style-side-${side}`}
+              value={current.sides?.[side]?.paint ?? "solid"}
+              disabled={!canEdit}
+              options={styleEdgePaints.map((paint) => ({
+                value: paint,
+                label: PAINT_LABELS[paint],
+              }))}
+              onSelect={(paint) => setSide(side, paint ?? "solid")}
+            />
+          ))
         )}
       </section>
 

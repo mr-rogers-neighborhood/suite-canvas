@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   CLAIM_OUTCOMES,
+  MEMORY_SEGMENTS,
   MetricsCollector,
+  type MetricsGauges,
   readProcessRss,
   STATUS_CLASSES,
   statusClassOf,
 } from "./metrics.js";
 
 /** Everything a label is allowed to be; ids, tokens and paths are not. */
-const LABEL_VALUES = new Set<string>([...STATUS_CLASSES, ...CLAIM_OUTCOMES, "1.4.0", "0.0.0-test"]);
+const LABEL_VALUES = new Set<string>([
+  ...STATUS_CLASSES,
+  ...CLAIM_OUTCOMES,
+  ...MEMORY_SEGMENTS,
+  "1.4.0",
+  "0.0.0-test",
+]);
 
 function labelValues(text: string): string[] {
   const values: string[] = [];
@@ -39,7 +47,7 @@ describe("statusClassOf", () => {
 });
 
 describe("MetricsCollector", () => {
-  const gauges = {
+  const gauges: MetricsGauges = {
     rssBytes: () => 1024,
     uptimeSeconds: () => 12.5,
     databaseBytes: () => 2048,
@@ -49,6 +57,7 @@ describe("MetricsCollector", () => {
     documents: () => 7,
     documentWritesPending: () => 0,
     eventLoopLagMaxSeconds: () => 0.25,
+    memorySplit: () => ({ heap: 512, external: 256, arrayBuffers: 128, rss: 1024 }),
   };
 
   it("increments every counter independently", () => {
@@ -129,6 +138,7 @@ describe("MetricsCollector", () => {
       "suite_documents",
       "suite_document_writes_pending",
       "suite_event_loop_lag_max_seconds",
+      "suite_memory_split",
     ]) {
       expect(text, name).toContain(`# TYPE ${name} `);
       expect(text, name).toContain(`# HELP ${name} `);
@@ -140,6 +150,10 @@ describe("MetricsCollector", () => {
     expect(text).toContain("suite_rss_bytes 1024");
     expect(text).toContain("suite_uptime_seconds 12.5");
     expect(text).toContain("suite_disk_above_soft 0");
+    expect(text).toContain('suite_memory_split{segment="heap"} 512');
+    expect(text).toContain('suite_memory_split{segment="external"} 256');
+    expect(text).toContain('suite_memory_split{segment="arrayBuffers"} 128');
+    expect(text).toContain('suite_memory_split{segment="rss"} 1024');
     expect(text.endsWith("\n")).toBe(true);
 
     const sample = /^[a-zA-Z_:][a-zA-Z0-9_:]*(\{[^}]*\})? -?\d+(?:\.\d+)?$/u;
@@ -219,6 +233,7 @@ describe("MetricsCollector", () => {
       documents: 7,
       documentWritesPending: 0,
       eventLoopLagMaxSeconds: 0.25,
+      memorySplit: { heap: 512, external: 256, arrayBuffers: 128, rss: 1024 },
     });
   });
 
@@ -248,6 +263,60 @@ describe("MetricsCollector", () => {
     expect(collector.snapshot().gauges.rssBytes).toBeNull();
     expect(
       sampleLines(collector.prometheus()).some((line) => line.startsWith("suite_rss_bytes")),
+    ).toBe(false);
+  });
+
+  it("splits this process's memory into the four segments", () => {
+    const split = new MetricsCollector().snapshot().gauges.memorySplit;
+
+    expect(split).not.toBeNull();
+    const heap = split?.heap ?? null;
+    const external = split?.external ?? null;
+    const arrayBuffers = split?.arrayBuffers ?? null;
+    const rss = split?.rss ?? null;
+    for (const [segment, value] of Object.entries({ heap, external, arrayBuffers, rss })) {
+      expect(value, segment).not.toBeNull();
+      expect(value ?? -1, segment).toBeGreaterThanOrEqual(0);
+    }
+    // A real reading, not a placeholder: the heap holds a test runner's worth of
+    // allocations, and the resident set holds the heap.
+    expect(heap ?? 0).toBeGreaterThan(1024 * 1024);
+    expect(rss ?? 0).toBeGreaterThan(heap ?? 0);
+    expect(external ?? 0).toBeLessThanOrEqual(rss ?? 0);
+    expect(arrayBuffers ?? 0).toBeLessThanOrEqual(external ?? 0);
+  });
+
+  it("publishes a zero segment but omits one that cannot be read", () => {
+    const collector = new MetricsCollector({
+      gauges: {
+        memorySplit: () => ({ heap: Number.NaN, external: 10, arrayBuffers: 0, rss: 20 }),
+      },
+    });
+
+    expect(collector.snapshot().gauges.memorySplit).toEqual({
+      heap: null,
+      external: 10,
+      arrayBuffers: 0,
+      rss: 20,
+    });
+    const lines = sampleLines(collector.prometheus());
+    expect(lines).toContain('suite_memory_split{segment="external"} 10');
+    expect(lines).toContain('suite_memory_split{segment="arrayBuffers"} 0');
+    expect(lines.some((line) => line.includes('segment="heap"'))).toBe(false);
+  });
+
+  it("omits the whole memory split when the process cannot answer", () => {
+    const collector = new MetricsCollector({
+      gauges: {
+        memorySplit: () => {
+          throw new Error("no /proc");
+        },
+      },
+    });
+
+    expect(collector.snapshot().gauges.memorySplit).toBeNull();
+    expect(
+      sampleLines(collector.prometheus()).some((line) => line.startsWith("suite_memory_split")),
     ).toBe(false);
   });
 });

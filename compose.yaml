@@ -14,13 +14,20 @@ name: suite
 
 services:
   app:
-    # A deployed host can `docker compose pull` this tag instead of building;
-    # `build:` stays so local dev still works and only needs the checkout.
-    # Set SUITE_IMAGE=ghcr.io/<owner>/suite:<tag> in `.env` to pin a release.
-    image: ${SUITE_IMAGE:-ghcr.io/mr-rogers-neighborhood/suite:latest}
+    # Built on this host, never pulled. `deploy/deploy.sh` tags every build
+    # `suite:<version>` and `suite:local`, and writes the version tag into
+    # `SUITE_IMAGE` in `.env`; a rollback points `SUITE_IMAGE` at a
+    # `suite:rollback-<version>` tag taken before the build. The default is a
+    # local name so an unset `.env` cannot send compose to a registry.
+    image: ${SUITE_IMAGE:-suite:local}
     build:
       context: .
       target: runtime
+      # The version the image reports through `/metrics` and
+      # `/api/admin/status`. A workflow used to bake it at push time; a build
+      # from a checkout has to pass it, or the image says 0.0.0.
+      args:
+        SUITE_VERSION: ${SUITE_VERSION:-0.0.0}
     restart: unless-stopped
     # Hardening. The image already ends with `USER node`; naming the uid here
     # keeps that visible in the file that deploys it. The root filesystem is
@@ -144,10 +151,15 @@ services:
     # The second process: accounts, billing and the Postgres above. It mounts
     # the route modules in `apps/control-plane/src/modules` and owns no
     # documents, so the relay keeps syncing when this service is down.
-    image: ${SUITE_CONTROL_PLANE_IMAGE:-ghcr.io/mr-rogers-neighborhood/suite-control-plane:latest}
+    # Same host-build rule as `app`: the default is a local tag, so nothing
+    # here reaches for a registry. `docker compose build control-plane` tags
+    # this name; `deploy/deploy.sh` builds only the relay.
+    image: ${SUITE_CONTROL_PLANE_IMAGE:-suite:local-control-plane}
     build:
       context: .
       target: control-plane
+      args:
+        SUITE_VERSION: ${SUITE_VERSION:-0.0.0}
     restart: unless-stopped
     depends_on:
       postgres:

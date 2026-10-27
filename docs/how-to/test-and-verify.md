@@ -15,7 +15,8 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols
 None of those commands needs a runner or an account. `pnpm check` runs Biome, `tsc`,
 `vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, which is why it belongs after each edit
 batch; it leaves out `pnpm docs:check` and the full test run. `pnpm verify` adds the billing tests, the
-story suite and the build.
+story suite, the build, and the two fast security scans (`security:deps` and `security:secrets`, both
+described below).
 
 Playwright stays outside the gate. No contributor or agent starts it by default, and no change waits
 on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
@@ -36,8 +37,57 @@ entitlement change would make the workflow usable again.
 | `pnpm docs:check` | Relative links and anchors, code fences, banned prose, generated indexes, limits | A prose change, or a change to a limit |
 | `pnpm docs:symbols` | Backticked paths, root scripts and ADR references that resolve | A page that names a command or a file |
 | `pnpm shape` | File length, observe call sites, raw Loro writes | A change under `apps/` or `packages/` |
-| `pnpm verify` | The gate plus the billing tests, the story suite and the build | Before a commit you want fully checked, and on a tag |
+| `pnpm verify` | The gate plus the billing tests, the story suite, the build, `security:deps` and `security:secrets` | Before a commit you want fully checked, and on a tag |
 | `pnpm test:stories` | The Storybook suite under jsdom plus axe, in both themes | A `.stories.tsx` changed, or you touched a component a story renders |
+
+## Security scans
+
+Four scans, one `pnpm` script each. Nothing here needs a GitHub workflow, a runner or an account, and
+each script exits non-zero on a finding, so the same command is a check and a gate.
+
+| Command | Reads | Needs |
+| --- | --- | --- |
+| `pnpm security:deps` | the registry advisories for `pnpm-lock.yaml`, then every package's published signature | the network |
+| `pnpm security:secrets` | every file in the checkout, then the staged diff from the pre-commit hook | Docker |
+| `pnpm security:osv` | `pnpm-lock.yaml`, against the OSV database | Docker and the network |
+| `pnpm security:image` | the package set inside a built image | Docker and a built image |
+
+`security:deps` runs `pnpm audit --audit-level high` and then `pnpm audit signatures`. The second half
+checks that each tarball came from the registry that published it, which is the part a lockfile alone
+cannot tell you. A high or critical advisory, or a package with no verified signature, fails it.
+
+`security:secrets` runs gitleaks in a pinned image (`zricethezav/gitleaks:v8.28.0`) with the rules in
+`.gitleaks.toml`. That file allows the gitignored paths a working copy has (`.env`, `dist/`,
+`storybook-static/`) and names each fixture credential the tests use, one value at a time, so test files
+are not exempt as a class and a real key pasted into a test still fails. Findings print redacted, with
+the file, the line and the rule. The same script runs from `.husky/pre-commit` as
+`pnpm security:secrets --staged`, which scans the index: a credential stops the commit instead of
+becoming a commit that has to be rewritten out of history.
+
+`security:osv` runs OSV-Scanner (`ghcr.io/google/osv-scanner:v2.7.0`) against `pnpm-lock.yaml`. It reads
+a different feed from `pnpm audit`, so the two report different sets of packages and different fixed
+versions, and running both is the point. The switches:
+
+```sh
+pnpm security:osv --download   # copy the vulnerability database into ~/.cache/suite/osv-scanner
+pnpm security:osv --offline    # scan with no network at all, from that cache
+pnpm security:osv --licences   # also report packages outside the licence allowlist
+```
+
+`--offline` fails when the cache is empty rather than reporting nothing, so an offline run is evidence.
+`--licences` checks the packages against a list in the script (MIT, Apache-2.0, ISC, BSD, 0BSD, CC0,
+BlueOak, Python-2.0, Unlicense, Zlib) and it is opt-in: what it currently reports (MPL-2.0 through
+lightningcss, ten LGPL-3.0-or-later packages, two `UNKNOWN`) is a licensing decision, and a build gate is
+not where that decision is made.
+
+`security:image` runs Trivy (`aquasec/trivy:0.76.1`) against `suite:local`, or against the image named
+as its argument (`pnpm security:image ghcr.io/<owner>/suite:v1.1.0`). It reports HIGH and CRITICAL
+only, and only findings with a fixed version, because a finding with no fix cannot be closed by
+rebuilding the image. It is a release-time command: `pnpm verify` leaves it out because it needs a
+built image. Build one with `docker build --target runtime -t suite:local .`.
+
+Docker is the only prerequisite for three of the four. A missing daemon stops the command with an
+instruction; no scan is skipped without saying so. `git commit --no-verify` is the only way past the hook.
 
 ## E2E on request
 

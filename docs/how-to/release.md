@@ -1,8 +1,8 @@
 # Release and roll back
 
-A release is a tag, an image built from it, the digest that identifies that image, a smoke test against
-a host, and a rollback path. This page is written against `1.1.0`; every release edits the tag
-and the digest recorded below.
+A release is a tag, an image built from it on the host that serves it, the image id that identifies
+it, a smoke test against a host, and a rollback path. This page is written against `1.1.0`; every
+release edits the tag and the id recorded below.
 
 ## What a release is
 
@@ -10,10 +10,10 @@ and the digest recorded below.
 | --- | --- |
 | Version | `1.1.0` in `package.json` and the newest `CHANGELOG.md` heading |
 | Git tag | `v1.1.0` on the release commit |
-| Image | `ghcr.io/<owner>/suite:v1.1.0`, also `:sha-<12>` and `:latest` |
-| Identity | the image digest, `ghcr.io/<owner>/suite@sha256:…`, in the release notes |
+| Image | `suite:v1.1.0`, built on the host that runs it and also tagged `suite:local` |
+| Identity | the image id from `docker image inspect --format '{{.Id}}' suite:v1.1.0` |
 | Change record | the matching `CHANGELOG.md` section |
-| Evidence | the Beta gate rows in the internal roadmap |
+| Evidence | the `pnpm verify` run and the security scan output, quoted in the release notes |
 
 `SUITE_VERSION` is baked into the image at build time, so a running container reports what it is:
 `version` in `/api/admin/status`, `suite_build_info{version="…"} 1` in `/metrics`, and the
@@ -40,21 +40,25 @@ If workflows can start, `.github/workflows/release.yml` runs three jobs:
 | `image` | Builds the `runtime` target with `SUITE_VERSION=<tag>` and pushes `:<tag>`, `:sha-<12>` and `:latest` to GHCR | The build fails |
 | `release` | Opens a GitHub release whose body is the changelog section plus the image digest and a rollback link | `CHANGELOG.md` has no section for the version |
 
-Record the digest from the run. It is the artefact every later rollback names.
+Nothing on this page depends on either workflow file. Every workflow on this account still ends in
+`startup_failure` with zero jobs, which is account state rather than workflow content, so the release
+image is built on the host that serves it.
 
-### When Actions cannot run
+### Build the image on the host
 
-Every workflow on this account still ends in `startup_failure` with zero jobs, which is account state
-rather than workflow content. If that is still true at the tag, build and push by hand with the same
-three tags and the same build argument, record the digest in the release notes, and say the image was
-built manually so nobody assumes `release.yml` produced it.
+The build argument is the tag, and the two `-t` names are what the host later rolls back to and runs:
 
 ```sh
+git checkout v1.1.0
 docker build --target runtime --build-arg SUITE_VERSION=v1.1.0 \
-  -t ghcr.io/<owner>/suite:v1.1.0 -t ghcr.io/<owner>/suite:latest .
-docker push ghcr.io/<owner>/suite:v1.1.0 && docker push ghcr.io/<owner>/suite:latest
-docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<owner>/suite:v1.1.0
+  -t suite:v1.1.0 -t suite:local .
+docker image inspect --format '{{.Id}}' suite:v1.1.0
 ```
+
+Record the image id in the release notes. A host-built image has no `RepoDigests`, so the id is the
+identity every later rollback names, and `docker image ls` shows it next to the tag.
+`deploy/deploy.sh` runs the same build with the tag at `HEAD`, plus the backup, the rollback tag and
+the restart.
 
 Do not tag unless the local gate is green on the exact commit. The tag is the only quality claim this
 project can currently make.
@@ -64,30 +68,33 @@ project can currently make.
 Against the host that will serve it, before announcing anything:
 
 ```sh
-SUITE_IMAGE=ghcr.io/<owner>/suite:v1.1.0 docker compose pull app
-SUITE_IMAGE=ghcr.io/<owner>/suite:v1.1.0 docker compose up -d
+sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v1.1.0|' .env
+docker compose up -d --no-build app                   # the new tag; Caddy keeps running
 docker compose ps                                     # app healthy, caddy up
 curl -fsS https://$SUITE_DOMAIN/health                # {"ok":true}
 curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/api/admin/status | head -c 400
 curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://$SUITE_DOMAIN/metrics | grep suite_build_info
 ```
 
-`/api/admin/status` must report `"version":"1.1.0"` and `suite_build_info` must carry the same
-tag. Then, by hand: open a workspace, upload an attachment, reload, open the same workspace in a second
-tab, and confirm the published limits still match what the server reports on a refusal
-([reference/limits.md](../reference/limits.md)). A container that reports the wrong version is not a
-release, however healthy `/health` looks.
+`/api/admin/status` must report `"version":"v1.1.0"` and `suite_build_info` must carry the same tag,
+because `SUITE_VERSION` reaches the process verbatim. Then, by hand: open a workspace, upload an
+attachment, reload, open the same workspace in a second tab, and confirm the published limits still
+match what the server reports on a refusal ([reference/limits.md](../reference/limits.md)). A
+container that reports the wrong version is not a release, however healthy `/health` looks.
 
 ## Rollback
 
-Rollback is re-pinning the previous image. It needs no code change and no build.
+Rollback restarts `app` on the tag taken before the upgrade. It needs no code change and no build, and
+on a host build it is the only rollback there is: a build overwrites `suite:local`, so the pre-upgrade
+tag is what names the previous image.
 
-1. Find the last good digest, either in the previous GitHub release body or with
-   `docker image inspect ghcr.io/<owner>/suite:v<previous> --format '{{index .RepoDigests 0}}'`.
-2. Set `SUITE_IMAGE` to that digest in `.env` and recreate `app` only:
+1. Find the tag. `deploy/deploy.sh --list` prints every `suite:rollback-*` on the host, and the release
+   notes record the version each upgrade started from.
+2. Point `app` at it and recreate that service only:
 
    ```sh
-   SUITE_IMAGE=ghcr.io/<owner>/suite@sha256:<digest> docker compose up -d app
+   deploy/deploy.sh --rollback suite:rollback-v1.1.0
+   # by hand: SUITE_IMAGE=suite:rollback-v1.1.0 docker compose up -d --no-build app
    ```
 
 3. Confirm `/health` answers and `/api/admin/status` reports the expected `version`.
@@ -95,14 +102,14 @@ Rollback is re-pinning the previous image. It needs no code change and no build.
    older binary may refuse the newer data. Stop `app`, restore the pre-upgrade backup with
    `deploy/restore.sh --force` ([operate.md](operate.md)), then start the older image. An older binary
    against newer data is not a rollback.
-5. Record the digest restored, the time, and whether a restore was needed, in the release notes.
+5. Record the tag restored, its image id, the time, and whether a restore was needed, in the release
+   notes.
 
 `caddy` never moves during a rollback. It serves a static bundle from its own image and proxies to
 `app`.
 
-## Not in Beta
+## Not in a release
 
-The tag workflow deliberately omits image signing and verification on pull, SBOM generation and
-attestation, multi-architecture images, self-hosted runners, and a staging environment or canary. There
-is one host and one tag. Adding any of them changes `release.yml` and should land with an ADR rather
-than by habit.
+A release omits image signing and verification on pull, SBOM generation and attestation,
+multi-architecture images, self-hosted runners, and a staging environment or canary. There is one host
+and one tag. Adding any of them changes `release.yml` and should land with an ADR rather than by habit.

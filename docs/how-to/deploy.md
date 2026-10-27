@@ -32,10 +32,17 @@ Measure instead of guessing: `/api/admin/status` has store sizes, rooms and clie
 `compose.yaml` turns a leak into a container restart instead of an OOM kill of the box. The volume is
 gp3, 20 GB minimum and encrypted at creation, because the application has no encryption at rest.
 
+That table is about serving. The same host also *builds* each release (§9), and the build needs more
+than the process does: 4 GB of memory and about 30 GB of root disk, on top of the data volume. A 2 GB
+instance serves a small deployment and then fails `pnpm build`, so either add swap or resize for the
+upgrade. §9 has both remedies and the numbers.
+
 ## 2. Create the instance and install Docker
 
 Lightsail: Ubuntu 24.04, 2 GB, static IP attached. EC2: Ubuntu 24.04 LTS, `t4g.small`, Elastic IP,
-security group from step 4. Instance store is not durable; root EBS is.
+security group from step 4. Instance store is not durable; root EBS is. Give the root volume 30 GB,
+because the build in §9 writes `node_modules`, the pnpm store and image layers there; the 2 GB
+Lightsail plan already includes 60 GB.
 
 ```sh
 sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg git sqlite3
@@ -46,8 +53,9 @@ sudo mkdir -p /srv && sudo chown "$USER" /srv
 git clone https://github.com/mr-rogers-neighborhood/suite /srv/suite
 ```
 
-The host needs the checkout because the `caddy` service is built from it and bakes `deploy/Caddyfile`
-and the canvas bundle into the image. The `app` image itself is pulled.
+The host needs the checkout because it builds every image it runs: `caddy` bakes `deploy/Caddyfile`
+and the canvas bundle, and `app` is compiled here from the same tree (§9). Nothing is pulled from a
+registry, so the clone is part of the deployment.
 
 ## 3. Attach the data volume
 
@@ -119,8 +127,9 @@ openssl rand -base64 32     # SUITE_PROJECTION_TOKEN
 openssl rand -base64 32     # SUITE_SOURCE_TOKEN
 ```
 
-Set `SUITE_DOMAIN`, `SUITE_ACME_EMAIL`, and `SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0`. Pin a
-release, because `:latest` moves under you. For a hosted relay also set `SUITE_HOSTED=1` and
+Set `SUITE_DOMAIN` and `SUITE_ACME_EMAIL`. Leave `SUITE_IMAGE` commented: the build below writes the
+tag it produced into that line, and a tag pinned by hand before an image exists only makes compose
+refuse to start. For a hosted relay also set `SUITE_HOSTED=1` and
 `SUITE_LICENCE_PUBLIC_KEY`, generating and signing on a workstation so the private key never reaches
 the relay:
 
@@ -140,7 +149,9 @@ unset, `:memory:`, relative, or outside the volume, naming each offender. Leave 
 local run. Every variable is in [reference/environment.md](../reference/environment.md).
 
 ```sh
-docker compose pull app && docker compose up -d --build
+deploy/deploy.sh --no-backup              # builds suite:v1.1.0, starts app, waits for health
+docker compose build caddy control-plane  # the other two images, from the same checkout
+docker compose up -d --no-build           # Caddy, the control plane and Postgres
 docker compose ps && docker compose logs -f caddy     # wait for "certificate obtained successfully"
 curl -fsS https://canvas.example.com/health           # {"ok":true}
 curl -fsS -o /dev/null -w '%{http_code}\n' https://canvas.example.com/admin
@@ -204,26 +215,169 @@ In order: verify, refuse a non-empty volume without `--force`, stop `app`, delet
 their stale `-wal`/`-shm` sidecars, copy the snapshot in, start `app`, and require `/health` within 90 seconds. Check the workspace you know best and one share link, then record the duration, which is your RTO.
 Caddy keeps proxying while `app` is down, so visitors see 502 for the length of the copy.
 
-## 9. Upgrade by image tag
+## 9. Upgrade by building on the host
+
+Nothing is pulled: the host builds `app` from `/srv/suite`, which is why it needs 4 GB of memory and
+30 GB of root disk (§1) and why a Graviton host produces an arm64 image. Neither the steps below nor
+`deploy/deploy.sh` depends on `.github/workflows/ci.yml` or `release.yml`, which cannot run on this
+account.
+
+The order is the part that matters. A host build replaces the image it runs, so the image that is
+running now is tagged *before* the build starts; that tag is the whole rollback.
+
+1. **Snapshot the six stores.** A release that changes a stored format can only be undone from a
+   backup taken before it opened the stores.
+
+   ```sh
+   cd /srv/suite
+   sudo bash -c 'set -a; . /etc/suite/backup.env; set +a; /srv/suite/deploy/backup.sh /srv/backups'
+   ```
+
+2. **Ask the running container which version it is.** The answer names the rollback tag; `v1.1.0`
+   below stands for it.
+
+   ```sh
+   docker compose ps -q app | xargs docker inspect \
+     --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^SUITE_VERSION=//p'
+   ```
+
+3. **Tag the running image before anything can replace it.**
+
+   ```sh
+   docker tag "$(docker compose images -q app)" suite:rollback-v1.1.0
+   ```
+
+   `docker compose images -q app` prints the image id the container runs from, so the tag names that
+   exact image and keeps it after the build moves `suite:local`.
+
+4. **Move the checkout onto the release.** The build reads the working tree, not a tag.
+
+   ```sh
+   git fetch --tags && git checkout v1.1.1 && git describe --tags --exact-match
+   ```
+
+5. **Build the image with the tag baked in.** `SUITE_VERSION` is what `/metrics` and
+   `/api/admin/status` report. Both `-t` flags matter: `suite:v1.1.1` is the record you can come back
+   to, `suite:local` is what compose runs when `.env` names no image.
+
+   ```sh
+   docker build --target runtime --build-arg SUITE_VERSION=v1.1.1 \
+     -t suite:v1.1.1 -t suite:local .
+   ```
+
+6. **Pin the tag and restart `app` alone.**
+
+   ```sh
+   sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:v1.1.1|' .env
+   docker compose up -d --no-build app     # Caddy keeps running; 502 for the restart only
+   ```
+
+   `--no-build` because the image already exists: without it compose may rebuild and retag over the
+   tag being started.
+
+7. **Check the version, not only health.**
+
+   ```sh
+   curl -fsS https://canvas.example.com/health
+   curl -fsS --oauth2-bearer "$SUITE_ADMIN_TOKEN" https://canvas.example.com/api/admin/status | head -c 200
+   ```
+
+   A container that reports the previous version is still the previous release, however healthy
+   `/health` looks.
+
+`deploy/deploy.sh` runs this sequence: it backs up, tags the running image, builds `suite:<tag>` and
+`suite:local` from the tag at `HEAD`, writes `SUITE_IMAGE` into `.env`, restarts `app` with
+`--no-build`, and waits 90 seconds for the compose healthcheck. A failure leaves the old image tagged
+and prints the rollback command.
 
 ```sh
-cd /srv/suite
-sudo bash -c 'set -a; . /etc/suite/backup.env; set +a; /srv/suite/deploy/backup.sh /srv/backups'
-$EDITOR .env                      # SUITE_IMAGE=ghcr.io/<owner>/suite:v1.0.0
-docker compose pull app && docker compose up -d app     # Caddy keeps running
-curl -fsS https://canvas.example.com/health
+cd /srv/suite && git fetch --tags && git checkout v1.1.1 && deploy/deploy.sh
 ```
 
-The tag travels into the process as `SUITE_VERSION`, visible in `/metrics`, `/api/admin/status` and the
-`server ready` line.
+`app` is the only image `deploy/deploy.sh` builds, because it is the only one that changes every
+release. When the control plane changed too, rebuild it and include it in the restart:
 
-Rollback is the previous tag and the same two commands, unless the release changed a stored format.
-Stores migrate forward on open, so a rollback after a schema change is a restore, not a tag change;
-that is what the pre-upgrade backup is for. See [release.md](release.md).
+```sh
+docker compose build control-plane
+docker compose up -d --no-build app control-plane
+```
+
+### Rollback
+
+Rollback restarts on the tag taken in step 3. Nothing is compiled and no old checkout is involved, so
+it takes as long as a container recreate.
+
+```sh
+deploy/deploy.sh --rollback suite:rollback-v1.1.0
+
+# the same thing by hand
+sed -i -E 's|^#?[[:space:]]*SUITE_IMAGE=.*|SUITE_IMAGE=suite:rollback-v1.1.0|' .env
+docker compose up -d --no-build app
+```
+
+`deploy/deploy.sh --list` prints the tags this host holds. Keep the last two `suite:rollback-*` and
+remove older ones with `docker image rm`: each is a full copy of the image and counts against the root
+volume.
+
+The tag returns the code; the data moves with it only as far as the schema allows. Stores migrate
+forward when opened, so a release that bumped `PRAGMA user_version` or changed a snapshot tag is undone
+by restoring the step 1 snapshot with `deploy/restore.sh --force` ([operate.md](operate.md)), then
+starting the older tag. [release.md](release.md) has the rest of that procedure.
+
+### What the build needs
+
+The build runs on the same box that serves, so these are facts about the deployment.
+
+- **4 GB of memory, or swap on 2 GB.** `pnpm build` for the canvas and the Docker build that runs the
+  same tree inside `node:22-bookworm` each want roughly 1 GB, and the second one runs inside a
+  container whose memory is charged to the same box. On 2 GB (`t4g.small`, the $5 Lightsail plan) one
+  of them usually ends in `JavaScript heap out of memory` or a killed `vite`, mid-upgrade, with the
+  rollback tag already taken and `app` still on the old image. For 4 GB of swap:
+
+  ```sh
+  sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+  sudo mkswap /swapfile && sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  ```
+
+  A swap-backed build takes several minutes. Resizing to `t4g.medium` for the upgrade is faster, and
+  is what §1 recommends past a handful of workspaces.
+
+- **About 30 GB of root volume.** The checkout grows with history, `node_modules` and the pnpm store
+  are several GB, and every image adds layers on top of the `node:22-bookworm` base. Reclaim space
+  before the build:
+
+  ```sh
+  df -h /                          # the number that decides whether to build now
+  docker builder prune             # build cache, 5-10 GB after a few upgrades
+  pnpm store prune                 # store entries no current lockfile names
+  docker image prune               # dangling layers; --all also drops tags, so check --list first
+  ```
+
+  The builder cache is the one that surprises people: it keeps the intermediate layer of every stage
+  of every build, and on a 30 GB disk two or three upgrades fill it. `deploy/deploy.sh --prune` runs
+  the first two for you.
+
+- **Architecture follows the host.** The image is built for the machine doing the building: arm64 on
+  Graviton, x86-64 on Intel. That is correct here because the host builds what it serves. An image
+  moved from an x86 workstation with `docker save` and `docker load`, or pulled from a registry that
+  built it elsewhere, starts and then dies with `exec format error`. A build that has to happen
+  off-instance needs `--platform linux/arm64` and a builder of that architecture.
+
+### A Caddyfile change
 
 A `deploy/Caddyfile` change needs `docker compose build caddy && docker compose up -d caddy`, which
 costs a couple of seconds of 502. Enable the commented `caddy-data` volume if you recreate Caddy often,
 or it re-issues certificates until Let's Encrypt's five-per-week limit stops you.
+
+### Publishing to a registry again (optional)
+
+Not used today, and nothing above needs it. If a registry becomes available, GitHub Actions on a
+working account or Codeberg with a container registry, only step 5 changes: build with a registry
+tag, push it, and point `SUITE_IMAGE` at the digest it produced. `compose.yaml` accepts any reference
+in `SUITE_IMAGE`, so a pull-based host sets it to `ghcr.io/<owner>/suite@sha256:…` and then runs
+`docker compose pull app` followed by `docker compose up -d --no-build app`. A host that builds keeps
+using `suite:<tag>`, and `caddy` is never pulled because it packages this checkout's canvas bundle.
 
 ## Container hardening
 

@@ -5,6 +5,18 @@ packages:
   - "e2e"
 allowBuilds:
   esbuild: true
+# Two of these are shipped in the canvas bundle through `@excalidraw/excalidraw`
+# and its Mermaid converter; `qs` is only reached by Stryker. Each is pinned to a
+# version the advisory database reports as patched, so `pnpm security:deps` stays
+# a gate instead of a warning nobody reads. Re-check when Excalidraw ships.
+overrides:
+  lodash-es: ^4.18.1
+  qs: ^6.17.0
+  nanoid@3: 3.3.20
+  nanoid@4: 5.1.16
+  # Low severity (2.1), reached only through Mermaid's math typesetting inside
+  # the Excalidraw converter. Overridden anyway so the scan stays a gate.
+  katex: ^0.18.2
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.11.10"
   - "@turbo/darwin-arm64@2.11.10"
@@ -13,6 +25,7 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-64@2.11.10"
   - "@turbo/windows-arm64@2.11.10"
   - turbo@2.11.10
+  - qs@6.17.0
 # Patches are keyed by exact version, so every patched dependency is pinned in
 # its package.json: a caret range would let a patch release install unpatched,
 # and the patch would be silently gone. Bumping any version below means

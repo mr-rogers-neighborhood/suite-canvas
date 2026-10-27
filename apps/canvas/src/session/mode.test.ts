@@ -225,6 +225,9 @@ describe("standalone guard rails", () => {
     "auth/client.ts": ["App.tsx"],
     // The operator panel is its own `admin.html` entry; the app never imports it.
     "admin/api.ts": [],
+    // The launcher's sync badges. `readAccountWorkspaces` returns immediately in a
+    // standalone build, so no request is ever built there.
+    "session/accountWorkspaces.ts": ["launcher/WorkspaceLauncher.tsx"],
   };
 
   /**

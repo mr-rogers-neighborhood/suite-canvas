@@ -65,6 +65,7 @@ const ACCOUNT_PATHS: readonly string[] = [
   "/api/invites/redeem",
   "/api/account",
   "/api/account/export",
+  "/api/account/workspaces",
 ];
 
 /** `GET /api/workspaces/:id/members`. The relay's `:id/claim` deliberately does not match. */

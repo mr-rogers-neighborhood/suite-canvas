@@ -3,6 +3,12 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
 import {
+  type AccountWorkspaces,
+  readAccountWorkspaces,
+  syncLabelOf,
+  syncStateOf,
+} from "../session/accountWorkspaces";
+import {
   forgetWorkspaceName,
   friendlyWorkspaceName,
   readWorkspaceNames,
@@ -106,6 +112,9 @@ export function WorkspaceLauncher() {
   const renameCancelled = useRef(false);
   // A mail link names one invitation, and this page is where it lands.
   const [invitationId, setInvitationId] = useState<string | null>(null);
+  // `null` until the account answers, and stays `null` when there is no session.
+  const [account, setAccount] = useState<AccountWorkspaces | null>(null);
+  const [bringDismissed, setBringDismissed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -113,6 +122,17 @@ export function WorkspaceLauncher() {
       const { invitationIdFromUrl } = await import("../auth/AcceptInvitation");
       setInvitationId(invitationIdFromUrl(window.location.href));
     })();
+  }, []);
+
+  useEffect(() => {
+    // `readAccountWorkspaces` answers null in a standalone build without asking.
+    let live = true;
+    void readAccountWorkspaces().then((result) => {
+      if (live) setAccount(result);
+    });
+    return () => {
+      live = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -440,6 +460,35 @@ export function WorkspaceLauncher() {
             </div>
           </div>
 
+          {/* A signed-in account that holds nothing, beside workspaces saved here, is
+              the one moment bringing them along is worth mentioning — and nothing is
+              moved until the workspace is opened, so this is an offer, not a migration. */}
+          {account !== null &&
+          account.workspaces.length === 0 &&
+          recents.length > 0 &&
+          !bringDismissed ? (
+            <div
+              data-testid="launcher-bring-prompt"
+              className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2.5"
+            >
+              <div className="min-w-0 flex-1 text-[12px] leading-5">
+                <p className="font-medium">These are saved on this device only.</p>
+                <p className="text-[var(--ink-muted)]">
+                  Open one while signed in to add it to your account. Nothing moves until you do.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="launcher-bring-dismiss"
+                aria-label="Dismiss"
+                className="rounded-md px-2 py-0.5 text-[13px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+                onClick={() => setBringDismissed(true)}
+              >
+                ×
+              </button>
+            </div>
+          ) : null}
+
           {recents.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-[var(--hairline)] px-4 py-8 text-center text-[13px] text-[var(--ink-muted)]">
               Nothing here yet. Start a new workspace or open a <code>.suite</code> file.
@@ -551,6 +600,15 @@ export function WorkspaceLauncher() {
                                 {detail}
                               </span>
                               <span className="shrink-0">{openedAt(entry.lastOpenedAt)}</span>
+                              {syncLabelOf(syncStateOf(entry.id, account)) === null ? null : (
+                                <span
+                                  data-testid={`launcher-sync-${entry.id}`}
+                                  data-sync={syncStateOf(entry.id, account)}
+                                  className="shrink-0 rounded-full border border-[var(--hairline)] px-1.5 text-[10px] leading-4"
+                                >
+                                  {syncLabelOf(syncStateOf(entry.id, account))}
+                                </span>
+                              )}
                             </span>
                           </button>
                         )}

@@ -273,7 +273,7 @@ docker run --rm -d --name suite-cp-probe --read-only --tmpfs /tmp:size=32m,mode=
   -e PORT=1236 -e SUITE_CONTROL_PLANE_DATABASE_URL=postgres://suite:suite@<postgres-host>:5432/suite \
   -e SUITE_AUTH_ENABLED=0 -e SUITE_BILLING_ENABLED=0 suite-control-plane
 docker exec suite-cp-probe node -e "fetch('http://127.0.0.1:1236/health').then(async r=>console.log(r.status, await r.text()))"
-# 200 {"status":"ok","buildId":"0.0.0","uptimeMs":8744,"modules":[{"name":"auth","state":"mounted"},{"name":"billing","state":"mounted"}]}
+# 200 {"status":"ok","buildId":"0.0.0","uptimeMs":8744,"modules":[{"name":"auth","state":"mounted"},{"name":"billing","state":"mounted"},{"name":"admin","state":"mounted"}]}
 ```
 
 And that the runtime tree carries no toolchain:
@@ -282,6 +282,55 @@ And that the runtime tree carries no toolchain:
 docker run --rm suite-relay sh -c 'ls node_modules/.pnpm | grep -E "^(typescript|vitest|@biomejs|@stryker|turbo)@" || echo clean'
 # clean
 ```
+
+## The account service on a hosted launch
+
+The relay above is one process on one box. The account service is the part that needs a managed
+database, because it holds accounts, organizations, seats and subscriptions, and losing it means every
+sign-in stops. Put it on RDS Postgres and leave the documents on the box.
+
+```
+app.suite.run ──▶ Caddy ──┬──▶ control-plane:1236  /api/auth, /api/account, /admin/admissions
+                          ├──▶ app:1235            /api/workspaces, /health, /metrics
+                          └──▶ app:1234            /ws
+                                   │
+                          RDS Postgres (accounts, organizations, billing)
+                          EBS volume   (six SQLite stores)
+```
+
+Set `app.suite.run` to **DNS only** in Cloudflare. The proxy's idle timeout sits on a WebSocket that is
+supposed to stay open, and a collaboration socket behind it is dropped on a timer.
+
+Four variables decide whether a person who signs up can ever get in:
+
+| Variable | Why it has to be right |
+| --- | --- |
+| `SUITE_AUTH_SECRET` | Signs the session. Changing it signs everyone out. |
+| `SUITE_MAIL_TRANSPORT` | `console` cannot deliver a verification link. Use `resend` with `RESEND_API_KEY` and `SUITE_MAIL_FROM`, or `smtp` with `SUITE_SMTP_URL`. |
+| `SUITE_ADMISSION_REQUIRED` | `1` holds every new account. Pair it with `SUITE_ADMIN_TOKEN` (16+ characters) or the boot refuses: the queue would have no door. |
+| `STRIPE_WEBHOOK_SECRET` | Without it every delivery fails verification, so no payment is recorded. `pnpm stripe --listen` prints it locally; on the host it comes from the Stripe dashboard endpoint. |
+
+Admitting the first users, once mail and the queue are live:
+
+```sh
+curl -fsS "$SUITE_AUTH_URL/admin/admissions" \
+  -H "authorization: Bearer $SUITE_ADMIN_TOKEN"          # who is waiting
+curl -fsS -X POST "$SUITE_AUTH_URL/admin/admissions" \
+  -H "authorization: Bearer $SUITE_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"emails":["them@example.com"]}'                   # admit, and tell them
+```
+
+`SUITE_APP_URL` is where the admission notice sends someone. Unset admits without sending one.
+
+A held account is not broken: it can sign in, edit, import and export on its own device. What it cannot
+do is create an organization or open a sync connection, which is what "waiting for approval" means.
+
+## Docs and marketing
+
+`docs.suite.run` is the static Astro tree described below. The marketing site is a second static build
+with no server, so both belong on Cloudflare Pages rather than on the box: a page that is a file does
+not need a machine that can go down.
 
 ## Docs site
 

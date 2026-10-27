@@ -36,6 +36,7 @@ const CLAIM_PATH = "/api/workspaces/claim";
 const MEMBERS_PATH = /^\/api\/workspaces\/([^/]+)\/members$/u;
 const ACCOUNT_PATH = "/api/account";
 const ACCOUNT_EXPORT_PATH = "/api/account/export";
+const ACCOUNT_WORKSPACES_PATH = "/api/account/workspaces";
 
 /**
  * The request body, as a refusal rather than an exception.
@@ -479,6 +480,52 @@ async function eraseRoute(
   });
 }
 
+/**
+ * `GET /api/account/workspaces` — the workspaces this account may open.
+ *
+ * The launcher asks this to tell a workspace saved in this browser from one the
+ * account already holds, which is the difference between "on this device" and
+ * "synced". Only the account's own memberships are read, so the answer is also the
+ * list a second browser sees after signing in.
+ *
+ * A held account gets the same empty list as one with nothing yet: admission gates
+ * *creating* an organization, so there is nothing here to refuse, and a `403` would
+ * read as a fault rather than as a gate.
+ */
+async function workspacesRoute(deps: AuthHandlerDeps, event: AuthHttpEvent): Promise<RouteResult> {
+  if (methodOf(event) !== "GET") return ok(methodNotAllowed("GET"));
+
+  const session = await requireSession(deps, event);
+  if (session.isErr()) return err(session.error);
+  const stores = accountStores(deps);
+  if (stores.isErr()) return err(stores.error);
+
+  const snapshot = await stores.value.accounts.read(session.value.userId);
+  const workspaces = (snapshot?.workspaces ?? []).map((workspace) => ({
+    id: workspace.workspaceId,
+    organizationId: workspace.organizationId,
+    name: workspace.name,
+    createdAt: workspace.createdAt,
+    archivedAt: workspace.archivedAt,
+  }));
+  return ok({
+    statusCode: 200,
+    body: JSON.stringify({
+      ok: true,
+      workspaces,
+      organizations: (snapshot?.organizations ?? []).map((organization) => ({
+        id: organization.organizationId,
+        name: organization.name,
+        role: organization.role,
+      })),
+    }),
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
 /** The route table, as one function: path first, then method, then the work. */
 export async function routeOf(
   deps: AuthHandlerDeps,
@@ -500,6 +547,7 @@ export async function routeOf(
   if (path === CLAIM_PATH) return claimRoute(deps, event, now, log);
   if (path === ACCOUNT_EXPORT_PATH) return exportRoute(deps, event, now, log);
   if (path === ACCOUNT_PATH) return eraseRoute(deps, event, now, log);
+  if (path === ACCOUNT_WORKSPACES_PATH) return workspacesRoute(deps, event);
 
   const membersMatch = MEMBERS_PATH.exec(path);
   if (membersMatch !== null) {

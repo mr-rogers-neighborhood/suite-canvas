@@ -105,6 +105,35 @@ describe("the account routes", () => {
     expect(document.organizations[0]?.workspaces[0]?.shares).toHaveLength(1);
   });
 
+  it("lists the workspaces the account may open", async () => {
+    const { call } = harness();
+
+    const response = await call({
+      httpMethod: "GET",
+      path: "/api/account/workspaces",
+      headers: { "x-test-user": OWNER },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as {
+      ok: boolean;
+      workspaces: { id: string; name: string }[];
+      organizations: { id: string; role: string }[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.workspaces.map((workspace) => workspace.id)).toEqual([WORKSPACE]);
+    expect(body.organizations[0]?.role).toBe("owner");
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("refuses the workspace list with no session", async () => {
+    const { call } = harness();
+
+    const response = await call({ httpMethod: "GET", path: "/api/account/workspaces" });
+
+    expect(response.statusCode).toBe(401);
+  });
+
   it("refuses a delete that is not a DELETE", async () => {
     const { call } = harness();
 

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readAccountWorkspaces } from "../session/accountWorkspaces";
 import { configureSession, type SessionConfig } from "../session/session";
 import {
   readWorkspaceNames,
@@ -13,6 +14,13 @@ import {
 } from "../session/workspaceTransfer";
 import { importVaultIntoWorkspace } from "./vaultImport";
 import { WorkspaceLauncher } from "./WorkspaceLauncher";
+
+// The account answer decides what a row says about sync, so it is the one thing a
+// test replaces; the rest of the module (the labels) stays real.
+vi.mock("../session/accountWorkspaces", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../session/accountWorkspaces")>();
+  return { ...actual, readAccountWorkspaces: vi.fn(async () => null) };
+});
 
 vi.mock("../session/workspaceName", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session/workspaceName")>();
@@ -37,6 +45,7 @@ vi.mock("../session/workspaceTransfer", async (importOriginal) => {
   };
 });
 
+const readAccount = vi.mocked(readAccountWorkspaces);
 const exportWorkspace = vi.mocked(downloadWorkspaceById);
 const navigate = vi.mocked(navigateTo);
 const renameCached = vi.mocked(renameCachedWorkspace);
@@ -441,5 +450,42 @@ describe("WorkspaceLauncher recents", () => {
 
     finish?.();
     await waitFor(() => expect(screen.queryByTestId("launcher-progress")).toBeNull());
+  });
+
+  it("says which workspaces the account already holds", async () => {
+    seedRecent();
+    readAccount.mockResolvedValueOnce({
+      workspaces: [
+        { id: WORKSPACE, organizationId: "org-1", name: TITLE, createdAt: 1, archivedAt: null },
+      ],
+      organizations: [{ id: "org-1", name: "Personal", role: "owner" }],
+    });
+    render(<WorkspaceLauncher />);
+
+    const badge = await screen.findByTestId(`launcher-sync-${WORKSPACE}`);
+    expect(badge).toHaveTextContent("Synced");
+    expect(badge.dataset.sync).toBe("synced");
+    expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
+  });
+
+  it("says nothing about sync when there is no account", async () => {
+    seedRecent();
+    render(<WorkspaceLauncher />);
+
+    await waitFor(() => expect(readAccount).toHaveBeenCalled());
+    expect(screen.queryByTestId(`launcher-sync-${WORKSPACE}`)).toBeNull();
+  });
+
+  it("offers to bring local work along when the account holds nothing", async () => {
+    seedRecent();
+    readAccount.mockResolvedValueOnce({ workspaces: [], organizations: [] });
+    render(<WorkspaceLauncher />);
+
+    const prompt = await screen.findByTestId("launcher-bring-prompt");
+    expect(prompt).toHaveTextContent("saved on this device only");
+    expect(screen.getByTestId(`launcher-sync-${WORKSPACE}`)).toHaveTextContent("On this device");
+
+    fireEvent.click(screen.getByTestId("launcher-bring-dismiss"));
+    expect(screen.queryByTestId("launcher-bring-prompt")).toBeNull();
   });
 });

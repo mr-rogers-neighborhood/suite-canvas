@@ -53,7 +53,7 @@ export function SettingsPanel() {
     <section className="admin-panel">
       <PanelHeader
         title="Settings"
-        description="Values the app reads on its next request. A row saved here beats the environment, and Reset returns to it."
+        description="A row saved here beats the environment, and Reset returns to it. Billing and mail are read once when the control plane boots, so those apply on its next restart; everything else applies on the next request."
         actions={<Button onClick={reload}>Refresh</Button>}
       />
       <ErrorLine message={error ?? failure} />

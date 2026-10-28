@@ -8,6 +8,25 @@ of it through.
 Setting a variable is [../how-to/deploy.md](../how-to/deploy.md); sizing the numbers is
 [../how-to/operate.md](../how-to/operate.md); the quotas are generated into [limits.md](limits.md).
 
+## What the panel manages, and what stays here
+
+A value the app can re-read on the next request belongs in the settings table, not in this file: `@suite/settings` holds the registry, and the operator panel at `/admin` edits it. Resolution is
+**organization → global → environment → default**, so a variable here is a boot default rather than a
+ceiling, and the panel shows which level answered.
+
+| Panel-managed | Applies |
+| --- | --- |
+| Stripe keys, webhook secrets, price tiers, `billing.mode` | next control-plane boot |
+| SMTP host, port, user, password, From | next control-plane boot |
+| Licence public key and tier caps | next boot |
+| Backup bucket and endpoint | next backup run |
+| Flags | next request |
+
+These stay in `.env`, because the process needs them before it can read a row, and the panel shows them
+read-only: `SUITE_CONTROL_PLANE_DATABASE_URL`, `SUITE_SETTINGS_KEY` (it decrypts the stored secrets),
+`SUITE_AUTH_SECRET`, `SUITE_AUTH_URL`, `SUITE_ADMIN_EMAILS` (the first operator has to be able to sign
+in), `PORT` and `SUITE_DATA_DIR`. `pnpm setup` generates them; `pnpm doctor` says which one is missing.
+
 ## Ports
 
 | Variable | Default | Serves |

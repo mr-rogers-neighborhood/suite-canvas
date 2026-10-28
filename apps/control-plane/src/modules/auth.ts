@@ -12,10 +12,12 @@ import {
   type WorkspaceDataErasure,
   type WorkspaceDataStore,
 } from "@suite/auth";
+import { envWithSettings } from "@suite/settings";
 import { createLogger, type Logger } from "../logging.js";
 import type { RouteModule } from "../routes.js";
 import { composeBilling } from "./auth-billing.js";
 import { publishSessionReader } from "./context.js";
+import { readStoredSettings } from "./settings.js";
 
 /**
  * The account module: the one file in this process that knows `@suite/auth` exists.
@@ -437,18 +439,27 @@ export function relayWorkspaceData(
  */
 function defaultBoot(logger: Logger, source: Readonly<Record<string, string | undefined>>) {
   return async (env: AuthEnvironment): Promise<AuthEntry> => {
-    // From `source`, not `env`: `AuthEnvironment` is the auth whitelist, so Stripe's
-    // variables are absent from it and `composeBilling` would report billing off no
-    // matter what an operator set.
-    const billing = await composeBilling(source, logger);
+    // The panel's saved values, laid over the process environment before anything reads it.
+    // Billing and mail take their settings once, when their plugin and transport are built,
+    // so this is the one moment a row can reach them; every other setting is read per
+    // request and does not need the overlay.
+    const rows = await readStoredSettings(
+      source.SUITE_CONTROL_PLANE_DATABASE_URL?.trim() ??
+        source.SUITE_AUTH_DATABASE_URL?.trim() ??
+        "",
+    );
+    const configured = envWithSettings({ env: source, rows });
+    // From `configured`, not `env`: `AuthEnvironment` is the auth whitelist, so Stripe's
+    // variables are absent from it, and the panel's rows are not in the process at all.
+    const billing = await composeBilling(configured, logger);
     // The relay is a second package's process, so this is the only place that
     // knows both: `@suite/auth` takes the port, and this composition builds it
     // from the two variables an operator set. Absent, the erase reports the three
     // relay stores as not configured, with the command that finishes them.
-    const workspaceData = relayWorkspaceData(source);
+    const workspaceData = relayWorkspaceData(configured);
     const entry = await createMigratedAuthEntry(env, {
       ...mailSenders(
-        mailTransportFromEnv(source, {
+        mailTransportFromEnv(configured, {
           write: (line) => logger.info("auth mail", { line }),
         }),
       ),

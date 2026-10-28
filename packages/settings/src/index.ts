@@ -9,6 +9,8 @@
  * The one boundary worth stating: a value the process needs before it can read a row stays
  * in `.env`, and `BOOTSTRAP_VARIABLES` is that list. Everything else can live in the panel.
  */
+
+export { envWithSettings, RESTART_KEYS } from "./overlay.js";
 export {
   BOOTSTRAP_VARIABLES,
   SETTINGS,

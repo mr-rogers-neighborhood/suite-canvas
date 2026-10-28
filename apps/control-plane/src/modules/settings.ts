@@ -291,3 +291,23 @@ export const module: RouteModule = createSettingsModule({
   env: process.env,
   logger: createLogger(),
 });
+
+/**
+ * Every stored row, read once by a caller that is not serving a settings request.
+ *
+ * The boot uses this to compose the environment billing and mail are built from: those two
+ * read their values once, so a saved row has to be in place before the plugin exists. A
+ * deployment with no database, or one whose table is not there yet, answers with no rows —
+ * which is exactly "nothing has been saved", so boot proceeds on the environment.
+ */
+export async function readStoredSettings(databaseUrl: string): Promise<StoredSetting[]> {
+  if (databaseUrl.trim().length === 0) return [];
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    return await readRows(pool);
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}

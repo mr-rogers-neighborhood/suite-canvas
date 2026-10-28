@@ -151,3 +151,53 @@ describe("secrets at rest", () => {
     expect(SECRET_MASK).not.toMatch(/[a-z0-9]/i);
   });
 });
+
+/**
+ * The overlay is how a value that is only read at boot still comes from the panel: the boot
+ * composes one environment and every feature keeps reading it.
+ */
+describe("the environment overlay", () => {
+  it("lays a saved value over the variable it belongs to", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const env = envWithSettings({
+      env: { STRIPE_SECRET_KEY: "sk_from_env" },
+      rows: [{ scope: GLOBAL_SCOPE, key: "billing.stripe.secretKey.test", value: "sk_from_panel" }],
+    });
+
+    expect(env.STRIPE_SECRET_KEY).toBe("sk_from_panel");
+  });
+
+  it("reveals a secret for the process that will use it", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const env = envWithSettings({
+      env: {},
+      rows: [{ scope: GLOBAL_SCOPE, key: "mail.smtp.password", value: "hunter2" }],
+    });
+
+    expect(env.SUITE_SMTP_PASSWORD).toBe("hunter2");
+  });
+
+  it("leaves an unset variable unset when nothing supplies a value", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const env = envWithSettings({ env: {}, rows: [] });
+
+    // A default written as "" would read as "this is configured, and empty".
+    expect(env.STRIPE_SECRET_KEY).toBeUndefined();
+  });
+
+  it("keeps a real environment value when no row overrides it", async () => {
+    const { envWithSettings } = await import("./overlay.js");
+    const env = envWithSettings({ env: { SUITE_BILLING_ENABLED: "1" }, rows: [] });
+
+    expect(env.SUITE_BILLING_ENABLED).toBe("1");
+  });
+
+  it("names the keys that only apply on a restart", async () => {
+    const { RESTART_KEYS } = await import("./overlay.js");
+
+    expect(RESTART_KEYS).toContain("billing.mode");
+    expect(RESTART_KEYS).toContain("mail.smtp.host");
+    // A flag the app reads per request is not one of them.
+    expect(RESTART_KEYS).not.toContain("flags.impersonation");
+  });
+});

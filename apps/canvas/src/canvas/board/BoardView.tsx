@@ -21,6 +21,7 @@ import { useBoardRefs } from "./useBoardRefs";
 import { useBoardSections } from "./useBoardSections";
 import { useBoardSelection } from "./useBoardSelection";
 import { useBoardUi } from "./useBoardUi";
+import { useNoTextSelection } from "./useNoTextSelection";
 
 /** Pointer samples published to peers land at most once per this window. */
 const POINTER_THROTTLE_MS = 60;
@@ -73,6 +74,10 @@ export function BoardView() {
 
   const refs = useBoardRefs(ui, boardOrder);
   const { lastPointerSent, marqueePress, boardRoot } = refs;
+
+  // Shift is the marquee key, so the browser must not read the same shift as "extend
+  // the selection": without this a shift+drag swept the page's text instead.
+  useNoTextSelection(boardRoot);
 
   const links = useBoardLinks(ui, { refs, projection });
   const { labelHandlers, startEdgeDescription } = links;

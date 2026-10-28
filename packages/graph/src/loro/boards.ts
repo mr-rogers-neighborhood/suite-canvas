@@ -34,6 +34,21 @@ import type { DuplicateBoardOptions } from "./model.js";
  * Plain functions over the shared DocContext: the facade delegates here,
  * and modules reach each other through `ctx.api`.
  */
+/**
+ * The next free "Board N".
+ *
+ * Counting boards gave "Board 3" to the second board anyone made, because the
+ * seeded board is still in the map under its own name: a count is not a number
+ * the reader has seen. The smallest unused number is, and it fills the gaps a
+ * deleted board leaves instead of climbing forever.
+ */
+export function nextBoardName(boards: readonly { name: string }[]): string {
+  const taken = new Set(boards.map((board) => board.name));
+  let index = 1;
+  while (taken.has(`Board ${index}`)) index += 1;
+  return `Board ${index}`;
+}
+
 export function boardsMethods(ctx: DocContext) {
   return {
     cachedBoard(id: string): Board | undefined {
@@ -79,7 +94,7 @@ export function boardsMethods(ctx: DocContext) {
       const now = Date.now();
       const board: Board = {
         id: input.id ?? crypto.randomUUID(),
-        name: input.name ?? `Board ${ctx.boards.size + 1}`,
+        name: input.name ?? nextBoardName(ctx.api.boards.listBoards()),
         tags: [],
         createdAt: now,
         updatedAt: now,

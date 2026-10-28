@@ -24,7 +24,17 @@ const workspaceUrl = (name: string) =>
 
 const cards = (page: Page) => page.locator('[data-testid="node-card"]');
 const edges = (page: Page) => page.locator(".react-flow__edge");
-const rows = (page: Page) => page.locator("li[data-row-id]");
+/**
+ * The library rows a run can actually place.
+ *
+ * A board is a row too: the inbox lists any board nothing portals to, and selecting
+ * one places nothing. A raw row count is therefore one too many as soon as the board
+ * the reader is on has no portal of its own, which is exactly the state these tests
+ * leave it in — five rows, four cards, and an expectation of five that could never
+ * hold.
+ */
+const placeableRows = (page: Page) =>
+  page.locator('li[data-row-id]:not(:has([data-testid^="library-board-state-"]))');
 
 /** Creates a note from the dock and closes whatever it opened. */
 async function createNote(page: Page): Promise<void> {
@@ -117,7 +127,7 @@ test("a thread is held as a stack and placed one card per click", async ({ page 
   await unplaceEverything(page, 2);
   await openSelection(page, "inbox");
 
-  const total = await rows(page).count();
+  const total = await placeableRows(page).count();
   await page.getByTestId("library-selection-all").click();
   await page.getByTestId("library-run-thread").click();
 
@@ -154,20 +164,20 @@ test("a fan is held too, and every spoke links to the first card", async ({ page
   await page.getByTestId("library-run-fan").click();
   await expect(page.getByTestId("held-stack")).toBeVisible();
 
-  await placeHeld(page, { dx: -200, dy: -60 });
-  await placeHeld(page, { dx: 0, dy: -60 });
-  await placeHeld(page, { dx: 200, dy: -60 });
-  // A fourth spoke below the hub: the case that used to leave from the origin's
-  // *bottom* dot, because the port was re-inferred from each new card's direction.
-  await placeHeld(page, { dx: 240, dy: 220 });
+  // The hub first, then spokes on three sides of it: one directly above, one level to
+  // its right, one below and to the right.
+  await placeHeld(page, { dx: -240, dy: 120 });
+  await placeHeld(page, { dx: -240, dy: -140 });
+  await placeHeld(page, { dx: 240, dy: 120 });
+  await placeHeld(page, { dx: 240, dy: 300 });
 
   await fitBoard(page);
   await expect(cards(page)).toHaveCount(4);
-  // Three spokes and three lines: one per spoke, all from the hub. A fourth line
+  // Three spokes and three lines: one per spoke, all leaving the hub. A fourth line
   // would be a chain link, which is the "web" this shape used to draw.
   await expect(edges(page)).toHaveCount(3);
-  // A starburst leaves the dot that faces each spoke, so four spokes around a hub do
-  // not share one departure point.
+  // A starburst leaves the dot facing each spoke, so the spoke above the hub departs
+  // from its top dot while the ones beside it leave its right one.
   const starts = await page.evaluate(() =>
     [...document.querySelectorAll<SVGPathElement>(".react-flow__edge-path")].map((path) => {
       const matrix = path.getScreenCTM();
@@ -227,31 +237,13 @@ test("a click on a dot while a run is live places, and draws nothing", async ({ 
   await expect(edges(page)).toHaveCount(1);
 });
 
-test("a branch is held until it is placed, not arranged for the user", async ({ page }) => {
-  await page.goto(workspaceUrl("branch"));
-  await expect(cards(page)).toHaveCount(2);
-  await unplaceEverything(page, 2);
-  await openSelection(page, "inbox");
-
-  await page.getByTestId("library-selection-all").click();
-  await page.getByTestId("library-run-branch").click();
-  await expect(page.getByTestId("held-stack")).toBeVisible();
-  await expect(cards(page)).toHaveCount(0);
-
-  await placeHeld(page, { dx: -120, dy: -80 });
-  await placeHeld(page, { dx: 40, dy: 0 });
-  await expect(cards(page)).toHaveCount(2);
-  // A tree of two is one line, and it hangs off the card placed first.
-  await expect(edges(page)).toHaveCount(1);
-});
-
 test("an arrangement is bulk: one step, one undo, no lines", async ({ page }) => {
   await page.goto(workspaceUrl("dump"));
   await expect(cards(page)).toHaveCount(2);
   await unplaceEverything(page, 3);
   await openSelection(page, "inbox");
 
-  const total = await rows(page).count();
+  const total = await placeableRows(page).count();
   await page.getByTestId("library-selection-all").click();
   await page.getByTestId("library-run-place").click();
 

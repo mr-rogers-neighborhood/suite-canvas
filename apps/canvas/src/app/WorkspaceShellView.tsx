@@ -21,7 +21,6 @@ import { UndoRedo } from "../chrome/UndoRedo";
 import { CommandPaletteHost } from "../command/CommandPalette";
 import type { PaletteItem } from "../command/paletteRank";
 import { PerfOverlay } from "../dev/PerfOverlay";
-import { LeavingDialog } from "../dialogs/LeavingDialog";
 import { FeedbackHost } from "../feedback/FeedbackHost";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
@@ -82,12 +81,11 @@ export interface WorkspaceShellViewProps {
   ready: boolean;
   synced: boolean;
   leaving: boolean;
-  leavingPrompt: boolean;
   /** The workspace palette and the live role colours, for every surface painter. */
   palette: readonly PaletteSwatch[];
   roles: SurfacePalette;
   mode: "light" | "dark";
-  /** Leaves for the launcher, or for another workspace's URL through the guard. */
+  /** Leaves for the launcher, or for another workspace's URL. */
   requestLeave: (destination?: string) => void;
   setPaletteOpen: UiState["setPaletteOpen"];
   standalone: boolean;
@@ -186,8 +184,6 @@ export interface WorkspaceShellViewProps {
   libraryGroupBySection: boolean;
   toggleLibraryGroupBySection: UiState["toggleLibraryGroupBySection"];
   openInspector: UiState["openInspector"];
-  leaveAnyway: () => void;
-  dismissLeavePrompt: () => void;
 }
 
 export function WorkspaceShellView({
@@ -196,7 +192,6 @@ export function WorkspaceShellView({
   ready,
   synced,
   leaving,
-  leavingPrompt,
   palette,
   roles,
   mode,
@@ -287,8 +282,6 @@ export function WorkspaceShellView({
   libraryGroupBySection,
   toggleLibraryGroupBySection,
   openInspector,
-  leaveAnyway,
-  dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
   const pins = useBoardPins();
   const workspacePins = useWorkspacePins();
@@ -749,17 +742,6 @@ export function WorkspaceShellView({
             <SignInSurface />
           </Suspense>
         )}
-
-        {/* The way out, when this browser is the only place the work exists. */}
-        {leavingPrompt ? (
-          <LeavingDialog
-            workspaceId={workspaceId}
-            title={workspaceName}
-            {...(standalone ? {} : { onSignIn: openSignIn })}
-            onLeave={leaveAnyway}
-            onDismiss={dismissLeavePrompt}
-          />
-        ) : null}
 
         {/* The type a card's title and body declare, previewed before it is written. */}
         {workspaceSurface && canManageSchema ? (

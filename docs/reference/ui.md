@@ -120,7 +120,7 @@ Every dialog that says `aria-modal="true"` traps Tab. `SignInDialog`, `Admission
 
 Three questions that used `window.confirm` ask in the surface that owns them. Deleting a trashed card for good opens the library's `Dialog` through `pendingPurge`. Revoking every share link and reloading a draft both replace the control with an inline confirmation inside the dialog they belong to, so the thing about to be lost stays on screen.
 
-Two confirmations ask for more than a press. `DeleteWorkspaceDialog` requires the workspace name or id to be typed and reports a failure inline without touching the local copy. `LeavingDialog` offers a backup export before the reader leaves a workspace that exists only in this browser.
+One confirmation asks for more than a press. `DeleteWorkspaceDialog` requires the workspace name or id to be typed and reports a failure inline without touching the local copy. Leaving a workspace asks nothing: an in-app dialog and the browser's tab-close prompt both stood there once, and both were removed because they fired for signed-in readers whose work was already synced and could not be acted on. Whether this browser keeps the copy is reported by the storage ladder, in `StoragePanel`.
 
 `DisplayStyleDialog` edits one display template with preset buttons, a live preview through `ValueTemplate`, and a scope choice between this instance and the field.
 

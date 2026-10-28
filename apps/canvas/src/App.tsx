@@ -5,13 +5,13 @@ import { shellPaletteItems } from "./app/palette";
 import { StaleBuildNotice } from "./app/StaleBuildNotice";
 import { useBoardDerivations } from "./app/useBoardDerivations";
 import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
-import { useLeaveGuard } from "./app/useLeaveGuard";
+import { useLeaveTransition } from "./app/useLeaveTransition";
 import { useStaleBuild } from "./app/useStaleBuild";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
-import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
+import { useAccountStore } from "./auth/useAccountStore";
 import { attachDots } from "./canvas/attachDots";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "./canvas/interactions/multiSelect";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
@@ -219,10 +219,9 @@ function WorkspaceShell({
   // no sharing, all decided once at build time.
   const standalone = isStandalone();
 
-  // The account is read once by `SignInDialogHost`; the header and the storage
-  // ladder only consume the answer. A device with no account is signed out, which
-  // is where it already was — nothing about the local path changes (ADR-0067 §6).
-  const signedIn = useAccountStore(accountSignedIn);
+  // The account is read once by `SignInDialogHost`; the header consumes the answer.
+  // A device with no account is signed out, which is where it already was — nothing
+  // about the local path changes (ADR-0067 §6).
   const accountPhase = useAccountStore((state) => state.phase);
   const openPanel = useAccountStore((state) => state.openPanel);
   const syncFacts = useWorkspaceSyncFacts({
@@ -233,8 +232,7 @@ function WorkspaceShell({
     shared: share !== null,
   });
   const openSignIn = useAccountStore((state) => state.openSignIn);
-  const { leaving, leavingPrompt, inRoom, requestLeave, dismissLeavePrompt, leaveAnyway } =
-    useLeaveGuard({ standalone, peerCount, signedIn, share, workspace });
+  const { leaving, inRoom, requestLeave } = useLeaveTransition({ standalone, peerCount });
 
   useWorkspaceBoot({
     workspace,
@@ -769,7 +767,6 @@ function WorkspaceShell({
       ready={ready}
       synced={synced}
       leaving={leaving}
-      leavingPrompt={leavingPrompt}
       palette={workspacePalette}
       roles={palette}
       mode={theme}
@@ -877,8 +874,6 @@ function WorkspaceShell({
       libraryGroupBySection={libraryGroupBySection}
       toggleLibraryGroupBySection={toggleLibraryGroupBySection}
       openInspector={openInspector}
-      leaveAnyway={leaveAnyway}
-      dismissLeavePrompt={dismissLeavePrompt}
     />
   );
 }

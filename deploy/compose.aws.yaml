@@ -56,6 +56,19 @@ services:
       - ${SUITE_RDS_CA_PATH:-/etc/suite/rds-global-bundle.pem}:/etc/ssl/rds-global-bundle.pem:ro
 
   caddy:
+    # Certificates and the ACME account have to survive a recreate. Without this the
+    # `web` image starts with an empty `/data`, re-requests every certificate, and
+    # Let's Encrypt allows five duplicates per week before refusing: a few deploys in
+    # an afternoon would take the site down until the window rolled over. The base
+    # file leaves both halves commented so a laptop does not accumulate state.
+    # `tmpfs` merges additively, so listing `/data` in the base file would still win.
+    # `!override` replaces the whole list: the other two stay tmpfs, and `/data` is the
+    # volume below it.
+    tmpfs: !override
+      - /tmp:size=32m,mode=1777
+      - /config:size=8m
+    volumes:
+      - caddy-data:/data
     logging:
       driver: awslogs
       options:
@@ -63,3 +76,6 @@ services:
         awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
         awslogs-stream: caddy
         awslogs-max-buffered-events: "8192"
+
+volumes:
+  caddy-data:

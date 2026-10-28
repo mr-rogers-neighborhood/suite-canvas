@@ -16,6 +16,40 @@ comes from another instance with its own workspaces. Day-two tasks are in [opera
 the quotas are generated into [reference/limits.md](../reference/limits.md). Paths below assume the
 repo at `/srv/suite`, compose project `suite`, hostname `canvas.example.com`.
 
+## The AWS path, in order
+
+The sections below are the shape of a deployment in general. This is the same thing as a checklist for
+one AWS account in `us-east-2`, with the console page each step lives on, because the order matters:
+the IAM role has to exist before the instance can assume it, and the bucket has to exist before a
+backup can land in it.
+
+| # | What | Where | Section |
+| --- | --- | --- | --- |
+| 1 | Bucket for dumps and snapshots, private, versioned, 30-day expiry | S3, `suite-backups-<account>-use2` | [§7](#7-backups-and-the-mount-guard) |
+| 2 | Instance role from `deploy/iam/instance-role-policy.json`, named `suite-host` | IAM, Policies then Roles, EC2 use case | §2 |
+| 3 | Security group: 80 and 443 from the world, 22 from your address only | EC2, Security Groups | §4 |
+| 4 | `t4g.medium` Ubuntu 24.04 arm64, 30 GB gp3 root, user-data from `deploy/user-data.sh` | EC2, Launch instance, Advanced details | §1, §2 |
+| 5 | Elastic IP, associated once the instance is running | EC2, Elastic IPs | §5 |
+| 6 | Data volume, gp3 20 GB, same availability zone, attached and mounted | EC2, Volumes | §3 |
+| 7 | RDS Postgres `db.t4g.micro`, private, same VPC, TLS required | RDS, Create database | [below](#the-account-service-on-a-hosted-launch) |
+| 8 | One `A` record, DNS only, at the Elastic IP | Cloudflare DNS | §5 |
+| 9 | `tailscale up --ssh` on the box, then the panel over the tailnet | Tailscale admin | §5 |
+| 10 | Five alarms and one topic | `deploy/cloudwatch/setup.sh` | [operate.md](operate.md) |
+| 11 | Stripe products and prices in test, then live; one 100%-off promotion | Stripe dashboard, then `/admin/settings` | below |
+| 12 | Resend domain and API key, Turnstile site and secret keys | Resend, Cloudflare Turnstile, then `/admin/settings` | below |
+| 13 | `docs.suite.run` and the marketing page as static builds | Cloudflare Pages | [Docs and marketing](#docs-and-marketing) |
+
+Two of those steps are the ones people get wrong. The first is the key pair: a Tailscale-only box needs
+none for daily use, but a box with neither a key pair nor a working tailnet has no way in at all, so
+create one anyway and keep it as the break-glass path. The second is the database URL: it has to name
+the RDS endpoint, and the compose default names a `postgres` service that this host does not run.
+
+Every secret in the list lands in one of two places, and neither is a file in the repository. The
+control plane reads the values the panel owns from settings rows encrypted with `SUITE_SETTINGS_KEY`,
+so Stripe, Resend and Turnstile keys go in at `/admin/settings` and are invisible to `docker exec`. The
+rest (the auth secret, the two relay tokens, the database URL) go in `/srv/suite/.env` with mode 600,
+written once by hand. `deploy/backup.sh` reads the same file.
+
 ## 1. Pick a size
 
 The process holds every open room in memory. Loading a room and rebuilding a share projection are the
@@ -49,11 +83,19 @@ Docker's repository, `sqlite3`, the AWS CLI, Tailscale and a 2 GB swap file, cre
 `suite` user in the `docker` group, and stops there.
 
 ```sh
-aws ec2 run-instances --image-id "$(aws ssm get-parameters --names /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id --query 'Parameters[0].Value' --output text)" \
-  --instance-type t4g.medium --key-name "" --iam-instance-profile "Name=suite-host" \
+aws ec2 run-instances --region us-east-2 \
+  --image-id "$(aws ssm get-parameters --region us-east-2 \
+    --names /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id \
+    --query 'Parameters[0].Value' --output text)" \
+  --instance-type t4g.medium --key-name suite-host \
+  --iam-instance-profile "Name=suite-host" \
   --security-group-ids sg-… --subnet-id subnet-… --user-data file://deploy/user-data.sh \
+  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=30,VolumeType=gp3,Encrypted=true}' \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=suite-app}]'
 ```
+
+`--key-name` is the break-glass path and it is not optional by accident: Tailscale is what you use
+every day, but a tailnet that failed to come up on a fresh box would otherwise leave no way in at all.
 
 Then, once, by hand (both are decisions rather than setup):
 
@@ -492,6 +534,22 @@ app.suite.run ──▶ Caddy ──┬──▶ control-plane:1236  /api/auth, 
                           RDS Postgres (accounts, organizations, billing)
                           EBS volume   (six SQLite stores)
 ```
+
+Creating that database, the fields that matter:
+
+| Field | Value | Why |
+| --- | --- | --- |
+| Engine | Postgres 17 | the migrations are tested against it, and `pnpm db:verify` names the version if a host drifts |
+| Template | Free tier, `db.t4g.micro`, 20 GB gp3 | accounts and subscriptions are small; the documents are not here |
+| Connectivity | same VPC, private subnets, no public access | only the instance's security group needs 5432, added as an inbound rule on the database's group |
+| Encryption | on, at creation | it cannot be turned on afterwards |
+| Backup | 7 days, deletion protection | a lost accounts table is a lost deployment |
+| Parameters | `rds.force_ssl = 1` | the connection string carries `sslmode=require`, and this makes it enforced |
+
+Nothing migrates by hand. The control plane runs its migrations on the first request that needs
+identity, so a fresh database fills itself in and a failed migration clears the memo and retries
+rather than wedging the process. `pnpm db:verify` (or `scripts/db-verify.mjs` on the host) is the check
+that the eleven migrations landed.
 
 Set `app.suite.run` to **DNS only** in Cloudflare. The proxy's idle timeout sits on a WebSocket that is
 supposed to stay open, and a collaboration socket behind it is dropped on a timer.

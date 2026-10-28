@@ -240,6 +240,9 @@ describe("standalone guard rails", () => {
     // The worn role is a control-plane row, and the reader refuses before it builds a
     // request in a standalone build: `readWornRole` returns at the first line.
     "session/roleOverride.ts": ["app/WornRoleStrip.tsx"],
+    // Notices are an account row on the control plane, read by the strip that explains
+    // them; a standalone build has no accounts and draws neither.
+    "session/accountNotices.ts": ["app/NoticeStrip.tsx"],
   };
 
   /**

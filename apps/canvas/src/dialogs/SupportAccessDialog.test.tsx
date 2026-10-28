@@ -1,5 +1,25 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+/** Hoisted so the factory below can close over it. */
+const { markNoticeRead } = vi.hoisted(() => ({ markNoticeRead: vi.fn(async () => {}) }));
+
+vi.mock("../session/accountNotices", () => ({
+  readNotices: async () => ({
+    notices: [
+      {
+        id: 7,
+        kind: "support-view",
+        body: "Someone on the team that runs this deployment opened your account on Tuesday.",
+        createdAt: 1,
+        readAt: null,
+      },
+    ],
+    unread: 1,
+  }),
+  markNoticeRead: (...args: unknown[]) => markNoticeRead(...(args as [])),
+}));
+
 import { SupportAccessDialog } from "./SupportAccessDialog";
 
 /**
@@ -53,5 +73,44 @@ describe("the support access dialog", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("nothing changed");
     // The state did not flip on a failed write.
     expect(screen.getByTestId("support-access-state").getAttribute("data-granted")).toBe("false");
+  });
+});
+
+describe("the history beside the switch", () => {
+  it("says nobody has looked, when nobody has", async () => {
+    render(
+      <SupportAccessDialog
+        onClose={() => {}}
+        read={async () => ({ granted: false, grantedAt: null })}
+      />,
+    );
+
+    const history = await screen.findByTestId("support-access-history");
+    expect(history.textContent).toContain("Nobody has opened your account");
+  });
+
+  it("lists what support did, and marks an unread one read", async () => {
+    render(
+      <SupportAccessDialog
+        onClose={() => {}}
+        read={async () => ({ granted: true, grantedAt: 1 })}
+      />,
+    );
+
+    // Wait for the notice itself: the empty state renders first, and its node is replaced.
+    const body = await screen.findByText(/^Someone on the team/u);
+    expect(body.closest("li")?.getAttribute("data-read")).toBe("false");
+
+    fireEvent.click(within(body.closest("li") as HTMLElement).getByText("Mark read"));
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByText(/^Someone on the team/u)
+          .closest("li")
+          ?.getAttribute("data-read"),
+      ).toBe("true"),
+    );
+    expect(markNoticeRead).toHaveBeenCalledWith(7);
   });
 });

@@ -4,6 +4,7 @@ import { type ControlPlane, createControlPlane } from "../host.js";
 import { createLogger } from "../logging.js";
 import { memoryAuditStore } from "./audit.js";
 import { createAuthModule } from "./auth.js";
+import { memoryNoticeStore } from "./notices.js";
 import type { RoleOverrideStore } from "./roleOverride.js";
 
 /** The worn-role store in memory: the row, and the lookup the auth wrapper asks. */
@@ -83,6 +84,8 @@ interface Harness {
   trail: ReturnType<typeof memoryAuditStore>;
   /** The worn-role store the module shares. */
   overrides: RoleOverrideStore;
+  /** The notices the module wrote. */
+  notices: ReturnType<typeof memoryNoticeStore>;
 }
 
 async function start(
@@ -101,6 +104,7 @@ async function start(
   const roles: string[] = [];
   const trail = memoryAuditStore();
   const overrides = memoryRoleOverrides();
+  const notices = memoryNoticeStore();
   const session =
     options.session === null
       ? null
@@ -143,7 +147,19 @@ async function start(
       throw new Error("unused");
     },
     sessions: {
-      sessionFor: async () => session,
+      // The plugin swaps the cookie jar, so a jar naming the target is the target: two
+      // identities is the whole point of an impersonation, and a fake with one cannot
+      // prove anything about whose notice is whose.
+      sessionFor: async (headers) =>
+        headers.cookie?.includes("session_token=target") === true
+          ? {
+              userId: TARGET,
+              organizationId: null,
+              role: null,
+              admittedAt: 1,
+              operator: false,
+            }
+          : session,
     },
     repositories: {
       licences: { read: async () => null, write: async () => {} } as never,
@@ -172,6 +188,7 @@ async function start(
         },
         audit: trail,
         roleOverrides: overrides,
+        notices,
         logger: log,
       }),
     ],
@@ -181,7 +198,7 @@ async function start(
   });
   running.push(plane);
   const port = await plane.listen(0);
-  return { url: `http://127.0.0.1:${port}`, calls, roles, trail, overrides };
+  return { url: `http://127.0.0.1:${port}`, calls, roles, trail, overrides, notices };
 }
 
 const impersonate = (url: string, body: unknown = { userId: TARGET }) =>
@@ -505,5 +522,65 @@ describe("wearing a role", () => {
       ["role.clear", "ok"],
     ]);
     expect(trail.entries[0]?.details).toEqual({ role: "member", realRole: "owner" });
+  });
+});
+
+describe("telling the account", () => {
+  it("leaves one notice naming support and the time, and no operator", async () => {
+    const { url, notices } = await start({ granted: [TARGET] });
+
+    await impersonate(url);
+
+    expect(notices.notices).toHaveLength(1);
+    const notice = notices.notices[0];
+    expect(notice).toMatchObject({ userId: TARGET, kind: "support-view", readAt: null });
+    expect(notice?.body).toContain("opened your account");
+    // The account needs to know support looked, not which colleague did.
+    expect(notice?.body).not.toContain(OPERATOR);
+  });
+
+  it("leaves nothing when the impersonation was refused", async () => {
+    const { url, notices } = await start({ granted: [], session: { operator: false } });
+
+    await impersonate(url);
+
+    expect(notices.notices).toHaveLength(0);
+  });
+
+  it("lists its own notices and marks one read", async () => {
+    const { url, notices } = await start({ granted: [TARGET] });
+    await impersonate(url);
+
+    // The account is the one signed in now, in the cookie jar the plugin set.
+    const asTarget = await fetch(`${url}/api/account/notices`, {
+      headers: { cookie: "better-auth.session_token=target" },
+    });
+    expect(asTarget.status).toBe(200);
+    expect(await asTarget.json()).toMatchObject({ unread: 1 });
+
+    const id = notices.notices[0]?.id ?? 0;
+    const marked = await fetch(`${url}/api/account/notices/${id}`, {
+      method: "PUT",
+      headers: { cookie: "better-auth.session_token=target" },
+    });
+
+    expect(marked.status).toBe(200);
+    expect(notices.notices[0]?.readAt).not.toBeNull();
+  });
+
+  it("refuses a notice that is not this account's", async () => {
+    const { url, notices } = await start({ granted: [TARGET] });
+    await impersonate(url);
+    const id = notices.notices[0]?.id ?? 0;
+
+    // A different signed-in account: the fake reader answers OPERATOR for this cookie, and
+    // the notice belongs to TARGET.
+    const response = await fetch(`${url}/api/account/notices/${id}`, {
+      method: "PUT",
+      headers: { cookie: "better-auth.admin_session=operator" },
+    });
+
+    expect(response.status).toBe(404);
+    expect(notices.notices[0]?.readAt).toBeNull();
   });
 });

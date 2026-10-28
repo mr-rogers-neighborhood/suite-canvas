@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { credentialAuthorization } from "../auth/credential";
 import { authServiceBase } from "../auth/endpoints";
+import { type AccountNotice, markNoticeRead, readNotices } from "../session/accountNotices";
 import { useEscapeLayer } from "../shell/escapeLayers";
 import { useFocusTrap } from "./useFocusTrap";
 
@@ -57,6 +58,7 @@ export function SupportAccessDialog({
   const [state, setState] = useState<SupportAccessState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notices, setNotices] = useState<AccountNotice[]>([]);
   const panel = useRef<HTMLDivElement | null>(null);
 
   useEscapeLayer(onClose);
@@ -64,6 +66,15 @@ export function SupportAccessDialog({
 
   useEffect(() => {
     let live = true;
+    // What support has done, beside the switch that allows it: the permission and its
+    // history belong on one screen, or "has anyone looked?" has no answer.
+    readNotices()
+      .then(({ notices: list }) => {
+        if (live) setNotices(list);
+      })
+      .catch(() => {
+        if (live) setNotices([]);
+      });
     read()
       .then((next) => {
         if (live) setState(next);
@@ -106,7 +117,7 @@ export function SupportAccessDialog({
         data-testid="support-access-dialog"
         className="relative w-[min(440px,calc(100vw-2rem))] rounded-xl border border-[var(--hairline)] bg-[var(--surface)] p-4 shadow-xl"
       >
-        <h2 className="text-sm font-semibold">Support access</h2>
+        <h2 className="text-sm font-semibold">Support access and activity</h2>
         <p className="mt-2 text-xs leading-relaxed text-[var(--ink)]">
           While this is on, someone running this deployment can open your account to see what you
           see, so they can answer a question about your boards. They cannot start on their own: this
@@ -133,6 +144,45 @@ export function SupportAccessDialog({
             {error}
           </p>
         ) : null}
+        {notices.length === 0 ? (
+          <p className="mt-3 text-xs text-[var(--ink-muted)]" data-testid="support-access-history">
+            Nobody has opened your account.
+          </p>
+        ) : (
+          <div className="mt-3" data-testid="support-access-history">
+            <p className="text-[11px] text-[var(--ink-muted)]">
+              Times support opened your account:
+            </p>
+            <ul className="mt-1 space-y-1">
+              {notices.map((notice) => (
+                <li
+                  key={notice.id}
+                  className="flex items-start justify-between gap-2 text-[11px]"
+                  data-read={notice.readAt === null ? "false" : "true"}
+                >
+                  <span>{notice.body}</span>
+                  {notice.readAt === null ? (
+                    <button
+                      type="button"
+                      className="shrink-0 underline underline-offset-2"
+                      onClick={() => {
+                        void markNoticeRead(notice.id).catch(() => undefined);
+                        setNotices((current) =>
+                          current.map((entry) =>
+                            entry.id === notice.id ? { ...entry, readAt: Date.now() } : entry,
+                          ),
+                        );
+                      }}
+                    >
+                      Mark read
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"

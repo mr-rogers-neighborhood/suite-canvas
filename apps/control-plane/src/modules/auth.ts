@@ -21,6 +21,7 @@ import { type AuditStore, auditSafely, createAuditStore } from "./audit.js";
 import { composeBilling } from "./auth-billing.js";
 import { publishSessionReader, sessionReader } from "./context.js";
 import { createGrantStore, type GrantStore } from "./grants.js";
+import { createNoticeStore, type NoticeStore, supportViewNotice } from "./notices.js";
 import { createRoleOverrideStore, isWearableRole, overrideBody } from "./roleOverride.js";
 import { readStoredSettings } from "./settings.js";
 
@@ -73,6 +74,7 @@ const ACCOUNT_PATHS: readonly string[] = [
   // this module owns the consent gate, the flag and the audit line.
   "/api/account/support-access",
   "/api/account/role-override",
+  "/api/account/notices",
   "/api/account/impersonate",
   "/api/account/stop-impersonating",
   "/api/workspaces/claim",
@@ -108,6 +110,8 @@ export interface AuthModuleOptions {
   audit?: AuditStore;
   /** The worn-role store. Defaults to this module's pool; a test passes a memory store. */
   roleOverrides?: ReturnType<typeof createRoleOverrideStore>;
+  /** The account notices. Defaults to this module's pool; a test passes a memory store. */
+  notices?: NoticeStore;
   logger?: Logger;
 }
 
@@ -222,6 +226,12 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
   const roleOverrides = (): ReturnType<typeof createRoleOverrideStore> => {
     overrides ??= createRoleOverrideStore(database());
     return overrides;
+  };
+
+  let noticesStore: NoticeStore | null = options.notices ?? null;
+  const notices = (): NoticeStore => {
+    noticesStore ??= createNoticeStore(database());
+    return noticesStore;
   };
 
   let trail: AuditStore | null = options.audit ?? null;
@@ -355,6 +365,70 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       redirect: "manual",
     });
     await writeResponse(response, await entry.handler(outbound));
+  }
+
+  /**
+   * What this account has been told, and the act of reading it.
+   *
+   * `GET` lists its own notices, each with the time it arrived and whether it has been read;
+   * `PUT /api/account/notices/:id` marks one read. Both read the id from the session, so one
+   * account can never mark another's notice.
+   */
+  async function handleNotices(
+    request: IncomingMessage,
+    response: ServerResponse,
+    path: string,
+  ): Promise<boolean> {
+    if (path !== "/api/account/notices" && !path.startsWith("/api/account/notices/")) {
+      return false;
+    }
+
+    const cookies = typeof request.headers.cookie === "string" ? request.headers.cookie : "";
+    const session = await sessionReader()?.({ cookie: cookies });
+    if (!session) {
+      sendJson(response, 401, {
+        ok: false,
+        error: "unauthorized",
+        message: "sign in to read your notices",
+      });
+      return true;
+    }
+
+    const method = request.method ?? "GET";
+    if (path === "/api/account/notices") {
+      if (method !== "GET") {
+        sendJson(response, 405, { error: "method-not-allowed", requestId: requestIdOf(request) });
+        return true;
+      }
+      const list = await notices().listFor(session.userId);
+      sendJson(response, 200, {
+        ok: true,
+        notices: list,
+        unread: list.filter((notice) => notice.readAt === null).length,
+      });
+      return true;
+    }
+
+    if (method !== "PUT") {
+      sendJson(response, 405, { error: "method-not-allowed", requestId: requestIdOf(request) });
+      return true;
+    }
+    const id = Number.parseInt(path.slice("/api/account/notices/".length), 10);
+    if (!Number.isFinite(id)) {
+      sendJson(response, 400, { ok: false, error: "invalid-id", message: "expected a notice id" });
+      return true;
+    }
+    const marked = await notices().markRead(session.userId, id);
+    if (!marked) {
+      sendJson(response, 404, {
+        ok: false,
+        error: "not-found",
+        message: "no notice with that id belongs to this account",
+      });
+      return true;
+    }
+    sendJson(response, 200, { ok: true, id, readAt: Date.now() });
+    return true;
   }
 
   /**
@@ -666,6 +740,18 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       target: userId,
       outcome: "ok",
     });
+    // The account is told in the product, at its next look: consent given once is not the
+    // same as being told each time. A failure here must not undo a session that already
+    // started, so it is logged rather than thrown.
+    try {
+      await notices().write({
+        userId,
+        kind: "support-view",
+        body: supportViewNotice(Date.now()),
+      });
+    } catch (error) {
+      logger.error("the support-view notice did not write", { error: messageOf(error) });
+    }
     logger.warn("operator impersonation started", { actor: session.userId, target: userId });
     await relayCookies(answered, response, answeredText);
     return true;
@@ -767,7 +853,12 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
     async handle(request, response): Promise<boolean> {
       const path = pathOf(request.url);
       const ownsAuth = path === AUTH_PREFIX || path.startsWith(`${AUTH_PREFIX}/`);
-      const ownsAccount = ACCOUNT_PATHS.includes(path) || MEMBERS_PATH.test(path);
+      // A single notice is one segment deeper than the list, so the claim is a prefix for
+      // that one path rather than an exact match.
+      const ownsAccount =
+        ACCOUNT_PATHS.includes(path) ||
+        path.startsWith("/api/account/notices/") ||
+        MEMBERS_PATH.test(path);
       if (!ownsAuth && !ownsAccount) return false;
 
       if (!enabled) {
@@ -795,6 +886,7 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       }
 
       if (ownsAuth) await handleAuth(request, response, entry);
+      else if (await handleNotices(request, response, path)) return true;
       else if (await handleRoleOverride(request, response, path)) return true;
       else if (await handleSupportAccess(request, response, path)) return true;
       else if (await handleImpersonation(request, response, entry, path)) return true;

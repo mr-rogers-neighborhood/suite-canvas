@@ -695,3 +695,21 @@ code {
   flex-wrap: wrap;
   gap: 4px;
 }
+
+/* Two rows: the group you are in, then the views inside it. */
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.admin-subtabs {
+  background: none;
+  padding: 0 2px;
+}
+
+.admin-subtabs .admin-tab {
+  padding: 2px 8px;
+  font-size: 12px;
+}

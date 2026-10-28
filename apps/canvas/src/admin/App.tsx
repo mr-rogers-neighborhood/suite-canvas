@@ -24,18 +24,55 @@ type View =
   | "settings"
   | "support";
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: "status", label: "Status" },
-  { id: "accounts", label: "Accounts" },
-  { id: "activity", label: "Activity" },
-  { id: "workspaces", label: "Workspaces" },
-  { id: "rooms", label: "Rooms" },
-  { id: "shares", label: "Shares" },
-  { id: "templates", label: "Templates" },
-  { id: "fixtures", label: "Fixtures" },
-  { id: "settings", label: "Settings" },
-  { id: "support", label: "Support" },
+/**
+ * Four groups, with the views inside them.
+ *
+ * Ten flat tabs was a wall, and two more arrived with the audit trail and the licence
+ * controls. The grouping is by *question* rather than by subsystem, because that is how an
+ * operator arrives: what is this deployment doing, who is here, what data is on it, what
+ * content does it hold.
+ */
+const GROUPS: { id: string; label: string; views: { id: View; label: string }[] }[] = [
+  {
+    id: "deployment",
+    label: "This deployment",
+    views: [
+      { id: "status", label: "Status" },
+      { id: "settings", label: "Settings" },
+      { id: "support", label: "Support" },
+    ],
+  },
+  {
+    id: "people",
+    label: "People",
+    views: [
+      { id: "accounts", label: "Accounts" },
+      { id: "activity", label: "Activity" },
+    ],
+  },
+  {
+    id: "workspaces",
+    label: "Workspaces",
+    views: [
+      { id: "workspaces", label: "All workspaces" },
+      { id: "rooms", label: "Rooms" },
+      { id: "shares", label: "Shares" },
+    ],
+  },
+  {
+    id: "content",
+    label: "Content",
+    views: [
+      { id: "templates", label: "Templates" },
+      { id: "fixtures", label: "Fixtures" },
+    ],
+  },
 ];
+
+/** The group a view belongs to, so opening `#rooms` shows the Workspaces group. */
+function groupOf(view: View): string {
+  return GROUPS.find((group) => group.views.some((entry) => entry.id === view))?.id ?? "deployment";
+}
 
 /**
  * The gate: an account, not a pasted secret.
@@ -141,17 +178,38 @@ export function App() {
           <strong>Suite</strong>
           <span className="admin-muted">operator</span>
         </div>
-        <nav className="admin-tabs" aria-label="Admin sections">
-          {VIEWS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={entry.id === view ? "admin-tab admin-tab-active" : "admin-tab"}
-              onClick={() => setView(entry.id)}
-            >
-              {entry.label}
-            </button>
-          ))}
+        <nav className="admin-nav" aria-label="Admin sections">
+          <div className="admin-tabs" role="tablist" aria-label="Groups">
+            {GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={group.id === groupOf(view)}
+                data-testid={`admin-group-${group.id}`}
+                className={group.id === groupOf(view) ? "admin-tab admin-tab-active" : "admin-tab"}
+                onClick={() => setView(group.views[0]?.id ?? "status")}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <div className="admin-tabs admin-subtabs" role="tablist" aria-label="Views">
+            {(GROUPS.find((group) => group.id === groupOf(view))?.views ?? []).map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={entry.id === view}
+                aria-current={entry.id === view ? "page" : undefined}
+                data-testid={`admin-view-${entry.id}`}
+                className={entry.id === view ? "admin-tab admin-tab-active" : "admin-tab"}
+                onClick={() => setView(entry.id)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
         </nav>
         {worn?.role == null ? null : (
           <span className="admin-worn" data-testid="worn-role" data-role={worn.role}>

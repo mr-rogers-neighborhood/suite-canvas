@@ -26,8 +26,8 @@ import type { RouteModule } from "../routes.js";
  *
  * Two paths are here:
  *
- *   POST /api/billing/entitlement  {"organizationId":"org_1"} → {"tier":"solo","limits":{…}}
- *   POST /api/billing/plans        → {"plans":[{"tier":"solo","priceId":"price_…","limits":{…}}]}
+ *   POST /api/billing/entitlement  {"organizationId":"org_1"} → {"tier":"personal","limits":{…}}
+ *   POST /api/billing/plans        → {"plans":[{"tier":"personal","priceId":"price_…","limits":{…}}]}
  *
  * The first is the read ADR-0075 mints tokens from; the second is the price list a
  * surface renders, so no client hardcodes a price id.

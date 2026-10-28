@@ -74,8 +74,8 @@ and the deployment's configuration all come from this one table.
 
 ```json
 {
-  "price_1PAbCdEfGhIjKl": { "tier": "solo", "seats": 1, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
-  "price_1PAbCdEfGhIjKm": { "tier": "solo-pro", "seats": 1, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
+  "price_1PAbCdEfGhIjKl": { "tier": "personal", "seats": 1, "workspaces": 3, "documentBytes": 268435456, "attachmentBytes": 1073741824 },
+  "price_1PAbCdEfGhIjKm": { "tier": "organization", "seats": 1, "workspaces": 25, "documentBytes": 2147483648, "attachmentBytes": 8589934592 }
 }
 ```
 
@@ -91,8 +91,10 @@ member rows, so the two numbers have different readers.
 ## Seats in v1: one per plan
 
 Both hosted plans sell one seat, so an organization on a paid plan has its owner and no
-second member. The plans are named for that, `solo` and `solo-pro`, and the site states it
-where a buyer reads the price (ADR-0082).
+second member. `personal` is $9 a month and `organization` $24, and **Organization buys
+capacity, not people**: 25 workspaces and 2 GiB of documents, still for one person. The site
+says so where a buyer reads the price, because a plan called "Organization" that admits one
+member has to be honest about what it is selling (ADR-0082).
 
 The number is enforced, not asserted. `planList` refuses a table that declares more than
 one seat, because there is no per-seat price to charge for the rest:
@@ -113,7 +115,7 @@ quantity above the current headcount, and that is a change to the admission rule
 ## The entitlement read
 
 `POST /api/billing/entitlement` takes `{"organizationId":"org_1"}` and answers
-`{"tier":"solo","limits":{"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
+`{"tier":"personal","limits":{"workspaces":3,"documentBytes":268435456,"attachmentBytes":1073741824}}`.
 It reads the plugin's `subscription` row and the tier table, and calls Stripe for nothing:
 a payment provider outage must not stop hosted sync for customers who already paid.
 

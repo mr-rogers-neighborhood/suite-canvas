@@ -25,13 +25,22 @@ const capabilities = [
  * The hosted plans, from the tier table the licence is minted from
  * (`services/billing/src/stripe/tiers.ts`, published in
  * `docs/reference/billing.md`). A licence carries a seat count, a workspace count
- * and two storage caps; nothing on this page is a price. Both plans sell one seat,
- * so a plan is one person and the names say so (ADR-0082).
+ * and two storage caps. Both plans sell one seat, so the price is per person, and
+ * Organization buys capacity rather than people (ADR-0082): the table says so. The
+ * prices here are the monthly amounts in `deploy/stripe/fixtures.json`.
  */
 const plans = [
-  { name: "Solo", seats: "1", workspaces: "3", documentBytes: "256 MiB", attachmentBytes: "1 GiB" },
   {
-    name: "Solo Pro",
+    name: "Personal",
+    price: "$9",
+    seats: "1",
+    workspaces: "3",
+    documentBytes: "256 MiB",
+    attachmentBytes: "1 GiB",
+  },
+  {
+    name: "Organization",
+    price: "$24",
     seats: "1",
     workspaces: "25",
     documentBytes: "2 GiB",
@@ -117,14 +126,15 @@ const plans = [
       <section class="pricing" aria-labelledby="pricing">
         <h2 id="pricing">Pricing</h2>
         <p class="pricing-lede">
-          Two hosted plans are configured, one seat each. A licence carries a seat count, a workspace
+          Two hosted plans, one seat each, billed monthly. A licence carries a seat count, a workspace
           count and two storage caps, and the relay enforces the tighter of the licence and the
-          instance.
+          instance. Organization buys capacity, not people: it is still one member.
         </p>
         <table>
           <thead>
             <tr>
               <th scope="col">Plan</th>
+              <th scope="col">Per month</th>
               <th scope="col">Seats</th>
               <th scope="col">Workspaces</th>
               <th scope="col">Document bytes per workspace</th>
@@ -136,6 +146,7 @@ const plans = [
               plans.map((plan) => (
                 <tr>
                   <th scope="row">{plan.name}</th>
+                  <td>{plan.price}</td>
                   <td>{plan.seats}</td>
                   <td>{plan.workspaces}</td>
                   <td>{plan.documentBytes}</td>
@@ -146,8 +157,8 @@ const plans = [
           </tbody>
         </table>
         <p class="pricing-note">
-          Hosted subscriptions are not on sale yet. When they are, a plan is one person: inviting a
-          second member is refused rather than billed, because seats are not sold separately.
+          A plan is one person: inviting a second member is refused rather than billed, because seats
+          are not sold separately yet.
           Self-hosting needs no licence: the same quotas are environment variables, and unset means
           unlimited.
         </p>

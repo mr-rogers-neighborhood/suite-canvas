@@ -2,20 +2,20 @@
   "currency": "usd",
   "plans": [
     {
-      "tier": "solo",
-      "name": "Suite Solo",
-      "lookupKey": "suite_solo_monthly",
-      "unitAmount": 1200,
+      "tier": "personal",
+      "name": "Personal",
+      "lookupKey": "suite_personal_monthly",
+      "unitAmount": 900,
       "seats": 1,
       "workspaces": 3,
       "documentBytes": 268435456,
       "attachmentBytes": 1073741824
     },
     {
-      "tier": "solo-pro",
-      "name": "Suite Solo Pro",
-      "lookupKey": "suite_solo_pro_monthly",
-      "unitAmount": 4900,
+      "tier": "organization",
+      "name": "Organization",
+      "lookupKey": "suite_organization_monthly",
+      "unitAmount": 2400,
       "seats": 1,
       "workspaces": 25,
       "documentBytes": 2147483648,

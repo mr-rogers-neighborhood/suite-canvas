@@ -15,7 +15,7 @@ SUITE_DOMAIN=localhost                     # Caddy's internal CA, not Let's Encr
 SUITE_ADMIN_EMAILS=you@example.com         # who may use the operator surface
 STRIPE_SECRET_KEY=sk_test_...              # the sandbox key
 STRIPE_WEBHOOK_SECRET=whsec_...            # printed by `pnpm stripe --listen`, step 4
-STRIPE_PRICE_TIERS='{"price_…":{"tier":"solo",…}}'   # printed by `pnpm stripe`
+STRIPE_PRICE_TIERS='{"price_…":{"tier":"personal",…}}'   # printed by `pnpm stripe`
 SUITE_BILLING_ENABLED=1
 ```
 

@@ -59,7 +59,7 @@ const PG = { host: "127.0.0.1", port: "54329", user: "suite", database: "suite" 
 /** Licence ceilings generous enough that a run never spends them. */
 const RUN_LICENCE = {
   id: "e2e-licence",
-  tier: "solo",
+  tier: "personal",
   workspaces: 10_000,
   seats: 1_000,
   /** A year: the row outlives the run, and a stale one is deleted with the cluster. */

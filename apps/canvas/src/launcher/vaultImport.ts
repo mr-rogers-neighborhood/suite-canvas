@@ -149,7 +149,7 @@ export async function importVaultIntoWorkspace(args: VaultImportArgs): Promise<V
   if (collected.files.length === 0) {
     return {
       ok: false,
-      message: "Nothing was imported: the dropped folder holds no notes or canvases.",
+      message: "Nothing was imported: that vault holds no notes or canvases.",
       ...(collected.skipped.length > 0
         ? {
             detail: `${collected.skipped.length} entry(ies) could not be read: ${listNames(

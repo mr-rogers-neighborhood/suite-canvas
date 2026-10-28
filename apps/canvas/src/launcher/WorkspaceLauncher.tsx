@@ -1,4 +1,5 @@
 import { STARTER_TEMPLATES, type WorkspaceTemplate } from "@suite/graph";
+import type { VaultFile } from "@suite/import-obsidian";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ToastLayer } from "../feedback/ToastLayer";
 import { toast } from "../feedback/toast";
@@ -31,6 +32,7 @@ import {
   rememberWorkspace,
   workspaceUrl,
 } from "../session/workspaceTransfer";
+import { ImportMenu } from "./ImportMenu";
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   loadStarterTemplates,
@@ -38,6 +40,7 @@ import {
   starterTemplateById,
 } from "./starterTemplates";
 import { importVaultIntoWorkspace, vaultFilesFromPicker, vaultName } from "./vaultImport";
+import { readVaultZip } from "./vaultZip";
 
 /** A recents row with the workspace name resolved for display. */
 interface RecentEntry extends RecentWorkspace {
@@ -128,7 +131,10 @@ export function WorkspaceLauncher() {
   const fileInput = useRef<HTMLInputElement | null>(null);
   /** The row an "Import" press belongs to: a vault merges into the workspace you name. */
   const vaultInput = useRef<HTMLInputElement | null>(null);
+  const zipInput = useRef<HTMLInputElement | null>(null);
   const [vaultTarget, setVaultTarget] = useState<RecentEntry | null>(null);
+  /** The row whose import menu is open, if any. */
+  const [importMenu, setImportMenu] = useState<string | null>(null);
   const renameCancelled = useRef(false);
   // A mail link names one invitation, and this page is where it lands.
   const [invitationId, setInvitationId] = useState<string | null>(null);
@@ -295,15 +301,20 @@ export function WorkspaceLauncher() {
    * A vault picked rather than dropped: the same import through the other door.
    *
    * A drag is unavailable on a tablet, and a row is the choice of workspace a drop
-   * already makes, so the picker is per row and reads the folder the reader chose.
+   * already makes, so the picker is per row. Two shapes arrive this way — a folder from
+   * a directory picker, and a zip a Files app can hand over but not unpack — and both
+   * end here, because only the reading differs.
    */
-  const importVaultFolder = async (entry: RecentEntry, list: FileList | null) => {
-    if (!list || list.length === 0) return;
+  const importVaultFrom = async (
+    entry: RecentEntry,
+    read: () => Promise<{ files: VaultFile[]; name: string | undefined }>,
+    failure: string,
+  ) => {
     setProgress(`Importing ${entry.name}\u2026`);
     setError(null);
     setNotice(null);
     try {
-      const { files, name } = await vaultFilesFromPicker(list);
+      const { files, name } = await read();
       const outcome = await importVaultIntoWorkspace({
         workspaceId: entry.id,
         files,
@@ -329,10 +340,25 @@ export function WorkspaceLauncher() {
       });
       setRecents(readRecentWorkspaces().map((row) => labelRecent(row, readWorkspaceNames())));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+      setError(cause instanceof Error ? cause.message : failure);
     } finally {
       setProgress(null);
     }
+  };
+
+  const importVaultFolder = (entry: RecentEntry, list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    void importVaultFrom(entry, () => vaultFilesFromPicker(list), "Could not import that folder.");
+  };
+
+  const importVaultZip = (entry: RecentEntry, list: FileList | null) => {
+    const archive = list?.[0];
+    if (!archive) return;
+    void importVaultFrom(
+      entry,
+      async () => readVaultZip(new Uint8Array(await archive.arrayBuffer()), archive.name),
+      "Could not read that archive.",
+    );
   };
 
   const exportRecent = async (entry: RecentEntry) => {
@@ -458,7 +484,24 @@ export function WorkspaceLauncher() {
                 const files = event.target.files;
                 event.target.value = "";
                 setVaultTarget(null);
-                if (target) void importVaultFolder(target, files);
+                if (target) importVaultFolder(target, files);
+              }}
+            />
+            {/* A tablet's Files app can hand over one file but cannot unpack a folder,
+                so a zipped vault is the shape some devices offer. It is the same import
+                past a reader, not a second importer. */}
+            <input
+              ref={zipInput}
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              data-testid="launcher-vault-zip-input"
+              onChange={(event) => {
+                const target = vaultTarget;
+                const files = event.target.files;
+                event.target.value = "";
+                setVaultTarget(null);
+                if (target) importVaultZip(target, files);
               }}
             />
             {/* Identity lives here as well as in the title bar: this is the first
@@ -740,20 +783,25 @@ export function WorkspaceLauncher() {
                             Rename
                           </button>
                         )}
-                        <button
-                          type="button"
-                          data-testid={`launcher-vault-${entry.id}`}
-                          aria-label={`Import an Obsidian vault into ${entry.name}`}
-                          title="Import from Obsidian… (merges into this workspace)"
-                          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
-                          onClick={() => {
+                        <ImportMenu
+                          workspaceId={entry.id}
+                          workspaceName={entry.name}
+                          open={importMenu === entry.id}
+                          onOpen={() =>
+                            setImportMenu((open) => (open === entry.id ? null : entry.id))
+                          }
+                          onClose={() => setImportMenu(null)}
+                          onImportFolder={() => {
                             setVaultTarget(entry);
                             vaultInput.current?.click();
                           }}
+                          onImportZip={() => {
+                            setVaultTarget(entry);
+                            zipInput.current?.click();
+                          }}
+                          onOpenBackup={() => fileInput.current?.click()}
                           disabled={busy}
-                        >
-                          Import
-                        </button>
+                        />
                         <button
                           type="button"
                           data-testid={`launcher-export-${entry.id}`}

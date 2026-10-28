@@ -3,11 +3,15 @@
 Importing a vault folder reads every note, tag, link and canvas into one workspace. The import runs once, as
 a single change, so `undo` takes it back whole.
 
-There are two doors onto it and they share one importer:
+There are three doors onto it and they share one importer:
 
 - **Drop** a folder on a workspace tile in the launcher.
-- **Pick** one: `Workspace → Import from Obsidian…` inside a workspace, or `Import` on a launcher tile. This
-  is the door for a tablet, where dragging a folder is not a gesture the OS offers.
+- **Pick** a folder: `Workspace → Import from Obsidian…` inside a workspace, or a launcher tile's
+  `Import` menu, → `Obsidian folder…`. This is the door for a tablet, where dragging a folder is not a
+  gesture the OS offers.
+- **Pick** a `.zip`: the same two menus, → `Obsidian .zip…`. A tablet's Files app offers one file rather
+  than a folder, so a vault that arrived zipped is read directly; `DecompressionStream` does the inflate,
+  so there is no dependency behind it. The archive's name becomes the root board's name.
 
 ## Read the vault
 

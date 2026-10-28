@@ -1,9 +1,11 @@
+import type { VaultFile } from "@suite/import-obsidian";
 import { useEffect, useRef, useState } from "react";
 import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useCardTitle } from "../hooks/useCardContainers";
 import { importVaultIntoWorkspace, vaultFilesFromPicker } from "../launcher/vaultImport";
+import { readVaultZip } from "../launcher/vaultZip";
 import { isShareSession } from "../session/session";
 import type { ShareScope } from "../session/shares";
 import {
@@ -66,6 +68,7 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const picker = useRef<HTMLInputElement | null>(null);
+  const zipPicker = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
@@ -120,19 +123,22 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
   };
 
   /**
-   * A folder picked rather than dropped.
+   * A vault picked rather than dropped.
    *
    * A folder input hands over every file with a relative path, which is the shape the
    * importer already parses, so the picker is a second door onto one import rather than
-   * a second importer.
+   * a second importer. An archive door sits beside it for the devices that can hand over
+   * one file but cannot unpack one.
    */
-  const importVault = async (list: FileList | null) => {
-    if (!list || list.length === 0) return;
+  const importVault = async (
+    read: () => Promise<{ files: VaultFile[]; name: string | undefined }>,
+    failure: string,
+  ) => {
     setError(null);
     setNotice(null);
     setImporting(true);
     try {
-      const { files, name } = await vaultFilesFromPicker(list);
+      const { files, name } = await read();
       const outcome = await importVaultIntoWorkspace({
         workspaceId,
         files,
@@ -142,11 +148,26 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
         setNotice(outcome.detail ? `${outcome.message} ${outcome.detail}` : outcome.message);
       else setError(outcome.detail ? `${outcome.message} ${outcome.detail}` : outcome.message);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+      setError(cause instanceof Error ? cause.message : failure);
     } finally {
       setImporting(false);
       if (picker.current) picker.current.value = "";
+      if (zipPicker.current) zipPicker.current.value = "";
     }
+  };
+
+  const importVaultFolder = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    await importVault(() => vaultFilesFromPicker(list), "Could not import that folder.");
+  };
+
+  const importVaultArchive = async (list: FileList | null) => {
+    const archive = list?.[0];
+    if (!archive) return;
+    await importVault(
+      async () => readVaultZip(new Uint8Array(await archive.arrayBuffer()), archive.name),
+      "Could not read that archive.",
+    );
   };
 
   const exportTo = async (kind: "backup" | "json" | "markdown") => {
@@ -225,6 +246,19 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
               }}
             >
               {importing ? "Importing\u2026" : "Import from Obsidian\u2026"}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="workspace-import-zip"
+              disabled={importing}
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+              onClick={() => {
+                setMenuOpen(false);
+                zipPicker.current?.click();
+              }}
+            >
+              Import a zipped vault\u2026
             </button>
             <hr className="my-1 border-[var(--hairline)]" />
             <button
@@ -324,7 +358,15 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
         hidden
         multiple
         data-testid="workspace-import-input"
-        onChange={(event) => void importVault(event.target.files)}
+        onChange={(event) => void importVaultFolder(event.target.files)}
+      />
+      <input
+        ref={zipPicker}
+        type="file"
+        accept=".zip,application/zip"
+        hidden
+        data-testid="workspace-import-zip-input"
+        onChange={(event) => void importVaultArchive(event.target.files)}
       />
       {error ? (
         <span

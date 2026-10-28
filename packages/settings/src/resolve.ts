@@ -23,6 +23,8 @@ export interface StoredSetting {
   scope: string;
   key: string;
   value: string;
+  /** When the row was written, for a caller that has to say "restart to apply". */
+  updatedAt?: number | null;
 }
 
 /** The scope string for one organization's override. */

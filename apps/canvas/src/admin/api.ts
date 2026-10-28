@@ -393,10 +393,14 @@ export interface AdminSetting {
   value: string | number | boolean | null;
   source: "organization" | "global" | "env" | "default";
   env: string;
+  /** When this row was last written, or null when it has never been written. */
+  savedAt?: number | null;
 }
 
 export async function listSettings(organizationId?: string | null): Promise<{
   organizationId: string | null;
+  /** When the control plane that answered this started, for the restart marker. */
+  bootedAt?: number;
   settings: AdminSetting[];
 }> {
   const scope = organizationId ? `?organization=${encode(organizationId)}` : "";

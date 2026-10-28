@@ -132,6 +132,11 @@ export function SettingsPanel() {
               const draft = drafts[setting.key];
               const isSecret = setting.kind === "secret";
               const current = isSecret ? "" : String(setting.value ?? "");
+              const bootedAt = data?.bootedAt ?? 0;
+              const needsRestart =
+                (setting.group === "billing" || setting.group === "mail") &&
+                typeof setting.savedAt === "number" &&
+                setting.savedAt > bootedAt;
               return (
                 <div
                   className="admin-settings-row"
@@ -144,15 +149,37 @@ export function SettingsPanel() {
                     <span className="admin-settings-source" data-source={setting.source}>
                       {sourceLabel(setting)}
                     </span>
+                    {needsRestart ? (
+                      // Billing and mail are read once, when the process starts. A row
+                      // written since then is saved and not yet in force, and saying so is
+                      // the difference between "my key does nothing" and "restart it".
+                      <span
+                        className="admin-settings-restart"
+                        data-testid={`restart-${setting.key}`}
+                      >
+                        Restart to apply
+                      </span>
+                    ) : null}
                   </div>
                   <div className="admin-settings-control">
                     {setting.kind === "boolean" ? (
-                      <Button
-                        disabled={busy === setting.key}
-                        onClick={() => void save(setting, setting.value !== true)}
-                      >
-                        {setting.value === true ? "On" : "Off"}
-                      </Button>
+                      // The label names the *action*, not the state: a button reading "Off"
+                      // looks like a state to confirm, and pressing it to "enable" that state
+                      // writes the opposite. The state is beside it, unclickable.
+                      <div className="admin-row-actions">
+                        <span
+                          className="admin-settings-state"
+                          data-on={setting.value === true ? "true" : "false"}
+                        >
+                          {setting.value === true ? "On" : "Off"}
+                        </span>
+                        <Button
+                          disabled={busy === setting.key}
+                          onClick={() => void save(setting, setting.value !== true)}
+                        >
+                          {setting.value === true ? "Turn off" : "Turn on"}
+                        </Button>
+                      </div>
                     ) : setting.kind === "enum" ? (
                       <div className="admin-settings-chips">
                         {(setting.values ?? []).map((option) => (

@@ -28,6 +28,7 @@ const rows = [
     value: false,
     source: "default" as const,
     env: "SUITE_BILLING_ENABLED",
+    savedAt: 2000,
   },
   {
     key: "mail.smtp.password",
@@ -38,6 +39,7 @@ const rows = [
     value: "••••••••",
     source: "global" as const,
     env: "SUITE_SMTP_PASSWORD",
+    savedAt: 500,
   },
 ];
 
@@ -46,7 +48,7 @@ const sendTestMail = vi.fn(async () => ({ ok: true, transport: "smtp" }));
 
 vi.mock("../api", () => ({
   errorText: (cause: unknown) => String(cause),
-  listSettings: async () => ({ organizationId: null, settings: rows }),
+  listSettings: async () => ({ organizationId: null, bootedAt: 1000, settings: rows }),
   writeSetting: (...args: unknown[]) => writeSetting(...(args as [])),
   resetSetting: async () => {},
   sendTestMail: (...args: unknown[]) => sendTestMail(...(args as [])),
@@ -97,6 +99,28 @@ describe("the settings panel", () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(writeSetting).toHaveBeenCalledWith("billing.enabled", true));
+  });
+
+  it("names the action on a switch, so a press cannot mean the opposite of its label", async () => {
+    // The control used to be one button reading "On"/"Off", which is a *state*: an operator
+    // who reads "Off" as "this is off, press to enable" was writing the same value back, and
+    // one who read "On" as a confirmation turned billing off.
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByTestId("setting-billing.enabled")).toBeTruthy());
+    const row = screen.getByTestId("setting-billing.enabled");
+
+    expect(row.textContent).toContain("Turn on");
+    expect(row.textContent).not.toContain("Turn off");
+  });
+
+  it("says which saved rows are not in force until a restart", async () => {
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByTestId("setting-billing.enabled")).toBeTruthy());
+
+    // Written at 2000, process started at 1000: saved, and not yet read.
+    expect(screen.getByTestId("restart-billing.enabled").textContent).toContain("Restart");
+    // Written before the boot: already in force, so no marker.
+    expect(screen.queryByTestId("restart-mail.smtp.password")).toBeNull();
   });
 
   it("offers a password field for a secret and no way to read it back", async () => {

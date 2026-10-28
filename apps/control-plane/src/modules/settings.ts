@@ -55,6 +55,7 @@ interface SettingsRow {
   scope: string;
   key: string;
   value: string;
+  updated_at: number | string | null;
 }
 
 const CREATE_TABLE = `
@@ -69,7 +70,7 @@ const CREATE_TABLE = `
 `;
 
 const SELECT_ROWS = `
-  SELECT scope, key, value
+  SELECT scope, key, value, updated_at
   FROM suite_settings
   ORDER BY scope, key
 `;
@@ -95,6 +96,7 @@ async function readRows(database: Pick<Pool, "query">): Promise<StoredSetting[]>
     scope: row.scope,
     key: row.key,
     value: row.value,
+    updatedAt: row.updated_at === null ? null : Number(row.updated_at),
   }));
 }
 
@@ -117,10 +119,28 @@ function storedValue(secretKey: string, key: string, raw: unknown): string {
  * What a read returns: every declared key, in registry order, with its value and the level
  * that supplied it. A secret is a mask and nothing else.
  */
-export function settingsBody(rows: readonly StoredSetting[], organizationId: string | null) {
+export function settingsBody(
+  rows: readonly StoredSetting[],
+  organizationId: string | null,
+  bootedAt: number = Date.now() - Math.round(process.uptime() * 1000),
+) {
   const resolved = resolveAll({ rows, organizationId, env: process.env });
+  const savedAt = new Map(
+    (rows as (StoredSetting & { updatedAt?: number | null })[]).map((row) => [
+      `${row.scope}\u0000${row.key}`,
+      row.updatedAt ?? null,
+    ]),
+  );
   return {
     organizationId,
+    /**
+     * When this process started.
+     *
+     * Billing and mail are read once, at boot, which is a fact the panel has to be able to
+     * state: without it an operator saves a key, sees the row, and waits for something to
+     * happen that cannot happen until the process is restarted.
+     */
+    bootedAt,
     settings: SETTINGS.map((definition) => {
       const entry = resolved.find((candidate) => candidate.key === definition.key);
       return {
@@ -133,6 +153,8 @@ export function settingsBody(rows: readonly StoredSetting[], organizationId: str
         value: definition.kind === "secret" ? SECRET_MASK : (entry?.value ?? null),
         source: entry?.source ?? "default",
         env: definition.env ?? "",
+        // The row's own write time, so the panel can say "saved after boot, restart".
+        savedAt: savedAt.get(`global\u0000${definition.key}`) ?? null,
       };
     }),
   };

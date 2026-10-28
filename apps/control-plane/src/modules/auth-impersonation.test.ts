@@ -49,6 +49,8 @@ interface Harness {
   url: string;
   /** Every path the Better Auth entry was asked to handle, in order. */
   calls: string[];
+  /** The accounts whose plugin role this module wrote before impersonating. */
+  roles: string[];
 }
 
 async function start(
@@ -59,9 +61,12 @@ async function start(
     granted?: readonly string[];
     /** A settings row that turns impersonation off. */
     flagOff?: boolean;
+    /** The plugin's own refusal, as it answers one: a code on a 200. */
+    pluginRefusal?: { code: string; message: string; enrollAt?: string };
   } = {},
 ): Promise<Harness> {
   const calls: string[] = [];
+  const roles: string[] = [];
   const session =
     options.session === null
       ? null
@@ -84,6 +89,13 @@ async function start(
         headers.append("set-cookie", "better-auth.admin_session=; Max-Age=0; Path=/");
         headers.append("set-cookie", "better-auth.session_token=operator; Path=/; HttpOnly");
         return new Response(JSON.stringify({ session: null }), { status: 200, headers });
+      }
+      if (options.pluginRefusal !== undefined) {
+        // Better Auth answers an endpoint refusal on a 200 with a code in the body.
+        return new Response(JSON.stringify(options.pluginRefusal), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }
       const headers = new Headers({ "content-type": "application/json" });
       headers.append("set-cookie", "better-auth.admin_session=operator; Path=/; HttpOnly");
@@ -121,6 +133,9 @@ async function start(
         },
         boot: async () => entry,
         grants: memoryGrants(options.granted),
+        operatorRoles: async (userId) => {
+          roles.push(userId);
+        },
         logger: log,
       }),
     ],
@@ -130,7 +145,7 @@ async function start(
   });
   running.push(plane);
   const port = await plane.listen(0);
-  return { url: `http://127.0.0.1:${port}`, calls };
+  return { url: `http://127.0.0.1:${port}`, calls, roles };
 }
 
 const impersonate = (url: string, body: unknown = { userId: TARGET }) =>
@@ -163,13 +178,15 @@ describe("starting an impersonation", () => {
   });
 
   it("refuses without a live grant from the target", async () => {
-    const { url, calls } = await start({ granted: [] });
+    const { url, calls, roles } = await start({ granted: [] });
 
     const response = await impersonate(url);
 
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: "no-support-grant" });
     expect(calls).toHaveLength(0);
+    // Nothing was written for a refusal, so a refused attempt leaves no trace.
+    expect(roles).toHaveLength(0);
   });
 
   it("refuses an operator impersonating itself", async () => {
@@ -190,13 +207,15 @@ describe("starting an impersonation", () => {
   });
 
   it("starts the impersonation and relays both cookies", async () => {
-    const { url, calls } = await start({ granted: [TARGET] });
+    const { url, calls, roles } = await start({ granted: [TARGET] });
 
     const response = await impersonate(url);
 
     expect(response.status).toBe(200);
     // The plugin's own endpoint, called the way a browser would.
     expect(calls).toEqual(["/api/auth/admin/impersonate-user"]);
+    // The plugin's gate is the role, so the operator carries it before the call.
+    expect(roles).toEqual([OPERATOR]);
     // Two cookies, in order: the operator's kept under `admin_session`, the target's own.
     expect(response.headers.getSetCookie()).toEqual([
       "better-auth.admin_session=operator; Path=/; HttpOnly",
@@ -261,5 +280,33 @@ describe("an account's own support access", () => {
     });
 
     expect(response.status).toBe(405);
+  });
+});
+
+describe("the plugin's own refusal", () => {
+  it("is a refusal, not a success", async () => {
+    // `mfa-enrollment-required` is the one an operator meets first: an account that may
+    // manage people needs a second factor. Answering 200 would tell the panel an
+    // impersonation had started when nothing had changed.
+    const { url, roles } = await start({
+      granted: [TARGET],
+      pluginRefusal: {
+        code: "mfa-enrollment-required",
+        message: "This account can manage people, so it needs a second factor.",
+        enrollAt: "/two-factor/enable",
+      },
+    });
+
+    const response = await impersonate(url);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: "mfa-enrollment-required",
+      enrollAt: "/two-factor/enable",
+    });
+    expect(response.headers.getSetCookie()).toHaveLength(0);
+    // The role was still written: the refusal is about the operator, not the target.
+    expect(roles).toEqual([OPERATOR]);
   });
 });

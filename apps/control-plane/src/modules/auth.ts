@@ -98,6 +98,8 @@ export interface AuthModuleOptions {
    * a memory store so the consent gate is exercised without a server.
    */
   grants?: GrantStore;
+  /** Writes the plugin's `admin` role for an operator. A test passes a spy. */
+  operatorRoles?: (userId: string) => Promise<void>;
   logger?: Logger;
 }
 
@@ -193,17 +195,38 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
    * composed: with it off, the route refuses before it looks at a grant, so a deployment
    * that never wants this can say so once.
    */
+  const authDatabaseUrl =
+    env.SUITE_AUTH_DATABASE_URL ?? source.SUITE_CONTROL_PLANE_DATABASE_URL ?? "";
+
+  let authPool: Pool | null = null;
+  const database = (): Pool => {
+    authPool ??= new Pool({ connectionString: authDatabaseUrl, max: 2 });
+    return authPool;
+  };
+
   let store: GrantStore | null = options.grants ?? null;
   const grants = (): GrantStore => {
-    store ??= createGrantStore(
-      new Pool({
-        connectionString:
-          env.SUITE_AUTH_DATABASE_URL ?? source.SUITE_CONTROL_PLANE_DATABASE_URL ?? "",
-        max: 1,
-      }),
-    );
+    store ??= createGrantStore(database());
     return store;
   };
+
+  /**
+   * Gives an operator-by-address the role the plugin's own gate reads.
+   *
+   * `SUITE_ADMIN_EMAILS` is this deployment's list, and the panel, the admissions queue
+   * and the template list all answer to it. The admin plugin has its own gate, `role =
+   * "admin"`, and it refuses `impersonate-user` for anything else. One account can be an
+   * operator by the first definition and not the second, so the role is written here, for
+   * an account already judged an operator by address: no account gains a capability from
+   * this that `SUITE_ADMIN_EMAILS` had not already given it.
+   */
+  const operatorRoles =
+    options.operatorRoles ??
+    (async (userId: string): Promise<void> => {
+      await database().query(`UPDATE "user" SET role = 'admin' WHERE id = $1 AND role <> 'admin'`, [
+        userId,
+      ]);
+    });
   /**
    * Whether impersonation exists on this deployment, from the settings row.
    *
@@ -440,15 +463,34 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       return true;
     }
 
+    // The plugin's gate is the role, not the address; see `operatorRoles`.
+    await operatorRoles(session.userId);
     const answered = await pluginCall(entry, "/api/auth/admin/impersonate-user", cookies, {
       userId,
     });
-    logger.warn("operator impersonation started", {
-      actor: session.userId,
-      target: userId,
-      result: answered.ok ? "started" : "refused",
-    });
-    await relayCookies(answered, response);
+    // The plugin answers a refusal as a body with a `code`, not a status: `mfa-
+    // enrollment-required` is the common one, because an account that may manage people
+    // needs a second factor before it may do anything else. Relaying that as a 200 would
+    // tell the panel an impersonation started when it did not.
+    const answeredText = await answered.text();
+    const refusal = refusalOf(answeredText);
+    if (refusal !== null) {
+      logger.warn("operator impersonation refused", {
+        actor: session.userId,
+        target: userId,
+        code: refusal.code,
+      });
+      sendJson(response, 403, {
+        ok: false,
+        error: refusal.code,
+        message: refusal.message,
+        ...(refusal.enrollAt === undefined ? {} : { enrollAt: refusal.enrollAt }),
+      });
+      return true;
+    }
+
+    logger.warn("operator impersonation started", { actor: session.userId, target: userId });
+    await relayCookies(answered, response, answeredText);
     return true;
   }
 
@@ -486,15 +528,20 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
    * of them, in order, because impersonation deletes the operator's `session_token`, keeps
    * it as `admin_session` and sets the target's own.
    */
-  async function relayCookies(answered: Response, response: ServerResponse): Promise<void> {
+  async function relayCookies(
+    answered: Response,
+    response: ServerResponse,
+    body: string | null = null,
+  ): Promise<void> {
     const cookies = answered.headers.getSetCookie?.() ?? [];
-    const body = await answered.text();
+    const text = body ?? (await answered.text());
+    // `text` is read above so the caller can inspect it; this keeps one read.
     for (const cookie of cookies) response.appendHeader?.("set-cookie", cookie);
     if (typeof response.appendHeader !== "function") {
       response.setHeader("set-cookie", cookies);
     }
     response.writeHead(answered.status, { "content-type": "application/json" });
-    response.end(body);
+    response.end(text);
   }
 
   async function handleAccount(
@@ -577,6 +624,26 @@ export function createAuthModule(options: AuthModuleOptions = {}): RouteModule {
       return true;
     },
   };
+}
+
+/**
+ * The plugin's own refusal, when the body is one.
+ *
+ * Better Auth answers an endpoint-level refusal with a `code` and a `message` on a 200,
+ * so a caller that only reads the status reports success for a thing that did not happen.
+ */
+function refusalOf(body: string): { code: string; message: string; enrollAt?: string } | null {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; message?: unknown; enrollAt?: unknown };
+    if (typeof parsed.code !== "string" || parsed.code.length === 0) return null;
+    return {
+      code: parsed.code,
+      message: typeof parsed.message === "string" ? parsed.message : parsed.code,
+      ...(typeof parsed.enrollAt === "string" ? { enrollAt: parsed.enrollAt } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** The request id the host put on the header, when it is there. */

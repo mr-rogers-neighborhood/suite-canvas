@@ -24,6 +24,8 @@ export class AdminApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's own error code, when it sent one, so a caller can act on it. */
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = "AdminApiError";
@@ -36,14 +38,22 @@ export function errorText(cause: unknown): string {
   return "The request failed.";
 }
 
-async function messageFor(response: Response): Promise<string> {
+async function failureFor(response: Response): Promise<{ message: string; code: string | null }> {
   try {
-    const body = (await response.json()) as { error?: unknown };
-    if (typeof body.error === "string" && body.error.trim().length > 0) return body.error;
+    const body = (await response.json()) as { error?: unknown; message?: unknown };
+    if (typeof body.error === "string" && body.error.trim().length > 0) {
+      return {
+        message:
+          typeof body.message === "string" && body.message.trim().length > 0
+            ? body.message
+            : body.error,
+        code: body.error,
+      };
+    }
   } catch {
     // Not JSON; fall through to the status line.
   }
-  return `${response.status} ${response.statusText}`.trim();
+  return { message: `${response.status} ${response.statusText}`.trim(), code: null };
 }
 
 /**
@@ -68,17 +78,18 @@ async function requestUrl<T>(url: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
-    const message = await messageFor(response);
+    const { message, code } = await failureFor(response);
     if (response.status === 401) {
-      throw new AdminApiError(401, message || "Sign in to use the operator surface.");
+      throw new AdminApiError(401, message || "Sign in to use the operator surface.", code);
     }
     if (response.status === 403) {
       throw new AdminApiError(
         403,
         message || "This account is not an operator on this deployment.",
+        code,
       );
     }
-    throw new AdminApiError(response.status, message);
+    throw new AdminApiError(response.status, message, code);
   }
   return (await response.json()) as T;
 }
@@ -339,7 +350,10 @@ export async function downloadExport(workspaceId: string): Promise<void> {
   } catch {
     throw new AdminApiError(0, "Could not reach the collab server.");
   }
-  if (!response.ok) throw new AdminApiError(response.status, await messageFor(response));
+  if (!response.ok) {
+    const { message, code } = await failureFor(response);
+    throw new AdminApiError(response.status, message, code);
+  }
 
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
@@ -459,4 +473,80 @@ export async function sendTestMail(to: string): Promise<{ ok: boolean; transport
     method: "POST",
     body: JSON.stringify({ to }),
   });
+}
+
+/**
+ * The signed-in operator's own second factor.
+ *
+ * The admin plugin refuses impersonation from an account that can manage people and has
+ * no second factor, so the panel has to be able to enrol one — otherwise the feature is
+ * reachable only by whoever can call the endpoint by hand. The secret is returned once,
+ * as an `otpauth://` URI, and the backup codes once; neither is readable afterwards.
+ */
+const TWO_FACTOR_BASE = `${authServiceBase()}/api/auth/two-factor`;
+
+export interface OwnSession {
+  email: string;
+  twoFactorEnabled: boolean;
+}
+
+export async function readOwnSession(): Promise<OwnSession | null> {
+  const authorization = await credentialAuthorization();
+  const response = await fetch(`${authServiceBase()}/api/auth/get-session`, {
+    headers: { ...authorization },
+    credentials: "include",
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as {
+    user?: { email?: unknown; twoFactorEnabled?: unknown };
+  } | null;
+  if (body?.user === undefined || typeof body.user.email !== "string") return null;
+  return {
+    email: body.user.email,
+    twoFactorEnabled: body.user.twoFactorEnabled === true,
+  };
+}
+
+export interface TotpEnrolment {
+  totpURI: string;
+  backupCodes: string[];
+}
+
+export async function beginTotpEnrolment(password: string): Promise<TotpEnrolment> {
+  const authorization = await credentialAuthorization();
+  const response = await fetch(`${TWO_FACTOR_BASE}/enable`, {
+    method: "POST",
+    headers: { ...authorization, "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ password }),
+  });
+  if (!response.ok) {
+    const { message, code } = await failureFor(response);
+    throw new AdminApiError(response.status, message, code);
+  }
+  const body = (await response.json()) as { totpURI?: unknown; backupCodes?: unknown };
+  if (typeof body.totpURI !== "string") {
+    throw new AdminApiError(500, "The server did not return a secret to enrol.");
+  }
+  return {
+    totpURI: body.totpURI,
+    backupCodes: Array.isArray(body.backupCodes)
+      ? body.backupCodes.filter((entry): entry is string => typeof entry === "string")
+      : [],
+  };
+}
+
+/** Confirms the secret with one code, which is what turns the factor on. */
+export async function confirmTotp(code: string): Promise<void> {
+  const authorization = await credentialAuthorization();
+  const response = await fetch(`${TWO_FACTOR_BASE}/verify-totp`, {
+    method: "POST",
+    headers: { ...authorization, "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ code: code.trim() }),
+  });
+  if (!response.ok) {
+    const { message, code: failureCode } = await failureFor(response);
+    throw new AdminApiError(response.status, message, failureCode);
+  }
 }

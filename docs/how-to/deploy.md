@@ -520,6 +520,11 @@ the operator's role.
 | Consent | the `operator_support_grants` table, written from the account's own session |
 | The second factor | required: the admin plugin refuses an impersonation for an account without 2FA |
 
+An operator needs a second factor of their own before impersonating: the admin plugin
+refuses an account that can manage people without one, and the Accounts tab enrols it: the
+password, then the `otpauth://` URI into an authenticator, then one code. That is a
+condition of the role, not of the panel, so it holds however the request arrives.
+
 The account turns consent on from **Support access…** in the app's File menu, and can turn
 it off there without asking anyone. The operator sees the grant in the Accounts list and
 may only *end* it; a request that tries to grant it is refused with `consent-is-the-accounts`,

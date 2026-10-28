@@ -36,13 +36,38 @@ const accounts = [
   },
 ];
 
-const impersonate = vi.fn(async () => {});
+const impersonate = vi.fn<() => Promise<void>>(async () => {});
+class FakeApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code: string | null = null,
+  ) {
+    super(message);
+  }
+}
 const stopImpersonating = vi.fn(async () => {});
 const revokeSupportAccess = vi.fn(async () => {});
 
 vi.mock("../api", () => ({
-  errorText: (cause: unknown) => String(cause),
+  // The class has to be built inside the factory: `vi.mock` is hoisted above the file.
+  AdminApiError: class extends Error {
+    constructor(
+      readonly status: number,
+      message: string,
+      readonly code: string | null = null,
+    ) {
+      super(message);
+    }
+  },
+  errorText: (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
   listAccounts: async () => ({ ok: true, accounts }),
+  readOwnSession: async () => ({ email: "op@example.com", twoFactorEnabled: false }),
+  beginTotpEnrolment: async () => ({
+    totpURI: "otpauth://totp/Suite:op@example.com?secret=ABC",
+    backupCodes: ["a-b", "c-d"],
+  }),
+  confirmTotp: async () => {},
   impersonate: (...args: unknown[]) => impersonate(...(args as [])),
   stopImpersonating: () => stopImpersonating(),
   revokeSupportAccess: (...args: unknown[]) => revokeSupportAccess(...(args as [])),
@@ -112,5 +137,39 @@ describe("the accounts panel", () => {
     fireEvent.click(screen.getByText("Stop impersonating"));
     await waitFor(() => expect(stopImpersonating).toHaveBeenCalled());
     expect(window.sessionStorage.getItem("suite.admin.impersonating")).toBeNull();
+  });
+});
+
+describe("when the operator has no second factor", () => {
+  it("says how to fix it, rather than guessing", async () => {
+    impersonate.mockRejectedValueOnce(
+      new FakeApiError(
+        403,
+        "This account can manage people, so it needs a second factor.",
+        "mfa-enrollment-required",
+      ),
+    );
+    render(<AccountsPanel />);
+    await waitFor(() => expect(screen.getByText("allowed@example.com")).toBeTruthy());
+
+    const button = byAccount("user-allowed").querySelector(
+      "button[class*='primary']",
+    ) as HTMLButtonElement;
+    fireEvent.click(button);
+
+    expect((await screen.findByTestId("mfa-hint")).textContent).toContain("second factor");
+    // The impersonation did not start, so there is nothing to stop.
+    expect(screen.queryByTestId("impersonation-banner")).toBeNull();
+  });
+});
+
+describe("the second factor card", () => {
+  it("offers enrolment when the account has none", async () => {
+    render(<AccountsPanel />);
+
+    expect((await screen.findByTestId("second-factor")).textContent).toContain(
+      "needs a second factor",
+    );
+    expect(screen.getByLabelText("Your password")).toBeTruthy();
   });
 });

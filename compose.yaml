@@ -208,14 +208,29 @@ services:
       SUITE_AUTH_MAX_ORGS_PER_USER: ${SUITE_AUTH_MAX_ORGS_PER_USER:-}
       SUITE_TURNSTILE_SECRET: ${SUITE_TURNSTILE_SECRET:-}
       SUITE_ADMISSION_REQUIRED: ${SUITE_ADMISSION_REQUIRED:-}
+      SUITE_AUTH_REQUIRE_VERIFICATION: ${SUITE_AUTH_REQUIRE_VERIFICATION:-1}
+      # Mail. A local stack sets `console`, which writes the message to this
+      # container's log; a deployment that leaves the transport out gets the
+      # console transport too, which is why a verification link is never
+      # delivered until one of these is set.
+      SUITE_MAIL_TRANSPORT: ${SUITE_MAIL_TRANSPORT:-console}
+      SUITE_MAIL_FROM: ${SUITE_MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SUITE_SMTP_URL: ${SUITE_SMTP_URL:-}
       # Who may use the operator surface: the admissions queue and the starter
       # templates. Read here and on the relay, so one list answers both.
       SUITE_ADMIN_EMAILS: ${SUITE_ADMIN_EMAILS:-}
-      # Billing, as `services/billing/src/stripe/plugin.ts` reads it.
+      # Billing, as `services/billing/src/stripe/plugin.ts` reads it. The panel's
+      # saved rows beat these; a mode switch reads only its own `_LIVE` set.
       SUITE_BILLING_ENABLED: ${SUITE_BILLING_ENABLED:-0}
+      SUITE_BILLING_MODE: ${SUITE_BILLING_MODE:-test}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_TIERS: ${STRIPE_PRICE_TIERS:-}
+      STRIPE_SECRET_KEY_LIVE: ${STRIPE_SECRET_KEY_LIVE:-}
+      STRIPE_WEBHOOK_SECRET_LIVE: ${STRIPE_WEBHOOK_SECRET_LIVE:-}
+      STRIPE_PRICE_TIERS_LIVE: ${STRIPE_PRICE_TIERS_LIVE:-}
+      SUITE_SETTINGS_KEY: ${SUITE_SETTINGS_KEY:-}
       # Account deletion reaches the relay's own delete route with this pair.
       # Empty leaves documents, shares and attachments in place and reports them
       # as not-configured, which is the self-host answer.

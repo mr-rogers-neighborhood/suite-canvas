@@ -28,6 +28,29 @@ export function edgeTouches(edge: GraphEdge, endpoint: LinkEndpoint): boolean {
   return sameEndpoint(ends.source, endpoint) || sameEndpoint(ends.target, endpoint);
 }
 
+/** True when the link joins exactly these two ends, in either direction. */
+export function joinsEndpoints(
+  edge: GraphEdge,
+  source: LinkEndpoint,
+  target: LinkEndpoint,
+): boolean {
+  const ends = edgeEndpoints(edge);
+  return (
+    (sameEndpoint(ends.source, source) && sameEndpoint(ends.target, target)) ||
+    (sameEndpoint(ends.source, target) && sameEndpoint(ends.target, source))
+  );
+}
+
+/** True when `source` is the link's *far* end, so the two ends arrive swapped. */
+export function joinsReversed(edge: GraphEdge, source: LinkEndpoint): boolean {
+  return !sameEndpoint(edgeEndpoints(edge).source, source);
+}
+
+/** True when neither end names a dot: the line was drawn before its dots were known. */
+export function isUnpinned(edge: GraphEdge): boolean {
+  return edge.sourceConnector === undefined && edge.targetConnector === undefined;
+}
+
 /**
  * A link from a thing to itself. It is refused *unless* it is a card joining two
  * of its own connectors: that draws a loop on the canvas, means nothing

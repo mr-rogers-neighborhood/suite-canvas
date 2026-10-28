@@ -626,6 +626,15 @@ export class WorkspaceDocument extends CardsFacade {
     return this.edgesApi.addEdge(input);
   }
 
+  /**
+   * Adds the link a caller planned, or puts its dots on the line already there. A
+   * template or an import leaves an unpinned link between the same two things; a
+   * second pinned line beside it reads as a duplicate.
+   */
+  linkEndpoints(input: CreateEdgeInput): GraphEdge | null {
+    return this.edgesApi.linkEndpoints(input);
+  }
+
   listLinksTo(kind: EdgeEndpointKind, id: string): GraphEdge[] {
     return this.edgesApi.listLinksTo(kind, id);
   }

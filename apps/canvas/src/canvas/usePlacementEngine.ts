@@ -242,7 +242,10 @@ export function usePlacementEngine(): PlacementEngine {
                 target: next.overrides?.target ?? null,
               },
             });
-            workspace.addEdge({
+            // The dots are known here, so a link these two cards already had — from a
+            // template, an import, a quick connect — takes them rather than gaining a
+            // second line beside it.
+            workspace.linkEndpoints({
               boardId: activeBoardId,
               source: plan.linkFrom.cardId,
               target: plan.head,

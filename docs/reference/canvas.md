@@ -84,6 +84,13 @@ A link is one `GraphEdge`. Both ends name a node and optionally a connector:
 SVG path with no React, Loro or DOM in sight. The edge component, the section-link layer and the tests
 all call the same functions, which is what keeps a preview and the finished link on the same curve.
 
+A line left without dots by a template, an import, a paste or a quick connect is *unpinned*. When a
+placement run links those two cards knowing the dots the line leaves and arrives on,
+`WorkspaceDocument.linkEndpoints` puts them on the record that is already there: a pinned line beside an
+unpinned one is two lines between the same pair on screen, which reads as a duplicate the reader cannot
+undo on its own. Two links between the same pair on *different* dots is still two links, because that is
+a difference the reader can mean.
+
 A board end has no position, so it draws through the first portal card pointing at that board. With no
 portal on the board there is no line, and the link survives in the inspector. A link whose two ends are
 not both on this board is not drawn at all; the record is untouched.

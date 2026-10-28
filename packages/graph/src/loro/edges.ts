@@ -1,6 +1,15 @@
 import type { LoroMap } from "loro-crdt";
 import { createConnectorId, nextFreeAnchor, snapToAnchor } from "../connectors.js";
-import { edgeEndpoints, edgeTouches, isSelfLink, type LinkEndpoint, linkKey } from "../links.js";
+import {
+  edgeEndpoints,
+  edgeTouches,
+  isSelfLink,
+  isUnpinned,
+  joinsEndpoints,
+  joinsReversed,
+  type LinkEndpoint,
+  linkKey,
+} from "../links.js";
 import { edgeFromMap, normalizeEdge } from "../records/entities.js";
 import { isMap, writeSurfaceStyle } from "../records/values.js";
 import {
@@ -192,6 +201,47 @@ export function edgesMethods(ctx: DocContext) {
       ctx.api.edges.applyEdge(edge);
       ctx.commit(`${STRUCT_ORIGIN}add-edge`);
       return edge;
+    },
+
+    /**
+     * Links two endpoints, refining the line already between them instead of drawing
+     * a second one beside it.
+     *
+     * A link can be made before its dots are known — a template, an import, a paste —
+     * and such a line is unpinned. When a caller now knows the dots the link leaves
+     * and arrives on, the existing record takes them. Adding a pinned line next to an
+     * unpinned one puts two lines between the same pair on screen, which reads as a
+     * duplicate the reader never asked for.
+     */
+    linkEndpoints(input: CreateEdgeInput): GraphEdge | null {
+      const source: LinkEndpoint = { kind: input.sourceKind ?? "card", id: input.source };
+      const target: LinkEndpoint = { kind: input.targetKind ?? "card", id: input.target };
+      const pinned = input.sourceConnector !== undefined || input.targetConnector !== undefined;
+      if (pinned) {
+        const existing = ctx.api.edges
+          .listEdges()
+          .find(
+            (edge) =>
+              edge.boardId === input.boardId &&
+              isUnpinned(edge) &&
+              joinsEndpoints(edge, source, target),
+          );
+        if (existing) {
+          // The record keeps its own direction: the dots belong to the ends the caller
+          // named, and the line may have been drawn the other way round.
+          const reversed = joinsReversed(existing, source);
+          ctx.api.edges.mutateEdge(existing.id, (fields) => {
+            const write = (end: "source" | "target", connector: string | undefined) => {
+              if (connector === undefined) return;
+              fields.set(end === "source" ? "sourceConnector" : "targetConnector", connector);
+            };
+            write(reversed ? "target" : "source", input.sourceConnector);
+            write(reversed ? "source" : "target", input.targetConnector);
+          });
+          return ctx.api.edges.cachedEdge(existing.id) ?? null;
+        }
+      }
+      return ctx.api.edges.addEdge(input);
     },
 
     /** A link may only point at a thing that exists in this workspace. */

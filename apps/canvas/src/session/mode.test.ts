@@ -250,6 +250,9 @@ describe("standalone guard rails", () => {
     // The launcher's starter list is asked for over HTTP, but a standalone build has
     // no control plane: it keeps the built-ins the bundle carries instead.
     "launcher/starterTemplates.ts": /isStandalone\(\)/u,
+    // A cover link is fetched by the panel, and the bytes only reach the relay through
+    // `relayUploader`, which returns null where there is no relay to reach.
+    "styles/coverFromUrl.ts": /relayUploader\(\)/u,
   };
 
   function sourceFiles(directory: string): string[] {

@@ -1,4 +1,6 @@
 import type { CardAttachment } from "@suite/graph";
+import { useState } from "react";
+import { CoverImportError, importCoverFromUrl } from "./coverFromUrl";
 import { useAttachmentSource, useCoverCandidates } from "./useBoardCover";
 
 export interface BoardCoverPickerProps {
@@ -27,6 +29,31 @@ export function BoardCoverPicker({
 }: BoardCoverPickerProps) {
   const candidates = useCoverCandidates();
   const current = useAttachmentSource(coverId);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  /**
+   * A link is the one cover that does not exist anywhere yet, so it is imported into an
+   * attachment first — the board then stores an id like every other cover, and nothing
+   * downstream has to know a cover can be a URL.
+   */
+  const applyLink = async () => {
+    if (disabled || busy || link.trim().length === 0) return;
+    setBusy(true);
+    setRefusal(null);
+    try {
+      onPick(await importCoverFromUrl(link));
+      setLink("");
+    } catch (error) {
+      // One line, and the cover that was there stays there.
+      setRefusal(
+        error instanceof CoverImportError ? error.message : "That link could not be used.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <section className="mt-3" data-testid="board-cover-picker" data-board-id={boardId}>
@@ -61,9 +88,45 @@ export function BoardCoverPicker({
         </div>
       </div>
 
+      <div className="mt-2 flex items-center gap-1" data-testid="board-cover-link">
+        <input
+          type="url"
+          value={link}
+          placeholder="Paste an image link"
+          aria-label="Image link for the cover"
+          data-testid="board-cover-link-input"
+          disabled={disabled || busy}
+          className="min-w-0 flex-1 rounded border border-[var(--hairline)] bg-transparent px-2 py-1 text-[11px]"
+          onChange={(event) => {
+            setLink(event.target.value);
+            setRefusal(null);
+          }}
+          onKeyDown={(event) => {
+            // The field is the whole gesture here: a link and Enter is a cover.
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void applyLink();
+          }}
+        />
+        <button
+          type="button"
+          className="library-action"
+          data-testid="board-cover-link-apply"
+          disabled={disabled || busy || link.trim().length === 0}
+          onClick={() => void applyLink()}
+        >
+          {busy ? "Reading…" : "Use link"}
+        </button>
+      </div>
+      {refusal ? (
+        <p className="mt-1 text-[11px] text-[var(--danger)]" data-testid="board-cover-link-error">
+          {refusal}
+        </p>
+      ) : null}
+
       {candidates.length === 0 ? (
         <p className="mt-1 text-[11px] text-[var(--ink-muted)]" data-testid="board-cover-empty">
-          Paste an image into any card and it becomes available here.
+          Paste an image into any card — or use a link above — and it becomes available here.
         </p>
       ) : (
         <ul className="mt-1 flex flex-wrap gap-1" data-testid="board-cover-options">

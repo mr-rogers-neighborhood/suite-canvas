@@ -4,6 +4,7 @@ import { DocumentAnnouncer } from "./DocumentAnnouncer";
 import { useFailureToasts } from "./failures";
 import { LiveRegion } from "./LiveRegion";
 import { type SaveState, useSaveState } from "./saveState";
+import { useStorageFill } from "./storageFill";
 import { SAVE_LABEL } from "./syncState";
 import { ToastLayer } from "./ToastLayer";
 import { toast } from "./toast";
@@ -20,6 +21,7 @@ import { toast } from "./toast";
  */
 export function FeedbackHost() {
   useFailureToasts();
+  useStorageFill();
   useSaveStateAnnouncement();
 
   return (

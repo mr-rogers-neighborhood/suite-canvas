@@ -122,6 +122,8 @@ Three questions that used `window.confirm` ask in the surface that owns them. De
 
 One confirmation asks for more than a press. `DeleteWorkspaceDialog` requires the workspace name or id to be typed and reports a failure inline without touching the local copy. Leaving a workspace asks nothing: an in-app dialog and the browser's tab-close prompt both stood there once, and both were removed because they fired for signed-in readers whose work was already synced and could not be acted on. Whether this browser keeps the copy is reported by the storage ladder, in `StoragePanel`.
 
+Storage is the one thing that warns without being asked, because a browser clears an origin's data without telling anyone. `apps/canvas/src/feedback/storageFill.ts` samples `navigator.storage.estimate()` as the document grows (a leading-edge throttle in `storage/estimateWatch.ts`, so a keystroke burst measures once) and toasts at two crossings: `FILL_THRESHOLDS.low` at 70% as a neutral line, and `FILL_THRESHOLDS.critical` at 90% as an urgent failure. Both offer one action, *Export a copy*, because a file survives a cleanup and nothing else on that page does. A crossing is news once: the stage has to fall back to `fine` and climb again before the same line is repeated. The rung-based warning for a copy the browser has not promised to keep is a separate rule, and it stays in the panel rather than interrupting.
+
 `DisplayStyleDialog` edits one display template with preset buttons, a live preview through `ValueTemplate`, and a scope choice between this instance and the field.
 
 ## Styles and appearance

@@ -4,10 +4,10 @@ import { type PersistState, type QuotaFailure, useDurabilityStore } from "./dura
 /**
  * Whether this device's copy is at risk, in one place.
  *
- * The sync panel asks this for its warning row and the shell asks it for the one
- * toast a reader gets when the browser refuses to keep the workspace. It answers
- * from `storageLadder()` rather than inventing a second rule, so the row and the
- * toast cannot disagree about when a warning is warranted.
+ * The sync panel's `Details` asks this for its warning row, and it answers from
+ * `storageLadder()` rather than inventing a second rule, so the row and the ladder cannot
+ * disagree about when a warning is warranted. The toast for a *refused* write is raised by
+ * `feedback/failures.ts` from the durability store, which is the same event seen as news.
  */
 
 export const STORAGE_AT_RISK_WARNING =

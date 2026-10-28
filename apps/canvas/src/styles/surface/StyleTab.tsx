@@ -1,53 +1,9 @@
-import type {
-  StyleEdgeFlow,
-  StyleEdgePaint,
-  StyleShape,
-  StyleSide,
-  SurfaceStyle,
-  WorkspaceDocument,
-} from "@suite/graph";
-import {
-  styleEdgeFlows,
-  styleEdgePaints,
-  styleShapes,
-  styleSides,
-  TEXT_SCALE_MAX,
-  TEXT_SCALE_MIN,
-} from "@suite/graph";
+import type { StyleEdgePaint, StyleSide, SurfaceStyle, WorkspaceDocument } from "@suite/graph";
+import { styleShapes, styleSides, TEXT_SCALE_MAX, TEXT_SCALE_MIN } from "@suite/graph";
 import { useSurfacePaint } from "../../canvas/surfaceContext";
 import { isShapedSurface } from "../../canvas/surfacePaint";
+import { FLOW_OPTIONS, PAINT_OPTIONS, SHAPE_LABELS, SIDE_LABELS } from "../styleOptions";
 import { type StyleSurfaceKind, useStyleDraft } from "./useStyleDraft";
-
-const SHAPE_LABELS: Record<StyleShape, string> = {
-  rect: "Rectangle",
-  pill: "Pill",
-  diamond: "Diamond",
-  parallelogram: "Parallelogram",
-  circle: "Circle",
-  document: "Document",
-  database: "Database",
-  hexagon: "Hexagon",
-};
-
-const SIDE_LABELS: Record<StyleSide, string> = {
-  top: "Top",
-  right: "Right",
-  bottom: "Bottom",
-  left: "Left",
-};
-
-const FLOW_LABELS: Record<StyleEdgeFlow, string> = {
-  none: "Still",
-  forward: "Along the link",
-  reverse: "Reversed",
-};
-
-const PAINT_LABELS: Record<StyleEdgePaint, string> = {
-  solid: "Solid",
-  dashed: "Dashed",
-  dotted: "Dotted",
-  none: "None",
-};
 
 /**
  * An enumerated choice as chips, which is the only shape this editor uses for one.
@@ -289,10 +245,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               testId="style-line-paint"
               value={current.sides?.top?.paint ?? "solid"}
               disabled={!canEdit}
-              options={styleEdgePaints.map((paint) => ({
-                value: paint,
-                label: PAINT_LABELS[paint],
-              }))}
+              options={PAINT_OPTIONS}
               onSelect={(paint) => setLinePaint(paint ?? "solid")}
             />
             <label className="style-tab__row">
@@ -326,12 +279,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               testId="style-line-flow"
               value={current.sides?.top?.flow ?? undefined}
               disabled={!canEdit}
-              options={[
-                { value: undefined, label: "Along the link" },
-                ...styleEdgeFlows
-                  .filter((flow) => flow !== "forward")
-                  .map((flow) => ({ value: flow, label: FLOW_LABELS[flow] })),
-              ]}
+              options={FLOW_OPTIONS}
               onSelect={(flow) => {
                 const stroke = current.sides?.top;
                 update({
@@ -350,10 +298,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
             testId="style-outline"
             value={current.sides?.top?.paint ?? "solid"}
             disabled={!canEdit}
-            options={styleEdgePaints.map((paint) => ({
-              value: paint,
-              label: PAINT_LABELS[paint],
-            }))}
+            options={PAINT_OPTIONS}
             onSelect={(paint) => setOutline(paint ?? "solid")}
           />
         ) : (
@@ -364,10 +309,7 @@ export function StyleTab({ kind, id, canEdit, workspace = null, typeName = null 
               testId={`style-side-${side}`}
               value={current.sides?.[side]?.paint ?? "solid"}
               disabled={!canEdit}
-              options={styleEdgePaints.map((paint) => ({
-                value: paint,
-                label: PAINT_LABELS[paint],
-              }))}
+              options={PAINT_OPTIONS}
               onSelect={(paint) => setSide(side, paint ?? "solid")}
             />
           ))

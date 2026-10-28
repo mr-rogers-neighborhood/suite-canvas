@@ -62,17 +62,32 @@ export function bulkStyleWrites(
   }));
 }
 
+/** A stable string for a style value, so two equal records compare equal whatever
+ * order their keys were written in. */
+function styleKey(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((name) => `${name}:${styleKey(record[name])}`)
+    .join(",")}}`;
+}
+
 /**
  * The value every selected card agrees on, so a bulk control can show it.
  *
  * `mixed` is what a "3 cards" bar has to say instead of pretending one card's
- * shape speaks for the others.
+ * shape speaks for the others. Any style key works — a record key like `sides`
+ * compares by content, because two cards can arrive at the same edges through
+ * different writes.
  */
-export function sharedStyleValue<K extends "shape" | "surface">(
+export function sharedStyleValue<K extends keyof SurfaceStyle>(
   targets: readonly StyledCardTarget[],
   key: K,
 ): { mixed: boolean; value: SurfaceStyle[K] | undefined } {
   const first = targets[0]?.style?.[key];
-  const mixed = targets.some((target) => target.style?.[key] !== first);
+  const mixed = targets.some(
+    (target) => styleKey(target.style?.[key] ?? null) !== styleKey(first ?? null),
+  );
   return { mixed, value: mixed ? undefined : first };
 }

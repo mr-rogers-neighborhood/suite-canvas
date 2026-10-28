@@ -53,13 +53,74 @@ describe("bulk style bar", () => {
     expect(doc.getCard(second.id)?.style).toEqual({ radius: 16 });
   });
 
-  it("lets the selection choose a fill colour", () => {
+  it("lets the selection choose a fill colour, in the inspector's words", () => {
     const { doc, first, targets } = seed();
 
     render(<BulkStyleBar targets={targets} canEdit workspace={doc} />);
-    fireEvent.change(screen.getByTestId("bulk-style-surface"), { target: { value: "canvas" } });
+    // The bar reads its labels from `styles/styleOptions`, so the chip says what the
+    // inspector's swatch says rather than a second vocabulary for one field.
+    const chip = screen.getByTestId("bulk-style-surface-canvas");
+    expect(chip).toHaveTextContent("Canvas");
+    fireEvent.click(chip);
 
     expect(doc.getCard(first.id)?.style).toEqual({ surface: "canvas" });
+  });
+
+  it("offers the same shape words as the single-card editor", () => {
+    const { doc, targets } = seed();
+
+    render(<BulkStyleBar targets={targets} canEdit workspace={doc} />);
+
+    for (const [value, label] of Object.entries({
+      default: "Default",
+      rect: "Rectangle",
+      pill: "Pill",
+      diamond: "Diamond",
+      parallelogram: "Parallelogram",
+      circle: "Circle",
+      document: "Document",
+      database: "Database",
+      hexagon: "Hexagon",
+    })) {
+      expect(screen.getByTestId(`bulk-style-shape-${value}`)).toHaveTextContent(label);
+    }
+  });
+
+  it("writes one outline to every edge, because a shape has one", () => {
+    const { doc, first, targets } = seed();
+
+    render(<BulkStyleBar targets={targets} canEdit workspace={doc} />);
+    fireEvent.click(screen.getByTestId("bulk-style-outline-dashed"));
+
+    expect(doc.getCard(first.id)?.style?.sides).toEqual({
+      top: { paint: "dashed" },
+      right: { paint: "dashed" },
+      bottom: { paint: "dashed" },
+      left: { paint: "dashed" },
+    });
+  });
+
+  it("marks a value the selection disagrees about instead of picking one", () => {
+    const doc = new WorkspaceDocument();
+    const board = doc.createBoard({ name: "Home" });
+    const first = doc.createCard({ boardId: board.id, position: { x: 0, y: 0 } });
+    const second = doc.createCard({ boardId: board.id, position: { x: 400, y: 0 } });
+    doc.setCardStyle(first.id, { shape: "pill" });
+    doc.setCardStyle(second.id, { shape: "diamond" });
+
+    render(
+      <BulkStyleBar
+        targets={[
+          { id: first.id, style: doc.getCard(first.id)?.style },
+          { id: second.id, style: doc.getCard(second.id)?.style },
+        ]}
+        canEdit
+        workspace={doc}
+      />,
+    );
+
+    expect(screen.getByTestId("bulk-style-shape-pill")).toHaveAttribute("data-mixed", "true");
+    expect(screen.getByTestId("bulk-style-shape-pill")).not.toHaveAttribute("data-checked");
   });
 
   it("does not write when the session cannot edit the layout", () => {

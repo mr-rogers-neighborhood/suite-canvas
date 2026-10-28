@@ -90,6 +90,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  /* The row is a `fieldset` so its chips are one labelled group for a screen
+     reader; the browser's box around it is not part of the design. */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
 }
 
 .bulk-style-chip {

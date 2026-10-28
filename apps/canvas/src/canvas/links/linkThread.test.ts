@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  gestureMode,
   isArmed,
   isChaining,
+  modifierMode,
   sameConnector,
   stepFan,
   stepLink,
+  stepShape,
   stepThread,
+  useLinkThreadStore,
 } from "./linkThread";
 
 const a = { kind: "card" as const, id: "card-a", connectorId: "a-right" };
@@ -164,12 +166,42 @@ describe("fan mode", () => {
   });
 
   it("reads a held key as the mode it implies", () => {
-    expect(gestureMode({ ctrlKey: true, mode: "place" })).toBe("fan");
-    expect(gestureMode({ shiftKey: true, mode: "place" })).toBe("thread");
+    expect(modifierMode({ ctrlKey: true })).toBe("fan");
+    expect(modifierMode({ shiftKey: true })).toBe("thread");
     // Control is the more specific gesture when both are down.
-    expect(gestureMode({ shiftKey: true, ctrlKey: true, mode: "thread" })).toBe("fan");
-    expect(gestureMode({ mode: "fan" })).toBe("fan");
-    expect(gestureMode({ mode: "place" })).toBe("place");
+    expect(modifierMode({ shiftKey: true, ctrlKey: true })).toBe("fan");
+    expect(modifierMode({})).toBe(null);
+  });
+
+  /**
+   * The bug this covers: a fan started by *holding* Control became a thread on the
+   * next click, because the shape was read from the stored mode again once the key
+   * came up. The spokes then left from the card clicked second, so the graph was a
+   * chain nobody asked for instead of a hub.
+   */
+  it("keeps a fan a fan after the key that started it is released", () => {
+    const armedShape = stepShape({ ctrlKey: true, mode: "place", armedShape: null });
+    expect(armedShape).toBe("fan");
+
+    // Key up, no modifier, nothing chosen in the control: the arm still decides.
+    const afterRelease = stepShape({ mode: "place", armedShape });
+    expect(afterRelease).toBe("fan");
+    expect(stepLink(afterRelease, origin, spokeB)).toEqual({
+      armed: origin,
+      link: { from: origin, to: spokeB },
+      handoff: false,
+    });
+    expect(stepLink(afterRelease, origin, spokeC).link).toEqual({ from: origin, to: spokeC });
+  });
+
+  it("still lets a held key say what it means over a stale arm", () => {
+    expect(stepShape({ shiftKey: true, mode: "place", armedShape: "fan" })).toBe("thread");
+    expect(stepShape({ ctrlKey: true, mode: "place", armedShape: "thread" })).toBe("fan");
+  });
+
+  it("falls back to the stored mode when nothing is armed", () => {
+    expect(stepShape({ mode: "thread", armedShape: null })).toBe("thread");
+    expect(stepShape({ mode: "place", armedShape: null })).toBe("place");
   });
 
   it("chains without a modifier when the mode is fan", () => {
@@ -177,5 +209,39 @@ describe("fan mode", () => {
     expect(isChaining({ mode: "thread" })).toBe(true);
     expect(isChaining({ mode: "place" })).toBe(false);
     expect(isChaining({ mode: "place", ctrlKey: true })).toBe(true);
+  });
+});
+
+describe("the armed origin", () => {
+  const origin = { kind: "card" as const, id: "a", connectorId: "a1" };
+
+  // One store for the module, so each test starts from an unarmed canvas.
+  beforeEach(() => useLinkThreadStore.getState().clear());
+
+  it("records the shape it draws, and forgets it when the arm ends", () => {
+    const store = useLinkThreadStore.getState();
+    store.arm(origin, "gesture", "fan");
+    expect(useLinkThreadStore.getState().armedShape).toBe("fan");
+
+    store.clear();
+    expect(useLinkThreadStore.getState().armedShape).toBe(null);
+    expect(useLinkThreadStore.getState().armed).toBe(null);
+  });
+
+  it("drops the hovered target whenever the arm changes", () => {
+    const store = useLinkThreadStore.getState();
+    store.arm(origin, "mode", "fan");
+    store.setTarget({ kind: "card", id: "b", connectorId: "b1" });
+    expect(useLinkThreadStore.getState().target?.id).toBe("b");
+
+    // A new arm asks a new question; the dot hovered before it means nothing now.
+    store.arm(origin, "mode", "fan");
+    expect(useLinkThreadStore.getState().target).toBe(null);
+  });
+
+  it("ignores a target while nothing is armed", () => {
+    const store = useLinkThreadStore.getState();
+    store.setTarget({ kind: "card", id: "b", connectorId: "b1" });
+    expect(useLinkThreadStore.getState().target).toBe(null);
   });
 });

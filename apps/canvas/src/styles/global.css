@@ -1798,6 +1798,15 @@ html[data-inspector-linking] .card-inspector {
   fill: var(--accent);
 }
 
+/* A dot the next link would land on: the band is already touching it, and the ring
+   says the connection is real rather than approximate. */
+.section-link-preview__target {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.85;
+}
+
 .section-link-arrow {
   fill: var(--ink-muted);
 }

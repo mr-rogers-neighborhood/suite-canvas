@@ -3,6 +3,7 @@ import { useUpdateNodeInternals } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import type { PresenceUser } from "../collab/presence";
 import { Connector, type Point } from "../presence/Connector";
+import { useLinkThreadStore } from "./links/linkThread";
 import { usePlacementRunStore } from "./placementRun";
 import { edgePoint, readSilhouette, type Silhouette } from "./silhouette";
 
@@ -277,6 +278,17 @@ export function NodeConnectors({
           onMove={(position) => onMove?.(connector.id, position)}
           onMoveFinished={onMoveFinished}
           onContextMenu={(event, id) => onContextMenu?.(event, id)}
+          onHoverStart={() =>
+            useLinkThreadStore
+              .getState()
+              .setTarget({ kind: "card", id: nodeId, connectorId: connector.id })
+          }
+          onHoverEnd={() => {
+            const thread = useLinkThreadStore.getState();
+            if (thread.target?.connectorId === connector.id && thread.target.id === nodeId) {
+              thread.setTarget(null);
+            }
+          }}
         />
       ))}
     </div>

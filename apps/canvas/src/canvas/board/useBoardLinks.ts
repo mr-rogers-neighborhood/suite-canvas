@@ -80,14 +80,16 @@ export function useBoardLinks(
     anchorEnd: "source" | "target";
   } | null>(null);
 
-  // Releasing the key that started an origin ends it: the modifier was the mode.
-  // Shift chains, Control webs, and an origin started from the control keeps
-  // going because nothing is being held.
+  // Releasing the key that started a *thread* ends it: the modifier was the mode.
+  // A fan does not end this way — its origin is a hub the reader keeps clicking
+  // from, and dropping it on key-up is what turned a fan into a chain from
+  // whichever card was clicked second. Clicking the origin, Escape and leaving the
+  // mode are the ways out.
   useEffect(() => {
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key !== "Shift" && event.key !== "Control") return;
       const state = useLinkThreadStore.getState();
-      if (state.armedBy === "gesture") state.clear();
+      if (state.armedBy === "gesture" && state.armedShape !== "fan") state.clear();
     };
     window.addEventListener("keyup", onKeyUp);
     return () => window.removeEventListener("keyup", onKeyUp);

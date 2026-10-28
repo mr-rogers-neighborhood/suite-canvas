@@ -10,7 +10,7 @@ import {
 } from "../../presence/Connector";
 import { PeerNameTag } from "../../presence/PeerNameTag";
 import { useUiStore } from "../../store/useUiStore";
-import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "../links/linkThread";
+import { isChaining, stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
 import type { SectionOffset } from "./sectionLayout";
@@ -385,19 +385,23 @@ export function SectionLayer({
           return;
         }
         const clicked = { kind: "section" as const, id: section.id, connectorId: connector.id };
-        // A fan keeps its origin, a thread moves to the connector just clicked.
-        const gesture = gestureMode({
+        // A fan keeps its origin, a thread moves to the connector just clicked —
+        // and an arm already in hand outranks the stored mode, so a fan started
+        // with Control keeps its origin after the key comes up.
+        const thread = useLinkThreadStore.getState();
+        const shape = stepShape({
           shiftKey: pointer.shiftKey,
           ctrlKey: pointer.ctrlKey,
           mode,
+          armedShape: thread.armedShape,
         });
-        const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
+        const step = stepLink(shape, thread.armed, clicked);
         if (step.link) {
           // The thread may have started on a card, so both ends come from it.
           onLinkCommit?.(step.link.from, step.link.to, origin);
         }
-        // A mode chosen in the control outlives the key; a modifier's does not.
-        useLinkThreadStore.getState().arm(step.armed, gesture === mode ? "mode" : "gesture");
+        // A shape chosen in the control outlives the key; a modifier's does not.
+        thread.arm(step.armed, shape === mode ? "mode" : "gesture", shape);
       },
     );
   };
@@ -563,6 +567,19 @@ export function SectionLayer({
                         // The dot draws a link. It must never also start the
                         // section drag, so the press is claimed here.
                         onPointerDown={(event) => startConnectorLink(event, section, connector)}
+                        // Named as the target while a link is armed, so the rubber
+                        // band can land on it instead of on the bare pointer.
+                        onPointerEnter={() =>
+                          useLinkThreadStore.getState().setTarget({
+                            kind: "section",
+                            id: section.id,
+                            connectorId: connector.id,
+                          })
+                        }
+                        onPointerLeave={() => {
+                          const thread = useLinkThreadStore.getState();
+                          if (thread.target?.connectorId === connector.id) thread.setTarget(null);
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();

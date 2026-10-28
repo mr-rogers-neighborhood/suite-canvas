@@ -33,6 +33,13 @@ export interface ConnectorProps {
    * measures nothing (a story, a test).
    */
   position?: Point | undefined;
+  /**
+   * The pointer arrived on (or left) this dot. The board uses it to name the target of
+   * the link it is about to draw, because a fan's origin never moves and the dot under
+   * the pointer is then the only end worth previewing (ADR-0061).
+   */
+  onHoverStart?: (() => void) | undefined;
+  onHoverEnd?: (() => void) | undefined;
 }
 
 /** Magnetic radius around a corner/side midpoint, in screen pixels. */
@@ -157,6 +164,8 @@ export function Connector({
   onMoveStart,
   onMoveFinished,
   position: basePosition,
+  onHoverStart,
+  onHoverEnd,
 }: ConnectorProps) {
   // Which dot a held card would use. Read from the run store so every dot asks the
   // same question and only one of them answers yes.
@@ -368,6 +377,8 @@ export function Connector({
           backgroundColor: selected ? color : undefined,
         }}
         onPointerDown={(event) => event.stopPropagation()}
+        onPointerEnter={onHoverStart}
+        onPointerLeave={onHoverEnd}
         onClick={(event) => {
           event.stopPropagation();
           // The event travels with the click so a thread can read Shift without

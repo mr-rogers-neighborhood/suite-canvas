@@ -39,15 +39,40 @@ export function isChaining(input: {
   return input.mode !== "place";
 }
 
-/** Which mode a gesture is being read as, before the stored mode is consulted. */
-export function gestureMode(input: {
+/**
+ * The shape a held key asks for, or null when no key is asking for one.
+ *
+ * Control is the more specific of the two, so it wins when both are down: a web is
+ * a bigger claim on the click than a chain.
+ */
+export function modifierMode(input: {
+  shiftKey?: boolean | undefined;
+  ctrlKey?: boolean | undefined;
+}): CanvasMode | null {
+  if (input.ctrlKey === true) return "fan";
+  if (input.shiftKey === true) return "thread";
+  return null;
+}
+
+/**
+ * The shape the next click draws: a held key first, then the arm already in hand,
+ * and only then the stored mode.
+ *
+ * The middle term is what keeps a fan a fan. `gestureMode` re-read the stored mode
+ * on every click, so a fan started by holding Control became a *thread* the moment
+ * the key came up — every spoke after the first left from the connector clicked
+ * second instead of from the origin, which is the spaghetti: the graph looked like
+ * a chain nobody asked for. An arm is a choice already made, so it outlives the
+ * key that made it; ending it is explicit (click the origin, Escape, or leave the
+ * mode).
+ */
+export function stepShape(input: {
   shiftKey?: boolean | undefined;
   ctrlKey?: boolean | undefined;
   mode: CanvasMode;
+  armedShape: CanvasMode | null;
 }): CanvasMode {
-  if (input.ctrlKey === true) return "fan";
-  if (input.shiftKey === true) return "thread";
-  return input.mode;
+  return modifierMode(input) ?? input.armedShape ?? input.mode;
 }
 
 export function sameConnector(left: LinkConnectorRef, right: LinkConnectorRef): boolean {
@@ -114,10 +139,25 @@ interface LinkThreadState {
    * mode off, because nothing physical is being held.
    */
   armedBy: ThreadArmSource | null;
+  /**
+   * The shape the arm draws — `stepShape` outranks the stored mode with it, so a
+   * fan started by holding Control stays a fan after the key comes up.
+   */
+  armedShape: CanvasMode | null;
   /** When the last arm happened, so a click handler can ignore a gesture's tail. */
   armedAt: number;
-  arm: (ref: LinkConnectorRef | null, by?: ThreadArmSource) => void;
+  /**
+   * The connector a click would land on right now, while an arm is held.
+   *
+   * The armed end of a *thread* moves with every click, so the reader always sees
+   * where the next line starts. A fan's origin never moves, so the only useful
+   * preview is the other end: this is the dot the next spoke would reach, and the
+   * rubber band snaps to it rather than to the bare pointer (ADR-0061).
+   */
+  target: LinkConnectorRef | null;
+  arm: (ref: LinkConnectorRef | null, by?: ThreadArmSource, shape?: CanvasMode | null) => void;
   clear: () => void;
+  setTarget: (ref: LinkConnectorRef | null) => void;
 }
 
 /**
@@ -128,10 +168,22 @@ interface LinkThreadState {
 export const useLinkThreadStore = create<LinkThreadState>((set) => ({
   armed: null,
   armedBy: null,
+  armedShape: null,
   armedAt: 0,
-  arm: (armed, by = "mode") =>
-    set({ armed, armedBy: armed ? by : null, armedAt: armed ? performance.now() : 0 }),
-  clear: () => set({ armed: null, armedBy: null }),
+  target: null,
+  arm: (armed, by = "mode", shape = null) =>
+    set({
+      armed,
+      armedBy: armed ? by : null,
+      armedShape: armed ? shape : null,
+      armedAt: armed ? performance.now() : 0,
+      // A new arm is a new question: the dot hovered before it says nothing about
+      // where this one is aimed.
+      target: null,
+    }),
+  clear: () => set({ armed: null, armedBy: null, armedShape: null, target: null }),
+  setTarget: (target) =>
+    set((state) => (state.armed === null && target !== null ? state : { target })),
 }));
 
 /** True when this connector is the armed end of a thread. */

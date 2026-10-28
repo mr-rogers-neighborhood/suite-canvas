@@ -7,7 +7,7 @@ import { useBoardPeers } from "../hooks/useBoardPeers";
 import type { Point } from "../presence/Connector";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
-import { gestureMode, isChaining, stepLink, useLinkThreadStore } from "./links/linkThread";
+import { isChaining, stepLink, stepShape, useLinkThreadStore } from "./links/linkThread";
 import type { ConnectorPeerState } from "./NodeConnectors";
 
 /**
@@ -164,24 +164,29 @@ export function useNodeConnectorWiring(
 
       // An armed thread keeps chaining on plain clicks: Shift starts a chain,
       // and the clicks after it should not each need the modifier.
-      const armedNow = useLinkThreadStore.getState().armed !== null;
-      const gesture = gestureMode({
-        shiftKey: event?.shiftKey,
-        ctrlKey: event?.ctrlKey,
-        mode,
-      });
-      if (!armedNow && !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, mode })) {
+      const thread = useLinkThreadStore.getState();
+      if (
+        thread.armed === null &&
+        !isChaining({ shiftKey: event?.shiftKey, ctrlKey: event?.ctrlKey, mode })
+      ) {
         armThread(null);
         setSelectedConnector({ nodeId, connectorId });
         return;
       }
 
-      // The mode decides what the next click means: a thread moves its armed end,
-      // a fan keeps it (ADR-0061).
-      const step = stepLink(gesture, useLinkThreadStore.getState().armed, clicked);
+      // The shape decides what the next click means: a thread moves its armed end,
+      // a fan keeps it (ADR-0061). An arm outranks the stored mode, so a fan started
+      // with Control stays a fan once the key is up.
+      const shape = stepShape({
+        shiftKey: event?.shiftKey,
+        ctrlKey: event?.ctrlKey,
+        mode,
+        armedShape: thread.armedShape,
+      });
+      const step = stepLink(shape, thread.armed, clicked);
       // A gesture started by a modifier ends when the modifier is released; only a
-      // mode chosen in the control survives the key.
-      const by = gesture === mode ? "mode" : "gesture";
+      // shape chosen in the control survives the key.
+      const by = shape === mode ? "mode" : "gesture";
       if (step.link && boardId) {
         workspace.addEdge({
           boardId,
@@ -193,7 +198,7 @@ export function useNodeConnectorWiring(
           ...(step.link.to.kind === "card" ? { targetConnector: step.link.to.connectorId } : {}),
         });
       }
-      armThread(step.armed, by);
+      armThread(step.armed, by, shape);
       setSelectedConnector(
         step.armed ? { nodeId: step.armed.id, connectorId: step.armed.connectorId } : null,
       );

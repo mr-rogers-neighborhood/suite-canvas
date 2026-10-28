@@ -61,6 +61,43 @@
 }
 
 /*
+ * What a link released over empty canvas is offered: a card here, or a card the reader
+ * places later. Fixed, because it opens at the pointer and the pointer is screen space.
+ */
+.drop-offer__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  cursor: default;
+}
+
+.drop-offer {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  min-width: 180px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  font-size: 12px;
+}
+
+.drop-offer__item {
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--ink);
+}
+
+.drop-offer__item:hover,
+.drop-offer__item:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+/*
  * The style editor for a multi-selection.
  *
  * Same controls as the inspector's Style tab, docked where the old bulk bar sat: a

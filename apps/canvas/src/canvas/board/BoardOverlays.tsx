@@ -3,6 +3,7 @@ import { StatusCursorLayer } from "../../cursor/StatusCursorLayer";
 import { ContextMenu, type ContextMenuItem } from "../../dialogs/ContextMenu";
 import { ExplainPanel } from "../../panels/ExplainPanel";
 import { NudgeHint } from "../BoardHints";
+import { DropOffer } from "../DropOffer";
 import { EdgeDescriptionInput } from "../EdgeDescription";
 import { HeldStackCursor } from "../HeldStackCursor";
 import { LibraryDropPreview } from "../PeerLibraryDragLayer";
@@ -85,6 +86,7 @@ export function BoardOverlays({
           workspace={workspace}
         />
       ) : null}
+      <DropOffer />
       <ExplainPanel />
       <StatusCursorLayer />
       <HeldStackCursor engine={placementEngine} />

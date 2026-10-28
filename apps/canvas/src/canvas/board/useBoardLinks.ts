@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { portalTargetId } from "../../cards/portal";
 import type { ConnectState } from "../../collab/presence";
 import { useEscapeLayer } from "../../shell/escapeLayers";
+import { useUiStore } from "../../store/useUiStore";
 import type { EdgeDescriptionData } from "../EdgeDescription";
 import {
   connectorAtPoint,
@@ -467,7 +468,21 @@ export function useBoardLinks(
       const hit: LinkEndpointRef | null = overNodeId
         ? { kind: "card", id: overNodeId }
         : resolveLinkTarget(point);
-      if (!hit) return;
+      if (!hit) {
+        // Released over nothing: the reader meant this end to point somewhere, so offer
+        // the two ways to give it a target rather than discarding the gesture. Nothing
+        // is created until they answer — a mis-drop must not leave a card behind.
+        const client = clientPoint(event);
+        if (client) {
+          useUiStore.getState().setDropOffer({
+            x: client.x,
+            y: client.y,
+            point,
+            from: { nodeId: draft.nodeId, connectorId: draft.connectorId },
+          });
+        }
+        return;
+      }
       const target = endpointForDrop(hit);
       if (target.kind === "card") return;
 

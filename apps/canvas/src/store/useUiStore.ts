@@ -25,6 +25,22 @@ export interface SelectedConnector {
 }
 
 /**
+ * A link released over empty canvas, and the offer to give it something to point at.
+ *
+ * It is UI state, not a draft: nothing is created until the reader answers, because a
+ * link dropped in the wrong place must not leave a card behind.
+ */
+export interface DropOffer {
+  /** Where the menu opens, in screen coordinates. */
+  x: number;
+  y: number;
+  /** Where the card would land, in flow coordinates. */
+  point: { x: number; y: number };
+  /** The end the gesture already had: the card and dot the line leaves. */
+  from: { nodeId: string; connectorId: string };
+}
+
+/**
  * Boards are not a tab: a board row sits in Cards beside the cards, filtered by
  * the Board facet. A second list would need a second set of actions for the same
  * gesture (open, place, drag).
@@ -348,6 +364,8 @@ interface UiState extends SessionCapabilities {
   mode: CanvasMode;
   setMode: (mode: CanvasMode) => void;
   contextMenu: ContextMenuState | null;
+  dropOffer: DropOffer | null;
+  setDropOffer: (offer: DropOffer | null) => void;
   selectedConnector: SelectedConnector | null;
   /** Scope a canvas gesture asked the app-bar dialog to open on; consumed once. */
   shareRequest: ShareScope | null;
@@ -500,6 +518,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   collapsedSections: {},
   blueprintCardId: null,
   contextMenu: null,
+  dropOffer: null,
+  setDropOffer: (dropOffer) => set({ dropOffer }),
   selectedConnector: null,
   shareRequest: null,
   requestShare: (shareRequest) => set({ shareRequest }),

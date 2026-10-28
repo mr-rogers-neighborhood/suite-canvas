@@ -2,9 +2,11 @@ import { WorkspaceDocument } from "@suite/graph";
 import {
   collectVaultFiles,
   type DroppedEntryLike,
+  fileKind,
   type ImportReport,
   importObsidianVault,
   reportSummary,
+  type VaultFile,
 } from "@suite/import-obsidian";
 import { LoroDoc } from "loro-crdt";
 import { LoroIndexeddbPersistence } from "../collab/loroPersistence";
@@ -31,12 +33,48 @@ export interface VaultImportOutcome {
 }
 
 export interface VaultImportArgs {
-  /** The workspace the reader dropped onto. */
+  /** The workspace the reader dropped onto, or picked from inside. */
   workspaceId: string;
   /** The dropped entries, taken from the event before the first `await`. */
-  entries: ReadonlyArray<DroppedEntryLike | null | undefined>;
-  /** Names the vault's root board; the dropped folder's name, usually. */
+  entries?: ReadonlyArray<DroppedEntryLike | null | undefined>;
+  /**
+   * The vault already read, for a caller that had a file picker rather than a drop.
+   *
+   * A tablet cannot drag a folder, so the menu offers one; the picker hands over flat
+   * files with relative paths, which is exactly the shape the importer parses.
+   */
+  files?: readonly VaultFile[];
+  /** Names the vault's root board; the folder's name, usually. */
   homeBoardName?: string | undefined;
+}
+
+/**
+ * What a folder picker handed over, as the importer's own file list.
+ *
+ * Only notes and canvases are read as text. An attachment is counted and reported, and
+ * reading a 40 MB video as a string to throw it away is how an import turns into a crash.
+ */
+export async function vaultFilesFromPicker(list: FileList): Promise<{
+  files: VaultFile[];
+  name: string | undefined;
+}> {
+  const files: VaultFile[] = [];
+  let name: string | undefined;
+  for (const file of Array.from(list)) {
+    // `MyVault/Notes/Alpha.md`: the first segment is the folder they picked, and it is
+    // the vault's name rather than part of any path inside it.
+    const parts = (file.webkitRelativePath || file.name).split("/");
+    if (name === undefined && parts.length > 1) name = parts[0];
+    const path = parts.slice(1).join("/");
+    if (path.length === 0) continue;
+    const kind = fileKind({ path });
+    files.push({
+      path,
+      byteLength: file.size,
+      ...(kind === "note" || kind === "canvas" ? { text: await file.text() } : {}),
+    });
+  }
+  return { files, name };
 }
 
 /** A short list that never hides a count: `a, b, c (+4 more)`. */
@@ -104,7 +142,10 @@ export function vaultName(
  * sync carries it to the relay.
  */
 export async function importVaultIntoWorkspace(args: VaultImportArgs): Promise<VaultImportOutcome> {
-  const collected = await collectVaultFiles(args.entries);
+  const collected =
+    args.files === undefined
+      ? await collectVaultFiles(args.entries ?? [])
+      : { files: [...args.files], skipped: [] };
   if (collected.files.length === 0) {
     return {
       ok: false,

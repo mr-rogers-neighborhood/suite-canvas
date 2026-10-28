@@ -978,6 +978,32 @@ body {
   line-height: 1.35;
 }
 
+/* Four more levels down, each a step smaller rather than a different face: a note
+   quoting a long document needs the structure, and the reader still reads one voice. */
+.node-card-editor h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.node-card-editor h5 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.node-card-editor h6 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.85;
+}
+
 .node-card-editor ul,
 .node-card-editor ol {
   margin: 0;

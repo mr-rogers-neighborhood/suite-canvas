@@ -39,9 +39,15 @@ describe("filterSlashItems", () => {
   it("should match keywords as well as titles", () => {
     expect(filterSlashItems("h1").map((entry) => entry.id)).toEqual(["heading-1"]);
     expect(filterSlashItems("quo").map((entry) => entry.id)).toEqual(["quote"]);
+    // Every level answers to "heading", which is how a reader who has not learned the
+    // `/h4` shorthand still finds the block.
     expect(filterSlashItems("HEADING").map((entry) => entry.id)).toEqual([
       "heading-1",
       "heading-2",
+      "heading-3",
+      "heading-4",
+      "heading-5",
+      "heading-6",
     ]);
   });
 

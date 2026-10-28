@@ -37,7 +37,7 @@ import {
   rememberChosenTemplate,
   starterTemplateById,
 } from "./starterTemplates";
-import { importVaultIntoWorkspace, vaultName } from "./vaultImport";
+import { importVaultIntoWorkspace, vaultFilesFromPicker, vaultName } from "./vaultImport";
 
 /** A recents row with the workspace name resolved for display. */
 interface RecentEntry extends RecentWorkspace {
@@ -126,6 +126,9 @@ export function WorkspaceLauncher() {
   const [templates, setTemplates] = useState<readonly WorkspaceTemplate[]>(STARTER_TEMPLATES);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  /** The row an "Import" press belongs to: a vault merges into the workspace you name. */
+  const vaultInput = useRef<HTMLInputElement | null>(null);
+  const [vaultTarget, setVaultTarget] = useState<RecentEntry | null>(null);
   const renameCancelled = useRef(false);
   // A mail link names one invitation, and this page is where it lands.
   const [invitationId, setInvitationId] = useState<string | null>(null);
@@ -288,6 +291,50 @@ export function WorkspaceLauncher() {
     }
   };
 
+  /**
+   * A vault picked rather than dropped: the same import through the other door.
+   *
+   * A drag is unavailable on a tablet, and a row is the choice of workspace a drop
+   * already makes, so the picker is per row and reads the folder the reader chose.
+   */
+  const importVaultFolder = async (entry: RecentEntry, list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    setProgress(`Importing ${entry.name}\u2026`);
+    setError(null);
+    setNotice(null);
+    try {
+      const { files, name } = await vaultFilesFromPicker(list);
+      const outcome = await importVaultIntoWorkspace({
+        workspaceId: entry.id,
+        files,
+        ...(name === undefined ? {} : { homeBoardName: name }),
+      });
+      if (!outcome.ok) {
+        toast.failure(outcome.message, {
+          urgent: true,
+          ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+        });
+        return;
+      }
+      toast.success(outcome.message, {
+        ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+        ...(outcome.boardId === undefined
+          ? {}
+          : {
+              action: {
+                label: "Open",
+                onAction: () => openWorkspace(entry.id, outcome.boardId ?? null),
+              },
+            }),
+      });
+      setRecents(readRecentWorkspaces().map((row) => labelRecent(row, readWorkspaceNames())));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+    } finally {
+      setProgress(null);
+    }
+  };
+
   const exportRecent = async (entry: RecentEntry) => {
     setProgress(`Exporting ${entry.name}\u2026`);
     setError(null);
@@ -393,6 +440,25 @@ export function WorkspaceLauncher() {
               onChange={(event) => {
                 void importFile(event.target.files?.[0]);
                 event.target.value = "";
+              }}
+            />
+            {/* A folder picker for the same import a drop performs, for a machine with
+                no drag: `webkitdirectory` has no JSX spelling, so the ref sets it. */}
+            <input
+              ref={(element) => {
+                vaultInput.current = element;
+                if (element) element.webkitdirectory = true;
+              }}
+              type="file"
+              hidden
+              multiple
+              data-testid="launcher-vault-input"
+              onChange={(event) => {
+                const target = vaultTarget;
+                const files = event.target.files;
+                event.target.value = "";
+                setVaultTarget(null);
+                if (target) void importVaultFolder(target, files);
               }}
             />
             {/* Identity lives here as well as in the title bar: this is the first
@@ -674,6 +740,20 @@ export function WorkspaceLauncher() {
                             Rename
                           </button>
                         )}
+                        <button
+                          type="button"
+                          data-testid={`launcher-vault-${entry.id}`}
+                          aria-label={`Import an Obsidian vault into ${entry.name}`}
+                          title="Import from Obsidian… (merges into this workspace)"
+                          className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-muted)] opacity-0 transition-opacity hover:bg-black/5 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-white/10"
+                          onClick={() => {
+                            setVaultTarget(entry);
+                            vaultInput.current?.click();
+                          }}
+                          disabled={busy}
+                        >
+                          Import
+                        </button>
                         <button
                           type="button"
                           data-testid={`launcher-export-${entry.id}`}

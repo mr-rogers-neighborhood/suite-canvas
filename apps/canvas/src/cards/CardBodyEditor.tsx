@@ -22,6 +22,10 @@ interface ToolbarState {
   strike: boolean;
   heading1: boolean;
   heading2: boolean;
+  heading3: boolean;
+  heading4: boolean;
+  heading5: boolean;
+  heading6: boolean;
   bulletList: boolean;
   orderedList: boolean;
 }
@@ -202,6 +206,10 @@ export function CardBodyEditor({
       strike: current.isActive("strike"),
       heading1: current.isActive("heading", { level: 1 }),
       heading2: current.isActive("heading", { level: 2 }),
+      heading3: current.isActive("heading", { level: 3 }),
+      heading4: current.isActive("heading", { level: 4 }),
+      heading5: current.isActive("heading", { level: 5 }),
+      heading6: current.isActive("heading", { level: 6 }),
       bulletList: current.isActive("bulletList"),
       orderedList: current.isActive("orderedList"),
     }),
@@ -262,6 +270,36 @@ export function CardBodyEditor({
               className={buttonClass(toolbar.heading2)}
             >
               H2
+            </button>
+            {/* Three to six are structural levels, not decorations: a note that quotes
+                a long document needs them, and the schema always had them. */}
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
+              className={buttonClass(toolbar.heading3)}
+            >
+              H3
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 4 }).run()}
+              className={buttonClass(toolbar.heading4)}
+            >
+              H4
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 5 }).run()}
+              className={buttonClass(toolbar.heading5)}
+            >
+              H5
+            </button>
+            <button
+              type="button"
+              onClick={() => editor?.chain().focus().toggleHeading({ level: 6 }).run()}
+              className={buttonClass(toolbar.heading6)}
+            >
+              H6
             </button>
             <button
               type="button"

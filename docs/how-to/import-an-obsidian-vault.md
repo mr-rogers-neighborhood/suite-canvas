@@ -1,7 +1,13 @@
 # Import an Obsidian vault
 
-Dropping a vault folder into Suite reads every note, tag, link and canvas into one workspace. The import
-runs once, as a single change, so `undo` takes it back whole.
+Importing a vault folder reads every note, tag, link and canvas into one workspace. The import runs once, as
+a single change, so `undo` takes it back whole.
+
+There are two doors onto it and they share one importer:
+
+- **Drop** a folder on a workspace tile in the launcher.
+- **Pick** one: `Workspace → Import from Obsidian…` inside a workspace, or `Import` on a launcher tile. This
+  is the door for a tablet, where dragging a folder is not a gesture the OS offers.
 
 ## Read the vault
 
@@ -31,16 +37,27 @@ return reportSummary(result.value);
 already carry the field definitions a key should fill; a key with no matching field is kept as body text
 rather than dropped.
 
-## The launcher action
+## The picker
 
-The launcher owns the button, so this package exposes the functions rather than the UI. The launcher needs a
-third input beside `.suite` and `.json`:
+A folder input hands over flat `File`s whose `webkitRelativePath` is `MyVault/Notes/Alpha.md`. That is
+already the importer's shape once the first segment is dropped, so `vaultFilesFromPicker` in
+`apps/canvas/src/launcher/vaultImport.ts` reads it directly and `importVaultIntoWorkspace` takes the files
+instead of walking entries:
 
-- A file input with no `accept` filter cannot take a folder. Use a drop target over the launcher header and
-  call `collectVaultFiles` with the dropped entries.
-- Pass `homeBoardName` from the dropped folder's name, so the vault root's board reads as the vault.
-- Create the target workspace first, then call `importObsidianVault` with its `WorkspaceDocument`, the same way
-  `openRecoveryKey` opens one. The import writes to an existing document; it does not create one.
+```ts
+const { files, name } = await vaultFilesFromPicker(input.files ?? new FileList());
+await importVaultIntoWorkspace({ workspaceId, files, homeBoardName: name });
+```
+
+Only notes and canvases are read as text; an attachment is counted and reported, because reading a large
+video into a string to throw it away is how an import becomes a crash. `webkitdirectory` has no JSX
+spelling, so the input sets it through its `ref`.
+
+## What the import needs
+
+- The workspace must exist on this device: the import merges into a document, it never creates one.
+- Pass `homeBoardName` from the folder's name, so the vault root's board reads as the vault.
+- Call `importObsidianVault` with that `WorkspaceDocument`, the same way `openRecoveryKey` opens one.
 
 ## The mapping
 

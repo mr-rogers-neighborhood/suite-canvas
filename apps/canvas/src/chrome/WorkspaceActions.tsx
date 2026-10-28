@@ -3,6 +3,7 @@ import { credentialAuthorization } from "../auth/credential";
 import { DeleteWorkspaceDialog } from "../dialogs/DeleteWorkspaceDialog";
 import { focusFirstMenuItem, menuKeyDown } from "../dialogs/menuKeys";
 import { useCardTitle } from "../hooks/useCardContainers";
+import { importVaultIntoWorkspace, vaultFilesFromPicker } from "../launcher/vaultImport";
 import { isShareSession } from "../session/session";
 import type { ShareScope } from "../session/shares";
 import {
@@ -41,8 +42,13 @@ export interface WorkspaceActionsProps {
 
 /**
  * The workspace-level actions that belong in the app bar: share the workspace, a
- * board or a card, export the exact backup, and return to the launcher. Import
- * lives on the launcher so it can never merge into the open document.
+ * board or a card, import a vault, export the exact backup, and return to the
+ * launcher.
+ *
+ * Import lives here as well as on the launcher. The launcher's drop is still the
+ * quickest path, but a reader who is already in the workspace — or on a tablet, where
+ * dragging a folder is not a gesture the OS offers — needs a picker, and the document
+ * it merges into is the one they are looking at.
  */
 export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: WorkspaceActionsProps) {
   const workspace = useCanvasStore((state) => state.workspace);
@@ -58,6 +64,8 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const picker = useRef<HTMLInputElement | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const canManageLinks = useUiStore((state) => state.canManageLinks);
@@ -109,6 +117,36 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
     await flush();
     if (onLeave) onLeave();
     else window.location.assign("/");
+  };
+
+  /**
+   * A folder picked rather than dropped.
+   *
+   * A folder input hands over every file with a relative path, which is the shape the
+   * importer already parses, so the picker is a second door onto one import rather than
+   * a second importer.
+   */
+  const importVault = async (list: FileList | null) => {
+    if (!list || list.length === 0) return;
+    setError(null);
+    setNotice(null);
+    setImporting(true);
+    try {
+      const { files, name } = await vaultFilesFromPicker(list);
+      const outcome = await importVaultIntoWorkspace({
+        workspaceId,
+        files,
+        ...(name === undefined ? {} : { homeBoardName: name }),
+      });
+      if (outcome.ok)
+        setNotice(outcome.detail ? `${outcome.message} ${outcome.detail}` : outcome.message);
+      else setError(outcome.detail ? `${outcome.message} ${outcome.detail}` : outcome.message);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not import that folder.");
+    } finally {
+      setImporting(false);
+      if (picker.current) picker.current.value = "";
+    }
   };
 
   const exportTo = async (kind: "backup" | "json" | "markdown") => {
@@ -175,6 +213,20 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
                 <hr className="my-1 border-[var(--hairline)]" />
               </>
             ) : null}
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="workspace-import-obsidian"
+              disabled={importing}
+              className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+              onClick={() => {
+                setMenuOpen(false);
+                picker.current?.click();
+              }}
+            >
+              {importing ? "Importing\u2026" : "Import from Obsidian\u2026"}
+            </button>
+            <hr className="my-1 border-[var(--hairline)]" />
             <button
               type="button"
               role="menuitem"
@@ -261,6 +313,19 @@ export function WorkspaceActions({ workspaceId, boardId, title, onLeave }: Works
           </div>
         ) : null}
       </div>
+      <input
+        ref={(element) => {
+          picker.current = element;
+          // A folder picker: `webkitdirectory` has no JSX spelling, and the property is
+          // the only place it can be set.
+          if (element) element.webkitdirectory = true;
+        }}
+        type="file"
+        hidden
+        multiple
+        data-testid="workspace-import-input"
+        onChange={(event) => void importVault(event.target.files)}
+      />
       {error ? (
         <span
           role="alert"

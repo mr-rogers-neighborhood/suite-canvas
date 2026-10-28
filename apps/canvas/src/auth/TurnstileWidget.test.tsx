@@ -69,6 +69,25 @@ describe("TurnstileWidget", () => {
     expect(removeWidget).not.toHaveBeenCalled();
   });
 
+  it("should pass the size and appearance it was asked for", async () => {
+    render(
+      <TurnstileWidget
+        siteKey="site-key"
+        onToken={vi.fn()}
+        size="compact"
+        appearance="interaction-only"
+      />,
+    );
+    await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(1));
+
+    const options = renderWidget.mock.calls[0]?.[1] as {
+      size?: string;
+      appearance?: string;
+    };
+    expect(options.size).toBe("compact");
+    expect(options.appearance).toBe("interaction-only");
+  });
+
   it("should still build a fresh challenge for a different site key", async () => {
     const { rerender } = render(<TurnstileWidget siteKey="one" onToken={vi.fn()} />);
     await waitFor(() => expect(renderWidget).toHaveBeenCalledTimes(1));

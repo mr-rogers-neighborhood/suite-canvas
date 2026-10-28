@@ -128,8 +128,16 @@ export function SendFeedbackBubble({
             className="mt-1.5 w-full resize-none rounded-lg border border-[var(--hairline)] bg-transparent px-2 py-1.5 text-[12px] leading-5 text-[var(--ink)] outline-none focus:ring-1 focus:ring-blue-400"
           />
           {challengeNeeded ? (
-            <div className="mt-2" data-testid="feedback-captcha">
-              <TurnstileWidget siteKey={siteKey} onToken={acceptToken} />
+            // Compact and interaction-only: the full-size widget is 300px wide and filled
+            // this popover, and a managed challenge that passes silently has nothing to
+            // say, so it stays out of the way until Cloudflare wants an answer.
+            <div className="mt-2 max-w-[150px]" data-testid="feedback-captcha">
+              <TurnstileWidget
+                siteKey={siteKey}
+                onToken={acceptToken}
+                size="compact"
+                appearance="interaction-only"
+              />
             </div>
           ) : null}
           <div className="mt-2 flex items-center justify-between">

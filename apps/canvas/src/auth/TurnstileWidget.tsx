@@ -25,6 +25,8 @@ interface TurnstileApi {
       "error-callback"?: () => void;
       "expired-callback"?: () => void;
       theme?: "auto" | "light" | "dark";
+      size?: "normal" | "flexible" | "compact";
+      appearance?: "always" | "interaction-only" | "execute";
     },
   ) => string;
   remove: (widgetId: string) => void;
@@ -63,6 +65,17 @@ export interface TurnstileWidgetProps {
   siteKey: string;
   /** The challenge answer, or `null` when it expired or failed. */
   onToken: (token: string | null) => void;
+  /**
+   * How much room the widget takes. `normal` is Cloudflare's 300px box, which is right
+   * for a dialog and far too large inside a popover: `compact` is about half that.
+   */
+  size?: "normal" | "flexible" | "compact";
+  /**
+   * `interaction-only` keeps the widget invisible until Cloudflare wants an answer, so a
+   * managed challenge that passes silently shows nothing at all. The default renders it,
+   * because a form that silently verifies looks like a form that did nothing.
+   */
+  appearance?: "always" | "interaction-only" | "execute";
 }
 
 /**
@@ -70,7 +83,12 @@ export interface TurnstileWidgetProps {
  * `null` rather than blocking sign-up: the server refuses a sign-up with no
  * challenge, and its message is the one worth showing.
  */
-export function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
+export function TurnstileWidget({
+  siteKey,
+  onToken,
+  size = "normal",
+  appearance = "always",
+}: TurnstileWidgetProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const widget = useRef<string | null>(null);
   // The callback is read through a ref so the widget's lifetime depends on the site key
@@ -90,6 +108,8 @@ export function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
         widget.current = window.turnstile.render(container.current, {
           sitekey: siteKey,
           theme: "auto",
+          size,
+          appearance,
           callback: (token) => report.current(token),
           "expired-callback": () => report.current(null),
           "error-callback": () => report.current(null),
@@ -102,7 +122,15 @@ export function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
       widget.current = null;
       if (id !== null) window.turnstile?.remove(id);
     };
-  }, [siteKey]);
+  }, [siteKey, size, appearance]);
 
-  return <div ref={container} data-testid="turnstile" className="mt-1 min-h-[65px]" />;
+  // The height follows the size: a compact challenge is ~60px tall and a normal one ~65,
+  // but an `interaction-only` widget reserves nothing until it appears.
+  return (
+    <div
+      ref={container}
+      data-testid="turnstile"
+      className={size === "compact" ? "mt-1 min-h-[60px]" : "mt-1 min-h-[65px]"}
+    />
+  );
 }

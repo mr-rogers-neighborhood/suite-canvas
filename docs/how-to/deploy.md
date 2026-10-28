@@ -43,6 +43,8 @@ Two of those steps are the ones people get wrong. The first is the key pair: a T
 none for daily use, but a box with neither a key pair nor a working tailnet has no way in at all, so
 create one anyway and keep it as the break-glass path. The second is the database URL: it has to name
 the RDS endpoint, and the compose default names a `postgres` service that this host does not run.
+`deploy/preflight.sh` asks a finished `.env` for both, and for the rest of the failures that a boot
+does not name itself (§6).
 
 Every secret in the list lands in one of two places, and neither is a file in the repository. The
 control plane reads the values the panel owns from settings rows encrypted with `SUITE_SETTINGS_KEY`,
@@ -216,6 +218,14 @@ unlimited one. `SUITE_HOSTED=0` is a self-host: no licences, and no quotas unles
 `licences`, `attachments`) and sets `SUITE_REQUIRE_DURABLE_STORES=1`, so boot refuses any store that is
 unset, `:memory:`, relative, or outside the volume, naming each offender. Leave the flag unset for a
 local run. Every variable is in [reference/environment.md](../reference/environment.md).
+
+Run the preflight first. It reads the `.env` and names the failures that do not stop a boot: a
+settings key that makes every panel save answer 503, a Turnstile secret with no site key, a mail
+transport that prints verification links to a log nobody reads, a licence key pasted as a PEM file.
+
+```sh
+deploy/preflight.sh                       # exit 1 when a blocker is found
+```
 
 ```sh
 deploy/deploy.sh --no-backup              # builds suite:v1.1.0, starts app, waits for health

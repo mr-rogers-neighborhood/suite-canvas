@@ -6,7 +6,7 @@ import { TagPicker } from "../cards/TagPicker";
 import type { InspectorTabId } from "../inspector/capabilities";
 import { tabLabel, tabsFor } from "../inspector/capabilities";
 import { IconField } from "../inspector/IconField";
-import { InspectorTabs } from "../inspector/InspectorTabs";
+import { InspectorTabs, inspectorPanelIds } from "../inspector/InspectorTabs";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -38,6 +38,9 @@ export interface ContainerPanelProps {
   /** Every tag in the workspace; defaults to the live snapshot. */
   tags?: readonly Tag[] | undefined;
 }
+
+/** The stem for this panel's tab and tabpanel ids, shared with `InspectorTabs`. */
+const PANEL_ID_PREFIX = "container";
 
 /**
  * The panel for a container: a portal card or a section.
@@ -83,6 +86,7 @@ export function ContainerPanel({
     id: entry.id,
     label: tabLabel(entry.id, kinds[0]),
   }));
+  const tabIds = inspectorPanelIds(PANEL_ID_PREFIX);
   const details = tab === "details";
   const contentsCount = model.contents.reduce((total, group) => total + group.cards.length, 0);
 
@@ -156,13 +160,19 @@ export function ContainerPanel({
         ariaLabel="Container sections"
         testId="container-panel-tabs"
         tabTestId={(id) => `container-tab-${id}`}
-        idPrefix="container"
+        idPrefix={PANEL_ID_PREFIX}
         className="card-panel-tabs px-3 pb-1"
         onSelect={setTab}
       />
 
       {tab === "style" ? (
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-style">
+        <div
+          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
+          role="tabpanel"
+          id={tabIds.style.panel}
+          aria-labelledby={tabIds.style.tab}
+          data-testid="container-style"
+        >
           <StyleTab
             targets={[{ kind: "card", id: model.id }]}
             canEdit={canEdit && !model.orphan}
@@ -170,7 +180,13 @@ export function ContainerPanel({
           />
         </div>
       ) : tab === "content" ? (
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-content">
+        <div
+          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
+          role="tabpanel"
+          id={tabIds.content.panel}
+          aria-labelledby={tabIds.content.tab}
+          data-testid="container-content"
+        >
           {portal && model.board ? (
             <section className="mt-3" data-testid="container-contents">
               <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
@@ -270,7 +286,13 @@ export function ContainerPanel({
           ) : null}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-2.5" data-testid="container-details">
+        <div
+          className="min-h-0 flex-1 overflow-auto px-3 py-2.5"
+          role="tabpanel"
+          id={tabIds.details.panel}
+          aria-labelledby={tabIds.details.tab}
+          data-testid="container-details"
+        >
           <div className="flex flex-wrap gap-1.5" data-testid="container-actions" hidden={!details}>
             {portal && model.board && onOpenBoard ? (
               <button

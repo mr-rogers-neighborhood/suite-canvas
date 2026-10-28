@@ -53,22 +53,22 @@ function plansOf(options: ReturnType<typeof optionsWith>) {
 describe("planList", () => {
   it("should carry each fixture plan with its limits", () => {
     const plans = planList(TIERS);
-    const solo = fixtureLimits("solo");
+    const personal = fixtureLimits("personal");
 
     assert.equal(plans.length, 2);
     assert.deepEqual(plans[0], {
-      name: "solo",
+      name: "personal",
       priceId: "price_solo",
       limits: {
-        workspaces: solo.workspaces,
-        documentBytes: solo.documentBytes,
-        attachmentBytes: solo.attachmentBytes,
+        workspaces: personal.workspaces,
+        documentBytes: personal.documentBytes,
+        attachmentBytes: personal.attachmentBytes,
       },
     });
   });
 
   it("should sell the first price when two prices name one tier", () => {
-    const monthly = fixtureLimits("solo");
+    const monthly = fixtureLimits("personal");
     const tiers = new Map([
       ["price_monthly", monthly],
       ["price_annual", monthly],
@@ -106,7 +106,7 @@ describe("billingPluginOptions", () => {
     assert.equal(options.organization?.enabled, true);
     assert.deepEqual(
       plansOf(options).map((plan) => plan.name),
-      ["solo", "solo-pro"],
+      ["personal", "organization"],
     );
   });
 

@@ -10,16 +10,16 @@ import {
 } from "./entitlement.ts";
 
 const TIERS = tierTableFixture();
-const SOLO = fixtureLimits("solo");
-const SOLO_LIMITS = {
-  workspaces: SOLO.workspaces,
-  documentBytes: SOLO.documentBytes,
-  attachmentBytes: SOLO.attachmentBytes,
+const PERSONAL = fixtureLimits("personal");
+const PERSONAL_LIMITS = {
+  workspaces: PERSONAL.workspaces,
+  documentBytes: PERSONAL.documentBytes,
+  attachmentBytes: PERSONAL.attachmentBytes,
 };
 
 function row(overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
   return {
-    plan: "solo",
+    plan: "personal",
     status: "active",
     periodEnd: NOW + 20 * DAY,
     cancelAtPeriodEnd: false,
@@ -29,19 +29,28 @@ function row(overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
 
 describe("entitlementFor", () => {
   it("should grant the plan while the subscription is active", () => {
-    assert.deepEqual(entitlementFor(row(), TIERS, NOW), { tier: "solo", limits: SOLO_LIMITS });
+    assert.deepEqual(entitlementFor(row(), TIERS, NOW), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
   });
 
   it("should grant the plan during a trial", () => {
     const trial = row({ status: "trialing", periodEnd: NOW + 7 * DAY });
 
-    assert.deepEqual(entitlementFor(trial, TIERS, NOW), { tier: "solo", limits: SOLO_LIMITS });
+    assert.deepEqual(entitlementFor(trial, TIERS, NOW), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
   });
 
   it("should keep the plan while a past-due period is still running", () => {
     const dunning = row({ status: "past_due", periodEnd: NOW + 2 * DAY });
 
-    assert.deepEqual(entitlementFor(dunning, TIERS, NOW), { tier: "solo", limits: SOLO_LIMITS });
+    assert.deepEqual(entitlementFor(dunning, TIERS, NOW), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
   });
 
   it("should drop to free once a past-due period has ended", () => {
@@ -53,7 +62,10 @@ describe("entitlementFor", () => {
   it("should keep the plan for a cancellation that only takes effect at period end", () => {
     const ending = row({ cancelAtPeriodEnd: true });
 
-    assert.deepEqual(entitlementFor(ending, TIERS, NOW), { tier: "solo", limits: SOLO_LIMITS });
+    assert.deepEqual(entitlementFor(ending, TIERS, NOW), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
   });
 
   it("should report free for a cancelled subscription", () => {
@@ -78,7 +90,7 @@ describe("entitlementFor", () => {
   });
 
   it("should match the plan name whatever case Stripe stored", () => {
-    assert.equal(entitlementFor(row({ plan: "Solo" }), TIERS, NOW).tier, "solo");
+    assert.equal(entitlementFor(row({ plan: "Personal" }), TIERS, NOW).tier, "personal");
   });
 
   it("should deny a plan the tier table does not describe", () => {
@@ -100,7 +112,10 @@ describe("createEntitlementReader", () => {
       },
     });
 
-    assert.deepEqual(await reader.forOrganization("org_1"), { tier: "solo", limits: SOLO_LIMITS });
+    assert.deepEqual(await reader.forOrganization("org_1"), {
+      tier: "personal",
+      limits: PERSONAL_LIMITS,
+    });
     assert.deepEqual(asked, ["org_1"]);
   });
 

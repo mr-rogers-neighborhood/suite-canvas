@@ -33,7 +33,7 @@ const FREE = {
 function view(overrides: Partial<SubscriptionView> = {}): SubscriptionView {
   return {
     organizationId: ORG,
-    plan: "solo",
+    plan: "personal",
     status: "active",
     periodEnd: NOW + DAY,
     cancelAtPeriodEnd: false,
@@ -58,7 +58,7 @@ describe("subscriptionViewOf", () => {
     assert.deepEqual(
       subscriptionViewOf({
         referenceId: ORG,
-        plan: "solo",
+        plan: "personal",
         status: "active",
         periodEnd: new Date(NOW + DAY),
         cancelAtPeriodEnd: false,
@@ -67,7 +67,7 @@ describe("subscriptionViewOf", () => {
       }),
       {
         organizationId: ORG,
-        plan: "solo",
+        plan: "personal",
         status: "active",
         periodEnd: NOW + DAY,
         cancelAtPeriodEnd: false,
@@ -78,7 +78,7 @@ describe("subscriptionViewOf", () => {
   });
 
   it("should report a missing period end and seat count as absent, not as zero", () => {
-    const read = subscriptionViewOf({ referenceId: ORG, plan: "solo", status: "active" });
+    const read = subscriptionViewOf({ referenceId: ORG, plan: "personal", status: "active" });
     assert.equal(read.periodEnd, null);
     assert.equal(read.seats, null);
     assert.equal(read.subscriptionId, null);
@@ -88,7 +88,12 @@ describe("subscriptionViewOf", () => {
     // `seats` becomes a ceiling compared against a member count, so a fraction would admit
     // a fraction of a person and a negative number would fall below the free tier.
     for (const seats of [2.5, -1, Number.NaN]) {
-      const read = subscriptionViewOf({ referenceId: ORG, plan: "solo", status: "active", seats });
+      const read = subscriptionViewOf({
+        referenceId: ORG,
+        plan: "personal",
+        status: "active",
+        seats,
+      });
       assert.equal(read.seats, null, `${String(seats)} is not a seat count`);
     }
   });
@@ -96,7 +101,7 @@ describe("subscriptionViewOf", () => {
 
 describe("licenceRowFor", () => {
   it("should write the plan's tier and limits for a live subscription", () => {
-    const solo = fixtureLimits("solo");
+    const personal = fixtureLimits("personal");
     const subscription = view();
     const row = licenceRowFor({
       organizationId: ORG,
@@ -109,11 +114,11 @@ describe("licenceRowFor", () => {
     assert.deepEqual(row, {
       organizationId: ORG,
       licenceId: "stripe:sub_1",
-      tier: "solo",
-      workspaces: solo.workspaces,
+      tier: "personal",
+      workspaces: personal.workspaces,
       seats: FREE.seats,
-      documentBytes: solo.documentBytes,
-      attachmentBytes: solo.attachmentBytes,
+      documentBytes: personal.documentBytes,
+      attachmentBytes: personal.attachmentBytes,
       // The paid horizon is the period Stripe last billed, so a lapsed renewal stops
       // granting the plan at the same instant the token does.
       expiresAt: NOW + DAY,
@@ -160,7 +165,7 @@ describe("licenceRowFor", () => {
   });
 
   it("should keep a two-member organization readable when the subscription drops to one seat", () => {
-    const solo = fixtureLimits("solo");
+    const personal = fixtureLimits("personal");
     const downgraded = view({ seats: 1 });
     const row = licenceRowFor({
       organizationId: ORG,
@@ -175,8 +180,8 @@ describe("licenceRowFor", () => {
     // `licence-unprovisioned`, a fault no upgrade fixes. What no longer fits is the second
     // member, and the refusal says so: "this organization has more members than its
     // licence allows" with `seat-allowance-exhausted`.
-    assert.equal(row.tier, "solo");
-    assert.equal(row.workspaces, solo.workspaces);
+    assert.equal(row.tier, "personal");
+    assert.equal(row.workspaces, personal.workspaces);
     assert.equal(row.seats, 1);
     assert.ok(row.expiresAt > NOW);
   });
@@ -247,12 +252,12 @@ describe("the licence row and the entitlement read", () => {
    */
   const statuses: readonly { name: string; subscription: SubscriptionView | null; tier: string }[] =
     [
-      { name: "active", subscription: view({ status: "active" }), tier: "solo" },
-      { name: "trialing", subscription: view({ status: "trialing" }), tier: "solo" },
+      { name: "active", subscription: view({ status: "active" }), tier: "personal" },
+      { name: "trialing", subscription: view({ status: "trialing" }), tier: "personal" },
       {
         name: "past due inside the period",
         subscription: view({ status: "past_due" }),
-        tier: "solo",
+        tier: "personal",
       },
       {
         name: "past due past the period",
@@ -297,7 +302,7 @@ describe("createLicenceProjection", () => {
 
     assert.deepEqual(
       rows.rows.map((row) => row.tier),
-      ["solo", "free"],
+      ["personal", "free"],
     );
     assert.equal(UPSERT_LICENCE_SQL.includes("ON CONFLICT (organization_id) DO UPDATE"), true);
   });
@@ -345,7 +350,7 @@ describe("createLicenceProjection", () => {
     const row = await licence.project(view());
     // The row is still answered: the caller is the plugin's hook, and the plugin treats a
     // thrown hook as "log it and answer the webhook 200" either way.
-    assert.equal(row.tier, "solo");
+    assert.equal(row.tier, "personal");
     assert.deepEqual(failures, [`${ORG}:the database is gone`]);
   });
 });
@@ -354,7 +359,7 @@ describe("the plugin's lifecycle hooks", () => {
   const subscription = {
     id: "row_1",
     referenceId: ORG,
-    plan: "solo",
+    plan: "personal",
     status: "active",
     periodEnd: new Date(NOW + DAY),
     cancelAtPeriodEnd: false,
@@ -401,7 +406,7 @@ describe("the plugin's lifecycle hooks", () => {
 
     assert.deepEqual(
       projected.map((row) => row.tier),
-      ["solo", "solo", "solo", "free"],
+      ["personal", "personal", "personal", "free"],
     );
     assert.equal(projected[0]?.seats, 2);
   });

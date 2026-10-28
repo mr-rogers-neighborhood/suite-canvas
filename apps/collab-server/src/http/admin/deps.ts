@@ -174,9 +174,27 @@ export interface AdminDatabaseRow {
   ok: boolean;
 }
 
+/**
+ * The licence behind a workspace, as the gate reads it.
+ *
+ * `state` is the word a reader needs and `expired` is what the gate does about it, kept
+ * apart so the panel can say "past due, so sync is refused" rather than leaving a reader to
+ * work out that a chip with a date in the past means something.
+ */
+export interface AdminWorkspaceLicence {
+  tier: string;
+  licenceId: string;
+  expiresAt: number;
+  expired: boolean;
+  /** The organization the licence was minted for, when the claim carried one. */
+  email: string | null;
+}
+
 export interface AdminWorkspaceRow {
   id: string;
   claimed: boolean;
+  /** Null when this workspace has no licence record, which is what a cancellation leaves. */
+  licence: AdminWorkspaceLicence | null;
   documentBytes: number;
   /** True when the document exceeds its budget; saves are still accepted. */
   overQuota: boolean;

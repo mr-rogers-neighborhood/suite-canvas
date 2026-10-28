@@ -9,6 +9,7 @@ import { createDocumentStore } from "../../store/persistence.js";
 import { createShareStore } from "../../store/shares.js";
 import { createWorkspaceOrgStore } from "../../store/workspaceOrgs.js";
 import { ADMIN_API_PATH, type AdminRequestDeps, handleAdminRequest } from "./index.js";
+import { licenceOf } from "./workspaces.js";
 
 /**
  * The licence writer, and the gate reading what it writes.
@@ -72,6 +73,12 @@ afterEach(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
+let built: AdminRequestDeps | null = null;
+const deps = (): AdminRequestDeps => {
+  if (built === null) throw new Error("start() first");
+  return built;
+};
+
 async function start(): Promise<void> {
   const deps: AdminRequestDeps = {
     documents,
@@ -86,6 +93,7 @@ async function start(): Promise<void> {
     licences,
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as never,
   };
+  built = deps;
   server = createServer((request, response) => {
     void handleAdminRequest(request, response, deps).then((handled) => {
       if (handled || response.writableEnded) return;
@@ -186,3 +194,29 @@ describe("the admin licence row", () => {
 
 /** The claim the writer produces, so a change in the shape is visible here. */
 export type WrittenClaims = LicenceClaims;
+
+describe("the row the panel reads", () => {
+  it("carries the licence the gate would read, and says when it has expired", async () => {
+    await start();
+    await call("PUT", { state: "active", tier: "team", licenceId: "lic-9" });
+
+    const active = licenceOf(deps(), WORKSPACE);
+    // The body named a tier, so the row carries it; `state` decides the expiry.
+    expect(active).toMatchObject({ tier: "team", expired: false, licenceId: "lic-9" });
+
+    await call("PUT", { state: "past-due" });
+
+    // The row is there and the gate refuses it: both facts travel, so the panel can say
+    // "past due, so sync is refused" instead of showing a chip with a date in the past.
+    expect(licenceOf(deps(), WORKSPACE)).toMatchObject({ expired: true });
+  });
+
+  it("says there is no licence after a cancellation", async () => {
+    await start();
+    await call("PUT", { state: "active" });
+
+    await call("DELETE");
+
+    expect(licenceOf(deps(), WORKSPACE)).toBeNull();
+  });
+});

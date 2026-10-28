@@ -7,7 +7,12 @@ import type { DocumentInventory } from "../../store/persistence.js";
 import { HttpError } from "../errors.js";
 import { sendJson } from "../respond.js";
 import { notifyRemoved } from "../shareHooks.js";
-import type { AdminRequestDeps, AdminWorkspaceRow, StoredWorkspace } from "./deps.js";
+import type {
+  AdminRequestDeps,
+  AdminWorkspaceLicence,
+  AdminWorkspaceRow,
+  StoredWorkspace,
+} from "./deps.js";
 import {
   audit,
   closedSessions,
@@ -77,7 +82,33 @@ export function sharesOf(deps: AdminRequestDeps, id: string): number {
   }
 }
 
-export function workspaceRow(deps: AdminRequestDeps, stored: StoredWorkspace): AdminWorkspaceRow {
+/**
+ * The licence the gate would read for this workspace, or null when there is none.
+ *
+ * Read from the same store `putLicence` writes and the quota service consults, so the chip
+ * in the panel cannot describe a state the gate disagrees with.
+ */
+export function licenceOf(
+  deps: AdminRequestDeps,
+  workspaceId: string,
+  now = Date.now(),
+): AdminWorkspaceLicence | null {
+  const record = deps.licences?.get(workspaceId) ?? null;
+  if (record === null) return null;
+  return {
+    tier: record.tier,
+    licenceId: record.licenceId,
+    expiresAt: record.expiresAt,
+    expired: record.expiresAt <= now,
+    email: record.email,
+  };
+}
+
+export function workspaceRow(
+  deps: AdminRequestDeps,
+  stored: StoredWorkspace,
+  now = Date.now(),
+): AdminWorkspaceRow {
   const loaded = loadWorkspace(deps.documents, stored.id);
   const documentBytes = loaded?.bytes ?? 0;
   const budget =
@@ -86,6 +117,7 @@ export function workspaceRow(deps: AdminRequestDeps, stored: StoredWorkspace): A
   return {
     id: stored.id,
     claimed: claimedOf(deps, stored.id),
+    licence: licenceOf(deps, stored.id, now),
     documentBytes,
     overQuota: documentBytes > budget,
     ...countersOf(loaded?.workspace ?? null),
@@ -118,6 +150,7 @@ export function workspaceDetail(
     sendJson(response, 200, {
       id: workspaceId,
       claimed: true,
+      licence: licenceOf(deps, workspaceId),
       documentBytes: 0,
       overQuota: false,
       cards: 0,

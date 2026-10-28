@@ -136,9 +136,19 @@ export interface AdminShare {
   revokedAt: number | null;
 }
 
+/** The licence the gate would read for a workspace, as the relay reports it. */
+export interface WorkspaceLicence {
+  tier: string;
+  licenceId: string;
+  expiresAt: number;
+  expired: boolean;
+  email: string | null;
+}
+
 export interface WorkspaceRow {
   id: string;
   claimed: boolean;
+  licence: WorkspaceLicence | null;
   documentBytes: number;
   cards: number;
   boards: number;
@@ -632,4 +642,28 @@ export async function playRole(role: WearableRole): Promise<RoleOverrideState> {
 
 export async function stopRole(): Promise<RoleOverrideState> {
   return requestUrl(`${ROLE_OVERRIDE_BASE}`, { method: "DELETE" });
+}
+
+/**
+ * The four states a real subscription passes through, written straight into the row the
+ * gate reads.
+ *
+ * This is the proof path for billing without a payment provider: an expired row is what a
+ * lapsed subscription produces, and no row at all is what a cancellation produces. The
+ * states are the product's words, so the panel never has to explain a raw tier.
+ */
+export type LicenceState = "trial" | "active" | "past-due" | "cancelled";
+
+export async function writeLicence(
+  workspaceId: string,
+  state: Exclude<LicenceState, "cancelled">,
+): Promise<void> {
+  await requestUrl(`${BASE}/workspaces/${encode(workspaceId)}/licence`, {
+    method: "PUT",
+    body: JSON.stringify({ state }),
+  });
+}
+
+export async function clearLicence(workspaceId: string): Promise<void> {
+  await requestUrl(`${BASE}/workspaces/${encode(workspaceId)}/licence`, { method: "DELETE" });
 }

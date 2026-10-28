@@ -668,3 +668,30 @@ code {
   background: rgba(244, 63, 94, 0.12);
   font-size: 12px;
 }
+
+/* A licence is a state and a consequence, stacked so the two read together. */
+.admin-licence {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 190px;
+}
+
+.admin-licence-chip {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--admin-line, rgba(127, 127, 127, 0.35));
+}
+
+.admin-licence-chip[data-state="expired"] {
+  border-color: rgba(244, 63, 94, 0.6);
+  color: rgb(190, 18, 60);
+}
+
+.admin-licence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

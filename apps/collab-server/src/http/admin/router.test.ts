@@ -364,6 +364,7 @@ describe("admin API", () => {
         tags: number;
         shares: number;
         lastSavedAt: number | null;
+        licence: unknown;
       }[];
       total: number;
     };
@@ -378,6 +379,9 @@ describe("admin API", () => {
     expect(first?.types).toBeGreaterThanOrEqual(1);
     expect(first?.documentBytes).toBeGreaterThan(0);
     expect(first?.lastSavedAt).toBeTypeOf("number");
+    // No licence store is wired in this suite, which reads as "no licence" rather than
+    // as a missing field the panel would have to guess about.
+    expect(first?.licence).toBeNull();
 
     const small = (await (await get(`${ADMIN_API_PATH}/workspaces?limit=1`)).json()) as {
       workspaces: { id: string }[];

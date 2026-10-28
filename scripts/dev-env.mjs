@@ -18,7 +18,7 @@
  *   node scripts/dev-env.mjs            write .env, or report that one exists
  *   node scripts/dev-env.mjs --force    write .env.new next to it
  */
-import { randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,7 +68,26 @@ const OVERRIDES = {
   SUITE_SETTINGS_KEY: randomBytes(32).toString("base64url"),
   SUITE_APP_URL: APP_ORIGIN,
   SUITE_MAIL_TRANSPORT: "console",
+  // The deployment's shape, locally: licences are enforced, so `pnpm drill:billing` can
+  // walk trial, past due, active and cancelled without a payment provider.
+  SUITE_HOSTED: "1",
+  SUITE_LICENCE_PUBLIC_KEY: licencePublicKey(),
 };
+
+/**
+ * The public half of an Ed25519 keypair, base64 raw.
+ *
+ * `SUITE_HOSTED=1` is what opens the relay's licence store, and the relay refuses to start
+ * without a verification key. The pair proves nothing here — the hosted path reads capacity
+ * from the organization's subscription, never from a signed self-host licence — but the
+ * variable is required, and an unlicensed local run could not test the gate at all.
+ */
+function licencePublicKey() {
+  const { publicKey } = generateKeyPairSync("ed25519");
+  // The raw key is the last 32 bytes of the SPKI DER, which is what the relay expects.
+  const der = publicKey.export({ type: "spki", format: "der" });
+  return Buffer.from(der.subarray(der.length - 32)).toString("base64");
+}
 
 /** A commented `KEY=` line becomes a live one; a live line keeps its comment. */
 function setValue(source, key, value) {

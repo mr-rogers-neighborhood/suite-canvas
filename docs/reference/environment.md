@@ -59,7 +59,7 @@ stores in one file. Two stores must never share a file, whatever the mode.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `SUITE_HOSTED` | `0` | `1` enforces hosted licences and installs the hosted quota defaults; `SUITE_LICENCE_PUBLIC_KEY` becomes required and `SUITE_LICENCE` is refused |
+| `SUITE_HOSTED` | `0` | `1` enforces hosted licences and installs the hosted quota defaults; `SUITE_LICENCE_PUBLIC_KEY` becomes required and `SUITE_LICENCE` is refused. It also opens the relay's licence claim store, so the panel can write the four plan states and `pnpm drill:billing` has something to walk; a self-host answers `501` to that route |
 | `SUITE_LICENCE` | none | signed licence token for a self-hosted instance, verified at boot; see [Self-host licence](#self-host-licence) |
 | `SUITE_LICENCE_PUBLIC_KEY` | none | Ed25519 public key that verifies `SUITE_LICENCE` and the relay's licence tokens, as PEM or the base64url raw key |
 | `SUITE_RELAY_PURGE_TOKEN` | none | bearer the control plane presents to the relay's own workspace delete, so an account erase removes documents, shares and attachments. It opens that one route and nothing else |

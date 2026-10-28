@@ -22,5 +22,13 @@
       "outputs": ["dist/**"]
     }
   },
-  "globalPassThroughEnv": ["POSTGRES_PORT"]
+  "globalPassThroughEnv": [
+    "POSTGRES_PORT",
+    "SUITE_DOMAIN",
+    "SUITE_DRILL_ORIGIN",
+    "SUITE_DRILL_EMAIL",
+    "SUITE_DRILL_PASSWORD",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_WEBHOOK_SECRET_LIVE"
+  ]
 }

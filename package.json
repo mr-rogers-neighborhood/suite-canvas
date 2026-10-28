@@ -29,6 +29,7 @@
     "docs:symbols": "node scripts/check-docs-symbols.mjs",
     "doctor": "node scripts/doctor.mjs",
     "drill:backup": "node scripts/drill-backup.mjs",
+    "drill:billing": "node scripts/drill-billing.mjs",
     "e2e": "pnpm --filter @suite/e2e e2e",
     "e2e:canvas": "pnpm --filter @suite/e2e e2e:canvas",
     "e2e:changed": "pnpm --filter @suite/e2e e2e:changed",

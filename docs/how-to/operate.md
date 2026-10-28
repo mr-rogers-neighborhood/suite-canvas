@@ -517,3 +517,52 @@ missing `SUITE_MAIL_FROM` shows up in the panel rather than in a stranger's sign
 which is what it was asked to do.
 
 `POST /admin/mail/test` with `{"to": "you@example.com"}` is the same call, for a script.
+
+## Prove the money path without a payment provider
+
+`pnpm drill:billing` drives a running stack over HTTP and asserts each state the licence gate
+can be in, then the one property that makes a mode switch safe.
+
+| Step | What it proves |
+| --- | --- |
+| `health` | the stack answers |
+| operator sign-in, then `/api/auth/token` | the relay accepts a session and mints the JWT it verifies |
+| a fixture workspace | the drill owns what it touches |
+| trial, past due, active, cancelled | an expired row refuses sync, an absent row is a cancellation |
+| a webhook signed by the active mode | the signature path works |
+| the same body signed by the *other* mode | it is refused, so a test event cannot write a licence on a live deployment |
+
+It seeds a fixture workspace and deletes it afterwards, including after a failure, and it
+charges nothing: the licence row is written directly and the webhook body is signed by the
+script itself.
+
+```sh
+SUITE_DRILL_EMAIL=you@example.com SUITE_DRILL_PASSWORD='…' pnpm drill:billing
+# or against another host:  pnpm drill:billing --origin=https://app.example.com
+```
+
+Without credentials it runs the steps that need no session and names the ones it skipped,
+so a green drill with skips is not the same as a green drill. Two facts make the run
+possible:
+
+- **`SUITE_HOSTED=1`.** The licence store only opens in hosted mode, so a self-host relay has
+  no row to write and answers `501` to the licence route. `pnpm setup` writes the hosted
+  shape locally, with a generated `SUITE_LICENCE_PUBLIC_KEY`.
+- **Both webhook secrets.** The pinning step needs the set the mode is *not* using; without
+  it there is nothing to refuse and the step says so.
+
+## What is audited
+
+Every control-plane act an operator takes writes a row to `operator_audit`: impersonation
+started, stopped or refused, a support grant given by the account or ended by an operator, a
+setting written or reset, a test message sent, a role worn or cleared. A refusal that reached
+an authorisation answer is kept, because "somebody tried" is the fact an incident review wants,
+and a 401 is not, because it names no actor. A secret's value is never recorded, only the fact
+that it was replaced.
+
+The **Activity** view reads it, newest first, filterable by actor and action. Rows are kept
+forever with no retention policy yet; that is stated here rather than assumed.
+
+The relay's own licence writes are audited by the relay, in its log, not in this table. The
+two processes keep two trails because they own two stores; the panel's Activity view covers
+the control plane's.

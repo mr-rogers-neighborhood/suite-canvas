@@ -102,7 +102,6 @@ export interface LibraryDrawerProps {
   /** Creates a portal card to the board on the active board; the row stays put. */
   onPlaceBoard?: (boardId: string) => void;
   /** The same portal, dropped where the reader let go. */
-  onDropBoardAt?: ((boardId: string, point: { x: number; y: number }) => void) | undefined;
   /** Removes this board's placements only; a card on another board stays there. */
   onUnplaceBoardCards?: (boardId: string) => void;
   /** Asks once, here: unplace the cards or trash them with the board. */

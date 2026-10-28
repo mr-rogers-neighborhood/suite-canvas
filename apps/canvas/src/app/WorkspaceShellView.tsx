@@ -167,6 +167,8 @@ export interface WorkspaceShellViewProps {
   placeCard: (cardId: string, point?: { x: number; y: number }) => void;
   /** Put picked rows in the reader's hand, one press per card. */
   startPlaceStack: (cardIds: readonly string[]) => void;
+  /** Place a whole picked set at a drop point, as a stepped stack. */
+  onDropSelection: (cardIds: readonly string[], point: { x: number; y: number }) => void;
   toggleLibraryType: UiState["toggleLibraryType"];
   toggleLibraryTag: UiState["toggleLibraryTag"];
   clearLibraryFilters: UiState["clearLibraryFilters"];
@@ -267,6 +269,7 @@ export function WorkspaceShellView({
   setLibraryTab,
   placeCard,
   startPlaceStack,
+  onDropSelection,
   toggleLibraryType,
   toggleLibraryTag,
   clearLibraryFilters,
@@ -686,7 +689,6 @@ export function WorkspaceShellView({
             onCreateBoard={canCreateBoards ? createBoard : undefined}
             onOpenBoard={activateBoard}
             onPlaceBoard={(boardId) => createPortal(boardId)}
-            onDropBoardAt={(boardId, point) => createPortal(boardId, point)}
             onUnplaceBoardCards={unplaceBoardCards}
             onDeleteBoard={deleteBoard}
             onLocateCard={locateCard}
@@ -708,14 +710,7 @@ export function WorkspaceShellView({
             onDeleteForever={(cardId) => workspace.purgeCard(cardId)}
             onEmptyTrash={() => workspace.emptyTrash()}
             onGoToBoard={activateBoard}
-            onDropAt={(cardIds, point) => {
-              // A dropped selection lands as a stack under the pointer, each card
-              // stepped from the last so the whole set is visible at once.
-              placeCard(cardIds[0] ?? "", point);
-              for (const [index, cardId] of cardIds.slice(1).entries()) {
-                placeCard(cardId, { x: point.x + 24 * (index + 1), y: point.y + 24 * (index + 1) });
-              }
-            }}
+            onDropAt={(cardIds, point) => onDropSelection(cardIds, point)}
             onPlaceCards={(cardIds) => {
               startPlaceStack(cardIds);
               setLibraryOpen(false);

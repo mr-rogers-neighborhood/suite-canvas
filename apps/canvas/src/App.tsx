@@ -13,6 +13,7 @@ import { WorkspaceShellView } from "./app/WorkspaceShellView";
 import { useSurfacePalette, useWorkspacePalette } from "./app/workspacePaint";
 import { signedIn as accountSignedIn, useAccountStore } from "./auth/useAccountStore";
 import { DEFAULT_PORTAL_SIZE } from "./canvas/PortalCard";
+import { placementLookup, resolveSelection } from "./canvas/placeSelection";
 import { usePlaceStackStore } from "./canvas/placeStack";
 import type { CanvasPurpose } from "./canvas/purpose";
 import { useRecordEngine } from "./canvas/useRecordEngine";
@@ -369,6 +370,32 @@ function WorkspaceShell({
       setSelectedNodeIds([card.id]);
     },
     [activeBoardId, canvasPoint, workspace, canCreateContent, setSelectedNodeIds],
+  );
+
+  /**
+   * A picked set dropped on the board lands as a stepped stack under the pointer.
+   *
+   * One resolver for the whole pick, the same one the stack asks: a board row becomes
+   * the portal that opens it, so a drop can no longer make a second portal for a board
+   * that already had one, and a mixed selection drops every row rather than the first.
+   */
+  const onDropSelection = useCallback(
+    (cardIds: readonly string[], point: { x: number; y: number }) => {
+      if (!activeBoardId || !canEditLayout) return;
+      const lookup = placementLookup(workspace);
+      const items = resolveSelection(cardIds, lookup);
+      items.forEach((item, index) => {
+        const stepped = { x: point.x + 24 * index, y: point.y + 24 * index };
+        if (item.kind === "board") {
+          const existing = lookup.portalFor(item.boardId);
+          if (existing === undefined) createPortal(item.boardId, stepped);
+          else placeCard(existing, stepped);
+          return;
+        }
+        placeCard(item.cardId, stepped);
+      });
+    },
+    [activeBoardId, canEditLayout, workspace, createPortal, placeCard],
   );
 
   /** The rows that act on the document, so the palette and the dock agree. */
@@ -735,6 +762,7 @@ function WorkspaceShell({
       setLibraryTab={setLibraryTab}
       placeCard={placeCard}
       startPlaceStack={(cardIds) => usePlaceStackStore.getState().start(cardIds)}
+      onDropSelection={onDropSelection}
       toggleLibraryType={toggleLibraryType}
       toggleLibraryTag={toggleLibraryTag}
       clearLibraryFilters={clearLibraryFilters}

@@ -14,6 +14,8 @@ interface PlaceStackState {
   start: (cardIds: readonly string[]) => void;
   /** The top card landed: drop it and keep the rest. */
   advance: () => void;
+  /** Drop these ids: one press can retire a board and the portal that opens it. */
+  remove: (ids: readonly string[]) => void;
   stop: () => void;
 }
 
@@ -27,6 +29,10 @@ export const usePlaceStackStore = create<PlaceStackState>()((set, get) => ({
   advance: () => {
     const queue = get().queue.slice(1);
     set({ queue });
+  },
+  remove: (ids) => {
+    const gone = new Set(ids);
+    set({ queue: get().queue.filter((id) => !gone.has(id)) });
   },
   stop: () => set({ queue: [] }),
 }));

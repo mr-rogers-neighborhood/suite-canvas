@@ -53,7 +53,6 @@ export function LibraryDrawer({
   onCreateBoard,
   onOpenBoard = () => {},
   onPlaceBoard = () => {},
-  onDropBoardAt,
   onUnplaceBoardCards = () => {},
   onDeleteBoard = () => {},
   onLocateCard = () => false,
@@ -178,15 +177,11 @@ export function LibraryDrawer({
   } = useLibraryHold({
     // A board dragged onto the canvas becomes a portal at the drop point, which
     // is the same gesture a card makes: the row lifts, the canvas receives it.
+    // The whole pick goes to the canvas, which resolves a board row into the portal
+    // that opens it. Special-casing one row here is how a mixed selection dropped a
+    // single board and lost every card beside it.
     onDropAt: (ids, point) => {
-      const [id] = ids;
-      if (!id) return;
-      const item = ordered.find((entry) => entry.id === id);
-      if (item !== undefined && isBoardItem(item)) {
-        onDropBoardAt?.(id, point);
-        return;
-      }
-      onDropAt(ids, point);
+      if (ids.length > 0) onDropAt(ids, point);
     },
     onOpen: (id) => {
       const item = ordered.find((entry) => entry.id === id);

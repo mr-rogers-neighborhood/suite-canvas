@@ -587,8 +587,16 @@ aws logs tail "${SUITE_LOG_GROUP:-suite-app}" --follow
 Cron is the half that has to exist for any of it to mean anything:
 
 ```cron
-*/5 * * * * root cd /srv/suite && SUITE_METRICS_LOCAL=1 deploy/alert.sh --cloudwatch >/dev/null
+*/5 * * * * root /srv/suite/deploy/cloudwatch/probe.sh >/dev/null 2>&1
 ```
+
+`deploy/cloudwatch/probe.sh` exists because the two halves of that job need different
+network namespaces. The relay answers `/metrics` without a session only when the *source*
+is loopback, and a request through a Docker port mapping arrives from the bridge gateway,
+so the scrape has to run inside the relay's namespace. Inside that namespace the EC2
+metadata service is unreachable, so `aws` has no credentials to publish with. The script
+scrapes in the namespace, publishes `Suite/Health` from the host, and exits with the
+probe's own code either way.
 
 `SUITE_METRICS_LOCAL=1` lets a loopback scrape read `/metrics` without a session, which is
 what a cron timer can do. The panel and a non-local scrape stay gated.

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# The health probe, arranged so that both halves can do their job.
+#
+# `deploy/alert.sh` scrapes `http://127.0.0.1:1235/metrics`, and the relay only answers that
+# without a session when the *source* is loopback (`SUITE_METRICS_LOCAL=1`). A request
+# through a Docker port mapping arrives from the bridge gateway, so the host cannot make
+# that scrape — it has to run inside the relay container's network namespace.
+#
+# Inside that namespace, however, the EC2 instance metadata service is unreachable, so the
+# `aws` client has no credentials and cannot publish. Rather than widen either guard, this
+# script does one in each place: scrape in the namespace, publish the datapoint from the
+# host, and exit with the probe's own code.
+#
+#   deploy/cloudwatch/probe.sh            # scrape and publish Suite/Health
+#   deploy/cloudwatch/probe.sh --no-publish
+#
+# Environment:
+#   SUITE_APP_CONTAINER   relay container name (default: suite-app-1)
+#   SUITE_LOG_DEPLOYMENT  dimension value (default: the host name)
+set -uo pipefail
+
+container=${SUITE_APP_CONTAINER:-suite-app-1}
+deployment=${SUITE_LOG_DEPLOYMENT:-$(hostname 2>/dev/null || printf 'suite')}
+namespace=Suite
+publish=1
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-publish) publish=0 ;;
+    *)
+      printf 'probe: unknown argument: %s\n' "$arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+alert_script="$here/../alert.sh"
+[ -x "$alert_script" ] || {
+  printf 'probe: cannot find %s\n' "$alert_script" >&2
+  exit 2
+}
+
+pid=$(docker inspect -f '{{.State.Pid}}' "$container" 2>/dev/null)
+[ -n "$pid" ] && [ "$pid" != "0" ] || {
+  printf 'probe: %s is not running\n' "$container" >&2
+  exit 2
+}
+
+# The scrape, with the relay's own view of loopback.
+nsenter -t "$pid" -n env SUITE_METRICS_LOCAL=1 "$alert_script"
+status=$?
+
+[ "$publish" = 1 ] || exit "$status"
+
+value=0
+[ "$status" -eq 0 ] && value=1
+aws cloudwatch put-metric-data \
+  --namespace "$namespace" --metric-name Health --value "$value" --unit None \
+  --dimensions "Deployment=$deployment" >/dev/null 2>&1 ||
+  printf 'probe: CloudWatch refused the Health metric (value %s)\n' "$value" >&2
+
+exit "$status"

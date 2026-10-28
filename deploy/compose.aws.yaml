@@ -11,9 +11,12 @@
 # `deploy/cloudwatch/logs.sh` rather than by `awslogs-create-group`, because a container
 # that can create log groups can create them anywhere.
 #
-# `mode: non-blocking` is the line that protects saves: a log write that blocks must not
-# stall a document write. The buffer is bounded, and what does not fit is dropped with a
-# message in the driver's own log rather than held forever.
+# The buffer is bounded (`awslogs-max-buffered-events`), so a log write that cannot keep up
+# is dropped rather than held forever: a stalled driver must not stall a document write.
+#
+# There is no `awslogs-mode` option. It reads like it belongs next to the other `awslogs-*`
+# keys, and Docker rejects it outright with `unknown log opt 'awslogs-mode'`, which fails
+# the container at *create* time. The non-blocking behaviour is the bounded buffer above.
 #
 # One group, one stream per service, so `aws logs tail` follows a process and a query across
 # the group follows all three.
@@ -26,7 +29,6 @@ services:
         awslogs-region: ${AWS_REGION:-us-east-2}
         awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
         awslogs-stream: app
-        awslogs-mode: non-blocking
         awslogs-max-buffered-events: "8192"
 
   control-plane:
@@ -36,7 +38,6 @@ services:
         awslogs-region: ${AWS_REGION:-us-east-2}
         awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
         awslogs-stream: control-plane
-        awslogs-mode: non-blocking
         awslogs-max-buffered-events: "8192"
 
   caddy:
@@ -46,5 +47,4 @@ services:
         awslogs-region: ${AWS_REGION:-us-east-2}
         awslogs-group: ${SUITE_LOG_GROUP:-suite-app}
         awslogs-stream: caddy
-        awslogs-mode: non-blocking
         awslogs-max-buffered-events: "8192"

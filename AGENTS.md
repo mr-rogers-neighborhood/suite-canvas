@@ -37,7 +37,7 @@ Read [docs/README.md](docs/README.md) for the four documentation sections, and
 ```sh
 pnpm install          # also installs the git hooks
 pnpm dev              # canvas on :5173, relay on :1234
-pnpm check            # the edit loop: biome, tsc, changed Vitest files, docs symbols, shape
+pnpm check            # the edit loop: biome, tsc, changed Vitest files, billing tests, docs symbols, shape
 pnpm lint             # biome check
 pnpm typecheck        # tsc across the workspace
 pnpm test             # every Vitest project
@@ -65,8 +65,9 @@ The gate is local and it runs on every change:
 pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols && pnpm shape
 ```
 
-`pnpm check` runs Biome, `tsc`, `vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, so it is
-the one to repeat after each edit batch; it leaves out `pnpm docs:check` and the full test run.
+`pnpm check` runs Biome, `tsc`, `vitest run --changed`, the `node --test` billing suite,
+`pnpm docs:symbols` and `pnpm shape`, so it is the one to repeat after each edit batch; it leaves out
+`pnpm docs:check` and the full test run.
 `pnpm verify` adds the story suite, the billing tests and the build.
 
 Playwright is not part of the gate. When the owner asks for a run, the area scripts (`pnpm e2e:smoke`,

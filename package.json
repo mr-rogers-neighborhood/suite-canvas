@@ -11,7 +11,7 @@
     "bench": "vitest bench --config vitest.bench.config.ts --reporter=verbose",
     "build": "turbo run build",
     "build-storybook": "pnpm --filter @suite/canvas build-storybook",
-    "check": "biome check . && turbo run typecheck && vitest run --changed && pnpm docs:symbols && pnpm shape",
+    "check": "biome check . && turbo run typecheck && vitest run --changed && pnpm turbo run test --filter=@suite/billing && pnpm docs:symbols && pnpm shape",
     "check:env": "node scripts/check-env.mjs",
     "clean": "rm -rf apps/*/dist apps/*/storybook-static packages/*/dist .turbo apps/*/.turbo packages/*/.turbo",
     "coverage": "vitest run --coverage",

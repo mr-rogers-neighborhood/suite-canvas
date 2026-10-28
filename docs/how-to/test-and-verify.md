@@ -13,10 +13,15 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm docs:symbols
 ```
 
 None of those commands needs a runner or an account. `pnpm check` runs Biome, `tsc`,
-`vitest run --changed`, `pnpm docs:symbols` and `pnpm shape`, which is why it belongs after each edit
-batch; it leaves out `pnpm docs:check` and the full test run. `pnpm verify` adds the billing tests, the
-story suite, the build, and the two fast security scans (`security:deps` and `security:secrets`, both
-described below).
+`vitest run --changed`, the `node --test` suite under `services/billing`, `pnpm docs:symbols` and
+`pnpm shape`, which is why it belongs after each edit batch; it leaves out `pnpm docs:check` and the
+full test run. `pnpm verify` adds the story suite, the build, and the two fast security scans
+(`security:deps` and `security:secrets`, both described below).
+
+The billing suite is in the edit loop because `pnpm test` cannot see it: those tests are `node --test`
+and Vitest does not collect them. A rename that reached `deploy/stripe/fixtures.json` and not the tests
+naming its tiers passed every fast run and only failed at `pnpm verify`, which is a bad trade for half
+a second.
 
 Playwright stays outside the gate. No contributor or agent starts it by default, and no change waits
 on a run. E2E runs when the owner asks for it, or at a commit milestone the owner names. A full
@@ -30,14 +35,14 @@ entitlement change would make the workflow usable again.
 
 | Command | Covers | Run it |
 | --- | --- | --- |
-| `pnpm check` | Biome, `tsc` across the workspace, `vitest run --changed`, docs symbols, shape | After each edit batch |
+| `pnpm check` | Biome, `tsc` across the workspace, `vitest run --changed`, the billing suite, docs symbols, shape | After each edit batch |
 | `pnpm lint` | Biome over the whole tree | The gate, and after a formatting sweep |
 | `pnpm typecheck` | `tsc` across every workspace package | The gate, and after a type-only change |
 | `pnpm test` | Every Vitest project | The gate, and before you report a result |
 | `pnpm docs:check` | Relative links and anchors, code fences, banned prose, generated indexes, limits | A prose change, or a change to a limit |
 | `pnpm docs:symbols` | Backticked paths, root scripts and ADR references that resolve | A page that names a command or a file |
 | `pnpm shape` | File length, observe call sites, raw Loro writes | A change under `apps/` or `packages/` |
-| `pnpm verify` | The gate plus the billing tests, the story suite, the build, `security:deps` and `security:secrets` | Before a commit you want fully checked, and on a tag |
+| `pnpm verify` | The gate plus the story suite, the build, `security:deps` and `security:secrets` | Before a commit you want fully checked, and on a tag |
 | `pnpm test:stories` | The Storybook suite under jsdom plus axe, in both themes | A `.stories.tsx` changed, or you touched a component a story renders |
 
 ## Security scans

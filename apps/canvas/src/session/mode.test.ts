@@ -253,6 +253,9 @@ describe("standalone guard rails", () => {
     // A cover link is fetched by the panel, and the bytes only reach the relay through
     // `relayUploader`, which returns null where there is no relay to reach.
     "styles/coverFromUrl.ts": /relayUploader\(\)/u,
+    // The stale-build check asks this origin for the page it was served from. The
+    // path is spelled out, so there is no relay to reach in either profile.
+    "app/useStaleBuild.ts": /fetch\("\/"/u,
   };
 
   function sourceFiles(directory: string): string[] {

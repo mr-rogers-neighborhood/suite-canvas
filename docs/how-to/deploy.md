@@ -303,6 +303,18 @@ docker compose build control-plane
 docker compose up -d --no-build app control-plane
 ```
 
+### Tabs that outlive a deploy
+
+A canvas tab keeps running the bundle it loaded. `index.html` is `no-store` and the hashed chunks under
+`/assets` are immutable, so nothing about the deploy reaches a tab that is already open: the old engine
+keeps running, and a fix that shipped reads as a bug that survived it. Ask the reader to reload before
+believing a report against a tab that predates the build.
+
+`apps/canvas/src/app/useStaleBuild.ts` makes that visible instead of remembered. It compares the entry
+chunk this page loaded with the one the server would hand out now, on mount and whenever the tab comes
+back into view, and `StaleBuildNotice.tsx` shows a line with a Reload button when they differ. It never
+reloads on its own: a document can be mid-edit.
+
 ### Rollback
 
 Rollback restarts on the tag taken in step 3. Nothing is compiled and no old checkout is involved, so

@@ -2,9 +2,11 @@ import { PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { ReactFlowProvider, useOnViewportChange, useReactFlow } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shellPaletteItems } from "./app/palette";
+import { StaleBuildNotice } from "./app/StaleBuildNotice";
 import { useBoardDerivations } from "./app/useBoardDerivations";
 import { useBoardPaletteActions } from "./app/useBoardPaletteActions";
 import { useLeaveGuard } from "./app/useLeaveGuard";
+import { useStaleBuild } from "./app/useStaleBuild";
 import { useWorkspaceBoot } from "./app/useWorkspaceBoot";
 import { useWorkspaceSyncFacts } from "./app/useWorkspaceSyncFacts";
 import { WorkspaceShellView } from "./app/WorkspaceShellView";
@@ -43,6 +45,9 @@ const CARD_HALF_HEIGHT = 60;
 
 export default function App() {
   useEffect(() => initTheme(), []);
+  // A tab can outlive several deploys; the notice is how a reader learns that the
+  // bug they are looking at was fixed an hour ago (see `staleBuild`).
+  const stale = useStaleBuild();
 
   const session = getSession();
   const workspaceId = session.workspaceId;
@@ -51,6 +56,7 @@ export default function App() {
   return (
     <ReactFlowProvider>
       <WorkspaceShell workspaceId={workspaceId} share={session.share} />
+      {stale ? <StaleBuildNotice onReload={() => window.location.reload()} /> : null}
     </ReactFlowProvider>
   );
 }

@@ -19,7 +19,10 @@
 #
 # Environment:
 #   AWS_REGION          region for the metrics and alarms (default: the profile's)
-#   SUITE_DEPLOYMENT    the Deployment dimension value (default: hostname)
+#   SUITE_DEPLOYMENT    the Deployment dimension value (default: suite-app). It has to
+#                       match what `deploy/cloudwatch/probe.sh` publishes, and it should be
+#                       stable: an EC2 host name is `ip-<private ip>`, so the default here is
+#                       the same constant the probe uses.
 #   SUITE_ALERT_EMAIL   the address to subscribe, if --email is not given
 #
 # Requires permission to create an SNS topic, subscribe an address and put alarms. Run it
@@ -34,7 +37,7 @@ usage() {
 EMAIL="${SUITE_ALERT_EMAIL:-}"
 INSTANCE=""
 DB=""
-DEPLOYMENT="${SUITE_DEPLOYMENT:-$(hostname 2>/dev/null || printf 'suite')}"
+DEPLOYMENT="${SUITE_DEPLOYMENT:-suite-app}"
 
 while [ $# -gt 0 ]; do
   case "$1" in

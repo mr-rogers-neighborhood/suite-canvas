@@ -20,7 +20,10 @@
 set -uo pipefail
 
 container=${SUITE_APP_CONTAINER:-suite-app-1}
-deployment=${SUITE_LOG_DEPLOYMENT:-$(hostname 2>/dev/null || printf 'suite')}
+# A stable name, not `hostname`. The default host name on EC2 is `ip-<private ip>`, which
+# changes when the instance is stopped and started, and an alarm watching a dimension that
+# no longer reports sits in INSUFFICIENT_DATA — which reads exactly like healthy.
+deployment=${SUITE_LOG_DEPLOYMENT:-suite-app}
 namespace=Suite
 publish=1
 

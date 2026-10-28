@@ -6,7 +6,6 @@ import type { LibraryTab } from "../store/useUiStore";
 const TABS: Array<{ id: LibraryTab; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "cards", label: "Cards" },
-  { id: "boards", label: "Boards" },
   { id: "trash", label: "Trash" },
 ];
 

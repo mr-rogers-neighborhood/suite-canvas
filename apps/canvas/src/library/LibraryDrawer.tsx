@@ -19,7 +19,13 @@ import { LibraryOverlays } from "./LibraryOverlays";
 import { type LibraryRowContext, LibraryRowList } from "./LibraryRows";
 import { LibrarySearchRow } from "./LibrarySearchRow";
 import { LibrarySelectionBar } from "./LibrarySelectionBar";
-import type { LibraryBoard, LibraryDrawerProps, LibraryEntry, LibraryItem } from "./libraryTypes";
+import {
+  isBoardItem,
+  type LibraryBoard,
+  type LibraryDrawerProps,
+  type LibraryEntry,
+  type LibraryItem,
+} from "./libraryTypes";
 import { useLibraryHold } from "./useLibraryHold";
 import { type LibrarySort, useLibraryList } from "./useLibraryList";
 import { useLibraryRowActions } from "./useLibraryRowActions";
@@ -48,12 +54,13 @@ export function LibraryDrawer({
   onCreateBoard,
   onOpenBoard = () => {},
   onPlaceBoard = () => {},
+  onDropBoardAt,
   onUnplaceBoardCards = () => {},
   onDeleteBoard = () => {},
   onLocateCard = () => false,
   onLocateBoard = () => false,
-  onUseBoardTemplate,
-  onUseStarter = () => {},
+  onUseBoardTemplate: _onUseBoardTemplate,
+  onUseStarter: _onUseStarter,
   onSetBoardTemplate,
   starters = [],
   onTab,
@@ -154,8 +161,8 @@ export function LibraryDrawer({
     grouped,
     sectionsById,
     visibleBoards,
-    visibleTemplates,
-    visibleStarters,
+    visibleTemplates: _visibleTemplates,
+    visibleStarters: _visibleStarters,
   } = useLibraryList({
     tab,
     scope,
@@ -186,8 +193,24 @@ export function LibraryDrawer({
     setHold,
     reset: resetHold,
   } = useLibraryHold({
-    onDropAt,
-    onOpenCard,
+    // A board dragged onto the canvas becomes a portal at the drop point, which
+    // is the same gesture a card makes: the row lifts, the canvas receives it.
+    onDropAt: (id, point) => {
+      const item = ordered.find((entry) => entry.id === id);
+      if (item !== undefined && isBoardItem(item)) {
+        onDropBoardAt?.(id, point);
+        return;
+      }
+      onDropAt(id, point);
+    },
+    onOpen: (id) => {
+      const item = ordered.find((entry) => entry.id === id);
+      if (item !== undefined && isBoardItem(item)) {
+        onOpenBoard(id);
+        return;
+      }
+      onOpenCard(id);
+    },
     canPlace,
   });
 
@@ -334,6 +357,7 @@ export function LibraryDrawer({
     selected,
     selectableOrder,
     selectRow,
+    shiftHeld,
     toggleSelecting,
     clear: clearSelection,
     selectAll: selectAllRows,
@@ -346,6 +370,23 @@ export function LibraryDrawer({
     onRunCards,
     onRunLoop,
   });
+
+  // Shift over the open drawer borrows the multi-select UI; a pick keeps it.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Shift") return;
+      // Shift is half of a shortcut too (⌘⇧K opens the library): only a plain
+      // Shift press is a request for the multi-select UI.
+      if (event.type === "keydown" && (event.metaKey || event.ctrlKey || event.altKey)) return;
+      shiftHeld(event.type === "keydown");
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+    };
+  }, [shiftHeld]);
 
   if (!open) return null;
 
@@ -387,14 +428,31 @@ export function LibraryDrawer({
     sectionLabel,
     onOpenMenu: openRowMenu,
     onPressRow: pressRow,
-    onOpenCard,
-    onOpenBoard,
+    // A board row opens the board it names; a card row opens the card. The
+    // gesture is the same, so the row does not need to know which it is.
+    onOpen: (id) => {
+      const item = ordered.find((entry) => entry.id === id);
+      if (item && isBoardItem(item)) onOpenBoard(id);
+      else onOpenCard(id);
+    },
+    // A board row's second line: where it is and how much is on it. Read from
+    // the same item the list was built from, so the two cannot disagree.
+    boardState: (boardId) => {
+      const item = ordered.find((entry) => entry.id === boardId);
+      if (item === undefined || !isBoardItem(item)) return undefined;
+      return {
+        open: boardId === activeBoardId,
+        cardCount: (item as { cardCount?: number }).cardCount ?? 0,
+      };
+    },
   };
 
-  const entries: LibraryEntry[] =
-    tab === "boards"
-      ? visibleBoards.map((board) => ({ kind: "board", board }))
-      : ordered.map((card) => ({ kind: "card", card }));
+  // One list. A board is an item like a card, so the row shape follows the item
+  // rather than the tab.
+  const entries: LibraryEntry[] = ordered.map((item) => ({
+    kind: isBoardItem(item) ? "board" : "card",
+    card: item,
+  }));
 
   return createPortal(
     <div
@@ -444,7 +502,6 @@ export function LibraryDrawer({
       <LibrarySearchRow
         inputRef={searchInput}
         query={query}
-        boardTab={tab === "boards"}
         onQuery={updateQuery}
         onNavigate={(step) =>
           setActiveResult((current) => (current + step + ordered.length) % ordered.length)
@@ -459,7 +516,6 @@ export function LibraryDrawer({
       />
 
       <LibraryFacets
-        tab={tab}
         types={types}
         tags={tags}
         countsByFacet={countsByFacet}
@@ -495,11 +551,6 @@ export function LibraryDrawer({
         entryCount={entries.length}
         truncated={truncated}
         rows={<LibraryRowList entries={entries} grouped={grouped} context={rowContext} />}
-        templates={visibleTemplates}
-        starters={visibleStarters}
-        onUseTemplate={onUseBoardTemplate}
-        onUseStarter={onUseStarter}
-        onEditTemplate={onOpenBoard}
         onCreateBoard={onCreateBoard}
       />
 

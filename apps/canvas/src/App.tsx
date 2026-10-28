@@ -27,7 +27,8 @@ import { countRender } from "./dev/perf";
 import { useBootGate } from "./hooks/useBootGate";
 import { LIBRARY_SEARCH_FOCUS_EVENT } from "./hooks/useLibrarySearch";
 import { WorkspaceLauncher } from "./launcher/WorkspaceLauncher";
-import type { LibraryBoard, LibraryItem } from "./library/LibraryDrawer";
+import type { LibraryItem } from "./library/LibraryDrawer";
+import { toBoardItems, unopenedBoards } from "./library/libraryBoards";
 import { createStarterBoard, templateCopyName } from "./library/TemplateGallery";
 import { isStandalone } from "./session/mode";
 import { getSession, type ShareSession } from "./session/session";
@@ -423,15 +424,15 @@ function WorkspaceShell({
    * the way a placed card is. The card and its target are one commit.
    */
   const createPortal = useCallback(
-    (targetBoardId: string) => {
+    (targetBoardId: string, point?: { x: number; y: number }) => {
       if (!activeBoardId || !canCreateContent) return;
-      const centre = canvasPoint();
+      const at = point ? canvasPoint(point) : canvasPoint();
       const card = workspace.createPortalCard({
         boardId: activeBoardId,
         targetBoardId,
         position: {
-          x: centre.x - DEFAULT_PORTAL_SIZE.width / 2,
-          y: centre.y - DEFAULT_PORTAL_SIZE.height / 2,
+          x: at.x - DEFAULT_PORTAL_SIZE.width / 2,
+          y: at.y - DEFAULT_PORTAL_SIZE.height / 2,
         },
       });
       setSelectedNodeIds([card.id]);
@@ -585,32 +586,16 @@ function WorkspaceShell({
 
   // Facet filtering lives in the drawer: it owns the section facet, and every
   // facet needs the counts computed against the others.
-  const inboxItems = unplaced.map(toItem);
-  const cardItems = allCards.map(toItem);
+  const boardItems = useMemo(() => toBoardItems(snapshot), [snapshot]);
+  const inboxBoardItems = useMemo(() => unopenedBoards(boardItems), [boardItems]);
+  const inboxItems = [...unplaced.map(toItem), ...inboxBoardItems];
+  const cardItems = [...allCards.map(toItem), ...boardItems];
   const trashItems = trashed.map(toItem);
 
   /**
-   * The library's Boards section. Placing a board adds a portal to the active
-   * board and leaves this list alone: boards are global, so a placed board is
-   * still one row here (unlike a card, which leaves the inbox).
+   * The library's board rows: boards are items in the same list as cards, and one
+   * nothing points at waits in the inbox with the loose cards.
    */
-  const boardEntries = useMemo<LibraryBoard[]>(() => {
-    const liveCards = new Set(
-      snapshot.cards.filter((card) => !card.deletedAt).map((card) => card.id),
-    );
-    const placed = new Map<string, number>();
-    for (const placement of snapshot.placements) {
-      if (!liveCards.has(placement.cardId)) continue;
-      placed.set(placement.boardId, (placed.get(placement.boardId) ?? 0) + 1);
-    }
-    return snapshot.boards.map((board) => ({
-      id: board.id,
-      title: board.name,
-      open: board.id === activeBoardId,
-      cardCount: placed.get(board.id) ?? 0,
-      template: board.template === true,
-    }));
-  }, [snapshot.boards, snapshot.cards, snapshot.placements, activeBoardId]);
 
   /**
    * Locate pans to the object on the board in front of the reader. A card that
@@ -810,7 +795,7 @@ function WorkspaceShell({
       cardFocusId={cardFocusId}
       inboxItems={inboxItems}
       cardItems={cardItems}
-      boardEntries={boardEntries}
+      boardEntries={boardItems}
       unplaceBoardCards={unplaceBoardCards}
       deleteBoard={deleteBoard}
       locateCard={locateCard}

@@ -8,7 +8,7 @@ import {
   groupBySection as groupSections,
   type SectionOrderEntry,
 } from "./libraryFilters";
-import type { LibraryBoard, LibraryItem } from "./libraryTypes";
+import { isBoardItem, type LibraryBoard, type LibraryItem } from "./libraryTypes";
 import type { BoardStarter } from "./TemplateGallery";
 
 /**
@@ -51,8 +51,8 @@ export interface LibraryListArgs {
   inbox: LibraryItem[];
   cards: LibraryItem[];
   trash: LibraryItem[];
-  boards: LibraryBoard[];
-  starters: readonly BoardStarter[];
+  boards: Array<LibraryItem & { updatedAt?: number }>;
+  starters?: readonly BoardStarter[];
   typeFilter: string[];
   tagFilter: string[];
   sectionFilter: string[];
@@ -77,7 +77,7 @@ export function useLibraryList({
   cards,
   trash,
   boards,
-  starters,
+  starters: _starters,
   typeFilter,
   tagFilter,
   sectionFilter,
@@ -119,41 +119,30 @@ export function useLibraryList({
   // Relevance is whatever the search produced; the other two orders are a sort
   // over it, because a reader who asks for "recently updated" means the list
   // they can see.
+  const boardsById = new Map(boards.map((board) => [board.id, board]));
   const ordered = useMemo(() => {
     if (sort === "relevance") return visible;
     const byTitle = (a: LibraryItem, b: LibraryItem) =>
       a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
     if (sort === "updated") {
-      const updatedAt = (item: LibraryItem) => workspace?.getCard(item.id)?.updatedAt ?? 0;
+      const updatedAt = (item: LibraryItem) =>
+        isBoardItem(item)
+          ? (boardsById.get(item.id)?.updatedAt ?? 0)
+          : (workspace?.getCard(item.id)?.updatedAt ?? 0);
       return [...visible].sort((a, b) => updatedAt(b) - updatedAt(a) || byTitle(a, b));
     }
     return [...visible].sort(byTitle);
-  }, [visible, sort, workspace]);
+  }, [visible, sort, workspace, boardsById]);
   const filtering = typeFilter.length > 0 || tagFilter.length > 0 || activeSectionFilter.length > 0;
   const grouped =
     boardScope && groupBySection && !searching ? groupSections(ordered, sectionOrder) : null;
   const sectionsById = new Map(sectionOrder.map((section) => [section.id, section]));
 
-  // Boards are a name and a placement count, so they are matched by title only:
-  // the card index has nothing to say about them.
-  const boardQuery = query.trim().toLowerCase();
-  const matchesBoardQuery = (title: string) =>
-    boardQuery.length === 0 || title.toLowerCase().includes(boardQuery);
-  const matchedBoards =
-    tab !== "boards"
-      ? []
-      : boardQuery.length === 0
-        ? boards
-        : boards.filter((board) => board.title.toLowerCase().includes(boardQuery));
-  const visibleBoards = matchedBoards;
-  // The Templates group answers the same query as the list: a search narrows
-  // both halves instead of leaving a gallery of things the reader did not ask for.
-  // Blueprints are hidden, not deleted: the schema keeps `template` so a board
-  // already marked stays marked, but the gallery lists only the starters this
-  // build ships. Turning them back on is one filter.
+  // A board is an item in this same list, so its rows are searched, filtered and
+  // sorted above with everything else; only the tab's own item set differed.
+  const visibleBoards: LibraryBoard[] = [];
   const visibleTemplates: LibraryBoard[] = [];
-  const visibleStarters =
-    tab === "boards" ? starters.filter((entry) => matchesBoardQuery(entry.title)) : [];
+  const visibleStarters: readonly BoardStarter[] = [];
 
   return {
     query,

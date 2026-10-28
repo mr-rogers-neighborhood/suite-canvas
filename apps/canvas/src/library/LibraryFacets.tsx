@@ -1,10 +1,10 @@
 import type { CardType, Tag } from "@suite/graph";
 import { isBehaviourType, typePluralName } from "@suite/graph";
 import { type facetCounts, type SectionOrderEntry, UNSORTED_SECTION } from "./libraryFilters";
+import { BOARD_TYPE_FACET } from "./libraryTypes";
 
 /** The type, tag and section facet row; a board row is not a card, so it hides. */
 export function LibraryFacets({
-  tab,
   types,
   tags,
   countsByFacet,
@@ -21,7 +21,6 @@ export function LibraryFacets({
   onToggleGroup,
   onClearFilters,
 }: {
-  tab: string;
   types: CardType[];
   tags: Tag[];
   countsByFacet: ReturnType<typeof facetCounts>;
@@ -42,10 +41,25 @@ export function LibraryFacets({
     <div
       className="library-facets flex flex-wrap items-center gap-1 border-b border-[var(--hairline)] px-2 py-1.5"
       data-testid="library-facets"
-      // The facet row filters cards. A board row is not a card, so the row
-      // would be a row of zeroes here even though boards now carry tags.
-      style={tab === "boards" ? { display: "none" } : undefined}
     >
+      {/* Boards sit in the same list as cards, so they are a facet like any
+          type. It comes first because "show me the boards" is the filter a
+          reader reaches for most. */}
+      <button
+        type="button"
+        aria-pressed={typeFilter.includes(BOARD_TYPE_FACET)}
+        data-testid={`facet-type-${BOARD_TYPE_FACET}`}
+        className="library-tab"
+        data-active={typeFilter.includes(BOARD_TYPE_FACET) ? "true" : undefined}
+        onClick={() => onToggleType(BOARD_TYPE_FACET)}
+      >
+        <span aria-hidden="true">{"\u25f1"}</span>
+        Boards
+        <span className="tabular-nums text-[var(--ink-muted)]">
+          {countsByFacet.types.get(BOARD_TYPE_FACET) ?? 0}
+        </span>
+      </button>
+
       {/* A behaviour is not a facet (ADR-0011 §3): offering Sketch or Portal here
           reads as "author your own Sketch type", which the model forbids. A
           sketch is found in its own section; a portal is that board's presence. */}

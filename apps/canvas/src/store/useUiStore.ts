@@ -24,7 +24,12 @@ export interface SelectedConnector {
   connectorId: string;
 }
 
-export type LibraryTab = "inbox" | "cards" | "boards" | "trash";
+/**
+ * Boards are not a tab: a board row sits in Cards beside the cards, filtered by
+ * the Board facet. A second list would need a second set of actions for the same
+ * gesture (open, place, drag).
+ */
+export type LibraryTab = "inbox" | "cards" | "trash";
 
 /**
  * Who asked for the library. `mode` means a mode opened it as its own starting

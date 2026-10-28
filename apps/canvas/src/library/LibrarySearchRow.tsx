@@ -5,7 +5,6 @@ import type { LibrarySort } from "./useLibraryList";
 export function LibrarySearchRow({
   inputRef,
   query,
-  boardTab,
   onQuery,
   onNavigate,
   onPick,
@@ -16,7 +15,6 @@ export function LibrarySearchRow({
   inputRef: RefObject<HTMLInputElement | null>;
   query: string;
   /** The Boards tab searches boards, so the labels change. */
-  boardTab: boolean;
   onQuery: (query: string) => void;
   /** Arrow keys move the row cursor while a search is active. */
   onNavigate: (step: 1 | -1) => void;
@@ -50,8 +48,8 @@ export function LibrarySearchRow({
         type="search"
         value={query}
         data-testid="library-search"
-        aria-label={boardTab ? "Search boards" : "Search cards"}
-        placeholder={boardTab ? "Search boards" : "Search titles and notes"}
+        aria-label="Search cards and boards"
+        placeholder="Search cards and boards"
         autoComplete="off"
         className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--ink-muted)]"
         onChange={(event) => onQuery(event.target.value)}

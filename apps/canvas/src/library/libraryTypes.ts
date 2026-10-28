@@ -7,6 +7,16 @@ import type { BoardStarter } from "./TemplateGallery";
 export interface LibraryItem {
   id: string;
   title: string;
+  /**
+   * What kind of thing this row is.
+   *
+   * A board is not a card — it has no type of its own, no fields and no
+   * placement of its own — but in the library it behaves like one: it is
+   * searchable, filterable, selectable and draggable. Rather than keep a second
+   * list with a second set of actions, a board is an item whose type is
+   * `"board"`, so every facet, sort and selection works on it unchanged.
+   */
+  kind?: "card" | "board";
   boards: Array<{ id: string; name: string }>;
   typeIds: string[];
   tagIds: string[];
@@ -23,6 +33,8 @@ export interface LibraryItem {
 export interface LibraryBoard {
   id: string;
   title: string;
+  /** When the board last changed; orders the list when a reader asks by date. */
+  updatedAt?: number;
   /** Whether the board currently has a tab; a closed board is still listed. */
   open: boolean;
   /** Cards placed on this board right now. */
@@ -35,10 +47,40 @@ export interface LibraryBoard {
    */
 }
 
-/** What a drawer row can be. Boards are global: they never leave this list. */
-export type LibraryEntry =
-  | { kind: "card"; card: LibraryItem }
-  | { kind: "board"; board: LibraryBoard };
+/** The facet a board row filters under; not a card type, so nothing may create it. */
+export const BOARD_TYPE_FACET = "board";
+
+/** A row is a board rather than a card. */
+export function isBoardItem(item: { kind?: "card" | "board" | undefined }): boolean {
+  return item.kind === "board";
+}
+
+/**
+ * A board item seen as a board row.
+ *
+ * The row needs two things a card item has no field for — how many cards are on
+ * the board, and whether it is the one on screen — so the adapter is here rather
+ * than in the row renderer, and the row keeps a shape of its own.
+ */
+export function toBoardRow(
+  item: LibraryItem & { cardCount?: number },
+  activeBoardId: string | null,
+): LibraryBoard {
+  return {
+    id: item.id,
+    title: item.title,
+    open: item.id === activeBoardId,
+    cardCount: item.cardCount ?? 0,
+  };
+}
+
+/**
+ * What a drawer row is.
+ *
+ * One shape for both kinds: a board row is a `LibraryItem` with `kind: "board"`,
+ * so a row never has to ask which of two payloads it was handed.
+ */
+export type LibraryEntry = { kind: "card" | "board"; card: LibraryItem };
 
 export interface LibraryDrawerProps {
   open: boolean;
@@ -48,14 +90,19 @@ export interface LibraryDrawerProps {
   inbox: LibraryItem[];
   cards: LibraryItem[];
   trash: LibraryItem[];
-  /** Every board in the workspace, open or closed. */
-  boards?: LibraryBoard[];
+  /**
+   * Every board as a library row. Boards are already inside `cards`/`inbox`;
+   * this is the same set, for the places that need a board by id.
+   */
+  boards?: Array<LibraryItem & { cardCount?: number }>;
   /** A new board, opened. Absent when this session may not create boards. */
   onCreateBoard?: (() => void) | undefined;
   /** Switches to the board. */
   onOpenBoard?: (boardId: string) => void;
   /** Creates a portal card to the board on the active board; the row stays put. */
   onPlaceBoard?: (boardId: string) => void;
+  /** The same portal, dropped where the reader let go. */
+  onDropBoardAt?: ((boardId: string, point: { x: number; y: number }) => void) | undefined;
   /** Removes this board's placements only; a card on another board stays there. */
   onUnplaceBoardCards?: (boardId: string) => void;
   /** Asks once, here: unplace the cards or trash them with the board. */

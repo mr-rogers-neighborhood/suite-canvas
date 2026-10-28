@@ -1,22 +1,13 @@
 import type { WorkspaceDocument } from "@suite/graph";
-import {
-  WorkspaceDocument as Document,
-  PORTAL_BOARD_FIELD_ID,
-  sectionMembership,
-} from "@suite/graph";
+import { WorkspaceDocument as Document, PORTAL_BOARD_FIELD_ID } from "@suite/graph";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { LoroMap, LoroText } from "loro-crdt";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePlacementRunStore } from "../canvas/placementRun";
 import { Dock } from "../chrome/Dock";
 import { useUiStore } from "../store/useUiStore";
-import {
-  type LibraryBoard,
-  LibraryDrawer,
-  type LibraryDrawerProps,
-  type LibraryItem,
-} from "./LibraryDrawer";
-import { BOARD_STARTERS, createStarterBoard, templateCopyName } from "./TemplateGallery";
+import { LibraryDrawer, type LibraryDrawerProps, type LibraryItem } from "./LibraryDrawer";
+import { templateCopyName } from "./TemplateGallery";
 
 function addNode(parent: LoroMap, name: string): LoroMap {
   const children = parent.ensureMergeableList("children");
@@ -521,7 +512,8 @@ describe("LibraryDrawer boards", () => {
     workspace: WorkspaceDocument;
     first: { id: string; name: string };
     second: { id: string; name: string };
-    entries: (open?: string[]) => LibraryBoard[];
+    /** Boards as the rows the list now holds: items typed `board`. */
+    entries: () => LibraryItem[];
   }
 
   /** Two named boards and a card on the first one. */
@@ -538,11 +530,16 @@ describe("LibraryDrawer boards", () => {
       workspace,
       first: { id: first.id, name: "Research" },
       second: { id: second.id, name: "Drafts" },
-      entries: (open = [first.id]) =>
+      entries: () =>
         workspace.listBoards().map((board) => ({
           id: board.id,
           title: board.name,
-          open: open.includes(board.id),
+          kind: "board" as const,
+          boards: [],
+          typeIds: ["board"],
+          tagIds: [],
+          sectionIds: [],
+          properties: {},
           cardCount: workspace.listBoardCards(board.id).length,
         })),
     };
@@ -553,7 +550,11 @@ describe("LibraryDrawer boards", () => {
 
   it("should list every board, open or closed", () => {
     const { workspace, first, second, entries } = boardFixture();
-    renderDrawer(workspace, [], { tab: "boards", boards: entries([second.id]) });
+    renderDrawer(workspace, entries(), {
+      tab: "cards",
+      boards: entries(),
+      activeBoardId: second.id,
+    });
 
     expect(screen.getByTestId(`library-title-${first.id}`)).toHaveTextContent("Research");
     expect(screen.getByTestId(`library-title-${second.id}`)).toHaveTextContent("Drafts");
@@ -565,7 +566,8 @@ describe("LibraryDrawer boards", () => {
   it("should place a board without moving or removing its row", () => {
     const { workspace, first, second, entries } = boardFixture();
     const view = renderDrawer(workspace, [], {
-      tab: "boards",
+      tab: "cards",
+      cards: entries(),
       boards: entries(),
       activeBoardId: first.id,
       onPlaceBoard: (boardId) => {
@@ -597,7 +599,8 @@ describe("LibraryDrawer boards", () => {
     workspace.placeCard(second.id, "c1", { x: 40, y: 40 });
 
     renderDrawer(workspace, [], {
-      tab: "boards",
+      tab: "cards",
+      cards: entries(),
       boards: entries(),
       onUnplaceBoardCards: (boardId) => {
         for (const card of workspace.listBoardCards(boardId)) {
@@ -617,7 +620,12 @@ describe("LibraryDrawer boards", () => {
   it("should ask once and offer unplace or trash", () => {
     const { workspace, first, entries } = boardFixture();
     const onDeleteBoard = vi.fn();
-    renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
+    renderDrawer(workspace, entries(), {
+      tab: "cards",
+      cards: entries(),
+      boards: entries(),
+      onDeleteBoard,
+    });
 
     rowAction(first.id, "Delete board\u2026");
 
@@ -633,7 +641,12 @@ describe("LibraryDrawer boards", () => {
   it("should trash the board's cards when asked to", () => {
     const { workspace, first, entries } = boardFixture();
     const onDeleteBoard = vi.fn();
-    renderDrawer(workspace, [], { tab: "boards", boards: entries(), onDeleteBoard });
+    renderDrawer(workspace, entries(), {
+      tab: "cards",
+      cards: entries(),
+      boards: entries(),
+      onDeleteBoard,
+    });
 
     rowAction(first.id, "Delete board\u2026");
     fireEvent.click(screen.getByRole("button", { name: "Trash cards" }));
@@ -738,7 +751,7 @@ describe("LibraryDrawer board blueprints", () => {
     workspace: WorkspaceDocument;
     template: { id: string; name: string };
     other: { id: string; name: string };
-    entries: () => LibraryBoard[];
+    entries: () => LibraryItem[];
   }
 
   /**
@@ -774,7 +787,12 @@ describe("LibraryDrawer board blueprints", () => {
         workspace.listBoards().map((board) => ({
           id: board.id,
           title: board.name,
-          open: false,
+          kind: "board" as const,
+          boards: [],
+          typeIds: ["board"],
+          tagIds: [],
+          sectionIds: [],
+          properties: {},
           cardCount: workspace.listBoardCards(board.id).length,
           template: board.template === true,
         })),
@@ -798,7 +816,8 @@ describe("LibraryDrawer board blueprints", () => {
   it.skip("should save a board as a blueprint and offer it in the Blueprints group", () => {
     const { workspace, template, entries } = templateFixture();
     const view = renderDrawer(workspace, [], {
-      tab: "boards",
+      tab: "cards",
+      cards: entries(),
       boards: entries(),
       onSetBoardTemplate: (boardId, isTemplate) => workspace.setBoardTemplate(boardId, isTemplate),
       // Saving and starting are separate capabilities; this test only exercises
@@ -832,7 +851,8 @@ describe("LibraryDrawer board blueprints", () => {
     workspace.setBoardTemplate(template.id, true);
 
     renderDrawer(workspace, [], {
-      tab: "boards",
+      tab: "cards",
+      cards: entries(),
       boards: entries(),
       onUseBoardTemplate: useTemplate(workspace),
     });
@@ -861,59 +881,6 @@ describe("LibraryDrawer board blueprints", () => {
     expect(templateCopyName("Research", ["Research", "Research 2", "Research 3"])).toBe(
       "Research 4",
     );
-  });
-
-  it("should generate a starter board with its sections and cards", () => {
-    const { workspace, entries } = templateFixture();
-    useUiStore.setState({ activeBoardId: null });
-
-    renderDrawer(workspace, [], {
-      tab: "boards",
-      boards: entries(),
-      starters: BOARD_STARTERS,
-      onUseBoardTemplate: () => {},
-      onUseStarter: (starterId) => {
-        const boardId = createStarterBoard(
-          workspace,
-          starterId,
-          workspace.listBoards().map((board) => board.name),
-        );
-        if (boardId) useUiStore.getState().activateBoard(boardId);
-      },
-    });
-
-    // The starter is offered before anything exists for it.
-    expect(screen.getByTestId("library-starter-title-notebook")).toHaveTextContent("Notebook");
-    // Nothing is written until the row is used.
-    expect(workspace.listBoards()).toHaveLength(2);
-
-    fireEvent.click(screen.getByTestId("library-starter-use-notebook"));
-
-    const board = workspace.listBoards().find((candidate) => candidate.name === "Notebook");
-    expect(board).toBeDefined();
-    if (!board) return;
-    expect(workspace.listSections(board.id).map((section) => section.title)).toEqual([
-      "Start here",
-    ]);
-    const onBoard = workspace.listBoardCards(board.id);
-    expect(onBoard).toHaveLength(3);
-    expect(onBoard.map((card) => workspace.displayTitle(card.id))).toContain("A note");
-    // Every card sits inside the region, which is what membership means.
-    const sections = workspace.listSections(board.id);
-    const membership = sectionMembership(workspace.listBoardPlacements(board.id), sections);
-    expect(membership.size).toBe(3);
-    const byTitle = new Map(sections.map((section) => [section.id, section.title]));
-    expect(
-      onBoard
-        .map((card) => byTitle.get(membership.get(card.id) ?? ""))
-        .filter((title): title is string => title !== undefined)
-        .sort(),
-    ).toEqual(["Start here", "Start here", "Start here"]);
-    expect(useUiStore.getState().activeBoardId).toBe(board.id);
-
-    // A starter is one batch, so a single undo takes the whole board away.
-    workspace.undo();
-    expect(workspace.listBoards().map((candidate) => candidate.name)).not.toContain("Notebook");
   });
 });
 
@@ -1043,12 +1010,18 @@ describe("row actions", () => {
     const workspace = new Document();
     workspace.ensureDefaultTypes();
     const board = workspace.ensureBoard();
-    const entry = { id: board.id, title: board.name, open: false, cardCount: 0 };
-    renderDrawer(workspace, [], {
-      tab: "boards",
-      boards: [entry],
-      onSetBoardTemplate: vi.fn(),
-    });
+    const entry = {
+      id: board.id,
+      title: board.name,
+      kind: "board" as const,
+      boards: [],
+      typeIds: ["board"],
+      tagIds: [],
+      sectionIds: [],
+      properties: {},
+      cardCount: 0,
+    };
+    renderDrawer(workspace, [entry], { tab: "cards", boards: [entry] });
 
     expect(rowActions(board.id)).toEqual([
       "Open",

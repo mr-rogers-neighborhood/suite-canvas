@@ -1,5 +1,5 @@
 import type { ContextMenuItem } from "../dialogs/ContextMenu";
-import type { LibraryBoard, LibraryItem } from "./libraryTypes";
+import { isBoardItem, type LibraryBoard, type LibraryItem, toBoardRow } from "./libraryTypes";
 
 /**
  * The actions for one row, in one place: the ⋯ button and a right-click both read
@@ -8,7 +8,6 @@ import type { LibraryBoard, LibraryItem } from "./libraryTypes";
 export function useLibraryRowActions({
   tab,
   ordered,
-  visibleBoards,
   activeBoardId,
   runActive,
   canManageTrash,
@@ -81,10 +80,12 @@ export function useLibraryRowActions({
    * was opened, and the list stays the whole truth about what a row can do.
    */
   const menuFor = (id: string): ContextMenuItem[] => {
-    const card = tab === "boards" ? undefined : ordered.find((entry) => entry.id === id);
-    const board = tab === "boards" ? visibleBoards.find((entry) => entry.id === id) : undefined;
+    const card = ordered.find((entry) => entry.id === id);
 
-    if (board) {
+    // One lookup, two shapes: a board row's actions are about the board, a card
+    // row's are about the card. Both rows come from the same list.
+    if (card && isBoardItem(card)) {
+      const board = toBoardRow(card, activeBoardId);
       return [
         { label: "Open", onSelect: () => onOpenBoard(board.id) },
         { label: "Place on board", onSelect: () => onPlaceBoard(board.id) },

@@ -7,7 +7,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react";
-import type { LibraryBoard, LibraryEntry, LibraryItem } from "./libraryTypes";
+import { isBoardItem, type LibraryEntry, type LibraryItem } from "./libraryTypes";
 
 /**
  * The overflow button every row carries.
@@ -138,10 +138,13 @@ export interface LibraryRowContext {
   ) => void;
   /** A press starts a hold-to-place, or selects, in selection mode. */
   onPressRow: (item: LibraryItem, event: ReactPointerEvent) => void;
-  /** The keyboard path into a card row. */
-  onOpenCard: (cardId: string) => void;
-  /** The keyboard path into a board row. */
-  onOpenBoard: (boardId: string) => void;
+  /**
+   * The keyboard path into a row. One function for both kinds: a board row and a
+   * card row differ in what they show, not in what a press on them means.
+   */
+  onOpen: (id: string) => void;
+  /** Boards on screen and their card counts, for a board row's second line. */
+  boardState?: (boardId: string) => { open: boolean; cardCount: number } | undefined;
 }
 
 /** One card row: title, match snippet, tags and the board/section line. */
@@ -165,8 +168,10 @@ export function LibraryCardRow({
     sectionLabel,
     onOpenMenu,
     onPressRow,
-    onOpenCard,
+    onOpen,
+    boardState,
   } = context;
+  const board = isBoardItem(item) ? boardState?.(item.id) : undefined;
   const hit: SearchHit | undefined = searching ? hits.get(item.id) : undefined;
   const current = activeId === item.id;
   return (
@@ -196,7 +201,7 @@ export function LibraryCardRow({
             type="button"
             data-row-open={item.id}
             className="library-row__open block max-w-full truncate text-left text-[12px]"
-            onClick={(event) => openOnKeyboard(event, () => onOpenCard(item.id))}
+            onClick={(event) => openOnKeyboard(event, () => onOpen(item.id))}
           >
             <span data-testid={`library-title-${item.id}`}>
               <Highlighted text={item.title} terms={searching ? terms : []} />
@@ -219,7 +224,16 @@ export function LibraryCardRow({
                 .join(" ")}
             </span>
           ) : null}
-          {boardScope ? (
+          {isBoardItem(item) ? (
+            <span
+              className="block truncate text-[10px] text-[var(--ink-muted)]"
+              data-testid={`library-board-state-${item.id}`}
+            >
+              {board?.open === true ? "Open" : "Closed"}
+              {" \u00b7 "}
+              {board?.cardCount ?? 0} {board?.cardCount === 1 ? "card" : "cards"}
+            </span>
+          ) : boardScope ? (
             <span
               className="block truncate text-[10px] text-[var(--ink-muted)]"
               data-testid="library-row-meta"
@@ -247,77 +261,6 @@ export function LibraryCardRow({
   );
 }
 
-/** One board row: name, open state, card count and the blueprint marker. */
-export function LibraryBoardRow({
-  board,
-  searching,
-  terms,
-  onOpenMenu,
-  onOpen,
-}: {
-  board: LibraryBoard;
-  searching: boolean;
-  terms: readonly string[];
-  /** The keyboard path: the row's own open button. */
-  onOpen: (boardId: string) => void;
-  onOpenMenu: (
-    id: string,
-    label: string,
-    point: { x: number; y: number },
-    event?: ReactMouseEvent,
-  ) => void;
-}) {
-  return (
-    <li key={board.id} className="library-entry" data-row-id={board.id}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: same as a card row — the ⋯ button is the keyboard path to this menu. */}
-      <div
-        data-testid={`library-item-${board.id}`}
-        data-board-open={board.open ? "true" : "false"}
-        className="library-row"
-        onContextMenu={(event) =>
-          onOpenMenu(board.id, board.title, { x: event.clientX, y: event.clientY }, event)
-        }
-        onKeyDown={rowsKeyDown}
-      >
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            data-row-open={board.id}
-            className="library-row__open block max-w-full truncate text-left text-[12px]"
-            onClick={(event) => openOnKeyboard(event, () => onOpen(board.id))}
-          >
-            <span data-testid={`library-title-${board.id}`}>
-              <Highlighted text={board.title} terms={searching ? terms : []} />
-            </span>
-          </button>
-          <span className="block truncate text-[10px] text-[var(--ink-muted)]">
-            <span data-testid={`library-board-state-${board.id}`}>
-              {board.open ? "Open" : "Closed"}
-            </span>
-            {" \u00b7 "}
-            {board.cardCount} {board.cardCount === 1 ? "card" : "cards"}
-            {/* The state moved out of the row's buttons into its menu, so the row
-              says it in words: a blueprint is a fact about the board, not only
-              something you can toggle. The word is the interface's; the record
-              still calls the flag `template` (ADR-0059). */}
-            {board.template === true ? (
-              <span data-testid={`library-board-template-${board.id}`}>{" \u00b7 blueprint"}</span>
-            ) : null}
-          </span>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          <RowMenuButton
-            id={board.id}
-            label={board.title}
-            onOpen={(point) => onOpenMenu(board.id, board.title, point)}
-          />
-        </div>
-      </div>
-    </li>
-  );
-}
-
 /** The scrolling list of rows, grouped by section or flat. */
 export function LibraryRowList({
   entries,
@@ -328,21 +271,11 @@ export function LibraryRowList({
   grouped: { id: string; title: string; depth: number; items: LibraryItem[] }[] | null;
   context: LibraryRowContext;
 }) {
-  const renderEntry = (entry: LibraryEntry) => {
-    const key = entry.kind === "board" ? `board:${entry.board.id}` : `card:${entry.card.id}`;
-    return entry.kind === "board" ? (
-      <LibraryBoardRow
-        key={key}
-        board={entry.board}
-        searching={context.searching}
-        terms={context.terms}
-        onOpenMenu={context.onOpenMenu}
-        onOpen={context.onOpenBoard}
-      />
-    ) : (
-      <LibraryCardRow key={key} item={entry.card} context={context} />
-    );
-  };
+  // One row component: a board is an item, and the row reads its `kind` for the
+  // two lines that differ rather than forking the whole row.
+  const renderEntry = (entry: LibraryEntry) => (
+    <LibraryCardRow key={`${entry.kind}:${entry.card.id}`} item={entry.card} context={context} />
+  );
 
   if (!grouped) return <ul className="space-y-0.5">{entries.map(renderEntry)}</ul>;
   return (

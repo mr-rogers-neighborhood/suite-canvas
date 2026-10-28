@@ -19,11 +19,12 @@ export interface LibraryHold {
  */
 export function useLibraryHold({
   onDropAt,
-  onOpenCard,
+  onOpen,
   canPlace,
 }: {
   onDropAt: (cardId: string, point: { x: number; y: number }) => void;
-  onOpenCard: (cardId: string) => void;
+  /** A press that never moved: open whatever the row names. */
+  onOpen: (id: string) => void;
   /** A viewer's ghost still travels; the drop does nothing. */
   canPlace: boolean;
 }) {
@@ -59,7 +60,7 @@ export function useLibraryHold({
       if (!current) return;
       // A press that never became a drag is a plain click on the row.
       if (!current.dragging) {
-        onOpenCard(current.cardId);
+        onOpen(current.cardId);
         return;
       }
       // A viewer's ghost still travelled; the drop does nothing, which is the
@@ -79,7 +80,7 @@ export function useLibraryHold({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [onDropAt, onOpenCard, canPlace, setLibraryDrag]);
+  }, [onDropAt, onOpen, canPlace, setLibraryDrag]);
 
   const reset = useCallback(() => setHold(null), []);
 

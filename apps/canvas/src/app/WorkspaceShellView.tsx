@@ -28,7 +28,8 @@ import { FeedbackHost } from "../feedback/FeedbackHost";
 import { SendFeedbackBubble } from "../feedback/SendFeedbackBubble";
 import type { SyncClaim, SyncRefusal } from "../feedback/syncState";
 import type { WorkspaceSnapshot } from "../hooks/snapshotMerge";
-import { type LibraryBoard, LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
+import { LibraryDrawer, type LibraryItem } from "../library/LibraryDrawer";
+import { openedByPortal } from "../library/libraryBoards";
 import { BOARD_STARTERS } from "../library/TemplateGallery";
 import { TypeSettingsHost } from "../panels/TypeSettingsHost";
 import { pinnedOrder, useBoardPins } from "../session/boardPins";
@@ -141,7 +142,8 @@ export interface WorkspaceShellViewProps {
   /** A new board, opened: what the start page and the tab chooser both mean. */
   createBoard: () => void;
   createCardInRun: (typeId: string) => void;
-  createPortal: (targetBoardId: string) => void;
+  /** Places a portal to the board; a point drops it under the cursor. */
+  createPortal: (targetBoardId: string, point?: { x: number; y: number }) => void;
   createSketch: () => void;
   createSection: () => void;
   createBoardPortal: () => void;
@@ -154,7 +156,8 @@ export interface WorkspaceShellViewProps {
   cardFocusId: string | null;
   inboxItems: LibraryItem[];
   cardItems: LibraryItem[];
-  boardEntries: LibraryBoard[];
+  /** Boards as library rows: the same list as cards, typed `board`. */
+  boardEntries: LibraryItem[];
   unplaceBoardCards: (boardId: string) => void;
   deleteBoard: (boardId: string, cards: "keep" | "trash") => void;
   locateCard: (cardId: string) => boolean;
@@ -290,6 +293,11 @@ export function WorkspaceShellView({
   dismissLeavePrompt,
 }: WorkspaceShellViewProps) {
   const pins = useBoardPins();
+  /** Boards nothing opens: they wait in the inbox with the loose cards. */
+  const inboxBoards = useMemo(
+    () => snapshot.boards.filter((board) => !openedByPortal(snapshot, board.id)).length,
+    [snapshot],
+  );
   // Read from the document rather than the projection. A board created through
   // the portal flow reached the document (the portal rendered it) but never
   // reached `snapshot.boards`, so the switcher offered one board and the other
@@ -451,7 +459,7 @@ export function WorkspaceShellView({
                 canManage={canManageBoards}
                 onCreate={createBoard}
                 onOpenLibrary={() => {
-                  setLibraryTab("boards");
+                  setLibraryTab("cards");
                   setLibraryOpen(true);
                 }}
                 onRename={(boardId, name) => workspace.renameBoard(boardId, name)}
@@ -625,9 +633,10 @@ export function WorkspaceShellView({
             open={libraryOpen}
             tab={libraryTab}
             counts={{
-              inbox: unplaced.length,
-              cards: allCards.length,
-              boards: snapshot.boards.length,
+              // Boards are rows in Cards (and in the inbox when nothing opens
+              // them), so their number is already inside these two.
+              inbox: unplaced.length + inboxBoards,
+              cards: allCards.length + snapshot.boards.length,
               trash: trashed.length,
             }}
             inbox={inboxItems}
@@ -636,7 +645,8 @@ export function WorkspaceShellView({
             boards={boardEntries}
             onCreateBoard={canCreateBoards ? createBoard : undefined}
             onOpenBoard={activateBoard}
-            onPlaceBoard={createPortal}
+            onPlaceBoard={(boardId) => createPortal(boardId)}
+            onDropBoardAt={(boardId, point) => createPortal(boardId, point)}
             onUnplaceBoardCards={unplaceBoardCards}
             onDeleteBoard={deleteBoard}
             onLocateCard={locateCard}

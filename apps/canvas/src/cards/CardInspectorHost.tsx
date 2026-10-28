@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { setEntityIcon } from "../canvas/entityIcon";
 import { useNavigateTarget } from "../canvas/navigateTarget";
 import { ContainerPanel } from "../panels/ContainerPanel";
 import { LinkInspector } from "../panels/LinkInspector";
@@ -150,12 +151,13 @@ export function CardInspectorHost() {
         onSetColor={(color) => {
           if (container.kind === "section") workspace.setSectionColor(container.id, color);
         }}
+        // One writer: a portal's icon is its own card's, and a section's is the section's.
         onSetIcon={(icon) => {
-          if (container.kind === "portal") {
-            if (container.board) workspace.setBoardIcon(container.board.id, icon);
-            return;
-          }
-          workspace.setSectionIcon(container.id, icon);
+          setEntityIcon(
+            workspace,
+            { kind: container.kind === "portal" ? "portal" : "section", id: container.id },
+            icon,
+          );
         }}
         onSetCover={(attachmentId) => {
           if (container.kind === "portal" && container.board) {

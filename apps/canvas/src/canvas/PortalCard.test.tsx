@@ -1,6 +1,7 @@
 import type { Placement, Section } from "@suite/graph";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { preloadIconSet } from "../icons/iconSets";
 import { PortalCard } from "./PortalCard";
 import { boardMiniature } from "./portalMiniature";
 
@@ -42,6 +43,51 @@ describe("PortalCard", () => {
     expect(screen.getByTestId("portal-miniature")).toBeInTheDocument();
     expect(screen.getByTestId("portal-card-count")).toHaveTextContent("3 cards");
     expect(screen.getByText("Research")).toBeInTheDocument();
+  });
+
+  it("draws the icon it was given where the type glyph was", async () => {
+    await preloadIconSet("lucide");
+    const { unmount } = render(<PortalCard boardName="Research" glyph={"\u25c9"} model={model} />);
+    expect(screen.getByTestId("portal-glyph")).toHaveTextContent("\u25c9");
+    unmount();
+
+    // The chosen icon replaces the circled dot rather than sitting beside it.
+    render(
+      <PortalCard boardName="Research" glyph={"\u25c9"} model={model} icon="lucide:compass" />,
+    );
+    const glyph = screen.getByTestId("portal-glyph");
+    await waitFor(() =>
+      expect(glyph.querySelector("svg")).toHaveAttribute("data-icon", "lucide:compass"),
+    );
+    expect(glyph).not.toHaveTextContent("\u25c9");
+  });
+
+  it("folds to its header, keeping the count", () => {
+    const onToggleCollapsed = vi.fn();
+    render(
+      <PortalCard
+        boardName="Research"
+        glyph={"\u25c9"}
+        model={model}
+        collapsed
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+
+    // The frame and the footer step out of the way; the header keeps the name and the count.
+    expect(screen.getByTestId("portal-node")).toHaveAttribute("data-collapsed", "true");
+    expect(screen.queryByTestId("portal-miniature")).toBeNull();
+    expect(screen.queryByTestId("portal-card-count")).toBeNull();
+    expect(screen.getByTestId("portal-folded-count")).toHaveTextContent("3 cards");
+    expect(screen.getByTestId("portal-glyph")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("portal-fold"));
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+
+  it("offers no fold when the surface owns none", () => {
+    render(<PortalCard boardName="Research" glyph={"\u25c9"} model={model} />);
+    expect(screen.queryByTestId("portal-fold")).toBeNull();
   });
 
   it("should open on double-click and on Enter/Space", () => {

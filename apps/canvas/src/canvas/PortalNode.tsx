@@ -8,9 +8,10 @@ import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
 import { useAttachmentSource } from "../styles/useBoardCover";
+import { cardIcon } from "./entityIcon";
 import { NodeConnectors } from "./NodeConnectors";
 import type { CardNodeData } from "./nodeData";
-import { DEFAULT_PORTAL_SIZE, PortalCard } from "./PortalCard";
+import { DEFAULT_PORTAL_SIZE, PORTAL_HEADER_HEIGHT, PortalCard } from "./PortalCard";
 import { boardMiniature, miniatureDots } from "./portalMiniature";
 import { useNodeConnectorWiring } from "./useNodeConnectorWiring";
 
@@ -92,6 +93,10 @@ export function PortalNode({ id, data, selected }: NodeProps) {
   // does; the dots live on the node's own box, above the miniatures chrome.
   const connectors = useNodeConnectorWiring(card, placement.boardId);
 
+  // A portal folds like a note: the same store flag, so the state persists per card and a
+  // board that reopens remembers which doors were rolled up.
+  const collapsed = useUiStore((state) => state.collapsedCards[id] === true);
+  const toggleCardCollapsed = useUiStore((state) => state.toggleCardCollapsed);
   const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
   const lastResizeSent = useRef(0);
 
@@ -132,6 +137,10 @@ export function PortalNode({ id, data, selected }: NodeProps) {
 
   const width = liveSize?.width ?? peerSize?.width ?? placement.width ?? null;
   const height = liveSize?.height ?? peerSize?.height ?? placement.height ?? null;
+  // A folded portal is a title bar: the shell shrinks with it, or the board keeps a
+  // 256px hole where a rolled-up card should be. React Flow re-measures on the change, so
+  // the connector dots land on the bar rather than where the frame used to be.
+  const shellHeight = collapsed ? PORTAL_HEADER_HEIGHT : (height ?? DEFAULT_PORTAL_SIZE.height);
 
   return (
     <div
@@ -141,7 +150,7 @@ export function PortalNode({ id, data, selected }: NodeProps) {
       style={{
         position: "relative",
         width: width ?? DEFAULT_PORTAL_SIZE.width,
-        height: height ?? DEFAULT_PORTAL_SIZE.height,
+        height: shellHeight,
       }}
     >
       <NodeResizer
@@ -155,14 +164,17 @@ export function PortalNode({ id, data, selected }: NodeProps) {
       />
       <PortalCard
         boardName={board?.name ?? null}
+        collapsed={collapsed}
+        onToggleCollapsed={canEditLayout ? () => toggleCardCollapsed(id) : undefined}
+        height={collapsed ? PORTAL_HEADER_HEIGHT : height}
         glyph={type.glyph || "\u25c9"}
+        icon={card ? cardIcon(card, type.icon) : null}
         model={model}
         dots={dots}
         cover={cover}
         peers={peerUsers}
         selected={Boolean(selected)}
         width={width}
-        height={height}
         style={card.style}
         onOpen={open}
         onOpenInfo={() => openContainerInspector({ kind: "portal", id })}

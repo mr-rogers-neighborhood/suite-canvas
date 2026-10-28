@@ -10,8 +10,11 @@ import {
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { cardIcon as resolveCardIcon, setEntityIcon } from "../canvas/entityIcon";
 import type { PeerPresence, PresenceUser } from "../collab/presence";
+import { IconField } from "../inspector/IconField";
 import { inspectorPanelIds } from "../inspector/InspectorTabs";
+import { useCanvasStore } from "../store/useCanvasStore";
 import { StyleTab } from "../styles/surface/StyleTab";
 import { CardBodySurface } from "./CardBodySurface";
 import { CardLinksSection } from "./CardLinksSection";
@@ -338,6 +341,17 @@ export function CardPanel({
           id={inspector ? tabIds.details.panel : undefined}
           aria-labelledby={inspector ? tabIds.details.tab : undefined}
         >
+          {/* The same row a portal and a section have: what the card draws in its header. */}
+          <IconField
+            value={resolveCardIcon(card, typesById.get(card.primaryTypeId)?.icon)}
+            canEdit={editLayout}
+            testId="card-icon"
+            onChange={(icon) => {
+              const workspace = useCanvasStore.getState().workspace;
+              if (workspace) setEntityIcon(workspace, { kind: "card", id: card.id }, icon);
+            }}
+          />
+
           <CardTypeTagsSection
             card={card}
             types={types}

@@ -2,6 +2,7 @@ import type { StyleShape, SurfaceStyle } from "@suite/graph";
 import { resolveSurfaceStyle } from "@suite/graph";
 import { type CSSProperties, useRef } from "react";
 import type { PresenceUser } from "../collab/presence";
+import { IconGlyph } from "../icons/IconGlyph";
 import { PresenceAvatars } from "../presence/PresenceAvatars";
 import { BoardMiniature } from "./BoardMiniature";
 import type { BoardMiniatureModel, MiniatureDot } from "./portalMiniature";
@@ -9,6 +10,9 @@ import { isShapedSurface, shapeInset, surfacePaintVars } from "./surfacePaint";
 
 /** Fallback frame for a portal that has never been resized, or whose board is empty. */
 export const DEFAULT_PORTAL_SIZE = { width: 288, height: 256 } as const;
+
+/** The height a folded portal occupies: its header and nothing else. */
+export const PORTAL_HEADER_HEIGHT = 34;
 
 /** The paint record as a DOM style: a custom property needs its `--` prefix. */
 function paintStyle(paint: Record<string, string>): CSSProperties {
@@ -40,8 +44,14 @@ export function portalSizeForBounds(bounds: { width: number; height: number } | 
 export interface PortalCardProps {
   /** Target board's name, or null when the stored id no longer resolves. */
   boardName: string | null;
-  /** Type glyph; the seeded portal type uses a circled dot. */
+  /** Type glyph, drawn when the card has no icon of its own. */
   glyph: string;
+  /** The icon this portal chose, which replaces the glyph (style, record, then type). */
+  icon?: string | null;
+  /** Folded to its header. The frame, the miniature and the footer step out of the way. */
+  collapsed?: boolean;
+  /** Folds or unfolds the portal. Absent leaves the fold off the face entirely. */
+  onToggleCollapsed?: (() => void) | undefined;
   model: BoardMiniatureModel;
   dots?: readonly MiniatureDot[];
   /** A chosen cover image; it stands in for the live picture while it resolves. */
@@ -67,6 +77,9 @@ export interface PortalCardProps {
 export function PortalCard({
   boardName,
   glyph,
+  icon = null,
+  collapsed = false,
+  onToggleCollapsed,
   model,
   dots = [],
   cover = null,
@@ -106,6 +119,7 @@ export function PortalCard({
       data-unavailable={unavailable ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       data-seamless={seamless ? "true" : undefined}
+      data-collapsed={collapsed ? "true" : undefined}
       data-shape={shape ?? undefined}
       role="button"
       tabIndex={0}
@@ -159,80 +173,106 @@ export function PortalCard({
     >
       <span className="sr-only">Portal to </span>
       <header className="portal-card__header">
-        <span aria-hidden="true" className="portal-card__glyph">
-          {glyph}
+        {onToggleCollapsed ? (
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand portal" : "Collapse portal"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand portal" : "Collapse portal"}
+            data-testid="portal-fold"
+            className="card-meta-toggle nodrag rounded px-0.5 text-[10px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleCollapsed();
+            }}
+          >
+            <span aria-hidden="true">{collapsed ? "\u25b8" : "\u25be"}</span>
+          </button>
+        ) : null}
+        <span aria-hidden="true" className="portal-card__glyph" data-testid="portal-glyph">
+          {icon ? <IconGlyph icon={icon} size={13} className="inline-block" /> : glyph}
         </span>
         <span className="portal-card__title" title={boardName ?? "Unavailable board"}>
           {boardName ?? "Unavailable board"}
         </span>
+        {collapsed ? (
+          <span className="portal-card__count" data-testid="portal-folded-count">
+            {count} card{count === 1 ? "" : "s"}
+          </span>
+        ) : null}
         <PresenceAvatars users={[...peers]} max={3} />
       </header>
 
       {/* The frame takes the target board's shape, so the drawing fills it rather
-          than letterboxing inside a box chosen for its own sake. */}
-      <div
-        className="portal-card__frame"
-        style={{
-          aspectRatio: `${model.viewBox.width} / ${model.viewBox.height}`,
-        }}
-      >
-        {unavailable ? (
-          // A missing target is a state, not a broken drawing: the frame keeps
-          // the card's shape, turns dashed, and says what happened.
-          <div
-            className="portal-card__missing"
-            data-testid="portal-unavailable"
-            style={{
-              flexDirection: "column",
-              gap: 4,
-              padding: "0 14px",
-              border: "1px dashed color-mix(in srgb, var(--ink-muted) 55%, transparent)",
-              borderRadius: 8,
-              textAlign: "center",
-            }}
-          >
-            <span>Unavailable board</span>
-            <span style={{ fontStyle: "normal", fontSize: 10 }}>
-              The board this portal opened was removed.
-            </span>
-          </div>
-        ) : cover ? (
-          // A cover is a still picture of the board the way its author chose to
-          // show it; the miniature would cost a redraw of somebody else's board.
-          <img src={cover} alt={`${boardName} cover`} className="portal-cover" />
-        ) : (
-          <BoardMiniature model={model} dots={dots} label={`${boardName} miniature`} />
-        )}
-        {boardName !== null && count === 0 ? (
-          <span className="portal-card__empty">Empty board</span>
-        ) : null}
-      </div>
+          than letterboxing inside a box chosen for its own sake. A folded portal draws
+          neither the frame nor the footer: it is a title bar that says what is inside. */}
+      {collapsed ? null : (
+        <div
+          className="portal-card__frame"
+          style={{
+            aspectRatio: `${model.viewBox.width} / ${model.viewBox.height}`,
+          }}
+        >
+          {unavailable ? (
+            // A missing target is a state, not a broken drawing: the frame keeps
+            // the card's shape, turns dashed, and says what happened.
+            <div
+              className="portal-card__missing"
+              data-testid="portal-unavailable"
+              style={{
+                flexDirection: "column",
+                gap: 4,
+                padding: "0 14px",
+                border: "1px dashed color-mix(in srgb, var(--ink-muted) 55%, transparent)",
+                borderRadius: 8,
+                textAlign: "center",
+              }}
+            >
+              <span>Unavailable board</span>
+              <span style={{ fontStyle: "normal", fontSize: 10 }}>
+                The board this portal opened was removed.
+              </span>
+            </div>
+          ) : cover ? (
+            // A cover is a still picture of the board the way its author chose to
+            // show it; the miniature would cost a redraw of somebody else's board.
+            <img src={cover} alt={`${boardName} cover`} className="portal-cover" />
+          ) : (
+            <BoardMiniature model={model} dots={dots} label={`${boardName} miniature`} />
+          )}
+          {boardName !== null && count === 0 ? (
+            <span className="portal-card__empty">Empty board</span>
+          ) : null}
+        </div>
+      )}
 
-      <footer className="portal-card__footer">
-        {unavailable ? null : (
-          <span data-testid="portal-card-count" className="portal-card__count">
-            {count} card{count === 1 ? "" : "s"}
-          </span>
-        )}
-        {peers.length > 0 ? (
-          <span
-            data-testid="portal-presence"
-            className="portal-card__peers"
-            role="img"
-            aria-label={`Here now: ${names}`}
-            title={names}
-          >
-            {peers.map((peer) => (
-              <span
-                key={`${peer.name}:${peer.color}`}
-                aria-hidden="true"
-                className="portal-card__peer-dot"
-                style={{ backgroundColor: peer.color }}
-              />
-            ))}
-          </span>
-        ) : null}
-      </footer>
+      {collapsed ? null : (
+        <footer className="portal-card__footer">
+          {unavailable ? null : (
+            <span data-testid="portal-card-count" className="portal-card__count">
+              {count} card{count === 1 ? "" : "s"}
+            </span>
+          )}
+          {peers.length > 0 ? (
+            <span
+              data-testid="portal-presence"
+              className="portal-card__peers"
+              role="img"
+              aria-label={`Here now: ${names}`}
+              title={names}
+            >
+              {peers.map((peer) => (
+                <span
+                  key={`${peer.name}:${peer.color}`}
+                  aria-hidden="true"
+                  className="portal-card__peer-dot"
+                  style={{ backgroundColor: peer.color }}
+                />
+              ))}
+            </span>
+          ) : null}
+        </footer>
+      )}
     </div>
   );
 }

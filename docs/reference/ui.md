@@ -54,6 +54,11 @@ Peers show on tabs as small avatars, aggregated per board, so "where is everyone
 
 One inspector exists. `CardPanel` renders in two variants, `inspector` (docked beside the canvas) and `embedded` (inside a card focus), and both read the same card model, so a property can be fixed without going to the canvas (ADR-0050).
 
+Every kind that can carry an icon shows the same row: `apps/canvas/src/inspector/IconField.tsx`, one picker
+with a button that names the current icon and a Clear that returns the entity to what it inherits. What the
+value means is `resolvedIcon`'s job (see [canvas.md](canvas.md#icons)); the row only decides how choosing
+reads, which is why a card, a portal and a section cannot end up with three slightly different pickers.
+
 What an inspector shows is one table, `apps/canvas/src/inspector/capabilities.ts`, not a branch per entity. A tab and a body row each declare the kinds they serve, and a surface asks for the ones that serve what it is describing: a card gets Details, Content and Style; a portal gets Details, Contents and Style; a section gets Details and Contents, because its paint is the one colour it owns and everything else about it is the theme. A kind that has nothing for a tab never sees the tab, and a mixed selection intersects rather than unions.
 
 `InspectorTabs` draws the strip for all of them: one tab stop, arrow-key movement, and the selected tab the only one with `tabIndex=0`, so the panels differ in their body and not in their controls.

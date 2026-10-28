@@ -310,10 +310,28 @@ A folded card does not mount its body, so nothing inside it can hold a caret. It
 it had, which is why unfolding restores the card exactly. The height a folded card paints at is
 `COLLAPSED_CARD_HEIGHT` in `canvas/nodeData.ts`, and the header's reference count is what the fold hides.
 
+A portal folds the same way, through the same `collapsedCards` flag: its shell shrinks to
+`PORTAL_HEADER_HEIGHT` (`canvas/PortalCard.tsx`), the miniature and the footer step out of the way, and the
+header keeps the icon, the board name and the count. The shell height is what shrinks rather than the
+placement, so a rolled-up portal leaves no hole on the board and unfolding restores the frame the reader
+had resized.
+
 A folded section stops drawing its members: `board/useBoardNodes.ts` skips a placement whose section is
 folded, so the cards are absent rather than invisible. `sections/SectionLayer.tsx` paints the frame at header
 height through `paintRect`, and the stored rect is untouched so unfolding puts every member back. A folded
 section shows no resize handles, because there is nothing to resize.
+
+### Icons
+
+An entity's icon is resolved by one function, `resolvedIcon` in `canvas/entityIcon.ts`, in this order: the
+paint record's `icon`, then the record's own field, then the type's icon. A card can also say "nothing",
+which is `iconHidden` and beats both of the first two. One writer, `setEntityIcon`, puts the choice in
+`style.icon` for a card and a portal and in the section's own field for a section, so the inspector, the
+appearance panel and the canvas cannot disagree.
+
+A chosen icon replaces what the entity would otherwise draw: the card's type glyph, the portal's circled
+dot, or a section's colour dot. A section keeps the dot when no icon is set, so the colour an author picked
+is never invisible.
 
 There is no separate summary surface. An earlier build carried a rollup rail in the corner of the board
 because neither a card nor a section could fold; the fold is on the two headers now and the rail is gone.

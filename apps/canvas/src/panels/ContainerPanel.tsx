@@ -3,10 +3,9 @@ import { sectionColors } from "@suite/graph";
 import { useState } from "react";
 import { SECTION_STROKE } from "../canvas/sections/sectionPalette";
 import { TagPicker } from "../cards/TagPicker";
-import { IconGlyph } from "../icons/IconGlyph";
-import { IconPicker } from "../icons/IconPicker";
 import type { InspectorTabId } from "../inspector/capabilities";
 import { tabLabel, tabsFor } from "../inspector/capabilities";
+import { IconField } from "../inspector/IconField";
 import { InspectorTabs } from "../inspector/InspectorTabs";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
@@ -73,7 +72,6 @@ export function ContainerPanel({
   // The picker is a disclosure, not a count: it only exists while the panel is
   // asking which board should replace the one that went away.
   const [picking, setPicking] = useState(false);
-  const [choosingIcon, setChoosingIcon] = useState(false);
   /**
    * The same leaves the card inspector has (ADR-0051): what it is, what it holds, how it
    * is painted. `tabsFor` decides which of them exist — a section has no Style tab,
@@ -356,55 +354,13 @@ export function ContainerPanel({
             </section>
           ) : null}
 
-          {/* One icon row for every container: a section's own, or the board a portal
-              opens. The same picker a card and a board use. */}
           {details && onSetIcon ? (
-            <section className="mt-3" data-testid="container-icon">
-              <h3 className="text-[11px] font-semibold tracking-wide text-[var(--ink-muted)]">
-                Icon
-              </h3>
-              <div className="mt-1 flex items-center gap-1.5">
-                <button
-                  type="button"
-                  data-testid="container-icon-pick"
-                  aria-expanded={choosingIcon}
-                  disabled={!canEdit}
-                  className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--hairline)] px-2 text-[12px] text-[var(--ink)] disabled:opacity-40"
-                  onClick={() => setChoosingIcon((open) => !open)}
-                >
-                  {model.icon ? (
-                    <IconGlyph icon={model.icon} size={14} />
-                  ) : (
-                    <span aria-hidden="true">{"\u25ab"}</span>
-                  )}
-                  <span>{model.icon ?? "Choose"}</span>
-                </button>
-                {model.icon ? (
-                  <button
-                    type="button"
-                    data-testid="container-icon-clear"
-                    disabled={!canEdit}
-                    className="rounded px-1.5 py-0.5 text-[11px] text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40"
-                    onClick={() => onSetIcon(null)}
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-              {choosingIcon ? (
-                <div className="mt-1" data-testid="container-icon-picker">
-                  <IconPicker
-                    value={model.icon}
-                    inline={false}
-                    onPick={(icon) => {
-                      onSetIcon(icon);
-                      setChoosingIcon(false);
-                    }}
-                    onClose={() => setChoosingIcon(false)}
-                  />
-                </div>
-              ) : null}
-            </section>
+            <IconField
+              value={model.icon}
+              canEdit={canEdit}
+              testId="container-icon"
+              onChange={(icon) => onSetIcon(icon)}
+            />
           ) : null}
 
           {/*

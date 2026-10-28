@@ -104,6 +104,63 @@ describe("surface paint", () => {
   it("keeps an unstyled surface untouched", () => {
     expect(surfacePaintVars(undefined)).toEqual({});
   });
+
+  /**
+   * A card and a portal are the same surface: a portal is a card drawn as a door, and it
+   * paints from the same record through the same call. The one thing worth pinning is
+   * that every kind of edge the panel offers publishes what the stylesheet needs, because
+   * a side that publishes half of it renders as a hairline or not at all.
+   */
+  it("offers every edge a card can have, on every side", () => {
+    const all = resolveSurfaceStyle(
+      {
+        sides: {
+          top: { paint: "solid", width: 3 },
+          right: { paint: "dashed", width: 2 },
+          bottom: { paint: "dotted", width: 2 },
+          left: { paint: "none" },
+        },
+      },
+      "card",
+    );
+    const paint = surfacePaintVars(all);
+
+    // Solid still draws a border, and the reader's width reaches it.
+    expect(paint["--paint-border-top"]).toBe("3px solid var(--ink)");
+    // Patterned sides draw no border: the strip is the edge and carries its thickness.
+    for (const side of ["right", "bottom"] as const) {
+      expect(paint[`--paint-border-${side}`]).toBe("0");
+      expect(paint[`--paint-dash-${side}`]).toContain("repeating-linear-gradient");
+      expect(paint[`--paint-dash-thickness-${side}`]).toBe("2px");
+    }
+    // A side switched off draws nothing at all.
+    expect(paint["--paint-border-left"]).toBe("none");
+    expect(paint["--paint-dash-left"]).toBeUndefined();
+  });
+
+  it("writes one outline across four sides for a shape that has one", () => {
+    // The outline row writes every side, because a diamond has no top edge to style
+    // apart from its bottom one; reading it back from `top` is what the panel does.
+    const outline = resolveSurfaceStyle(
+      {
+        shape: "diamond",
+        sides: {
+          top: { paint: "dashed", width: 2 },
+          right: { paint: "dashed", width: 2 },
+          bottom: { paint: "dashed", width: 2 },
+          left: { paint: "dashed", width: 2 },
+        },
+      },
+      "card",
+    );
+    const paint = surfacePaintVars(outline);
+
+    for (const side of ["top", "right", "bottom", "left"] as const) {
+      expect(paint[`--paint-dash-size-${side}`]).toBe(
+        `${side === "top" || side === "bottom" ? "100% 2px" : "2px 100%"}`,
+      );
+    }
+  });
 });
 
 describe("a silhouette that is not the box", () => {

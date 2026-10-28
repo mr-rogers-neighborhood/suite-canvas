@@ -2,6 +2,7 @@ import type { Connector, Rect, Section } from "@suite/graph";
 import { useReactFlow, useViewport, ViewportPortal } from "@xyflow/react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerPresence } from "../../collab/presence";
+import { IconGlyph } from "../../icons/IconGlyph";
 import {
   MAGNET_RADIUS,
   magnetizeToAnchors,
@@ -10,6 +11,7 @@ import {
 } from "../../presence/Connector";
 import { PeerNameTag } from "../../presence/PeerNameTag";
 import { useUiStore } from "../../store/useUiStore";
+import { sectionIcon } from "../entityIcon";
 import { isChaining, stepLink, stepShape, useLinkThreadStore } from "../links/linkThread";
 import { revealConnectors } from "../NodeConnectors";
 import { useLinkDraftStore } from "../useNodeConnectorWiring";
@@ -660,11 +662,23 @@ export function SectionLayer({
                 onPointerDown={(event) => startDrag(event, section)}
                 onContextMenu={(event) => onContextMenu(event, section.id)}
               >
-                <span
-                  aria-hidden="true"
-                  className="section-color-dot"
-                  style={{ backgroundColor: STROKE[color] }}
-                />
+                {/* A section's icon replaces its colour dot, and the dot stays when no icon is
+                    set, so the colour an author picked is never invisible. */}
+                {sectionIcon(section) ? (
+                  <span
+                    aria-hidden="true"
+                    className="section-color-dot"
+                    data-testid={`section-icon-${section.id}`}
+                  >
+                    <IconGlyph icon={sectionIcon(section) ?? ""} size={12} />
+                  </span>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="section-color-dot"
+                    style={{ backgroundColor: STROKE[color] }}
+                  />
+                )}
                 {editingSectionId === section.id ? (
                   <input
                     ref={editingSectionId === section.id ? titleInput : undefined}

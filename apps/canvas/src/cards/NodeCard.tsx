@@ -2,6 +2,7 @@ import type { Card, CardType, StyleShape } from "@suite/graph";
 import type { ContainerID, LoroDoc } from "loro-crdt";
 import type { CursorEphemeralStore } from "loro-prosemirror";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cardIcon as resolveCardIcon } from "../canvas/entityIcon";
 import { DEFAULT_CARD_HEIGHT, DEFAULT_CARD_WIDTH } from "../canvas/interactions/multiSelect";
 import { NodeConnectors } from "../canvas/NodeConnectors";
 import { paintSurface, useSurfacePaint } from "../canvas/surfaceContext";
@@ -196,14 +197,10 @@ export function NodeCard({
   armedConnectorId = null,
   draftActive = false,
 }: NodeCardProps) {
-  // One decision, in one place: hidden draws nothing, the card's own icon beats
+  // One decision, in one file: `cardIcon` walks style, then the card's own icon, then
   // the type's, and a type with no icon keeps the glyph it has always had.
-  const cardIcon: string | null | undefined =
-    card?.iconHidden === true
-      ? null
-      : (card?.icon ?? type.icon)
-        ? (card?.icon ?? type.icon)
-        : undefined;
+  const resolved = card ? resolveCardIcon(card, type.icon) : null;
+  const glyphIcon: string | null | undefined = resolved ?? undefined;
   const editContent = canEditContent ?? !readOnly;
   const editLayout = canEditLayout ?? !readOnly;
   const canTrash = canManageTrash ?? !readOnly;
@@ -453,11 +450,11 @@ export function NodeCard({
           </button>
         ) : null}
 
-        {cardIcon === null ? null : (
+        {glyphIcon === null ? null : (
           <button
             type="button"
             aria-label={`Card type: ${type.name}`}
-            title={cardIcon === undefined ? type.name : `${type.name} · change type`}
+            title={glyphIcon === undefined ? type.name : `${type.name} · change type`}
             aria-haspopup="menu"
             data-testid="card-type"
             className="card-type-glyph nodrag shrink-0 rounded px-0.5 text-[13px] leading-none text-[var(--ink-muted)] hover:bg-black/5 dark:hover:bg-white/10"
@@ -466,10 +463,10 @@ export function NodeCard({
               onOpenTypeMenu?.(event.currentTarget.getBoundingClientRect());
             }}
           >
-            {cardIcon === undefined ? (
+            {glyphIcon === undefined ? (
               type.glyph
             ) : (
-              <IconGlyph icon={cardIcon} size={13} className="inline-block" />
+              <IconGlyph icon={glyphIcon} size={13} className="inline-block" />
             )}
           </button>
         )}

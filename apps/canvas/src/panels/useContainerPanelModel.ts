@@ -1,6 +1,7 @@
 import type { Board, Card, GraphEdge, Placement, Section } from "@suite/graph";
 import { edgeEndpoints, PORTAL_BOARD_FIELD_ID, sectionMembership } from "@suite/graph";
 import { useMemo } from "react";
+import { cardIcon, sectionIcon } from "../canvas/entityIcon";
 import { useCanvasStore } from "../store/useCanvasStore";
 import { useUiStore } from "../store/useUiStore";
 import { useWorkspaceSnapshot } from "../store/workspaceStore";
@@ -241,7 +242,7 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
 
   return useMemo(() => {
     if (!target) return null;
-    const { edges, boards, sections, placements, cards } = snapshot;
+    const { edges, boards, sections, placements, cards, types } = snapshot;
     const displayTitle = (cardId: string) => workspace.displayTitle(cardId);
 
     if (target.kind === "portal") {
@@ -255,8 +256,10 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
         title: board?.name ?? "Missing board",
         board,
         section: null,
-        // A portal shows the board it opens, so its icon is the board's.
-        icon: board?.icon ?? null,
+        // A portal is a card on this board, so its icon is its own: style, then the record,
+        // then the portal type's. The board's icon belongs to the board and is edited in
+        // the library, which is why choosing one here cannot repaint anything else.
+        icon: cardIcon(card, types.find((entry) => entry.id === card.primaryTypeId)?.icon),
         color: board?.color ?? null,
         members: [],
         links: board
@@ -287,7 +290,7 @@ export function useContainerPanelModel(): ContainerPanelModel | null {
       title: section.title || "Untitled section",
       board: null,
       section,
-      icon: section.icon ?? null,
+      icon: sectionIcon(section),
       color: section.color ?? null,
       members: inside.map((placement) => ({
         id: placement.cardId,

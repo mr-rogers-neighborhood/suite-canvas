@@ -206,9 +206,13 @@ services:
       SUITE_AUTH_ENABLED: ${SUITE_AUTH_ENABLED:-0}
       SUITE_AUTH_SECRET: ${SUITE_AUTH_SECRET:-}
       SUITE_AUTH_URL: ${SUITE_AUTH_URL:-}
-      # Same database as the control plane. Unset here would leave the auth
-      # module with no pool at all, which it treats as a boot failure.
-      SUITE_AUTH_DATABASE_URL: ${SUITE_AUTH_DATABASE_URL:-postgres://suite:suite@postgres:5432/suite}
+      # Same database as the control plane. Unset here would leave the auth module with
+      # no pool at all, which it treats as a boot failure. The default follows
+      # `SUITE_CONTROL_PLANE_DATABASE_URL` rather than repeating the compose service name:
+      # the auth module prefers this variable, so a literal `postgres` default meant a
+      # deployed host with RDS configured answered `getaddrinfo ENOTFOUND postgres` on
+      # every sign-in while `/health` reported the database ok.
+      SUITE_AUTH_DATABASE_URL: ${SUITE_AUTH_DATABASE_URL:-${SUITE_CONTROL_PLANE_DATABASE_URL:-postgres://suite:suite@postgres:5432/suite}}
       SUITE_GOOGLE_CLIENT_ID: ${SUITE_GOOGLE_CLIENT_ID:-}
       SUITE_GOOGLE_CLIENT_SECRET: ${SUITE_GOOGLE_CLIENT_SECRET:-}
       SUITE_AUTH_RP_ID: ${SUITE_AUTH_RP_ID:-}

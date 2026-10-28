@@ -67,6 +67,41 @@
 # else is JSON on /api/*, a token-gated scrape, a WebSocket upgrade, one of the
 # two HTML entry points, or the SPA fallback -- all of it must be revalidated,
 # so a deploy or a revoked link is visible on the next request.
+# The operator surface, reachable only from the tailnet.
+#
+# `/admin.html` is session-gated and now audited, but "on the public internet" is still a
+# decision nobody has to make: the panel is for the person who runs the deployment, and a
+# Tailscale tailnet is free, private and already how SSH reaches the box. Requests from
+# `100.64.0.0/10` (the CGNAT range Tailscale hands out) are the only ones served; anything
+# else gets the same 404 an unknown path gets, so the panel is not even discoverable.
+#
+# Loopback is included for a probe or a tunnel running on the box itself. `/metrics` is
+# here for the same reason: it carries room and memory counts, and a scraper has no
+# business reaching it from the internet.
+#
+# This relies on seeing the real client address, which is why the app host is DNS-only in
+# Cloudflare. Behind the proxy every request would arrive from an edge address and the
+# rule would either refuse everyone or admit everyone; `docs/how-to/deploy.md` says so
+# where the proxy settings are.
+(suite_operator_door) {
+	# A `handle` rather than a bare `respond`: Caddy orders `handle` before `respond`, so a
+	# standalone respond sits *after* the panel rewrite and never runs. Handles evaluate in
+	# the order they appear, this one is imported first, and it answers before any other
+	# route can.
+	#
+	# `SUITE_OPERATOR_ALLOW` is the list of client networks served, space separated. The
+	# default is the tailnet plus loopback, which is what a deployed host wants; a local
+	# compose stack adds the Docker bridge, because a browser on the host arrives through
+	# it and nothing on that machine is in a tailnet.
+	@off_tailnet {
+		path /admin* /metrics /api/admin*
+		not remote_ip {$SUITE_OPERATOR_ALLOW:100.64.0.0/10 127.0.0.1/32 ::1/128}
+	}
+	handle @off_tailnet {
+		respond "Not found" 403
+	}
+}
+
 (suite_caching) {
 	@hashed path /assets/*
 	@uncached not path /assets/*
@@ -79,6 +114,7 @@
 	encode zstd gzip
 	import suite_security_headers
 	import suite_csp_reporting
+	import suite_operator_door
 	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_DOMAIN:localhost}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/report/csp; report-to suite-csp"
 	import suite_caching
 
@@ -147,6 +183,7 @@
 	encode zstd gzip
 	import suite_security_headers
 	import suite_csp_reporting
+	import suite_operator_door
 	header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss://{$SUITE_APP_HOST:app.suite.run}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; report-uri /api/report/csp; report-to suite-csp"
 	import suite_caching
 

@@ -318,6 +318,11 @@ services:
     cpus: "0.5"
     environment:
       SUITE_DOMAIN: ${SUITE_DOMAIN:-localhost}
+      # Who may reach /admin, /metrics and /api/admin. A deployed host sets this to its
+      # tailnet (100.64.0.0/10); a local stack adds the Docker bridge, because a browser on
+      # this machine arrives through it and is in no tailnet. The default fails closed
+      # either way: nothing outside these ranges is served.
+      SUITE_OPERATOR_ALLOW: ${SUITE_OPERATOR_ALLOW:-127.0.0.1/32 ::1/128 172.16.0.0/12}
       SUITE_ACME_EMAIL: ${SUITE_ACME_EMAIL:-}
       # The three production hosts and the two static roots they serve. The
       # defaults are `*.localhost` so a bare `docker compose up` uses Caddy's

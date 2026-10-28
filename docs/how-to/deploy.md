@@ -113,7 +113,20 @@ validation needs plain HTTP on port 80, and the edge redirect refuses it before 
   Rocket Loader breaks ES modules and the WASM bundle.
 - Client addresses: with the proxy on, Caddy sees the edge. Leave `SUITE_TRUST_PROXY=0` unless you also
   set Caddy's `trusted_proxies` for Cloudflare's ranges, or every visitor of one edge shares a
-  rate-limit bucket.
+  rate-limit bucket. The operator door below depends on seeing the real address, which is why the app
+  host is DNS-only.
+
+### The operator door
+
+`/admin.html`, `/admin/*`, `/metrics` and `/api/admin/*` are served only to the networks in
+`SUITE_OPERATOR_ALLOW`. The default is the Tailscale tailnet (`100.64.0.0/10`) plus loopback, so the
+panel and a metrics scrape exist for the person who runs the deployment and for nobody else; anything
+else gets the 404 an unknown path gets, which means the panel is not discoverable either.
+
+Tailscale's personal plan is free and covers this. Install it on the box (the instance user-data does),
+run `tailscale up --ssh`, and connect your laptop: `ssh` and the panel both arrive over the tailnet, so
+port 22 never has to be open. A local `docker compose` stack sets `SUITE_OPERATOR_ALLOW` to the Docker
+bridge instead, because a browser on that machine arrives through it and is in no tailnet.
 
 An external monitor on `https://canvas.example.com/health`, expecting `200 {"ok":true}`, catches the
 instance being down; `deploy/alert.sh` from cron catches it being sick.

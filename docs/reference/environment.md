@@ -201,6 +201,8 @@ reach a managed Postgres. Unset, they dump through the compose `postgres` servic
 local shape. The `postgres` service itself sits behind the `local-db` profile: `pnpm up` passes it, a
 deployed host with RDS does not.
 
+| `SUITE_OPERATOR_ALLOW` | tailnet + loopback | space-separated CIDRs Caddy serves `/admin*`, `/metrics` and `/api/admin*` to. A local stack adds `172.16.0.0/12` for the Docker bridge; a deployed host keeps the tailnet and nothing else |
+
 `compose.yaml` adds three variables it consumes itself: `SUITE_DOMAIN` (the hostname Caddy serves),
 `SUITE_ACME_EMAIL` (the ACME account address) and `SUITE_IMAGE` (the image to run, defaulting to the image
 the host builds locally, `suite:local`).
